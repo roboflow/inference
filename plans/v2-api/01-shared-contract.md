@@ -4,7 +4,7 @@
 
 **Status:** Proposed plan. D2 records Damian's confirmed paths and permission to replace undeployed V2 behavior directly. D1 and D3–D6 remain proposals. This draft PR contains the plan only; it does not implement the API, schema catalogue or fixture suite.
 
-**Scope update:** PR 01 covers model and server contracts only. The new Workflows functionality is not yet included, as clarified by Damian. All V2 Workflows routes and their contracts, schemas, fixtures and direct-inference parity are offloaded to separate roadmap PRs 12 and 13 and are **on hold**. They do not block this plan or active model/server implementation. Resume that work only once the new functionality is included and the team explicitly agrees to resume.
+**Scope update:** PR 01 covers model and server contracts only. The new Workflows functionality is not yet included, as clarified by Damian. V2 Workflows routes, their route-specific contracts/schemas, executable fixtures and live direct-inference parity checks are offloaded to separate roadmap PRs 12 and 13 and are **on hold**. The design's shared input/result requirement still constrains the model contract; D3 reviews that requirement using illustrative examples. They do not block this plan or active model/server implementation. Resume that work only once the new functionality is included and the team explicitly agrees to resume.
 
 **Related work:** [Gap report PR 3088](https://github.com/roboflow/inference/pull/3088), [roadmap PR 01][roadmap], [design PR 2277](https://github.com/roboflow/inference/pull/2277).
 
@@ -18,9 +18,9 @@ PR 01 should establish the shared conventions, valid examples and a small offlin
 
 ### Evidence checked
 
-The integration branch was fetched while preparing this plan and still points to `3d45b8712cc428eb01b714f3609346be7c92acc4`. Design PR 2277 still points to `de634b98bac204c96caa98a15dd7559dded361d5`. This plan rechecks the model/server routers, dispatch, authentication middleware, error helper, detection response serializer and SDK version selection against that public revision.
+The integration branch was fetched while preparing this plan and still points to `3d45b8712cc428eb01b714f3609346be7c92acc4`. Design PR 2277 still points to `de634b98bac204c96caa98a15dd7559dded361d5`. This plan rechecks the model/server routers, dispatch, authentication middleware, error helper, detection response serializer and SDK version selection against that public revision. The D3 follow-up also checks the current PR 2277 preface/workflow proposal and the legacy workflow response entities, provider, execution wrapper and test expectations; it does not run a workflow.
 
-The [report][report] and [review follow-up][followup] retain their evidence snapshot at report-branch commit `6dcada6ace296522d4be9451f8764b81eb5c8411`. The [roadmap][roadmap] is pinned to `8e6f47d119e6cb9b772c14b1f263e2cb948d6cdd`, including the Workflows hold, plain-language planning guidance and updated D2 pre-deployment compatibility decision. Discussion guidance remains the snapshot recorded in the follow-up: loading controls, score/decision separation, rich/compact distinction and V1 safeguard parity have support; naming, defaults, optional metadata and several policies remain open. This plan does not claim newer team agreement.
+The [report][report] and [review follow-up][followup] retain their evidence snapshot at report-branch commit `6dcada6ace296522d4be9451f8764b81eb5c8411`. The [roadmap][roadmap] is pinned to `8a215c246d5ebabe5c76c287ff20fa75bfeb8149`, including the Workflows hold, plain-language planning guidance and updated D2 pre-deployment compatibility decision and the D3 shared-result design constraint. Discussion guidance remains the snapshot recorded in the follow-up: loading controls, score/decision separation, rich/compact distinction and V1 safeguard parity have support; naming, defaults, optional metadata and several policies remain open. This plan does not claim newer team agreement.
 
 The earlier private-runtime audit is contextual evidence only. No new private backend or deployed-client audit was performed for this shared-contract plan. The local SDK exposes V0/V1 selection, while server tests call experimental V2 paths. That search alone did not establish deployment status; Damian has now confirmed that V2 is not deployed and its existing integration tests can be adjusted. [SDK][sdk], [server integration tests][integration-tests]
 
@@ -28,7 +28,7 @@ The earlier private-runtime audit is contextual evidence only. No new private ba
 
 ### Recommended solution
 
-Maintain one versioned model/server V2 contract alongside the integration branch, separating intended capability from implemented capability. Future reuse by Workflows is a design consideration, not a requirement to settle workflow semantics now. Agree the decisions in section 3 before making schemas and examples part of the required contract. Review those artifacts in this same draft PR before considering PR 01 complete.
+Maintain one versioned model/server V2 contract alongside the integration branch, separating intended capability from implemented capability. The model contract must respect the design's same-inputs/same-results requirement for an equivalent single-step workflow. Review that shared boundary now without implementing Workflows routes or settling detailed workflow semantics. Agree the decisions in section 3 before making schemas and examples part of the required contract. Review those artifacts in this same draft PR before considering PR 01 complete.
 
 Recommend `design/00_inference_api_v2/` as the contract home, preserving PR 2277's established document layout and authorship/provenance. Reconcile its preface, model/server API structure and model proposal into the integration branch deliberately; mark the Workflows surface as on hold and leave its detailed contract to PRs 12 and 13. Do not import `03-workflows.md` as an active contract, merge unrelated history or maintain two competing specifications. Keep this plan under `plans/v2-api/`. Documentation should link to the contract rather than duplicate it.
 
@@ -141,7 +141,7 @@ The execution envelope in this plan applies to successful model runs, not automa
 
 PR 01 will contain model/server specification, schemas, examples and their offline checks after agreement. It will not change routers, authentication, gateways, model loading, serializers or workflow execution. It will not generate a static schema for every model or claim that the draft contract is already available at runtime.
 
-Classification field names/threshold algorithms, exact loader options/cache identity, architecture compatibility contents, mask encoding and tensor shapes, OCR layout, and binary encoding details stay in their later model plans. All workflow contract work, including identifiers, discovery/validation, batching, null positions, execution IDs, usage and readiness, is on hold for PRs 12 and 13. PR 01 reserves extension points for later model details without using permissive placeholder schemas as evidence of full conformance; it does not define the held workflow contracts.
+Classification field names/threshold algorithms, exact loader options/cache identity, architecture compatibility contents, mask encoding and tensor shapes, OCR layout, and binary encoding details stay in their later model plans. Workflow-specific identifiers, discovery/validation, advanced batching, null positions, step IDs, usage and readiness remain on hold for PRs 12 and 13. The shared input/result structure and the distinction between prediction data and execution metadata must be considered in D3 now. PR 01 reserves extension points for later model details without using permissive placeholder schemas as evidence of full conformance; it does not define the held workflow contracts.
 
 ## 3. Decisions to make before writing the contract
 
@@ -198,23 +198,56 @@ For example, a test posting to `/v2/models/infer` and expecting `predictions` sh
 
 **Remaining decisions:** None about preserving old experimental V2 behavior. D3–D6 still settle the new response, input, access and versioning rules. Keep V1 behavior and existing non-V2 consumers of shared code covered by regression checks. Workflows remains on hold.
 
-### D3 What should one result or a batch look like
+### D3 What should direct inference and an equivalent single-step workflow return
 
-**What we found:** The draft does not fully define output naming and batch nesting. Current handlers return `predictions`, while some family serializers also add `batch` wrappers. [Model design][design-models], [typed serializers][typed]
+**What the design requires:** The preface says direct inference and a single-step workflow wrapping the same model accept the same inputs and produce the same results. It specifically identifies differing field names, nesting and parent metadata as problems. The workflow proposal then says V2 reuses the model response envelope, rich/compact styles and type catalogue, with one entry per named output and batch-aligned values. This is stronger than merely calling the same model. [Preface][design-preface], [workflow proposal][design-workflows]
 
-**Recommendation:** Give each output a name and a value. A batch-aligned output has one value per input, in input order. One image gives a one-element list; two images give two elements. Do not add another `batch` wrapper inside each item.
+**Correction to the earlier recommendation:** Keep the shared input/result requirement active while Workflows implementation is on hold. We should not settle a model-only body now and make the workflow API invent a different one later. The `outputs: [{"name": ..., "value": ...}]` proposal can satisfy the workflow prose, but those exact keys are our proposed clarification, not a shape already mandated by the draft. D3 remains open until the shared shape and metadata boundary are agreed.
 
-For two images with no detections, the proposed response is:
+**What the existing code tells us:** Current legacy workflow tests read `outputs[0]["predictions"]["predictions"][0]["class"]`, while the direct V2 path uses a typed detection response. The workflow provider repacks model results through legacy conversions before workflow serialization. Sharing the gateway therefore does not establish equal HTTP results today. These are source/test-code observations, not a new live parity test. The legacy response is evidence of the mismatch; it is not the future V2 response we must preserve. [Legacy workflow test][workflow-test], [workflow provider][workflow-provider], [workflow execution][workflow-execution], [direct response][detection]
+
+#### Use the same runtime inputs
+
+For the comparison, select the same model package/action and effective loading/inference options. The single-step workflow must simply forward the inputs and expose the model output as `predictions`, without resizing, filtering, renaming or adding other processing. This is a proposed equivalence case, not a complete workflow definition.
+
+Both calls should accept the following runtime input body with the same meaning:
 
 ```json
 {
-  "type": "roboflow-inference-server-response-v2",
-  "inference_id": "execution-a",
+  "inputs": {
+    "image": [
+      {"type": "url", "value": "https://example.com/first.jpg"},
+      {"type": "url", "value": "https://example.com/second.jpg"}
+    ],
+    "confidence": 0.5
+  }
+}
+```
+
+Direct inference selects the model in its URL; a predefined workflow selects the workflow and its definition selects the same model. An inline workflow additionally supplies its definition. Those routing/setup fields differ; the caller should not have to re-encode the images or rename `confidence` inside `inputs`. Input validation, default values, threshold meaning and rich/compact/transport choices must match. When a value is omitted, the workflow wrapper must not silently introduce a different default. Per-item overrides remain outside scope.
+
+#### Return the same result structure
+
+**Recommendation:** Retain one entry per named output, with an explicit `name` and `value`. A batch-aligned output has one value per input, in input order, even for a singleton batch. Do not add a second family-level `batch` wrapper. For the simple workflow above, both calls should produce this same result-bearing part of the response:
+
+```json
+{
   "outputs": [
     {
       "name": "predictions",
       "value": [
-        {"type": "roboflow-object-detection-rich-v1", "detections": []},
+        {
+          "type": "roboflow-object-detection-rich-v1",
+          "detections": [
+            {
+              "left_top": [1, 1],
+              "right_bottom": [3, 5],
+              "confidence": 0.9,
+              "class_id": 0,
+              "class_name": "cat"
+            }
+          ]
+        },
         {"type": "roboflow-object-detection-rich-v1", "detections": []}
       ]
     }
@@ -222,13 +255,33 @@ For two images with no detections, the proposed response is:
 }
 ```
 
-The first result belongs to the first image, even though it is empty. `predictions` is the default name for a single prediction output; other action outputs declare their names in the interface. Each output appears once. Filtering outputs keeps their declared order, regardless of filter order.
+This is a synthetic comparison example, not an executed workflow response or a complete envelope. The first value belongs to the first image; the second remains present even with no detections. Both paths use the same type identifier, geometry, class names and result nesting. The client can use the same decoder. `predictions` is a default declared output name, not a universal name for every action. If a user intentionally renames a workflow output, that name differs by configuration rather than by an automatic API conversion.
 
-The interface must say whether a value follows the input batch. An embedding vector such as `[0.1, 0.2]` must not be mistaken for results from two images. Scalar/object outputs that are not batch-aligned use their own declared shape. Missing/nullable model results must also be described explicitly. Workflow skipped-output and `null` rules remain on hold.
+The interface must distinguish batch-aligned values from values such as an embedding vector. Output filtering preserves declaration order on both paths. Workflow filters/short-circuits and their `null` positions remain in the held workflow plan; this simple single-step comparison does not run those operations.
 
-Use one top-level `inference_id` for a successful model execution, shared by all returned outputs. A later execution, including a retry, gets its own ID; sending a request again does not promise reuse of its previous result. The ID does not identify individual detections. Workflow execution/step IDs and direct/workflow equivalence remain in held PR 13.
+#### Keep execution metadata separate from predictions
 
-**Decision needed:** Should we use named outputs, one list entry per input, and one ID per execution as shown? Does tracing or usage require the draft's output-level IDs instead? The explicit `name`/`value` fields and ID placement change the draft example and need agreement.
+Separate calls cannot have identical generated execution IDs or timing values. My recommendation is equality of runtime input meaning and result structure/values, allowing only explicitly identified execution metadata to differ. Do not use a broad “ignore metadata” rule to hide a changed class name, extra result wrapper or workflow-only `parent_id` inside a prediction. Agree each metadata exception explicitly.
+
+The earlier top-level `inference_id` is still a proposal, not a settled requirement. If retained, it should identify the top-level execution consistently for direct and workflow calls, not stand in for every model/step invocation. Its exact name/placement and the draft's output-level IDs need a decision before finalizing D3. Detailed multi-step tracing stays on hold. Repeated requests are separate executions; no idempotency guarantee follows from an ID.
+
+#### Share processing without routing direct calls through Workflows
+
+A suggested architecture is shared input normalization, model execution semantics and result serialization, with separate route/engine adapters. The principle does not require a direct request to start the workflow engine:
+
+```mermaid
+flowchart LR
+    Direct[Direct model route] --> Input[Shared input types and parameter rules]
+    Workflow[Future single-step workflow adapter] -.-> Input
+    Input --> Model[Same model action and effective options]
+    Model --> Output[Shared typed result and output formatting]
+    Output --> DirectResponse[Direct response]
+    Output -.-> WorkflowResponse[Future workflow response]
+```
+
+Dashed paths are future Workflows work. Model-side schemas and illustrative input/result examples can be reviewed now. In held PR 13, use the same fixtures to check live direct/workflow parity after the new functionality is available. Deterministic fake results can establish exact structure and decoding; real-model comparisons must account for documented numerical/stochastic behavior with explicit tolerances where needed. No workflow routes or executable parity suite are added in PR 01.
+
+**Decision needed:** Accept this reading of “same inputs/results,” including the named-output/batch shape for both paths and a narrow, explicit execution-metadata exception? Then choose the ID name/placement. The principle supports the structure but does not by itself choose `name`/`value` keys or settle inference-ID semantics.
 
 ### D4 Where do parameters go and which value wins
 
@@ -396,7 +449,7 @@ After the decisions are recorded, author the following artifacts in this PR. The
 
 The fixture suite should cover all three input format skeletons, rich/compact response selection, singleton and multi-item model batches, typed empty model output, multiple named outputs, repeated output selection, optional metadata, common errors and discovery filters. Validate JSON inside multipart `inputs` with quoted `$part.<name>` references. Correct mask-example array lengths, but do not claim that a placeholder RLE object establishes the final mask contract.
 
-Schema validation alone is insufficient. Add focused semantic checks for unique output names, batch-position preservation, checking that every schema reference resolves, filter behavior and parameter conflicts. Include negative fixtures that demonstrate these checks fail for the intended reason. Validate schemas and resolve references offline; no remote schema retrieval. Maintain a route/access inventory covering the ten active model/server endpoints. Do not add old-V2 compatibility routes or claim that the planned routes exist at runtime yet. The six held Workflows routes require no schemas, examples or acceptance checks in PR 01.
+Schema validation alone is insufficient. Add focused semantic checks for unique output names, batch-position preservation, checking that every schema reference resolves, filter behavior and parameter conflicts. Include negative fixtures that demonstrate these checks fail for the intended reason. Validate schemas and resolve references offline; no remote schema retrieval. Maintain a route/access inventory covering the ten active model/server endpoints. Do not add old-V2 compatibility routes or claim that the planned routes exist at runtime yet. The six held Workflows routes require no route schemas or executable acceptance tests in PR 01. D3 includes an illustrative equivalent-input/result case to check the model contract against the original design principle.
 
 Record the actual validation command when the tooling is implemented. Later feature PRs add live HTTP conformance tests against the same approved examples, plus real-model/backend evidence appropriate to their scope. Existing implementation tests and the earlier audit's passing checks are not substitutes for these new contract checks.
 
@@ -406,11 +459,11 @@ Record the actual validation command when the tooling is implemented. Later feat
 2. Reconcile the canonical documents and record agreed decisions. Check them against the roadmap so no later family decision is accidentally marked settled.
 3. Add the shared schemas, valid/invalid examples and offline checks. Review the examples as client contracts, not merely as test input.
 4. Verify reference integrity, fixture validity and semantic assertions; document the agreed V2 replacement behavior, V1 regression coverage and unresolved later-PR boundaries. Keep this PR draft until that review is complete.
-5. Mark PR 01 complete only when the model/server decisions and artifacts are accepted; no workflow decision or parity test is a completion gate. Then prepare the PR 02 loading/lifecycle plan. Runtime API implementation remains in the later roadmap PRs.
+5. Mark PR 01 complete only when the model/server decisions and artifacts are accepted, including D3's review against the shared input/result principle. Workflow-specific route decisions and live parity tests remain outside its completion gates. Then prepare the PR 02 loading/lifecycle plan. Runtime API implementation remains in the later roadmap PRs.
 
 Verification for this plan covers source/reference inspection, Markdown whitespace/link checks, parsing the illustrative JSON and Python, and checking diagrams against the described behavior. The diagrams have not been rendered in this check. No product code or runtime test was changed or executed. The plan is ready for decision review; the shared-contract deliverable itself is still pending.
 
-[roadmap]: https://github.com/roboflow/inference/blob/8e6f47d119e6cb9b772c14b1f263e2cb948d6cdd/reports/v2-api-gap-2026-09-30/ROADMAP.md
+[roadmap]: https://github.com/roboflow/inference/blob/8a215c246d5ebabe5c76c287ff20fa75bfeb8149/reports/v2-api-gap-2026-09-30/ROADMAP.md
 [report]: https://github.com/roboflow/inference/blob/6dcada6ace296522d4be9451f8764b81eb5c8411/reports/v2-api-gap-2026-09-30/REPORT.md
 [followup]: https://github.com/roboflow/inference/blob/6dcada6ace296522d4be9451f8764b81eb5c8411/reports/v2-api-gap-2026-09-30/REVIEW_COMMENT_FOLLOWUP.md
 [design-structure]: https://github.com/roboflow/inference/blob/de634b98bac204c96caa98a15dd7559dded361d5/design/00_inference_api_v2/01-general-api-structure.md
@@ -423,3 +476,9 @@ Verification for this plan covers source/reference inspection, Markdown whitespa
 [typed]: https://github.com/roboflow/inference/blob/3d45b8712cc428eb01b714f3609346be7c92acc4/inference_model_manager/inference_model_manager/serializers_typed.py
 [sdk]: https://github.com/roboflow/inference/blob/3d45b8712cc428eb01b714f3609346be7c92acc4/inference_sdk/http/client.py
 [integration-tests]: https://github.com/roboflow/inference/blob/3d45b8712cc428eb01b714f3609346be7c92acc4/inference_server/tests/integration_tests/test_dispatch_v2_infer.py
+
+[design-preface]: https://github.com/roboflow/inference/blob/de634b98bac204c96caa98a15dd7559dded361d5/design/00_inference_api_v2/00-preface.md
+[design-workflows]: https://github.com/roboflow/inference/blob/de634b98bac204c96caa98a15dd7559dded361d5/design/00_inference_api_v2/03-workflows.md
+[workflow-test]: https://github.com/roboflow/inference/blob/3d45b8712cc428eb01b714f3609346be7c92acc4/inference_server/tests/unit_tests/workflows/test_router.py#L61
+[workflow-provider]: https://github.com/roboflow/inference/blob/3d45b8712cc428eb01b714f3609346be7c92acc4/inference_server/inference_server/workflows/models_provider.py#L620
+[workflow-execution]: https://github.com/roboflow/inference/blob/3d45b8712cc428eb01b714f3609346be7c92acc4/inference_server/inference_server/workflows/execution.py#L62
