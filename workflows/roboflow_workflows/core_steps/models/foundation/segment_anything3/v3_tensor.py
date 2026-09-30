@@ -6,8 +6,8 @@ predicted class names after inference).
 BREAKING CHANGE (tensor path) — mask output format: this sibling KEEPS the numpy
 v3 manifest field `output_format: Literal["rle", "polygons"]` verbatim (so existing
 workflow definitions validate identically against the tensor block), but
-`run_tensor_native_inference` always returns raw binary masks with no polygon
-analog, so RLE output is ENFORCED ALWAYS on this tensor path (see run()). Selecting
+the local model is requested to return RLE masks directly and RLE output is
+ENFORCED ALWAYS on this tensor path (see run()). Selecting
 `output_format="polygons"` is now a NO-OP — it is silently downgraded to 'rle' with
 a warning. That downgrade IS the breaking change: the field is honored for 'rle'
 and ignored for 'polygons'.
@@ -24,20 +24,12 @@ wiring/advertisement concern. Downstream tensor consumers (mask/polygon/halo/ico
 visualizers, trackers, fusion blocks) accept both kinds, so no graph is broken by
 the carrier choice.
 
-Private adapter coupling: the per-class-threshold + cross-prompt-NMS orchestration
-is reused from `v2_tensor` (`_collect_from_native_with_nms`, `_min_floor`,
-`_per_class_threshold`, `_build_http_prompts`). v2_tensor now holds LOCAL COPIES of
-those adapter helpers (see its TODO(sam3-public-adapter) note) instead of importing
-the private `inference.models.sam3` internals, so v3 no longer transitively depends
-on that private cross-package surface.
-
-`class_mapping` is applied on the flat `items` list before building
-`InstanceDetections`, so both image_metadata's class-names map and per-instance
-bboxes_metadata inherit the mapped names (v3's sv-based `_apply_class_mapping` is a
-no-op on InstanceDetections and cannot be reused).
+The local path filters and suppresses the model's RLE masks without decoding
+pixels. Class mapping is applied while packing predictions, preserving both
+image-level and per-instance class metadata. Remote response conversion retains
+the existing polygon adapter behavior.
 """
 
-import logging
 from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
@@ -45,17 +37,17 @@ import requests
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.models.foundation.segment_anything3.rle import (
+    build_native_rle_detections,
+)
 
-# Reuse the v1_tensor conversion machinery + the v2_tensor per-class/NMS collector.
+# Reuse the existing remote conversion and prompt-threshold helpers.
 from roboflow_workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
-    Item,
-    _build_instance_detections,
     _build_instance_detections_from_polygons,
     _normalize_class_names,
 )
 from roboflow_workflows.core_steps.models.foundation.segment_anything3.v2_tensor import (
     _build_http_prompts,
-    _collect_from_native_with_nms,
     _min_floor,
     _per_class_threshold,
 )
@@ -478,22 +470,19 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 images=[model_image],
                 prompts=native_prompts,
                 output_prob_thresh=float(floor),
+                mask_format="rle",
             )
-            items = _collect_from_native_with_nms(
-                per_prompt_results=per_image[0],
-                class_names=class_names,
-                prompts=sam3_prompts,
-                global_confidence=confidence,
-                apply_nms=apply_nms,
-                nms_iou_threshold=nms_iou_threshold,
-            )
-            items = _apply_class_mapping_to_items(items, class_mapping)
             results.append(
                 {
-                    "predictions": _build_instance_detections(
-                        items=items,
+                    "predictions": build_native_rle_detections(
+                        per_prompt_results=per_image[0],
+                        class_names=class_names,
+                        class_mapping=class_mapping,
+                        prompts=sam3_prompts,
+                        global_confidence=confidence,
+                        apply_nms=apply_nms,
+                        nms_iou_threshold=nms_iou_threshold,
                         image=single_image,
-                        mask_representation=mask_representation,
                     )
                 }
             )
@@ -623,18 +612,3 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 class_mapping=class_mapping,
             )
         }
-
-
-def _apply_class_mapping_to_items(
-    items: List[Item], class_mapping: Optional[Dict[str, str]]
-) -> List[Item]:
-    """Rename predicted class names on the flat items list before building
-    InstanceDetections, so image_metadata's class-names map and per-instance
-    bboxes_metadata both inherit the mapped names. (v3's sv-based
-    _apply_class_mapping is a no-op on InstanceDetections and is not reused.)"""
-    if not class_mapping:
-        return items
-    return [
-        (mask, score, class_id, class_mapping.get(class_name, class_name))
-        for (mask, score, class_id, class_name) in items
-    ]

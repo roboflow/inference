@@ -172,3 +172,29 @@ def test_embed_raises_on_negative_offset() -> None:
         embed_rle_masks_in_larger_canvas(
             masks=wrapped, offset_xy=(-1, 0), target_size_hw=(10, 10)
         )
+
+
+@pytest.mark.parametrize("seed", range(30))
+def test_compressed_placement_matches_canonical_rle_without_decode(seed, monkeypatch):
+    from pycocotools import mask as mask_utils
+
+    rng = np.random.default_rng(seed)
+    h, w = map(int, rng.integers(1, 100, size=2))
+    target_h, target_w = h + 40, w + 30
+    x0, y0 = int(rng.integers(0, 31)), int(rng.integers(0, 41))
+    dense = (rng.random((h, w)) < rng.choice([0, 0.01, 0.5, 0.99, 1])).astype(np.uint8)
+    wrapped = _encode_dense_slices([dense])
+    expected = mask_utils.encode(
+        np.asfortranarray(
+            _numpy_reference_canvas(dense, (x0, y0), (target_h, target_w)),
+            dtype=np.uint8,
+        )
+    )
+
+    def forbid_decode(*args, **kwargs):
+        raise AssertionError("Stitch must not decode mask pixels")
+
+    if len(wrapped.masks[0]) <= h * w // 8:
+        monkeypatch.setattr(mask_utils, "decode", forbid_decode)
+    actual = embed_rle_masks_in_larger_canvas(wrapped, (x0, y0), (target_h, target_w))
+    assert actual.masks == [expected["counts"]]
