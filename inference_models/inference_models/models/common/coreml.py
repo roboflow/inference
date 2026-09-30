@@ -143,8 +143,10 @@ def load_coreml_package(
     native_root = os.path.join(root, COREML_CACHE_DIR_NAME, NATIVE_MLPACKAGE_CACHE_DIR)
     extraction_dir = os.path.join(native_root, get_file_identity(archive))
     target = os.path.join(extraction_dir, MLPACKAGE_NAME)
-    os.makedirs(extraction_dir, exist_ok=True)
+    os.makedirs(root, exist_ok=True)
     with FileLock(os.path.join(root, COREML_CACHE_LOCK_NAME)):
+        # Created under the lock: the watchdog may have purged the cache just before it was taken.
+        os.makedirs(extraction_dir, exist_ok=True)
         _remove_stale_extractions(native_root=native_root, keep=extraction_dir)
         if not os.path.isfile(os.path.join(target, MLPACKAGE_MANIFEST)):
             _extract_bundle(archive=archive, target=target)

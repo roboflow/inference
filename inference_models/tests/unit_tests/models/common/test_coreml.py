@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import zipfile
 from types import SimpleNamespace
 from typing import List
@@ -151,6 +152,27 @@ def test_load_coreml_package_extracts_and_loads_under_the_package_coreml_cache_l
     coreml.load_coreml_package(package_dir)
 
     assert held_during_load == [True]
+
+
+def test_load_coreml_package_survives_a_cache_purge_right_before_the_lock(
+    tmp_path, loaded_paths, monkeypatch
+) -> None:
+    package_dir = _zipped_package(tmp_path)
+    coreml.load_coreml_package(package_dir)
+    real_file_lock = coreml.FileLock
+
+    def purge_then_lock(path, *args, **kwargs):
+        # The watchdog purges coreml_cache after the loader decided to use it, before it holds the lock.
+        shutil.rmtree(
+            os.path.join(package_dir, COREML_CACHE_DIR_NAME), ignore_errors=True
+        )
+        return real_file_lock(path, *args, **kwargs)
+
+    monkeypatch.setattr(coreml, "FileLock", purge_then_lock)
+
+    result = coreml.load_coreml_package(package_dir)
+
+    assert _read_weights(result) == b"weights"
 
 
 def test_load_coreml_package_extracts_outside_package_in_offline_mode(
