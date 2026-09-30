@@ -210,7 +210,7 @@ def _package(tmp_path) -> Tuple[str, str]:
 
 
 def _coreml_providers(cache_directory: Optional[str]) -> list:
-    options = {"ModelFormat": "MLProgram"}
+    options = onnx._PackageCoreMLProviderOptions(ModelFormat="MLProgram")
     if cache_directory is not None:
         options["ModelCacheDirectory"] = cache_directory
     return [("CoreMLExecutionProvider", options), "CPUExecutionProvider"]
@@ -405,3 +405,56 @@ def test_session_passes_session_options_through(
     )
 
     assert factory.calls[0][2] is session_options
+
+
+def test_caller_configured_coreml_cache_directory_is_passed_through(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_path, _ = _package(tmp_path)
+    (tmp_path / "my-cache-other").mkdir()
+    factory = _SessionFactory()
+    monkeypatch.setattr(onnx.onnxruntime, "InferenceSession", factory)
+    providers = [
+        (
+            "CoreMLExecutionProvider",
+            {
+                "ModelFormat": "MLProgram",
+                "ModelCacheDirectory": str(tmp_path / "my-cache"),
+            },
+        ),
+        "CPUExecutionProvider",
+    ]
+
+    onnx.create_onnx_inference_session(model_path=model_path, providers=providers)
+
+    assert factory.calls == [(model_path, providers, None)]
+    assert (tmp_path / "my-cache-other").exists()
+    assert not (tmp_path / ".coreml_cache.lock").exists()
+
+
+def test_caller_configured_coreml_options_failure_is_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory = _SessionFactory(failures=1)
+    monkeypatch.setattr(onnx.onnxruntime, "InferenceSession", factory)
+
+    with pytest.raises(RuntimeError):
+        onnx.create_onnx_inference_session(
+            model_path="/models/weights.onnx",
+            providers=[("CoreMLExecutionProvider", {"ModelFormat": "MLProgram"})],
+        )
+
+    assert len(factory.calls) == 1
+
+
+def test_generated_coreml_options_reach_onnxruntime_as_a_plain_dict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory = _SessionFactory()
+    monkeypatch.setattr(onnx.onnxruntime, "InferenceSession", factory)
+
+    onnx.create_onnx_inference_session(
+        model_path="/models/weights.onnx", providers=_coreml_providers(None)
+    )
+
+    assert type(factory.calls[0][1][0][1]) is dict

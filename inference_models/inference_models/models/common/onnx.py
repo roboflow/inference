@@ -122,6 +122,14 @@ COREML_MODEL_FORMATS = {"MLProgram", "NeuralNetwork"}
 COREML_COMPUTE_UNITS = {"CPUAndGPU", "ALL", "CPUAndNeuralEngine", "CPUOnly"}
 
 
+class _PackageCoreMLProviderOptions(dict):
+    """CoreMLExecutionProvider options generated for a model package by `get_default_coreml_provider_options`.
+
+    Only these get the package-cache handling and fallback in `create_onnx_inference_session`; options a caller
+    configured are passed to onnxruntime unchanged.
+    """
+
+
 def _onnxruntime_supports_coreml_options() -> bool:
     try:
         return (
@@ -159,10 +167,10 @@ def get_default_coreml_provider_options(
         value=INFERENCE_MODELS_COREML_COMPUTE_UNITS,
         allowed=COREML_COMPUTE_UNITS,
     )
-    options = {
-        "ModelFormat": INFERENCE_MODELS_COREML_MODEL_FORMAT,
-        "MLComputeUnits": INFERENCE_MODELS_COREML_COMPUTE_UNITS,
-    }
+    options = _PackageCoreMLProviderOptions(
+        ModelFormat=INFERENCE_MODELS_COREML_MODEL_FORMAT,
+        MLComputeUnits=INFERENCE_MODELS_COREML_COMPUTE_UNITS,
+    )
     if (
         INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED
         and not OFFLINE_MODE
@@ -218,25 +226,31 @@ def create_onnx_inference_session(
     providers: List[Union[str, tuple]],
     sess_options: Optional[onnxruntime.SessionOptions] = None,
 ) -> onnxruntime.InferenceSession:
-    """Create an ONNX Runtime session, guarding a configured CoreMLExecutionProvider.
+    """Create an ONNX Runtime session, guarding CoreMLExecutionProvider options generated for the package.
 
     onnxruntime fails session creation, rather than falling back to the CPU, when CoreML cannot
-    compile the model. So if the configured CoreML options fail, the session is created once more
+    compile the model. So if the generated CoreML options fail, the session is created once more
     with a bare CoreMLExecutionProvider, which is how these models ran before the options existed.
 
     onnxruntime also reuses a cached compiled CoreML model whenever its directory exists and never
-    validates it, so the cache directory is keyed by the model file (see
-    `_create_session_with_coreml_cache`).
+    validates it, so the generated cache directory is keyed by the model file (see
+    `_create_session_with_coreml_cache`). CoreML options a caller configured, including their own
+    `ModelCacheDirectory`, are passed to onnxruntime unchanged.
     """
     coreml_options = _get_coreml_provider_options(providers=providers)
-    if coreml_options is None:
+    if not isinstance(coreml_options, _PackageCoreMLProviderOptions):
         return onnxruntime.InferenceSession(
             path_or_bytes=model_path, providers=providers, sess_options=sess_options
         )
     try:
         if coreml_options.get("ModelCacheDirectory") is None:
             return onnxruntime.InferenceSession(
-                path_or_bytes=model_path, providers=providers, sess_options=sess_options
+                path_or_bytes=model_path,
+                providers=_replace_coreml_provider(
+                    providers=providers,
+                    replacement=(COREML_EXECUTION_PROVIDER, dict(coreml_options)),
+                ),
+                sess_options=sess_options,
             )
         return _create_session_with_coreml_cache(
             model_path=model_path,
