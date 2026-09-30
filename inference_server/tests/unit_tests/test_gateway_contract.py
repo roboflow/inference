@@ -17,6 +17,7 @@ EXPECTED_GATEWAY_SIGNATURES = {
         ("model_id", "POSITIONAL_OR_KEYWORD", REQUIRED),
         ("api_key", "POSITIONAL_OR_KEYWORD", ""),
         ("timeout_s", "POSITIONAL_OR_KEYWORD", None),
+        ("pinned", "POSITIONAL_OR_KEYWORD", True),
     ],
     "unload": [("model_id", "POSITIONAL_OR_KEYWORD", REQUIRED)],
     "infer": [

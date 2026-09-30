@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict
 
 from inference_server import configuration as cfg
 
-GATEWAY_API_VERSION = 1
+GATEWAY_API_VERSION = 2
 
 GATEWAY_FACTORIES: Dict[str, Callable[[], Any]] = {}
 _EPS_LOADED = False

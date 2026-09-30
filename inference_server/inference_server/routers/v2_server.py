@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 
 from inference_server import configuration
 from inference_server.dependencies import get_model_manager
@@ -22,26 +22,36 @@ async def v2_health() -> Response:
 
 @router.get("/ready")
 async def v2_ready(
+    request: Request,
     mm: Any = Depends(get_model_manager),
 ) -> Response:
-    """Readiness check — all preloaded models loaded and healthy."""
+    """Readiness check — startup preload finished and model manager reachable."""
     try:
         stats = await mm.stats()
     except Exception:
         return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
-    preload_ids = set(configuration.preload_model_ids())
-    if preload_ids:
+    if not request.app.state.preload_finished:
         models = stats.get("models", {})
-        for mid in preload_ids:
-            m = models.get(mid, {})
-            if m.get("state") != "loaded":
-                return error_response(
-                    503,
-                    "MODEL_NOT_READY",
-                    f"model {mid} not ready",
-                    follow_up="wait for model to finish loading",
-                )
+        startup_ids = (
+            configuration.preload_model_ids() + configuration.pinned_model_ids()
+        )
+        pending = [
+            mid
+            for mid, _ in startup_ids
+            if models.get(mid, {}).get("state") != "loaded"
+        ]
+        description = (
+            f"model {pending[0]} not ready"
+            if pending
+            else "startup preload not finished"
+        )
+        return error_response(
+            503,
+            "MODEL_NOT_READY",
+            description,
+            follow_up="wait for model to finish loading",
+        )
 
     return Response(content=b'{"ready":true}', media_type="application/json")
 

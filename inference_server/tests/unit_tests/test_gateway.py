@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gc
 import weakref
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -861,15 +862,19 @@ class TestPreloadModels:
         calls = []
 
         class _Proxy:
-            async def load(self, mid, api_key="", timeout_s=None):
+            async def load(self, mid, api_key="", timeout_s=None, pinned=True):
                 calls.append((mid, api_key))
                 if mid == "bad":
                     raise RuntimeError("boom")
                 return ("ok",)
 
-        await _preload_models(_Proxy(), ["a", "bad", "b"], api_key="k")
+        state = SimpleNamespace(preload_finished=False)
+        await _preload_models(
+            state, _Proxy(), [("a", "k"), ("bad", "k"), ("b", "k")], []
+        )
         assert {c[0] for c in calls} == {"a", "bad", "b"}
         assert all(c[1] == "k" for c in calls)
+        assert state.preload_finished is True
 
 
 class _CapBackend:
@@ -967,6 +972,37 @@ class TestPinnedLoadRace:
         finally:
             manager.load = real_load
             manager.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_load_unpinned_evictable(self, monkeypatch):
+        import inference_model_manager.configuration as mm_cfg
+        from inference_model_manager.model_manager import ModelManager
+
+        monkeypatch.setattr(mm_cfg, "INFERENCE_MAX_ACTIVE_MODELS", 1)
+        manager = ModelManager()
+        manager._create_backend = lambda model_id, api_key, backend, **kw: _CapBackend(
+            model_id
+        )
+        try:
+            wrapper = ModelManagerGateway(manager)
+
+            assert await wrapper.load("m0", "key", pinned=False) == ("ok",)
+            assert manager._pinned == set()
+
+            assert await wrapper.load("m1", "key", pinned=False) == ("ok",)
+            assert manager.loaded_models == ["m1"]
+            assert manager._pinned == set()
+        finally:
+            manager.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_load_unpinned_skips_pin(self):
+        mgr = _PinTrackingManager()
+        wrapper = ModelManagerGateway(mgr)
+
+        assert await wrapper.load("m", "key", pinned=False) == ("ok",)
+        assert mgr.loaded == {"m"}
+        assert mgr.pinned == set()
 
     @pytest.mark.asyncio
     async def test_ensure_loaded_keeps_auto_loads_unpinned(self):

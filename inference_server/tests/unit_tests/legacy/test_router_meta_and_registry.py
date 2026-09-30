@@ -25,6 +25,120 @@ def test_healthz_and_readiness(legacy_client):
     assert c.get("/readiness").json() == {"status": "ready"}
 
 
+def _wait_for_status(client, path, status_code):
+    import time
+
+    deadline = time.monotonic() + 5
+    response = client.get(path)
+    while response.status_code != status_code and time.monotonic() < deadline:
+        time.sleep(0.01)
+        response = client.get(path)
+    return response
+
+
+def test_readiness_after_failed_preload(legacy_client, monkeypatch):
+    class _FailingGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            self.calls.append(("load", model_id, api_key))
+            return ("error", 3)
+
+    monkeypatch.setenv("INFERENCE_PRELOAD_MODELS", "ds/1")
+    monkeypatch.setenv("PINNED_MODELS", "ds/2")
+    gw = _FailingGateway()
+    c = legacy_client(gw)
+
+    r = _wait_for_status(c, "/readiness", 200)
+    assert r.json() == {"status": "ready"}
+    r = _wait_for_status(c, "/v2/server/ready", 200)
+    assert r.json() == {"ready": True}
+    assert {call[1] for call in gw.calls if call[0] == "load"} == {"ds/1", "ds/2"}
+
+
+def test_readiness_waits_for_preload_to_finish(legacy_client, monkeypatch):
+    import threading
+
+    release = threading.Event()
+
+    class _BlockingGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            import asyncio
+
+            while not release.is_set():
+                await asyncio.sleep(0.01)
+            return await super().load(model_id, api_key, timeout_s, pinned)
+
+    monkeypatch.setenv("INFERENCE_PRELOAD_MODELS", "ds/1")
+    c = legacy_client(_BlockingGateway())
+
+    r = c.get("/readiness")
+    assert r.status_code == 503 and r.json() == {"status": "not ready"}
+    r = c.get("/v2/server/ready")
+    assert r.status_code == 503
+    assert r.json() == {
+        "error_code": "MODEL_NOT_READY",
+        "description": "model ds/1 not ready",
+        "actionable_follow_up": "wait for model to finish loading",
+    }
+
+    release.set()
+    assert _wait_for_status(c, "/readiness", 200).json() == {"status": "ready"}
+    assert _wait_for_status(c, "/v2/server/ready", 200).json() == {"ready": True}
+
+
+def test_v2_ready_without_pending_id_reports_preload_not_finished(
+    legacy_client, monkeypatch
+):
+    import threading
+
+    release = threading.Event()
+
+    class _SlowReturnGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            import asyncio
+
+            result = await super().load(model_id, api_key, timeout_s, pinned)
+            while not release.is_set():
+                await asyncio.sleep(0.01)
+            return result
+
+    monkeypatch.setenv("INFERENCE_PRELOAD_MODELS", "ds/1")
+    gw = _SlowReturnGateway()
+    c = legacy_client(gw)
+    try:
+        import time
+
+        deadline = time.monotonic() + 5
+        while "ds/1" not in gw.loaded and time.monotonic() < deadline:
+            time.sleep(0.01)
+        r = c.get("/v2/server/ready")
+
+        assert r.status_code == 503
+        assert r.json() == {
+            "error_code": "MODEL_NOT_READY",
+            "description": "startup preload not finished",
+            "actionable_follow_up": "wait for model to finish loading",
+        }
+    finally:
+        release.set()
+
+
+def test_model_add_does_not_pin(legacy_client, fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    fake_stat["ds/2"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    c = legacy_client(gw)
+
+    assert (
+        c.post("/model/add", json={"model_id": "ds/1", "api_key": "k"}).status_code
+        == 200
+    )
+    assert c.get("/start/ds/2?api_key=k").status_code == 200
+
+    assert ("load", "ds/1", "k") in gw.calls
+    assert ("load", "ds/2", "k") in gw.calls
+    assert gw.pinned == []
+
+
 def test_model_add_registry_remove_clear(legacy_client, fake_stat):
     fake_stat["ds/1"] = ("object-detection", "infer")
     gw = FakeGateway(model_info={"ds/1": {"actions": {"infer": {}}}})

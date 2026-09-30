@@ -83,7 +83,9 @@ ENABLE_CONTROL_PLANE_ROUTES = get_boolean_from_env(
     "ENABLE_CONTROL_PLANE_ROUTES", default=False
 )
 # API key used for INFERENCE_PRELOAD_MODELS startup loads (weight fetch).
-PRELOAD_API_KEY = os.environ.get("PRELOAD_API_KEY", "")
+PRELOAD_API_KEY = os.environ.get("PRELOAD_API_KEY") or os.environ.get(
+    "ROBOFLOW_API_KEY", ""
+)
 
 # ── Model-stat TTL-LRU cache (framework/model_stat.py) ────────────────────
 MODEL_STAT_CACHE_SIZE = get_integer_from_env(
@@ -128,11 +130,59 @@ MULTIPART_SPOOL_MB = get_integer_from_env("INFERENCE_MULTIPART_SPOOL_MB", defaul
 
 # ── Preload / readiness (routers/v2_server) ────────────────────────────────
 INFERENCE_PRELOAD_MODELS_ENV = "INFERENCE_PRELOAD_MODELS"
+PINNED_MODELS_ENV = "PINNED_MODELS"
+PRELOAD_HF_IDS_ENV = "PRELOAD_HF_IDS"
 
 
-def preload_model_ids() -> list[str]:
-    raw = os.environ.get(INFERENCE_PRELOAD_MODELS_ENV, "")
+def _env_list(name: str) -> list[str]:
+    raw = os.environ.get(name, "")
     return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def _with_api_key(entry: str) -> tuple[str, str]:
+    model_id, _, api_key = entry.partition(":")
+    return model_id, api_key or PRELOAD_API_KEY
+
+
+def preload_model_ids() -> list[tuple[str, str]]:
+    """Return ``(model_id, api_key)`` pairs from ``INFERENCE_PRELOAD_MODELS``.
+
+    An entry may carry its own key as ``model_id:api_key``; otherwise
+    ``PRELOAD_API_KEY`` is used.
+
+    Returns:
+        Startup loads that are not pinned.
+    """
+    entries = [
+        _with_api_key(entry) for entry in _env_list(INFERENCE_PRELOAD_MODELS_ENV)
+    ]
+
+    return entries
+
+
+def pinned_model_ids() -> list[tuple[str, str]]:
+    """Return ``(model_id, api_key)`` pairs from ``PINNED_MODELS``.
+
+    An entry may carry its own key as ``model_id:api_key``; otherwise
+    ``PRELOAD_API_KEY`` is used.
+
+    Returns:
+        Startup loads that are pinned against eviction.
+    """
+    entries = [_with_api_key(entry) for entry in _env_list(PINNED_MODELS_ENV)]
+
+    return entries
+
+
+def preload_hf_ids() -> list[str]:
+    """Return the OWLv2 Hugging Face ids listed in ``PRELOAD_HF_IDS``.
+
+    Returns:
+        Backbone ids warmed at startup, never split on ``:``.
+    """
+    hf_ids = _env_list(PRELOAD_HF_IDS_ENV)
+
+    return hf_ids
 
 
 # ── Gateway resolution (gateway_resolver.resolve_gateway) ─────────────────

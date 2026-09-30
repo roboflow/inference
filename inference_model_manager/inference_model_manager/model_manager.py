@@ -20,7 +20,6 @@ from inference_model_manager.marshalling import (
     split_batched_result,
     tensors_to_numpy,
 )
-from inference_models.utils.performance import performance_profiler
 
 logger = logging.getLogger(__name__)
 
@@ -141,9 +140,6 @@ class ModelManager:
             max_workers=cfg.INFERENCE_DIRECT_MAX_WORKERS,
             thread_name_prefix="mm-worker",
         )
-        performance_profiler.set_metadata(
-            "manager.direct_max_workers", cfg.INFERENCE_DIRECT_MAX_WORKERS
-        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -237,14 +233,6 @@ class ModelManager:
                 self._backends[model_id] = b
                 if pinned:
                     self._pinned.add(model_id)
-            performance_profiler.set_metadata("manager.model_id", model_id)
-            performance_profiler.set_metadata("manager.backend", backend)
-            performance_profiler.set_metadata("manager.device", b.device)
-            model = getattr(b, "model", None)
-            if model is not None:
-                performance_profiler.set_metadata(
-                    "manager.model_class", type(model).__name__
-                )
         finally:
             self._loading_ids.discard(model_id)
 
@@ -496,94 +484,38 @@ class ModelManager:
                     return entry.serializer(result, backend)
             return result
 
-        action_setup_ns = 0
-        action_setup_started = performance_profiler.start()
-        try:
-            # Resolve action (validates it exists, raises ValueError if not)
-            action_name, _entry = resolve_action(backend.model, action)
-        finally:
-            if action_setup_started is not None:
-                action_setup_ns += time.perf_counter_ns() - action_setup_started
+        # Resolve action (validates it exists, raises ValueError if not)
+        action_name, _entry = resolve_action(backend.model, action)
 
         n_images = 1
         if wire_marshalling:
-            decode_started = performance_profiler.start()
-            performance_profiler.increment("manager.input_decode.calls")
-            try:
-                kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
-            finally:
-                performance_profiler.stop("manager.input_decode", decode_started)
+            kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
 
-        action_setup_started = performance_profiler.start()
-        try:
-            # Validate kwargs through registry (if entry exists)
-            kwargs = _get_registry().validate(backend.model, action_name, kwargs)
-        finally:
-            if action_setup_started is not None:
-                action_setup_ns += time.perf_counter_ns() - action_setup_started
-                performance_profiler.record(
-                    "manager.action_setup", action_setup_ns / 1_000_000, "ms"
-                )
+        # Validate kwargs through registry (if entry exists)
+        kwargs = _get_registry().validate(backend.model, action_name, kwargs)
 
         t0 = time.monotonic()
         _begin = getattr(backend, "inflight_begin", None)
         if _begin is not None:
-            inflight_started = performance_profiler.start()
-            try:
-                _begin()
-            finally:
-                performance_profiler.stop("manager.inflight_wait", inflight_started)
+            _begin()
         try:
-            invoke_started = performance_profiler.start()
-            performance_profiler.increment("manager.model_invoke.calls")
-            try:
-                result = invoke_action(backend.model, action=action, **kwargs)
-            finally:
-                performance_profiler.stop("manager.model_invoke", invoke_started)
+            result = invoke_action(backend.model, action=action, **kwargs)
             if wire_marshalling:
                 # Inside the inflight/accounting window: per-image retries are
                 # inference too — unload drains must wait for them and their
                 # failures must count as errors.
                 images = kwargs.get("images")
-                retry_invoke_ns = 0
 
                 def _retry_single(index: int) -> Any:
-                    nonlocal retry_invoke_ns
                     single_kwargs = dict(kwargs)
                     single_kwargs["images"] = images[index]
-                    retry_started = performance_profiler.start()
-                    performance_profiler.increment("manager.model_invoke.calls")
-                    try:
-                        return invoke_action(
-                            backend.model, action=action, **single_kwargs
-                        )
-                    finally:
-                        if retry_started is not None:
-                            retry_ended = time.perf_counter_ns()
-                            retry_invoke_ns += retry_ended - retry_started
-                            performance_profiler.stop(
-                                "manager.model_invoke", retry_started, retry_ended
-                            )
+                    return invoke_action(backend.model, action=action, **single_kwargs)
 
-                marshal_started = performance_profiler.start()
-                performance_profiler.increment("manager.result_marshal.calls")
-                try:
-                    result = self._wire_marshal_result(
-                        result,
-                        n_images,
-                        retry_single=(
-                            _retry_single if isinstance(images, list) else None
-                        ),
-                    )
-                finally:
-                    if marshal_started is not None:
-                        marshal_ended = time.perf_counter_ns()
-                        performance_profiler.record(
-                            "manager.result_marshal",
-                            max(0, marshal_ended - marshal_started - retry_invoke_ns)
-                            / 1_000_000,
-                            "ms",
-                        )
+                result = self._wire_marshal_result(
+                    result,
+                    n_images,
+                    retry_single=(_retry_single if isinstance(images, list) else None),
+                )
             if serialize:
                 # Inside the in-flight lease: serialization still reads
                 # backend.model, which an unload would drop underneath it.
@@ -619,63 +551,16 @@ class ModelManager:
         """
         self._check_open()
         loop = asyncio.get_running_loop()
-        if not performance_profiler.enabled:
-            return await loop.run_in_executor(
-                self._executor,
-                lambda: self.process(
-                    model_id,
-                    action=action,
-                    serialize=serialize,
-                    wire_marshalling=wire_marshalling,
-                    **kwargs,
-                ),
-            )
-
-        queue_started = performance_profiler.start()
-        return_started = [None]
-
-        def _run() -> Any:
-            performance_profiler.stop("manager.executor.queue", queue_started)
-            process_started = performance_profiler.start()
-            try:
-                return self.process(
-                    model_id,
-                    action=action,
-                    serialize=serialize,
-                    wire_marshalling=wire_marshalling,
-                    **kwargs,
-                )
-            finally:
-                process_ended = time.perf_counter_ns()
-                performance_profiler.stop(
-                    "manager.process.total", process_started, process_ended
-                )
-                return_started[0] = process_ended
-
-        try:
-            result = await loop.run_in_executor(self._executor, _run)
-        except asyncio.CancelledError:
-            performance_profiler.increment("manager.executor.cancelled")
-            raise
-        except Exception:
-            executor_ended = time.perf_counter_ns()
-            performance_profiler.stop(
-                "manager.return", return_started[0], executor_ended
-            )
-            performance_profiler.stop(
-                "manager.executor.total", queue_started, executor_ended
-            )
-            performance_profiler.increment("manager.executor.errors")
-            raise
-        else:
-            executor_ended = time.perf_counter_ns()
-            performance_profiler.stop(
-                "manager.return", return_started[0], executor_ended
-            )
-            performance_profiler.stop(
-                "manager.executor.total", queue_started, executor_ended
-            )
-            return result
+        return await loop.run_in_executor(
+            self._executor,
+            lambda: self.process(
+                model_id,
+                action=action,
+                serialize=serialize,
+                wire_marshalling=wire_marshalling,
+                **kwargs,
+            ),
+        )
 
     def submit(
         self,

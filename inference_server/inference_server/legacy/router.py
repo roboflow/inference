@@ -236,15 +236,15 @@ async def healthz() -> Response:
 
 
 @router.get("/readiness", status_code=200)
-async def readiness(model_manager: Any = Depends(get_model_manager)) -> Response:
+async def readiness(
+    request: Request, model_manager: Any = Depends(get_model_manager)
+) -> Response:
     try:
-        stats = await model_manager.stats()
+        await model_manager.stats()
     except Exception:
         return JSONResponse(content={"status": "not ready"}, status_code=503)
-    models = stats.get("models", {})
-    for model_id in configuration.preload_model_ids():
-        if models.get(model_id, {}).get("state") != "loaded":
-            return JSONResponse(content={"status": "not ready"}, status_code=503)
+    if not request.app.state.preload_finished:
+        return JSONResponse(content={"status": "not ready"}, status_code=503)
     return JSONResponse(content={"status": "ready"})
 
 
@@ -288,7 +288,7 @@ async def model_add(
     api_key = resolve_api_key(
         request, request.query_params.get("api_key"), add_model_request.api_key
     )
-    route = await bridge.load_pinned(add_model_request.model_id, api_key)
+    route = await bridge.load(add_model_request.model_id, api_key)
     bridge.record_request(route, add_model_request.model_id, request.scope["path"])
     return await _models_descriptions(bridge)
 
@@ -347,7 +347,7 @@ async def model_add_legacy(
 ) -> Response:
     model_id = f"{dataset_id}/{version_id}"
     resolved_key = resolve_api_key(request, api_key, None)
-    route = await bridge.load_pinned(model_id, resolved_key)
+    route = await bridge.load(model_id, resolved_key)
     bridge.record_request(route, model_id, request.scope["path"])
     return JSONResponse(
         {"status": 200, "message": "inference session started from local memory."}

@@ -17,6 +17,7 @@ class FakeGateway:
         self.loaded: dict[str, dict] = {}
         self.calls: list[tuple] = []
         self.ensure_results: list[tuple] = []
+        self.pinned: list[str] = []
 
     async def start(self): ...
 
@@ -31,8 +32,10 @@ class FakeGateway:
         )
         return ("model_ready",)
 
-    async def load(self, model_id, api_key="", timeout_s=None):
+    async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
         self.calls.append(("load", model_id, api_key))
+        if pinned:
+            self.pinned.append(model_id)
         self.loaded.setdefault(
             model_id, dict(self.model_info.get(model_id, {}), state="loaded")
         )

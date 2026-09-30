@@ -18,7 +18,6 @@ from fastapi import Request
 
 from inference_model_manager.errors import INPUT_ERROR_PREFIX
 from inference_model_manager.model_manager import ModelManager
-from inference_models.utils.performance import performance_profiler
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
 
@@ -189,19 +188,8 @@ class ModelManagerGateway:
         replacement.
         """
         lock = self._load_locks.setdefault(key, asyncio.Lock())
-        if not performance_profiler.enabled:
-            async with lock:
-                return self._acquire_load_future_locked(key, api_key, device, pinned)
-
-        lock_started = performance_profiler.start()
-        await lock.acquire()
-        performance_profiler.stop("wrapper.ensure.lock", lock_started)
-        check_started = performance_profiler.start()
-        try:
+        async with lock:
             return self._acquire_load_future_locked(key, api_key, device, pinned)
-        finally:
-            lock.release()
-            performance_profiler.stop("wrapper.ensure.check", check_started)
 
     def _acquire_load_future_locked(
         self, key: str, api_key: str, device: Optional[str], pinned: bool = False
@@ -297,23 +285,19 @@ class ModelManagerGateway:
         api_key: str = "",
         device: str = "",
     ) -> tuple:
-        started = performance_profiler.start()
-        try:
-            future = await self._acquire_load_future(
-                routing_key(model_id, instance), api_key, device or None
-            )
-            if future is None:
-                return ("model_ready",)
-            failure = await self._await_load(
-                future,
-                self.load_wait_s,
-                deadline_result=("load_timeout", int(self.load_wait_s)),
-            )
-            if failure is not None:
-                return failure
+        future = await self._acquire_load_future(
+            routing_key(model_id, instance), api_key, device or None
+        )
+        if future is None:
             return ("model_ready",)
-        finally:
-            performance_profiler.stop("wrapper.ensure.total", started)
+        failure = await self._await_load(
+            future,
+            self.load_wait_s,
+            deadline_result=("load_timeout", int(self.load_wait_s)),
+        )
+        if failure is not None:
+            return failure
+        return ("model_ready",)
 
     async def _pinned_load(
         self, model_id: str, api_key: str, timeout_s: float
@@ -325,11 +309,24 @@ class ModelManagerGateway:
         return await self._await_load(future, timeout_s, deadline_result=None)
 
     async def load(
-        self, model_id: str, api_key: str = "", timeout_s: Optional[float] = None
+        self,
+        model_id: str,
+        api_key: str = "",
+        timeout_s: Optional[float] = None,
+        pinned: bool = True,
     ) -> tuple:
         effective_timeout = (
             timeout_s if timeout_s is not None else _LOAD_DEFAULT_TIMEOUT_S
         )
+        if not pinned:
+            future = await self._acquire_load_future(model_id, api_key)
+            if future is None:
+                return ("ok",)
+            failure = await self._await_load(
+                future, effective_timeout, deadline_result=None
+            )
+            return failure or ("ok",)
+
         failure = await self._pinned_load(model_id, api_key, effective_timeout)
         if failure is not None:
             return failure
@@ -375,18 +372,14 @@ class ModelManagerGateway:
         params: Optional[dict] = None,
         request: Optional[Request] = None,
     ) -> Any:
-        started = performance_profiler.start()
-        try:
-            return await self._infer(
-                model_id=model_id,
-                image=image,
-                action=action,
-                instance=instance,
-                params=params,
-                request=request,
-            )
-        finally:
-            performance_profiler.stop("wrapper.infer.total", started)
+        return await self._infer(
+            model_id=model_id,
+            image=image,
+            action=action,
+            instance=instance,
+            params=params,
+            request=request,
+        )
 
     async def _infer(
         self,

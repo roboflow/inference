@@ -201,10 +201,13 @@ class LegacyModelBridge:
                 )
             await asyncio.sleep(LEGACY_LOAD_POLL_INTERVAL_S)
 
-    async def load_pinned(self, model_id: str, api_key: Optional[str]) -> Route:
+    async def load(self, model_id: str, api_key: Optional[str]) -> Route:
         route = await self.resolve(model_id, api_key)
         result = await self.gateway.load(
-            route.registry_id, api_key or "", timeout_s=LEGACY_LOAD_TIMEOUT_S
+            route.registry_id,
+            api_key or "",
+            timeout_s=LEGACY_LOAD_TIMEOUT_S,
+            pinned=False,
         )
         state = result[0] if result else "error"
         if state != "ok":

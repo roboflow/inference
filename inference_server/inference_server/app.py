@@ -16,17 +16,25 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from typing import Optional
 
-from fastapi import FastAPI, Response
-from fastapi.staticfiles import StaticFiles
+from inference_server.legacy_env import apply_legacy_env
 
-from inference_server import configuration as _cfg
-from inference_server.auth import extract_bearer, validate_api_key
-from inference_server.cors import PathAwareCORSMiddleware
-from inference_server.errors import AuthBackendUnavailable
-from inference_server.legacy.bridge import LegacyModelBridge, LoopBridge
-from inference_server.routers import v2_models, v2_server
+apply_legacy_env()
+
+from fastapi import FastAPI, Response  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+from inference_server import configuration as _cfg  # noqa: E402
+from inference_server import hf_preload  # noqa: E402
+from inference_server.auth import extract_bearer, validate_api_key  # noqa: E402
+from inference_server.cors import PathAwareCORSMiddleware  # noqa: E402
+from inference_server.errors import AuthBackendUnavailable  # noqa: E402
+from inference_server.legacy.bridge import (  # noqa: E402
+    LegacyModelBridge,
+    LoopBridge,
+    registry_id_for,
+)
+from inference_server.routers import v2_models, v2_server  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +60,43 @@ _LEGACY_ERROR_HANDLING_ENABLED = (
 # ---------------------------------------------------------------------------
 
 
-async def _preload_models(
-    proxy, model_ids: list[str], api_key: Optional[str]
-) -> None:
-    async def _one(mid):
-        try:
-            result = await proxy.load(mid, api_key=api_key, timeout_s=300.0)
-            logger.info("Preload of '%s': %s", mid, result)
-        except Exception:
-            logger.warning("Preload of '%s' failed", mid, exc_info=True)
+_PRELOAD_CONCURRENCY = 2
 
-    await asyncio.gather(*(_one(m) for m in model_ids))
+
+async def _preload_models(
+    state,
+    proxy,
+    preload: list[tuple[str, str]],
+    pinned: list[tuple[str, str]],
+) -> None:
+    loads = {mid: (api_key, False) for mid, api_key in preload}
+    loads.update({mid: (api_key, True) for mid, api_key in pinned})
+    semaphore = asyncio.Semaphore(_PRELOAD_CONCURRENCY)
+
+    async def _one(mid, api_key, is_pinned):
+        async with semaphore:
+            try:
+                result = await proxy.load(
+                    registry_id_for(mid),
+                    api_key=api_key or None,
+                    timeout_s=300.0,
+                    pinned=is_pinned,
+                )
+            except Exception:
+                logger.error("Preload of '%s' failed", mid, exc_info=True)
+                return
+
+        if result and result[0] == "ok":
+            logger.info("Preload of '%s': %s", mid, result)
+        else:
+            logger.error("Preload of '%s' failed: %s", mid, result)
+
+    try:
+        await asyncio.gather(
+            *(_one(mid, key, is_pinned) for mid, (key, is_pinned) in loads.items())
+        )
+    finally:
+        state.preload_finished = True
 
 
 @asynccontextmanager
@@ -76,6 +110,7 @@ async def _lifespan(app: FastAPI):
 
     proxy = resolve_gateway()
     preload_task = None
+    hf_preload_task = None
     watchdog_daemons = []
     workflows_executor = ThreadPoolExecutor(
         max_workers=_cfg.WORKFLOWS_THREAD_POOL_WORKERS
@@ -95,19 +130,33 @@ async def _lifespan(app: FastAPI):
         if _workflows_host is not None:
             _workflows_host.GUARDED_IMAGE_CODEC.bind_loop(app.state.loop_bridge)
         preload_ids = _cfg.preload_model_ids()
+        pinned_ids = _cfg.pinned_model_ids()
+        hf_ids = _cfg.preload_hf_ids()
+        app.state.preload_finished = not (preload_ids or pinned_ids)
         preload_task = (
             asyncio.create_task(
-                _preload_models(proxy, preload_ids, _cfg.PRELOAD_API_KEY or None)
+                _preload_models(app.state, proxy, preload_ids, pinned_ids)
             )
-            if preload_ids
+            if preload_ids or pinned_ids
+            else None
+        )
+        hf_preload_task = (
+            asyncio.create_task(
+                hf_preload.preload_hf_models(
+                    proxy, hf_ids, api_key=_cfg.PRELOAD_API_KEY or None
+                )
+            )
+            if hf_ids
             else None
         )
         yield
     finally:
-        if preload_task is not None:
-            if not preload_task.done():
-                preload_task.cancel()
-            await asyncio.gather(preload_task, return_exceptions=True)
+        for task in (preload_task, hf_preload_task):
+            if task is None:
+                continue
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         try:
             await proxy.shutdown()
         finally:

@@ -63,7 +63,7 @@ if LEGACY_MMP_ADAPTER_ENABLED:
             break
     if _adapter_factory is None:
         raise ImportError(
-            "LEGACY_MMP_ADAPTER_ENABLED requires the Roboflow enterprise runtime (rf-legacy-bridge)."
+            "LEGACY_MMP_ADAPTER_ENABLED requires the Roboflow enterprise runtime."
         )
     model_manager = _adapter_factory(legacy_stack=model_manager)
 model_manager.init_pingback()
