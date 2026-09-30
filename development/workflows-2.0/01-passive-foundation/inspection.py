@@ -2,7 +2,7 @@
 
 Nothing here executes, groups or gates workflow data. The functions only walk
 the ``Batch`` trees, layouts, metadata, statuses and trace returned by
-``plan.run`` and write them down.
+``session.run`` and write them down.
 """
 
 import dataclasses
@@ -14,7 +14,11 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import numpy as np
 from PIL import Image
-from roboflow_workflows.execution_engine.v2 import Batch, EntryLayout, EntryMetadata
+from roboflow_workflows.execution_engine.v2.data import (
+    Batch,
+    EntryLayout,
+    EntryMetadata,
+)
 
 PayloadDescriber = Callable[[Any, str], Any]
 
@@ -148,16 +152,16 @@ def describe_result(
     *,
     describe_payload: PayloadDescriber,
 ) -> Dict[str, Any]:
-    """Serialize a ``RunResult`` obtained from ``plan.run``.
+    """Serialize a ``RunResult`` obtained from ``session.run``.
 
     Args:
-        result: Object with ``outputs`` (``WorkflowsBuffer``), ``statuses``,
-            ``trace`` and ``invocation_id``.
+        result: ``RunResult`` with ``outputs`` (``WorkflowsBuffer``),
+            ``selections``, ``statuses``, ``trace`` and run/session ids.
         describe_payload: Callback used for leaf payloads.
 
     Returns:
-        JSON-friendly mapping with identity, per-output layout/tree/context,
-        statuses and the executor trace.
+        JSON-friendly mapping with identity, which entry each workflow output
+        selects, per-entry layout/tree/context, statuses and the trace.
     """
     outputs = result.outputs
     entries: Dict[str, Any] = {}
@@ -177,9 +181,11 @@ def describe_result(
         }
 
     document = {
-        "invocation_id": result.invocation_id,
+        "session_id": result.session_id,
+        "run_id": result.run_id,
         "lineage_id": outputs.lineage_id,
         "pulse_id": outputs.pulse_id,
+        "selections": {name: dict(ports) for name, ports in result.selections.items()},
         "statuses": dict(result.statuses),
         "outputs": entries,
         "trace": list(result.trace),

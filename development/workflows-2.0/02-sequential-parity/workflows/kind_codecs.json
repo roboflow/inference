@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "temperature", "kind": ["celsius"]}],
+  "steps": [
+    {
+      "type": "capability/to_fahrenheit@v1",
+      "name": "convert",
+      "celsius": "$inputs.temperature"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "fahrenheit", "selector": "$steps.convert.fahrenheit"}
+  ]
+}

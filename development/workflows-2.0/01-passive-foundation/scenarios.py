@@ -1,9 +1,10 @@
 """Named demo scenarios for the passive V2 foundation.
 
 Every scenario loads an ordinary JSON definition from ``workflows/``, compiles
-it with ``compile_workflow`` and executes it with ``plan.run``. The scenario
-code only prepares inputs, checks expectations against the real result
-objects and writes artifacts. It never groups, gates or executes steps itself.
+it with ``compile_workflow``, creates an execution session and runs it. The
+scenario code only prepares inputs, checks expectations against the real
+result objects and writes artifacts. It never groups, gates or executes steps
+itself.
 
 Each scenario returns a :class:`ScenarioReport`; ``ok`` is ``False`` when an
 expectation was not met, and the CLI turns that into a non-zero exit code.
@@ -23,7 +24,7 @@ from author_blocks import (
     ExpandBlock,
     ScaleBlock,
     SumWithParentBlock,
-    register_author_blocks,
+    create_author_catalogue,
 )
 from fixtures import (
     BRIGHTNESS_MINIMUM,
@@ -42,19 +43,20 @@ from inspection import (
     save_png,
     write_json,
 )
-from roboflow_workflows.execution_engine.v2 import (
+from roboflow_workflows.execution_engine.v2.blocks import (
+    CropBlock,
+    InvertBlock,
+    create_catalogue,
+)
+from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
+from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
+from roboflow_workflows.execution_engine.v2.data import (
     Batch,
     EntryMetadata,
     InputValue,
     SampleContext,
-    compile_workflow,
 )
-from roboflow_workflows.execution_engine.v2.blocks import (
-    CropBlock,
-    InvertBlock,
-    MosaicBlock,
-    native_registry,
-)
+from roboflow_workflows.execution_engine.v2.plan import RunResult
 
 WORKFLOWS_DIR = Path(__file__).resolve().parent / "workflows"
 
@@ -137,6 +139,58 @@ def run_scenario(name: str, *, output_dir: Path) -> ScenarioReport:
     return report
 
 
+def run_workflow(
+    name: str, *, catalogue: Catalogue, inputs: Mapping[str, Any]
+) -> RunResult:
+    """Compile a definition from ``workflows/``, create a session and run it once.
+
+    Args:
+        name: Definition name relative to ``workflows/``.
+        catalogue: Blocks the definition may use.
+        inputs: Workflow inputs.
+
+    Returns:
+        The engine's run result.
+    """
+    plan = compile_workflow(load_definition(name), catalogue=catalogue)
+    result = plan.create_session().run(inputs)
+
+    return result
+
+
+def output_entry(result: RunResult, name: str) -> Optional[str]:
+    """Return the buffer entry key selected by workflow output ``name``.
+
+    Args:
+        result: Run result.
+        name: Workflow output name.
+
+    Returns:
+        The entry key, or ``None`` when the whole output was filtered.
+    """
+    (entry,) = result.selections[name].values()
+    if entry not in result.outputs.data:
+        return None
+
+    return entry
+
+
+def output_data(result: RunResult, name: str) -> Any:
+    """Return the data of workflow output ``name``; ``None`` if fully filtered.
+
+    Args:
+        result: Run result.
+        name: Workflow output name.
+
+    Returns:
+        Payload or nested ``Batch``.
+    """
+    entry = output_entry(result, name)
+    data = None if entry is None else result.outputs.data[entry]
+
+    return data
+
+
 def _image_inputs(fixtures: List[Fixture]) -> Dict[str, InputValue]:
     images = Batch.of([fixture.image for fixture in fixtures])
     inputs = {"images": InputValue(images, metadata=make_input_metadata(fixtures))}
@@ -164,9 +218,9 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
     fixtures = make_fixtures()
     _save_fixture_pngs(fixtures, scenario_dir / "inputs", report)
 
-    registry = native_registry()
-    plan = compile_workflow(load_definition("nested"), registry=registry)
-    result = plan.run(inputs=_image_inputs(fixtures))
+    result = run_workflow(
+        "nested", catalogue=create_catalogue(), inputs=_image_inputs(fixtures)
+    )
 
     artifact_dir = scenario_dir / "outputs"
     document = describe_result(result, describe_payload=image_describer(artifact_dir))
@@ -175,20 +229,26 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
     report.artifacts.extend(str(path) for path in sorted(artifact_dir.glob("*.png")))
 
     outputs = result.outputs
-    crops = outputs.data["crops"]
+    crops = output_data(result, "crops")
     report.check(
         "crop child counts are [2, 0, 1]",
         _group_sizes(crops) == list(EXPECTED_CROP_COUNTS),
         _group_sizes(crops),
     )
-    crops_axes = [axis.kind for axis in outputs.layout["crops"].axes]
-    summary_axes = [axis.kind for axis in outputs.layout["summary"].axes]
+    crops_axes = [
+        axis.kind for axis in outputs.layout[output_entry(result, "crops")].axes
+    ]
+    summary_axes = [
+        axis.kind for axis in outputs.layout[output_entry(result, "summary")].axes
+    ]
     report.check(
         "crops layout is [sample, dynamic_nesting] while summary layout is [sample]",
         crops_axes == ["sample", "dynamic_nesting"] and summary_axes == ["sample"],
         {"crops": crops_axes, "summary": summary_axes},
     )
-    mosaic_axes = [axis.kind for axis in outputs.layout["mosaic"].axes]
+    mosaic_axes = [
+        axis.kind for axis in outputs.layout[output_entry(result, "mosaic")].axes
+    ]
     report.check(
         "mosaic layout collapsed back to [sample]",
         mosaic_axes == ["sample"],
@@ -196,17 +256,18 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
     )
     report.check(
         "mosaic_all layout is ungrouped ()",
-        outputs.layout["mosaic_all"].axes == (),
-        [axis.id for axis in outputs.layout["mosaic_all"].axes],
+        outputs.layout[output_entry(result, "mosaic_all")].axes == (),
+        [axis.id for axis in outputs.layout[output_entry(result, "mosaic_all")].axes],
     )
 
-    direct_crop = CropBlock(regions=[tuple(r) for r in CROP_REGIONS])
+    direct_crop = CropBlock()
     direct_invert = InvertBlock()
+    regions = [tuple(region) for region in CROP_REGIONS]
     pixel_equal = True
     for parent_position, fixture in enumerate(fixtures):
-        expected = direct_crop.run(image=fixture.image)
+        expected = direct_crop.run(image=fixture.image, regions=regions)
         engine_group = crops[parent_position]
-        engine_inverted = outputs.data["inverted"][parent_position]
+        engine_inverted = output_data(result, "inverted")[parent_position]
         if list(engine_group.indices) != [
             (parent_position,) + index for index in expected["crops"].indices
         ]:
@@ -224,8 +285,8 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
         pixel_equal,
     )
 
-    mosaic = outputs.data["mosaic"]
-    counts = list(outputs.data["mosaic_count"])
+    mosaic = output_data(result, "mosaic")
+    counts = list(output_data(result, "mosaic_count"))
     report.check("mosaic counts per parent are [2, 0, 1]", counts == [2, 0, 1], counts)
     blank = mosaic[1]
     report.check(
@@ -237,11 +298,11 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
     )
     report.check(
         "mosaic_all over the sample axis counted all 3 inputs",
-        outputs.data["mosaic_all_count"] == 3,
-        outputs.data["mosaic_all_count"],
+        output_data(result, "mosaic_all_count") == 3,
+        output_data(result, "mosaic_all_count"),
     )
     sample_ids = [
-        outputs.metadata["crops"].sample_at(index).source_id
+        outputs.metadata[output_entry(result, "crops")].sample_at(index).source_id
         for index, _ in _leaf_indices(crops)
     ]
     report.check(
@@ -249,8 +310,9 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
         sample_ids == ["fixture:alpha", "fixture:alpha", "fixture:gamma"],
         sample_ids,
     )
-    beta_temporal = outputs.metadata["mosaic"].temporal_at((1,))
-    alpha_temporal = outputs.metadata["mosaic"].temporal_at((0,))
+    mosaic_metadata = outputs.metadata[output_entry(result, "mosaic")]
+    beta_temporal = mosaic_metadata.temporal_at((1,))
+    alpha_temporal = mosaic_metadata.temporal_at((0,))
     report.check(
         "collapsed mosaic keeps alpha's temporal context and beta stays without one",
         alpha_temporal is not None and beta_temporal is None,
@@ -260,6 +322,17 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
         "all outputs complete",
         all(status == "complete" for status in result.statuses.values()),
         dict(result.statuses),
+    )
+    single = run_workflow(
+        "single_image_mosaic",
+        catalogue=create_catalogue(),
+        inputs={"image": fixtures[2].image},
+    )
+    single_canvas = output_data(single, "mosaic")
+    report.check(
+        "a single ungrouped image bound to the mosaic group is cast into a one-image group",
+        output_data(single, "count") == 1 and single_canvas.shape == (32, 32, 3),
+        {"count": output_data(single, "count"), "shape": list(single_canvas.shape)},
     )
     report.notes.append(
         "The [2,0,1] grouping, per-output layouts and blank canvas come from the compiled graph;"
@@ -287,8 +360,9 @@ def _run_filtered(scenario_dir: Path) -> ScenarioReport:
     fixtures = make_fixtures()
     _save_fixture_pngs(fixtures, scenario_dir / "inputs", report)
 
-    plan = compile_workflow(load_definition("filtered"), registry=native_registry())
-    result = plan.run(inputs=_image_inputs(fixtures))
+    result = run_workflow(
+        "filtered", catalogue=create_catalogue(), inputs=_image_inputs(fixtures)
+    )
 
     artifact_dir = scenario_dir / "outputs"
     document = describe_result(result, describe_payload=image_describer(artifact_dir))
@@ -298,7 +372,7 @@ def _run_filtered(scenario_dir: Path) -> ScenarioReport:
 
     outputs = result.outputs
     keep_values = [
-        (index, value) for index, value in _leaf_indices(outputs.data["keep"])
+        (index, value) for index, value in _leaf_indices(output_data(result, "keep"))
     ]
     report.check(
         f"has_brightness(minimum={BRIGHTNESS_MINIMUM}) keeps only alpha's first crop",
@@ -306,14 +380,14 @@ def _run_filtered(scenario_dir: Path) -> ScenarioReport:
         [[list(index), value] for index, value in keep_values],
     )
 
-    inverted = outputs.data.get("inverted")
+    inverted = output_data(result, "inverted")
     inverted_leaves = (
         [index for index, _ in _leaf_indices(inverted)]
         if inverted is not None
         else None
     )
     report.check(
-        "gated invert ran only for the surviving crop, which kept its logical index (0, 0)",
+        "the v2/continue_if gate let invert run only for the surviving crop, index (0, 0)",
         inverted_leaves == [(0, 0)],
         (
             [list(index) for index in inverted_leaves]
@@ -322,11 +396,12 @@ def _run_filtered(scenario_dir: Path) -> ScenarioReport:
         ),
     )
 
-    mosaic = outputs.data.get("mosaic")
+    mosaic = output_data(result, "mosaic")
     mosaic_indices = list(mosaic.indices) if isinstance(mosaic, Batch) else None
+    mosaic_count = output_data(result, "mosaic_count")
     mosaic_counts = (
-        {index: value for index, value in _leaf_indices(outputs.data["mosaic_count"])}
-        if "mosaic_count" in outputs.data
+        {index: value for index, value in _leaf_indices(mosaic_count)}
+        if mosaic_count is not None
         else {}
     )
     report.check(
@@ -339,16 +414,18 @@ def _run_filtered(scenario_dir: Path) -> ScenarioReport:
             "counts": {str(k): v for k, v in mosaic_counts.items()},
         },
     )
-    unfiltered_counts = list(outputs.data["mosaic_unfiltered_count"])
+    unfiltered_counts = list(output_data(result, "mosaic_unfiltered_count"))
     report.check(
         "ungated sibling mosaic still sees all groups: counts [2, 0, 1]",
         unfiltered_counts == [2, 0, 1],
         unfiltered_counts,
     )
     report.check(
-        "statuses reported for every declared output",
-        set(result.statuses)
-        == {o["name"] for o in load_definition("filtered")["outputs"]},
+        "a status is reported for every declared output",
+        set(result.selections)
+        == {o["name"] for o in load_definition("filtered")["outputs"]}
+        and set(result.statuses)
+        == {key for ports in result.selections.values() for key in ports.values()},
         dict(result.statuses),
     )
     report.notes.append(
@@ -356,44 +433,73 @@ def _run_filtered(scenario_dir: Path) -> ScenarioReport:
         " genuinely empty; gamma has no mosaic entry because its only crop was gated out."
     )
     report.notes.append(
-        "Per-output statuses come from result.statuses; per-index filtering is visible in the"
-        " executor trace recorded in result.json."
+        "The gate is an ordinary v2/continue_if step with next_steps; it replaces the earlier"
+        " provisional 'when' field. Per-output statuses come from result.statuses."
     )
 
     return report
 
 
-INVALID_CASES: Tuple[Tuple[str, str], ...] = (
-    ("unknown_selector", "step input references a step that does not exist"),
-    ("unknown_block_type", "step type not registered"),
-    ("kind_mismatch", "crop_summary bound to an image input"),
+# (definition name, what is wrong, error class the compiler must raise)
+INVALID_CASES: Tuple[Tuple[str, str, str], ...] = (
     (
-        "batch_view_on_ungrouped_input",
-        "batch view needs a trailing axis; input has none",
+        "unknown_selector",
+        "step parameter references a step that does not exist",
+        "SelectorError",
     ),
+    ("unknown_block_type", "step type not in the catalogue", "UnknownBlockError"),
+    ("kind_mismatch", "crop_summary bound to an image parameter", "KindMismatchError"),
     (
         "unrelated_lineages_equal_shape",
         "parent and children from unrelated sample axes",
+        "LineageError",
     ),
     (
         "sibling_expansions_as_parent_child",
         "parent at [N,K_a] beside children of [N,K_b]",
+        "LineageError",
     ),
-    ("cycle", "two steps feeding each other"),
-    ("bad_block_config", "crop region with three numbers"),
-    ("unknown_config_key", "crop config with unsupported key 'padding'"),
-    ("gate_not_boolean", "'when' bound to a crop_summary output"),
-    ("missing_required_input", "crop without its image binding"),
-    ("unknown_section", "definition with an unsupported 'sources' section"),
+    ("cycle", "two steps feeding each other", "CycleError"),
+    (
+        "bad_block_config",
+        "crop region literal with three numbers",
+        "ParamsValidationError",
+    ),
+    (
+        "unknown_config_key",
+        "crop step with unsupported parameter 'padding'",
+        "ParamsValidationError",
+    ),
+    (
+        "gate_not_boolean",
+        "continue_if condition bound to a crop_summary output",
+        "KindMismatchError",
+    ),
+    (
+        "missing_required_input",
+        "crop without its image parameter",
+        "ParamsValidationError",
+    ),
+    (
+        "unknown_section",
+        "definition with an unsupported 'sources' section",
+        "WorkflowCompileError",
+    ),
     (
         "unknown_output_selector",
         "workflow output selecting a non-existent block output",
+        "SelectorError",
     ),
     (
         "temporal_axis_input",
-        "input declaring a time axis; M1 rejects temporal execution",
+        "input declaring a time axis; the sequential engine rejects it",
+        "WorkflowCompileError",
     ),
-    ("wrong_version", "definition version 1.0 handed to the V2 compiler"),
+    (
+        "wrong_version",
+        "definition version 1.0 handed to the V2 compiler",
+        "WorkflowCompileError",
+    ),
 )
 
 RUNTIME_CASES: Tuple[Tuple[str, str], ...] = (
@@ -404,11 +510,11 @@ RUNTIME_CASES: Tuple[Tuple[str, str], ...] = (
 )
 
 
-def _registry_with_author_blocks() -> Tuple[Any, CallCounter]:
-    registry = native_registry()
-    counter = register_author_blocks(registry)
+def _catalogue_with_author_blocks() -> Tuple[Catalogue, CallCounter]:
+    counter = CallCounter()
+    catalogue = Catalogue.merge(create_catalogue(), create_author_catalogue(counter))
 
-    return registry, counter
+    return catalogue, counter
 
 
 def _exception_record(error: BaseException) -> Dict[str, Any]:
@@ -432,8 +538,8 @@ def _run_invalid_bindings(scenario_dir: Path) -> ScenarioReport:
     report = ScenarioReport(name="invalid-bindings")
     cases: List[Dict[str, Any]] = []
 
-    for case_name, description in INVALID_CASES:
-        registry, counter = _registry_with_author_blocks()
+    for case_name, description, expected_error in INVALID_CASES:
+        catalogue, counter = _catalogue_with_author_blocks()
         definition = load_definition(f"invalid/{case_name}")
         record: Dict[str, Any] = {
             "case": case_name,
@@ -441,24 +547,25 @@ def _run_invalid_bindings(scenario_dir: Path) -> ScenarioReport:
             "stage": "compile",
         }
         try:
-            compile_workflow(definition, registry=registry)
+            compile_workflow(definition, catalogue=catalogue)
             record["error"] = None
         except Exception as error:
             record["error"] = _exception_record(error)
         record["block_runs_before_error"] = counter.total
         cases.append(record)
+        error_type = record["error"]["type"] if record["error"] else None
         report.check(
-            f"compile rejects '{case_name}' before any block run",
-            record["error"] is not None and counter.total == 0,
-            record["error"]["type"] if record["error"] else "compiled without error",
+            f"compile rejects '{case_name}' with {expected_error} before any block run",
+            error_type == expected_error and counter.total == 0,
+            error_type or "compiled without error",
         )
 
     for case_name, description in RUNTIME_CASES:
-        registry, counter = _registry_with_author_blocks()
+        catalogue, counter = _catalogue_with_author_blocks()
         definition = load_definition(f"runtime/{case_name}")
         record = {"case": case_name, "description": description, "stage": "run"}
         try:
-            plan = compile_workflow(definition, registry=registry)
+            plan = compile_workflow(definition, catalogue=catalogue)
             record["compiled"] = True
         except Exception as error:
             record["compiled"] = False
@@ -472,7 +579,7 @@ def _run_invalid_bindings(scenario_dir: Path) -> ScenarioReport:
             continue
 
         try:
-            plan.run(inputs={"values": Batch.of([1, 2])})
+            plan.create_session().run({"values": Batch.of([1, 2])})
             record["error"] = None
         except Exception as error:
             record["error"] = _exception_record(error)
@@ -500,12 +607,27 @@ def _author_oracle(values: List[float]) -> Dict[str, Any]:
     unit test would; it does not stand in for the engine.
     """
     counter = CallCounter()
-    scale_two = ScaleBlock(factor=2, counter=counter)
-    expand = ExpandBlock(offsets=[1, 2], limit=31, counter=counter)
-    expand_deep = ExpandBlock(offsets=[1], limit=60, counter=counter)
-    scale_three = ScaleBlock(factor=3, counter=counter)
-    reduce_plain = SumWithParentBlock(parent_weight=0, counter=counter)
-    reduce_parent = SumWithParentBlock(parent_weight=1, counter=counter)
+    scale = ScaleBlock(counter=counter)
+    expand = ExpandBlock(counter=counter)
+    reduce = SumWithParentBlock(counter=counter)
+
+    def scale_two(value):
+        return scale.run(value=value, factor=2)["scaled"]
+
+    def scale_three(value):
+        return scale.run(value=value, factor=3)["scaled"]
+
+    def expand_shallow(value):
+        return expand.run(value=value, offsets=[1, 2], limit=31)["children"]
+
+    def expand_deep(value):
+        return expand.run(value=value, offsets=[1], limit=60)["children"]
+
+    def reduce_plain(parent, children):
+        return reduce.run(parent=parent, children=children, parent_weight=0)
+
+    def reduce_parent(parent, children):
+        return reduce.run(parent=parent, children=children, parent_weight=1)
 
     oracle: Dict[str, Any] = {
         key: []
@@ -525,42 +647,35 @@ def _author_oracle(values: List[float]) -> Dict[str, Any]:
         )
     }
     for value in values:
-        oracle["scaled_root"].append(scale_two.run(value=value)["scaled"])
-        children = expand.run(value=value)["children"]
+        oracle["scaled_root"].append(scale_two(value))
+        children = expand_shallow(value)
         oracle["children"].append(list(children))
         oracle["children_local"].append([index[0] for index in children.indices])
-        scaled = [scale_two.run(value=child)["scaled"] for child in children]
+        scaled = [scale_two(child) for child in children]
         oracle["scaled"].append(scaled)
-        plain = reduce_plain.run(parent=value, children=children)
+        plain = reduce_plain(value, children)
         oracle["sums"].append(plain["total"])
         oracle["counts"].append(plain["count"])
-        oracle["with_parent"].append(
-            reduce_parent.run(parent=value, children=scaled)["total"]
-        )
-        deep_children = [list(expand_deep.run(value=s)["children"]) for s in scaled]
+        oracle["with_parent"].append(reduce_parent(value, scaled)["total"])
+        deep_children = [list(expand_deep(s)) for s in scaled]
         oracle["deep_children"].append(deep_children)
-        deep_scaled = [
-            [scale_three.run(value=d)["scaled"] for d in group]
-            for group in deep_children
-        ]
+        deep_scaled = [[scale_three(d) for d in group] for group in deep_children]
         oracle["deep_scaled"].append(deep_scaled)
         deep_totals = [
-            reduce_parent.run(parent=s, children=group)["total"]
-            for s, group in zip(scaled, deep_scaled)
+            reduce_parent(s, group)["total"] for s, group in zip(scaled, deep_scaled)
         ]
         oracle["deep_totals"].append(deep_totals)
         oracle["deep_counts"].append([len(group) for group in deep_scaled])
-        oracle["twice_reduced"].append(
-            reduce_plain.run(parent=value, children=deep_totals)["total"]
-        )
+        oracle["twice_reduced"].append(reduce_plain(value, deep_totals)["total"])
 
     return oracle
 
 
 def _run_author_block(scenario_dir: Path) -> ScenarioReport:
     report = ScenarioReport(name="author-block")
-    registry, counter = _registry_with_author_blocks()
-    plan = compile_workflow(load_definition("author_block"), registry=registry)
+    catalogue, counter = _catalogue_with_author_blocks()
+    plan = compile_workflow(load_definition("author_block"), catalogue=catalogue)
+    session = plan.create_session()
 
     runs = {
         "ragged": [10, 200, 30],
@@ -575,8 +690,8 @@ def _run_author_block(scenario_dir: Path) -> ScenarioReport:
             }
         )
         runs_before = counter.total
-        result = plan.run(
-            inputs={"values": InputValue(Batch.of(values), metadata=metadata)}
+        result = session.run(
+            {"values": InputValue(Batch.of(values), metadata=metadata)}
         )
         document = describe_result(result, describe_payload=plain_describer)
         write_json(document, scenario_dir / f"result_{run_name}.json")
@@ -584,11 +699,11 @@ def _run_author_block(scenario_dir: Path) -> ScenarioReport:
 
         oracle = _author_oracle(values)
         engine = {
-            name: batch_to_nested(result.outputs.data[name])
+            name: batch_to_nested(output_data(result, name))
             for name in oracle
             if name != "children_local"
         }
-        engine["children_local"] = batch_local_indices(result.outputs.data["children"])
+        engine["children_local"] = batch_local_indices(output_data(result, "children"))
         agreement = {name: engine[name] == oracle[name] for name in oracle}
         comparison[run_name] = {
             "values": values,
@@ -596,10 +711,12 @@ def _run_author_block(scenario_dir: Path) -> ScenarioReport:
             "direct": oracle,
             "agreement": agreement,
             "engine_block_runs_this_invocation": counter.total - runs_before,
-            "invocation_id": result.invocation_id,
+            "run_id": result.run_id,
+            "session_id": result.session_id,
             "layouts": {
-                name: [axis.id for axis in result.outputs.layout[name].axes]
-                for name in result.outputs.entry_names
+                name: [axis.id for axis in result.outputs.layout[entry].axes]
+                for name in result.selections
+                if (entry := output_entry(result, name)) is not None
             },
         }
         report.check(
@@ -632,16 +749,18 @@ def _run_author_block(scenario_dir: Path) -> ScenarioReport:
         and len(layouts["twice_reduced"]) == 1,
         layouts,
     )
-    invocation_ids = {run["invocation_id"] for run in comparison.values()}
+    run_ids = {run["run_id"] for run in comparison.values()}
+    session_ids = {run["session_id"] for run in comparison.values()}
     report.check(
-        "three invocations of one plan have distinct invocation ids",
-        len(invocation_ids) == 3,
-        sorted(invocation_ids),
+        "three runs of one session have distinct run ids and one session id",
+        len(run_ids) == 3 and len(session_ids) == 1,
+        {"run_ids": sorted(run_ids), "session_ids": sorted(session_ids)},
     )
     write_json(comparison, scenario_dir / "comparison.json")
     report.artifacts.append(str(scenario_dir / "comparison.json"))
     report.notes.append(
-        "Author blocks import only Batch/BlockContract/InputSpec/OutputSpec/Registry from the public package."
+        "Author blocks are single classes with nested Params; the shared call counter is a"
+        " constructor resource supplied by the catalogue."
     )
 
     return report
@@ -705,21 +824,22 @@ def _run_metadata_cost(scenario_dir: Path) -> ScenarioReport:
             )
 
     fixtures = make_fixtures()
-    plan = compile_workflow(load_definition("nested"), registry=native_registry())
+    plan = compile_workflow(load_definition("nested"), catalogue=create_catalogue())
+    session = plan.create_session()
     workflow_timings: Dict[str, Any] = {}
     for variant in ("without_metadata", "with_metadata"):
         if variant == "with_metadata":
             inputs = _image_inputs(fixtures)
         else:
             inputs = {"images": Batch.of([fixture.image for fixture in fixtures])}
-        plan.run(inputs=inputs)  # warm-up, not timed
+        session.run(inputs)  # warm-up, not timed
         durations = []
         for _ in range(5):
             start = time.perf_counter()
-            plan.run(inputs=inputs)
+            session.run(inputs)
             durations.append(time.perf_counter() - start)
         tracemalloc.start()
-        plan.run(inputs=inputs)
+        session.run(inputs)
         _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
         workflow_timings[variant] = {

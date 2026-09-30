@@ -1,0 +1,34 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowBatchInput", "name": "groups", "dimensionality": 2},
+    {"type": "WorkflowBatchInput", "name": "keep", "kind": ["boolean"]}
+  ],
+  "steps": [
+    {"type": "fixture/collapse@v1", "name": "collect", "data": "$steps.child.out"},
+    {"type": "capability/total@v1", "name": "total", "values": "$steps.child.out"},
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "child",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"type": "WorkflowBatchInput", "name": "g", "dimensionality": 2}],
+        "steps": [{"type": "fixture/echo@v1", "name": "body", "value": "$inputs.g"}],
+        "outputs": [{"type": "JsonField", "name": "out", "selector": "$inputs.g"}]
+      },
+      "parameter_bindings": {"g": "$inputs.groups"}
+    },
+    {
+      "type": "v2/continue_if",
+      "name": "gate",
+      "condition": "$inputs.keep",
+      "next_steps": ["$steps.child"]
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "forwarded", "selector": "$steps.child.out"},
+    {"type": "JsonField", "name": "collected", "selector": "$steps.collect.output"},
+    {"type": "JsonField", "name": "total", "selector": "$steps.total.total"},
+    {"type": "JsonField", "name": "original", "selector": "$inputs.groups"}
+  ]
+}

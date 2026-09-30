@@ -1,0 +1,36 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "vector"}],
+  "dynamic_blocks_definitions": [
+    {
+      "type": "DynamicBlockDefinition",
+      "manifest": {
+        "type": "ManifestDescription",
+        "block_type": "Normalize",
+        "inputs": {
+          "vector": {
+            "type": "DynamicInputDefinition",
+            "selector_types": ["input_parameter"]
+          }
+        },
+        "outputs": {
+          "scaled": {"type": "DynamicOutputDefinition", "kind": []},
+          "mean": {"type": "DynamicOutputDefinition", "kind": []}
+        },
+        "tensor_compatibility": "tensor_native"
+      },
+      "code": {
+        "type": "PythonCode",
+        "run_function_code": "def run(self, vector) -> BlockResult:\n    globals.setdefault(\"events\", []).append(\"code received \" + type(vector).__name__)\n    return {\"scaled\": vector / vector.max(), \"mean\": float(vector.mean())}\n",
+        "init_function_code": "def init():\n    globals[\"init_ran\"] = True\n    return {}\n",
+        "init_function_name": "init",
+        "imports": ["import numpy as np"]
+      }
+    }
+  ],
+  "steps": [{"type": "Normalize", "name": "normalize", "vector": "$inputs.vector"}],
+  "outputs": [
+    {"type": "JsonField", "name": "scaled", "selector": "$steps.normalize.scaled"},
+    {"type": "JsonField", "name": "mean", "selector": "$steps.normalize.mean"}
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "x"}],
+  "steps": [
+    {"type": "fixture/scale@v1", "name": "scale", "value": "$inputs.x", "factor": 10}
+  ],
+  "outputs": [{"type": "JsonField", "name": "y", "selector": "$steps.scale.scaled"}]
+}

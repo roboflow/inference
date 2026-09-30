@@ -1,0 +1,50 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowBatchInput", "name": "x"},
+    {"type": "WorkflowBatchInput", "name": "keep", "kind": ["boolean"]}
+  ],
+  "steps": [
+    {"type": "fixture/echo@v1", "name": "consumer", "value": "$steps.child.out"},
+    {
+      "type": "fixture/merge@v1",
+      "name": "recover",
+      "values": ["$steps.child.out", "$steps.sibling.value"]
+    },
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "child",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [
+          {"type": "WorkflowBatchInput", "name": "x"},
+          {"type": "WorkflowParameter", "name": "tag", "default_value": "tag-default"},
+          {"type": "WorkflowParameter", "name": "note"}
+        ],
+        "steps": [{"type": "fixture/echo@v1", "name": "body", "value": "$inputs.x"}],
+        "outputs": [
+          {"type": "JsonField", "name": "out", "selector": "$inputs.x"},
+          {"type": "JsonField", "name": "tag", "selector": "$inputs.tag"},
+          {"type": "JsonField", "name": "note", "selector": "$inputs.note"}
+        ]
+      },
+      "parameter_bindings": {"x": "$inputs.x", "note": "bound-literal"}
+    },
+    {"type": "fixture/echo@v1", "name": "sibling", "value": "$inputs.x"},
+    {
+      "type": "v2/continue_if",
+      "name": "gate",
+      "condition": "$inputs.keep",
+      "next_steps": ["$steps.child"]
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "forwarded", "selector": "$steps.child.out"},
+    {"type": "JsonField", "name": "tag", "selector": "$steps.child.tag"},
+    {"type": "JsonField", "name": "note", "selector": "$steps.child.note"},
+    {"type": "JsonField", "name": "consumed", "selector": "$steps.consumer.value"},
+    {"type": "JsonField", "name": "recovered", "selector": "$steps.recover.value"},
+    {"type": "JsonField", "name": "sibling", "selector": "$steps.sibling.value"},
+    {"type": "JsonField", "name": "original", "selector": "$inputs.x"}
+  ]
+}

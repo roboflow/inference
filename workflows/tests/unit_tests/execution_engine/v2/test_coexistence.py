@@ -15,10 +15,7 @@ import pytest
 from packaging.version import Version
 from roboflow_workflows.execution_engine.v2 import (
     Batch,
-    BlockContract,
-    InputSpec,
-    OutputSpec,
-    Registry,
+    Catalogue,
     WorkflowCompileError,
     compile_workflow,
 )
@@ -80,47 +77,42 @@ def observe_v1():
 
 
 def observe_v2():
+    from pydantic import Field
     from roboflow_workflows.execution_engine.v2 import (
-        Batch,
-        BlockContract,
-        InputSpec,
-        OutputSpec,
-        Registry,
+        Block,
+        BlockParams,
+        Catalogue,
+        Kind,
+        Output,
+        Ref,
         compile_workflow,
     )
 
-    registry = Registry()
-    registry.register_kind("number", lambda v: isinstance(v, int))
+    number = Kind("number", validate=lambda value: isinstance(value, int))
 
-    class Double:
-        def __init__(self, config):
-            pass
+    class Double(Block):
+        type = "demo/double"
+        outputs = {"out": Output(number)}
 
-        def run(self, value):
+        class Params(BlockParams):
+            value: Ref(number) = Field(description="Number to double.")
+
+        def run(self, *, value):
             return {"out": value * 2}
 
-    registry.register_block(
-        "double",
-        contract=BlockContract(
-            reference="value",
-            inputs={"value": InputSpec("number")},
-            outputs={"out": OutputSpec("number")},
-        ),
-        factory=Double,
-    )
     plan = compile_workflow(
         {
             "version": "2.0",
-            "inputs": [{"name": "values", "kind": "number", "axes": [{"id": "n", "kind": "sample"}]}],
-            "steps": [{"name": "d", "type": "double", "inputs": {"value": "$inputs.values"}}],
+            "inputs": [{"type": "WorkflowBatchInput", "name": "values", "kind": ["number"]}],
+            "steps": [{"name": "d", "type": "demo/double", "value": "$inputs.values"}],
             "outputs": [{"name": "out", "selector": "$steps.d.out"}],
         },
-        registry=registry,
+        catalogue=Catalogue([Double]),
     )
-    result = plan.run(inputs={"values": Batch.of([1, 2, 3])})
+    result = plan.create_session().run({"values": [1, 2, 3]})
     return {
-        "doubled": list(result.outputs.data["out"]),
-        "statuses": dict(result.statuses),
+        "doubled": [row["out"] for row in result.rows()],
+        "complete": all(status == "complete" for status in result.statuses.values()),
         "v2_blocks_loaded": "roboflow_workflows.execution_engine.v2.blocks" in sys.modules,
     }
 
@@ -183,7 +175,7 @@ def test_v1_then_v2_import_order_leaves_legacy_engine_unchanged() -> None:
     _expected_v1(report["v1_after"])
     assert report["v2"] == {
         "doubled": [2, 4, 6],
-        "statuses": {"out": "complete"},
+        "complete": True,
         "v2_blocks_loaded": False,
     }
 
@@ -221,17 +213,6 @@ def test_in_process_v2_import_does_not_register_with_legacy_dispatcher() -> None
 
 
 def test_v2_compiler_rejects_v1_definitions_instead_of_falling_back() -> None:
-    registry = Registry()
-    registry.register_kind("number")
-    registry.register_block(
-        "leaf",
-        contract=BlockContract(
-            reference="value",
-            inputs={"value": InputSpec("number")},
-            outputs={"out": OutputSpec("number")},
-        ),
-        factory=lambda config: None,
-    )
     legacy = {
         "version": "1.0",
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
@@ -240,5 +221,5 @@ def test_v2_compiler_rejects_v1_definitions_instead_of_falling_back() -> None:
     }
 
     with pytest.raises(WorkflowCompileError, match="must be '2.0' for the V2 engine"):
-        compile_workflow(legacy, registry=registry)
+        compile_workflow(legacy, catalogue=Catalogue())
     assert Batch.empty().indices == ()

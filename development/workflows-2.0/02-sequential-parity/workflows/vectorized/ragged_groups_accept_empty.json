@@ -1,0 +1,16 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowBatchInput", "name": "roots"}],
+  "steps": [
+    {"type": "fixture/ragged_expand@v1", "name": "expand", "value": "$inputs.roots"},
+    {
+      "type": "capability/empty_accepting_group_consumer@v1",
+      "name": "consumer",
+      "parent": "$inputs.roots",
+      "value": "$steps.expand.value"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "result", "selector": "$steps.consumer.result"}
+  ]
+}

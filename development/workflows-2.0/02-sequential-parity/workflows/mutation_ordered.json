@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "tags", "kind": ["list_of_values"]}],
+  "steps": [
+    {
+      "type": "capability/append_tag@v1",
+      "name": "append",
+      "tags": "$inputs.tags",
+      "tag": "seen"
+    },
+    {"type": "capability/count_tags@v1", "name": "count", "tags": "$steps.append.tags"}
+  ],
+  "outputs": [{"type": "JsonField", "name": "count", "selector": "$steps.count.count"}]
+}

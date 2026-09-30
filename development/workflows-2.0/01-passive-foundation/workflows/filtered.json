@@ -11,42 +11,52 @@
     {
       "name": "crop",
       "type": "v2/crop",
-      "inputs": {"image": "$inputs.images"},
-      "config": {"regions": [[40, 40, 100, 100], [120, 10, 180, 70]]}
+      "image": "$inputs.images",
+      "regions": [[40, 40, 100, 100], [120, 10, 180, 70]]
     },
     {
       "name": "keep",
       "type": "v2/has_brightness",
-      "inputs": {"image": "$steps.crop.crops"},
-      "config": {"minimum": 100}
+      "image": "$steps.crop.crops",
+      "minimum": 100
     },
     {
-      "name": "invert",
-      "type": "v2/invert",
-      "inputs": {"image": "$steps.crop.crops"},
-      "config": {},
-      "when": "$steps.keep.keep"
+      "name": "gate_invert",
+      "type": "v2/continue_if",
+      "condition": "$steps.keep.keep",
+      "next_steps": ["$steps.invert"]
     },
+    {"name": "invert", "type": "v2/invert", "image": "$steps.crop.crops"},
     {
       "name": "mosaic",
       "type": "v2/mosaic",
-      "inputs": {"images": "$steps.invert.image"},
-      "config": {"tile_size": 48, "background": 128}
+      "images": "$steps.invert.image",
+      "tile_size": 48,
+      "background": 128
     },
     {
       "name": "mosaic_unfiltered",
       "type": "v2/mosaic",
-      "inputs": {"images": "$steps.crop.crops"},
-      "config": {"tile_size": 48, "background": 128}
+      "images": "$steps.crop.crops",
+      "tile_size": 48,
+      "background": 128
     }
   ],
   "outputs": [
-    {"name": "crops", "selector": "$steps.crop.crops"},
-    {"name": "keep", "selector": "$steps.keep.keep"},
-    {"name": "inverted", "selector": "$steps.invert.image"},
-    {"name": "mosaic", "selector": "$steps.mosaic.image"},
-    {"name": "mosaic_count", "selector": "$steps.mosaic.count"},
-    {"name": "mosaic_unfiltered", "selector": "$steps.mosaic_unfiltered.image"},
-    {"name": "mosaic_unfiltered_count", "selector": "$steps.mosaic_unfiltered.count"}
+    {"type": "JsonField", "name": "crops", "selector": "$steps.crop.crops"},
+    {"type": "JsonField", "name": "keep", "selector": "$steps.keep.keep"},
+    {"type": "JsonField", "name": "inverted", "selector": "$steps.invert.image"},
+    {"type": "JsonField", "name": "mosaic", "selector": "$steps.mosaic.image"},
+    {"type": "JsonField", "name": "mosaic_count", "selector": "$steps.mosaic.count"},
+    {
+      "type": "JsonField",
+      "name": "mosaic_unfiltered",
+      "selector": "$steps.mosaic_unfiltered.image"
+    },
+    {
+      "type": "JsonField",
+      "name": "mosaic_unfiltered_count",
+      "selector": "$steps.mosaic_unfiltered.count"
+    }
   ]
 }

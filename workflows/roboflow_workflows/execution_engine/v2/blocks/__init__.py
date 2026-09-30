@@ -1,64 +1,57 @@
 """Native V2 CPU image block catalogue.
 
-This package is imported only by callers that explicitly select the native
-blocks. The generic V2 engine (`data`, `contracts`, `compiler`, `executor`)
-does not import it, and the legacy V1 loader does not discover it.
+Callers select these blocks explicitly::
+
+    from roboflow_workflows.execution_engine.v2.blocks import create_catalogue
+
+    catalogue = create_catalogue()
+
+``Catalogue.from_modules(["roboflow_workflows.execution_engine.v2.blocks"])``
+reads the same catalogue through ``WORKFLOWS_V2_CATALOGUE``. The generic V2
+engine never imports this package, and the legacy V1 loader does not discover
+it. Every contract detail lives on the block classes themselves.
 """
 
+from roboflow_workflows.execution_engine.v2.blocks.control import ContinueIfBlock
 from roboflow_workflows.execution_engine.v2.blocks.image import (
-    CROP_BLOCK_NAME,
-    CROP_CONTRACT,
-    CROP_REGIONS_AXIS,
-    HAS_BRIGHTNESS_BLOCK_NAME,
-    HAS_BRIGHTNESS_CONTRACT,
-    INVERT_BLOCK_NAME,
-    INVERT_CONTRACT,
-    MOSAIC_BLOCK_NAME,
-    MOSAIC_CONTRACT,
     CropBlock,
     HasBrightnessBlock,
     InvertBlock,
     MosaicBlock,
 )
 from roboflow_workflows.execution_engine.v2.blocks.kinds import (
-    BOOLEAN_KIND,
     CROP_SUMMARY_KIND,
     IMAGE_KIND,
-    INTEGER_KIND,
-    is_boolean_payload,
-    is_crop_summary_payload,
-    is_image_payload,
-    is_integer_payload,
 )
-from roboflow_workflows.execution_engine.v2.blocks.registry import (
-    NATIVE_BLOCK_NAMES,
-    NATIVE_KIND_NAMES,
-    native_registry,
-)
+from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
+
+
+def create_catalogue() -> Catalogue:
+    """Collect the native image blocks and their media kinds.
+
+    Returns:
+        Immutable catalogue with ``v2/crop``, ``v2/invert``, ``v2/mosaic``,
+        ``v2/has_brightness`` and ``v2/continue_if``, the ``image`` and
+        ``crop_summary`` kinds, and the built-in kinds these blocks use.
+    """
+    catalogue = Catalogue(
+        [CropBlock, InvertBlock, MosaicBlock, HasBrightnessBlock, ContinueIfBlock],
+        kinds=[IMAGE_KIND, CROP_SUMMARY_KIND],
+    )
+
+    return catalogue
+
+
+WORKFLOWS_V2_CATALOGUE = create_catalogue
 
 __all__ = [
-    "BOOLEAN_KIND",
-    "CROP_BLOCK_NAME",
-    "CROP_CONTRACT",
-    "CROP_REGIONS_AXIS",
     "CROP_SUMMARY_KIND",
+    "ContinueIfBlock",
     "CropBlock",
-    "HAS_BRIGHTNESS_BLOCK_NAME",
-    "HAS_BRIGHTNESS_CONTRACT",
     "HasBrightnessBlock",
     "IMAGE_KIND",
-    "INTEGER_KIND",
-    "INVERT_BLOCK_NAME",
-    "INVERT_CONTRACT",
     "InvertBlock",
-    "MOSAIC_BLOCK_NAME",
-    "MOSAIC_CONTRACT",
     "MosaicBlock",
-    "NATIVE_BLOCK_NAMES",
-    "NATIVE_KIND_NAMES",
-    "is_boolean_payload",
-    "is_crop_summary_payload",
-    "is_image_payload",
-    "is_integer_payload",
-    "native_registry",
+    "WORKFLOWS_V2_CATALOGUE",
+    "create_catalogue",
 ]

@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "x"}],
+  "steps": [
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "leaf",
+      "workflow_workspace_id": "local",
+      "workflow_id": "leaf",
+      "parameter_bindings": {"x": "$inputs.x"}
+    }
+  ],
+  "outputs": [{"type": "JsonField", "name": "y", "selector": "$steps.leaf.y"}]
+}

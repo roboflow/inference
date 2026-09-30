@@ -4,60 +4,31 @@
     {
       "name": "values",
       "kind": "number",
-      "axes": [
-        {
-          "id": "samples",
-          "kind": "sample",
-          "stationary": true
-        }
-      ]
+      "axes": [{"id": "samples", "kind": "sample", "stationary": true}]
     }
   ],
   "steps": [
     {
       "name": "expand_a",
       "type": "demo/expand",
-      "inputs": {
-        "value": "$inputs.values"
-      },
-      "config": {
-        "offsets": [
-          1,
-          2
-        ],
-        "limit": 31
-      }
+      "value": "$inputs.values",
+      "offsets": [1, 2],
+      "limit": 31
     },
     {
       "name": "expand_b",
       "type": "demo/expand",
-      "inputs": {
-        "value": "$inputs.values"
-      },
-      "config": {
-        "offsets": [
-          1,
-          2
-        ],
-        "limit": 31
-      }
+      "value": "$inputs.values",
+      "offsets": [1, 2],
+      "limit": 31
     },
     {
       "name": "reduce",
       "type": "demo/sum_with_parent",
-      "inputs": {
-        "parent": "$steps.expand_a.children",
-        "children": "$steps.expand_b.children"
-      },
-      "config": {
-        "parent_weight": 1
-      }
+      "parent": "$steps.expand_a.children",
+      "children": "$steps.expand_b.children",
+      "parent_weight": 1
     }
   ],
-  "outputs": [
-    {
-      "name": "out",
-      "selector": "$steps.reduce.total"
-    }
-  ]
+  "outputs": [{"type": "JsonField", "name": "out", "selector": "$steps.reduce.total"}]
 }

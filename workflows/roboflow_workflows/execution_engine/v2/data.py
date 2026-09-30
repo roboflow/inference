@@ -56,8 +56,6 @@ SOURCE_TYPE_STATIC = "static"
 
 T = TypeVar("T")
 
-_EMPTY_MAPPING: Mapping[Any, Any] = MappingProxyType({})
-
 
 def _validate_index(value: Any, *, what: str) -> Index:
     if not isinstance(value, tuple):
@@ -388,7 +386,7 @@ class SampleContext:
 
     source_id: str
     source_type: str = SOURCE_TYPE_STATIC
-    source_metadata: Mapping[str, Any] = field(default=_EMPTY_MAPPING, hash=False)
+    source_metadata: Mapping[str, Any] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         _validate_non_empty_string(self.source_id, what="SampleContext source_id")
@@ -456,10 +454,10 @@ class EntryMetadata:
     """
 
     sample: Mapping[Index, Optional[SampleContext]] = field(
-        default=_EMPTY_MAPPING, hash=False
+        default_factory=dict, hash=False
     )
     temporal: Mapping[Index, Optional[TemporalContext]] = field(
-        default=_EMPTY_MAPPING, hash=False
+        default_factory=dict, hash=False
     )
 
     def __post_init__(self) -> None:
@@ -529,18 +527,20 @@ class Batch(Generic[T]):
     batches (nested grouping). Membership and indices cannot change after
     construction; the payload objects themselves stay plugin-owned.
 
-    Indices are full logical paths: every index equals ``parent_index`` plus
-    one trailing component. Blocks constructing a batch directly get local
-    one-component indices by default; engine-built groups carry full paths and
-    an attached read-only ``layout``/``metadata`` view. A batch knows its
-    ``parent_index`` even when it has no children, so an empty nested group
-    still identifies its parent.
+    Indices are full logical paths extending ``parent_index``. A group has
+    exactly one trailing component per index. The engine may also deliver a
+    flat view over a deeper domain, e.g. one vectorized call over indices
+    ``(0, 0), (0, 1), (1, 0)``; all indices of one batch then share one depth.
+    Blocks constructing a batch directly get local one-component indices by
+    default; engine-built batches carry full paths and an attached read-only
+    ``layout``/``metadata`` view. A batch knows its ``parent_index`` even when
+    it has no children, so an empty nested group still identifies its parent.
 
     Args:
         content: Payloads or nested batches. Strings, bytes and mappings are
             rejected because they are never implicit groups.
-        indices: Full logical index per element. Defaults to
-            ``parent_index + (position,)``.
+        indices: Full logical index per element, all of one depth greater
+            than ``parent_index``. Defaults to ``parent_index + (position,)``.
         layout: Read-only layout view attached by the engine, if any.
         metadata: Read-only metadata view attached by the engine, if any.
         parent_index: Logical index of the group's parent; ``()`` at the root.
@@ -618,8 +618,17 @@ class Batch(Generic[T]):
 
         Returns:
             A batch with local one-component indices.
+
+        Raises:
+            ContractError: When an explicit index has more than one component.
         """
         batch = cls(content, indices=indices)
+        for index in batch.indices:
+            if len(index) != 1:
+                raise ContractError(
+                    f"Batch.of index {index!r} must have 1 component; "
+                    "local indices are one-component tuples such as (0,)"
+                )
 
         return batch
 
@@ -749,16 +758,24 @@ def _validate_batch_indices(
             f"Batch has {expected_count} elements but {len(stored_indices)} indices"
         )
 
-    expected_depth = len(parent_index) + 1
+    minimal_depth = len(parent_index) + 1
+    shared_depth = None
     seen = set()
     for index in stored_indices:
         validated_index = _validate_index(index, what="Batch index")
-        if len(validated_index) != expected_depth:
+        if len(validated_index) < minimal_depth:
             raise ContractError(
-                f"Batch index {validated_index!r} must have {expected_depth} "
+                f"Batch index {validated_index!r} must have at least {minimal_depth} "
                 f"component(s) under parent {parent_index!r}"
             )
-        if validated_index[:-1] != parent_index:
+        if shared_depth is None:
+            shared_depth = len(validated_index)
+        if len(validated_index) != shared_depth:
+            raise ContractError(
+                f"Batch indices must share one depth, got {stored_indices[0]!r} "
+                f"and {validated_index!r}"
+            )
+        if validated_index[: len(parent_index)] != parent_index:
             raise ContractError(
                 f"Batch index {validated_index!r} does not extend parent index "
                 f"{parent_index!r}"
@@ -822,6 +839,11 @@ def _collect_positions(
         )
 
     for index, element in data.iter_with_indices():
+        if len(index) != len(path) + 1:
+            raise ContractError(
+                f"Batch at logical index {path!r} holds index {index!r}; an entry "
+                "group adds exactly one component per nesting level"
+            )
         positions.add(index)
         _collect_positions(
             element,
@@ -924,9 +946,9 @@ class WorkflowsBuffer:
 
     lineage_id: str
     pulse_id: int
-    data: Mapping[str, Any] = field(default=_EMPTY_MAPPING, hash=False)
-    layout: Mapping[str, EntryLayout] = field(default=_EMPTY_MAPPING, hash=False)
-    metadata: Mapping[str, EntryMetadata] = field(default=_EMPTY_MAPPING, hash=False)
+    data: Mapping[str, Any] = field(default_factory=dict, hash=False)
+    layout: Mapping[str, EntryLayout] = field(default_factory=dict, hash=False)
+    metadata: Mapping[str, EntryMetadata] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         _validate_non_empty_string(self.lineage_id, what="WorkflowsBuffer lineage_id")

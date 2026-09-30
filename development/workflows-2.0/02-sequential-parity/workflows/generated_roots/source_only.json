@@ -1,0 +1,8 @@
+{
+  "version": "2.0",
+  "inputs": [],
+  "steps": [{"type": "capability/generate@v1", "name": "source", "values": [10, 20]}],
+  "outputs": [
+    {"type": "JsonField", "name": "generated", "selector": "$steps.source.value"}
+  ]
+}

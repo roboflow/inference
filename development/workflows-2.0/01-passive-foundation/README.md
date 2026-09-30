@@ -16,9 +16,9 @@ Expect 45 `[PASS]` lines, no `[FAIL]`, and exit code 0. Run one example with
 
 | Scenario | What it exercises | Outputs to inspect |
 | --- | --- | --- |
-| `nested` | Ragged crops `[2,0,1]`, per-crop inversion, per-image and all-image mosaics | `nested/result.json`, `nested/outputs/*.png` |
-| `filtered` | Partial, empty and fully filtered groups using a `when` gate | `filtered/result.json`, `filtered/outputs/mosaic_*.png` |
-| `invalid-bindings` | Invalid workflow definitions and incorrect block results | `invalid-bindings/cases.json` |
+| `nested` | Ragged crops `[2,0,1]`, per-crop inversion, per-image and all-image mosaics; one ungrouped image cast into a one-image mosaic | `nested/result.json`, `nested/outputs/*.png` |
+| `filtered` | Partial, empty and fully filtered groups using a `v2/continue_if` gate step | `filtered/result.json`, `filtered/outputs/mosaic_*.png` |
+| `invalid-bindings` | Invalid definitions, each rejected with its expected error class, and incorrect block results | `invalid-bindings/cases.json` |
 | `author-block` | Custom blocks at several nesting depths; engine results compared with direct calls | `author-block/comparison.json`, `author-block/result_*.json` |
 | `metadata-cost` | Inherited versus per-leaf metadata measurements | `metadata-cost/metadata_cost.json` |
 
@@ -31,7 +31,14 @@ In `filtered`, image 1 has no crops and produces a blank mosaic. Image 2 has
 crops removed by its gate, so its downstream mosaic is absent. This exposes the
 difference between an empty group and a filtered group.
 
+Steps use flat parameters: a literal, a default or a selector in the same
+field. The gate in [filtered.json](workflows/filtered.json) is an ordinary
+`v2/continue_if` step with `next_steps`. A mosaic bound to a single ungrouped
+image is now valid (the image is cast into a one-image group), so that former
+invalid case became a check in `nested`.
+
 To change the examples, edit the [workflow definitions](workflows/) or inspect
-[author_blocks.py](author_blocks.py) for custom block declarations.
+[author_blocks.py](author_blocks.py): each block is one class with nested
+`Params`, and the shared call counter is a constructor resource.
 [run_demo.py](run_demo.py) provides the CLI; [scenarios.py](scenarios.py)
 assembles the cases and [fixtures.py](fixtures.py) creates their inputs.

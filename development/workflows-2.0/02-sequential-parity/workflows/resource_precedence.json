@@ -1,0 +1,6 @@
+{
+  "version": "2.0",
+  "inputs": [],
+  "steps": [{"type": "capability/greeting@v1", "name": "greet"}],
+  "outputs": [{"type": "JsonField", "name": "text", "selector": "$steps.greet.text"}]
+}

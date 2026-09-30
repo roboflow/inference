@@ -4,45 +4,17 @@
     {
       "name": "images",
       "kind": "image",
-      "axes": [
-        {
-          "id": "samples",
-          "kind": "sample",
-          "stationary": true
-        }
-      ]
+      "axes": [{"id": "samples", "kind": "sample", "stationary": true}]
     }
   ],
   "steps": [
     {
       "name": "crop",
       "type": "v2/crop",
-      "inputs": {
-        "image": "$inputs.images"
-      },
-      "config": {
-        "regions": [
-          [
-            40,
-            40,
-            100,
-            100
-          ],
-          [
-            120,
-            10,
-            180,
-            70
-          ]
-        ]
-      }
+      "image": "$inputs.images",
+      "regions": [[40, 40, 100, 100], [120, 10, 180, 70]]
     }
   ],
-  "outputs": [
-    {
-      "name": "out",
-      "selector": "$steps.crop.crops"
-    }
-  ],
+  "outputs": [{"type": "JsonField", "name": "out", "selector": "$steps.crop.crops"}],
   "sources": []
 }

@@ -11,35 +11,35 @@
     {
       "name": "crop",
       "type": "v2/crop",
-      "inputs": {"image": "$inputs.images"},
-      "config": {"regions": [[40, 40, 100, 100], [120, 10, 180, 70]]}
+      "image": "$inputs.images",
+      "regions": [[40, 40, 100, 100], [120, 10, 180, 70]]
     },
-    {
-      "name": "invert",
-      "type": "v2/invert",
-      "inputs": {"image": "$steps.crop.crops"},
-      "config": {}
-    },
+    {"name": "invert", "type": "v2/invert", "image": "$steps.crop.crops"},
     {
       "name": "mosaic",
       "type": "v2/mosaic",
-      "inputs": {"images": "$steps.invert.image"},
-      "config": {"tile_size": 48, "background": 128}
+      "images": "$steps.invert.image",
+      "tile_size": 48,
+      "background": 128
     },
     {
       "name": "mosaic_all",
       "type": "v2/mosaic",
-      "inputs": {"images": "$inputs.images"},
-      "config": {"tile_size": 96}
+      "images": "$inputs.images",
+      "tile_size": 96
     }
   ],
   "outputs": [
-    {"name": "crops", "selector": "$steps.crop.crops"},
-    {"name": "summary", "selector": "$steps.crop.summary"},
-    {"name": "inverted", "selector": "$steps.invert.image"},
-    {"name": "mosaic", "selector": "$steps.mosaic.image"},
-    {"name": "mosaic_count", "selector": "$steps.mosaic.count"},
-    {"name": "mosaic_all", "selector": "$steps.mosaic_all.image"},
-    {"name": "mosaic_all_count", "selector": "$steps.mosaic_all.count"}
+    {"type": "JsonField", "name": "crops", "selector": "$steps.crop.crops"},
+    {"type": "JsonField", "name": "summary", "selector": "$steps.crop.summary"},
+    {"type": "JsonField", "name": "inverted", "selector": "$steps.invert.image"},
+    {"type": "JsonField", "name": "mosaic", "selector": "$steps.mosaic.image"},
+    {"type": "JsonField", "name": "mosaic_count", "selector": "$steps.mosaic.count"},
+    {"type": "JsonField", "name": "mosaic_all", "selector": "$steps.mosaic_all.image"},
+    {
+      "type": "JsonField",
+      "name": "mosaic_all_count",
+      "selector": "$steps.mosaic_all.count"
+    }
   ]
 }

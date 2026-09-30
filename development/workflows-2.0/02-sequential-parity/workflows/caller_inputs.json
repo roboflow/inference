@@ -1,0 +1,26 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowBatchInput", "name": "a", "kind": ["float"]},
+    {"type": "WorkflowBatchInput", "name": "b", "kind": ["float"]},
+    {"type": "WorkflowParameter", "name": "f", "default_value": 10}
+  ],
+  "steps": [
+    {
+      "type": "fixture/scale@v1",
+      "name": "scale",
+      "value": "$inputs.a",
+      "factor": "$inputs.b"
+    },
+    {
+      "type": "fixture/scale@v1",
+      "name": "offset",
+      "value": "$inputs.a",
+      "factor": "$inputs.f"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "scaled", "selector": "$steps.scale.scaled"},
+    {"type": "JsonField", "name": "offset", "selector": "$steps.offset.scaled"}
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "model", "kind": ["string"]}],
+  "steps": [
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "default_model",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [
+          {
+            "type": "WorkflowParameter",
+            "name": "model",
+            "kind": ["string"],
+            "default_value": "small-model"
+          }
+        ],
+        "steps": [
+          {"type": "plugin/load_model@v1", "name": "load", "model_id": "$inputs.model"}
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "model", "selector": "$steps.load.model"}
+        ]
+      }
+    },
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "literal_model",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [
+          {
+            "type": "WorkflowParameter",
+            "name": "model",
+            "kind": ["string"],
+            "default_value": "small-model"
+          }
+        ],
+        "steps": [
+          {"type": "plugin/load_model@v1", "name": "load", "model_id": "$inputs.model"}
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "model", "selector": "$steps.load.model"}
+        ]
+      },
+      "parameter_bindings": {"model": "large-model"}
+    },
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "selected_model",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [
+          {
+            "type": "WorkflowParameter",
+            "name": "model",
+            "kind": ["string"],
+            "default_value": "small-model"
+          }
+        ],
+        "steps": [
+          {"type": "plugin/load_model@v1", "name": "load", "model_id": "$inputs.model"}
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "model", "selector": "$steps.load.model"}
+        ]
+      },
+      "parameter_bindings": {"model": "$inputs.model"}
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "default_model",
+      "selector": "$steps.default_model.model"
+    },
+    {
+      "type": "JsonField",
+      "name": "literal_model",
+      "selector": "$steps.literal_model.model"
+    },
+    {
+      "type": "JsonField",
+      "name": "selected_model",
+      "selector": "$steps.selected_model.model"
+    }
+  ]
+}

@@ -4,45 +4,20 @@
     {
       "name": "values",
       "kind": "number",
-      "axes": [
-        {
-          "id": "samples",
-          "kind": "sample",
-          "stationary": true
-        }
-      ]
+      "axes": [{"id": "samples", "kind": "sample", "stationary": true}]
     }
   ],
   "steps": [
     {
       "name": "broken",
       "type": "demo/broken",
-      "inputs": {
-        "value": "$inputs.values"
-      },
-      "config": {
-        "mode": "empty_mapping"
-      }
+      "value": "$inputs.values",
+      "mode": "empty_mapping"
     },
-    {
-      "name": "scale",
-      "type": "demo/scale",
-      "inputs": {
-        "value": "$inputs.values"
-      },
-      "config": {
-        "factor": 2
-      }
-    }
+    {"name": "scale", "type": "demo/scale", "value": "$inputs.values", "factor": 2}
   ],
   "outputs": [
-    {
-      "name": "out",
-      "selector": "$steps.broken.value"
-    },
-    {
-      "name": "sibling",
-      "selector": "$steps.scale.scaled"
-    }
+    {"type": "JsonField", "name": "out", "selector": "$steps.broken.value"},
+    {"type": "JsonField", "name": "sibling", "selector": "$steps.scale.scaled"}
   ]
 }

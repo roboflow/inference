@@ -474,12 +474,29 @@ def test_batch_rejects_malformed_indices() -> None:
 
 
 def test_batch_rejects_indices_not_extending_parent() -> None:
-    with pytest.raises(ContractError, match="must have 2 component"):
+    with pytest.raises(ContractError, match="must have at least 2 component"):
         Batch(["a"], indices=[(0,)], parent_index=(1,))
     with pytest.raises(ContractError, match="does not extend parent index"):
         Batch(["a"], indices=[(0, 0)], parent_index=(1,))
     with pytest.raises(ContractError, match="must have 1 component"):
         Batch.of(["a"], indices=[(0, 0)])
+
+
+def test_flat_batch_view_over_a_deeper_domain_keeps_full_indices() -> None:
+    view = Batch(["a", "b", "c"], indices=[(0, 0), (0, 1), (2, 0)])
+
+    assert view.parent_index == ()
+    assert view.indices == ((0, 0), (0, 1), (2, 0))
+    with pytest.raises(ContractError, match="share one depth"):
+        Batch(["a", "b"], indices=[(0, 0), (1,)])
+
+
+def test_validate_entry_rejects_flat_view_as_entry_group() -> None:
+    layout = EntryLayout(axes=(Axis(id="samples", kind="sample"),))
+    flat = Batch(["a"], indices=[(0, 0)])
+
+    with pytest.raises(ContractError, match="exactly one component"):
+        validate_entry(flat, layout=layout, metadata=EntryMetadata())
 
 
 def test_batch_rejects_duplicate_indices() -> None:
@@ -927,3 +944,21 @@ def test_source_metadata_snapshots_nested_proxy_backing_and_children() -> None:
     assert dict(nested) == {"regions": (1, 2)}
     with pytest.raises(TypeError):
         nested["other"] = "mutation"
+
+
+def test_default_context_and_buffer_mappings_are_read_only() -> None:
+    source = SampleContext(source_id="camera")
+    metadata = EntryMetadata()
+    buffer = WorkflowsBuffer(lineage_id="lineage", pulse_id=0)
+
+    for mapping in (
+        source.source_metadata,
+        metadata.sample,
+        metadata.temporal,
+        buffer.data,
+        buffer.layout,
+        buffer.metadata,
+    ):
+        assert dict(mapping) == {}
+        with pytest.raises(TypeError):
+            mapping["new"] = "value"

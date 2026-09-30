@@ -1,0 +1,11 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "image", "kind": ["image"]}],
+  "steps": [
+    {"name": "mosaic", "type": "v2/mosaic", "images": "$inputs.image", "tile_size": 32}
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "mosaic", "selector": "$steps.mosaic.image"},
+    {"type": "JsonField", "name": "count", "selector": "$steps.mosaic.count"}
+  ]
+}

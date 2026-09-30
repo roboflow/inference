@@ -1,47 +1,37 @@
-"""Author exercise: ordinary numeric V2 blocks written without engine internals.
+"""Author exercise: ordinary numeric V2 blocks written as single classes.
 
-This module shows what a block author writes. It imports only the public V2
-package surface (``Batch``, ``BlockContract``, ``InputSpec``, ``OutputSpec``,
-``Registry``) and never the compiler, executor or buffer carrier.
+Each block class declares its identity, ``Params``, outputs and resources.
+Nothing is registered separately; ``create_author_catalogue`` only lists the
+classes. All payloads are plain Python numbers of kind ``number``.
 
-Blocks (all payloads are plain Python numbers of kind ``number``):
+* ``demo/scale``: ``scaled = value * factor``. ``factor`` may be a literal or
+  a selector. Works unchanged at any nesting depth.
+* ``demo/expand``: emits ``value + offset`` per offset, omitting children above
+  ``limit`` while keeping the offset's local index (a sparse ``Batch``).
+* ``demo/sum_with_parent``: receives one parent and the group of its children;
+  returns ``total`` and ``count`` at the parent level. An empty group returns
+  ``parent * parent_weight`` and count 0.
+* ``demo/broken``: violates its declaration in a configured way, for the
+  ``invalid-bindings`` scenario.
 
-* ``demo/scale``: leaf. ``scaled = value * factor``. Works unchanged at any
-  nesting depth because it declares an ``item`` view.
-* ``demo/expand``: expander. Emits ``value + offset`` for each configured
-  offset, omitting children above ``limit`` while keeping the offset's local
-  index. Declares an appended dynamic axis ``children``.
-* ``demo/sum_with_parent``: parent+child reducer. Receives one parent item and
-  the trailing group of children; returns ``total`` and ``count`` collapsed to
-  the parent level. An empty child group returns ``parent * parent_weight``
-  and count 0.
-* ``demo/broken``: deliberately misbehaving leaf used by the
-  ``invalid-bindings`` scenario to show runtime diagnostics.
-
-``register_author_blocks`` adds them to any registry and returns a call
-counter so the demo can prove that invalid definitions fail before any
-``run()`` call.
+Every block receives the shared ``counter`` resource in its constructor, so
+the demo can prove that invalid definitions fail before any ``run()`` call.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Mapping
 
-from roboflow_workflows.execution_engine.v2 import (
-    Batch,
-    BlockContract,
-    InputSpec,
-    OutputSpec,
-    Registry,
+from pydantic import Field
+from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
+from roboflow_workflows.execution_engine.v2.data import Batch
+from roboflow_workflows.execution_engine.v2.declaration import (
+    Block,
+    BlockParams,
+    Group,
+    Output,
+    Ref,
 )
-
-NUMBER_KIND = "number"
-
-SCALE_BLOCK = "demo/scale"
-EXPAND_BLOCK = "demo/expand"
-SUM_WITH_PARENT_BLOCK = "demo/sum_with_parent"
-BROKEN_BLOCK = "demo/broken"
-
-BROKEN_MODES = ("empty_mapping", "missing_output", "raise", "wrong_kind")
+from roboflow_workflows.execution_engine.v2.kinds import Kind
 
 
 def is_number(payload: Any) -> bool:
@@ -58,19 +48,22 @@ def is_number(payload: Any) -> bool:
     return accepted
 
 
+NUMBER_KIND = Kind(name="number", description="Plain int or float.", validate=is_number)
+
+
 @dataclass
 class CallCounter:
-    """Counts ``run()`` invocations per block name."""
+    """Counts ``run()`` invocations per block type."""
 
     runs: Dict[str, int] = field(default_factory=dict)
 
-    def record(self, block_name: str) -> None:
-        """Increment the counter for ``block_name``.
+    def record(self, block_type: str) -> None:
+        """Increment the counter for ``block_type``.
 
         Args:
-            block_name: Registered block type name.
+            block_type: Block type identity.
         """
-        self.runs[block_name] = self.runs.get(block_name, 0) + 1
+        self.runs[block_type] = self.runs.get(block_type, 0) + 1
 
     @property
     def total(self) -> int:
@@ -78,228 +71,128 @@ class CallCounter:
         return sum(self.runs.values())
 
 
-class ScaleBlock:
-    """Multiply one number by a configured factor."""
+class ScaleBlock(Block):
+    """Multiply one number by ``factor``."""
 
-    contract = BlockContract(
-        reference="value",
-        inputs={"value": InputSpec(kind=NUMBER_KIND, view="item")},
-        outputs={"scaled": OutputSpec(kind=NUMBER_KIND, transform="preserve")},
-    )
+    type = "demo/scale"
+    outputs = {"scaled": Output(NUMBER_KIND)}
 
-    def __init__(self, *, factor: float, counter: CallCounter):
-        self._factor = factor
+    class Params(BlockParams):
+        value: Ref(NUMBER_KIND) = Field(description="Number to scale.")
+        factor: float | Ref(NUMBER_KIND) = Field(description="Multiplier.")
+
+    def __init__(self, *, counter: CallCounter):
         self._counter = counter
 
-    def run(self, *, value: float) -> Mapping[str, Any]:
-        """Scale ``value``.
-
-        Args:
-            value: Input number.
-
-        Returns:
-            Mapping with ``scaled``.
-        """
-        self._counter.record(SCALE_BLOCK)
-        result = {"scaled": value * self._factor}
+    def run(self, *, value: float, factor: float) -> Mapping[str, Any]:
+        self._counter.record(self.type)
+        result = {"scaled": value * factor}
 
         return result
 
 
-class ExpandBlock:
+class ExpandBlock(Block):
     """Emit ``value + offset`` children, omitting those above ``limit``."""
 
-    contract = BlockContract(
-        reference="value",
-        inputs={"value": InputSpec(kind=NUMBER_KIND, view="item")},
-        outputs={
-            "children": OutputSpec(
-                kind=NUMBER_KIND, transform="append", axis="children"
-            )
-        },
-    )
+    type = "demo/expand"
+    outputs = {"children": Output(NUMBER_KIND, expand="children")}
 
-    def __init__(self, *, offsets: Sequence[float], limit: float, counter: CallCounter):
-        self._offsets = tuple(offsets)
-        self._limit = limit
+    class Params(BlockParams):
+        value: Ref(NUMBER_KIND) = Field(description="Parent number.")
+        offsets: List[float] = Field(description="Offsets added to the parent.")
+        limit: float = Field(description="Children above this value are omitted.")
+
+    def __init__(self, *, counter: CallCounter):
         self._counter = counter
 
-    def run(self, *, value: float) -> Mapping[str, Any]:
-        """Expand ``value`` into its children.
+    def run(
+        self, *, value: float, offsets: List[float], limit: float
+    ) -> Mapping[str, Any]:
+        self._counter.record(self.type)
+        kept = [
+            (position, value + offset)
+            for position, offset in enumerate(offsets)
+            if value + offset <= limit
+        ]
+        children = Batch.of(
+            [child for _, child in kept],
+            indices=[(position,) for position, _ in kept],
+        )
 
-        Args:
-            value: Parent number.
-
-        Returns:
-            Mapping with ``children``: a ``Batch`` whose local indices are the
-            positions of the surviving offsets (possibly sparse or empty).
-        """
-        self._counter.record(EXPAND_BLOCK)
-        children: List[float] = []
-        indices: List[Tuple[int, ...]] = []
-        for position, offset in enumerate(self._offsets):
-            child = value + offset
-            if child > self._limit:
-                continue
-            children.append(child)
-            indices.append((position,))
-
-        result = {"children": Batch.of(children, indices=indices)}
-
-        return result
+        return {"children": children}
 
 
-class SumWithParentBlock:
-    """Reduce a child group next to its parent item."""
+class SumWithParentBlock(Block):
+    """Reduce a group of children next to its parent."""
 
-    contract = BlockContract(
-        reference="children",
-        inputs={
-            "parent": InputSpec(kind=NUMBER_KIND, view="item"),
-            "children": InputSpec(kind=NUMBER_KIND, view="batch"),
-        },
-        outputs={
-            "total": OutputSpec(kind=NUMBER_KIND, transform="collapse"),
-            "count": OutputSpec(kind=NUMBER_KIND, transform="collapse"),
-        },
-    )
+    type = "demo/sum_with_parent"
+    outputs = {"total": Output(NUMBER_KIND), "count": Output(NUMBER_KIND)}
 
-    def __init__(self, *, parent_weight: float, counter: CallCounter):
-        self._parent_weight = parent_weight
+    class Params(BlockParams):
+        parent: Ref(NUMBER_KIND) = Field(description="Parent number.")
+        children: Group(NUMBER_KIND) = Field(description="Children of the parent.")
+        parent_weight: float = Field(default=1, description="Weight of the parent.")
+
+    def __init__(self, *, counter: CallCounter):
         self._counter = counter
 
-    def run(self, *, parent: float, children: Iterable[float]) -> Mapping[str, Any]:
-        """Sum ``children`` and add the weighted ``parent``.
-
-        Args:
-            parent: The parent item the group belongs to.
-            children: Trailing-axis group of child numbers; may be empty.
-
-        Returns:
-            Mapping with ``total`` and ``count``.
-        """
-        self._counter.record(SUM_WITH_PARENT_BLOCK)
+    def run(
+        self, *, parent: float, children: Batch, parent_weight: float
+    ) -> Mapping[str, Any]:
+        self._counter.record(self.type)
         child_values = list(children)
-        total = parent * self._parent_weight + sum(child_values)
-        result = {"total": total, "count": len(child_values)}
+        result = {
+            "total": parent * parent_weight + sum(child_values),
+            "count": len(child_values),
+        }
 
         return result
 
 
-class BrokenBlock:
-    """Leaf that violates the result contract in a configured way."""
+class BrokenBlock(Block):
+    """Violate the declared result in a configured way, or raise."""
 
-    contract = BlockContract(
-        reference="value",
-        inputs={"value": InputSpec(kind=NUMBER_KIND, view="item")},
-        outputs={"value": OutputSpec(kind=NUMBER_KIND, transform="preserve")},
-    )
+    type = "demo/broken"
+    outputs = {"value": Output(NUMBER_KIND)}
 
-    def __init__(self, *, mode: str, counter: CallCounter):
-        self._mode = mode
+    class Params(BlockParams):
+        value: Ref(NUMBER_KIND) = Field(description="Input number (ignored).")
+        mode: Literal["empty_mapping", "missing_output", "raise", "wrong_kind"] = Field(
+            description="How to misbehave."
+        )
+
+    def __init__(self, *, counter: CallCounter):
         self._counter = counter
 
-    def run(self, *, value: float) -> Mapping[str, Any]:
-        """Return an invalid result or raise, depending on ``mode``.
-
-        Args:
-            value: Input number (ignored).
-
-        Returns:
-            An invalid mapping for ``empty_mapping``, ``missing_output`` and
-            ``wrong_kind``.
-
-        Raises:
-            RuntimeError: In ``raise`` mode.
-        """
-        self._counter.record(BROKEN_BLOCK)
-        if self._mode == "raise":
+    def run(self, *, value: float, mode: str) -> Mapping[str, Any]:
+        self._counter.record(self.type)
+        if mode == "raise":
             raise RuntimeError("deliberate failure inside demo/broken")
-        if self._mode == "empty_mapping":
+        if mode == "empty_mapping":
             return {}
-        if self._mode == "missing_output":
+        if mode == "missing_output":
             return {"unexpected": value}
 
-        result = {"value": "not a number"}
-
-        return result
+        return {"value": "not a number"}
 
 
-def _require_number(
-    config: Mapping[str, Any], key: str, *, block: str, default: Any = None
-) -> float:
-    if key not in config:
-        if default is None:
-            raise ValueError(f"{block} requires config key '{key}'")
-        return default
-
-    value = config[key]
-    if not is_number(value):
-        raise ValueError(f"{block} config '{key}' must be a number, got {value!r}")
-
-    return value
+AUTHOR_BLOCKS = (ScaleBlock, ExpandBlock, SumWithParentBlock, BrokenBlock)
 
 
-def register_author_blocks(registry: Registry) -> CallCounter:
-    """Register the numeric author blocks on ``registry``.
+def create_author_catalogue(counter: CallCounter) -> Catalogue:
+    """List the author blocks and share one call counter between them.
 
     Args:
-        registry: Any mutable V2 registry, for example ``native_registry()``
-            or a fresh ``Registry()``.
+        counter: Resource passed unchanged to every author block constructor.
 
     Returns:
-        Counter incremented on every ``run()`` of these blocks.
+        Catalogue in namespace ``demo`` with the ``number`` kind.
     """
-    counter = CallCounter()
-
-    def scale_factory(config: Mapping[str, Any]) -> ScaleBlock:
-        factor = _require_number(config, "factor", block=SCALE_BLOCK)
-        block = ScaleBlock(factor=factor, counter=counter)
-
-        return block
-
-    def expand_factory(config: Mapping[str, Any]) -> ExpandBlock:
-        offsets = config.get("offsets")
-        if not isinstance(offsets, list) or not all(is_number(o) for o in offsets):
-            raise ValueError(
-                f"{EXPAND_BLOCK} config 'offsets' must be a list of numbers"
-            )
-        limit = _require_number(config, "limit", block=EXPAND_BLOCK)
-        block = ExpandBlock(offsets=offsets, limit=limit, counter=counter)
-
-        return block
-
-    def sum_factory(config: Mapping[str, Any]) -> SumWithParentBlock:
-        parent_weight = _require_number(
-            config, "parent_weight", block=SUM_WITH_PARENT_BLOCK, default=1
-        )
-        block = SumWithParentBlock(parent_weight=parent_weight, counter=counter)
-
-        return block
-
-    def broken_factory(config: Mapping[str, Any]) -> BrokenBlock:
-        mode = config.get("mode")
-        if mode not in BROKEN_MODES:
-            raise ValueError(
-                f"{BROKEN_BLOCK} config 'mode' must be one of {list(BROKEN_MODES)}, "
-                f"got {mode!r}"
-            )
-        block = BrokenBlock(mode=mode, counter=counter)
-
-        return block
-
-    registry.register_kind(NUMBER_KIND, validator=is_number)
-    registry.register_block(
-        SCALE_BLOCK, contract=ScaleBlock.contract, factory=scale_factory
-    )
-    registry.register_block(
-        EXPAND_BLOCK, contract=ExpandBlock.contract, factory=expand_factory
-    )
-    registry.register_block(
-        SUM_WITH_PARENT_BLOCK, contract=SumWithParentBlock.contract, factory=sum_factory
-    )
-    registry.register_block(
-        BROKEN_BLOCK, contract=BrokenBlock.contract, factory=broken_factory
+    catalogue = Catalogue(
+        AUTHOR_BLOCKS,
+        kinds=[NUMBER_KIND],
+        namespace="demo",
+        providers={"counter": counter},
     )
 
-    return counter
+    return catalogue

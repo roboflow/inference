@@ -21,7 +21,7 @@ from fractions import Fraction
 from typing import List, Tuple
 
 import numpy as np
-from roboflow_workflows.execution_engine.v2 import (
+from roboflow_workflows.execution_engine.v2.data import (
     EntryMetadata,
     SampleContext,
     TemporalContext,

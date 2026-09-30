@@ -1,0 +1,16 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowBatchInput", "name": "items"},
+    {"type": "WorkflowParameter", "name": "fail_on", "default_value": -1}
+  ],
+  "steps": [
+    {
+      "type": "capability/context_probe@v1",
+      "name": "probe",
+      "value": "$inputs.items",
+      "fail_on": "$inputs.fail_on"
+    }
+  ],
+  "outputs": [{"type": "JsonField", "name": "seen", "selector": "$steps.probe.seen"}]
+}

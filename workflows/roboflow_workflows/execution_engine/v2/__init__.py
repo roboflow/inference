@@ -1,27 +1,27 @@
-"""Explicit entry point of the passive Workflows V2 execution engine.
+"""Opt-in sequential Workflows V2 engine and class-owned block API.
 
-Importing this package does not register anything with the legacy V1 engine,
-its block loader or ``REGISTERED_ENGINES``. Callers select V2 by importing
-``compile_workflow`` from here and by passing an explicit ``Registry``. The
-native image block catalogue lives in ``roboflow_workflows.execution_engine.v2.blocks``
-and is never imported by this generic core.
+Register block classes in a ``Catalogue``, compile a version ``2.0`` definition,
+then create an execution session. Compilation is structural; the session owns
+block instances and preserves their state across runs::
+
+    plan = compile_workflow(definition, catalogue=catalogue)
+    session = plan.create_session(resources=resources)
+    rows = session.run(inputs).rows()
+
+V1 defaults and discovery are unaffected. Native image blocks live in the
+separately imported ``v2.blocks`` catalogue; this generic entry point loads no
+image libraries, native block implementations or V1 engine.
 """
 
-from roboflow_workflows.execution_engine.v2.compiler import (
-    CompiledInput,
-    CompiledOutput,
-    CompiledPort,
-    CompiledStep,
-    CompiledWorkflow,
-    CompiledWorkflowOutput,
+from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
+from roboflow_workflows.execution_engine.v2.compilation import (
+    WorkflowReference,
     compile_workflow,
 )
-from roboflow_workflows.execution_engine.v2.contracts import (
-    BlockContract,
-    BlockRegistration,
-    InputSpec,
-    OutputSpec,
-    Registry,
+from roboflow_workflows.execution_engine.v2.context import (
+    ExecutionContext,
+    NoExecutionContextError,
+    get_execution_context,
 )
 from roboflow_workflows.execution_engine.v2.data import (
     Axis,
@@ -32,46 +32,77 @@ from roboflow_workflows.execution_engine.v2.data import (
     InputValue,
     SampleContext,
     TemporalContext,
-    Timestamp,
     TimeSpan,
+    Timestamp,
     WorkflowsBuffer,
     validate_entry,
+)
+from roboflow_workflows.execution_engine.v2.declaration import (
+    Block,
+    BlockParams,
+    DependentResource,
+    Group,
+    Output,
+    Ref,
+    Select,
+    StepRef,
+    Stop,
+    spec_of,
 )
 from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
     WorkflowCompileError,
     WorkflowExecutionError,
+    WorkflowInputError,
 )
-from roboflow_workflows.execution_engine.v2.executor import RunResult, execute_plan
+from roboflow_workflows.execution_engine.v2.kinds import Kind
+from roboflow_workflows.execution_engine.v2.plan import (
+    CompiledWorkflow,
+    CompileOptions,
+    ExecutionObserver,
+    ExecutionSession,
+    RunResult,
+)
+from roboflow_workflows.execution_engine.v2.resources import Factory
 
 __all__ = [
     "Axis",
     "Batch",
-    "BlockContract",
-    "BlockRegistration",
-    "CompiledInput",
-    "CompiledOutput",
-    "CompiledPort",
-    "CompiledStep",
+    "Block",
+    "BlockParams",
+    "Catalogue",
     "CompiledWorkflow",
-    "CompiledWorkflowOutput",
+    "CompileOptions",
     "ContractError",
+    "DependentResource",
     "EntryLayout",
     "EntryMetadata",
+    "ExecutionContext",
+    "ExecutionObserver",
+    "ExecutionSession",
+    "Factory",
+    "Group",
     "Index",
-    "InputSpec",
     "InputValue",
-    "OutputSpec",
-    "Registry",
+    "Kind",
+    "NoExecutionContextError",
+    "Output",
+    "Ref",
     "RunResult",
     "SampleContext",
+    "Select",
+    "StepRef",
+    "Stop",
     "TemporalContext",
     "TimeSpan",
     "Timestamp",
     "WorkflowCompileError",
     "WorkflowExecutionError",
+    "WorkflowInputError",
+    "WorkflowReference",
     "WorkflowsBuffer",
     "compile_workflow",
-    "execute_plan",
+    "get_execution_context",
+    "spec_of",
     "validate_entry",
 ]

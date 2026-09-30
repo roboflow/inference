@@ -1,40 +1,33 @@
-"""Payload kinds understood by the native V2 CPU image blocks.
+"""Media kinds owned by the native V2 CPU image catalogue.
 
-The generic V2 engine never inspects payload types. Every kind used by the
-native catalogue is declared here together with its validator, and the
-validators are registered on the explicit native registry only. Kind names
-are plain identifiers compared by the compiler; the validators run at the
-engine boundary when a payload enters or leaves a block.
+The generic V2 engine never inspects payloads. It calls the hooks of these
+``Kind`` objects at its boundaries: ``validate`` when a payload enters or leaves
+a block, ``deserialize`` for workflow input values and ``serialize`` for
+serialized output rows. Plain values (booleans, integers, floats, lists) use
+the engine's built-in kinds instead, so that every catalogue shares one kind
+object per name.
 
-Image payloads are NumPy ``uint8`` arrays with shape ``(height, width, 3)``
-in RGB channel order. Ownership of that convention stays in this plugin.
+Image payloads are NumPy ``uint8`` arrays with shape ``(height, width, 3)`` in
+RGB channel order. Serialized images use the V1 shape
+``{"type": "base64", "value": <PNG bytes in base64>}``; PNG keeps pixels exact.
 """
 
-from typing import Any, Mapping
+import base64
+import binascii
+from typing import Any, Dict, Mapping
 
+import cv2
 import numpy as np
-
-IMAGE_KIND = "image"
-BOOLEAN_KIND = "boolean"
-INTEGER_KIND = "integer"
-CROP_SUMMARY_KIND = "crop_summary"
+from roboflow_workflows.execution_engine.v2.errors import ContractError
+from roboflow_workflows.execution_engine.v2.kinds import Kind
 
 IMAGE_CHANNELS = 3
+SERIALIZED_IMAGE_TYPE = "base64"
 
 
-def is_image_payload(payload: Any) -> bool:
-    """Check that a payload is a non-empty RGB ``uint8`` NumPy image.
-
-    Args:
-        payload: Candidate payload supplied by the engine or a direct caller.
-
-    Returns:
-        True when the payload is a ``numpy.ndarray`` with dtype ``uint8``,
-        three dimensions, three channels and a positive height and width.
-    """
+def _is_image(payload: Any) -> bool:
     if not isinstance(payload, np.ndarray):
         return False
-
     if payload.dtype != np.uint8 or payload.ndim != 3:
         return False
 
@@ -44,54 +37,67 @@ def is_image_payload(payload: Any) -> bool:
     return valid
 
 
-def is_boolean_payload(payload: Any) -> bool:
-    """Check that a payload is an actual Python ``bool``.
+def _image_to_serialized(image: np.ndarray) -> Dict[str, str]:
+    bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    encoded, png = cv2.imencode(".png", bgr)
+    if not encoded:
+        raise ContractError(f"Cannot encode image of shape {image.shape} as PNG")
 
-    NumPy booleans and integers are rejected so that gate decisions produced by
-    native blocks are always plain ``bool`` values, as required by the engine.
+    serialized = {
+        "type": SERIALIZED_IMAGE_TYPE,
+        "value": base64.b64encode(png.tobytes()).decode("ascii"),
+    }
 
-    Args:
-        payload: Candidate payload.
-
-    Returns:
-        True only for ``True`` or ``False``.
-    """
-    valid = isinstance(payload, bool)
-
-    return valid
+    return serialized
 
 
-def is_integer_payload(payload: Any) -> bool:
-    """Check that a payload is a plain non-boolean Python ``int``.
+def _image_from_value(value: Any) -> np.ndarray:
+    if isinstance(value, np.ndarray):
+        return value
+    if not isinstance(value, Mapping) or value.get("type") != SERIALIZED_IMAGE_TYPE:
+        raise ContractError(
+            "An image input must be an RGB uint8 numpy array or "
+            f"{{'type': '{SERIALIZED_IMAGE_TYPE}', 'value': <base64 image>}}, "
+            f"got {type(value).__name__}"
+        )
 
-    Args:
-        payload: Candidate payload.
+    try:
+        encoded = base64.b64decode(value.get("value", ""), validate=True)
+    except (binascii.Error, TypeError, ValueError) as error:
+        raise ContractError(f"Image input holds invalid base64: {error}") from error
+    bgr = cv2.imdecode(np.frombuffer(encoded, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if bgr is None:
+        raise ContractError("Image input base64 does not decode to an image")
 
-    Returns:
-        True for ``int`` instances that are not ``bool``.
-    """
-    valid = isinstance(payload, int) and not isinstance(payload, bool)
+    image = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
-    return valid
+    return image
 
 
-def is_crop_summary_payload(payload: Any) -> bool:
-    """Check that a payload is a crop summary mapping.
-
-    A crop summary is the per-parent description emitted by ``v2/crop`` next to
-    its child crops. It must contain the crop count and the parent dimensions.
-
-    Args:
-        payload: Candidate payload.
-
-    Returns:
-        True when the payload is a mapping containing integer ``crop_count``,
-        ``image_height`` and ``image_width`` entries.
-    """
+def _is_crop_summary(payload: Any) -> bool:
     if not isinstance(payload, Mapping):
         return False
 
-    required_keys = ("crop_count", "image_height", "image_width")
-    valid = all(is_integer_payload(payload.get(key)) for key in required_keys)
+    counts = [payload.get(key) for key in ("crop_count", "image_height", "image_width")]
+    valid = all(
+        isinstance(count, int) and not isinstance(count, bool) for count in counts
+    )
 
     return valid
+
+
+IMAGE_KIND = Kind(
+    name="image",
+    description="RGB uint8 numpy array of shape (height, width, 3).",
+    validate=_is_image,
+    deserialize=_image_from_value,
+    serialize=_image_to_serialized,
+)
+CROP_SUMMARY_KIND = Kind(
+    name="crop_summary",
+    description=(
+        "Mapping describing one cropped image: integer crop_count, image_height "
+        "and image_width, plus kept_regions and crop_dimensions lists."
+    ),
+    validate=_is_crop_summary,
+)

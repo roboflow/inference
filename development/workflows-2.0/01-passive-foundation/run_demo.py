@@ -5,8 +5,8 @@ Run from the repository root with the checkout's sources on the path::
     PYTHONPATH=workflows python development/workflows-2.0/01-passive-foundation/run_demo.py \\
         --scenario nested --output-dir /tmp/workflows-2.0-demo
 
-Every scenario compiles an ordinary JSON definition with ``compile_workflow``
-and executes it with ``plan.run``; the demo only prepares inputs and records
+Every scenario compiles an ordinary JSON definition with ``compile_workflow``,
+creates a session and runs it; the demo only prepares inputs and records
 what the engine returned. The exit code is 1 when any expectation failed.
 """
 
