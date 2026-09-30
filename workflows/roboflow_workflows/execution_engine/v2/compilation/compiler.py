@@ -38,10 +38,21 @@ comes from ``CompileOptions.mutation_conflicts``.
 
 Active definitions: declared sources are planned first (``compilation.sources``)
 and their ports are ordinary value sources with the port's scoped layout. Each
-step then records its causal ``domain``: the one source reached through its
-bindings, gates and nested boundaries (``plan.derive_domain``), or ``None``
-for a static step. Reaching two sources is a ``LineageError``; so is an
-output group whose field comes from a source other than its anchor's.
+step then records its causal ``domain``: the one source or operator reached
+through its bindings, gates and nested boundaries (``plan.derive_domain``), or
+``None`` for a static step. Reaching two domains is a ``LineageError``; so is
+an output group whose field comes from a domain other than its anchor's.
+
+Operators (``compilation.operators``) are nodes of the same graph as the block
+steps, so declaration order never matters and a cycle through them is found::
+
+    $sources.cam ─▶ crop ─▶ [$operators.clip] ─▶ best ─▶ [$operators.again] ─▶ …
+                      (domain cam)          (domain clip)
+
+An operator depends on the producers of its inputs and every step reading its
+ports depends on it. Planning walks one topological order of steps and
+operators; an operator is planned when its inputs' layouts are known and
+before any consumer of its ports.
 
 Nothing here constructs a block, a source, or executes submitted code.
 """
@@ -61,6 +72,12 @@ from roboflow_workflows.execution_engine.v2.compilation.definition import (
     WorkflowInputDeclaration,
     WorkflowOutputDeclaration,
 )
+from roboflow_workflows.execution_engine.v2.compilation.operators import (
+    OperatorSite,
+    check_operator_kinds,
+    plan_operator,
+    prepare_operator_sites,
+)
 from roboflow_workflows.execution_engine.v2.compilation.sources import (
     check_active_definition,
     plan_sources,
@@ -68,6 +85,7 @@ from roboflow_workflows.execution_engine.v2.compilation.sources import (
 from roboflow_workflows.execution_engine.v2.data import (
     AXIS_KIND_DYNAMIC_NESTING,
     AXIS_KIND_STATIC_NESTING,
+    AXIS_KIND_TIME,
     Axis,
     EntryLayout,
 )
@@ -109,6 +127,7 @@ from roboflow_workflows.execution_engine.v2.plan import (
     PlannedChildInput,
     PlannedChildOutput,
     PlannedInput,
+    PlannedOperator,
     PlannedOutput,
     PlannedOutputGroup,
     PlannedSource,
@@ -119,7 +138,12 @@ from roboflow_workflows.execution_engine.v2.plan import (
     StepPort,
     derive_dependencies,
     derive_domain,
+    is_operator_port,
+    operator_step_path,
 )
+
+Site = Union["_Site", OperatorSite]
+"""A node of the compile graph: a block step or an operator."""
 
 
 @dataclass
@@ -201,16 +225,30 @@ def compile_composition(
         for name, declaration in composition.root.workflow.inputs.items()
     }
     sources = plan_sources(composition.root, catalogue=catalogue, inputs=inputs)
+    operator_sites = prepare_operator_sites(composition.root, catalogue=catalogue)
     gate_edges = _add_control_edges(sites)
     child_gates = _child_gates(sites)
-    _add_child_output_dependencies(sites, child_gates=child_gates)
-    order = _order(sites)
+    nodes: Dict[StepPath, Site] = {**sites, **operator_sites}
+    _add_operator_dependencies(nodes)
+    _add_child_output_dependencies(nodes, child_gates=child_gates)
+    order = _order(nodes)
 
     planned: Dict[StepPath, PlannedStep] = {}
+    operators: Dict[str, PlannedOperator] = {}
     boundaries = _Boundaries(
-        inputs=inputs, sources=sources, planned=planned, child_gates=child_gates
+        inputs=inputs,
+        sources=sources,
+        operators=operators,
+        planned=planned,
+        child_gates=child_gates,
     )
     for path in order:
+        if path in operator_sites:
+            operator = plan_operator(
+                operator_sites[path], boundaries=boundaries, catalogue=catalogue
+            )
+            operators[operator.name] = operator
+            continue
         planned[path] = _plan_step(
             sites[path],
             planned=planned,
@@ -219,16 +257,21 @@ def compile_composition(
             order=order,
             catalogue=catalogue,
         )
-    steps = tuple(planned[path] for path in order)
+    check_operator_kinds(operators, catalogue=catalogue)
+    steps = tuple(planned.values())
     _check_child_inputs(composition.root, boundaries=boundaries, catalogue=catalogue)
     outputs = _plan_workflow_outputs(
         composition.root, planned=planned, boundaries=boundaries
     )
     output_groups = _plan_output_groups(
-        composition.root, planned=planned, boundaries=boundaries, sources=sources
+        composition.root, planned=planned, boundaries=boundaries
     )
     mutation_warnings = _check_mutations(
-        steps, boundaries=boundaries.records, options=options
+        steps,
+        operators=operators,
+        ancestors=_ancestor_closure(nodes, order=order),
+        boundaries=boundaries.records,
+        options=options,
     )
 
     try:
@@ -243,6 +286,7 @@ def compile_composition(
             warnings=composition.warnings + mutation_warnings,
             sources=sources,
             output_groups=output_groups,
+            operators=operators,
         )
     except ContractError as error:
         raise WorkflowCompileError(f"Compiled plan is inconsistent: {error}") from error
@@ -390,9 +434,25 @@ def _add_control_edges(
     return gate_edges
 
 
-def _order(sites: Mapping[StepPath, _Site]) -> Tuple[StepPath, ...]:
-    # Depth-first in declaration order: producers and controllers first,
-    # otherwise the definition order is kept.
+def _add_operator_dependencies(nodes: Mapping[StepPath, Site]) -> None:
+    """Make every node reading an operator port depend on that operator."""
+    for node in nodes.values():
+        for resolution in _resolutions(node):
+            origin = resolution.origin
+            if is_operator_port(origin):
+                node.dependencies.add(operator_step_path(origin.source))
+
+
+def _resolutions(node: Site) -> List[Resolution]:
+    if isinstance(node, OperatorSite):
+        return node.resolutions()
+
+    return [resolution for _, resolution in node.data]
+
+
+def _order(sites: Mapping[StepPath, Site]) -> Tuple[StepPath, ...]:
+    # Depth-first in declaration order (steps, then operators): producers,
+    # controllers and operators first, otherwise the definition order is kept.
     declared = list(sites)
     order: List[StepPath] = []
     state: Dict[StepPath, str] = {}
@@ -404,7 +464,8 @@ def _order(sites: Mapping[StepPath, _Site]) -> Tuple[StepPath, ...]:
         if state.get(path) == "active":
             cycle = stack[stack.index(path) :] + [path]
             raise CycleError(
-                "Steps form a dependency cycle through data and control edges: "
+                "Steps and operators form a dependency cycle through data and "
+                "control edges: "
                 + " -> ".join(format_step_path(item) for item in cycle),
                 step_path=path,
             )
@@ -469,7 +530,14 @@ def _plan_step(
             outputs=_plan_step_outputs(site, invocation=invocation, bindings=bindings),
             gates=gates,
             control_targets=site.targets,
-            dependencies=tuple(path for path in order if path in site.dependencies),
+            # An operator node orders compilation only: a step reading its
+            # ports runs within that operator's own pulses, so the recorded
+            # step dependencies are steps.
+            dependencies=tuple(
+                path
+                for path in order
+                if path in site.dependencies and path in boundaries.planned
+            ),
             domain=domain,
         )
     except ContractError as error:
@@ -492,13 +560,10 @@ def _step_domain(
             controllers=[gate.controller for gate in gates],
             steps=boundaries.planned,
             boundaries=boundaries.records,
+            operator_upstreams=boundaries.operator_upstreams,
         )
     except ContractError as error:
-        raise LineageError(
-            f"{site.location} {error}; give each source its own steps and output "
-            "groups",
-            step_path=site.path,
-        ) from error
+        raise LineageError(f"{site.location} {error}", step_path=site.path) from error
 
     return domain
 
@@ -633,7 +698,7 @@ def _child_input_problem(
 
 def _producer_text(source: Source) -> str:
     if isinstance(source, SourcePort):
-        return f"$sources.{source.source}"
+        return f"${source.origin}s.{source.source}"
 
     return format_step_path(source.step)
 
@@ -803,6 +868,15 @@ def _binding(site: _Site, *, item: _Bound, invocation: EntryLayout) -> Binding:
     source_ids = item.layout.axis_ids
     cast_layout = None
     if use.marker.role == "group" and not source_ids:
+        if use.marker.temporal:
+            raise LineageError(
+                f"{site.where(use)} is a T-oriented Group (temporal=True), but "
+                f"{use.selector!r} is ungrouped and has no time axis. Collect the "
+                "values over time first with a window operator, or pass an input "
+                "declaring a time axis",
+                step_path=site.path,
+                field_path=use.field_path,
+            )
         mode = "constant_group"
         cast_layout = _cast_layout(site, field_name=use.field, invocation=invocation)
     elif use.marker.role == "group":
@@ -816,6 +890,13 @@ def _binding(site: _Site, *, item: _Bound, invocation: EntryLayout) -> Binding:
                 field_path=use.field_path,
             )
         mode = "group"
+        if use.marker.temporal and item.layout.last_axis.kind != AXIS_KIND_TIME:
+            raise LineageError(
+                f"{site.where(use)} is a T-oriented Group (temporal=True) over "
+                f"{list(source_ids)}; {_temporal_group_remedy(item.layout)}",
+                step_path=site.path,
+                field_path=use.field_path,
+            )
     elif not source_ids:
         mode = "constant"
     elif source_ids == invocation.axis_ids:
@@ -848,6 +929,26 @@ def _binding(site: _Site, *, item: _Bound, invocation: EntryLayout) -> Binding:
     )
 
     return binding
+
+
+def _temporal_group_remedy(layout: EntryLayout) -> str:
+    """Why a T-oriented group cannot consume ``layout``, and what to do instead."""
+    last = layout.last_axis
+    if not layout.has_time:
+        remedy = (
+            f"its last axis {last.id!r} is {last.kind} and it has no time axis at "
+            "all. Collect the values over time first with a window operator, or "
+            "pass an input declaring a time axis"
+        )
+        return remedy
+
+    remedy = (
+        f"its last axis {last.id!r} is {last.kind}, after the time axis; a "
+        "T-oriented collapse consumes only a final time axis. Collapse the axes "
+        "after T first, or declare an ordinary Group"
+    )
+
+    return remedy
 
 
 def _plan_step_outputs(
@@ -940,11 +1041,10 @@ def _plan_output_groups(
     *,
     planned: Mapping[StepPath, PlannedStep],
     boundaries: "_Boundaries",
-    sources: Mapping[str, PlannedSource],
 ) -> Tuple[PlannedOutputGroup, ...]:
     groups: List[PlannedOutputGroup] = []
     for declaration in root.workflow.output_groups:
-        anchor = _resolve_anchor(root, declaration=declaration, sources=sources)
+        anchor = _resolve_anchor(root, declaration=declaration, boundaries=boundaries)
         outputs = _plan_selections(
             root, declaration.outputs, planned=planned, boundaries=boundaries
         )
@@ -955,6 +1055,7 @@ def _plan_output_groups(
                     controllers=(),
                     steps=planned,
                     boundaries=boundaries.records,
+                    operator_upstreams=boundaries.operator_upstreams,
                 )
             except ContractError as error:
                 raise LineageError(
@@ -966,9 +1067,9 @@ def _plan_output_groups(
                 raise LineageError(
                     f"{declaration.location} ({declaration.name}) is anchored on "
                     f"{anchor.describe()}, but its field {output.name!r} "
-                    f"({output.selector}) comes from source {domain!r}; a group "
-                    "follows one source's pulses until an alignment operator "
-                    "relates independent sources",
+                    f"({output.selector}) comes from {_domain_text(domain, boundaries)}"
+                    "; a group follows the pulses of its anchor's source or operator "
+                    "only",
                     field_path=("outputs", output.name),
                 )
         groups.append(
@@ -991,7 +1092,7 @@ def _resolve_anchor(
     root: Scope,
     *,
     declaration: OutputGroupDeclaration,
-    sources: Mapping[str, PlannedSource],
+    boundaries: "_Boundaries",
 ) -> SourcePort:
     resolution = root.resolve_data(
         declaration.anchor,
@@ -1000,15 +1101,20 @@ def _resolve_anchor(
         field_path=("anchor",),
     )
     anchor = resolution.origin
-    if anchor.output not in sources[anchor.source].outputs:
+    if boundaries.kinds_of(anchor) is None:
         raise SelectorError(
-            f"{declaration.location}.anchor: $sources.{anchor.source} has no output "
-            f"{anchor.output!r}; its outputs are "
-            f"{list(sources[anchor.source].outputs)}",
+            f"{declaration.location}.anchor: {_producer_text(anchor)} has no output "
+            f"{anchor.output!r}; its outputs are {boundaries.output_names(anchor)}",
             field_path=("anchor",),
         )
 
     return anchor
+
+
+def _domain_text(domain: str, boundaries: "_Boundaries") -> str:
+    kind = "operator" if boundaries.is_operator(domain) else "source"
+
+    return f"{kind} {domain!r}"
 
 
 def _plan_selections(
@@ -1050,14 +1156,15 @@ def _child_gates(
 
 
 def _add_child_output_dependencies(
-    sites: Mapping[StepPath, _Site],
+    nodes: Mapping[StepPath, Site],
     *,
     child_gates: Mapping[StepPath, List[Tuple[StepPath, str]]],
 ) -> None:
     # A value leaving a gated child through a child output is ready only once
-    # every controller of that child has decided (decision 026).
-    for site in sites.values():
-        for _, resolution in site.data:
+    # every controller of that child has decided (decision 026); an operator
+    # reading such a value waits the same way.
+    for site in nodes.values():
+        for resolution in _resolutions(site):
             for hop in resolution.hops:
                 if isinstance(hop.port, ChildOutputPort):
                     site.dependencies.update(
@@ -1078,23 +1185,44 @@ class _Boundaries:
         *,
         inputs: Mapping[str, PlannedInput],
         sources: Mapping[str, PlannedSource],
+        operators: Mapping[str, PlannedOperator],
         planned: Mapping[StepPath, PlannedStep],
         child_gates: Mapping[StepPath, List[Tuple[StepPath, str]]],
     ):
         self._inputs = inputs
         self._sources = sources
+        self._operators = operators
         self.planned = planned
         self._child_gates = child_gates
         self.records: Dict[
             BoundaryPort, Union[PlannedChildInput, PlannedChildOutput]
         ] = {}
 
+    @property
+    def operator_upstreams(self) -> Mapping[str, Tuple[str, ...]]:
+        """Upstream domains of the operators planned so far, by name."""
+        return {
+            name: operator.upstream_domains
+            for name, operator in self._operators.items()
+        }
+
+    def is_operator(self, domain: str) -> bool:
+        """Whether ``domain`` names an operator rather than a source."""
+        return domain in self._operators
+
+    def ports_of(self, port: SourcePort) -> Mapping[str, Any]:
+        """Planned ports of the source or operator behind ``port``."""
+        if port.origin == "operator":
+            return self._operators[port.source].outputs
+
+        return self._sources[port.source].outputs
+
     def kinds_of(self, origin: Source) -> Optional[Tuple[str, ...]]:
-        """Kinds of an input, source port or step output; ``None`` for a missing port."""
+        """Kinds of an input, source/operator port or step output; ``None`` if missing."""
         if isinstance(origin, InputPort):
             return self._inputs[origin.name].kinds
         if isinstance(origin, SourcePort):
-            output = self._sources[origin.source].outputs.get(origin.output)
+            output = self.ports_of(origin).get(origin.output)
             return output.kinds if output is not None else None
         if origin.output == "*":
             return (WILDCARD_KIND_NAME,)
@@ -1105,9 +1233,9 @@ class _Boundaries:
         return kinds
 
     def output_names(self, origin: Union[SourcePort, StepPort]) -> List[str]:
-        """Declared output names of a source or step, for error messages."""
+        """Declared output names of a source, operator or step, for messages."""
         if isinstance(origin, SourcePort):
-            return list(self._sources[origin.source].outputs)
+            return list(self.ports_of(origin))
 
         return list(self.planned[origin.step].outputs)
 
@@ -1203,10 +1331,10 @@ class _Boundaries:
         if isinstance(origin, InputPort):
             return self._inputs[origin.name].layout
         if isinstance(origin, SourcePort):
-            port = self._sources[origin.source].outputs.get(origin.output)
+            port = self.ports_of(origin).get(origin.output)
             if port is None:
                 raise SelectorError(
-                    f"$sources.{origin.source} has no output {origin.output!r}; its "
+                    f"{_producer_text(origin)} has no output {origin.output!r}; its "
                     f"outputs are {self.output_names(origin)}"
                 )
             return port.layout
@@ -1256,32 +1384,84 @@ def _resolve_output(
 def _check_mutations(
     steps: Tuple[PlannedStep, ...],
     *,
+    operators: Mapping[str, PlannedOperator],
+    ancestors: Mapping[StepPath, Set[StepPath]],
     boundaries: Mapping[BoundaryPort, Union[PlannedChildInput, PlannedChildOutput]],
     options: CompileOptions,
 ) -> Tuple[str, ...]:
+    """Report in-place mutations another step or a later pulse may observe.
+
+    Two steps conflict when they may see one payload without an ordering
+    dependency. An operator reads its inputs after the whole pulse of their
+    domain, so every step downstream of it is ordered after every step of its
+    upstream domains. A payload that reached a step through an operator port
+    may also be retained or emitted again by that operator (overlapping
+    windows, held references, reused alignment matches), so mutating it in
+    place is reported even without a second reader.
+    """
     by_path = {step.path: step for step in steps}
-    ancestors = _ancestor_closure(steps)
+    by_node = {operator.step_path: operator for operator in operators.values()}
+    domains_before = {
+        step.path: {
+            domain
+            for node in ancestors[step.path]
+            if node in by_node
+            for domain in by_node[node].upstream_domains
+        }
+        for step in steps
+    }
+
+    def ordered(first: PlannedStep, second: PlannedStep) -> bool:
+        return (
+            second.path in ancestors[first.path]
+            or first.path in ancestors[second.path]
+            or first.domain in domains_before[second.path]
+            or second.domain in domains_before[first.path]
+        )
+
     leaves = [
         (
             step,
             binding,
-            _payload_origins(binding.source, steps=by_path, boundaries=boundaries),
+            _payload_origins(
+                binding.source,
+                steps=by_path,
+                operators=operators,
+                boundaries=boundaries,
+            ),
         )
         for step in steps
         for binding in step.bindings
     ]
     warnings: List[str] = []
     reported: Set[frozenset] = set()
+
+    def report(message: str, *, mutator: PlannedStep, mutated: Binding) -> None:
+        if options.mutation_conflicts == "error":
+            raise MutationConflictError(
+                message, step_path=mutator.path, field_path=mutated.field_path
+            )
+        warnings.append(message)
+
     for mutator, mutated, origins in leaves:
         if mutated.field not in mutator.spec.mutates:
             continue
+        retaining = sorted(
+            origin.describe() for origin in origins if is_operator_port(origin)
+        )
+        if retaining:
+            report(
+                f"{format_step_path(mutator.path)} {_field_text(mutated.field_path)} "
+                f"({mutated.selector}) is mutated in place, but the payload passed "
+                f"{retaining}; an operator may retain or emit it again in a later "
+                "pulse (overlapping windows, held values, reused matches)",
+                mutator=mutator,
+                mutated=mutated,
+            )
         for reader, read, reader_origins in leaves:
             if reader.path == mutator.path or not origins & reader_origins:
                 continue
-            if (
-                reader.path in ancestors[mutator.path]
-                or mutator.path in ancestors[reader.path]
-            ):
+            if ordered(mutator, reader):
                 continue
             pair = frozenset(
                 {(mutator.path, mutated.field_path), (reader.path, read.field_path)}
@@ -1289,29 +1469,29 @@ def _check_mutations(
             if pair in reported:
                 continue
             reported.add(pair)
-            message = (
+            report(
                 f"{format_step_path(mutator.path)} {_field_text(mutated.field_path)} "
                 f"({mutated.selector}) is mutated in place, and "
                 f"{format_step_path(reader.path)} {_field_text(read.field_path)} "
                 f"({read.selector}) may see the same payload without an ordering "
-                "dependency between the two steps"
+                "dependency between the two steps",
+                mutator=mutator,
+                mutated=mutated,
             )
-            if options.mutation_conflicts == "error":
-                raise MutationConflictError(
-                    message, step_path=mutator.path, field_path=mutated.field_path
-                )
-            warnings.append(message)
 
     return tuple(warnings)
 
 
-def _ancestor_closure(steps: Tuple[PlannedStep, ...]) -> Dict[StepPath, Set[StepPath]]:
+def _ancestor_closure(
+    nodes: Mapping[StepPath, Site], *, order: Tuple[StepPath, ...]
+) -> Dict[StepPath, Set[StepPath]]:
+    """Every node each node transitively depends on, operators included."""
     closure: Dict[StepPath, Set[StepPath]] = {}
-    for step in steps:
+    for path in order:
         reached: Set[StepPath] = set()
-        for dependency in step.dependencies:
+        for dependency in nodes[path].dependencies:
             reached |= {dependency} | closure[dependency]
-        closure[step.path] = reached
+        closure[path] = reached
 
     return closure
 
@@ -1320,8 +1500,15 @@ def _payload_origins(
     source: Source,
     *,
     steps: Mapping[StepPath, PlannedStep],
+    operators: Mapping[str, PlannedOperator],
     boundaries: Mapping[BoundaryPort, Union[PlannedChildInput, PlannedChildOutput]],
 ) -> Set[Any]:
+    """Every value source whose payload objects may reach ``source``.
+
+    An operator port named like one of the operator's inputs carries that
+    input's payloads; any other port (for example aligned ``samples``) may
+    carry the payloads of every input.
+    """
     if isinstance(source, (ChildInputPort, ChildOutputPort)):
         # A child input over a constant materializes its own value once per
         # run, shared by its consumers; any other boundary (every child
@@ -1329,19 +1516,28 @@ def _payload_origins(
         boundary = boundaries[source]
         if isinstance(source, ChildInputPort) and isinstance(boundary.source, Constant):
             return {source}
-        return _payload_origins(boundary.source, steps=steps, boundaries=boundaries)
+        return _payload_origins(
+            boundary.source, steps=steps, operators=operators, boundaries=boundaries
+        )
     if isinstance(source, Constant):
         if isinstance(source.value, (str, bytes, int, float, bool, type(None))):
             return set()
         return {("constant", id(source.value))}
 
     origins: Set[Any] = {source}
+    if is_operator_port(source):
+        operator = operators[source.source]
+        named = [item for item in operator.inputs if item.name == source.output]
+        for item in named or operator.inputs:
+            origins |= _payload_origins(
+                item.source, steps=steps, operators=operators, boundaries=boundaries
+            )
     if isinstance(source, StepPort):
         producer = steps[source.step]
         source_field = producer.outputs[source.output].source_field
         for binding in producer.bindings_for(source_field) if source_field else ():
             origins |= _payload_origins(
-                binding.source, steps=steps, boundaries=boundaries
+                binding.source, steps=steps, operators=operators, boundaries=boundaries
             )
 
     return origins

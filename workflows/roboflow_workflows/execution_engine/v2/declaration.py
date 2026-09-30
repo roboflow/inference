@@ -42,7 +42,21 @@ and where its source/temporal context comes from:
   invocation contribute under the same policy.
 
 Collapse needs no keyword: a block with a ``Group`` field runs once per parent,
-so its ordinary outputs sit at the parent level.
+so its ordinary outputs sit at the parent level. Outputs taking context from a
+``Group`` field may pick it from one member instead::
+
+    policy            block returns                 context of the result
+    common_or_none    the value                     shared by all members, else None
+    first / last      the value                     temporal: first / last member;
+                                                    sample: common_or_none
+    selected          Selected(index[, value])      sample and temporal of the
+                                                    chosen member
+    selected+expand   Selection(indices[, values])  per child: its chosen member
+
+``index`` is a full logical index from the delivered ``Batch.indices``, e.g.
+``Selected(frames.indices[best])``. Without ``value`` the chosen member's
+payload object itself is the result. A selection is a new, non-stationary
+collection axis, even with one child.
 
 Invalid declarations raise ``DeclarationError`` while the class is created.
 ``spec_of(cls)`` returns the validated ``BlockSpec`` the compiler, executor,
@@ -147,6 +161,8 @@ __all__ = [
     "Ref",
     "Select",
     "SelectorMarker",
+    "Selected",
+    "Selection",
     "SelectorUse",
     "StepRef",
     "Stop",
@@ -158,11 +174,13 @@ __all__ = [
 
 
 OutputTransform = Literal["same", "expand", "preserve"]
-ContextPolicy = Literal["common_or_none"]
+ContextPolicy = Literal["common_or_none", "first", "last", "selected"]
 InputPath = Tuple[Union[str, int], ...]
 """Location of a parameter in the step mapping: object keys and list indices."""
 
-CONTEXT_POLICIES: Tuple[str, ...] = ("common_or_none",)
+CONTEXT_POLICIES: Tuple[str, ...] = ("common_or_none", "first", "last", "selected")
+MEMBER_POLICIES: Tuple[str, ...] = ("first", "last", "selected")
+"""Policies taking context from one member of the ``source`` group."""
 RESERVED_PARAM_NAMES: Tuple[str, ...] = ("type", "name")
 
 _IDENTITY = re.compile(r"[A-Za-z0-9_\-./@]+")
@@ -189,18 +207,32 @@ class Output:
             children for each invocation.
         preserve: Name of a ``Group`` field. The block returns a ``Batch``
             with one value per child of that group, keeping its axis.
-        stationary: With ``expand``, whether children keep stable identities
-            across arrivals (for example configured static crops).
+        stationary: With ``expand``, the producer's promise that child
+            position ``k`` identifies the same logical entity or region in
+            every arrival, so a window may collect each position over time.
+            Fixed configured crops are one example. The engine checks the
+            declared structure and contradictions in known source identities.
+            It cannot prove that position ``k`` shows the same region, so the
+            block is responsible for keeping that promise. Children that
+            depend on the data or can be reordered without this guarantee
+            (for example crops around detections) stay non-stationary and must
+            be collapsed before temporal collection.
         source: Field whose bound values provide the output's source and
             temporal context. ``None`` uses every data binding.
-        context_policy: How several contributing contexts combine;
-            ``common_or_none`` keeps one only when all are equal.
+        context_policy: How several contributing contexts combine:
+            ``common_or_none`` keeps one only when all are equal; ``first`` /
+            ``last`` take the temporal context of the first / last member of
+            the ``source`` group; ``selected`` takes both contexts of the
+            member the block returns with ``Selected`` (or, with ``expand``,
+            ``Selection``). The last three need a ``Group`` ``source``.
         description: Human-readable meaning of the output.
 
     Raises:
         DeclarationError: On invalid kinds, both ``expand`` and ``preserve``,
             invalid names, ``stationary`` without ``expand``, an unknown
-            context policy or a ``source`` differing from ``preserve``.
+            context policy, a ``source`` differing from ``preserve``, a member
+            policy without ``source`` or with ``preserve``, or a stationary
+            selection.
     """
 
     kinds: Tuple[Kind, ...]
@@ -256,6 +288,23 @@ class Output:
                 f"Output preserving {preserve!r} takes its context from that group; "
                 f"source {source!r} cannot differ"
             )
+        if context_policy in MEMBER_POLICIES:
+            if preserve is not None:
+                raise DeclarationError(
+                    f"Output preserving {preserve!r} keeps every member's context; "
+                    f"context_policy={context_policy!r} does not apply"
+                )
+            if source is None:
+                raise DeclarationError(
+                    f"Output context_policy={context_policy!r} picks one member of "
+                    "a group; name that Group field with source=..."
+                )
+        if context_policy == "selected" and stationary:
+            raise DeclarationError(
+                "Output with context_policy='selected' and expand returns a "
+                "Selection, whose chosen members change between arrivals; it "
+                "cannot be stationary"
+            )
 
         values = {
             "kinds": normalized_kinds,
@@ -284,11 +333,22 @@ class Output:
 
         return "same"
 
+    @property
+    def returns(self) -> str:
+        """Form ``run`` returns for this output, per invocation."""
+        if self.context_policy == "selected":
+            return "Selection" if self.expand is not None else "Selected"
+        if self.transform == "same":
+            return "value"
+
+        return "Batch"
+
     def describe(self) -> Dict[str, Any]:
         """Return a JSON-friendly description."""
         description = {
             "kinds": list(self.kind_names),
             "transform": self.transform,
+            "returns": self.returns,
             "expand": self.expand,
             "preserve": self.preserve,
             "stationary": self.stationary,
@@ -344,6 +404,111 @@ class Stop(Select):
 
     def __init__(self):
         super().__init__(())
+
+
+class _SamePayload:
+    """Marker of a ``Selected`` value: the chosen member's own payload."""
+
+    def __repr__(self) -> str:
+        return "<chosen payload>"
+
+
+SAME_PAYLOAD = _SamePayload()
+
+
+def _member_index(value: Any) -> Tuple[int, ...]:
+    if (
+        not isinstance(value, tuple)
+        or not value
+        or not all(
+            isinstance(part, int) and not isinstance(part, bool) for part in value
+        )
+    ):
+        raise ContractError(
+            f"a selected index is a full logical index from Batch.indices, such as "
+            f"(0, 3), got {value!r}; a position p is written group.indices[p]"
+        )
+
+    return value
+
+
+@dataclass(frozen=True, init=False)
+class Selected:
+    """One chosen member of a ``Group``, returned for a ``selected`` output.
+
+    The engine resolves the result's sample and temporal context from the
+    chosen member, so the output carries that member's PTS.
+
+    Args:
+        index: Full logical index of the member, taken from the delivered
+            ``Batch.indices`` (``frames.indices[best]``), not its position.
+        value: Result to emit. Omitted, the member's payload object itself is
+            emitted; a transformed value keeps the member's context.
+
+    Raises:
+        ContractError: When ``index`` is not a non-empty tuple of integers.
+    """
+
+    index: Tuple[int, ...]
+    value: Any
+
+    def __init__(self, index: Tuple[int, ...], value: Any = SAME_PAYLOAD):
+        object.__setattr__(self, "index", _member_index(index))
+        object.__setattr__(self, "value", value)
+
+
+@dataclass(frozen=True, init=False)
+class Selection:
+    """Chosen members of a ``Group``, returned for a ``selected`` expand output.
+
+    The result is a new collection with one child per chosen member, in the
+    requested order, each with that member's sample and temporal context. It
+    stays a collection even with one child.
+
+    Args:
+        indices: Full logical indices of the members, from the delivered
+            ``Batch.indices``; each at most once.
+        values: Results to emit, one per index. Omitted, the members' payload
+            objects themselves are emitted.
+
+    Raises:
+        ContractError: On a malformed or repeated index, or ``values`` of a
+            different length.
+    """
+
+    indices: Tuple[Tuple[int, ...], ...]
+    values: Optional[Tuple[Any, ...]]
+
+    def __init__(
+        self,
+        indices: Iterable[Tuple[int, ...]],
+        values: Optional[Iterable[Any]] = None,
+    ):
+        normalized = tuple(_member_index(index) for index in indices)
+        repeated = sorted(
+            {index for index in normalized if normalized.count(index) > 1}
+        )
+        if repeated:
+            raise ContractError(
+                f"Selection repeats member(s) {[list(index) for index in repeated]}; "
+                "each member can be chosen once"
+            )
+        chosen_values = None if values is None else tuple(values)
+        if chosen_values is not None and len(chosen_values) != len(normalized):
+            raise ContractError(
+                f"Selection has {len(normalized)} indices but {len(chosen_values)} "
+                "values"
+            )
+
+        object.__setattr__(self, "indices", normalized)
+        object.__setattr__(self, "values", chosen_values)
+
+    def chosen(self) -> List[Selected]:
+        """Return one ``Selected`` per chosen member, in the requested order."""
+        values = self.values or (SAME_PAYLOAD,) * len(self.indices)
+        members = [Selected(index, value) for index, value in zip(self.indices, values)]
+
+        return members
 
 
 class DependentResource(BaseModel):
@@ -1313,6 +1478,18 @@ def _validate_outputs(
                 raise fail(
                     f"output {name!r} takes context from {output.source!r}, which "
                     "accepts no data selector"
+                )
+        if output.context_policy in MEMBER_POLICIES:
+            source_field = fields[output.source]
+            if (
+                source_field.whole is None
+                or source_field.whole.role != "group"
+                or source_field.leaves is not None
+            ):
+                raise fail(
+                    f"output {name!r} uses context_policy="
+                    f"{output.context_policy!r}, which picks a member of one "
+                    f"group; {output.source!r} must be a whole Group(...) field"
                 )
         outputs[name] = output
 

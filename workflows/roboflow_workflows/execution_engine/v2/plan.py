@@ -77,6 +77,7 @@ from typing import (
     Literal,
     Mapping,
     Optional,
+    Sequence,
     Tuple,
     Union,
 )
@@ -87,6 +88,9 @@ from roboflow_workflows.execution_engine.v2.context import (
     use_execution_context,
 )
 from roboflow_workflows.execution_engine.v2.data import (
+    AXIS_KIND_DYNAMIC_NESTING,
+    AXIS_KIND_STATIC_NESTING,
+    AXIS_KIND_TIME,
     Axis,
     Batch,
     EntryLayout,
@@ -107,10 +111,11 @@ from roboflow_workflows.execution_engine.v2.errors import (
     ResourceError,
     StepExecutionError,
     StepPath,
+    WorkflowCompileError,
     WorkflowInputError,
     format_step_path,
 )
-from roboflow_workflows.execution_engine.v2.kinds import kinds_compatible
+from roboflow_workflows.execution_engine.v2.kinds import Kind, kinds_compatible
 from roboflow_workflows.execution_engine.v2.resources import (
     ResolvedResource,
     ResourceResolver,
@@ -233,26 +238,60 @@ class ChildOutputPort:
         return f"{format_step_path(self.scope)}.{self.name}"
 
 
+PortOrigin = Literal["source", "operator"]
+PORT_ORIGINS: Tuple[str, ...] = ("source", "operator")
+
+
 @dataclass(frozen=True)
 class SourcePort:
-    """One port of a declared source, as consumers and groups address it.
+    """One port of a pulse domain, as consumers and groups address it.
+
+    A pulse domain is a declared source or a declared operator; both emit
+    pulses whose ports steps read. The field keeps the name ``source`` for
+    pulse compatibility (``PulseKey.source`` names the domain too).
 
     Args:
-        source: Declared source name.
-        output: Port name declared by the source class.
+        source: Declared source or operator name (the domain).
+        output: Port name declared by the source class or planned by the
+            operator.
+        origin: ``source`` for ``$sources.<name>.<port>``, ``operator`` for
+            ``$operators.<name>.<port>``.
+
+    Raises:
+        ContractError: On an unknown origin.
     """
 
     source: str
     output: str
+    origin: PortOrigin = "source"
+
+    def __post_init__(self) -> None:
+        if self.origin not in PORT_ORIGINS:
+            raise ContractError(
+                f"SourcePort origin must be one of {list(PORT_ORIGINS)}, got "
+                f"{self.origin!r}"
+            )
+
+    @property
+    def domain(self) -> str:
+        """Name of the pulse domain emitting this port."""
+        return self.source
 
     def describe(self) -> str:
-        """Return the selector text of this port, e.g. ``$sources.camera.image``."""
-        return f"$sources.{self.source}.{self.output}"
+        """Return the selector text, e.g. ``$sources.camera.image``."""
+        return f"${self.origin}s.{self.source}.{self.output}"
 
 
 Source = Union[
     InputPort, StepPort, Constant, ChildInputPort, ChildOutputPort, SourcePort
 ]
+
+
+def is_operator_port(source: Any) -> bool:
+    """Whether ``source`` is a port of an operator (``$operators.<op>.<port>``)."""
+    return isinstance(source, SourcePort) and source.origin == "operator"
+
+
 BoundaryPort = Union[ChildInputPort, ChildOutputPort]
 
 
@@ -318,15 +357,16 @@ class AxisOrigin:
 
     Args:
         kind: ``input`` (a workflow input's axis), ``source`` (a declared
-            source's local axis), ``expand`` (created by an expanding step
-            output) or ``cast`` (created by a scalar cast into a one-element
-            group).
-        name: Input name, source name, output name or parameter name,
-            respectively.
+            source's local axis), ``operator`` (an axis an operator
+            introduces, e.g. its aligned members or its time axis), ``expand``
+            (created by an expanding step output) or ``cast`` (created by a
+            scalar cast into a one-element group).
+        name: Input name, source name, operator name, output name or
+            parameter name, respectively.
         step: Producing step for ``expand`` and ``cast``; ``None`` otherwise.
     """
 
-    kind: Literal["input", "source", "expand", "cast"]
+    kind: Literal["input", "source", "operator", "expand", "cast"]
     name: str
     step: Optional[StepPath] = None
 
@@ -336,6 +376,8 @@ class AxisOrigin:
             return f"$inputs.{self.name}"
         if self.kind == "source":
             return f"$sources.{self.name}"
+        if self.kind == "operator":
+            return f"$operators.{self.name}"
         if self.kind == "expand":
             return f"{format_step_path(self.step)}.{self.name}"
 
@@ -630,6 +672,7 @@ class PlannedStep:
             self._check_output(output, location=location)
         if self.control_targets and not self.spec.is_control:
             raise ContractError(f"{location}: control_targets on a non-control block")
+        self._check_invocation(location=location)
 
     @property
     def block_type(self) -> str:
@@ -732,25 +775,37 @@ class PlannedStep:
                 f"mode {binding.mode!r}"
             )
 
-        invocation_ids = self.invocation_layout.axis_ids
-        source_ids = binding.source_layout.axis_ids
+        # Whole axes (id, kind, stationarity), never ids alone: a step passes
+        # on the axis declarations of its inputs and cannot restate them.
+        invocation_axes = self.invocation_layout.axes
+        source_axes = binding.source_layout.axes
+        cast_axes = binding.cast_layout.axes if binding.cast_layout else None
         valid = {
-            "element": source_ids == invocation_ids,
-            "ancestor": 0 < len(source_ids) < len(invocation_ids)
-            and invocation_ids[: len(source_ids)] == source_ids,
-            "constant": not source_ids,
-            "group": len(source_ids) == len(invocation_ids) + 1
-            and source_ids[:-1] == invocation_ids,
-            "constant_group": not source_ids
-            and binding.cast_layout is not None
-            and len(binding.cast_layout.axis_ids) == len(invocation_ids) + 1
-            and binding.cast_layout.axis_ids[:-1] == invocation_ids,
+            "element": source_axes == invocation_axes,
+            "ancestor": 0 < len(source_axes) < len(invocation_axes)
+            and invocation_axes[: len(source_axes)] == source_axes,
+            "constant": not source_axes,
+            "group": len(source_axes) == len(invocation_axes) + 1
+            and source_axes[:-1] == invocation_axes,
+            "constant_group": not source_axes
+            and cast_axes is not None
+            and len(cast_axes) == len(invocation_axes) + 1
+            and cast_axes[:-1] == invocation_axes,
         }[binding.mode]
         if not valid:
             raise ContractError(
                 f"{location}: binding {binding.field_path!r} in mode "
-                f"{binding.mode!r} has source axes {list(source_ids)} but the step "
-                f"runs over {list(invocation_ids)}"
+                f"{binding.mode!r} has source axes {_describe_axes(binding.source_layout)} "
+                f"but the step runs over {_describe_axes(self.invocation_layout)}"
+            )
+        if marker.temporal and (
+            binding.mode != "group"
+            or binding.source_layout.last_axis.kind != AXIS_KIND_TIME
+        ):
+            raise ContractError(
+                f"{location}: {binding.field_path!r} is a T-oriented group, but it "
+                f"consumes the last of {list(binding.source_layout.axis_ids)}, which "
+                "is not a time axis"
             )
         if (
             self.spec.accepts_batches
@@ -762,19 +817,75 @@ class PlannedStep:
                 "batch-accepting block, so its binding must be constant (V1 rule)"
             )
 
+    def _check_expanded_axis(self, output: PlannedOutput, *, location: str) -> None:
+        """The new axis has the stability its producer declares, never more.
+
+        A declared ``stationary`` expansion creates a stable ``static_nesting``
+        axis; every other one, a selected collection's K included, creates a
+        ``dynamic_nesting`` axis.
+        """
+        declared = self.spec.resolve_outputs(self.params)[output.name]
+        expected = (
+            AXIS_KIND_STATIC_NESTING
+            if declared.stationary
+            else AXIS_KIND_DYNAMIC_NESTING
+        )
+        axis = output.layout.last_axis
+        if axis.kind != expected or axis.stationary != declared.stationary:
+            raise ContractError(
+                f"{location}: output {output.name!r} records axis {axis.id!r} as "
+                f"{axis.kind} (stationary={axis.stationary}), but the block declares "
+                f"{expected} (stationary={declared.stationary})"
+            )
+
+    def _check_invocation(self, *, location: str) -> None:
+        """The invocation layout is the one its bindings and gates determine.
+
+        Element and group bindings fix it completely (a group's axes minus the
+        consumed last one); without them the deepest gate decides, else the
+        step runs once. Gates decide over a prefix of it.
+        """
+        fixing = [
+            (
+                binding.source_layout
+                if binding.mode == "element"
+                else binding.source_layout.remove_last_axis()
+            )
+            for binding in self.bindings
+            if binding.mode in ("element", "group")
+        ]
+        candidates = fixing or [gate.controller_layout for gate in self.gates]
+        expected = max(candidates, key=_depth, default=EntryLayout())
+        if self.invocation_layout != expected:
+            raise ContractError(
+                f"{location}: runs over {_describe_axes(self.invocation_layout)}, but "
+                f"its bindings and gates determine {_describe_axes(expected)}"
+            )
+        invocation_axes = self.invocation_layout.axes
+        for gate in self.gates:
+            depth = gate.controller_layout.depth
+            if invocation_axes[:depth] != gate.controller_layout.axes:
+                raise ContractError(
+                    f"{location}: gate of {format_step_path(gate.controller)} decides "
+                    f"over {_describe_axes(gate.controller_layout)}, not a prefix of "
+                    f"the invocation axes {_describe_axes(self.invocation_layout)}"
+                )
+
     def _check_output(self, output: PlannedOutput, *, location: str) -> None:
-        invocation_ids = self.invocation_layout.axis_ids
-        output_ids = output.layout.axis_ids
+        invocation_axes = self.invocation_layout.axes
+        output_axes = output.layout.axes
         if output.transform == "same":
-            valid = output_ids == invocation_ids
+            valid = output_axes == invocation_axes
         elif output.transform == "expand":
             valid = (
-                len(output_ids) == len(invocation_ids) + 1
-                and output_ids[:-1] == invocation_ids
+                len(output_axes) == len(invocation_axes) + 1
+                and output_axes[:-1] == invocation_axes
             )
+            if valid:
+                self._check_expanded_axis(output, location=location)
         else:
             group_layouts = {
-                binding.group_layout.axis_ids
+                binding.group_layout
                 for binding in self.bindings_for(output.group_field or "")
                 if binding.group_layout is not None
             }
@@ -782,14 +893,14 @@ class PlannedStep:
                 raise ContractError(
                     f"{location}: output {output.name!r} preserves "
                     f"{output.group_field!r}, whose group leaves have different "
-                    f"layouts {sorted(map(list, group_layouts))}"
+                    f"layouts {sorted(_describe_axes(layout) for layout in group_layouts)}"
                 )
-            valid = group_layouts == {output_ids}
+            valid = group_layouts == {output.layout}
         if not valid:
             raise ContractError(
                 f"{location}: output {output.name!r} ({output.transform}) has axes "
-                f"{list(output_ids)}, inconsistent with invocation axes "
-                f"{list(invocation_ids)}"
+                f"{_describe_axes(output.layout)}, inconsistent with invocation axes "
+                f"{_describe_axes(self.invocation_layout)}"
             )
         # A source field written as a literal contributes no context.
         source_spec = self.spec.fields.get(output.source_field or "")
@@ -975,16 +1086,189 @@ class PlannedSource:
         return description
 
 
+OperatorInputRole = Literal["input", "collect", "hold"]
+OPERATOR_INPUT_ROLES: Tuple[str, ...] = ("input", "collect", "hold")
+
+
+@dataclass(frozen=True)
+class PlannedOperatorInput:
+    """One named selector an operator consumes.
+
+    Args:
+        name: Key in the declaration's ``inputs``, ``collect`` or ``hold`` map.
+        role: ``input`` (alignment), ``collect`` or ``hold`` (window).
+        selector: Selector text as written.
+        source: Value source read at the end of each pulse of ``domain``; any
+            source but a constant or workflow input.
+        layout: Layout of the bound value.
+        domain: The one pulse domain (source or operator) the value comes
+            from; never static.
+
+    Raises:
+        ContractError: On a name that is not a selector segment or an
+            unknown role.
+    """
+
+    name: str
+    role: OperatorInputRole
+    selector: str
+    source: Source
+    layout: EntryLayout
+    domain: str
+
+    def __post_init__(self) -> None:
+        if not is_selector_segment(self.name):
+            raise ContractError(
+                f"Operator input name must use letters, digits, _ or -, got "
+                f"{self.name!r}"
+            )
+        if self.role not in OPERATOR_INPUT_ROLES:
+            raise ContractError(
+                f"Operator input {self.name!r} has unknown role {self.role!r}; "
+                f"expected one of {list(OPERATOR_INPUT_ROLES)}"
+            )
+
+    def describe(self) -> Dict[str, Any]:
+        """Return a JSON-friendly description."""
+        description = {
+            "role": self.role,
+            "selector": self.selector,
+            "source": _describe_source(self.source),
+            "axes": list(self.layout.axis_ids),
+            "domain": self.domain,
+        }
+
+        return description
+
+
+@dataclass(frozen=True)
+class PlannedOperator:
+    """One declared operator: an explicit transition between pulse domains.
+
+    An operator consumes values of upstream domains at the end of their
+    pulses and emits pulses of its own domain, named like the operator.
+    Steps reading its ports belong to that domain.
+
+    Args:
+        name: Operator name, unique among sources and operators.
+        spec: Class-owned ``OperatorSpec`` of the operator.
+        namespace: Catalogue namespace that registered the operator class.
+        params: Validated literal parameters.
+        inputs: Consumed selectors in declaration order.
+        outputs: Planned ports with their kinds and layouts.
+
+    Raises:
+        ContractError: On an invalid name, repeated input names or an
+            operator without inputs or outputs.
+    """
+
+    name: str
+    spec: Any
+    namespace: str
+    params: Any
+    inputs: Tuple[PlannedOperatorInput, ...]
+    outputs: Mapping[str, PlannedSourceOutput]
+
+    def __post_init__(self) -> None:
+        if not is_selector_segment(self.name):
+            raise ContractError(
+                f"Operator name must use letters, digits, _ or -, got {self.name!r}"
+            )
+        object.__setattr__(self, "inputs", tuple(self.inputs))
+        object.__setattr__(self, "outputs", MappingProxyType(dict(self.outputs)))
+        names = [item.name for item in self.inputs]
+        if len(names) != len(set(names)):
+            raise ContractError(f"$operators.{self.name} repeats input names {names}")
+        if not self.inputs:
+            raise ContractError(f"$operators.{self.name} consumes no inputs")
+        if not self.outputs:
+            raise ContractError(f"$operators.{self.name} plans no outputs")
+
+    @property
+    def step_path(self) -> StepPath:
+        """Structured location ``("$operators", name)`` used by errors."""
+        return operator_step_path(self.name)
+
+    @property
+    def upstream_domains(self) -> Tuple[str, ...]:
+        """Distinct domains of the inputs, in input declaration order."""
+        domains = tuple(dict.fromkeys(item.domain for item in self.inputs))
+
+        return domains
+
+    def inputs_from(self, domain: str) -> Tuple[PlannedOperatorInput, ...]:
+        """Return the inputs read at the end of each pulse of ``domain``.
+
+        Args:
+            domain: Upstream source or operator name.
+
+        Returns:
+            The inputs of that domain, in declaration order; empty when the
+            operator does not consume it.
+        """
+        found = tuple(item for item in self.inputs if item.domain == domain)
+
+        return found
+
+    def port(self, output: str) -> SourcePort:
+        """Return the port consumers use to address one output.
+
+        Args:
+            output: Port name.
+
+        Returns:
+            The port.
+
+        Raises:
+            ContractError: When the operator plans no such port.
+        """
+        if output not in self.outputs:
+            raise ContractError(
+                f"$operators.{self.name} has no output {output!r}; its outputs are "
+                f"{list(self.outputs)}"
+            )
+
+        return SourcePort(source=self.name, output=output, origin="operator")
+
+    def describe(self) -> Dict[str, Any]:
+        """Return a JSON-friendly description."""
+        description = {
+            "type": self.spec.type,
+            "namespace": self.namespace,
+            "params": self.params.model_dump(mode="json"),
+            "inputs": {item.name: item.describe() for item in self.inputs},
+            "outputs": {
+                name: output.describe() for name, output in self.outputs.items()
+            },
+            "upstream_domains": list(self.upstream_domains),
+        }
+
+        return description
+
+
+def operator_step_path(operator_name: str) -> StepPath:
+    """Return the structured location of an operator, ``("$operators", name)``.
+
+    Args:
+        operator_name: Declared operator name.
+
+    Returns:
+        A path distinct from every step path, used by errors and contexts.
+    """
+    return ("$operators", operator_name)
+
+
 @dataclass(frozen=True)
 class PlannedOutputGroup:
-    """A named output group delivered once per pulse of its anchor's source.
+    """A named output group delivered once per pulse of its anchor's domain.
 
     Args:
         name: Group name; the host registers a handler under it.
-        anchor: Source port whose emission defines the group's pulse. The
-            group is delivered when that port is present in the emission, or
-            as a fully filtered outcome for an explicitly filtered emission.
-        outputs: The selected fields, each in the anchor source's domain or
+        anchor: Source or operator port whose emission defines the group's
+            pulse. The group is delivered when that port is present in the
+            emission, or as a fully filtered outcome for an explicitly
+            filtered emission.
+        outputs: The selected fields, each in the anchor's domain or
             static.
         dependencies: Steps that must have run before every field is
             terminal, in plan order: each field's producing step and the
@@ -1006,7 +1290,7 @@ class PlannedOutputGroup:
             )
         if not isinstance(self.anchor, SourcePort):
             raise ContractError(
-                f"Output group {self.name!r} must be anchored on a source port, got "
+                f"Output group {self.name!r} must be anchored on a source or operator port, got "
                 f"{_describe_source(self.anchor)}"
             )
         object.__setattr__(self, "outputs", tuple(self.outputs))
@@ -1021,7 +1305,7 @@ class PlannedOutputGroup:
 
     @property
     def source(self) -> str:
-        """Name of the anchor's source."""
+        """Name of the anchor's domain: a source or an operator."""
         return self.anchor.source
 
     def describe(self) -> Dict[str, Any]:
@@ -1037,12 +1321,15 @@ class PlannedOutputGroup:
 
 @dataclass(frozen=True)
 class PulseKey:
-    """Identity of one emission of one source within one active run.
+    """Identity of one emission of one pulse domain within one active run.
+
+    A domain is a declared source or a declared operator; their names are
+    disjoint, so ``source`` identifies either.
 
     Args:
         active_run_id: Identity of the active run (one ``start`` call).
-        source: Declared source name.
-        sequence: Emission number of that source in that run, from 0.
+        source: Declared source or operator name.
+        sequence: Emission number of that domain in that run, from 0.
 
     Raises:
         ContractError: On an empty run id or source name, or a negative
@@ -1137,17 +1424,22 @@ class CompiledWorkflow:
             ``outputs``, every input is ungrouped, and it runs through
             ``ExecutionSession.start``.
         output_groups: Output groups of an active plan, in declaration order.
+        operators: Declared operators by name, in a topological order of
+            their domains: every input comes from a source or an earlier
+            operator. Operators need sources.
 
     Raises:
         ContractError: On duplicate step paths or child inputs, references to
-            steps, outputs, inputs, child inputs, source ports or controllers
-            that do not exist earlier in the plan, a binding or child input
-            whose declared layout differs from its source's layout, cyclic
-            child boundaries, child output gates that do not govern the
-            child, an expanded axis identity claimed by two producers, flat
-            outputs or grouped inputs beside sources, a step whose recorded
-            domain differs from its derived one, or a step, gate or group
-            joining two sources.
+            steps, outputs, inputs, child inputs, source or operator ports or
+            controllers that do not exist earlier in the plan, a binding or
+            child input whose declared layout differs from its source's
+            layout, cyclic child boundaries, child output gates that do not
+            govern the child, an expanded axis identity claimed by two
+            producers, flat outputs or grouped inputs beside sources, a step
+            whose recorded domain differs from its derived one, a step, gate
+            or group joining two domains, or an operator whose inputs are
+            static, come from itself or a later operator, or whose recorded
+            domains differ from the derived ones.
     """
 
     inputs: Mapping[str, PlannedInput]
@@ -1162,6 +1454,9 @@ class CompiledWorkflow:
         default_factory=lambda: MappingProxyType({})
     )
     output_groups: Tuple[PlannedOutputGroup, ...] = ()
+    operators: Mapping[str, PlannedOperator] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
     _axis_origins: Mapping[str, AxisOrigin] = field(
         init=False, repr=False, compare=False
     )
@@ -1175,14 +1470,34 @@ class CompiledWorkflow:
         object.__setattr__(self, "child_outputs", tuple(self.child_outputs))
         object.__setattr__(self, "sources", MappingProxyType(dict(self.sources)))
         object.__setattr__(self, "output_groups", tuple(self.output_groups))
+        object.__setattr__(self, "operators", MappingProxyType(dict(self.operators)))
+        if self.operators and not self.sources:
+            raise ContractError(
+                f"Operators {list(self.operators)} need declared sources; a passive "
+                "plan runs each session.run call on its own, with no pulses to "
+                "align or collect across calls"
+            )
         _check_plan_references(self)
         _check_active_shape(self)
+        _check_operators(self)
         object.__setattr__(self, "_axis_origins", _collect_axis_origins(self))
 
     @property
     def is_active(self) -> bool:
         """Whether the plan declares sources and runs through ``start``."""
         return bool(self.sources)
+
+    @property
+    def operator_upstreams(self) -> Mapping[str, Tuple[str, ...]]:
+        """Upstream domains of every operator, by operator name."""
+        return {
+            name: operator.upstream_domains for name, operator in self.operators.items()
+        }
+
+    @property
+    def domains(self) -> Tuple[str, ...]:
+        """Pulse domain names: sources first, then operators in plan order."""
+        return tuple(self.sources) + tuple(self.operators)
 
     def source(self, name: str) -> PlannedSource:
         """Return the declared source named ``name``.
@@ -1203,66 +1518,131 @@ class CompiledWorkflow:
 
         return self.sources[name]
 
+    def operator(self, name: str) -> PlannedOperator:
+        """Return the declared operator named ``name``.
+
+        Args:
+            name: Operator name.
+
+        Returns:
+            The planned operator.
+
+        Raises:
+            ContractError: When the plan declares no such operator.
+        """
+        if name not in self.operators:
+            raise ContractError(
+                f"Plan has no operator {name!r}; declared operators: "
+                f"{list(self.operators)}"
+            )
+
+        return self.operators[name]
+
+    def domain_ports(self, name: str) -> Mapping[str, PlannedSourceOutput]:
+        """Return the ports one pulse of a source or operator carries.
+
+        Args:
+            name: Source or operator name.
+
+        Returns:
+            Planned ports by name.
+
+        Raises:
+            ContractError: When ``name`` is neither a source nor an operator.
+        """
+        if name in self.sources:
+            return self.sources[name].outputs
+        if name in self.operators:
+            return self.operators[name].outputs
+
+        raise ContractError(
+            f"Plan has no source {name!r} and no operator of that name; sources: "
+            f"{list(self.sources)}, operators: {list(self.operators)}"
+        )
+
     def source_port(self, port: SourcePort) -> PlannedSourceOutput:
         """Return the compiled port addressed by ``port``.
 
         Args:
-            port: Source port used by a binding, group or anchor.
+            port: Source or operator port used by a binding, group or anchor.
 
         Returns:
             The planned port.
 
         Raises:
-            ContractError: When the plan has no such source or port.
+            ContractError: When the plan has no such source, operator or port,
+                or the port's origin names the wrong kind of domain.
         """
-        planned = self.source(port.source)
-        if port.output not in planned.outputs:
+        if port.origin == "operator":
+            planned_ports = self.operator(port.source).outputs
+        else:
+            planned_ports = self.source(port.source).outputs
+        if port.output not in planned_ports:
             raise ContractError(
-                f"{port.describe()}: $sources.{port.source} has no output "
-                f"{port.output!r}; its outputs are {list(planned.outputs)}"
+                f"{port.describe()}: ${port.origin}s.{port.source} has no output "
+                f"{port.output!r}; its outputs are {list(planned_ports)}"
             )
 
-        return planned.outputs[port.output]
+        return planned_ports[port.output]
 
-    def route(self, source_name: str) -> Tuple[PlannedStep, ...]:
-        """Return the steps one pulse of ``source_name`` executes, in plan order.
+    def route(self, domain: str) -> Tuple[PlannedStep, ...]:
+        """Return the steps one pulse of ``domain`` executes, in plan order.
 
-        These are the steps whose domain is the source plus every static
-        step (domain ``None``), which runs once per admitted pulse of every
-        source. Nothing is pruned for output groups.
+        These are the steps whose domain is the source or operator plus every
+        static step (domain ``None``), which runs once per pulse of every
+        domain. Nothing is pruned for output groups.
 
         Args:
-            source_name: Declared source name.
+            domain: Declared source or operator name.
 
         Returns:
             The steps to execute for one pulse.
 
         Raises:
-            ContractError: When the plan declares no such source.
+            ContractError: When the plan declares no such domain.
         """
-        self.source(source_name)
-        steps = tuple(step for step in self.steps if step.domain in (source_name, None))
+        self.domain_ports(domain)
+        steps = tuple(step for step in self.steps if step.domain in (domain, None))
 
         return steps
 
-    def groups_of(self, source_name: str) -> Tuple[PlannedOutputGroup, ...]:
-        """Return the output groups anchored on ``source_name``, in order.
+    def groups_of(self, domain: str) -> Tuple[PlannedOutputGroup, ...]:
+        """Return the output groups anchored on ``domain``, in order.
 
         Args:
-            source_name: Declared source name.
+            domain: Declared source or operator name.
 
         Returns:
-            The groups delivered from that source's pulses.
+            The groups delivered from that domain's pulses.
 
         Raises:
-            ContractError: When the plan declares no such source.
+            ContractError: When the plan declares no such domain.
         """
-        self.source(source_name)
-        groups = tuple(
-            group for group in self.output_groups if group.source == source_name
-        )
+        self.domain_ports(domain)
+        groups = tuple(group for group in self.output_groups if group.source == domain)
 
         return groups
+
+    def consumers_of(self, domain: str) -> Tuple[PlannedOperator, ...]:
+        """Return the operators reading values at the end of ``domain``'s pulses.
+
+        Args:
+            domain: Declared source or operator name.
+
+        Returns:
+            The consuming operators in plan order.
+
+        Raises:
+            ContractError: When the plan declares no such domain.
+        """
+        self.domain_ports(domain)
+        consumers = tuple(
+            operator
+            for operator in self.operators.values()
+            if domain in operator.upstream_domains
+        )
+
+        return consumers
 
     def step(self, path: StepPath) -> PlannedStep:
         """Return the step with the given path.
@@ -1375,6 +1755,9 @@ class CompiledWorkflow:
         description = {
             "inputs": {name: item.describe() for name, item in self.inputs.items()},
             "sources": {name: item.describe() for name, item in self.sources.items()},
+            "operators": {
+                name: item.describe() for name, item in self.operators.items()
+            },
             "steps": [step.describe() for step in self.steps],
             "outputs": {output.name: output.describe() for output in self.outputs},
             "output_groups": {
@@ -1479,6 +1862,18 @@ def _check_plan_references(plan: CompiledWorkflow) -> None:
                 boundaries=boundaries,
                 location=f"output group {group.name!r} field {output.name!r}",
             )
+    # An operator reads its inputs after the whole route of their domain, so
+    # any step of the plan may feed it.
+    for operator in plan.operators.values():
+        for item in operator.inputs:
+            _check_source(
+                item.source,
+                layout=item.layout,
+                plan=plan,
+                steps=earlier,
+                boundaries=boundaries,
+                location=f"$operators.{operator.name} input {item.name!r}",
+            )
 
 
 def _check_active_shape(plan: CompiledWorkflow) -> None:
@@ -1520,6 +1915,7 @@ def _check_active_shape(plan: CompiledWorkflow) -> None:
                 controllers=[gate.controller for gate in step.gates],
                 steps=steps,
                 boundaries=boundaries,
+                operator_upstreams=plan.operator_upstreams,
             )
         except ContractError as error:
             raise ContractError(f"{location}: {error}") from error
@@ -1532,7 +1928,11 @@ def _check_active_shape(plan: CompiledWorkflow) -> None:
         for output in group.outputs:
             try:
                 derived = derive_domain(
-                    [output.source], controllers=(), steps=steps, boundaries=boundaries
+                    [output.source],
+                    controllers=(),
+                    steps=steps,
+                    boundaries=boundaries,
+                    operator_upstreams=plan.operator_upstreams,
                 )
             except ContractError as error:
                 raise ContractError(
@@ -1632,6 +2032,184 @@ def _check_source_record(
             )
 
 
+def _check_operators(plan: CompiledWorkflow) -> None:
+    """Check operator names, input domains, topological order and ports.
+
+    Every input must reach exactly one pulse domain: a source or an operator
+    listed earlier, never the operator itself. Inputs of an operator with
+    ``collect`` or ``hold`` roles share one domain. The recorded ports must be
+    what the operator class plans (``plan_operator_ports``) from its
+    re-validated parameters and the producers' actual layouts and kinds.
+    """
+    clashing = sorted(set(plan.operators) & set(plan.sources))
+    if clashing:
+        raise ContractError(
+            f"Operator names {clashing} are also source names; sources and "
+            "operators share one namespace of pulse domains"
+        )
+
+    steps = {step.path: step for step in plan.steps}
+    boundaries = {item.port: item for item in plan.child_inputs + plan.child_outputs}
+    known = set(plan.sources)
+    for name, operator in plan.operators.items():
+        location = f"$operators.{name}"
+        if operator.name != name:
+            raise ContractError(
+                f"{location} is recorded under key {name!r} but names itself "
+                f"{operator.name!r}"
+            )
+        for item in operator.inputs:
+            where = f"{location} input {item.name!r} ({item.selector})"
+            if isinstance(item.source, (Constant, InputPort)):
+                raise ContractError(
+                    f"{where} reads {_describe_source(item.source)}, which never "
+                    "changes between pulses; an operator consumes pulse data"
+                )
+            try:
+                derived = derive_domain(
+                    [item.source],
+                    controllers=(),
+                    steps=steps,
+                    boundaries=boundaries,
+                    operator_upstreams=plan.operator_upstreams,
+                )
+            except ContractError as error:
+                raise ContractError(f"{where}: {error}") from error
+            if derived is None:
+                raise ContractError(
+                    f"{where} reads static data; an operator input must come from "
+                    "a source or an operator"
+                )
+            if derived != item.domain:
+                raise ContractError(
+                    f"{where} records domain {item.domain!r}, but its value comes "
+                    f"from {derived!r}"
+                )
+            if derived == name:
+                raise ContractError(
+                    f"{where} reads the operator's own pulses; operator domains "
+                    "must not form a cycle"
+                )
+            if derived not in known:
+                raise ContractError(
+                    f"{where} comes from operator {derived!r}, which is not listed "
+                    "before it; operators are kept in topological order"
+                )
+        collected_domains = sorted(
+            {
+                item.domain
+                for item in operator.inputs
+                if item.role in ("collect", "hold")
+            }
+        )
+        if len(collected_domains) > 1:
+            raise ContractError(
+                f"{location} collects from several domains {collected_domains}; "
+                "collect and hold inputs share one upstream domain"
+            )
+        _check_operator_ports(plan, operator, steps=steps)
+        known.add(name)
+
+
+def plan_operator_ports(
+    spec: Any,
+    *,
+    name: str,
+    params: Any,
+    inputs: Sequence[Tuple[str, str, EntryLayout, Tuple[Kind, ...]]],
+) -> Dict[str, PlannedSourceOutput]:
+    """Plan an operator's ports with its class; the one path for every plan.
+
+    The compiler records these ports, and ``CompiledWorkflow`` checks recorded
+    ports against them, so the class is the only owner of an operator's
+    dimensional rules (for example a window's eligible layouts).
+
+    Args:
+        spec: The operator's ``OperatorSpec``.
+        name: Declared operator name.
+        params: Validated parameters.
+        inputs: ``(name, role, layout, kinds)`` per input in declaration order,
+            with the producers' actual layouts and kinds.
+
+    Returns:
+        Planned ports by name.
+
+    Raises:
+        WorkflowCompileError: When the class rejects the inputs; errors about
+            one input carry ``field_path=(role, input_name)``.
+    """
+    ports = spec.plan_ports(name, params, inputs)
+    planned = {
+        port_name: PlannedSourceOutput(
+            name=port_name, kinds=port.kind_names, layout=port.layout
+        )
+        for port_name, port in ports.items()
+    }
+
+    return planned
+
+
+def _check_operator_ports(
+    plan: CompiledWorkflow,
+    operator: PlannedOperator,
+    *,
+    steps: Mapping[StepPath, PlannedStep],
+) -> None:
+    """Re-plan an operator's ports and compare them with the recorded ones."""
+    location = f"$operators.{operator.name}"
+    spec = operator.spec
+    if not isinstance(operator.params, spec.params_model):
+        raise ContractError(
+            f"{location} records parameters of type "
+            f"{type(operator.params).__name__}, but {spec.type} declares "
+            f"{spec.params_model.__name__}"
+        )
+    inputs = [
+        (
+            item.name,
+            item.role,
+            item.layout,
+            tuple(
+                plan.catalogue.kind(kind_name)
+                for kind_name in _producer_kinds(plan, item.source, steps=steps)
+            ),
+        )
+        for item in operator.inputs
+    ]
+    try:
+        params = spec.validate_params(
+            operator.params.model_dump(), operator_name=operator.name
+        )
+        expected = plan_operator_ports(
+            spec, name=operator.name, params=params, inputs=inputs
+        )
+    except (WorkflowCompileError, ContractError) as error:
+        raise ContractError(
+            f"{location} is not a valid {spec.type}: {error}"
+        ) from error
+    if dict(operator.outputs) != expected:
+        raise ContractError(
+            f"{location} records ports "
+            f"{ {name: port.describe() for name, port in operator.outputs.items()} }, "
+            f"but {spec.type} plans "
+            f"{ {name: port.describe() for name, port in expected.items()} } for its "
+            "inputs"
+        )
+
+
+def _producer_kinds(
+    plan: CompiledWorkflow, source: Source, *, steps: Mapping[StepPath, PlannedStep]
+) -> Tuple[str, ...]:
+    """Kinds the producer behind ``source`` declares, past child boundaries."""
+    origin = plan.origin(source)
+    if isinstance(origin, SourcePort):
+        return plan.source_port(origin).kinds
+
+    kinds = steps[origin.step].outputs[origin.output].kinds
+
+    return kinds
+
+
 def scoped_layout(source_name: str, layout: EntryLayout) -> EntryLayout:
     """Scope a source-local layout to the plan: ``sources.<name>:<local id>``.
 
@@ -1701,27 +2279,36 @@ def derive_domain(
     controllers: Iterable[StepPath],
     steps: Mapping[StepPath, PlannedStep],
     boundaries: Mapping[BoundaryPort, "Boundary"],
+    operator_upstreams: Optional[Mapping[str, Tuple[str, ...]]] = None,
 ) -> Optional[str]:
-    """Derive the one source a consumer depends on, or ``None`` for static.
+    """Derive the one pulse domain a consumer depends on, or ``None`` for static.
 
-    A source port contributes its source; a workflow input or constant
-    contributes nothing; a step output contributes the producing step's
-    domain; a child input contributes its source's domain; a gated child
-    output contributes its source's domain and its controllers' domains; a
-    controller contributes its own domain.
+    A causal domain is a declared source or a declared operator: the consumer
+    runs once per pulse of that domain. A source or operator port contributes
+    its domain; a workflow input or constant contributes nothing; a step
+    output contributes the producing step's domain; a child input contributes
+    its source's domain; a gated child output contributes its source's domain
+    and its controllers' domains; a controller contributes its own domain.
+
+    One consumer never reaches two domains: pulses of different domains do
+    not correspond by order, timestamps or shape. Operators are the explicit
+    transitions: an alignment operator relates independent domains, and a
+    window's ``hold`` input carries an upstream parent value into its pulses.
 
     Args:
         sources: Value sources the consumer reads (bindings, an output).
         controllers: Control steps whose gates govern the consumer.
         steps: Planned steps that may be referenced, by path.
         boundaries: Planned child inputs and outputs, by port.
+        operator_upstreams: Upstream domains of each operator, by name; used
+            to name each domain's kind and suggest the remedy that fits.
 
     Returns:
-        The source name, or ``None`` when nothing source-derived is read.
+        The source or operator name, or ``None`` when nothing pulse-derived
+        is read.
 
     Raises:
-        ContractError: When two different sources are reached; no alignment
-            between independent sources exists in this engine.
+        ContractError: When two different domains are reached.
     """
     reached: Dict[str, str] = {}
 
@@ -1748,18 +2335,52 @@ def derive_domain(
         visit_step(controller, via=f"gate of {format_step_path(controller)}")
 
     if len(reached) > 1:
-        described = "; ".join(
-            f"{name!r} via {via}" for name, via in sorted(reached.items())
-        )
         raise ContractError(
-            f"joins independent sources {sorted(reached)} ({described}); sources "
-            "correspond only through an explicit alignment, never by pulse "
-            "order, timestamps or shape"
+            _domain_join_message(reached, operator_upstreams=operator_upstreams or {})
         )
 
     domain = next(iter(reached), None)
 
     return domain
+
+
+def _domain_join_message(
+    reached: Mapping[str, str], *, operator_upstreams: Mapping[str, Tuple[str, ...]]
+) -> str:
+    """Name each joined domain by kind and give the remedy that fits them."""
+
+    def kind(name: str) -> str:
+        return "operator" if name in operator_upstreams else "source"
+
+    def feeds(upstream: str, downstream: str) -> bool:
+        direct = operator_upstreams.get(downstream, ())
+        return upstream in direct or any(feeds(upstream, item) for item in direct)
+
+    described = "; ".join(
+        f"{kind(name)} {name!r} via {via}" for name, via in sorted(reached.items())
+    )
+    fed = [
+        (upstream, downstream)
+        for downstream in sorted(reached)
+        for upstream in sorted(reached)
+        if feeds(upstream, downstream)
+    ]
+    if fed:
+        upstream, downstream = fed[0]
+        remedy = (
+            f"{kind(upstream)} {upstream!r} feeds operator {downstream!r}, but a "
+            f"pulse of {downstream!r} is not a pulse of {upstream!r}. Pass the "
+            f"value into {downstream!r} as one of its inputs (for a window, a hold "
+            f"input: a held parent reference) and read it from $operators.{downstream}"
+        )
+    else:
+        remedy = (
+            "independent domains correspond only through an explicit alignment "
+            "operator, never by pulse order, timestamps or shape"
+        )
+    message = f"joins independent pulse domains ({described}); {remedy}"
+
+    return message
 
 
 Boundary = Union[PlannedChildInput, PlannedChildOutput]
@@ -1820,8 +2441,8 @@ def _check_boundaries(
         ]
         layouts += [gate.controller_layout for gate in item.gates]
         deepest = max((layout for layout in layouts if layout is not None), key=_depth)
-        if item.layout.axis_ids != deepest.axis_ids or not all(
-            layout is None or deepest.axis_ids[: layout.depth] == layout.axis_ids
+        if item.layout.axes != deepest.axes or not all(
+            layout is None or deepest.axes[: layout.depth] == layout.axes
             for layout in layouts
         ):
             raise ContractError(
@@ -1894,10 +2515,10 @@ def _check_source(
                 "earlier step"
             )
 
-    if layout is not None and actual is not None and layout.axis_ids != actual.axis_ids:
+    if layout is not None and actual is not None and layout.axes != actual.axes:
         raise ContractError(
-            f"{location}: declared source axes {list(layout.axis_ids)} differ from "
-            f"the axes {list(actual.axis_ids)} of {_describe_source(source)}"
+            f"{location}: declared source axes {_describe_axes(layout)} differ from "
+            f"the axes {_describe_axes(actual)} of {_describe_source(source)}"
         )
 
 
@@ -1937,6 +2558,16 @@ def _source_layout(
     return layout
 
 
+def _describe_axes(layout: EntryLayout) -> List[str]:
+    """Axis ids with kind and stationarity, e.g. ``['crop:regions (dynamic_nesting)']``."""
+    described = [
+        f"{axis.id} ({axis.kind}{', stationary' if axis.stationary else ''})"
+        for axis in layout.axes
+    ]
+
+    return described
+
+
 def _depth(layout: EntryLayout) -> int:
     return layout.depth
 
@@ -1952,6 +2583,19 @@ def _collect_axis_origins(plan: CompiledWorkflow) -> Mapping[str, AxisOrigin]:
                 origins.setdefault(
                     axis_id, AxisOrigin(kind="source", name=planned_source.name)
                 )
+
+    for operator in plan.operators.values():
+        # Ports keep the axes of the inputs they carry; only new axes (an
+        # aligned member axis, a window's time axis) originate here.
+        consumed = {
+            axis_id for item in operator.inputs for axis_id in item.layout.axis_ids
+        }
+        for output in operator.outputs.values():
+            for axis_id in output.layout.axis_ids:
+                if axis_id not in consumed:
+                    origins.setdefault(
+                        axis_id, AxisOrigin(kind="operator", name=operator.name)
+                    )
 
     for step in plan.steps:
         created = [
@@ -2049,6 +2693,11 @@ class ExecutionObserver:
         self, *, run_id: str, group: str, source: str, pulse: PulseKey
     ) -> None:
         """A registered handler returned for one group of one pulse."""
+
+    def on_operator_finished(
+        self, *, operator: str, error: Optional[BaseException]
+    ) -> None:
+        """An operator of an active run finished, or was closed after ``error``."""
 
 
 ErrorHandler = Callable[[StepExecutionError], None]

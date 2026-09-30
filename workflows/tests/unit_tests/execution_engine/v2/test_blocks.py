@@ -27,8 +27,15 @@ from roboflow_workflows.execution_engine.v2.blocks import (
     MosaicBlock,
     create_catalogue,
 )
-from roboflow_workflows.execution_engine.v2.blocks.image import ResizeBlock
+from roboflow_workflows.execution_engine.v2.blocks.image import (
+    ResizeBlock,
+    StaticCropBlock,
+)
 from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
+from roboflow_workflows.execution_engine.v2.blocks.temporal import (
+    BestFrameBlock,
+    TopKBrightestBlock,
+)
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.data import Batch
 from roboflow_workflows.execution_engine.v2.declaration import Select, Stop, spec_of
@@ -204,7 +211,7 @@ class TestDeclarations:
             assert output.transform == "same"
             assert (output.source, output.context_policy) == (
                 "images",
-                "common_or_none",
+                "last",
             )
         assert spec.outputs["count"].kinds == (INTEGER_KIND,)
 
@@ -633,13 +640,19 @@ class TestCatalogue:
 
         assert catalogue.block_types == (
             "v2/crop",
+            "v2/static_crop",
             "v2/resize",
             "v2/invert",
             "v2/mosaic",
             "v2/has_brightness",
             "v2/continue_if",
+            "v2/best_frame",
+            "v2/top_k_brightest",
         )
         assert catalogue.entry("v2/crop").spec is spec_of(CropBlock)
+        assert catalogue.entry("v2/static_crop").spec is spec_of(StaticCropBlock)
+        assert catalogue.entry("v2/best_frame").spec is spec_of(BestFrameBlock)
+        assert catalogue.entry("v2/top_k_brightest").spec is spec_of(TopKBrightestBlock)
         assert catalogue.kind("image") is IMAGE_KIND
         assert catalogue.kind("crop_summary") is CROP_SUMMARY_KIND
         assert catalogue.kind("boolean") is BOOLEAN_KIND

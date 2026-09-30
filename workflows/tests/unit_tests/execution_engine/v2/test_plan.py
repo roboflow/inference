@@ -291,11 +291,21 @@ def test_hand_built_reference_plan_is_valid_and_describable() -> None:
 def test_item_binding_modes_match_layouts(
     mode, source_layout, invocation_layout
 ) -> None:
+    # An ancestor or constant leaf does not determine the invocation level; an
+    # element leaf over the invocation layout does, as the compiler plans it.
+    pinning = (
+        (_value_binding("factor", InputPort("values"), invocation_layout, "element"),)
+        if mode != "element" and invocation_layout.depth
+        else ()
+    )
     step = _step(
         Scale,
         ("scale",),
-        raw={"value": "$inputs.values"},
-        bindings=(_value_binding("value", InputPort("values"), source_layout, mode),),
+        raw={"value": "$inputs.values", "factor": "$inputs.values"},
+        bindings=(
+            _value_binding("value", InputPort("values"), source_layout, mode),
+            *pinning,
+        ),
         layout=invocation_layout,
     )
 
@@ -324,6 +334,54 @@ def test_item_binding_modes_reject_inconsistent_layouts(
             ),
             layout=invocation_layout,
         )
+
+
+STABLE_BATCH = EntryLayout(axes=(Axis(id="N", kind="sample", stationary=True),))
+STABLE_CROPS = EntryLayout(
+    axes=(SAMPLES, Axis(id="crop/children", kind="static_nesting"))
+)
+
+
+@pytest.mark.parametrize(
+    "source_layout, invocation_layout",
+    [(BATCH, STABLE_BATCH), (NESTED, STABLE_CROPS), (STABLE_CROPS, NESTED)],
+    ids=["stationary-flag", "axis-kind", "kind-dropped"],
+)
+def test_bindings_and_invocations_compare_whole_axes_not_ids(
+    source_layout, invocation_layout
+) -> None:
+    # Equal axis ids with another kind or stationarity are a different axis.
+    with pytest.raises(ContractError, match="in mode 'element' has source axes"):
+        _step(
+            Scale,
+            ("scale",),
+            raw={"value": "$inputs.values"},
+            bindings=(
+                _value_binding("value", InputPort("values"), source_layout, "element"),
+            ),
+            layout=invocation_layout,
+        )
+
+
+def test_outputs_restate_no_inherited_axis_and_invocations_are_determined() -> None:
+    binding = _value_binding("value", InputPort("values"), BATCH, "element")
+
+    def scale(layout, output_layout):
+        planned = _step(
+            Scale,
+            ("scale",),
+            raw={"value": "$inputs.values"},
+            bindings=(binding,),
+            layout=layout,
+            outputs={"scaled": PlannedOutput("scaled", ("float",), output_layout)},
+        )
+        return planned
+
+    assert scale(BATCH, BATCH).outputs["scaled"].layout == BATCH
+    with pytest.raises(ContractError, match="inconsistent with invocation axes"):
+        scale(BATCH, STABLE_BATCH)
+    with pytest.raises(ContractError, match="bindings and gates determine"):
+        _step(Sink, ("sink",), layout=BATCH)
 
 
 def test_constant_group_casts_at_scalar_and_batched_invocation_levels() -> None:
@@ -766,6 +824,7 @@ def test_consensus_leaves_deliver_batches_even_when_all_are_constant() -> None:
     constant = _step(
         Consensus,
         ("consensus",),
+        layout=SCALAR,
         raw={"predictions": ["$inputs.values"]},
         bindings=(
             _leaf(

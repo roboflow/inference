@@ -1,13 +1,17 @@
-"""Explicit, immutable collection of V2 block classes, source classes and kinds.
+"""Explicit, immutable collection of V2 block, source and operator classes and kinds.
 
 A catalogue only collects classes; every contract detail comes from the class
-itself (see ``declaration`` and ``sources``)::
+itself (see ``declaration``, ``sources`` and ``operators``)::
 
-    catalogue = Catalogue([Scale, Crop], sources=[CsvTemperature], namespace="demo")
+    catalogue = Catalogue(
+        [Scale, Crop], sources=[CsvTemperature], operators=[Align], namespace="demo"
+    )
 
-Blocks and sources are separate registries: a ``steps`` entry names a block
-type, a ``sources`` entry names a source type, and the two may spell the same
-identity without conflict.
+Blocks, sources and operators are separate registries: a ``steps`` entry names
+a block type, a ``sources`` entry a source type and an ``operators`` entry an
+operator type; the registries may spell the same identity without conflict.
+There is no hidden process-wide operator registry: the built-in operators are
+collected by the V2 built-in catalogue like any third-party class.
 
 Catalogues are immutable. ``Catalogue.merge`` and ``with_blocks`` return new
 catalogues, so a compiled plan can keep the catalogue it was compiled with.
@@ -28,7 +32,7 @@ it and survives later registration of the placeholder.
 import importlib
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Mapping, Optional, Tuple, Union
 
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
@@ -36,6 +40,9 @@ from roboflow_workflows.execution_engine.v2.declaration import BlockSpec, spec_o
 from roboflow_workflows.execution_engine.v2.errors import CatalogueError, ContractError
 from roboflow_workflows.execution_engine.v2.kinds import WILDCARD_KIND, Kind
 from roboflow_workflows.execution_engine.v2.sources import SourceSpec, spec_of_source
+
+if TYPE_CHECKING:
+    from roboflow_workflows.execution_engine.v2.operators.contract import OperatorSpec
 
 V2_ENGINE_VERSION = "2.0.0"
 CATALOGUE_ATTRIBUTE = "WORKFLOWS_V2_CATALOGUE"
@@ -79,22 +86,41 @@ class SourceEntry:
         return description
 
 
+@dataclass(frozen=True)
+class OperatorEntry:
+    """A registered operator class and the namespace that registered it.
+
+    Args:
+        spec: The class's validated ``OperatorSpec``.
+        namespace: Catalogue namespace of the registration.
+    """
+
+    spec: "OperatorSpec"
+    namespace: str
+
+    def describe(self) -> Dict[str, Any]:
+        """Return the operator description including its namespace."""
+        description = {"namespace": self.namespace, **self.spec.describe()}
+
+        return description
+
+
 class Catalogue:
-    """Immutable set of block classes, source classes, kinds and providers.
+    """Immutable set of block, source and operator classes, kinds and providers.
 
     Args:
         blocks: Concrete ``Block`` subclasses.
         sources: Concrete ``Source`` subclasses.
+        operators: Concrete ``Operator`` subclasses.
         kinds: Additional kinds, e.g. for workflow inputs no block references.
-        namespace: Namespace of these blocks and sources, used for resource
-            keys.
+        namespace: Namespace of these classes, used for resource keys.
         providers: Resource providers for blocks and sources of this
             namespace, by constructor parameter name. Wrap lazily created
             values in ``Factory``.
 
     Raises:
-        CatalogueError: On a class that is neither a concrete block nor a
-            concrete source, duplicate identities, conflicting kinds or an
+        CatalogueError: On a class that is not a concrete class of its
+            registry, duplicate identities, conflicting kinds or an
             incompatible declaration.
     """
 
@@ -103,6 +129,7 @@ class Catalogue:
         blocks: Iterable[type] = (),
         *,
         sources: Iterable[type] = (),
+        operators: Iterable[type] = (),
         kinds: Iterable[Kind] = (),
         namespace: str = "",
         providers: Optional[Mapping[str, Any]] = None,
@@ -111,6 +138,8 @@ class Catalogue:
         self._identities: Dict[str, str] = {}
         self._source_entries: Dict[str, SourceEntry] = {}
         self._source_identities: Dict[str, str] = {}
+        self._operator_entries: Dict[str, OperatorEntry] = {}
+        self._operator_identities: Dict[str, str] = {}
         self._kinds: Dict[str, Kind] = {}
         self._providers: Dict[str, Dict[str, Any]] = {}
 
@@ -138,6 +167,9 @@ class Catalogue:
                     f"Cannot register {source_class!r}: {error}"
                 ) from error
             self._add_source(SourceEntry(spec=source_spec, namespace=namespace))
+        for operator_class in operators:
+            operator_spec = _spec_of_operator(operator_class)
+            self._add_operator(OperatorEntry(spec=operator_spec, namespace=namespace))
         for name, value in (providers or {}).items():
             self._add_provider(namespace, name=name, value=value)
 
@@ -152,7 +184,8 @@ class Catalogue:
             *catalogues: Catalogues to combine.
 
         Returns:
-            A new catalogue containing every block, source, kind and provider.
+            A new catalogue containing every block, source, operator, kind and
+            provider.
 
         Raises:
             CatalogueError: On conflicting identities, kinds or providers.
@@ -169,6 +202,8 @@ class Catalogue:
                 merged._add_entry(entry)
             for source_entry in catalogue._source_entries.values():
                 merged._add_source(source_entry)
+            for operator_entry in catalogue._operator_entries.values():
+                merged._add_operator(operator_entry)
             for namespace, values in catalogue._providers.items():
                 for name, value in values.items():
                     merged._add_provider(namespace, name=name, value=value)
@@ -244,6 +279,11 @@ class Catalogue:
     def source_types(self) -> Tuple[str, ...]:
         """Canonical source types in registration order."""
         return tuple(self._source_entries)
+
+    @property
+    def operator_types(self) -> Tuple[str, ...]:
+        """Canonical operator types in registration order."""
+        return tuple(self._operator_entries)
 
     @property
     def kinds(self) -> Mapping[str, Kind]:
@@ -331,6 +371,42 @@ class Catalogue:
 
         return found
 
+    def find_operator(self, identity: str) -> Optional[OperatorEntry]:
+        """Look up an operator by canonical type or alias.
+
+        Args:
+            identity: Type or alias used by an ``operators`` declaration.
+
+        Returns:
+            The entry, or ``None`` when unknown.
+        """
+        canonical = self._operator_identities.get(identity)
+        if canonical is None:
+            return None
+
+        return self._operator_entries[canonical]
+
+    def resolve_operator(self, identity: str) -> OperatorEntry:
+        """Look up an operator by canonical type or alias.
+
+        Args:
+            identity: Type or alias used by an ``operators`` declaration.
+
+        Returns:
+            The entry; ``entry.spec.operator_class`` implements it.
+
+        Raises:
+            CatalogueError: When the identity is unknown.
+        """
+        found = self.find_operator(identity)
+        if found is None:
+            raise CatalogueError(
+                f"Unknown operator type {identity!r}; known operator types: "
+                f"{sorted(self._operator_identities)}"
+            )
+
+        return found
+
     def kind(self, name: str) -> Kind:
         """Look up a kind by name.
 
@@ -360,6 +436,9 @@ class Catalogue:
             "engine_version": V2_ENGINE_VERSION,
             "blocks": [entry.describe() for entry in self._entries.values()],
             "sources": [entry.describe() for entry in self._source_entries.values()],
+            "operators": [
+                entry.describe() for entry in self._operator_entries.values()
+            ],
             "kinds": [_describe_kind(kind) for kind in self._kinds.values()],
         }
 
@@ -374,7 +453,8 @@ class Catalogue:
     def __repr__(self) -> str:
         return (
             f"Catalogue(blocks={list(self._entries)}, "
-            f"sources={list(self._source_entries)})"
+            f"sources={list(self._source_entries)}, "
+            f"operators={list(self._operator_entries)})"
         )
 
     def _add_entry(self, entry: CatalogueEntry) -> None:
@@ -429,6 +509,33 @@ class Catalogue:
         for identity in spec.identities:
             self._source_identities[identity] = spec.type
 
+    def _add_operator(self, entry: OperatorEntry) -> None:
+        spec = entry.spec
+        existing = self._operator_entries.get(spec.type)
+        if (
+            existing is not None
+            and existing.spec.operator_class is spec.operator_class
+            and existing.namespace == entry.namespace
+        ):
+            return
+
+        _require_compatible(spec)
+        for identity in spec.identities:
+            owner = self._operator_identities.get(identity)
+            if owner is not None:
+                other_class = self._operator_entries[owner].spec.operator_class
+                raise CatalogueError(
+                    f"Operator identity {identity!r} of "
+                    f"{spec.operator_class.__qualname__} is already registered by "
+                    f"{other_class.__qualname__}"
+                )
+        for kind in spec.kinds:
+            self._add_kind(kind)
+
+        self._operator_entries[spec.type] = entry
+        for identity in spec.identities:
+            self._operator_identities[identity] = spec.type
+
     def _add_kind(self, kind: Kind) -> None:
         if not isinstance(kind, Kind):
             raise CatalogueError(f"Catalogue kinds must be Kind objects, got {kind!r}")
@@ -457,7 +564,22 @@ class Catalogue:
         values[name] = value
 
 
-def _require_compatible(spec: Union[BlockSpec, SourceSpec]) -> None:
+def _spec_of_operator(operator_class: Any) -> "OperatorSpec":
+    # Imported here: the operator contract imports declaration helpers, and
+    # the plan imports this module, so a module-level import could cycle.
+    from roboflow_workflows.execution_engine.v2.operators.contract import (
+        spec_of_operator,
+    )
+
+    try:
+        spec = spec_of_operator(operator_class)
+    except ContractError as error:
+        raise CatalogueError(f"Cannot register {operator_class!r}: {error}") from error
+
+    return spec
+
+
+def _require_compatible(spec: Union[BlockSpec, SourceSpec, "OperatorSpec"]) -> None:
     if spec.engine_compatibility is None:
         return
 

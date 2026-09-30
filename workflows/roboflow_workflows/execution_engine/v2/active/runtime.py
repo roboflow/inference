@@ -11,16 +11,37 @@ Threads of one active run::
 
     reader[S]   (one per source)     processor   (one per run)
     ----------------------------     -----------------------------------------
-    open(**params)                   pulse = queue.get()
-    loop: emission = read()          run = begin_pulse(...)        fresh RunState
-          None -> end of S           deliver groups that are ready
-          admit(S, emission)         for step in plan.route(S):    plan order
-    close()  exactly once                execute_step; deliver groups now ready
-                                     release S's admission slot
+    open(**params)                   item = queue.get()
+    loop: emission = read()          pulse of S:
+          None -> end of S             run = begin_pulse(...)      fresh RunState
+          admit(S, emission)           for step in plan.route(S):  plan order
+    close()  exactly once                  execute_step; deliver groups now ready
+    queue "S done"                     feed operators of S (below)
+                                       release S's admission slot
+                                     "S done": end S's inputs of its operators
+
+Operators turn pulses of upstream domains into pulses of their own domain,
+depth first on the processor thread::
+
+    feed(run of domain D):
+        for operator in plan.consumers_of(D):          plan order
+            emitted = operator.push(arrivals of D's pulse)
+            for each emitted pulse P of the operator:
+                run = begin_operator_pulse(...)        fresh RunState, causes
+                route of the operator, groups, then feed(run)
+
+    end(D):
+        for operator in plan.consumers_of(D):
+            end_input(each input of D) -> pulses run as above
+            all upstream domains ended -> finish once -> pulses run, end(operator)
 
 Admission is the acceptance boundary: a reader takes one of its source's
 ``admission_bound`` slots and, under the run's lock, queues the pulse. The
-slot is released after the pulse's handlers returned. A reader holds at most
+slot is released after the pulse's handlers returned and the operators it
+fed returned and their immediate pulses ran; what an operator retains
+afterwards is bounded by the operator's own parameters, not by admission.
+Nothing waits for future data: an operator returns what it can decide
+now. A reader holds at most
 one read-but-unadmitted emission, so per source at most ``admission_bound + 1``
 emissions exist outside the source at any time, and a slow synchronous
 handler backpressures every reader instead of growing a queue. Readers never
@@ -35,17 +56,23 @@ registered group of the source at pulse start, all fields filtered.
 
 Lifecycle:
 
-* End of one source ends only its reader. The run completes when every
-  reader has closed its source and every admitted pulse was processed.
+* End of one source ends only its reader. Its end marker follows its
+  admitted pulses through the queue; the operators it feeds then learn that
+  its inputs ended, and an operator whose upstream domains all ended
+  finishes once (``eof``) and ends its own domain after its final pulses.
+  The run completes when every reader has closed its source, every admitted
+  pulse was processed and every operator was closed.
 * ``stop()`` closes admission and sets the shared ``stop_event`` the sources
   see. A reader whose ``read()`` returns afterwards discards that emission
-  and closes. Admitted pulses are still processed and delivered exactly once.
-* A failure (open, read, emission, step, handler, observer or close) closes
-  admission, cancels admitted pulses not yet processed and the remaining
-  steps and deliveries of the pulse in flight, closes every source whose
-  ``open`` was attempted, and is raised by ``wait()`` as one
-  ``ActiveRunError``; later errors are kept in its ``suppressed``. Handlers
-  already called are not undone.
+  and closes. Admitted pulses are still processed and delivered exactly once;
+  operators then finish with reason ``stop`` and apply their partial policies.
+* A failure (open, read, emission, step, handler, observer, operator or
+  close) closes admission, cancels admitted pulses not yet processed and the
+  remaining steps, deliveries and operator pulses of the pulse in flight,
+  closes every source whose ``open`` was attempted and every operator
+  without finishing it (no partial emission), and is raised by ``wait()`` as
+  one ``ActiveRunError``; later errors are kept in its ``suppressed``.
+  Handlers already called are not undone.
 * ``stop()`` never blocks and is safe inside a handler; ``wait()`` inside a
   handler raises instead of waiting for itself. A handler may run before
   ``start()`` has returned; ``ExecutionSession.stop()`` (``stop_session``)
@@ -57,8 +84,9 @@ Lifecycle:
 * A failure to start a reader thread fails the run: unstarted readers are
   marked done, started ones stop cooperatively and close, the run drains
   and ``start()`` raises the attributed failure.
-* A later ``start()`` on the same session constructs new source instances
-  and reuses the session's block instances and their state.
+* A later ``start()`` on the same session constructs new source and
+  operator instances and reuses the session's block instances and their
+  state. Nothing an operator retained survives its run.
 
 Block calls and handlers run on the processor thread only, so ordinary
 stateful blocks are never reentered. This is sequential processing with
@@ -71,13 +99,26 @@ import threading
 import uuid
 import weakref
 from dataclasses import dataclass, field
-from typing import Any, Callable, FrozenSet, List, Mapping, Optional, Set, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    FrozenSet,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Union,
+)
 
 from roboflow_workflows.execution_engine.v2.active.execution import (
     abandon_pulse,
+    begin_operator_pulse,
     begin_pulse,
     engine_observation,
     group_result,
+    operator_arrivals,
 )
 from roboflow_workflows.execution_engine.v2.context import (
     ExecutionContext,
@@ -103,10 +144,17 @@ from roboflow_workflows.execution_engine.v2.execution.steps import (
     RunState,
     execute_step,
 )
+from roboflow_workflows.execution_engine.v2.operators import (
+    Operator,
+    OperatorCounters,
+    OperatorPulse,
+    TerminationReason,
+)
 from roboflow_workflows.execution_engine.v2.plan import (
     Binding,
     Constant,
     ExecutionSession,
+    PlannedOperator,
     PlannedOutputGroup,
     PlannedSource,
     PulseKey,
@@ -118,6 +166,8 @@ __all__ = [
     "ActiveRunError",
     "GroupHandler",
     "GroupResult",
+    "OperatorCounters",
+    "SourceCounters",
     "start_session",
     "stop_session",
 ]
@@ -170,6 +220,46 @@ class _SourceSlot:
     @property
     def name(self) -> str:
         return self.planned.name
+
+
+@dataclass
+class _OperatorSlot:
+    """One operator of the run: its instance and which upstream domains ended."""
+
+    planned: PlannedOperator
+    instance: Operator
+    next_sequence: int = 0
+    ended: Set[str] = field(default_factory=set)
+    stopped: bool = False
+    close_attempted: bool = False
+    error: Optional[ActiveRunError] = None
+
+    @property
+    def name(self) -> str:
+        return self.planned.name
+
+    @property
+    def counters(self) -> OperatorCounters:
+        return self.instance.counters
+
+
+@dataclass(frozen=True)
+class _Outcome:
+    """How a pulse, or the operator work it fed, ended.
+
+    Args:
+        completed: Whether everything ran and every handler returned.
+        error: The failure raised by this work, already recorded as the run's
+            failure (or suppressed); ``None`` when it completed or a failure
+            elsewhere cut it short.
+    """
+
+    completed: bool
+    error: Optional[ActiveRunError] = None
+
+
+_COMPLETED = _Outcome(completed=True)
+_CANCELLED = _Outcome(completed=False)
 
 
 @dataclass(frozen=True)
@@ -230,8 +320,8 @@ def start_session(
             callable, is a coroutine function, the bound is invalid or the
             session already has an unfinished active run.
         ActiveRunError: When a source's resolved parameters violate its
-            declaration, its constructor fails or the observer rejects the
-            run (stage ``start``).
+            declaration, a source or operator constructor fails or the
+            observer rejects the run (stage ``start``).
     """
     plan = session.plan
     if not plan.is_active:
@@ -267,12 +357,14 @@ def start_session(
             )
             for planned in plan.sources.values()
         }
+        operators = _prepare_operators(plan.operators.values())
         run = ActiveRun(
             session,
             run_id=run_id,
             inputs=entries,
             registered=registered,
             slots=slots,
+            operators=operators,
             stop_event=stop_event,
         )
         _ACTIVE_RUNS[session] = run
@@ -420,6 +512,56 @@ def _prepare_source(
     return slot
 
 
+def _prepare_operators(
+    planned_operators: Sequence[PlannedOperator],
+) -> Dict[str, _OperatorSlot]:
+    """Construct a fresh instance of every operator; close them all on failure."""
+    prepared: Dict[str, _OperatorSlot] = {}
+    for planned in planned_operators:
+        operator_class = planned.spec.operator_class
+        try:
+            instance = operator_class(
+                name=planned.name, params=planned.params, inputs=planned.inputs
+            )
+        except Exception as error:
+            failure = ActiveRunError(
+                f"constructor of {operator_class.__qualname__} failed: "
+                f"{type(error).__name__}: {error}",
+                stage="start",
+                operator=planned.name,
+            )
+            failure.__cause__ = error
+            for slot in prepared.values():
+                close_error = _close_operator(slot)
+                if close_error is not None:
+                    failure.suppressed += (close_error,)
+            raise failure
+        prepared[planned.name] = _OperatorSlot(planned=planned, instance=instance)
+
+    return prepared
+
+
+def _close_operator(slot: _OperatorSlot) -> Optional[ActiveRunError]:
+    """Close an operator exactly once; return what ``close`` raised."""
+    if slot.close_attempted:
+        return None
+
+    slot.close_attempted = True
+    try:
+        slot.instance.close()
+    except Exception as error:
+        failure = ActiveRunError(
+            f"close raised {type(error).__name__}: {error}",
+            stage="operator",
+            operator=slot.name,
+        )
+        failure.__cause__ = error
+        return failure
+    slot.counters.closed = True
+
+    return None
+
+
 def _static_value(binding: Binding, entries: Mapping[str, Entry]) -> Any:
     """Value of a source parameter selector: a literal or an ungrouped static input."""
     if isinstance(binding.source, Constant):
@@ -435,6 +577,7 @@ def _attributed(
     *,
     stage: ActiveRunStage,
     source: Optional[str] = None,
+    operator: Optional[str] = None,
     pulse: Optional[int] = None,
 ) -> ActiveRunError:
     """Wrap an exception of the run into its attributed terminal error."""
@@ -445,6 +588,7 @@ def _attributed(
             str(raised),
             stage="step",
             source=source,
+            operator=operator,
             pulse=pulse,
             step_path=raised.step_path,
         )
@@ -453,6 +597,7 @@ def _attributed(
             f"{type(raised).__name__}: {raised}",
             stage=stage,
             source=source,
+            operator=operator,
             pulse=pulse,
         )
     error.__cause__ = raised
@@ -472,6 +617,7 @@ class ActiveRun:
         inputs: Static input entries shared by every pulse.
         registered: Output groups with handlers, in plan order.
         slots: Constructed sources by name.
+        operators: Constructed operators by name, in plan order.
         stop_event: Event the sources watch; set by ``stop()`` and by failure.
     """
 
@@ -483,6 +629,7 @@ class ActiveRun:
         inputs: Mapping[str, Entry],
         registered: List[_Registered],
         slots: Mapping[str, _SourceSlot],
+        operators: Mapping[str, _OperatorSlot],
         stop_event: threading.Event,
     ):
         self.session = session
@@ -491,6 +638,7 @@ class ActiveRun:
         self._inputs = inputs
         self._registered = registered
         self._slots = slots
+        self._operators = operators
         self._lock = threading.Lock()
         self._admission_open = True
         self._failure: Optional[ActiveRunError] = None
@@ -513,6 +661,11 @@ class ActiveRun:
     def counters(self) -> Mapping[str, SourceCounters]:
         """Per-source counters; complete once ``done``."""
         return {name: slot.counters for name, slot in self._slots.items()}
+
+    @property
+    def operator_counters(self) -> Mapping[str, OperatorCounters]:
+        """Per-operator counters, including bounded-state outcomes; complete once ``done``."""
+        return {name: slot.counters for name, slot in self._operators.items()}
 
     @property
     def done(self) -> bool:
@@ -581,8 +734,8 @@ class ActiveRun:
     def _launch(self) -> None:
         """Notify the observer and start the processor, then every reader.
 
-        Before the processor runs nothing needs unwinding: sources are
-        constructed but not opened, so a failure only releases the
+        Before the processor runs, sources are constructed but not opened,
+        so a failure only closes the constructed operators and releases the
         registration. Once readers are launching, a failure to start one of
         them is a failure of the run: the readers that never started are
         marked done so the processor does not wait for them, the started
@@ -596,7 +749,12 @@ class ActiveRun:
             self._processor.start()
         except Exception as raised:
             self._unregister()
-            raise _attributed(raised, stage="start") from raised
+            failure = _attributed(raised, stage="start")
+            for slot in self._operators.values():
+                close_error = _close_operator(slot)
+                if close_error is not None:
+                    failure.suppressed += (close_error,)
+            raise failure from raised
 
         names = list(self._readers)
         for position, name in enumerate(names):
@@ -751,90 +909,291 @@ class ActiveRun:
                 item = self._queue.get()
                 if isinstance(item, _ReaderDone):
                     remaining -= 1
-                    continue
-
-                slot = self._slots[item.key.source]
-                if self._failure is not None:
-                    slot.counters.cancelled += 1
+                    if self._failure is None:
+                        self._end_domain(item.source, reason=self._termination(item))
                 else:
-                    self._process_pulse(slot, item)
-                slot.admission.release()
+                    slot = self._slots[item.key.source]
+                    if self._failure is not None:
+                        slot.counters.cancelled += 1
+                    else:
+                        self._process_source_pulse(slot, item)
+                    slot.admission.release()
+                if self._failure is not None:
+                    # Release what operators retain now, not after the readers.
+                    self._close_operators()
+            self._close_operators()
             self.session.observer.on_run_finished(
                 run_id=self.run_id, result=None, error=self._failure
             )
         except Exception as raised:
             self._fail(_attributed(raised, stage="observer"))
         finally:
+            self._close_operators()
             self._unregister()
             self._done.set()
 
-    def _process_pulse(self, slot: _SourceSlot, item: _Pulse) -> None:
-        key = item.key
+    def _termination(self, done: _ReaderDone) -> TerminationReason:
+        """``eof`` when the source reached its end, ``stop`` when it was stopped."""
+        ended = self._slots[done.source].counters.ended
+
+        return "eof" if ended else "stop"
+
+    def _process_source_pulse(self, slot: _SourceSlot, item: _Pulse) -> None:
+        self._run_pulse(
+            item.key,
+            counters=slot.counters,
+            begin=lambda: begin_pulse(
+                self.session,
+                pulse=item.key,
+                emission=item.emission,
+                inputs=self._inputs,
+                observed=item.observed,
+            ),
+            begin_stage="emission",
+            present=frozenset(item.emission.data),
+            filtered=item.emission.is_filtered,
+        )
+
+    def _process_operator_pulse(
+        self, slot: _OperatorSlot, emission: OperatorPulse
+    ) -> _Outcome:
+        key = PulseKey(
+            active_run_id=self.run_id, source=slot.name, sequence=slot.next_sequence
+        )
+        slot.next_sequence += 1
+        outcome = self._run_pulse(
+            key,
+            counters=slot.counters,
+            begin=lambda: begin_operator_pulse(
+                self.session, pulse=key, emission=emission, inputs=self._inputs
+            ),
+            begin_stage="operator",
+            present=frozenset(emission.ports),
+            filtered=False,
+        )
+
+        return outcome
+
+    def _run_pulse(
+        self,
+        key: PulseKey,
+        *,
+        counters: Union[SourceCounters, OperatorCounters],
+        begin: Callable[[], RunState],
+        begin_stage: ActiveRunStage,
+        present: FrozenSet[str],
+        filtered: bool,
+    ) -> _Outcome:
+        """Run one pulse of a source or an operator, then the operators it feeds.
+
+        A failure raised here is attributed to this pulse, recorded as the
+        run's failure once and returned; a failure of work the pulse fed is
+        returned as it was recorded there. Either way ``on_pulse_finished``
+        of this pulse receives it. A pulse cut short by a failure elsewhere
+        is cancelled with no error, as in M2.1.
+        """
         run: Optional[RunState] = None
-        error: Optional[ActiveRunError] = None
         stage: ActiveRunStage = "observer"
         try:
             self.session.observer.on_pulse_started(
                 run_id=key.run_id, source=key.source, pulse=key
             )
-            stage = "emission"
-            run = begin_pulse(
-                self.session,
-                pulse=key,
-                emission=item.emission,
-                inputs=self._inputs,
-                observed=item.observed,
-            )
+            stage = begin_stage
+            run = begin()
             stage = "step"
-            if self._run_route(slot, run, emission=item.emission):
-                slot.counters.processed += 1
+            if self._run_route(
+                run, counters=counters, present=present, filtered=filtered
+            ):
+                outcome = self._feed_operators(run)
             else:
-                slot.counters.cancelled += 1
+                outcome = _CANCELLED
         except Exception as raised:
-            error = _attributed(
-                raised, stage=stage, source=key.source, pulse=key.sequence
-            )
-            slot.counters.cancelled += 1
+            error = _attributed(raised, stage=stage, **self._where(key))
+            self._fail(error)
+            outcome = _Outcome(completed=False, error=error)
         finally:
             if run is not None:
                 abandon_pulse(run)
-        if error is not None:
-            self._fail(error)
+        if outcome.completed:
+            counters.processed += 1
+        else:
+            counters.cancelled += 1
+        self._pulse_finished(key, error=outcome.error)
+
+        return outcome
+
+    def _pulse_finished(
+        self, key: PulseKey, *, error: Optional[ActiveRunError]
+    ) -> None:
         try:
             self.session.observer.on_pulse_finished(
                 run_id=key.run_id, source=key.source, pulse=key, error=error
             )
         except Exception as raised:
-            self._fail(
-                _attributed(
-                    raised, stage="observer", source=key.source, pulse=key.sequence
+            self._fail(_attributed(raised, stage="observer", **self._where(key)))
+
+    def _feed_operators(self, run: RunState) -> _Outcome:
+        """Push the pulse's values to each consuming operator; run what they emit."""
+        for planned in self.session.plan.consumers_of(run.pulse.source):
+            if self._failure is not None:
+                return _CANCELLED
+            slot = self._operators[planned.name]
+            arrivals = operator_arrivals(run, planned)
+            slot.counters.arrivals += len(arrivals)
+            emitted = self._call_operator(slot, "push", arrivals, fed_by=run.pulse)
+            outcome = self._run_emissions(slot, emitted)
+            if not outcome.completed:
+                return outcome
+
+        return _COMPLETED
+
+    def _end_domain(self, domain: str, *, reason: TerminationReason) -> None:
+        """Tell the operators of ``domain`` that its inputs ended; finish the done ones.
+
+        An operator whose upstream domains all ended finishes once, its final
+        pulses run, and its own domain ends in turn, after them. Stops at the
+        first failure, which is already recorded.
+        """
+        for planned in self.session.plan.consumers_of(domain):
+            if self._failure is not None:
+                return
+            slot = self._operators[planned.name]
+            slot.stopped = slot.stopped or reason == "stop"
+            for item in planned.inputs_from(domain):
+                emitted = self._call_operator(slot, "end_input", item.name)
+                if not self._run_emissions(slot, emitted).completed:
+                    return
+            slot.ended.add(domain)
+            if not slot.ended.issuperset(planned.upstream_domains):
+                continue
+
+            final: TerminationReason = "stop" if slot.stopped else "eof"
+            emitted = self._call_operator(slot, "finish", final)
+            if emitted is not None:
+                slot.counters.finished = True
+            if not self._run_emissions(slot, emitted).completed:
+                return
+            self._end_domain(planned.name, reason=final)
+
+    def _call_operator(
+        self,
+        slot: _OperatorSlot,
+        method: str,
+        argument: Any,
+        *,
+        fed_by: Optional[PulseKey] = None,
+    ) -> Optional[List[OperatorPulse]]:
+        """Call ``push``, ``end_input`` or ``finish``; count what it returned.
+
+        Returns ``None`` when the call raised or returned something other than
+        a list of ``OperatorPulse``; that failure is attributed to the
+        operator, kept as ``slot.error`` and recorded as the run's failure.
+        Pulses an operator built but did not return were never emitted.
+        """
+        try:
+            emitted = getattr(slot.instance, method)(argument)
+            if not isinstance(emitted, (list, tuple)) or not all(
+                isinstance(pulse, OperatorPulse) for pulse in emitted
+            ):
+                raise ContractError(
+                    f"{method}() must return a list of OperatorPulse, got {emitted!r}"
                 )
+        except Exception as error:
+            fed = ""
+            where: Dict[str, Any] = {}
+            if fed_by is not None and fed_by.source in self._slots:
+                where = {"source": fed_by.source, "pulse": fed_by.sequence}
+            elif fed_by is not None:
+                fed = f" (fed by pulse {fed_by.source}#{fed_by.sequence})"
+            failure = ActiveRunError(
+                f"{method}{fed} raised {type(error).__name__}: {error}",
+                stage="operator",
+                operator=slot.name,
+                **where,
             )
+            failure.__cause__ = error
+            slot.error = failure
+            self._fail(failure)
+            return None
+        slot.counters.emitted += len(emitted)
+
+        return list(emitted)
+
+    def _run_emissions(
+        self, slot: _OperatorSlot, emitted: Optional[Sequence[OperatorPulse]]
+    ) -> _Outcome:
+        """Run an operator's returned pulses in order until one does not complete.
+
+        ``None`` is a failed call (see ``_call_operator``). A started pulse
+        counts itself as processed or cancelled; returned pulses that never
+        started because of a failure are counted cancelled here.
+        """
+        if emitted is None:
+            return _Outcome(completed=False, error=slot.error)
+
+        # A pulse that does not complete always leaves a recorded run failure.
+        outcome = _COMPLETED
+        started = 0
+        for emission in emitted:
+            if self._failure is not None:
+                break
+            outcome = self._process_operator_pulse(slot, emission)
+            started += 1
+        unstarted = len(emitted) - started
+        slot.counters.cancelled += unstarted
+        if unstarted and outcome.completed:
+            outcome = _CANCELLED  # the run failed elsewhere before they started
+
+        return outcome
+
+    def _close_operators(self) -> None:
+        """Close every operator once, releasing what it retained; notify the observer."""
+        for slot in self._operators.values():
+            if slot.close_attempted:
+                continue
+            close_error = _close_operator(slot)
+            if close_error is not None:
+                self._fail(close_error)
+                slot.error = slot.error or close_error
+            try:
+                self.session.observer.on_operator_finished(
+                    operator=slot.name, error=slot.error
+                )
+            except Exception as raised:
+                self._fail(_attributed(raised, stage="observer", operator=slot.name))
 
     def _run_route(
-        self, slot: _SourceSlot, run: RunState, *, emission: Emission
+        self,
+        run: RunState,
+        *,
+        counters: Union[SourceCounters, OperatorCounters],
+        present: FrozenSet[str],
+        filtered: bool,
     ) -> bool:
-        """Run the source route, delivering each activated group once it is ready.
+        """Run the pulse's route, delivering each activated group once it is ready.
 
+        A group is activated when its anchor port is ``present``, or for
+        every group of the domain when the pulse is explicitly ``filtered``.
         Returns ``False`` when a failure elsewhere cancelled the rest of the
         pulse at a step or delivery boundary.
         """
-        filtered = not emission.data
         pending = [
             item
             for item in self._registered
             if item.group.source == run.pulse.source
-            and (filtered or item.group.anchor.output in emission.data)
+            and (filtered or item.group.anchor.output in present)
         ]
         executed: Set[StepPath] = set()
-        self._deliver_ready(slot, run, pending, executed=executed, filtered=filtered)
+        self._deliver_ready(
+            run, pending, counters=counters, executed=executed, filtered=filtered
+        )
         for step in run.plan.route(run.pulse.source):
             if self._failure is not None:
                 return False
             execute_step(run, step)
             executed.add(step.path)
             self._deliver_ready(
-                slot, run, pending, executed=executed, filtered=filtered
+                run, pending, counters=counters, executed=executed, filtered=filtered
             )
         completed = not pending
 
@@ -842,10 +1201,10 @@ class ActiveRun:
 
     def _deliver_ready(
         self,
-        slot: _SourceSlot,
         run: RunState,
         pending: List[_Registered],
         *,
+        counters: Union[SourceCounters, OperatorCounters],
         executed: Set[StepPath],
         filtered: bool,
     ) -> None:
@@ -855,22 +1214,27 @@ class ActiveRun:
                 continue
             if self._failure is not None:
                 return
-            self._deliver(slot, run, item, filtered=filtered)
+            self._deliver(run, item, counters=counters, filtered=filtered)
             pending.remove(item)
 
     def _deliver(
-        self, slot: _SourceSlot, run: RunState, item: _Registered, *, filtered: bool
+        self,
+        run: RunState,
+        item: _Registered,
+        *,
+        counters: Union[SourceCounters, OperatorCounters],
+        filtered: bool,
     ) -> None:
         result = group_result(run, item.group, filtered=filtered)
+        where = self._where(run.pulse)
         try:
             returned = item.handler(result)
         except Exception as error:
             raise ActiveRunError(
                 f"handler raised {type(error).__name__}: {error}",
                 stage="handler",
-                source=run.pulse.source,
-                pulse=run.pulse.sequence,
                 group=item.group.name,
+                **where,
             ) from error
         if inspect.isawaitable(returned):
             if inspect.iscoroutine(returned):
@@ -879,11 +1243,10 @@ class ActiveRun:
                 "handler returned an awaitable; active runs call synchronous "
                 "handlers only and never await their results",
                 stage="handler",
-                source=run.pulse.source,
-                pulse=run.pulse.sequence,
                 group=item.group.name,
+                **where,
             )
-        slot.counters.delivered += 1
+        counters.delivered += 1
         try:
             self.session.observer.on_group_delivered(
                 run_id=run.run_id,
@@ -895,10 +1258,16 @@ class ActiveRun:
             raise ActiveRunError(
                 f"on_group_delivered raised {type(error).__name__}: {error}",
                 stage="observer",
-                source=run.pulse.source,
-                pulse=run.pulse.sequence,
                 group=item.group.name,
+                **where,
             ) from error
+
+    def _where(self, pulse: PulseKey) -> Dict[str, Any]:
+        """Attribution of a pulse: its source or operator, and its sequence."""
+        domain = "operator" if pulse.source in self._operators else "source"
+        where = {domain: pulse.source, "pulse": pulse.sequence}
+
+        return where
 
     # Shared ---------------------------------------------------------------
 

@@ -1,6 +1,6 @@
-"""Opt-in V2 tensor image and native prediction catalogue.
+"""Opt-in V2 tensor image, temporal and native prediction catalogue.
 
-Callers select these blocks explicitly::
+Callers select these blocks and the built-in operators explicitly::
 
     from roboflow_workflows.execution_engine.v2.blocks import create_catalogue
 
@@ -23,6 +23,7 @@ from roboflow_workflows.execution_engine.v2.blocks.image import (
     InvertBlock,
     MosaicBlock,
     ResizeBlock,
+    StaticCropBlock,
 )
 from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
 from roboflow_workflows.execution_engine.v2.blocks.kinds import (
@@ -46,15 +47,23 @@ from roboflow_workflows.execution_engine.v2.blocks.predictions import (
     SEMANTIC_SEGMENTATION_PREDICTION_KIND,
     TENSOR_KIND,
 )
+from roboflow_workflows.execution_engine.v2.blocks.temporal import (
+    BestFrameBlock,
+    TopKBrightestBlock,
+)
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
+from roboflow_workflows.execution_engine.v2.operators.alignment import Align
+from roboflow_workflows.execution_engine.v2.operators.window import Window
 
 
 def create_catalogue() -> Catalogue:
-    """Collect the image blocks and all native media kinds.
+    """Collect the image and temporal blocks, the operators and native media kinds.
 
     Returns:
-        Immutable catalogue with ``v2/crop``, ``v2/invert``, ``v2/mosaic``,
-        ``v2/resize``, ``v2/has_brightness`` and ``v2/continue_if``, the ``image`` and
+        Immutable catalogue with ``v2/crop``, ``v2/static_crop``,
+        ``v2/invert``, ``v2/mosaic``, ``v2/resize``, ``v2/has_brightness``,
+        ``v2/continue_if``, ``v2/best_frame`` and ``v2/top_k_brightest``; the
+        ``v2/align@v1`` and ``v2/window@v1`` operators; the ``image`` and
         ``crop_summary`` kinds, all eleven native prediction/tensor kinds, and
         the built-in kinds these blocks use. Wildcard media outputs and the
         legacy ``numpy_array`` tensor label use explicit boundary policies.
@@ -62,12 +71,16 @@ def create_catalogue() -> Catalogue:
     catalogue = Catalogue(
         [
             CropBlock,
+            StaticCropBlock,
             ResizeBlock,
             InvertBlock,
             MosaicBlock,
             HasBrightnessBlock,
             ContinueIfBlock,
+            BestFrameBlock,
+            TopKBrightestBlock,
         ],
+        operators=[Align, Window],
         kinds=[
             IMAGE_KIND,
             CROP_SUMMARY_KIND,
@@ -98,6 +111,8 @@ __all__ = [
     "SEMANTIC_SEGMENTATION_PREDICTION_KIND",
     "TENSOR_KIND",
     "CROP_SUMMARY_KIND",
+    "Align",
+    "BestFrameBlock",
     "ContinueIfBlock",
     "CropBlock",
     "HasBrightnessBlock",
@@ -107,6 +122,9 @@ __all__ = [
     "ResizeBlock",
     "select_predictions",
     "MosaicBlock",
+    "StaticCropBlock",
+    "TopKBrightestBlock",
+    "Window",
     "WORKFLOWS_V2_CATALOGUE",
     "create_catalogue",
 ]

@@ -1,0 +1,24 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "frames", "kind": ["image"],
+      "axes": [{"id": "cameras", "kind": "sample", "stationary": true}, {"id": "window", "kind": "time"}]
+    },
+    {
+      "name": "reference", "kind": ["image"],
+      "axes": [{"id": "cameras", "kind": "sample", "stationary": true}]
+    }
+  ],
+  "steps": [
+    {"type": "v2/best_frame", "name": "best", "frames": "$inputs.frames", "reference": "$inputs.reference"},
+    {"type": "temporal_demo/clip_ends", "name": "ends", "frames": "$inputs.frames"},
+    {"type": "v2/mosaic", "name": "strip", "images": "$inputs.frames", "tile_size": 16, "columns": 4}
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "best", "selector": "$steps.best.frame"},
+    {"type": "JsonField", "name": "first", "selector": "$steps.ends.first"},
+    {"type": "JsonField", "name": "last", "selector": "$steps.ends.last"},
+    {"type": "JsonField", "name": "strip", "selector": "$steps.strip.image"}
+  ]
+}

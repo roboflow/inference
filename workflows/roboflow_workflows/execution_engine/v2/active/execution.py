@@ -1,21 +1,28 @@
-"""One source pulse executed as one ``RunState`` over the session's instances.
+"""One pulse executed as one ``RunState`` over the session's instances.
 
-A pulse is one emission of one source. It runs that source's route
-(``plan.route(source)``: the steps whose domain is the source plus the static
-steps, in plan order) with a fresh ``RunState`` whose only dynamic entries are
-the emitted ports::
+A pulse is one emission of one domain: a source, or an operator. It runs that
+domain's route (``plan.route(domain)``: the steps whose domain it is plus the
+static steps, in plan order) with a fresh ``RunState`` whose only dynamic
+entries are the emitted ports::
 
     run = begin_pulse(session, pulse=PulseKey(run_id, "camera", 3),
                       emission=emission, inputs=static_entries)
     execute_pulse(run)                                # plan.route("camera")
     result = build_group_result(run, group=group)     # a group anchored on "camera"
+    arrivals = operator_arrivals(run, plan.operator("pair"))
     abandon_pulse(run)                                # drop the pulse's entries
 
-Every present port becomes an entry with the port's compiled layout, carrying
-the source's sample context and the pulse's temporal context at index ``()``
-(an ``InputValue`` payload overlays its own indexed metadata verbatim). Every
-declared port the emission omits is a terminally absent entry, filtered at
-``()``: consumers skip it and group fields selecting it come out ``filtered``.
+    emitted = operator.push(arrivals)                 # zero or more OperatorPulse
+    run = begin_operator_pulse(session, pulse=PulseKey(run_id, "pair", 0),
+                               emission=emitted[0], inputs=static_entries)
+
+Every present source port becomes an entry with the port's compiled layout,
+carrying the source's sample context and the pulse's temporal context at index
+``()`` (an ``InputValue`` payload overlays its own indexed metadata verbatim).
+An operator pulse carries the operator's entries as they are, with the
+upstream pulses that caused it in ``RunState.causes``. Every declared port an
+emission omits is a terminally absent entry, filtered at ``()``: consumers
+skip it and group fields selecting it come out ``filtered``.
 
 These primitives are what the active runtime uses per pulse and what the
 same-session two-pulse experiment drives by hand. They do not make pulses
@@ -24,7 +31,7 @@ concurrent: a block instance is shared by every pulse of its session.
 
 import time
 from fractions import Fraction
-from typing import Dict, Mapping, Optional
+from typing import Dict, List, Mapping, Optional
 
 from roboflow_workflows.execution_engine.v2.data import (
     EntryLayout,
@@ -53,9 +60,11 @@ from roboflow_workflows.execution_engine.v2.execution.steps import (
     RunState,
     execute_step,
 )
+from roboflow_workflows.execution_engine.v2.operators import Arrival, OperatorPulse
 from roboflow_workflows.execution_engine.v2.plan import (
     CompiledWorkflow,
     ExecutionSession,
+    PlannedOperator,
     PlannedOutputGroup,
     PlannedSource,
     PulseKey,
@@ -201,6 +210,114 @@ def port_entries(
     return entries
 
 
+def begin_operator_pulse(
+    session: ExecutionSession,
+    *,
+    pulse: PulseKey,
+    emission: OperatorPulse,
+    inputs: Mapping[str, Entry],
+) -> RunState:
+    """Create the run state of one pulse an operator emitted.
+
+    Args:
+        session: Session whose block instances run the pulse.
+        pulse: Identity of the pulse; ``pulse.source`` names the operator.
+        emission: What the operator emitted.
+        inputs: Static input entries prepared once per active run.
+
+    Returns:
+        A fresh run state holding the static inputs and the operator's
+        ports, with ``causes`` from the emission; nothing of an upstream
+        pulse's state is shared.
+
+    Raises:
+        ContractError: When the emission names an undeclared port or an
+            entry's layout differs from the port's planned layout.
+    """
+    ports = operator_port_entries(session.plan, pulse.source, emission=emission)
+    run = RunState(
+        session=session,
+        run_id=pulse.run_id,
+        inputs=dict(inputs),
+        pulse=pulse,
+        ports=ports,
+        causes=emission.causes,
+    )
+    run.record(
+        "pulse_started",
+        run_id=run.run_id,
+        source=pulse.source,
+        pulse=pulse.sequence,
+        ports=sorted(emission.ports),
+        causes=[f"{cause.source}#{cause.sequence}" for cause in emission.causes],
+    )
+
+    return run
+
+
+def operator_port_entries(
+    plan: CompiledWorkflow, operator: str, *, emission: OperatorPulse
+) -> Dict[SourcePort, Entry]:
+    """Check an operator's emitted entries against its planned ports.
+
+    Args:
+        plan: Compiled plan declaring the operator.
+        operator: Declared operator name.
+        emission: The operator's emission.
+
+    Returns:
+        Present ports as emitted, omitted ports as terminally absent entries.
+
+    Raises:
+        ContractError: On an undeclared port or a layout mismatch.
+    """
+    planned = plan.operator(operator)
+    unknown = sorted(set(emission.ports) - set(planned.outputs))
+    if unknown:
+        raise ContractError(
+            f"Operator $operators.{operator} emitted undeclared ports {unknown}; "
+            f"planned: {sorted(planned.outputs)}"
+        )
+
+    entries: Dict[SourcePort, Entry] = {}
+    for name, port in planned.outputs.items():
+        key = planned.port(name)
+        if name not in emission.ports:
+            entries[key] = absent_entry(port.layout)
+            continue
+
+        entry = emission.ports[name]
+        if entry.layout != port.layout:
+            raise ContractError(
+                f"Operator port {key.describe()} emitted axes "
+                f"{list(entry.layout.axis_ids)}, planned {list(port.layout.axis_ids)}"
+            )
+        entries[key] = entry
+
+    return entries
+
+
+def operator_arrivals(run: RunState, operator: PlannedOperator) -> List[Arrival]:
+    """Read the operator's inputs of the pulse's domain, after its route ran.
+
+    All inputs of one domain arrive together, filtered ones included, so
+    the operator sees the pulse atomically.
+
+    Args:
+        run: State of a pulse after its route ran.
+        operator: An operator consuming the pulse's domain.
+
+    Returns:
+        One arrival per input of that domain, in declaration order.
+    """
+    arrivals = [
+        Arrival(input=item.name, entry=run.entry_for(item.source), pulse=run.pulse)
+        for item in operator.inputs_from(run.pulse.source)
+    ]
+
+    return arrivals
+
+
 def absent_entry(layout: EntryLayout) -> Entry:
     """Return the entry of a port the emission omitted: filtered as a whole.
 
@@ -251,7 +368,7 @@ def _overlay(context: EntryMetadata, supplied: EntryMetadata) -> EntryMetadata:
 
 
 def execute_pulse(run: RunState) -> None:
-    """Run every step of the pulse's source route, in plan order.
+    """Run every step of the pulse's domain route, in plan order.
 
     Args:
         run: State created by ``begin_pulse``.
@@ -266,7 +383,7 @@ def execute_pulse(run: RunState) -> None:
 def group_result(
     run: RunState, group: PlannedOutputGroup, *, filtered: bool = False
 ) -> GroupResult:
-    """Build the result of one group anchored on the pulse's source.
+    """Build the result of one group anchored on the pulse's domain.
 
     Args:
         run: State of the pulse after its route ran.

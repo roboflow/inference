@@ -495,8 +495,8 @@ INVALID_CASES: Tuple[Tuple[str, str, str], ...] = (
         "SelectorError",
     ),
     (
-        "temporal_axis_input",
-        "input declaring a time axis; the sequential engine rejects it",
+        "multiple_temporal_axes",
+        "input declaring a second time axis; at most one T is active",
         "WorkflowCompileError",
     ),
     (
@@ -505,6 +505,11 @@ INVALID_CASES: Tuple[Tuple[str, str, str], ...] = (
         "WorkflowCompileError",
     ),
 )
+
+# Cases whose error class alone could also match an unrelated mistake.
+INVALID_REASONS: Dict[str, str] = {
+    "multiple_temporal_axes": "at most one time axis",
+}
 
 RUNTIME_CASES: Tuple[Tuple[str, str], ...] = (
     ("broken_empty_mapping", "block returns {} (missing result, not a filter signal)"),
@@ -558,10 +563,14 @@ def _run_invalid_bindings(scenario_dir: Path) -> ScenarioReport:
         record["block_runs_before_error"] = counter.total
         cases.append(record)
         error_type = record["error"]["type"] if record["error"] else None
+        message = record["error"]["message"] if record["error"] else ""
+        reason = INVALID_REASONS.get(case_name, "")
+        because = f" because {reason!r}" if reason else ""
         report.check(
-            f"compile rejects '{case_name}' with {expected_error} before any block run",
-            error_type == expected_error and counter.total == 0,
-            error_type or "compiled without error",
+            f"compile rejects '{case_name}' with {expected_error}{because} "
+            "before any block run",
+            error_type == expected_error and reason in message and counter.total == 0,
+            message or "compiled without error",
         )
 
     for case_name, description in RUNTIME_CASES:

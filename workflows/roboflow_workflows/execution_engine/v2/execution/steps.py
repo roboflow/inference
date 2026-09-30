@@ -16,7 +16,9 @@
     ready     futures in the result are resolved right after each call, in
               the same context (decision 023)
     record    one Entry per output (or the controller's decisions), keeping
-              skipped and denied indices as filtered positions
+              skipped and denied indices as filtered positions; a
+              ``selected`` output resolves Selected/Selection to the chosen
+              members' payloads, and member policies take their contexts
 
 Skipped invocations, denied ones included, run zero times and produce no
 placeholder values: their positions are filtered in every output.
@@ -42,7 +44,13 @@ from roboflow_workflows.execution_engine.v2.context import (
     use_execution_context,
 )
 from roboflow_workflows.execution_engine.v2.data import Batch, EntryMetadata, Index
-from roboflow_workflows.execution_engine.v2.declaration import Select
+from roboflow_workflows.execution_engine.v2.declaration import (
+    MEMBER_POLICIES,
+    SAME_PAYLOAD,
+    Select,
+    Selected,
+    Selection,
+)
 from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
     StepExecutionError,
@@ -100,6 +108,9 @@ class RunState:
         pulse: Identity of the pulse; ``None`` for a passive run.
         ports: Entries of every declared port of the pulse's source, the
             omitted ones terminally absent; empty for a passive run.
+        causes: Upstream pulses whose arrivals produced this operator
+            emission, in contribution order; empty for source pulses and
+            passive runs.
     """
 
     session: ExecutionSession
@@ -107,6 +118,7 @@ class RunState:
     inputs: Dict[str, Entry]
     pulse: Optional[PulseKey] = None
     ports: Dict[SourcePort, Entry] = field(default_factory=dict)
+    causes: Tuple[PulseKey, ...] = ()
     outputs: Dict[Tuple[StepPath, str], Entry] = field(default_factory=dict)
     decisions: Dict[StepPath, Entry] = field(default_factory=dict)
     constants: Dict[int, Tuple[Constant, Entry]] = field(default_factory=dict)
@@ -576,7 +588,7 @@ def _ready_result(instance: Any, call: _Call, *, context: ExecutionContext) -> A
                 f"block raised {type(error).__name__}: {error}"
             ) from error
         try:
-            result = resolve_futures(raw)
+            result = _resolve_chosen_values(resolve_futures(raw))
         except Exception as error:
             raise _BlockFailure(
                 f"a future returned by the block failed with "
@@ -584,6 +596,38 @@ def _ready_result(instance: Any, call: _Call, *, context: ExecutionContext) -> A
             ) from error
 
     return result
+
+
+def _resolve_chosen_values(result: Any) -> Any:
+    """Wait for futures given as ``Selected`` / ``Selection`` values.
+
+    ``resolve_futures`` does not look inside the wrappers. Only output values
+    of a result (or of each result of a batch call) can be wrappers. Chosen
+    payloads (``SAME_PAYLOAD``) are untouched; wrappers without futures stay
+    the same objects.
+    """
+    if isinstance(result, (list, tuple)):
+        resolved = [_resolve_chosen_values(item) for item in result]
+        return resolved
+    if isinstance(result, Batch) or not isinstance(result, Mapping):
+        return result
+
+    resolved = {name: _resolved_choice(value) for name, value in result.items()}
+
+    return resolved
+
+
+def _resolved_choice(value: Any) -> Any:
+    if isinstance(value, Selected) and value.value is not SAME_PAYLOAD:
+        ready = resolve_futures(value.value)
+        return value if ready is value.value else Selected(value.index, ready)
+    if isinstance(value, Selection) and value.values is not None:
+        ready = [resolve_futures(item) for item in value.values]
+        if all(new is old for new, old in zip(ready, value.values)):
+            return value
+        return Selection(value.indices, values=ready)
+
+    return value
 
 
 def _record_outputs(
@@ -700,9 +744,33 @@ def _output_entry(
     kinds = kinds_named(run.plan, output.kinds)
     children = dict(structure.children)
     values: Dict[Index, Any] = {}
+    chosen: Dict[Index, Optional[Index]] = {}
     output_filtered = set(filtered)
     for index, values_at in produced.items():
         value = values_at[output.name]
+        if output.context_policy == "selected":
+            group = _source_group(step, output, leaves[index])
+            placed = _chosen_members(run, step, output, value, index=index, group=group)
+            for placed_index, payload, member in placed:
+                _check_output_value(
+                    run, step, output, kinds, payload, index=placed_index
+                )
+                values[placed_index] = payload
+                chosen[placed_index] = member
+            if output.transform == "expand":
+                children[index] = tuple(placed_index for placed_index, _, _ in placed)
+            continue
+
+        if isinstance(value, (Selected, Selection)):
+            _fail(
+                run,
+                step,
+                f"output {output.name!r} returned {type(value).__name__}, but "
+                f"declares context_policy={output.context_policy!r}; declare "
+                "context_policy='selected' with source=<Group field> to return "
+                "chosen members",
+                index=index,
+            )
         if output.transform == "same":
             _check_output_value(run, step, output, kinds, value, index=index)
             values[index] = value
@@ -733,13 +801,91 @@ def _output_entry(
 
     entry = Entry(
         layout=output.layout,
-        metadata=_output_metadata(step, output, leaves=leaves, entries=entries),
+        metadata=_output_metadata(
+            step, output, leaves=leaves, entries=entries, chosen=chosen
+        ),
         children=children,
         values=values,
         filtered=frozenset(output_filtered),
     )
 
     return entry
+
+
+def _chosen_members(
+    run: RunState,
+    step: PlannedStep,
+    output: PlannedOutput,
+    value: Any,
+    *,
+    index: Index,
+    group: Optional[Batch],
+) -> List[Tuple[Index, Any, Optional[Index]]]:
+    """Resolve a ``selected`` output's ``Selected`` / ``Selection`` result.
+
+    Returns ``(output index, payload, chosen member)`` triples: one at
+    ``index`` for ``Selected`` (``None`` chooses no member and emits a
+    ``None`` payload), and one child ``index + (k,)`` per member, in the
+    requested order, for ``Selection``. A member must be one of the group's
+    delivered full logical indices.
+    """
+    wrapper = Selection if output.transform == "expand" else Selected
+    if value is None and wrapper is Selected:
+        return [(index, None, None)]
+    if not isinstance(value, wrapper):
+        _fail(
+            run,
+            step,
+            f"output {output.name!r} declares context_policy='selected'; return "
+            f"{wrapper.__name__}(...) with indices from "
+            f"{output.source_field!r}.indices, got {type(value).__name__}",
+            index=index,
+        )
+
+    members = dict(group.iter_with_indices()) if group is not None else {}
+    selections = value.chosen() if isinstance(value, Selection) else [value]
+    placed = []
+    for position, selected in enumerate(selections):
+        if selected.index not in members:
+            _fail(
+                run,
+                step,
+                f"output {output.name!r} selected {list(selected.index)}, which "
+                f"{output.source_field!r} did not deliver here; delivered "
+                f"{[list(member) for member in members]}",
+                index=index,
+            )
+        payload = (
+            members[selected.index]
+            if selected.value is SAME_PAYLOAD
+            else selected.value
+        )
+        placed_index = index + (position,) if isinstance(value, Selection) else index
+        placed.append((placed_index, payload, selected.index))
+
+    return placed
+
+
+def _source_group(
+    step: PlannedStep, output: PlannedOutput, invocation: Sequence[Leaf]
+) -> Optional[Batch]:
+    """Group the output's ``source_field`` delivered to one invocation, if any."""
+    for position, binding in enumerate(step.bindings):
+        if binding.field == output.source_field:
+            return invocation[position].value
+
+    return None
+
+
+def _binding_position(step: PlannedStep, field_name: Optional[str]) -> int:
+    """Position in ``step.bindings`` of the binding of a whole field."""
+    position = next(
+        position
+        for position, binding in enumerate(step.bindings)
+        if binding.field == field_name
+    )
+
+    return position
 
 
 def _check_output_value(
@@ -823,11 +969,7 @@ def _preserved_children(
     positions. The domain is ``None`` when the whole source group was
     unavailable, so the output position stays filtered too.
     """
-    position = next(
-        position
-        for position, binding in enumerate(step.bindings)
-        if binding.field == output.group_field
-    )
+    position = _binding_position(step, output.group_field)
     leaf = leaves[position]
     group = leaf.value
     if group is None:
@@ -916,20 +1058,27 @@ def _output_metadata(
     *,
     leaves: Mapping[Index, Sequence[Leaf]],
     entries: Sequence[Entry],
+    chosen: Mapping[Index, Optional[Index]],
 ) -> EntryMetadata:
-    """Context of one output, following its ``source_field``.
+    """Context of one output, following its ``source_field`` and policy.
 
     ``preserve`` keeps the group's own contexts. Otherwise each invocation
     takes ``common_or_none`` of the contributing bindings' contexts: the
     ``source_field`` bindings, else every varying binding (every binding
     when none varies). Children of ``expand`` inherit the invocation context.
+
+    Member policies then replace contexts taken from the source group::
+
+        first / last       temporal at i  = first / last delivered member's
+        selected           both at i      = chosen member's
+        selected + expand  temporal at i  = None (a collection has no one time)
+                           both at i+(k,) = k-th chosen member's, explicitly
+
+    No member (an empty or absent group, or ``Selected`` returned as
+    ``None``) means temporal ``None``, never a stale inherited timestamp.
     """
     if output.transform == "preserve":
-        position = next(
-            position
-            for position, binding in enumerate(step.bindings)
-            if binding.field == output.group_field
-        )
+        position = _binding_position(step, output.group_field)
         metadata = entries[position].metadata
         return metadata
 
@@ -955,11 +1104,43 @@ def _output_metadata(
         }
         for kind in ("sample", "temporal")
     }
+    children: Dict[str, Dict[Index, Any]] = {"sample": {}, "temporal": {}}
+    if output.context_policy in MEMBER_POLICIES and step.bindings_for(
+        output.source_field
+    ):
+        source = entries[_binding_position(step, output.source_field)].metadata
+        for index, invocation in leaves.items():
+            if output.context_policy == "selected":
+                # No member at i for a Selection: its children hold them.
+                member = chosen.get(index)
+            else:
+                member = _end_member(output, _source_group(step, output, invocation))
+            contexts["temporal"][index] = (
+                source.temporal_at(member) if member is not None else None
+            )
+            if output.context_policy == "selected" and member is not None:
+                contexts["sample"][index] = source.sample_at(member)
+        if output.transform == "expand" and output.context_policy == "selected":
+            for placed_index, member in chosen.items():
+                children["sample"][placed_index] = source.sample_at(member)
+                children["temporal"][placed_index] = source.temporal_at(member)
+
     metadata = EntryMetadata(
-        sample=_compact(contexts["sample"]), temporal=_compact(contexts["temporal"])
+        sample={**_compact(contexts["sample"]), **children["sample"]},
+        temporal={**_compact(contexts["temporal"]), **children["temporal"]},
     )
 
     return metadata
+
+
+def _end_member(output: PlannedOutput, group: Optional[Batch]) -> Optional[Index]:
+    """First or last delivered member of a group, per the output's policy."""
+    if not group:
+        return None
+
+    member = group.indices[0] if output.context_policy == "first" else group.indices[-1]
+
+    return member
 
 
 def _binding_contexts(
@@ -987,8 +1168,13 @@ def _binding_contexts(
             contexts.append(
                 common_or_none(lookup(child) for child in leaf.value.indices)
             )
-        elif leaf.binding.mode == "group":
+        elif leaf.binding.mode == "group" and kind == "sample":
+            # An empty group still belongs to its parent's source.
             contexts.append(lookup(index))
+        elif leaf.binding.mode == "group":
+            # No member was observed, so no timestamp describes the result;
+            # the parent's inherited one (e.g. a root PTS) would be invented.
+            contexts.append(None)
         else:
             contexts.append(lookup(index[: leaf.binding.source_layout.depth]))
 

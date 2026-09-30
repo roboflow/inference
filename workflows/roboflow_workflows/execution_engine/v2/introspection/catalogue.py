@@ -1,10 +1,11 @@
-"""Catalogue description: what blocks and sources exist and how they can be wired.
+"""Catalogue description: what blocks, sources and operators exist and how they wire.
 
-Everything comes from class declarations (``spec_of``, ``spec_of_source``); no
-block, source, provider or submitted dynamic code is touched.
+Everything comes from class declarations (``spec_of``, ``spec_of_source``,
+``spec_of_operator``); no block, source, operator, provider or submitted
+dynamic code is touched.
 """
 
-from typing import Any, Dict, List, Sequence, Tuple, Union
+from typing import Any, Dict, List, Sequence, Tuple
 
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.declaration import (
@@ -32,6 +33,11 @@ SELECTOR_GRAMMAR: Dict[str, Any] = {
     },
     "batch_modes": list(BATCH_MODES),
     "positions": "the whole field, one list element or one dict value",
+    "operator_input_maps": {
+        "inputs": "values an alignment operator relates",
+        "collect": "values a window collects over time",
+        "hold": "parent values a window keeps from its last arrival",
+    },
 }
 
 
@@ -47,7 +53,7 @@ def describe_catalogue(catalogue: Catalogue) -> Dict[str, Any]:
 
     Returns:
         JSON-friendly mapping with ``engine_version``, ``selector_grammar``,
-        ``kinds``, ``blocks``, ``sources``, ``providers`` (constructor
+        ``kinds``, ``blocks``, ``sources``, ``operators``, ``providers`` (constructor
         resources the catalogue supplies per namespace; factories are
         described, never called), ``connections``, ``source_connections``
         and ``connection_inputs``. A field default is ``{"value": v}``,
@@ -65,7 +71,10 @@ def describe_catalogue(catalogue: Catalogue) -> Dict[str, Any]:
         location (``input_paths``) and the ``params_schema`` property
         describing the value (``schema_property``). Each source lists its
         identities, ports with source-local axes, constructor resources and
-        the static parameters it accepts (with defaults).
+        the static parameters it accepts (with defaults). Each operator lists
+        its identities, accepted input roles and literal parameters (with
+        defaults); its ports depend on the bound inputs, so it is no static
+        producer.
     """
     described = catalogue.describe()
     specs = [catalogue.entry(block_type).spec for block_type in catalogue.block_types]
@@ -82,6 +91,17 @@ def describe_catalogue(catalogue: Catalogue) -> Dict[str, Any]:
         for name, field in source["fields"].items():
             field["default"] = _describe_default(spec, field_name=name)
 
+    operator_specs = [
+        catalogue.resolve_operator(operator_type).spec
+        for operator_type in catalogue.operator_types
+    ]
+    for operator, spec in zip(described["operators"], operator_specs):
+        operator["identities"] = list(spec.identities)
+        operator["parameters"] = {
+            name: {"default": _describe_default(spec, field_name=name)}
+            for name in spec.params_model.model_fields
+        }
+
     connections = _compatible_connections(specs, producers=_block_producers(specs))
     description = {
         "engine_version": described["engine_version"],
@@ -89,6 +109,7 @@ def describe_catalogue(catalogue: Catalogue) -> Dict[str, Any]:
         "kinds": described["kinds"],
         "blocks": described["blocks"],
         "sources": described["sources"],
+        "operators": described["operators"],
         "providers": {
             namespace: {
                 name: _describe_provider(value) for name, value in values.items()
@@ -105,7 +126,7 @@ def describe_catalogue(catalogue: Catalogue) -> Dict[str, Any]:
     return description
 
 
-def _describe_default(spec: Union[BlockSpec, SourceSpec], *, field_name: str) -> Any:
+def _describe_default(spec: Any, *, field_name: str) -> Any:
     info = spec.params_model.model_fields[field_name]
     if info.is_required():
         return None

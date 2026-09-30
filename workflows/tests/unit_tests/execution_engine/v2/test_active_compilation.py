@@ -606,7 +606,9 @@ def test_route_runs_the_source_domain_plus_static_steps_once_per_pulse() -> None
                 )
             ],
             (),
-            r"\$steps\.s joins independent sources \['cam', 'temp'\]",
+            r"\$steps\.s joins independent pulse domains \(source 'cam' via "
+            r"\$sources\.cam\.image; source 'temp' via \$sources\.temp\.temperature\); "
+            "independent domains correspond only through an explicit alignment",
         ),
         (
             [
@@ -616,7 +618,7 @@ def test_route_runs_the_source_domain_plus_static_steps_once_per_pulse() -> None
                 ),
             ],
             (),
-            r"\$steps\.t joins independent sources",
+            r"\$steps\.t joins independent pulse domains",
         ),
         (
             [
@@ -624,7 +626,8 @@ def test_route_runs_the_source_domain_plus_static_steps_once_per_pulse() -> None
                 step("scale", "s", value="$sources.temp.temperature"),
             ],
             (),
-            r"'cam' via gate of \$steps\.g; 'temp' via \$sources\.temp\.temperature",
+            r"source 'cam' via gate of \$steps\.g; "
+            r"source 'temp' via \$sources\.temp\.temperature",
         ),
         (
             [
@@ -633,7 +636,7 @@ def test_route_runs_the_source_domain_plus_static_steps_once_per_pulse() -> None
                 step("sink", "k", payload="x"),
             ],
             (),
-            r"\$steps\.k joins independent sources",
+            r"\$steps\.k joins independent pulse domains",
         ),
         (
             [
@@ -648,8 +651,8 @@ def test_route_runs_the_source_domain_plus_static_steps_once_per_pulse() -> None
                 step("echo", "reader", value="$steps.child.fwd"),
             ],
             (),
-            r"\$steps\.child/e joins independent sources .*'cam' via gate of \$steps\.g; "
-            r"'temp' via \$steps\.child: \$inputs\.x",
+            r"\$steps\.child/e joins independent pulse domains .*'cam' via gate of "
+            r"\$steps\.g; source 'temp' via \$steps\.child: \$inputs\.x",
         ),
         (
             [step("scale", "s", value="$sources.temp.temperature")],
@@ -1047,7 +1050,8 @@ def test_group_field_joining_two_sources_through_a_gated_forward_is_a_lineage_er
     forwarded = _child([step("constant", "k")], {"v": "$inputs.x"})
 
     with pytest.raises(
-        LineageError, match=r"field 'v' \(\$steps\.child\.v\) joins independent sources"
+        LineageError,
+        match=r"field 'v' \(\$steps\.child\.v\) joins independent pulse domains",
     ):
         compile_active(
             [
@@ -1186,14 +1190,14 @@ def test_source_bindings_must_read_the_input_their_selector_names() -> None:
         )
 
 
-def test_output_groups_are_anchored_on_source_ports_only() -> None:
+def test_output_groups_are_anchored_on_source_or_operator_ports_only() -> None:
     field = PlannedWorkflowOutput("x", "$inputs.p", InputPort("p"))
 
     with pytest.raises(
-        ContractError, match=r"anchored on a source port, got \$inputs\.p"
+        ContractError, match=r"anchored on a source or operator port, got \$inputs\.p"
     ):
         PlannedOutputGroup("g", InputPort("p"), (field,))
-    with pytest.raises(ContractError, match="anchored on a source port"):
+    with pytest.raises(ContractError, match="anchored on a source or operator port"):
         PlannedOutputGroup("g", StepPort(("s",), "out"), ())
 
 

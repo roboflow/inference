@@ -35,7 +35,8 @@ Every batch input shares the root sample axis ``inputs``, like V1's single
 ``<workflow_input>`` lineage. Deeper levels of a nested batch input get axes of
 their own, so two inputs never correspond merely because their sizes match.
 The explicit ``axes`` form keeps the advanced independent-axis declaration; a
-shared axis id there asserts correspondence.
+shared axis id there asserts correspondence. It may end in a ``time`` axis for
+values a host collected already (at most one, after stationary axes only).
 
 An active definition adds ``sources`` and delivers its outputs in groups::
 
@@ -50,6 +51,16 @@ An active definition adds ``sources`` and delivers its outputs in groups::
          "outputs": [{"type": "JsonField", "name": "fahrenheit", "selector": "$steps.convert.value"}]}
       ]
     }
+
+Operators relate pulses of sources explicitly. They are root declarations with
+named selector maps (``inputs`` for alignment, ``collect``/``hold`` for a
+window); every other key is a literal parameter of the operator class::
+
+      "operators": [{"type": "v2/window@v1", "name": "clip", "size": 4,
+                     "collect": {"frames": "$sources.camera.image"}}]
+
+Their ports are addressed as ``$operators.<operator>.<port>``, also as an
+``OutputGroup`` anchor.
 
 Flat ``JsonField`` outputs and ``OutputGroup`` outputs do not mix in one list.
 
@@ -81,6 +92,7 @@ from roboflow_workflows.execution_engine.v2.errors import (
     WorkflowCompileError,
 )
 from roboflow_workflows.execution_engine.v2.kinds import WILDCARD_KIND_NAME
+from roboflow_workflows.execution_engine.v2.operators.contract import INPUT_MAP_ROLES
 
 SUPPORTED_VERSION = "2.0"
 NESTED_WORKFLOW_TYPES: Tuple[str, ...] = (
@@ -109,9 +121,18 @@ _INPUT_AXIS_KINDS = (
     AXIS_KIND_SAMPLE,
     AXIS_KIND_STATIC_NESTING,
     AXIS_KIND_DYNAMIC_NESTING,
+    AXIS_KIND_TIME,
 )
 _DEFINITION_KEYS = frozenset(
-    {"version", "inputs", "sources", "steps", "outputs", "dynamic_blocks_definitions"}
+    {
+        "version",
+        "inputs",
+        "sources",
+        "operators",
+        "steps",
+        "outputs",
+        "dynamic_blocks_definitions",
+    }
 )
 _NESTED_STEP_KEYS = frozenset(
     {
@@ -272,6 +293,44 @@ class SourceDeclaration:
 
 
 @dataclass(frozen=True)
+class OperatorInputDeclaration:
+    """One ``name: selector`` entry of an operator's selector maps.
+
+    Args:
+        name: Input name, unique across the operator's maps.
+        role: ``input``, ``collect`` or ``hold``, from the map holding it.
+        selector: Data selector as written.
+        location: Definition path for messages.
+    """
+
+    name: str
+    role: str
+    selector: str
+    location: str
+
+
+@dataclass(frozen=True)
+class OperatorDeclaration:
+    """A declared operator instance.
+
+    Args:
+        name: Operator name, unique among the workflow's sources and
+            operators.
+        type: Operator type or alias.
+        params: Literal parameters without ``type``, ``name`` and the
+            selector maps.
+        inputs: Named selectors of every map, in declaration order.
+        location: Definition path for messages.
+    """
+
+    name: str
+    type: str
+    params: Mapping[str, Any]
+    inputs: Tuple[OperatorInputDeclaration, ...]
+    location: str
+
+
+@dataclass(frozen=True)
 class WorkflowDeclaration:
     """One parsed workflow definition, root or child.
 
@@ -285,6 +344,7 @@ class WorkflowDeclaration:
         sources: Sources in declaration order.
         output_groups: Output groups in declaration order; empty when the
             outputs are flat.
+        operators: Operators in declaration order.
     """
 
     inputs: Mapping[str, WorkflowInputDeclaration]
@@ -294,6 +354,7 @@ class WorkflowDeclaration:
     location: str
     sources: Tuple[SourceDeclaration, ...] = ()
     output_groups: Tuple[OutputGroupDeclaration, ...] = ()
+    operators: Tuple[OperatorDeclaration, ...] = ()
 
     def step(self, name: str) -> Optional[StepDeclaration]:
         """Return the step named ``name``.
@@ -347,6 +408,7 @@ def parse_workflow(definition: Any, *, location: str = "") -> WorkflowDeclaratio
     for section in (
         "inputs",
         "sources",
+        "operators",
         "steps",
         "outputs",
         "dynamic_blocks_definitions",
@@ -360,14 +422,25 @@ def parse_workflow(definition: Any, *, location: str = "") -> WorkflowDeclaratio
         sections[section] = value
 
     outputs, output_groups = _parse_outputs(sections["outputs"], location=location)
+    sources = _parse_sources(sections["sources"], location=location)
+    operators = _parse_operators(sections["operators"], location=location)
+    clashing = sorted(
+        {source.name for source in sources} & {item.name for item in operators}
+    )
+    if clashing:
+        raise WorkflowCompileError(
+            f"{location}operators reuse source names {clashing}; sources and "
+            "operators share one namespace of pulse domains"
+        )
     declaration = WorkflowDeclaration(
         inputs=MappingProxyType(_parse_inputs(sections["inputs"], location=location)),
         steps=_parse_steps(sections["steps"], location=location),
         outputs=outputs,
         dynamic_blocks=tuple(sections["dynamic_blocks_definitions"]),
         location=location,
-        sources=_parse_sources(sections["sources"], location=location),
+        sources=sources,
         output_groups=output_groups,
+        operators=operators,
     )
 
     return declaration
@@ -406,8 +479,8 @@ def require_data_selector(
 
     Raises:
         SelectorError: When ``value`` is not ``$inputs.<name>``,
-            ``$steps.<step>.<output>``, ``$steps.<step>.*`` or
-            ``$sources.<source>.<output>``.
+            ``$steps.<step>.<output>``, ``$steps.<step>.*``,
+            ``$sources.<source>.<output>`` or ``$operators.<operator>.<output>``.
     """
     try:
         is_data_selector = parse_selector(value).target != "step"
@@ -416,7 +489,8 @@ def require_data_selector(
     if not is_data_selector:
         raise SelectorError(
             f"{location} holds malformed selector {value!r}; use $inputs.<name>, "
-            "$steps.<step>.<output>, $steps.<step>.* or $sources.<source>.<output>",
+            "$steps.<step>.<output>, $steps.<step>.*, $sources.<source>.<output> "
+            "or $operators.<operator>.<output>",
             step_path=step_path,
             field_path=field_path,
         )
@@ -424,8 +498,8 @@ def require_data_selector(
     return value
 
 
-def require_source_selector(value: Any, *, location: str) -> str:
-    """Return ``value`` when it is a ``$sources.<source>.<output>`` selector.
+def require_pulse_selector(value: Any, *, location: str) -> str:
+    """Return ``value`` when it selects a port of a source or an operator.
 
     Args:
         value: Candidate selector.
@@ -435,16 +509,17 @@ def require_source_selector(value: Any, *, location: str) -> str:
         The selector.
 
     Raises:
-        SelectorError: When ``value`` selects anything but a source port.
+        SelectorError: When ``value`` selects anything but a source or
+            operator port.
     """
     try:
-        is_source_selector = parse_selector(value).target == "source_output"
+        target = parse_selector(value).target
     except SelectorError:
-        is_source_selector = False
-    if not is_source_selector:
+        target = None
+    if target not in ("source_output", "operator_output"):
         raise SelectorError(
-            f"{location} must select a source port as $sources.<source>.<output>, "
-            f"got {value!r}"
+            f"{location} must select a source port as $sources.<source>.<output> "
+            f"or an operator port as $operators.<operator>.<output>, got {value!r}"
         )
 
     return value
@@ -582,11 +657,6 @@ def _parse_axis(raw: Any, *, location: str) -> Axis:
     _reject_unknown_keys(raw, allowed=_AXIS_KEYS, location=location)
     axis_id = _require_name(raw.get("id"), location=f"{location}.id")
     kind = raw.get("kind")
-    if kind == AXIS_KIND_TIME:
-        raise WorkflowCompileError(
-            f"{location} declares a time axis; temporal execution is not supported "
-            "by the sequential V2 engine"
-        )
     if kind not in _INPUT_AXIS_KINDS:
         raise WorkflowCompileError(
             f"{location}.kind must be one of {list(_INPUT_AXIS_KINDS)}, got {kind!r}"
@@ -744,6 +814,87 @@ def _parse_sources(
     return tuple(sources)
 
 
+def _parse_operators(
+    raw_operators: List[Any], *, location: str
+) -> Tuple[OperatorDeclaration, ...]:
+    operators: List[OperatorDeclaration] = []
+    names = set()
+    for position, raw in enumerate(raw_operators):
+        where = f"{location}operators[{position}]"
+        if not isinstance(raw, Mapping):
+            raise WorkflowCompileError(f"{where} must be a mapping")
+
+        name = _require_name(raw.get("name"), location=f"{where}.name")
+        if name in names:
+            raise WorkflowCompileError(f"{where}: duplicate operator name {name!r}")
+        names.add(name)
+        operator_type = raw.get("type")
+        if not isinstance(operator_type, str) or not operator_type:
+            raise WorkflowCompileError(
+                f"{where} ($operators.{name}) must declare a type"
+            )
+
+        inputs: List[OperatorInputDeclaration] = []
+        for key, role in INPUT_MAP_ROLES.items():
+            inputs.extend(
+                _parse_operator_inputs(
+                    raw.get(key), role=role, location=f"{where}.{key}"
+                )
+            )
+        input_names = [item.name for item in inputs]
+        repeated = sorted({item for item in input_names if input_names.count(item) > 1})
+        if repeated:
+            raise WorkflowCompileError(
+                f"{where} ($operators.{name}) repeats input names {repeated} across "
+                f"its {list(INPUT_MAP_ROLES)} maps"
+            )
+        if not inputs:
+            raise WorkflowCompileError(
+                f"{where} ($operators.{name}) declares no inputs; name the selectors "
+                f"it consumes in one of {list(INPUT_MAP_ROLES)}"
+            )
+
+        params = {
+            key: value
+            for key, value in raw.items()
+            if key not in ("type", "name") and key not in INPUT_MAP_ROLES
+        }
+        operators.append(
+            OperatorDeclaration(
+                name=name,
+                type=operator_type,
+                params=MappingProxyType(params),
+                inputs=tuple(inputs),
+                location=where,
+            )
+        )
+
+    return tuple(operators)
+
+
+def _parse_operator_inputs(
+    raw: Any, *, role: str, location: str
+) -> List[OperatorInputDeclaration]:
+    if raw is None:
+        return []
+    if not isinstance(raw, Mapping):
+        raise WorkflowCompileError(
+            f"{location} must map input names to selectors, got {type(raw).__name__}"
+        )
+
+    inputs = [
+        OperatorInputDeclaration(
+            name=_require_name(name, location=f"{location} key {name!r}"),
+            role=role,
+            selector=require_data_selector(selector, location=f"{location}.{name}"),
+            location=f"{location}.{name}",
+        )
+        for name, selector in raw.items()
+    ]
+
+    return inputs
+
+
 def _parse_outputs(
     raw_outputs: List[Any], *, location: str
 ) -> Tuple[Tuple[WorkflowOutputDeclaration, ...], Tuple[OutputGroupDeclaration, ...]]:
@@ -798,9 +949,7 @@ def _parse_output_group(raw: Any, *, location: str) -> OutputGroupDeclaration:
 
     group = OutputGroupDeclaration(
         name=name,
-        anchor=require_source_selector(
-            raw.get("anchor"), location=f"{location}.anchor"
-        ),
+        anchor=require_pulse_selector(raw.get("anchor"), location=f"{location}.anchor"),
         outputs=_parse_json_fields(fields, location=f"{location}.outputs"),
         location=location,
     )

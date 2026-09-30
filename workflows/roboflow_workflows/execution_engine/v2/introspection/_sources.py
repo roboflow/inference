@@ -8,6 +8,7 @@ possibly another port for deeper nesting::
     $steps.outer/inner: $inputs.x --source--> $steps.outer: $inputs.x --source--> $inputs.x
     $steps.outer.out --source--> $steps.outer: $inputs.x
     $steps.detect.image --source--> $sources.camera (output "image")
+    $steps.best.image --source--> $operators.clip (output "frames")
 """
 
 from typing import Any, Optional
@@ -36,6 +37,33 @@ def source_node(name: str) -> str:
     return f"$sources.{name}"
 
 
+def operator_node(name: str) -> str:
+    """Node id of a declared operator, ``$operators.<name>``.
+
+    Args:
+        name: Declared operator name.
+
+    Returns:
+        The node id.
+    """
+    return f"$operators.{name}"
+
+
+def domain_node(port: SourcePort) -> str:
+    """Node id of the source or operator emitting ``port``.
+
+    Args:
+        port: Source or operator port.
+
+    Returns:
+        ``$sources.<name>`` or ``$operators.<name>``.
+    """
+    if port.origin == "operator":
+        return operator_node(port.source)
+
+    return source_node(port.source)
+
+
 def origin_of(plan: CompiledWorkflow, source: Any) -> Any:
     """Follow child ports to the input, step output or constant behind them.
 
@@ -59,7 +87,8 @@ def node_of(source: Any) -> Optional[str]:
 
     Returns:
         ``$inputs.<name>``, the producing step's node id, the declared
-        source's node id (``$sources.<name>``) or a child input port such as
+        source's or operator's node id (``$sources.<name>``,
+        ``$operators.<name>``) or a child input port such as
         ``$steps.child: $inputs.image``.
     """
     if isinstance(source, Constant):
@@ -67,7 +96,7 @@ def node_of(source: Any) -> Optional[str]:
     if isinstance(source, StepPort):
         return format_step_path(source.step)
     if isinstance(source, SourcePort):
-        return source_node(source.source)
+        return domain_node(source)
 
     node = source.describe()
 
@@ -75,7 +104,7 @@ def node_of(source: Any) -> Optional[str]:
 
 
 def output_of(source: Any) -> Optional[str]:
-    """Step output or source port name for step and source sources, else ``None``."""
+    """Step output or source/operator port name for those sources, else ``None``."""
     if isinstance(source, (StepPort, SourcePort)):
         return source.output
 

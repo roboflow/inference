@@ -135,10 +135,18 @@ def test_explicit_axes_keep_independent_lineages_and_reject_inconsistent_reuse()
         pytest.param(
             workflow(
                 [],
-                inputs=[{"name": "x", "axes": [{"id": "t", "kind": "time"}]}],
+                inputs=[
+                    {
+                        "name": "x",
+                        "axes": [
+                            {"id": "n", "kind": "sample"},
+                            {"id": "t", "kind": "time"},
+                        ],
+                    }
+                ],
             ),
-            "declares a time axis",
-            id="time-axis",
+            "must be stationary",
+            id="nonstationary-parent-before-time",
         ),
         pytest.param(
             workflow(

@@ -222,10 +222,11 @@ class Scope:
                 visiting=visiting,
             )
             return resolution
-        if parsed.target == "source_output":
-            port = self._resolve_source(
+        if parsed.target in ("source_output", "operator_output"):
+            port = self._resolve_domain_port(
                 parsed.name,
                 output=parsed.output,
+                origin="source" if parsed.target == "source_output" else "operator",
                 selector=selector,
                 location=location,
                 step_path=step_path,
@@ -382,36 +383,42 @@ class Scope:
 
         return resolution
 
-    def _resolve_source(
+    def _resolve_domain_port(
         self,
         name: str,
         *,
         output: str,
+        origin: str,
         selector: str,
         location: str,
         step_path: StepPath,
         field_path: FieldPath,
     ) -> SourcePort:
-        # Sources belong to the root workflow; a child reads their values
-        # through its parameter_bindings like any other parent value.
+        # Sources and operators belong to the root workflow; a child reads
+        # their values through its parameter_bindings like any other parent
+        # value.
+        plural = f"{origin}s"
         if self.parent is not None:
             raise SelectorError(
                 f"{location} references {selector!r} inside nested workflow "
-                f"{format_step_path(self.path)}; sources are addressed from the root "
-                "workflow, so bind the value through parameter_bindings",
+                f"{format_step_path(self.path)}; {plural} are addressed from the "
+                "root workflow, so bind the value through parameter_bindings",
                 step_path=step_path,
                 field_path=field_path,
             )
-        declared = [source.name for source in self.workflow.sources]
+        declarations = (
+            self.workflow.sources if origin == "source" else self.workflow.operators
+        )
+        declared = [declaration.name for declaration in declarations]
         if name not in declared:
             raise SelectorError(
-                f"{location} references unknown source {name!r} via {selector!r}; "
-                f"sources here: {declared}",
+                f"{location} references unknown {origin} {name!r} via {selector!r}; "
+                f"{plural} here: {declared}",
                 step_path=step_path,
                 field_path=field_path,
             )
 
-        return SourcePort(source=name, output=output)
+        return SourcePort(source=name, output=output, origin=origin)
 
     def _constant(self, name: str, value: Any) -> Constant:
         # One Constant per child input: every resolution through this input
@@ -591,6 +598,15 @@ class _Composer:
                 f"{where}: nested workflow declares sources "
                 f"{[source.name for source in declaration.sources]}; only the root "
                 "workflow declares sources",
+                step_path=path,
+            )
+        if declaration.operators:
+            raise NestedWorkflowError(
+                f"{where}: nested workflow declares operators "
+                f"{[operator.name for operator in declaration.operators]}; in this "
+                "version only the root workflow declares operators. A nested "
+                "workflow can still feed an operator or consume its ports through "
+                "parameter_bindings",
                 step_path=path,
             )
         if declaration.output_groups:

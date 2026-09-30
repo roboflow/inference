@@ -1,0 +1,29 @@
+{
+  "version": "2.0",
+  "sources": [
+    {"type": "temporal_demo/tensor_camera", "name": "left", "schedule": "left"},
+    {"type": "temporal_demo/tensor_camera", "name": "right", "schedule": "right"}
+  ],
+  "operators": [
+    {
+      "type": "v2/align@v1", "name": "rig",
+      "inputs": {"left": "$sources.left.image", "right": "$sources.right.image"},
+      "clock": "rig-media", "tolerance_ms": 10, "layout": "batch"
+    },
+    {"type": "v2/window@v1", "name": "clip", "collect": {"frames": "$operators.rig.samples"}, "size": 4}
+  ],
+  "steps": [
+    {"type": "v2/top_k_brightest", "name": "brightest", "images": "$operators.clip.frames", "k": 1},
+    {"type": "v2/mosaic", "name": "brightest_tile", "images": "$steps.brightest.images", "tile_size": 16}
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "clips", "anchor": "$operators.clip.frames",
+      "outputs": [
+        {"type": "JsonField", "name": "brightest", "selector": "$steps.brightest.images"},
+        {"type": "JsonField", "name": "brightness", "selector": "$steps.brightest.brightness"},
+        {"type": "JsonField", "name": "brightest_tile", "selector": "$steps.brightest_tile.image"}
+      ]
+    }
+  ]
+}

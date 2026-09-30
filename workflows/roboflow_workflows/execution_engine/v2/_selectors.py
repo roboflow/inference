@@ -54,12 +54,18 @@ SELECTOR_SEGMENT = r"[A-Za-z0-9_\-]+"
 DATA_SELECTOR = (
     rf"\$(?:inputs\.{SELECTOR_SEGMENT}"
     rf"|steps\.{SELECTOR_SEGMENT}\.(?:{SELECTOR_SEGMENT}|\*)"
-    rf"|sources\.{SELECTOR_SEGMENT}\.{SELECTOR_SEGMENT})"
+    rf"|sources\.{SELECTOR_SEGMENT}\.{SELECTOR_SEGMENT}"
+    rf"|operators\.{SELECTOR_SEGMENT}\.{SELECTOR_SEGMENT})"
 )
 STEP_SELECTOR = rf"\$steps\.{SELECTOR_SEGMENT}"
 DATA_SELECTOR_PATTERN = f"^{DATA_SELECTOR}$"
 STEP_SELECTOR_PATTERN = f"^{STEP_SELECTOR}$"
-SELECTOR_PREFIXES: Tuple[str, ...] = ("$inputs.", "$steps.", "$sources.")
+SELECTOR_PREFIXES: Tuple[str, ...] = (
+    "$inputs.",
+    "$steps.",
+    "$sources.",
+    "$operators.",
+)
 
 _SEGMENT = re.compile(SELECTOR_SEGMENT)
 _DATA = re.compile(DATA_SELECTOR)
@@ -85,14 +91,14 @@ class ParsedSelector:
     """Structure of one selector string.
 
     Args:
-        target: ``"input"``, ``"step_output"``, ``"source_output"`` or
-            ``"step"``.
-        name: Workflow input name, step name or source name.
-        output: Step or source output name (``"*"`` for all outputs of a
-            step); ``None`` otherwise.
+        target: ``"input"``, ``"step_output"``, ``"source_output"``,
+            ``"operator_output"`` or ``"step"``.
+        name: Workflow input, step, source or operator name.
+        output: Step, source or operator output name (``"*"`` for all
+            outputs of a step); ``None`` otherwise.
     """
 
-    target: Literal["input", "step_output", "source_output", "step"]
+    target: Literal["input", "step_output", "source_output", "operator_output", "step"]
     name: str
     output: Optional[str] = None
 
@@ -102,8 +108,8 @@ def parse_selector(text: Any) -> ParsedSelector:
 
     Args:
         text: ``$inputs.<name>``, ``$steps.<step>.<output>``,
-            ``$steps.<step>.*``, ``$sources.<source>.<output>`` or
-            ``$steps.<step>``.
+            ``$steps.<step>.*``, ``$sources.<source>.<output>``,
+            ``$operators.<operator>.<output>`` or ``$steps.<step>``.
 
     Returns:
         The parsed selector.
@@ -121,6 +127,11 @@ def parse_selector(text: Any) -> ParsedSelector:
                 target="source_output", name=parts[1], output=parts[2]
             )
             return parsed
+        if parts[0] == "operators":
+            parsed = ParsedSelector(
+                target="operator_output", name=parts[1], output=parts[2]
+            )
+            return parsed
 
         parsed = ParsedSelector(target="step_output", name=parts[1], output=parts[2])
         return parsed
@@ -131,7 +142,8 @@ def parse_selector(text: Any) -> ParsedSelector:
 
     raise SelectorError(
         f"Malformed selector {text!r}. Use $inputs.<name>, $steps.<step>.<output>, "
-        "$steps.<step>.*, $sources.<source>.<output> or, for control targets, "
+        "$steps.<step>.*, $sources.<source>.<output>, "
+        "$operators.<operator>.<output> or, for control targets, "
         "$steps.<step>."
     )
 
@@ -148,11 +160,14 @@ class SelectorMarker:
         batch: ``never`` delivers one value per invocation; ``always``
             delivers a ``Batch`` over the step's invocations to one call;
             ``if_varying`` does so only when the bound value varies.
+        temporal: For a ``group``: the consumed final axis must be the time
+            axis (a T-oriented collapse). ``False`` accepts any final axis.
     """
 
     role: SelectorRole
     kinds: Tuple[Kind, ...]
     batch: BatchMode = "never"
+    temporal: bool = False
 
     @property
     def kind_names(self) -> Tuple[str, ...]:
@@ -207,6 +222,8 @@ class SelectorMarker:
             "kinds": list(self.kind_names),
             "batch": self.batch,
         }
+        if self.role == "group":
+            description["temporal"] = self.temporal
 
         return description
 
@@ -236,8 +253,10 @@ def _marker_annotation(marker: SelectorMarker, *, pattern: str) -> Any:
 
 
 def _make_marker(
-    *, role: SelectorRole, kinds: Iterable[Any], batch: Any
+    *, role: SelectorRole, kinds: Iterable[Any], batch: Any, temporal: Any = False
 ) -> SelectorMarker:
+    if not isinstance(temporal, bool):
+        raise DeclarationError(f"temporal must be a bool, got {temporal!r}")
     if batch not in BATCH_MODES:
         raise DeclarationError(
             f"batch must be one of {list(BATCH_MODES)}, got {batch!r}"
@@ -248,7 +267,9 @@ def _make_marker(
     except ContractError as error:
         raise DeclarationError(str(error)) from error
 
-    marker = SelectorMarker(role=role, kinds=normalized_kinds, batch=batch)
+    marker = SelectorMarker(
+        role=role, kinds=normalized_kinds, batch=batch, temporal=temporal
+    )
 
     return marker
 
@@ -275,24 +296,33 @@ def Ref(*kinds: Kind, batch: BatchMode = "never") -> Any:  # noqa: N802
     return annotation
 
 
-def Group(*kinds: Kind, batch: BatchMode = "never") -> Any:  # noqa: N802
+def Group(  # noqa: N802
+    *kinds: Kind, batch: BatchMode = "never", temporal: bool = False
+) -> Any:
     """Declare a selector to the trailing group of children per invocation.
 
     The step runs once per parent; the block receives a ``Batch`` of that
     parent's children with their full logical indices. Usable as a whole
     field or as a list element / dict value.
 
+    An ordinary (S-oriented) group collapses whatever axis is last, sample
+    nesting or time alike. ``temporal=True`` declares a T-oriented group: the
+    compiler then requires the consumed last axis to be the time axis, so
+    ``[N, T]`` is accepted and ``[N, T, C]`` is rejected.
+
     Args:
         *kinds: Accepted kinds of the children; none means the wildcard.
         batch: ``always`` or ``if_varying`` deliver a ``Batch`` of groups.
+        temporal: Require the consumed final axis to be time.
 
     Returns:
         An annotation usable in a ``BlockParams`` field.
 
     Raises:
-        DeclarationError: On an unknown batch mode or invalid kinds.
+        DeclarationError: On an unknown batch mode, invalid kinds or a
+            non-bool ``temporal``.
     """
-    marker = _make_marker(role="group", kinds=kinds, batch=batch)
+    marker = _make_marker(role="group", kinds=kinds, batch=batch, temporal=temporal)
     annotation = _marker_annotation(marker, pattern=DATA_SELECTOR_PATTERN)
 
     return annotation

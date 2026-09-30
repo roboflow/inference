@@ -6,7 +6,8 @@
       "kind": "image",
       "axes": [
         {"id": "samples", "kind": "sample", "stationary": true},
-        {"id": "frames", "kind": "time"}
+        {"id": "frames", "kind": "time"},
+        {"id": "clips", "kind": "time"}
       ]
     }
   ],

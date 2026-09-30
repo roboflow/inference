@@ -15,11 +15,14 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from roboflow_workflows.execution_engine.v2.data import Axis, EntryLayout
 from roboflow_workflows.execution_engine.v2.errors import StepPath, format_step_path
 from roboflow_workflows.execution_engine.v2.introspection._sources import (
+    domain_node,
     node_of,
+    operator_node,
     output_of,
     selector_of,
     source_node,
 )
+from roboflow_workflows.execution_engine.v2.operators.contract import INPUT_MAP_ROLES
 from roboflow_workflows.execution_engine.v2.plan import (
     Binding,
     ChildInputPort,
@@ -30,12 +33,16 @@ from roboflow_workflows.execution_engine.v2.plan import (
     PlannedChildInput,
     PlannedChildOutput,
     PlannedInput,
+    PlannedOperator,
     PlannedOutputGroup,
     PlannedSource,
     PlannedStep,
     SourcePort,
     StepPort,
 )
+
+_MAP_KEYS: Mapping[str, str] = {role: key for key, role in INPUT_MAP_ROLES.items()}
+"""Definition map holding each operator input role, e.g. ``input`` -> ``inputs``."""
 
 
 @dataclass(frozen=True)
@@ -46,20 +53,23 @@ class Connection:
         kind: ``data`` (a value bound into a step field), ``child_input`` (a
             value entering a nested workflow input), ``child_output`` (a value
             leaving a nested workflow past its steps), ``control`` (a gate
-            governing a step or a child output), ``output`` (a flat workflow
-            output), ``anchor`` (the source port whose pulses deliver an
+            governing a step or a child output), ``operator_input`` (a value
+            an operator consumes), ``output`` (a flat workflow output),
+            ``anchor`` (the source or operator port whose pulses deliver an
             output group) or ``group_output`` (a field of an output group).
-        source: ``$inputs.<name>``, a step node id, a source node id
-            (``$sources.<name>``), a child input port
-            (``$steps.child: $inputs.x``) or a child output port
+        source: ``$inputs.<name>``, a step node id, a source or operator node
+            id (``$sources.<name>``, ``$operators.<name>``), a child input
+            port (``$steps.child: $inputs.x``) or a child output port
             (``$steps.child.out``).
-        target: Consuming step node id, child port, ``$outputs.<name>``,
-            ``$output_groups.<group>`` or ``$output_groups.<group>.<field>``.
+        target: Consuming step node id, child port, operator node id,
+            ``$outputs.<name>``, ``$output_groups.<group>`` or
+            ``$output_groups.<group>.<field>``.
         selector: Selector text as written at the target; for control, the
             target key as the controller received it.
         output: Producing step output (``"*"`` for all) or source port for
             step and source sources.
-        field_path: Consuming field and position for data edges.
+        field_path: Consuming field and position for data edges; the selector
+            map and input name for operator inputs, e.g. ``("collect", "frames")``.
         mode: Binding mode for data edges (see ``plan``).
         produced_kinds: Kinds the source declares (for a child input port,
             the kinds the child workflow declared).
@@ -103,24 +113,30 @@ def describe_workflow(plan: CompiledWorkflow) -> Dict[str, Any]:
     compile-time constants), and every axis with its kind and origin. An
     active plan adds its declared sources (configured parameters, ports with
     scoped axes, the steps one pulse runs and the groups it delivers), its
-    output groups (anchor, fields, readiness dependencies) and each step's
-    causal ``domain``.
+    operators (parameters, inputs with their domains, planned ports, route,
+    groups and downstream operators), its output groups (anchor, fields,
+    readiness dependencies) and each step's causal ``domain``.
 
     Args:
         plan: Compiled plan.
 
     Returns:
-        JSON-friendly mapping with ``inputs``, ``sources``, ``child_inputs``
+        JSON-friendly mapping with ``inputs``, ``sources``, ``operators``,
+        ``child_inputs``
         (outer before inner), ``child_outputs``, ``steps`` (execution order),
         ``outputs``, ``output_groups``, ``axes`` and ``warnings``. Defaults
         and constants use ``{"value": v}``; ``None`` means none. ``sources``
-        and ``output_groups`` are empty for a passive plan.
+        ``operators`` and ``output_groups`` are empty for a passive plan.
     """
     description = {
         "inputs": {name: _describe_input(item) for name, item in plan.inputs.items()},
         "sources": {
             name: _describe_declared_source(item, plan=plan)
             for name, item in plan.sources.items()
+        },
+        "operators": {
+            name: _describe_operator(item, plan=plan)
+            for name, item in plan.operators.items()
         },
         "child_inputs": [
             _describe_child_input(item, plan=plan) for item in plan.child_inputs
@@ -160,8 +176,9 @@ def discover_connections(plan: CompiledWorkflow) -> Tuple[Connection, ...]:
     Returns:
         Child input edges (outer before inner), child output edges with the
         control edges of their gates, then step edges in execution order of
-        their targets, then flat workflow outputs, then for each output group
-        its ``anchor`` edge followed by one ``group_output`` edge per field.
+        their targets, then operator input edges in operator order, then flat
+        workflow outputs, then for each output group its ``anchor`` edge
+        followed by one ``group_output`` edge per field.
     """
     steps_by_path = {step.path: step for step in plan.steps}
 
@@ -233,6 +250,19 @@ def discover_connections(plan: CompiledWorkflow) -> Tuple[Connection, ...]:
 
     connections.extend(
         Connection(
+            kind="operator_input",
+            source=node_of(item.source),
+            target=operator_node(operator.name),
+            selector=item.selector,
+            output=output_of(item.source),
+            field_path=(_MAP_KEYS[item.role], item.name),
+            produced_kinds=produced(item.source),
+        )
+        for operator in plan.operators.values()
+        for item in operator.inputs
+    )
+    connections.extend(
+        Connection(
             kind="output",
             source=node_of(output.source),
             target=f"$outputs.{output.name}",
@@ -300,12 +330,49 @@ def _describe_declared_source(
     return description
 
 
+def _describe_operator(
+    item: PlannedOperator, *, plan: CompiledWorkflow
+) -> Dict[str, Any]:
+    description = {
+        "node_id": operator_node(item.name),
+        "type": item.spec.type,
+        "namespace": item.namespace,
+        "parameters": item.params.model_dump(mode="json"),
+        "inputs": {
+            planned.name: {
+                "role": planned.role,
+                "selector": planned.selector,
+                "domain": planned.domain,
+                "axes": list(planned.layout.axis_ids),
+                **_describe_source(planned.source, plan=plan),
+            }
+            for planned in item.inputs
+        },
+        "upstream_domains": list(item.upstream_domains),
+        "outputs": {
+            name: {
+                "kinds": list(output.kinds),
+                "axes": list(output.layout.axis_ids),
+                "selector": item.port(name).describe(),
+            }
+            for name, output in item.outputs.items()
+        },
+        "route": [format_step_path(step.path) for step in plan.route(item.name)],
+        "groups": [group.name for group in plan.groups_of(item.name)],
+        "consumers": [
+            operator_node(consumer.name) for consumer in plan.consumers_of(item.name)
+        ],
+    }
+
+    return description
+
+
 def _describe_group(
     group: PlannedOutputGroup, *, plan: CompiledWorkflow
 ) -> Dict[str, Any]:
     description = {
         "anchor": group.anchor.describe(),
-        "source": source_node(group.source),
+        "source": domain_node(group.anchor),
         "outputs": {
             output.name: {
                 **output.describe(),
@@ -402,10 +469,20 @@ def _describe_step(step: PlannedStep, *, plan: CompiledWorkflow) -> Dict[str, An
             for key, paths in step.control_targets.items()
         },
         "dependencies": [format_step_path(path) for path in step.dependencies],
-        "domain": None if step.domain is None else source_node(step.domain),
+        "domain": _domain_node(step.domain, plan=plan),
     }
 
     return description
+
+
+def _domain_node(domain: Optional[str], *, plan: CompiledWorkflow) -> Optional[str]:
+    """Node id of a step's causal domain; ``None`` for a static step."""
+    if domain is None:
+        return None
+    if domain in plan.operators:
+        return operator_node(domain)
+
+    return source_node(domain)
 
 
 def _describe_parameters(
@@ -491,6 +568,12 @@ def _collect_axes(plan: CompiledWorkflow) -> List[Axis]:
         output.layout
         for item in plan.sources.values()
         for output in item.outputs.values()
+    )
+    layouts.extend(
+        layout
+        for item in plan.operators.values()
+        for layout in [planned.layout for planned in item.inputs]
+        + [output.layout for output in item.outputs.values()]
     )
     layouts.extend(item.layout for item in plan.child_inputs)
     layouts.extend(item.layout for item in plan.child_outputs)

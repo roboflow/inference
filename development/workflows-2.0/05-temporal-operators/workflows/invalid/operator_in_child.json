@@ -1,0 +1,27 @@
+{
+  "version": "2.0",
+  "sources": [
+    {"type": "temporal_demo/tensor_camera", "name": "left", "schedule": "left"}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/inner_workflow@v1", "name": "child",
+      "parameter_bindings": {"image": "$sources.left.image"},
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"name": "image", "kind": ["image"], "axes": []}],
+        "steps": [{"type": "v2/invert", "name": "invert", "image": "$inputs.image"}],
+        "operators": [
+          {"type": "v2/window@v1", "name": "clip", "collect": {"frames": "$steps.invert.image"}, "size": 3}
+        ],
+        "outputs": [{"type": "JsonField", "name": "inverted", "selector": "$steps.invert.image"}]
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "results", "anchor": "$sources.left.image",
+      "outputs": [{"type": "JsonField", "name": "inverted", "selector": "$steps.child.inverted"}]
+    }
+  ]
+}

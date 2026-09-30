@@ -1,0 +1,70 @@
+{
+  "version": "2.0",
+  "sources": [
+    {"type": "temporal_demo/tensor_camera", "name": "left", "schedule": "left"},
+    {"type": "temporal_demo/tensor_camera", "name": "right", "schedule": "right"}
+  ],
+  "operators": [
+    {
+      "type": "v2/align@v1", "name": "rig",
+      "inputs": {"left": "$steps.prepare_left.resized", "right": "$steps.prepare_right.resized"},
+      "clock": "rig-media", "coverage": "media", "tolerance_ms": 10, "layout": "batch"
+    },
+    {
+      "type": "v2/window@v1", "name": "clip",
+      "collect": {"frames": "$operators.rig.samples"},
+      "size": 3
+    }
+  ],
+  "steps": [
+    {"type": "v2/has_brightness", "name": "left_bright", "image": "$sources.left.image", "minimum": 50.0},
+    {"type": "v2/continue_if", "name": "left_gate", "condition": "$steps.left_bright.keep", "next_steps": ["$steps.prepare_left"]},
+    {
+      "type": "roboflow_core/inner_workflow@v1", "name": "prepare_left",
+      "parameter_bindings": {"image": "$sources.left.image"},
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"name": "image", "kind": ["image"], "axes": []}],
+        "steps": [{"type": "v2/resize", "name": "resize", "image": "$inputs.image", "height": 24, "width": 32, "interpolation": "nearest"}],
+        "outputs": [{"type": "JsonField", "name": "resized", "selector": "$steps.resize.image"}]
+      }
+    },
+    {
+      "type": "roboflow_core/inner_workflow@v1", "name": "prepare_right",
+      "parameter_bindings": {"image": "$sources.right.image"},
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"name": "image", "kind": ["image"], "axes": []}],
+        "steps": [{"type": "v2/resize", "name": "resize", "image": "$inputs.image", "height": 24, "width": 32, "interpolation": "nearest"}],
+        "outputs": [{"type": "JsonField", "name": "resized", "selector": "$steps.resize.image"}]
+      }
+    },
+    {"type": "temporal_demo/clip_ends", "name": "ends", "frames": "$operators.clip.frames"},
+    {"type": "v2/has_brightness", "name": "last_bright", "image": "$steps.ends.last", "minimum": 100.0},
+    {"type": "v2/continue_if", "name": "last_gate", "condition": "$steps.last_bright.keep", "next_steps": ["$steps.finish"]},
+    {
+      "type": "roboflow_core/inner_workflow@v1", "name": "finish",
+      "parameter_bindings": {"image": "$steps.ends.last"},
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"name": "image", "kind": ["image"], "axes": []}],
+        "steps": [{"type": "v2/invert", "name": "invert", "image": "$inputs.image"}],
+        "outputs": [{"type": "JsonField", "name": "inverted", "selector": "$steps.invert.image"}]
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "left_frames", "anchor": "$sources.left.image",
+      "outputs": [{"type": "JsonField", "name": "prepared", "selector": "$steps.prepare_left.resized"}]
+    },
+    {
+      "type": "OutputGroup", "name": "clips", "anchor": "$operators.clip.frames",
+      "outputs": [
+        {"type": "JsonField", "name": "frames", "selector": "$operators.clip.frames"},
+        {"type": "JsonField", "name": "last", "selector": "$steps.ends.last"},
+        {"type": "JsonField", "name": "finished", "selector": "$steps.finish.inverted"}
+      ]
+    }
+  ]
+}

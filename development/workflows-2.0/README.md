@@ -5,6 +5,7 @@ Runnable examples for the explicitly selected V2 engine in
 
 | Examples | What you can try |
 | --- | --- |
+| [Temporal operators](05-temporal-operators/README.md) | Explicit alignment of two cameras and a sensor, time windows, static crops before and crops after T, per-camera best frame, last-PTS mosaics and recollection, plus EOF/missing/late/clock/capacity, stop/failure/restart and compile-time rejections |
 | [Finite sources](04-source-lifecycle/README.md) | Independent image and CSV signal sources, timestamps, nested conditionals, output groups and stop/drain |
 | [Passive foundation](01-passive-foundation/README.md) | Nested image crops, mosaics, a filtering gate, custom blocks, invalid definitions and metadata measurements |
 | [Tensor-native media](03-tensor-native/README.md) | Nested crop/resize predictions, native family round-trips, sparse filtering, provenance and rendered own/root outputs |

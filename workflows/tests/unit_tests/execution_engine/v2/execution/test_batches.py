@@ -182,16 +182,14 @@ def test_cast_group_is_preserved_under_its_own_cast_axis() -> None:
     assert result.rows() == [{"labels": []}, {"labels": ["#x"]}]
 
 
-def test_layout_without_a_domain_source_is_rejected() -> None:
-    plan = (
-        PlanBuilder()
-        .input("label", SCALAR)
-        .step(Relabel, "relabel", at=BATCH, values="$inputs.label")
-        .build()
-    )
-
-    with pytest.raises(ContractError, match="no varying binding or gate"):
-        plan.create_session().run({"label": "x"})
+def test_layout_without_a_domain_source_is_rejected_when_planned() -> None:
+    with pytest.raises(ContractError, match="bindings and gates determine"):
+        (
+            PlanBuilder()
+            .input("label", SCALAR)
+            .step(Relabel, "relabel", at=BATCH, values="$inputs.label")
+            .build()
+        )
 
 
 def test_parent_value_is_broadcast_to_its_children() -> None:

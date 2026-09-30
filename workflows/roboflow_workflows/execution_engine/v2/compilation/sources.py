@@ -52,9 +52,17 @@ def check_active_definition(root: Scope) -> None:
 
     Raises:
         WorkflowCompileError: When sources come with grouped inputs or flat
-            outputs, or output groups come without sources.
+            outputs, or output groups or operators come without sources.
     """
     workflow = root.workflow
+    if not workflow.sources and workflow.operators:
+        raise WorkflowCompileError(
+            f"{workflow.location}operators "
+            f"{[operator.name for operator in workflow.operators]} need sources: "
+            "session.run() executes each call on its own and keeps no pulses to "
+            "align or collect across calls. Declare sources, or pass values a host "
+            "already collected as an input with a time axis"
+        )
     if not workflow.sources:
         if workflow.output_groups:
             raise WorkflowCompileError(

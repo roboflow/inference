@@ -15,6 +15,10 @@ delivers each ``OutputGroup`` to a registered handler once per pulse::
     run = session.start(static_inputs, handlers={"frames": on_frames})
     run.wait()
 
+Root ``operators`` (class-owned ``Operator`` plugins, such as the built-in
+``v2/align@v1`` and ``v2/window@v1``) turn pulses of sources into pulses of
+their own domain; ``$operators.<name>.<port>`` selects their outputs.
+
 V1 defaults and discovery are unaffected. Native image blocks live in the
 separately imported ``v2.blocks`` catalogue; this generic entry point loads no
 image libraries, native block implementations or V1 engine. The lightweight
@@ -26,6 +30,7 @@ from roboflow_workflows.execution_engine.v2.active.runtime import (
     ActiveRunError,
     GroupHandler,
     GroupResult,
+    SourceCounters,
 )
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.compilation import (
@@ -52,29 +57,50 @@ from roboflow_workflows.execution_engine.v2.data import (
     validate_entry,
 )
 from roboflow_workflows.execution_engine.v2.declaration import (
+    CONTEXT_POLICIES,
+    SAME_PAYLOAD,
     Block,
     BlockParams,
+    ContextPolicy,
     DependentResource,
     Group,
     Output,
     Ref,
     Select,
+    Selected,
+    Selection,
     StepRef,
     Stop,
     spec_of,
 )
 from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
+    OperatorError,
+    OperatorInputError,
     WorkflowCompileError,
     WorkflowExecutionError,
     WorkflowInputError,
 )
 from roboflow_workflows.execution_engine.v2.kinds import Kind
+from roboflow_workflows.execution_engine.v2.operators import (
+    Arrival,
+    Operator,
+    OperatorCounters,
+    OperatorDeclarationError,
+    OperatorInput,
+    OperatorParams,
+    OperatorPort,
+    OperatorPulse,
+    OperatorSpec,
+    spec_of_operator,
+)
 from roboflow_workflows.execution_engine.v2.plan import (
     CompiledWorkflow,
     CompileOptions,
     ExecutionObserver,
     ExecutionSession,
+    PlannedOperator,
+    PlannedOperatorInput,
     PlannedOutputGroup,
     PlannedSource,
     PlannedSourceOutput,
@@ -94,8 +120,11 @@ from roboflow_workflows.execution_engine.v2.sources import (
 )
 
 __all__ = [
+    "CONTEXT_POLICIES",
+    "SAME_PAYLOAD",
     "ActiveRun",
     "ActiveRunError",
+    "Arrival",
     "Axis",
     "Batch",
     "Block",
@@ -103,6 +132,7 @@ __all__ = [
     "Catalogue",
     "CompiledWorkflow",
     "CompileOptions",
+    "ContextPolicy",
     "ContractError",
     "DependentResource",
     "Emission",
@@ -119,7 +149,19 @@ __all__ = [
     "InputValue",
     "Kind",
     "NoExecutionContextError",
+    "Operator",
+    "OperatorCounters",
+    "OperatorDeclarationError",
+    "OperatorError",
+    "OperatorInputError",
+    "OperatorInput",
+    "OperatorParams",
+    "OperatorPort",
+    "OperatorPulse",
+    "OperatorSpec",
     "Output",
+    "PlannedOperator",
+    "PlannedOperatorInput",
     "PlannedOutputGroup",
     "PlannedSource",
     "PlannedSourceOutput",
@@ -128,7 +170,10 @@ __all__ = [
     "RunResult",
     "SampleContext",
     "Select",
+    "Selected",
+    "Selection",
     "Source",
+    "SourceCounters",
     "SourceDeclarationError",
     "SourceOutput",
     "SourceParams",
@@ -147,6 +192,7 @@ __all__ = [
     "compile_workflow",
     "get_execution_context",
     "spec_of",
+    "spec_of_operator",
     "spec_of_source",
     "validate_entry",
 ]

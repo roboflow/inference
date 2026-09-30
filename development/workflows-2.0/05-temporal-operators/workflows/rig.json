@@ -1,0 +1,96 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "sensor_csv", "kind": ["string"]}],
+  "sources": [
+    {"type": "temporal_demo/tensor_camera", "name": "left", "schedule": "left"},
+    {"type": "temporal_demo/tensor_camera", "name": "right", "schedule": "right"},
+    {"type": "temporal_demo/csv_sensor", "name": "sensor", "path": "$inputs.sensor_csv"}
+  ],
+  "operators": [
+    {
+      "type": "v2/align@v1", "name": "rig",
+      "inputs": {"left": "$sources.left.image", "right": "$sources.right.image"},
+      "clock": "rig-media", "coverage": "media", "tolerance_ms": 10, "layout": "batch"
+    },
+    {
+      "type": "v2/align@v1", "name": "paired",
+      "inputs": {"celsius": "$sources.sensor.celsius", "image": "$sources.left.image"},
+      "leader": "celsius", "clock": "rig-media", "coverage": "media", "tolerance_ms": 20
+    },
+    {
+      "type": "v2/window@v1", "name": "clip",
+      "collect": {"frames": "$operators.rig.samples", "crops": "$steps.halves.crops"},
+      "hold": {"reference": "$steps.grey_card.image"},
+      "size": 4
+    },
+    {
+      "type": "v2/window@v1", "name": "recollect",
+      "collect": {"summaries": "$steps.clip_mosaic.image"},
+      "size": 2
+    }
+  ],
+  "steps": [
+    {"type": "temporal_demo/celsius_to_fahrenheit", "name": "convert", "celsius": "$sources.sensor.celsius"},
+    {
+      "type": "temporal_demo/describe_pair", "name": "describe",
+      "celsius": "$operators.paired.celsius", "image": "$operators.paired.image"
+    },
+    {
+      "type": "v2/static_crop", "name": "halves", "image": "$operators.rig.samples",
+      "regions": [[0, 0, 32, 48], [32, 0, 64, 48]]
+    },
+    {"type": "temporal_demo/grey_card", "name": "grey_card", "image": "$operators.rig.samples", "value": 128},
+    {
+      "type": "v2/best_frame", "name": "best",
+      "frames": "$operators.clip.frames", "reference": "$operators.clip.reference"
+    },
+    {"type": "v2/mosaic", "name": "half_strips", "images": "$operators.clip.crops", "tile_size": 16},
+    {
+      "type": "v2/crop", "name": "marker_crops", "image": "$operators.clip.frames",
+      "regions": [[0, 18, 32, 30], [32, 18, 64, 30]]
+    },
+    {"type": "v2/mosaic", "name": "marker_tiles", "images": "$steps.marker_crops.crops", "tile_size": 16, "columns": 2},
+    {"type": "v2/mosaic", "name": "clip_mosaic", "images": "$steps.marker_tiles.image", "tile_size": 16, "columns": 4}
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "paired", "anchor": "$operators.paired.celsius",
+      "outputs": [
+        {"type": "JsonField", "name": "celsius", "selector": "$operators.paired.celsius"},
+        {"type": "JsonField", "name": "image", "selector": "$operators.paired.image"},
+        {"type": "JsonField", "name": "summary", "selector": "$steps.describe.summary"}
+      ]
+    },
+    {
+      "type": "OutputGroup", "name": "rig_samples", "anchor": "$operators.rig.samples",
+      "outputs": [
+        {"type": "JsonField", "name": "samples", "selector": "$operators.rig.samples"},
+        {"type": "JsonField", "name": "halves", "selector": "$steps.halves.crops"}
+      ]
+    },
+    {
+      "type": "OutputGroup", "name": "temperatures", "anchor": "$sources.sensor.celsius",
+      "outputs": [
+        {"type": "JsonField", "name": "fahrenheit", "selector": "$steps.convert.fahrenheit"}
+      ]
+    },
+    {
+      "type": "OutputGroup", "name": "clips", "anchor": "$operators.clip.frames",
+      "outputs": [
+        {"type": "JsonField", "name": "frames", "selector": "$operators.clip.frames"},
+        {"type": "JsonField", "name": "crops", "selector": "$operators.clip.crops"},
+        {"type": "JsonField", "name": "reference", "selector": "$operators.clip.reference"},
+        {"type": "JsonField", "name": "best", "selector": "$steps.best.frame"},
+        {"type": "JsonField", "name": "half_strips", "selector": "$steps.half_strips.image"},
+        {"type": "JsonField", "name": "marker_crops", "selector": "$steps.marker_crops.crops"},
+        {"type": "JsonField", "name": "clip_mosaic", "selector": "$steps.clip_mosaic.image"}
+      ]
+    },
+    {
+      "type": "OutputGroup", "name": "recollected", "anchor": "$operators.recollect.summaries",
+      "outputs": [
+        {"type": "JsonField", "name": "summaries", "selector": "$operators.recollect.summaries"}
+      ]
+    }
+  ]
+}

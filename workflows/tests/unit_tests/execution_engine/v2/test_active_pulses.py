@@ -2,7 +2,8 @@
 
 The experiment drives ``begin_pulse`` / ``execute_step`` on two ``RunState``
 objects of one session and one source from a single thread, in an order the
-test chooses. It proves that pulse-local decisions, entries, boundary caches
+test chooses; its operator variant does the same with two pulses an
+alignment operator actually emitted. It proves that pulse-local decisions, entries, boundary caches
 and metadata never leak between pulses while block instances are shared. It
 is a state-separation experiment, not a supported scheduler: the active
 runtime processes pulses one at a time.
@@ -16,14 +17,19 @@ import pytest
 from roboflow_workflows.execution_engine.v2.active.execution import (
     ENGINE_CLOCK_ID,
     abandon_pulse,
+    begin_operator_pulse,
     begin_pulse,
     execute_pulse,
     group_result,
+    operator_arrivals,
     port_entries,
 )
+from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
 from roboflow_workflows.execution_engine.v2.data import (
+    Axis,
     Batch,
+    EntryLayout,
     EntryMetadata,
     InputValue,
     SampleContext,
@@ -35,8 +41,11 @@ from roboflow_workflows.execution_engine.v2.errors import (
     StepExecutionError,
     WorkflowInputError,
 )
+from roboflow_workflows.execution_engine.v2.execution.entries import Entry
 from roboflow_workflows.execution_engine.v2.execution.inputs import prepare_inputs
 from roboflow_workflows.execution_engine.v2.execution.steps import execute_step
+from roboflow_workflows.execution_engine.v2.operators import OperatorPulse
+from roboflow_workflows.execution_engine.v2.operators.alignment import Align
 from roboflow_workflows.execution_engine.v2.plan import PulseKey, SourcePort
 from roboflow_workflows.execution_engine.v2.sources import Emission
 
@@ -356,3 +365,161 @@ def test_a_failing_pulse_is_abandoned_without_touching_the_other() -> None:
     later = begin_pulse(session, pulse=pulse(2), emission=emit(value=2.0), inputs={})
     execute_pulse(later)
     assert group_result(later, plan.groups_of("a")[0]).rows() == [{"count": 2}]
+
+
+# The operator variant ------------------------------------------------------
+
+
+def operator_experiment_plan():
+    """Align two sources; the same gate, child and counter run per aligned pair."""
+    child = {
+        "version": "2.0",
+        "inputs": [parameter("x", 0.0)],
+        "steps": [step(Scale, "scale", value="$inputs.x")],
+        "outputs": [
+            {"type": "JsonField", "name": "scaled", "selector": "$steps.scale.scaled"}
+        ],
+    }
+    definition = active(
+        [source("a"), source("b")],
+        [
+            step(
+                ContinueIf,
+                "gate",
+                value="$operators.pair.a",
+                next_steps=["$steps.notice", "$steps.child"],
+            ),
+            step(Notice, "notice"),
+            {
+                "type": "roboflow_core/inner_workflow@v1",
+                "name": "child",
+                "workflow_definition": child,
+                "parameter_bindings": {"x": "$operators.pair.b"},
+            },
+            step(Counter, "count", value="$operators.pair.a"),
+        ],
+        [
+            group(
+                "P",
+                "$operators.pair.a",
+                scaled="$steps.child.scaled",
+                count="$steps.count.count",
+            )
+        ],
+    )
+    definition["operators"] = [
+        {
+            "type": Align.type,
+            "name": "pair",
+            "inputs": {"a": "$sources.a.value", "b": "$sources.b.value"},
+            "clock": "media",
+        }
+    ]
+    started = threading.Event()
+    started.set()
+    catalogue = Catalogue.merge(CATALOGUE, Catalogue([], operators=[Align]))
+    plan = compile_workflow(definition, catalogue=catalogue)
+    session = plan.create_session(
+        resources={"feeds": {}, "log": Log(), "started": started}
+    )
+
+    return plan, session
+
+
+def aligned_pulses(plan, session, values) -> list:
+    """Feed source pulses through a real ``Align``; return what it emitted."""
+    planned = plan.operator("pair")
+    align = planned.spec.operator_class(
+        name="pair", params=planned.params, inputs=planned.inputs
+    )
+    emitted = []
+    for sequence, (a_value, b_value, pts) in enumerate(values):
+        for name, value in (("a", a_value), ("b", b_value)):
+            run = begin_pulse(
+                session,
+                pulse=pulse(sequence, source_name=name),
+                emission=emit(value=value, pts=pts),
+                inputs={},
+            )
+            execute_pulse(run)
+            emitted += align.push(operator_arrivals(run, planned))
+            abandon_pulse(run)
+
+    return emitted
+
+
+def test_two_operator_pulses_keep_separate_state_while_sharing_blocks() -> None:
+    plan, session = operator_experiment_plan()
+    steps = {"/".join(item.path): item for item in plan.route("pair")}
+    assert list(steps) == ["gate", "notice", "child/scale", "count"]
+    first, second = aligned_pulses(plan, session, [(1.0, 10.0, 0), (-1.0, 20.0, 5)])
+    admitting = begin_operator_pulse(
+        session, pulse=pulse(0, source_name="pair"), emission=first, inputs={}
+    )
+    denying = begin_operator_pulse(
+        session, pulse=pulse(1, source_name="pair"), emission=second, inputs={}
+    )
+
+    execute_step(admitting, steps["gate"])
+    for name in steps:
+        execute_step(denying, steps[name])
+    denied = group_result(denying, plan.groups_of("pair")[0])
+    for name in list(steps)[1:]:
+        execute_step(admitting, steps[name])
+    admitted = group_result(admitting, plan.groups_of("pair")[0])
+
+    assert admitted.rows() == [{"scaled": 20.0, "count": 2}]
+    assert denied.rows() == [{"scaled": None, "count": 1}]
+    assert len(session.instances[("notice",)].calls) == 1
+    assert admitted.causes == (pulse(0, source_name="a"), pulse(0, source_name="b"))
+    assert denied.causes == (pulse(1, source_name="a"), pulse(1, source_name="b"))
+    assert admitted.run_id == f"{RUN}:pair:0" and denied.run_id == f"{RUN}:pair:1"
+    assert admitting.decisions[("gate",)].values[()] == frozenset(
+        {"$steps.notice", "$steps.child"}
+    )
+    assert denying.decisions[("gate",)].values[()] == frozenset()
+    # The aligned entries are the source pulses' own, still valid after those
+    # pulses were abandoned; their media time follows each pair.
+    port = SourcePort("pair", "a", origin="operator")
+    assert admitting.ports[port] is first.ports["a"]
+    assert admitted.outputs.metadata["count"].temporal_at(
+        ()
+    ).media_coverage == Timestamp(0, MEDIA, "media")
+    abandon_pulse(admitting)
+    abandon_pulse(denying)
+    assert not admitting.decisions and not admitting.ports
+
+
+def test_operator_pulses_must_match_the_planned_ports() -> None:
+    plan, session = operator_experiment_plan()
+    (emitted,) = aligned_pulses(plan, session, [(1.0, 2.0, 0)])
+    key = pulse(0, source_name="pair")
+
+    only_a = begin_operator_pulse(
+        session,
+        pulse=key,
+        emission=OperatorPulse(ports={"a": emitted.ports["a"]}, causes=()),
+        inputs={},
+    )
+    assert only_a.ports[SourcePort("pair", "b", origin="operator")].is_filtered(())
+    with pytest.raises(ContractError, match=r"undeclared ports \['c'\]"):
+        begin_operator_pulse(
+            session,
+            pulse=key,
+            emission=OperatorPulse(ports={"c": emitted.ports["a"]}, causes=()),
+            inputs={},
+        )
+    wrong = Entry(
+        layout=EntryLayout((Axis("extra", "static_nesting"),)),
+        metadata=EntryMetadata(),
+        children={(): ()},
+        values={},
+        filtered=frozenset(),
+    )
+    with pytest.raises(ContractError, match="emitted axes"):
+        begin_operator_pulse(
+            session,
+            pulse=key,
+            emission=OperatorPulse(ports={"a": wrong}, causes=()),
+            inputs={},
+        )
