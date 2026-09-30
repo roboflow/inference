@@ -8,6 +8,7 @@ from unittest import mock
 
 import pytest
 import requests
+import requests_mock
 from roboflow_workflows.prototypes.platform_client import RoboflowPlatformClient
 from roboflow_workflows.prototypes.platform_errors import (
     RoboflowAPIConnectionError,
@@ -446,3 +447,39 @@ def test_offline_mode_skips_fire_and_forget_calls_and_refuses_the_rest(
             )
 
     post.assert_not_called()
+
+
+def test_offline_mode_refuses_an_uncached_workspace_lookup(monkeypatch) -> None:
+    monkeypatch.setattr(host.configuration, "OFFLINE_MODE", True)
+
+    with requests_mock.Mocker() as m:
+        with pytest.raises(RoboflowAPIConnectionError) as error:
+            _RecordingPlatformClient().get_roboflow_workspace(api_key="my-key")
+
+    assert m.call_count == 0
+    assert str(error.value) == (
+        "Cannot fetch workspace at Roboflow - OFFLINE_MODE is enabled."
+    )
+
+
+def test_offline_mode_still_answers_an_already_cached_workspace(
+    monkeypatch,
+) -> None:
+    with requests_mock.Mocker() as m:
+        m.get(requests_mock.ANY, json={"workspace": "ws"})
+        assert host.PLATFORM_CLIENT.get_roboflow_workspace(api_key="my-key") == "ws"
+        assert m.call_count == 1
+        monkeypatch.setattr(host.configuration, "OFFLINE_MODE", True)
+
+        assert host.PLATFORM_CLIENT.get_roboflow_workspace(api_key="my-key") == "ws"
+        assert m.call_count == 1
+
+
+def test_offline_mode_refuses_generic_platform_posts(monkeypatch) -> None:
+    monkeypatch.setattr(host.configuration, "OFFLINE_MODE", True)
+
+    with requests_mock.Mocker() as m:
+        with pytest.raises(RoboflowAPIConnectionError):
+            host.PLATFORM_CLIENT.post("x/y", api_key="k", payload={"a": 1})
+
+    assert m.call_count == 0

@@ -638,6 +638,7 @@ class ServerRoboflowPlatformClient:
         params: Optional[List[Tuple[str, str]]] = None,
         http_errors_handlers: Optional[HttpErrorHandlers] = None,
     ) -> dict:
+        _refuse_when_offline(operation="make API requests")
         url_params: List[Tuple[str, str]] = []
         if api_key:
             url_params.append(("api_key", api_key))
@@ -724,6 +725,9 @@ class ServerRoboflowPlatformClient:
         return workspace_id
 
     def _fetch_roboflow_workspace(self, api_key: str) -> str:
+        # Guarded behind the cache lookup: the legacy server's `ttl_cache`
+        # still answers for an already-resolved key while OFFLINE_MODE is on.
+        _refuse_when_offline(operation="fetch workspace")
         url = _add_params_to_url(
             url=_api_url(""), params=[("api_key", api_key), ("nocache", "true")]
         )
