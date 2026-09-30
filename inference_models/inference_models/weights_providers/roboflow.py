@@ -735,17 +735,49 @@ def parse_torch_script_model_package(
 
 
 class CoreMLModelPackageV1(BaseModel):
-    type: Literal["coreml-model-package-v1"]
-    backend_type: Literal["coreml"] = Field(alias="backendType")
-    dynamic_batch_size: bool = Field(alias="dynamicBatchSize", default=False)
-    static_batch_size: Optional[int] = Field(alias="staticBatchSize", default=None)
-    quantization: Quantization
+    type: Literal["coreml-model-package-v1"] = Field(
+        description="Manifest type of a native Core ML (.mlpackage) model package.",
+        examples=["coreml-model-package-v1"],
+    )
+    backend_type: Literal["coreml"] = Field(
+        alias="backendType",
+        description="Backend that runs the package.",
+        examples=["coreml"],
+    )
+    dynamic_batch_size: bool = Field(
+        alias="dynamicBatchSize",
+        default=False,
+        description="Whether the model accepts a variable batch size.",
+        examples=[False],
+    )
+    static_batch_size: Optional[int] = Field(
+        alias="staticBatchSize",
+        default=None,
+        description="Fixed batch size the model was exported for, when the batch size is not dynamic.",
+        examples=[1],
+    )
+    quantization: Quantization = Field(
+        description="Numeric precision of the model's weights and compute.",
+        examples=["fp16"],
+    )
 
 
 def parse_coreml_model_package(
     metadata: RoboflowModelPackageV1,
     proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
+    """Parse a ``coreml-model-package-v1`` package listed by the Roboflow API.
+
+    Args:
+        metadata (RoboflowModelPackageV1): Package entry returned by the weights endpoint.
+        proxy_url_builder (ProxyUrlBuilder): Optional rewriter for artefact download URLs.
+
+    Returns:
+        ModelPackageMetadata: Package metadata with the ``coreml`` backend.
+
+    Raises:
+        ModelMetadataConsistencyError: If the batch size settings are inconsistent.
+    """
     parsed_manifest = CoreMLModelPackageV1.model_validate(metadata.package_manifest)
     validate_batch_settings(
         dynamic_batch_size=parsed_manifest.dynamic_batch_size,

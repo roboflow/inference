@@ -40,7 +40,16 @@ COMPUTE_UNITS = {
 
 @dataclass(frozen=True)
 class CoreMLModelSignature:
-    """Input / output layout read from a Core ML model's spec."""
+    """Input / output layout read from a Core ML model's spec.
+
+    Attributes:
+        input_name (str): Name of the model's (single) input.
+        image_input (bool): True for an image input (the package normalizes pixels itself), False for a
+            multi-array input that takes the normalized tensor.
+        input_height (int): Input height the model was exported for.
+        input_width (int): Input width the model was exported for.
+        output_names (tuple[str, ...]): Output names, in the order the spec declares them.
+    """
 
     input_name: str
     image_input: bool
@@ -50,7 +59,12 @@ class CoreMLModelSignature:
 
 
 class CoreMLModel:
-    """A loaded Core ML model plus its signature; ``predict`` is serialized across threads."""
+    """A loaded Core ML model plus its signature; ``predict`` is serialized across threads.
+
+    Args:
+        model (Any): The loaded ``coremltools.models.MLModel`` (or any object with a compatible ``predict``).
+        signature (CoreMLModelSignature): The model's input / output layout.
+    """
 
     def __init__(self, model: Any, signature: CoreMLModelSignature):
         self._model = model
@@ -58,6 +72,14 @@ class CoreMLModel:
         self._lock = threading.Lock()
 
     def predict(self, feed: Mapping[str, Any]) -> Dict[str, Any]:
+        """Run one prediction, holding the model's lock for the duration of the call.
+
+        Args:
+            feed (Mapping[str, Any]): Input name to value (a PIL image or a numpy array).
+
+        Returns:
+            dict[str, Any]: Output name to value, as returned by Core ML.
+        """
         with self._lock:
             return self._model.predict(dict(feed))
 
@@ -66,6 +88,21 @@ def load_coreml_model(
     mlpackage_path: str,
     compute_units: str = INFERENCE_MODELS_COREML_COMPUTE_UNITS,
 ) -> CoreMLModel:
+    """Load a ``.mlpackage`` bundle with Core ML on the configured compute units.
+
+    Args:
+        mlpackage_path (str): Path of the ``.mlpackage`` bundle directory.
+        compute_units (str): One of ``CPUAndGPU``, ``ALL``, ``CPUAndNeuralEngine`` or ``CPUOnly``
+            (``INFERENCE_MODELS_COREML_COMPUTE_UNITS`` by default).
+
+    Returns:
+        CoreMLModel: The loaded model and its signature.
+
+    Raises:
+        InvalidEnvVariable: If ``compute_units`` is not a known value.
+        MissingDependencyError: If coremltools (the ``coreml`` extra) is not installed.
+        CorruptedModelPackageError: If the model's input is neither an image nor a multi-array.
+    """
     if compute_units not in COMPUTE_UNITS:
         raise InvalidEnvVariable(
             message=f"Core ML compute units must be one of {sorted(COMPUTE_UNITS)}, got '{compute_units}' "
@@ -91,6 +128,17 @@ def load_coreml_model(
 
 
 def read_signature(spec: Any) -> CoreMLModelSignature:
+    """Read the input / output layout from a Core ML model spec.
+
+    Args:
+        spec (Any): The model's ``Model_pb2.Model`` spec, as returned by ``MLModel.get_spec()``.
+
+    Returns:
+        CoreMLModelSignature: The model's input name, kind and size, and its output names.
+
+    Raises:
+        CorruptedModelPackageError: If the input is neither an image nor a multi-array.
+    """
     model_input = spec.description.input[0]
     input_type = model_input.type.WhichOneof("Type")
     if input_type == "imageType":
@@ -128,6 +176,18 @@ def load_coreml_package(
     ``coreml_cache`` lock, which the inference cache watchdog takes before purging that directory, so it can
     never delete a bundle that is being extracted or read. Offline or read-only packages are extracted into a
     temporary directory instead of being written to.
+
+    Args:
+        model_package_dir (str): Model package directory holding ``weights.mlpackage`` or
+            ``weights.mlpackage.zip``.
+        compute_units (str): Core ML compute units (see ``load_coreml_model``).
+
+    Returns:
+        CoreMLModel: The loaded model and its signature.
+
+    Raises:
+        CorruptedModelPackageError: If the package holds no bundle, or the archive holds no bundle or an
+            entry outside it.
     """
     bundle = os.path.join(model_package_dir, MLPACKAGE_NAME)
     if os.path.isfile(os.path.join(bundle, MLPACKAGE_MANIFEST)):

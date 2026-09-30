@@ -39,6 +39,14 @@ def align_network_input_with_model(
     Some registered packages carry an inference config whose training input size does not match the exported
     weights. The model's spec is authoritative: RF-DETR's outputs are relative to the input, so pre-processing
     to the size the model takes gives correct results, where feeding the configured size fails every call.
+
+    Args:
+        inference_config (InferenceConfig): The package's parsed inference config.
+        signature (CoreMLModelSignature): The loaded model's signature.
+
+    Returns:
+        InferenceConfig: ``inference_config`` itself when the sizes agree, otherwise a copy with the model's
+        input size.
     """
     size = inference_config.network_input.training_input_size
     if size is None or (size.height, size.width) == (
@@ -74,7 +82,20 @@ def run_rfdetr_coreml(
     num_logit_classes: int,
     with_masks: bool,
 ) -> Tuple[torch.Tensor, ...]:
-    """Run each image through the package and stack raw ``(boxes, logits[, masks])`` for the batch."""
+    """Run each image through the package and stack raw ``(boxes, logits[, masks])`` for the batch.
+
+    Args:
+        model (CoreMLModel): The loaded Core ML model.
+        pre_processed_images (torch.Tensor): Normalized NCHW batch from the shared RF-DETR pre-processing.
+        network_input (NetworkInputDefinition): The package's network input definition, used to recover the
+            8-bit image for image-input packages.
+        num_logit_classes (int): Logit width the shared post-processing expects (class names + 1).
+        with_masks (bool): Whether to return mask logits as well.
+
+    Returns:
+        tuple[torch.Tensor, ...]: ``(boxes, logits)`` or ``(boxes, logits, masks)`` stacked over the batch,
+        in the layout of the ONNX model's raw outputs.
+    """
     per_image = [
         _run_single_image(
             model=model,
@@ -124,7 +145,17 @@ def _run_single_image(
 def selections_to_logits(
     scores: torch.Tensor, labels: torch.Tensor, num_logit_classes: int
 ) -> torch.Tensor:
-    """Build ``[K, C]`` logits whose flat top-K is exactly the package's ``K`` (score, label) selections."""
+    """Build ``[K, C]`` logits whose flat top-K is exactly the package's ``K`` (score, label) selections.
+
+    Args:
+        scores (torch.Tensor): ``[K]`` selection scores (sigmoid probabilities).
+        labels (torch.Tensor): ``[K]`` selected class ids.
+        num_logit_classes (int): Minimum logit width; widened if a label does not fit.
+
+    Returns:
+        torch.Tensor: ``[K, C]`` float32 logits with ``logit(score)`` at each selection's label and a large
+        negative value elsewhere.
+    """
     num_classes = max(
         num_logit_classes, int(labels.max().item()) + 1 if labels.numel() else 0
     )
@@ -141,7 +172,15 @@ def selections_to_logits(
 def to_package_image(
     image: torch.Tensor, network_input: NetworkInputDefinition
 ) -> Image.Image:
-    """Undo the network-input scaling and normalization to recover the 8-bit RGB image the package expects."""
+    """Undo the network-input scaling and normalization to recover the 8-bit RGB image the package expects.
+
+    Args:
+        image (torch.Tensor): One normalized CHW image from the shared pre-processing.
+        network_input (NetworkInputDefinition): Normalization, scaling factor and color mode it was built with.
+
+    Returns:
+        PIL.Image.Image: The RGB image, rounded to 8 bits.
+    """
     pixels = image.float()
     if network_input.normalization is not None:
         mean = torch.tensor(network_input.normalization[0], dtype=torch.float32)[
