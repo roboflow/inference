@@ -328,6 +328,12 @@ def _create_session_with_coreml_cache(
 
 
 def _model_file_identity(model_path: str) -> str:
+    """Identify the ONNX file a compiled-model cache was built from, by its size and modification time.
+
+    A heuristic, not content validation: model package files are downloaded once and never rewritten in
+    place, so a new model file arrives with a new mtime. An in-place replacement that keeps both size and
+    mtime, or a change to external-data files beside the model, reuses the stale compiled model.
+    """
     stat = os.stat(model_path)
     return hashlib.sha256(f"{stat.st_size}-{stat.st_mtime_ns}".encode()).hexdigest()[
         :12
