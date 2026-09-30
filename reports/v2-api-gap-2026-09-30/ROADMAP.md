@@ -24,6 +24,19 @@ PR 01 establishes the shared conventions that would otherwise cause repeated rew
 
 All implementation PRs should target `feat/new-model-manager` in the public repository unless the team changes the integration strategy. PR 03 belongs in `inference-closed-plugins`; choose its target from that repository's current integration policy during planning. The audit found no private branch named `feat/new-model-manager`.
 
+## Make each plan easy to decide
+
+Use plain language and concrete examples in every PR plan. Lead with what changes for the caller or contributor, then show the choice the reviewer needs to make. Keep the repository plan template's problem, before/after behavior, evidence, recommendation and open questions, but avoid making readers decode abstract terminology first.
+
+- For each blocking decision, show a small example of the proposed behavior and ask a direct question about it. Explain only the trade-off needed to answer that question.
+- Use JSON and HTTP request/response examples for API choices. Include an invalid request and its expected error when validation or conflicting inputs are the issue.
+- Use a short Pydantic model or dataclass when fields, defaults, optional values or a Python interface are easier to understand in code. Label sketches as illustrative; they do not select an implementation or replace the agreed wire contract.
+- Use Mermaid for routing, request handling or control-flow choices. Show the affected path and meaningful branches rather than a generic project process diagram. Skip diagrams that add no information.
+- Put current and proposed examples next to each other. Mark recommendations and unresolved details explicitly so a plausible example cannot be mistaken for a settled decision.
+- Keep source links close to factual claims. Check JSON/Python example syntax and diagram consistency before publishing. Save exhaustive cases for the later contract tests rather than making the plan a full specification.
+
+These are writing guidelines for the existing scope. Workflows contracts and implementation remain on hold in PRs 12 and 13.
+
 ## Recommended sequence
 
 The identifiers below are roadmap identifiers, not GitHub PR numbers. PRs 01–11 and 14 are proposed active-scope items; PRs 12 and 13 are on hold. Dependencies describe technical prerequisites; they are not instructions to start parallel work.
