@@ -20,7 +20,7 @@ PR 01 should establish the shared conventions, valid examples and a small offlin
 
 The integration branch was fetched while preparing this plan and still points to `3d45b8712cc428eb01b714f3609346be7c92acc4`. Design PR 2277 still points to `de634b98bac204c96caa98a15dd7559dded361d5`. This plan rechecks the model/server routers, dispatch, authentication middleware, error helper, detection response serializer and SDK version selection against that public revision.
 
-The [report][report] and [review follow-up][followup] retain their evidence snapshot at report-branch commit `6dcada6ace296522d4be9451f8764b81eb5c8411`. The [roadmap][roadmap] is pinned to the Workflows hold update at `fc08dddf0b05942bc86f578fbfdcceef46e6d2d7`. Discussion guidance remains the snapshot recorded in the follow-up: loading controls, score/decision separation, rich/compact distinction and V1 safeguard parity have support; naming, defaults, optional metadata and several policies remain open. This plan does not claim newer team agreement.
+The [report][report] and [review follow-up][followup] retain their evidence snapshot at report-branch commit `6dcada6ace296522d4be9451f8764b81eb5c8411`. The [roadmap][roadmap] is pinned to `74756313e3e425829fd3915d5840e7734d83ce57`, including the Workflows hold and the guidance to write plans in plain language with concrete examples. Discussion guidance remains the snapshot recorded in the follow-up: loading controls, score/decision separation, rich/compact distinction and V1 safeguard parity have support; naming, defaults, optional metadata and several policies remain open. This plan does not claim newer team agreement.
 
 The earlier private-runtime audit is contextual evidence only. No new private backend or deployed-client audit was performed for this shared-contract plan. The local SDK exposes V0/V1 selection, while server tests call experimental V2 paths. That search does not establish that external or private clients have no V2 dependencies. [SDK][sdk], [server integration tests][integration-tests]
 
@@ -28,9 +28,9 @@ The earlier private-runtime audit is contextual evidence only. No new private ba
 
 ### Recommended solution
 
-Maintain one versioned model/server V2 contract alongside the integration branch, separating intended capability from implemented capability. Future reuse by Workflows is a design consideration, not a requirement to settle workflow semantics now. Agree the decisions in section 3 before authoring the normative schemas and examples. Review those artifacts in this same draft PR before considering PR 01 complete.
+Maintain one versioned model/server V2 contract alongside the integration branch, separating intended capability from implemented capability. Future reuse by Workflows is a design consideration, not a requirement to settle workflow semantics now. Agree the decisions in section 3 before making schemas and examples part of the required contract. Review those artifacts in this same draft PR before considering PR 01 complete.
 
-Recommend `design/00_inference_api_v2/` as the contract home, preserving PR 2277's established document layout and authorship/provenance. Reconcile its preface, model/server API structure and model proposal into the integration branch deliberately; mark the Workflows surface as on hold and leave its normative contract to PRs 12 and 13. Do not import `03-workflows.md` as an active contract, merge unrelated history or maintain two competing specifications. Keep this plan under `plans/v2-api/`. Documentation should link to the contract rather than duplicate it.
+Recommend `design/00_inference_api_v2/` as the contract home, preserving PR 2277's established document layout and authorship/provenance. Reconcile its preface, model/server API structure and model proposal into the integration branch deliberately; mark the Workflows surface as on hold and leave its detailed contract to PRs 12 and 13. Do not import `03-workflows.md` as an active contract, merge unrelated history or maintain two competing specifications. Keep this plan under `plans/v2-api/`. Documentation should link to the contract rather than duplicate it.
 
 ### Before
 
@@ -72,11 +72,11 @@ PR 01 itself leaves runtime behavior unchanged. Once the later implementation PR
 
 ```mermaid
 flowchart LR
-    A[Agreed contract and examples] --> B[Offline schema and semantic checks]
-    B --> C[Later focused implementation PRs]
-    C --> D[Model and server adapters]
-    D --> E[Common response conventions]
-    E --> F[Client contract checks]
+    A[POST /v2/models/run] --> B[Check credentials and model access]
+    B --> C[Validate controls and model inputs]
+    C --> D[Run selected model action]
+    D --> E[Select requested outputs]
+    E --> F[Return named outputs in the chosen format]
 ```
 
 Recommended target example for the same one-image request, subject to D2–D4 below:
@@ -121,9 +121,9 @@ The explicit `name`/`value` fields, envelope version and top-level `inference_id
 |---|---|---|
 | Surface and access | Model/server method/path/access inventory, migration policy, public-probe exceptions | Roadmap 02, 05, 14 |
 | Requests | Model controls, defaults, repetition and precedence rules; input format skeletons | 02–05, 11 |
-| Responses | Model execution envelope, output names/cardinality, optional metadata, IDs, model/server errors | Active model/server PRs from 05 onward |
+| Responses | Model response body, output names and batch sizes, optional metadata, IDs, model/server errors | Active model/server PRs from 05 onward |
 | Discovery | Model document structure, actions, representation references, filters and supported-capability rules | 10 |
-| Compatibility | Type/schema evolution rules and experimental-client migration requirements | Every affected PR |
+| Compatibility | Rules for changing type identifiers and schemas and experimental-client migration requirements | Every affected PR |
 | Evidence | Valid/invalid fixtures, reference checks and shared semantic assertions | Extended with each feature |
 
 Include the ten active model/server routes in the contract inventory: six model routes and four server routes. D2 resolves their disputed semantics and migration. The six proposed Workflows routes are tracked separately below as on hold and are excluded from PR 01 decisions and acceptance:
@@ -143,83 +143,247 @@ PR 01 will contain model/server specification, schemas, examples and their offli
 
 Classification field names/threshold algorithms, exact loader options/cache identity, architecture compatibility contents, mask encoding and tensor shapes, OCR layout, and binary encoding details stay in their later model plans. All workflow contract work, including identifiers, discovery/validation, batching, null positions, execution IDs, usage and readiness, is on hold for PRs 12 and 13. PR 01 reserves extension points for later model details without using permissive placeholder schemas as evidence of full conformance; it does not define the held workflow contracts.
 
-## 3. Uncertainties and decisions needing input
+## 3. Decisions to make before writing the contract
 
-All decisions below are **Open**. Each blocks finalizing the affected shared contract and its normative fixtures; none prevents reviewing this plan. Record the agreed answer and discussion reference beside each decision before implementing it. Start with D1–D3 because they determine where and in what shape the remaining artifacts are written.
+All six decisions are **Open**. The examples show the recommendation, not agreed or implemented behavior. Start with D1–D3, then review D4–D6. Record each answer and its discussion link before turning the examples into required behavior.
 
-### D1 Contract home and schema dialect
+### D1 Where should the contract live and how should we check it
 
-**Question:** Where is the authoritative contract, and which schema dialect will its fixtures and consumers use?
+**What we found:** The design lives on PR 2277, separate from the integration branch. It refers to both OpenAPI and JSON Schema without choosing a schema version. A schema is a machine-readable description of allowed fields and values. [Design structure][design-structure], [interface proposal][design-models]
 
-**Investigation:** The four design documents exist on PR 2277 but not on the integration branch. The discovery proposal mixes “OpenAPI/JSON-Schema” descriptions and `#/definitions/...` references without selecting a dialect. [Design structure][design-structure], [interface proposal][design-models]
+**Recommendation:** Keep the model/server contract in `design/00_inference_api_v2/`. Bring across the relevant proposal text and preserve its authorship. Keep Workflows marked on hold. Use JSON Schema Draft 7 to check examples, preserving the proposal's `definitions` reference format. Treat the model interface description as a separate document from FastAPI's generated OpenAPI page.
 
-**Recommendation:** Reconcile the model/server proposal under `design/00_inference_api_v2/` in this PR after agreement. Use explicitly declared JSON Schema Draft 7 for representation fragments and fixture validation, retaining `definitions` reference spelling; keep the custom discovery document distinct from FastAPI's OpenAPI output. Give each standalone schema a stable ID and resolve references locally in validation. Pin a compatible validator in the relevant test tooling after inspecting existing dependency conventions, without introducing a new runtime dependency or package.
+For example, this small schema checks only the two response options:
 
-**Input needed:** Confirm the home and dialect, and whether existing client/schema tooling imposes another dialect. A demonstrated requirement for another dialect should change this recommendation before fixtures are authored. Coordinate with the author of PR 2277 on how the old draft points to the reconciled contract; this plan does not close or edit that PR.
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "response_style": {"enum": ["rich", "compact"]},
+    "response_format": {"enum": ["json", "multipart"]}
+  }
+}
+```
 
-### D2 Canonical routes and migration
+`{"response_style":"rich"}` passes; `{"response_style":"verbose"}` fails. This excerpt does not describe every request control, apply defaults, or claim that multipart is implemented. The complete schemas would have stable IDs and local references so checks can run without network access. Choose the test validator after checking existing dependency conventions; do not add a runtime dependency for this work.
 
-**Question:** Adopt the proposed routes, and what compatibility obligation exists for experimental V2 clients?
+**Decision needed:** Can we use this directory and Draft 7, or does an existing consumer require another schema version? Also agree with PR 2277's author how that draft will point to the reconciled contract. This plan does not close or edit that PR.
 
-**Investigation:** Current routes are `/infer`, `GET /models`, `POST /models/unload` and `DELETE /models`; the latter lists every manager entry and returns a partial-result body on failures. The follow-up tentatively supports DELETE, while loaded-model naming/filtering remains open. The SDK search is not a deployed consumer inventory. [Routes][routes], [follow-up][followup], [SDK][sdk]
+### D2 Which URLs should clients call and what happens to old clients
 
-**Recommendation:** Adopt `/run`, `/loaded` and `DELETE /unload`, with a supplied `model_id` unloading one model and omission unloading all. Define `/loaded` as actually loaded entries, not compatible architectures or a hidden all-state listing. Reserve richer state listing/filtering for the lifecycle plan rather than making `state=loading` contradict this path. PR 02 must settle cancellation/partial-failure details and whether inventory is needed during loading.
+**What we found:** The server and design use different paths. DELETE unload has tentative support; loaded-model naming/filtering is still open. Local SDK code selects V0/V1, but that does not prove private or deployed V2 clients do not exist. [Routes][routes], [follow-up][followup], [SDK][sdk]
 
-Preserve existing experimental paths and their current response contract through an explicitly announced migration release, implemented as compatibility adapters where necessary; simply aliasing an old path to a breaking new response is insufficient. Keep V1 unchanged. Remove experimental compatibility only after affected consumers have been identified and migrated; do not invent a sunset date here. Existing same-path routes such as `/interface` need an explicit transition too: retain current behavior until consumer migration is coordinated, then announce the response/version change. Do not silently add a second permanent API or a new version-negotiation mechanism.
+**Recommendation:** Use these paths for the agreed contract:
 
-**Input needed:** Confirm the canonical routes and loaded-only meaning; identify known internal/external V2 consumers, release constraints and the acceptable same-path transition. If maintainers establish that there are no compatibility commitments, a coordinated experimental breaking release is simpler than adapters. Until then, preserving current consumers is the recommended assumption.
+| Operation | Current path | Proposed path |
+|---|---|---|
+| Run a model | `POST /v2/models/infer` | `POST /v2/models/run` |
+| List loaded models | `GET /v2/models` | `GET /v2/models/loaded` |
+| Unload one | `POST /v2/models/unload?model_id=example%2F1` | `DELETE /v2/models/unload?model_id=example%2F1` |
+| Unload all | `DELETE /v2/models` | `DELETE /v2/models/unload` |
 
-### D3 Execution envelope and batch identity
+`/loaded` should contain only loaded entries. For example, a model still loading would not appear there. If clients need loading/error states, PR 02 should specify that separately, along with cancellation and partial unload failures.
 
-**Question:** How are output names, batch dimensions and inference IDs represented consistently?
+Keep old experimental paths **and their current response shape** through an announced migration release. Changing an old path to return the new body can still break its clients:
 
-**Investigation:** The model proposal leaves output names and batch structure underspecified. Current handlers emit `predictions` and family serializers can also emit their own `batch` arrays. The original workflow prose is background only; its batching and skipped-position rules are not adopted into this active model contract. [Model design][design-models], [typed serializers][typed]
+```mermaid
+flowchart LR
+    Old[Existing client] --> Infer[POST /v2/models/infer]
+    Infer --> Adapter[Compatibility handling]
+    Adapter --> Predictions[Current predictions response]
+    New[Updated client] --> Run[POST /v2/models/run]
+    Run --> Contract[Agreed request handling]
+    Contract --> Outputs[New outputs response]
+```
 
-**Recommendation:** Use the target example above: ordered `outputs` entries with explicit unique `name` and `value`, with names declared by interface discovery. Default direct-model output is `predictions` when the action has a single prediction output; other names are declared, not guessed. Batched outputs always hold a list aligned with input batch positions, including a singleton list for one item. Non-batched outputs use their declared scalar/object schema; discovery explicitly states the distinction, so an embedding vector is not mistaken for a request batch. Do not add a second family-level batch wrapper for an already batched output. Preserve typed empty model results. Any model-specific nullable result must be declared by its schema; workflow skipped-position behavior remains on hold.
+This is a behavior sketch for later implementation PRs, not a requirement for separate model execution code. Keep V1 unchanged. Remove experimental compatibility after identifying and migrating its consumers; no sunset date is assumed here. For routes whose URL stays the same, such as `/interface`, coordinate the response change with consumers before switching it. Do not add a permanent second API or a new version-selection mechanism in this plan.
 
-Use one opaque top-level `inference_id` per successful top-level model execution. It identifies the execution, not each object, output, model invocation or retry; it provides no idempotency guarantee. Workflow execution/step IDs and the definition of direct/workflow equivalence belong to held PR 13; this decision does not settle them. Output filtering preserves declaration order, not filter parameter order.
+**Decision needed:** Do these paths and the loaded-only list match what we want? Which clients need the old responses, and what migration release can they use? If there are no compatibility commitments, a coordinated breaking experimental release is simpler than adapters; until that is established, preserving existing clients is the recommendation.
 
-**Input needed:** Confirm explicit output entries and top-level execution identity, or identify an existing tracing/usage requirement that needs the draft's per-output IDs. Confirm model batch cardinality rules; all workflow batching and identity questions remain on hold in roadmap PR 13. This decision deliberately changes the draft example and needs explicit agreement.
+### D3 What should one result or a batch look like
 
-### D4 Controls and effective metadata
+**What we found:** The draft does not fully define output naming and batch nesting. Current handlers return `predictions`, while some family serializers also add `batch` wrappers. [Model design][design-models], [typed serializers][typed]
 
-**Question:** What belongs to the HTTP contract, and how are defaults and conflicting inputs handled?
+**Recommendation:** Give each output a name and a value. A batch-aligned output has one value per input, in input order. One image gives a one-element list; two images give two elements. Do not add another `batch` wrapper inside each item.
 
-**Investigation:** Dispatch defaults to compact, recognizes a `style` alias, reduces extra query parameters to single values, and forwards some proposed HTTP controls to model invocation. The draft defaults to rich/JSON. The team supports rich/compact distinction and threshold visibility but has not settled all details. [Dispatch][dispatch], [follow-up][followup]
+For two images with no detections, the proposed response is:
 
-**Recommendation:** Canonical endpoints default to `response_style=rich` and `response_format=json`. Keep identity (`model_id` and optional package ID), `action`, style/format and `requested_output` in query controls, with Bearer authentication only in headers. Loading-specific controls are reserved now but fully specified in PR 02. Model inputs belong in the selected transport's input mapping; conflicting duplicate input locations and repeated singleton controls return a client error rather than silently overriding. Repeated `requested_output` values form a deduplicated selection of declared outputs; unknown names are errors. Absent selection means all outputs. Deprecated `style` remains only on the compatibility surface.
+```json
+{
+  "type": "roboflow-inference-server-response-v2",
+  "inference_id": "execution-a",
+  "outputs": [
+    {
+      "name": "predictions",
+      "value": [
+        {"type": "roboflow-object-detection-rich-v1", "detections": []},
+        {"type": "roboflow-object-detection-rich-v1", "detections": []}
+      ]
+    }
+  ]
+}
+```
 
-Reserve an optional `effective_parameters` map on each output entry so later model families can report their actual applied values in either style. Omit unavailable optional metadata; never fabricate values. Use `null` only where the schema gives it a semantic meaning. Family PRs define which effective settings are mandatory; requested settings are not evidence that they were applied. Omit unavailable usage rather than representing unknown usage as zero. Usage implementation stays in its existing workstream.
+The first result belongs to the first image, even though it is empty. `predictions` is the default name for a single prediction output; other action outputs declare their names in the interface. Each output appears once. Filtering outputs keeps their declared order, regardless of filter order.
 
-**Input needed:** Confirm defaults, conflict handling, metadata placement and the usage integration boundary. Parameter-level exceptions for actual multi-valued model inputs must be declared in discovery; this rule does not ban image batches or list-valued model parameters.
+The interface must say whether a value follows the input batch. An embedding vector such as `[0.1, 0.2]` must not be mistaken for results from two images. Scalar/object outputs that are not batch-aligned use their own declared shape. Missing/nullable model results must also be described explicitly. Workflow skipped-output and `null` rules remain on hold.
 
-### D5 Access and error conventions
+Use one top-level `inference_id` for a successful model execution, shared by all returned outputs. A later execution, including a retry, gets its own ID; sending a request again does not promise reuse of its previous result. The ID does not identify individual detections. Workflow execution/step IDs and direct/workflow equivalence remain in held PR 13.
 
-**Question:** Which endpoints are public or gated, and what error contract applies before and after routing?
+**Decision needed:** Should we use named outputs, one list entry per input, and one ID per execution as shown? Does tracing or usage require the draft's output-level IDs instead? The explicit `name`/`value` fields and ID placement change the draft example and need agreement.
 
-**Investigation:** Health/readiness bypass authentication; management plus info/metrics are disabled by default. Middleware returns plain text for several errors, whereas route errors use `error_code` and `description`. Loaded interface discovery returns gateway metadata without the per-model check used by fallback. These are source findings, not evidence of a tested cross-workspace leak. [Middleware][app], [error helper][errors], [interface route][routes]
+### D4 Where do parameters go and which value wins
 
-**Recommendation:** Retain public health/readiness as explicitly documented exceptions with minimal, non-sensitive responses. Retain default-disabled lifecycle/info/metrics operations, including their canonical and compatibility paths. Authenticated discovery remains available without enabling the control plane, but model-specific discovery must apply the same model-access policy before and after loading. Model loading still occurs automatically on inference until the separately planned management/prediction separation changes that behavior; disabling control-plane routes does not disable automatic loading.
+**What we found:** The implementation defaults to compact, accepts a `style` alias, drops repeated values from some extra query parameters, and forwards some proposed HTTP controls to the model. The draft defaults to rich/JSON. Rich/compact support and visible effective thresholds have support; the exact rules are open. [Dispatch][dispatch], [follow-up][followup]
 
-Use the existing structured error shape (`error_code`, `description`, optional `actionable_follow_up`/`help_url`) throughout the active model/server V2 surface, including middleware, missing routes, method errors and parameter validation. Recommend 400 for malformed/invalid input, 401 for absent/invalid credentials, 403 for an authenticated denial or disabled operation, 404 for a non-disclosing missing/inaccessible resource, 405 for unsupported method, 413 for size limits, 415 for unsupported request media type, 501 for a known but unimplemented capability, 503 for transient unavailability and 504 for execution timeout. Preserve appropriate `Allow`, authentication-challenge and `Retry-After` headers. Keep internal details in logs; an error response does not imply execution succeeded. Transport disconnects may prevent any response.
+**Recommendation:** Put model identity, optional package ID, `action`, response options and `requested_output` in the URL query. Put model inputs in the chosen input format. Use Bearer authentication in the header. Default to `response_style=rich` and `response_format=json`. Keep deprecated `style` only on the old compatibility paths. PR 02 specifies the reserved loading controls.
 
-These recommendations require reconciling today's mixed 401/403 behavior and middleware ordering. The disabled-route gate can retain 403 before authentication, provided the policy is documented consistently. Do not place errors inside successful `outputs` or advertise unsupported multipart as silently fulfilled JSON.
+For example, do not silently choose between these conflicting confidence values:
 
-**Input needed:** Confirm access exceptions, per-model metadata authorization, non-disclosure policy and error mapping. Confirm whether operators rely on existing plain-text probe/error details. Separate ports, independent credentials and manual-loading-only mode remain outside PR 01.
+```http
+POST /v2/models/run?model_id=example%2F1&confidence=0.5
+Authorization: Bearer <api_key>
+Content-Type: application/json
+```
 
-### D6 Discovery and evolution
+```json
+{
+  "inputs": {
+    "image": {"type": "url", "value": "https://example.com/image.jpg"},
+    "confidence": 0.3
+  }
+}
+```
 
-**Question:** How does discovery describe actions/representations honestly, and how are breaking wire changes identified?
+Proposed result: HTTP 400, using the existing general error code rather than defining a new code just for this example:
 
-**Investigation:** The proposal defines common controls, transports, input/output mappings and references but leaves catalogue versioning open. Current loaded/unloaded action descriptions differ. Both old and proposed execution layouts claim the same envelope type. [Interface proposal][design-models], [routes][routes], [detection response][detection]
+```json
+{
+  "error_code": "INVALID_PARAM",
+  "description": "confidence was supplied with conflicting values in query and inputs"
+}
+```
 
-**Recommendation:** Define common controls, request format definitions and a shared `definitions` catalogue at document level; put concrete `model_inputs` and `model_outputs` under each named action, with one declared default action. This explicit action structure extends the draft's per-model sketch to support the existing multi-action surface. Workflow discovery descriptors (`workflow_inputs`/`workflow_outputs`) remain on hold for PR 12; future reuse must be assessed against the new functionality. A descriptor selects representations by transport/style/format and declares output batch cardinality. Filters trim supported representations and referenced definitions without changing meaning; unknown filters are errors and valid combinations with no supported representation return an explicit unsupported-combination error.
+Repeated singleton controls are errors too. `requested_output` is intentionally repeatable: `requested_output=predictions&requested_output=predictions` selects that output once. An unknown output name is an error; omitting the filter returns all outputs. Declared list-valued model inputs and image batches are still allowed.
 
-Advertise only verified model actions and available representations; label unavailable capabilities or fail discovery explicitly rather than inferring every task-level action is supported. Distinguish contract target capabilities from the runtime capability set. The full catalogue and loaded/unloaded resolution algorithm belong to PR 10.
+An output may include `effective_parameters` containing values actually applied by the model. For example, if the caller omits a threshold and the model uses `0.5`, the reported value is `0.5`, not a copy of the absent request field. Family PRs decide which settings must be reported. Omit unavailable metadata and usage rather than inventing values or reporting unknown usage as zero. Use `null` only when the field's definition explains what it means. This applies to either response style; usage implementation remains separate.
 
-Use a new envelope identifier (`roboflow-inference-server-response-v2`) for the breaking layout in this recommendation. Preserve existing type IDs for unchanged family payloads; increment their major suffix when fields or semantics change incompatibly. Allow additive optional fields within a major version and require tolerant response readers; request-control validation remains strict. Type suffixes identify representations, not the `/v2` API path. Do not promise indefinite servicing of all previous type versions; support/removal follows D2's explicit migration policy. Same-path discovery changes need the coordinated transition described there.
+**Decision needed:** Accept rich/JSON defaults, errors for conflicting values, repeatable output selection, and effective settings on each output? Confirm the usage integration boundary before making those fields required.
 
-**Input needed:** Confirm the action structure, new envelope identifier and additive/breaking rules. Confirm whether consumers already rely on a particular type/version selection mechanism before adding any such mechanism. Family naming choices, including classification singular/plural and predicted/detected, remain open for their dedicated plans.
+### D5 Who can call each route and what should errors look like
+
+**What we found:** Health/readiness are public; management and info/metrics are disabled by default. Middleware often returns plain text, while handlers return JSON errors. Loaded model-interface lookup skips the per-model check used by the unloaded path. This source finding is not a tested cross-workspace leak. [Middleware][app], [error helper][errors], [interface route][routes]
+
+**Recommendation:** Keep health/readiness public with minimal, non-sensitive responses. Keep management and info/metrics disabled by default on both new and compatibility paths. Require authentication for discovery, plus the same model-access check whether or not a model is loaded. Disabling management routes does not disable automatic loading during inference; changing that policy is separate work.
+
+This sketch shows the proposed protected request path. Public probes bypass it:
+
+```mermaid
+flowchart TD
+    A[Protected model or server request] --> B{Management route disabled?}
+    B -->|Yes| E403[403 JSON error]
+    B -->|No| C{Valid Bearer credentials?}
+    C -->|No| E401[401 JSON error]
+    C -->|Auth service unavailable| E503[503 JSON error with Retry-After]
+    C -->|Yes| D{Model access check needed?}
+    D -->|No| Handler[Handle request]
+    D -->|Yes| Access{Caller may access model?}
+    Access -->|Yes| Handler
+    Access -->|No| Denied[403 or non-disclosing 404 per agreed policy]
+```
+
+Return the same error fields whether middleware, routing or a handler rejects the request. A Pydantic sketch makes the fields and optional values explicit:
+
+```python
+from pydantic import BaseModel, Field
+
+
+class ApiError(BaseModel):
+    """Describe an error returned by a V2 model or server route."""
+
+    error_code: str = Field(
+        description="Stable code that a client can handle.",
+        examples=["INVALID_PARAM"],
+    )
+    description: str = Field(
+        description="Safe explanation of what went wrong.",
+        examples=["response_style must be rich or compact"],
+    )
+    actionable_follow_up: str | None = Field(
+        default=None,
+        description="Optional action the caller can take.",
+    )
+    help_url: str | None = Field(
+        default=None,
+        description="Optional documentation link.",
+    )
+```
+
+This illustrates the existing JSON fields; it does not select Pydantic as the implementation or define how schemas are generated. In this proposal, serialization omits absent optional fields, for example with `model_dump(exclude_none=True)` if Pydantic is used. Do not put errors in successful `outputs` or return JSON success when requested multipart is unsupported.
+
+| Situation | Proposed status |
+|---|---|
+| Malformed input or invalid parameter | 400 |
+| Missing/invalid credentials | 401 |
+| Authenticated denial or disabled operation | 403 |
+| Missing resource, or hidden resource existence | 404 |
+| Wrong method | 405, retaining `Allow` |
+| Input too large | 413 |
+| Unsupported request media type | 415 |
+| Known capability not implemented | 501 |
+| Temporary service failure | 503, with `Retry-After` where appropriate |
+| Execution timeout | 504 |
+
+Keep authentication-challenge headers where appropriate. Log internal failure details rather than returning them. A disconnected client may receive no response. This proposal changes today's mixed 401/403 and plain-text behavior, so compatibility needs review.
+
+**Decision needed:** Accept these public-probe exceptions, checks and error shape/statuses? Settle when access denial should hide a resource with 404 rather than return 403, and identify operators relying on existing error/probe bodies. Separate ports/credentials and manual-loading-only operation remain outside PR 01.
+
+### D6 How does a client discover supported outputs and recognize a changed format
+
+**What we found:** The design describes inputs, outputs and schema references, but does not settle versioning. Loaded and unloaded interface responses differ. The current and proposed execution bodies use the same type identifier for different structures. [Interface proposal][design-models], [routes][routes], [detection response][detection]
+
+**Recommendation:** Describe common HTTP controls and formats once, then list each supported action's inputs and outputs. Declare one default action. An output description needs to tell clients its name, whether it follows the input batch, and which representations are supported. A small Python sketch shows those responsibilities:
+
+```python
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class OutputDescription:
+    """Describe a named output and its supported representations."""
+
+    name: str
+    batch_aligned: bool
+    representation_ids: tuple[str, ...]
+
+
+predictions = OutputDescription(
+    name="predictions",
+    batch_aligned=True,
+    representation_ids=(
+        "roboflow-object-detection-rich-v1",
+        "roboflow-object-detection-compact-v1",
+    ),
+)
+```
+
+This is an illustrative interface, not a new runtime class or final discovery JSON. The full document would place `model_inputs`/`model_outputs` under named actions, refer to shared schema `definitions`, and map each representation to its request format, response style and response format. That action grouping extends the draft's per-model sketch and needs agreement.
+
+A filter such as `response_style=rich` removes compact representations and unused definitions from the description; it must not change what a rich response means. Unknown filter values are errors. A valid combination with no supported representation returns an explicit unsupported-combination error. Advertise only verified actions and implemented formats, not everything supported by the broader task family. PR 10 implements the full catalogue and consistent loaded/unloaded lookup. Workflows discovery remains on hold.
+
+For versioning, a client should not have to guess which body a type identifies:
+
+| Example change | Recommendation |
+|---|---|
+| Add an optional field that old readers can ignore | Keep the representation's major version |
+| Rename/remove a field or change its meaning | Increase that representation's major version |
+| Replace top-level `predictions` with named `outputs` | Use `roboflow-inference-server-response-v2` |
+| Leave detection item fields unchanged | Keep their existing detection type IDs |
+
+The type suffix describes the data format; it is separate from the `/v2` URL. Response readers tolerate new optional fields, while request-control validation stays strict. D2 governs migration and removal; no promise is made to serve every old type indefinitely or add a version-selection mechanism.
+
+**Decision needed:** Accept the action grouping, batch/representation descriptions and versioning examples? Identify existing clients with version-selection requirements. Classification field names and other family-specific changes remain for their own plans.
 
 ## 4. Planned artifacts and validation
 
@@ -235,7 +399,7 @@ After the decisions are recorded, author the following artifacts in this PR. The
 
 The fixture suite should cover all three input format skeletons, rich/compact response selection, singleton and multi-item model batches, typed empty model output, multiple named outputs, repeated output selection, optional metadata, common errors and discovery filters. Validate JSON inside multipart `inputs` with quoted `$part.<name>` references. Correct mask-example array lengths, but do not claim that a placeholder RLE object establishes the final mask contract.
 
-Schema validation alone is insufficient. Add focused semantic checks for unique output names, batch-position preservation, reference closure, filter behavior and parameter conflicts. Include negative fixtures that demonstrate these checks fail for the intended reason. Validate schemas and resolve references offline; no remote schema retrieval. Maintain a route/access inventory covering the ten active model/server endpoints and their explicit compatibility surface without asserting those routes exist at runtime yet. The six held Workflows routes require no normative schemas, fixtures or acceptance checks in PR 01.
+Schema validation alone is insufficient. Add focused semantic checks for unique output names, batch-position preservation, checking that every schema reference resolves, filter behavior and parameter conflicts. Include negative fixtures that demonstrate these checks fail for the intended reason. Validate schemas and resolve references offline; no remote schema retrieval. Maintain a route/access inventory covering the ten active model/server endpoints and their explicit compatibility surface without asserting those routes exist at runtime yet. The six held Workflows routes require no schemas, examples or acceptance checks in PR 01.
 
 Record the actual validation command when the tooling is implemented. Later feature PRs add live HTTP conformance tests against the same approved examples, plus real-model/backend evidence appropriate to their scope. Existing implementation tests and the earlier audit's passing checks are not substitutes for these new contract checks.
 
@@ -247,9 +411,9 @@ Record the actual validation command when the tooling is implemented. Later feat
 4. Verify reference integrity, fixture validity and semantic assertions; document consumer compatibility and unresolved later-PR boundaries. Keep this PR draft until that review is complete.
 5. Mark PR 01 complete only when the model/server decisions and artifacts are accepted; no workflow decision or parity test is a completion gate. Then prepare the PR 02 loading/lifecycle plan. Runtime API implementation remains in the later roadmap PRs.
 
-For this initial plan submission, verification is limited to source/reference inspection, Markdown whitespace/link checks and parsing the illustrative JSON. No product code or runtime test was changed or executed. The plan is ready for decision review; the shared-contract deliverable itself is still pending.
+Verification for this plan covers source/reference inspection, Markdown whitespace/link checks, parsing the illustrative JSON and Python, and checking diagrams against the described behavior. The diagrams have not been rendered in this check. No product code or runtime test was changed or executed. The plan is ready for decision review; the shared-contract deliverable itself is still pending.
 
-[roadmap]: https://github.com/roboflow/inference/blob/fc08dddf0b05942bc86f578fbfdcceef46e6d2d7/reports/v2-api-gap-2026-09-30/ROADMAP.md
+[roadmap]: https://github.com/roboflow/inference/blob/74756313e3e425829fd3915d5840e7734d83ce57/reports/v2-api-gap-2026-09-30/ROADMAP.md
 [report]: https://github.com/roboflow/inference/blob/6dcada6ace296522d4be9451f8764b81eb5c8411/reports/v2-api-gap-2026-09-30/REPORT.md
 [followup]: https://github.com/roboflow/inference/blob/6dcada6ace296522d4be9451f8764b81eb5c8411/reports/v2-api-gap-2026-09-30/REVIEW_COMMENT_FOLLOWUP.md
 [design-structure]: https://github.com/roboflow/inference/blob/de634b98bac204c96caa98a15dd7559dded361d5/design/00_inference_api_v2/01-general-api-structure.md
