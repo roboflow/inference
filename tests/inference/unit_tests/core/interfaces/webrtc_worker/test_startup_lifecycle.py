@@ -69,24 +69,62 @@ def test_initialization_error_is_delivered_logged_and_reraised(
     peer.assert_not_called()
 
 
-def _modal_functions(watchdog):
-    # Execute the real functions without Modal decorators/image registration.
+def _session_harness(monkeypatch, watchdog):
+    # Imported here: a module-level import would run before `inference.core` is set up.
+    from streamvision.webrtc_worker import host as worker_host
+    from streamvision.webrtc_worker import modal_session
+
+    host = MagicMock()
+    monkeypatch.setattr(worker_host, "_HOST", host)
+    logger = MagicMock()
+    monkeypatch.setattr(modal_session, "logger", logger)
+    monkeypatch.setattr(
+        modal_session,
+        "modal",
+        SimpleNamespace(
+            exception=SimpleNamespace(
+                InputCancellation=type("InputCancellation", (Exception,), {})
+            )
+        ),
+    )
+    watchdog_class = MagicMock(return_value=watchdog)
+    monkeypatch.setattr(modal_session, "Watchdog", watchdog_class)
+
+    return SimpleNamespace(host=host, logger=logger, watchdog_class=watchdog_class)
+
+
+def _run_session(request, queue, **overrides):
+    from streamvision.webrtc_worker import modal_session
+
+    modal_session.run_modal_session(
+        request,
+        queue,
+        **{
+            "workflow_id": "example",
+            "model_manager": None,
+            "cold_start": False,
+            "function_call_number_on_container": 1,
+            "container_startup_time_seconds": 0,
+            **overrides,
+        },
+    )
+
+
+def _modal_method(run_modal_session):
+    # Execute the real method without Modal decorators/image registration.
     path = Path(webrtc_worker_package.__file__).with_name("modal.py")
     tree = ast.parse(path.read_text())
-    names = {"run_rtc_peer_connection_with_watchdog", "rtc_peer_connection_modal"}
     functions = [
         node
         for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name in names
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "rtc_peer_connection_modal"
     ]
-    assert len(functions) == 2
-    for node in functions:
-        node.decorator_list = []
+    assert len(functions) == 1
+    functions[0].decorator_list = []
     namespace = {
         node.id: None
-        for function in functions
-        for node in ast.walk(function)
+        for node in ast.walk(functions[0])
         if isinstance(node, ast.Name) and node.id.isupper()
     }
 
@@ -96,21 +134,12 @@ def _modal_functions(watchdog):
         return "workspace-1"
 
     namespace.update(
-        asyncio=asyncio,
-        datetime=datetime,
         logger=MagicMock(),
-        modal=SimpleNamespace(
-            exception=SimpleNamespace(
-                InputCancellation=type("InputCancellation", (Exception,), {})
-            )
-        ),
-        WebRTCWorkerResult=WebRTCWorkerResult,
         reuse_resolved_workspace_id_for_webrtc_request=resolve_workspace,
-        sanitize_source_reference=lambda reference: reference,
         usage_collector=MagicMock(),
-        PRELOADED_HF_MODELS={},
+        PRELOADED_HF_MODELS={"owl": object()},
         docker_tag="test-image",
-        Watchdog=MagicMock(return_value=watchdog),
+        run_modal_session=run_modal_session,
     )
     exec(
         compile(
@@ -121,7 +150,21 @@ def _modal_functions(watchdog):
         ),
         namespace,
     )
+
     return namespace
+
+
+def _instance(**attributes):
+    return SimpleNamespace(
+        **{
+            "_model_manager": None,
+            "_function_call_number_on_container": 0,
+            "_cold_start": False,
+            "_gpu": None,
+            "_container_startup_time_seconds": 0,
+            **attributes,
+        }
+    )
 
 
 @pytest.mark.parametrize("fails", [False, True])
@@ -133,7 +176,7 @@ def test_modal_awaits_queue_and_stops_once_outside_event_loop(monkeypatch, fails
             asyncio.get_running_loop()
 
     watchdog.stop.side_effect = stop
-    namespace = _modal_functions(watchdog)
+    harness = _session_harness(monkeypatch, watchdog)
     error = AttributeError("startup failed")
     answer = WebRTCWorkerResult(error_message=str(error) if fails else None)
 
@@ -147,26 +190,21 @@ def test_modal_awaits_queue_and_stops_once_outside_event_loop(monkeypatch, fails
         put=MagicMock(side_effect=AssertionError("blocking queue call"))
     )
     queue.put.aio = AsyncMock()
-    instance = SimpleNamespace(
-        _model_manager=None,
-        _function_call_number_on_container=0,
-        _cold_start=False,
-        _gpu=None,
-        _container_startup_time_seconds=0,
-    )
-    namespace["rtc_peer_connection_modal"](instance, _request(), queue)
-    assert namespace["logger"].exception.called is fails
+    _run_session(_request(), queue)
+    assert harness.logger.exception.called is fails
     queue.put.assert_not_called()
     queue.put.aio.assert_awaited_once_with(answer)
     watchdog.start.assert_called_once()
     watchdog.stop.assert_called_once()
-    namespace["usage_collector"].record_usage.assert_called_once()
-    namespace["usage_collector"].push_usage_payloads.assert_called_once()
+    harness.host.record_session_usage.assert_called_once()
+    harness.host.push_usage_payloads.assert_called_once()
 
 
 @pytest.mark.parametrize("invalid", ["timeout", "offer"])
-def test_modal_early_validation_awaits_queue_without_starting_watchdog(invalid):
-    namespace = _modal_functions(MagicMock())
+def test_modal_early_validation_awaits_queue_without_starting_watchdog(
+    monkeypatch, invalid
+):
+    harness = _session_harness(monkeypatch, MagicMock())
     request = _request()
     if invalid == "timeout":
         request.processing_timeout = 0
@@ -176,25 +214,19 @@ def test_modal_early_validation_awaits_queue_without_starting_watchdog(invalid):
         put=MagicMock(side_effect=AssertionError("blocking queue call"))
     )
     queue.put.aio = AsyncMock()
-    instance = SimpleNamespace(
-        _model_manager=None,
-        _function_call_number_on_container=0,
-        _cold_start=False,
-        _gpu=None,
-        _container_startup_time_seconds=0,
-    )
-    namespace["rtc_peer_connection_modal"](instance, request, queue)
+    _run_session(request, queue)
     queue.put.assert_not_called()
     queue.put.aio.assert_awaited_once()
     assert queue.put.aio.call_args.args[0].error_message
-    namespace["Watchdog"].assert_not_called()
+    harness.watchdog_class.assert_not_called()
 
 
 _STARTED = datetime.datetime(2026, 1, 1, 12, 0, 0)
 
 
-def _prepare_modal_call(monkeypatch, watchdog, **attributes):
-    namespace = _modal_functions(watchdog)
+def _prepare_session(monkeypatch, watchdog):
+    harness = _session_harness(monkeypatch, watchdog)
+    from streamvision.webrtc_worker import modal_session
 
     class _Clock(datetime.datetime):
         ticks = [_STARTED, _STARTED + datetime.timedelta(seconds=90)]
@@ -203,8 +235,10 @@ def _prepare_modal_call(monkeypatch, watchdog, **attributes):
         def now(cls, tz=None):
             return cls.ticks.pop(0)
 
-    namespace["datetime"] = SimpleNamespace(
-        datetime=_Clock, timedelta=datetime.timedelta
+    monkeypatch.setattr(
+        modal_session,
+        "datetime",
+        SimpleNamespace(datetime=_Clock, timedelta=datetime.timedelta),
     )
 
     async def initialize(*, send_answer, **kwargs):
@@ -213,31 +247,21 @@ def _prepare_modal_call(monkeypatch, watchdog, **attributes):
     monkeypatch.setattr(webrtc, "init_rtc_peer_connection_with_loop", initialize)
     queue = SimpleNamespace(put=MagicMock())
     queue.put.aio = AsyncMock()
-    instance = SimpleNamespace(
-        **{
-            "_model_manager": None,
-            "_function_call_number_on_container": 0,
-            "_cold_start": False,
-            "_gpu": None,
-            "_container_startup_time_seconds": 0,
-            **attributes,
-        }
-    )
 
-    def run(request):
-        namespace["rtc_peer_connection_modal"](instance, request, queue)
+    def run(request, **overrides):
+        _run_session(request, queue, **overrides)
 
-    return namespace, run
+    return harness, run
 
 
-def _collector_calls(namespace):
-    return [name for name, _, _ in namespace["usage_collector"].mock_calls]
+def _host_calls(harness):
+    return [name for name, _, _ in harness.host.mock_calls]
 
 
 @pytest.mark.parametrize("established", [True, False])
-def test_modal_usage_record_payload_is_pinned(monkeypatch, established):
+def test_modal_session_reports_the_facts_of_the_session(monkeypatch, established):
     watchdog = MagicMock(total_heartbeats=1, connection_established=established)
-    namespace, run = _prepare_modal_call(monkeypatch, watchdog)
+    harness, run = _prepare_session(monkeypatch, watchdog)
     request = _request()
     request.rtsp_url = "rtsp://camera/stream"
     request.is_preview = True
@@ -246,52 +270,44 @@ def test_modal_usage_record_payload_is_pinned(monkeypatch, established):
 
     run(request)
 
-    record_usage = namespace["usage_collector"].record_usage
-    assert record_usage.call_args.args == ()
-    kwargs = dict(record_usage.call_args.kwargs)
-    duration = kwargs.pop("execution_duration")
-    assert kwargs == {
-        "source": "example",
-        "category": "modal",
-        "api_key": "test-key",
-        "resource_id": "example",
-        "resource_details": {
-            "plan": "webrtc-gpu-large",
-            "billable": True,
-            "video_source": "rtsp",
-            "is_preview": True,
-        },
+    record_session_usage = harness.host.record_session_usage
+    assert record_session_usage.call_args.args == ()
+    assert record_session_usage.call_args.kwargs == {
+        "webrtc_request": request,
+        "workflow_id": "example",
+        "video_source": "rtsp",
+        "session_started": _STARTED,
+        "session_stopped": _STARTED + datetime.timedelta(seconds=90),
+        "connection_established": established,
     }
-    if established:
-        assert duration == 90.0 and type(duration) is float
-    else:
-        assert duration == 0 and type(duration) is int
-    assert _collector_calls(namespace) == ["record_usage", "push_usage_payloads"]
-    namespace["usage_collector"].push_usage_payloads.assert_called_once_with()
+    assert record_session_usage.call_args.kwargs["webrtc_request"] is request
+    assert _host_calls(harness) == ["record_session_usage", "push_usage_payloads"]
+    harness.host.push_usage_payloads.assert_called_once_with()
 
 
 @pytest.mark.parametrize(
-    "attributes, offset",
+    "overrides, offset",
     [
         ({}, datetime.timedelta(0)),
         (
-            {"_cold_start": True, "_container_startup_time_seconds": 12},
+            {"cold_start": True, "container_startup_time_seconds": 12},
             datetime.timedelta(seconds=-12),
         ),
     ],
 )
 def test_modal_cold_start_backdates_session_start_but_not_billed_duration(
-    monkeypatch, attributes, offset
+    monkeypatch, overrides, offset
 ):
     watchdog = MagicMock(total_heartbeats=1, connection_established=True)
-    namespace, run = _prepare_modal_call(monkeypatch, watchdog, **attributes)
+    harness, run = _prepare_session(monkeypatch, watchdog)
     request = _request()
 
-    run(request)
+    run(request, **overrides)
 
     assert request.processing_session_started == _STARTED + offset
-    kwargs = namespace["usage_collector"].record_usage.call_args.kwargs
-    assert kwargs["execution_duration"] == 90.0
+    kwargs = harness.host.record_session_usage.call_args.kwargs
+    assert kwargs["session_started"] == _STARTED
+    assert kwargs["session_stopped"] == _STARTED + datetime.timedelta(seconds=90)
 
 
 @pytest.mark.parametrize(
@@ -300,103 +316,136 @@ def test_modal_cold_start_backdates_session_start_but_not_billed_duration(
 )
 def test_modal_usage_video_source_for_browser_streams(monkeypatch, realtime, expected):
     watchdog = MagicMock(total_heartbeats=1, connection_established=True)
-    namespace, run = _prepare_modal_call(monkeypatch, watchdog)
+    harness, run = _prepare_session(monkeypatch, watchdog)
     request = _request()
     request.webrtc_realtime_processing = realtime
 
     run(request)
 
-    details = namespace["usage_collector"].record_usage.call_args.kwargs[
-        "resource_details"
-    ]
-    assert details["video_source"] == expected
-    assert details["is_preview"] is False
+    kwargs = harness.host.record_session_usage.call_args.kwargs
+    assert kwargs["video_source"] == expected
 
 
 @pytest.mark.parametrize(
-    "established, expected_calls, duration, message",
+    "established, expected_calls, message",
     [
         (
             True,
-            ["record_usage", "push_usage_payloads"],
-            90.0,
+            ["record_session_usage", "push_usage_payloads"],
             "WebRTC connection was established but no frames were processed. "
             "This typically indicates an invalid RTSP stream URL or corrupted "
             "video file.",
         ),
         (
             False,
-            ["record_usage"],
-            0,
+            ["record_session_usage"],
             "WebRTC connection could not be established. No frames were processed.",
         ),
     ],
 )
 def test_modal_without_frames_raises_and_pushes_only_when_established(
-    monkeypatch, established, expected_calls, duration, message
+    monkeypatch, established, expected_calls, message
 ):
     watchdog = MagicMock(total_heartbeats=0, connection_established=established)
-    namespace, run = _prepare_modal_call(monkeypatch, watchdog)
+    harness, run = _prepare_session(monkeypatch, watchdog)
 
     with pytest.raises(Exception) as caught:
         run(_request())
 
     assert type(caught.value) is Exception
     assert str(caught.value) == message
-    assert _collector_calls(namespace) == expected_calls
-    kwargs = namespace["usage_collector"].record_usage.call_args.kwargs
-    assert kwargs["execution_duration"] == duration
+    assert _host_calls(harness) == expected_calls
+    kwargs = harness.host.record_session_usage.call_args.kwargs
+    assert kwargs["connection_established"] is established
+    assert kwargs["session_started"] == _STARTED
+    assert kwargs["session_stopped"] == _STARTED + datetime.timedelta(seconds=90)
 
 
-def test_modal_inline_specification_is_billed_under_its_resource_hash(monkeypatch):
+def test_modal_session_bills_the_resource_identifier_it_was_given(monkeypatch):
     watchdog = MagicMock(total_heartbeats=1, connection_established=True)
-    namespace, run = _prepare_modal_call(monkeypatch, watchdog)
-    namespace["usage_collector"]._calculate_resource_hash.return_value = "hash-1"
+    harness, run = _prepare_session(monkeypatch, watchdog)
+
+    run(_request(), workflow_id="hash-1")
+
+    kwargs = harness.host.record_session_usage.call_args.kwargs
+    assert kwargs["workflow_id"] == "hash-1"
+
+
+def test_modal_session_wires_request_watchdog_and_model_manager(monkeypatch):
+    from streamvision.webrtc_worker import modal_session
+
+    watchdog = MagicMock(total_heartbeats=1, connection_established=True)
+    harness = _session_harness(monkeypatch, watchdog)
+    monkeypatch.setattr(modal_session, "WEBRTC_MODAL_WATCHDOG_TIMEMOUT", 7)
+    monkeypatch.setattr(
+        modal_session, "WEBRTC_SESSION_HEARTBEAT_URL", "https://heartbeat.example"
+    )
+    captured = {}
+
+    async def initialize(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(webrtc, "init_rtc_peer_connection_with_loop", initialize)
+    manager = MagicMock()
+    queue = SimpleNamespace(put=MagicMock())
+    queue.put.aio = AsyncMock()
     request = _request()
-    request.workflow_configuration.workflow_id = None
-    request.workflow_configuration.workflow_specification = {"version": "1.0"}
+    request.workspace_id = "workspace-1"
+    request.session_id = "session-1"
 
-    run(request)
+    _run_session(request, queue, model_manager=manager)
 
-    kwargs = namespace["usage_collector"].record_usage.call_args.kwargs
-    assert kwargs["source"] == "hash-1"
-    assert kwargs["resource_id"] == "hash-1"
-    namespace["usage_collector"]._calculate_resource_hash.assert_called_once_with(
-        resource_details={"version": "1.0"}
+    assert captured["webrtc_request"] is request
+    assert captured["model_manager"] is manager
+    assert captured["heartbeat_callback"] is watchdog.heartbeat
+    assert (
+        captured["connection_established_callback"]
+        is watchdog.mark_connection_established
+    )
+    harness.watchdog_class.assert_called_once_with(
+        api_key="test-key",
+        timeout_seconds=7,
+        workspace_id="workspace-1",
+        session_id="session-1",
+        heartbeat_url="https://heartbeat.example",
     )
 
 
-@pytest.mark.parametrize(
-    "workflow_id, specification, expected",
-    [("example", {"version": "1.0"}, "example"), (None, None, "unknown")],
-)
-def test_modal_workflow_id_takes_precedence_over_specification_hash(
-    monkeypatch, workflow_id, specification, expected
-):
-    watchdog = MagicMock(total_heartbeats=1, connection_established=True)
-    namespace, run = _prepare_modal_call(monkeypatch, watchdog)
+def test_modal_method_resolves_the_session_identity_then_delegates():
+    run = MagicMock()
+    namespace = _modal_method(run)
+    manager = MagicMock()
+    manager.models.return_value = {}
+    instance = _instance(
+        _model_manager=manager,
+        _cold_start=True,
+        _gpu="T4",
+        _container_startup_time_seconds=1.5,
+    )
     request = _request()
-    request.workflow_configuration.workflow_id = workflow_id
-    request.workflow_configuration.workflow_specification = specification
+    queue = SimpleNamespace(put=MagicMock())
 
-    run(request)
+    namespace["rtc_peer_connection_modal"](instance, request, queue)
 
-    kwargs = namespace["usage_collector"].record_usage.call_args.kwargs
-    assert kwargs["source"] == kwargs["resource_id"] == expected
-    namespace["usage_collector"]._calculate_resource_hash.assert_not_called()
+    assert instance._function_call_number_on_container == 1
+    assert len(namespace["logger"].info.call_args_list) == 10
+    run.assert_called_once_with(
+        request,
+        queue,
+        workflow_id="example",
+        model_manager=manager,
+        cold_start=True,
+        function_call_number_on_container=1,
+        container_startup_time_seconds=1.5,
+    )
 
 
 def test_modal_method_logs_the_session_identity_before_reading_preloaded_models():
-    namespace = _modal_functions(MagicMock())
+    run = MagicMock()
+    namespace = _modal_method(run)
     manager = MagicMock()
     manager.models.side_effect = RuntimeError("model lookup failed")
-    instance = SimpleNamespace(
-        _model_manager=manager,
-        _function_call_number_on_container=0,
-        _cold_start=False,
-        _gpu="T4",
-        _container_startup_time_seconds=0,
-    )
+    instance = _instance(_model_manager=manager, _gpu="T4")
     queue = SimpleNamespace(put=MagicMock())
     queue.put.aio = AsyncMock()
 
@@ -410,47 +459,39 @@ def test_modal_method_logs_the_session_identity_before_reading_preloaded_models(
         call("Workspace ID: %s", "workspace-1"),
         call("Workflow ID: %s", "example"),
     ]
-    namespace["Watchdog"].assert_not_called()
+    run.assert_not_called()
 
 
-def test_modal_session_wires_request_watchdog_and_model_manager(monkeypatch):
-    watchdog = MagicMock(total_heartbeats=1, connection_established=True)
-    namespace = _modal_functions(watchdog)
-    namespace["WEBRTC_MODAL_WATCHDOG_TIMEMOUT"] = 7
-    namespace["WEBRTC_SESSION_HEARTBEAT_URL"] = "https://heartbeat.example"
-    captured = {}
-
-    async def initialize(**kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(webrtc, "init_rtc_peer_connection_with_loop", initialize)
-    manager = MagicMock()
-    manager.models.return_value = {}
-    instance = SimpleNamespace(
-        _model_manager=manager,
-        _function_call_number_on_container=0,
-        _cold_start=False,
-        _gpu=None,
-        _container_startup_time_seconds=0,
-    )
-    queue = SimpleNamespace(put=MagicMock())
-    queue.put.aio = AsyncMock()
+def test_modal_inline_specification_is_billed_under_its_resource_hash():
+    run = MagicMock()
+    namespace = _modal_method(run)
+    namespace["usage_collector"]._calculate_resource_hash.return_value = "hash-1"
     request = _request()
-    request.session_id = "session-1"
+    request.workflow_configuration.workflow_id = None
+    request.workflow_configuration.workflow_specification = {"version": "1.0"}
 
-    namespace["rtc_peer_connection_modal"](instance, request, queue)
+    namespace["rtc_peer_connection_modal"](_instance(), request, MagicMock())
 
-    assert captured["webrtc_request"] is request
-    assert captured["model_manager"] is manager
-    assert captured["heartbeat_callback"] is watchdog.heartbeat
-    assert (
-        captured["connection_established_callback"]
-        is watchdog.mark_connection_established
+    assert run.call_args.kwargs["workflow_id"] == "hash-1"
+    namespace["usage_collector"]._calculate_resource_hash.assert_called_once_with(
+        resource_details={"version": "1.0"}
     )
-    namespace["Watchdog"].assert_called_once_with(
-        api_key="test-key",
-        timeout_seconds=7,
-        workspace_id="workspace-1",
-        session_id="session-1",
-        heartbeat_url="https://heartbeat.example",
-    )
+
+
+@pytest.mark.parametrize(
+    "workflow_id, specification, expected",
+    [("example", {"version": "1.0"}, "example"), (None, None, "unknown")],
+)
+def test_modal_workflow_id_takes_precedence_over_specification_hash(
+    workflow_id, specification, expected
+):
+    run = MagicMock()
+    namespace = _modal_method(run)
+    request = _request()
+    request.workflow_configuration.workflow_id = workflow_id
+    request.workflow_configuration.workflow_specification = specification
+
+    namespace["rtc_peer_connection_modal"](_instance(), request, MagicMock())
+
+    assert run.call_args.kwargs["workflow_id"] == expected
+    namespace["usage_collector"]._calculate_resource_hash.assert_not_called()
