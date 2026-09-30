@@ -3,6 +3,7 @@
 Routes are split into routers:
   - routers/v2_models.py  — /v2/models/* (load, unload, list, infer, interface)
   - routers/v2_server.py  — /v2/server/* (health, ready, info, metrics)
+  - prometheus.py         — /metrics (Prometheus text format)
 
 Per-process gateway state lives in whatever gateway_resolver.resolve_gateway()
 returns.
@@ -26,6 +27,10 @@ from inference_server.auth import extract_bearer, validate_api_key
 from inference_server.cors import PathAwareCORSMiddleware
 from inference_server.errors import AuthBackendUnavailable
 from inference_server.legacy.bridge import LegacyModelBridge, LoopBridge
+from inference_server.response_headers import (
+    EXPOSED_MODEL_HEADERS,
+    ResponseHeadersMiddleware,
+)
 from inference_server.routers import v2_models, v2_server
 
 logger = logging.getLogger(__name__)
@@ -249,6 +254,8 @@ if _LEGACY_ERROR_HANDLING_ENABLED:
     install_legacy_exception_handlers(app)
 
 app.add_middleware(_AuthMiddleware)
+# Outside auth so rejected requests carry the request id and engine headers too.
+app.add_middleware(ResponseHeadersMiddleware)
 
 if _cfg.ALLOW_ORIGINS:
     app.add_middleware(
@@ -258,6 +265,7 @@ if _cfg.ALLOW_ORIGINS:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=EXPOSED_MODEL_HEADERS,
     )
 
 if _cfg.ENABLE_BUILDER:
@@ -319,6 +327,12 @@ _LANDING_ASSETS_MOUNTED = mount_landing_assets(app)
 
 app.include_router(v2_models.router)
 app.include_router(v2_server.router)
+
+# Before the legacy catch-all and the root static mount, which would shadow it.
+if _cfg.ENABLE_PROMETHEUS:
+    from inference_server.prometheus import install_prometheus_metrics
+
+    install_prometheus_metrics(app)
 
 if _cfg.LEGACY_ROUTES_ENABLED:
     from inference_server.legacy.router import (

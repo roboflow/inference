@@ -615,7 +615,7 @@ def _pipeline_registry(calls: list):
         "pp-ocrv6-rec/medium": "text-only-ocr",
     }
 
-    def _metadata(model_id, api_key=None):
+    def _metadata(model_id, api_key=None, **_):
         calls.append((model_id, api_key))
         if model_id not in table:
             raise ModelNotFoundError(message=model_id, help_url="")

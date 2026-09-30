@@ -6,12 +6,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+import platform
 import re
+import socket
 import stat
+import threading
+import urllib.parse
+import uuid
 import warnings
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests
 from roboflow_workflows.configuration import (
@@ -386,6 +391,13 @@ from roboflow_workflows.prototypes.platform_client import (  # noqa: E402
 )
 from roboflow_workflows.prototypes.platform_errors import (  # noqa: E402
     FeatureDeprecatedError,
+    RoboflowAPIConnectionError,
+    RoboflowAPIForbiddenError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
+    RoboflowAPIRequestError,
+    RoboflowAPITimeoutError,
+    RoboflowAPIUnsuccessfulRequestError,
 )
 from roboflow_workflows.utils.image_encoding import (  # noqa: E402
     choose_image_decoding_flags,
@@ -410,6 +422,7 @@ from inference_sdk.http.errors import HTTPCallErrorError  # noqa: E402
 from inference_server.framework.input_parsers.url_fetch import (  # noqa: E402
     URL_FETCH_TIMEOUT_S,
 )
+from inference_server.framework.model_stat import _TtlLruCache  # noqa: E402
 from inference_server.legacy import bridge as legacy_bridge  # noqa: E402
 from inference_server.legacy.bridge import LoopBridge  # noqa: E402
 from inference_server.legacy.errors import (  # noqa: E402
@@ -445,8 +458,6 @@ def _redact_api_key(value: str) -> str:
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     if not params:
         return url
-    import urllib.parse
-
     query = "&".join(
         f"{name}={urllib.parse.quote_plus(value)}" for name, value in params
     )
@@ -486,6 +497,138 @@ def _api_error_message(response: requests.Response, api_key: Optional[str]) -> s
     return message
 
 
+_SERVICE_SECRET_PATTERN = re.compile(r"service_secret=[^&]*")
+_WORKSPACE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+# Process-wide api_key -> workspace cache, the counterpart of the legacy
+# server's `@ttl_cache` on `get_roboflow_workspace`: blocks such as
+# visual_search_classifier look the workspace up once per image. Keyed by the
+# key's SHA-256 so no plaintext key is held; only successful lookups are stored.
+_WORKSPACE_CACHE = _TtlLruCache(
+    configuration.WORKSPACE_CACHE_MAX_SIZE, configuration.WORKSPACE_CACHE_TTL_S
+)
+_WORKSPACE_CACHE_LOCK = threading.Lock()
+
+
+def clear_workspace_cache() -> None:
+    with _WORKSPACE_CACHE_LOCK:
+        _WORKSPACE_CACHE.clear()
+
+
+_SEARCH_DEFAULT_FIELDS = [
+    "id",
+    "name",
+    "filename",
+    "url",
+    "user_metadata",
+    "tags",
+    "width",
+    "height",
+    "aspectRatio",
+]
+_NOT_AUTHORIZED_MESSAGE = (
+    "Unauthorized access to roboflow API - check API key. Visit "
+    "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+    "to learn how to retrieve one."
+)
+_FORBIDDEN_MESSAGE = (
+    "Unauthorized access to roboflow API - check API key regarding correctness and "
+    "required scopes. Visit "
+    "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+    "to learn how to retrieve one."
+)
+# Same classes and messages as `inference.core.roboflow_api.wrap_roboflow_api_errors`.
+_PLATFORM_API_ERRORS: Dict[int, Tuple[type, str]] = {
+    401: (RoboflowAPINotAuthorizedError, _NOT_AUTHORIZED_MESSAGE),
+    402: (
+        RoboflowAPIUnsuccessfulRequestError,
+        "Not enough credits to perform this request. Verify your workspace billing page.",
+    ),
+    403: (RoboflowAPIForbiddenError, _FORBIDDEN_MESSAGE),
+    404: (
+        RoboflowAPINotNotFoundError,
+        "Could not find requested Roboflow resource. Check that the provided dataset "
+        "and version are correct, and check that the provided Roboflow API key has "
+        "the correct permissions.",
+    ),
+    423: (
+        RoboflowAPIUnsuccessfulRequestError,
+        "Roboflow API usage is paused. Please contact your workspace administrator "
+        "to re-enable api keys.",
+    ),
+}
+
+
+def _api_key_safe_raise_for_status(response: requests.Response) -> None:
+    if response.status_code < 400:
+        return None
+    response.url = _SERVICE_SECRET_PATTERN.sub(
+        "service_secret=***", _redact_api_key(response.url)
+    )
+    response.raise_for_status()
+
+
+def _translate_platform_api_errors(
+    call: Callable[[], Any],
+    http_error_overrides: Optional[Dict[int, Tuple[type, str]]] = None,
+) -> Any:
+    """Map transport failures onto the shared `RoboflowAPI*` error classes, as
+    the `inference` server does for the Roboflow-platform blocks."""
+    try:
+        return call()
+    except requests.exceptions.Timeout as error:
+        raise RoboflowAPITimeoutError(
+            "Timeout when attempting to connect to Roboflow API."
+        ) from error
+    except (requests.exceptions.ConnectionError, ConnectionError) as error:
+        raise RoboflowAPIConnectionError(
+            "Could not connect to Roboflow API."
+        ) from error
+    except requests.exceptions.HTTPError as error:
+        status_code = error.response.status_code
+        handlers = {**_PLATFORM_API_ERRORS, **(http_error_overrides or {})}
+        if status_code in handlers:
+            error_class, message = handlers[status_code]
+            raise error_class(message) from error
+        raise RoboflowAPIUnsuccessfulRequestError(
+            f"Unsuccessful request to Roboflow API with response code: {status_code}"
+        ) from error
+    except (requests.exceptions.InvalidJSONError, ValueError) as error:
+        raise RoboflowAPIRequestError(
+            "Could not decode JSON response from Roboflow API."
+        ) from error
+
+
+def _refuse_when_offline(operation: str) -> None:
+    if configuration.OFFLINE_MODE:
+        raise RoboflowAPIConnectionError(
+            f"Cannot {operation} at Roboflow - OFFLINE_MODE is enabled."
+        )
+
+
+def _api_url(path: str) -> str:
+    return f"{configuration.API_BASE_URL.rstrip('/')}/{path}"
+
+
+def collect_system_info() -> dict:
+    """Platform, architecture, hostname, IP, MAC and processor, best effort.
+
+    Same keys as `inference.core.managers.metrics.get_system_info`.
+    """
+    info = {}
+    try:
+        info["platform"] = platform.system()
+        info["platform_release"] = platform.release()
+        info["platform_version"] = platform.version()
+        info["architecture"] = platform.machine()
+        info["hostname"] = socket.gethostname()
+        info["ip_address"] = socket.gethostbyname(socket.gethostname())
+        info["mac_address"] = ":".join(re.findall("..", "%012x" % uuid.getnode()))
+        info["processor"] = platform.processor()
+    except Exception as error:
+        logger.exception(error)
+    return info
+
+
 class ServerRoboflowPlatformClient:
     def post(
         self,
@@ -495,6 +638,7 @@ class ServerRoboflowPlatformClient:
         params: Optional[List[Tuple[str, str]]] = None,
         http_errors_handlers: Optional[HttpErrorHandlers] = None,
     ) -> dict:
+        _refuse_when_offline(operation="make API requests")
         url_params: List[Tuple[str, str]] = []
         if api_key:
             url_params.append(("api_key", api_key))
@@ -549,6 +693,246 @@ class ServerRoboflowPlatformClient:
 
     def wrap_url(self, url: str) -> str:
         return roboflow_secure_gateway_proxy_url_builder(url, None)
+
+    # The Roboflow-platform blocks' operations. Endpoints, payloads, query
+    # parameters and error classes are those of `inference.core.roboflow_api`.
+
+    def _post_to_api(
+        self, url: str, headers: Optional[Dict[str, Any]] = None, **kwargs: Any
+    ) -> requests.Response:
+        response = requests.post(
+            url=self.wrap_url(url),
+            headers=headers if headers is not None else self.build_api_headers(),
+            timeout=API_REQUEST_TIMEOUT_S,
+            **kwargs,
+        )
+        _api_key_safe_raise_for_status(response=response)
+        return response
+
+    def get_roboflow_workspace(self, api_key: str) -> str:
+        if not api_key:
+            raise RoboflowAPIRequestError(
+                "Empty workspace encountered, check your API key."
+            )
+        cache_key = sha256(api_key.encode("utf-8")).hexdigest()
+        with _WORKSPACE_CACHE_LOCK:
+            cached_workspace_id = _WORKSPACE_CACHE.get(cache_key)
+        if cached_workspace_id is not None:
+            return cached_workspace_id
+        workspace_id = self._fetch_roboflow_workspace(api_key=api_key)
+        with _WORKSPACE_CACHE_LOCK:
+            _WORKSPACE_CACHE.set(cache_key, workspace_id)
+        return workspace_id
+
+    def _fetch_roboflow_workspace(self, api_key: str) -> str:
+        # Guarded behind the cache lookup: the legacy server's `ttl_cache`
+        # still answers for an already-resolved key while OFFLINE_MODE is on.
+        _refuse_when_offline(operation="fetch workspace")
+        url = _add_params_to_url(
+            url=_api_url(""), params=[("api_key", api_key), ("nocache", "true")]
+        )
+
+        def _call() -> dict:
+            response = requests.get(
+                url=self.wrap_url(url),
+                headers=self.build_api_headers(),
+                timeout=API_REQUEST_TIMEOUT_S,
+            )
+            _api_key_safe_raise_for_status(response=response)
+            return response.json()
+
+        workspace_id = _translate_platform_api_errors(_call).get("workspace")
+        if not isinstance(workspace_id, str) or not _WORKSPACE_ID_PATTERN.fullmatch(
+            workspace_id
+        ):
+            raise RoboflowAPIRequestError(
+                "Empty workspace encountered, check your API key."
+            )
+        return workspace_id
+
+    def add_custom_metadata(
+        self,
+        api_key: str,
+        workspace_id: str,
+        inference_ids: List[str],
+        field_name: str,
+        field_value: str,
+    ) -> None:
+        if configuration.OFFLINE_MODE:
+            return None
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/inference-stats/metadata"),
+            params=[("api_key", api_key), ("nocache", "true")],
+        )
+        payload = {
+            "data": [
+                {
+                    "inference_ids": inference_ids,
+                    "field_name": field_name,
+                    "field_value": field_value,
+                }
+            ]
+        }
+        _translate_platform_api_errors(lambda: self._post_to_api(url, json=payload))
+
+    def register_image_at_roboflow(
+        self,
+        api_key: str,
+        dataset_id: str,
+        local_image_id: str,
+        image_bytes: bytes,
+        batch_name: str,
+        tags: Optional[List[str]] = None,
+        inference_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> dict:
+        _refuse_when_offline(operation="register image")
+        params = [("api_key", api_key), ("batch", batch_name)]
+        if inference_id is not None:
+            params.append(("inference_id", inference_id))
+        for tag in tags if tags is not None else []:
+            params.append(("tag", tag))
+        url = _add_params_to_url(
+            url=_api_url(f"dataset/{dataset_id}/upload"), params=params
+        )
+        data = {"name": f"{local_image_id}.jpg"}
+        if metadata is not None:
+            data["metadata"] = json.dumps(metadata)
+        files = {"file": ("imageToUpload", image_bytes, "image/jpeg")}
+        parsed_response = _translate_platform_api_errors(
+            lambda: self._post_to_api(url, data=data, files=files).json()
+        )
+        if not parsed_response.get("duplicate") and not parsed_response.get("success"):
+            raise RoboflowAPIUnsuccessfulRequestError(
+                f"Server rejected image: {parsed_response}"
+            )
+        return parsed_response
+
+    def annotate_image_at_roboflow(
+        self,
+        api_key: str,
+        dataset_id: str,
+        local_image_id: str,
+        roboflow_image_id: str,
+        annotation_content: str,
+        annotation_file_type: str,
+        is_prediction: bool = True,
+    ) -> dict:
+        _refuse_when_offline(operation="annotate image")
+        url = _add_params_to_url(
+            url=_api_url(f"dataset/{dataset_id}/annotate/{roboflow_image_id}"),
+            params=[
+                ("api_key", api_key),
+                ("name", f"{local_image_id}.{annotation_file_type}"),
+                ("prediction", str(is_prediction).lower()),
+            ],
+        )
+        headers = self.build_api_headers(
+            explicit_headers={"Content-Type": "text/plain"}
+        )
+        parsed_response = _translate_platform_api_errors(
+            lambda: self._post_to_api(
+                url, headers=headers, data=annotation_content
+            ).json(),
+            http_error_overrides={
+                409: (
+                    RoboflowAPIUnsuccessfulRequestError,
+                    "Given datapoint already has annotation.",
+                )
+            },
+        )
+        if "error" in parsed_response or not parsed_response.get("success"):
+            raise RoboflowAPIUnsuccessfulRequestError(
+                f"Failed to save annotation for {roboflow_image_id}. "
+                f"API response: {parsed_response}"
+            )
+        return parsed_response
+
+    def update_image_metadata_at_roboflow(
+        self,
+        api_key: str,
+        workspace_id: str,
+        image_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        add_tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        _refuse_when_offline(operation="update image metadata")
+        payload: Dict[str, Any] = {}
+        if metadata is not None:
+            payload["metadata"] = metadata
+        if add_tags is not None:
+            payload["addTags"] = add_tags
+        encoded_image_id = urllib.parse.quote(image_id, safe="")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/images/{encoded_image_id}/metadata"),
+            params=[("api_key", api_key)],
+        )
+        return _translate_platform_api_errors(
+            lambda: self._post_to_api(url, json=payload).json()
+        )
+
+    def batch_update_image_metadata_at_roboflow(
+        self,
+        api_key: str,
+        workspace_id: str,
+        updates: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        _refuse_when_offline(operation="update image metadata")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/images/metadata"),
+            params=[("api_key", api_key)],
+        )
+        return _translate_platform_api_errors(
+            lambda: self._post_to_api(url, json={"updates": updates}).json()
+        )
+
+    def search_project_images_at_roboflow(
+        self,
+        api_key: str,
+        workspace: str,
+        project: str,
+        image_base64: str,
+        limit: int,
+        fields: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        _refuse_when_offline(operation="search project images")
+        payload = {
+            "image_base64": image_base64,
+            "limit": limit,
+            "fields": fields or list(_SEARCH_DEFAULT_FIELDS),
+        }
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace}/{project}/search"),
+            params=[("api_key", api_key)] if api_key and api_key != "local" else [],
+        )
+        return _translate_platform_api_errors(
+            lambda: self._post_to_api(url, json=payload).json()
+        )
+
+    def send_inference_results_to_model_monitoring(
+        self,
+        api_key: str,
+        workspace_id: str,
+        inference_data: dict,
+    ) -> None:
+        if configuration.OFFLINE_MODE:
+            return None
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/inference-stats"),
+            params=[("api_key", api_key)],
+        )
+        _translate_platform_api_errors(
+            lambda: self._post_to_api(url, json=inference_data)
+        )
+
+    def get_device_id(self) -> Optional[str]:
+        return configuration.DEVICE_ID
+
+    def get_server_version(self) -> str:
+        return configuration.SERVER_VERSION
+
+    def get_system_info(self) -> dict:
+        return collect_system_info()
 
 
 class ServerWorkspaceResolver:

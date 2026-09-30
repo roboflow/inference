@@ -10,6 +10,7 @@ from typing import Any, Optional, Union
 import numpy as np
 import orjson
 from fastapi import Request, Response
+from inference_model_manager.backends.decode import decoded_dims
 from PIL import Image
 from pydantic import BaseModel
 
@@ -70,6 +71,8 @@ def image_dims(data: bytes) -> tuple[int, int]:
             width, height = image.size
     except Exception as error:
         raise LegacyHTTPError(400, _IMAGE_ERROR) from error
+    # The decoder applies EXIF orientation; report the size of what it yields.
+    width, height = decoded_dims(data, width, height)
     return int(width), int(height)
 
 

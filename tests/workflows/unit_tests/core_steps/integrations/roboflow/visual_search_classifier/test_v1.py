@@ -5,18 +5,15 @@ from unittest import mock
 
 import numpy as np
 import pytest
+from roboflow_workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
+    BlockManifest,
+    RoboflowVisualSearchClassifierBlockV1,
+)
 
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.utils.image_utils import load_image_base64
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     execute_operations,
-)
-from inference.roboflow_workflows_plugin.integrations.visual_search_classifier import (
-    v1,
-)
-from inference.roboflow_workflows_plugin.integrations.visual_search_classifier.v1 import (
-    BlockManifest,
-    RoboflowVisualSearchClassifierBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -127,9 +124,14 @@ def test_manifest_describes_visual_search_latency_and_resize_default() -> None:
 
 
 def test_run_calls_project_search_and_returns_predictions() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [make_candidate()]}
 
         result = block.run(
@@ -186,9 +188,14 @@ def test_run_calls_project_search_and_returns_predictions() -> None:
 
 
 def test_run_downscales_query_image_to_default_max_size() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [make_candidate()]}
 
         result = block.run(
@@ -205,9 +212,14 @@ def test_run_downscales_query_image_to_default_max_size() -> None:
 
 
 def test_run_honors_custom_query_image_max_size() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [make_candidate()]}
 
         block.run(
@@ -224,9 +236,14 @@ def test_run_honors_custom_query_image_max_size() -> None:
 
 
 def test_run_does_not_reencode_image_when_it_is_smaller_than_resize_cap() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [make_candidate()]}
 
         block.run(
@@ -241,14 +258,19 @@ def test_run_does_not_reencode_image_when_it_is_smaller_than_resize_cap() -> Non
 def test_run_returns_multi_label_predictions_when_candidate_has_multiple_classes() -> (
     None
 ):
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
     candidate = make_candidate()
     candidate["labels"] = [
         {"class": "widget-a", "class_id": 7},
         {"class": "fragile", "class_id": "9"},
     ]
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [candidate]}
 
         result = block.run(
@@ -286,11 +308,16 @@ def test_run_returns_multi_label_predictions_when_candidate_has_multiple_classes
 def test_run_returns_multi_label_predictions_compatible_with_all_classes_extraction() -> (
     None
 ):
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
     candidate = make_candidate()
     candidate["labels"] = ["widget-a", "fragile"]
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [candidate]}
 
         result = block.run(
@@ -315,11 +342,16 @@ def test_run_returns_multi_label_predictions_compatible_with_all_classes_extract
 def test_run_returns_prediction_with_zero_confidence_when_candidate_has_no_score() -> (
     None
 ):
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
     candidate = make_candidate()
     del candidate["score"]
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [candidate]}
 
         result = block.run(
@@ -337,12 +369,17 @@ def test_run_returns_prediction_with_zero_confidence_when_candidate_has_no_score
 
 
 def test_run_ignores_raw_search_engine_score_when_candidate_score_is_missing() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
     candidate = make_candidate()
     del candidate["score"]
     candidate["_score"] = "1.64"
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [candidate]}
 
         result = block.run(
@@ -360,12 +397,15 @@ def test_run_ignores_raw_search_engine_score_when_candidate_score_is_missing() -
 
 
 def test_run_resolves_workspace_from_api_key_when_workspace_is_not_provided() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
     with mock.patch.object(
-        v1, "get_roboflow_workspace", return_value="resolved-workspace"
+        platform_client, "get_roboflow_workspace", return_value="resolved-workspace"
     ) as workspace_mock, mock.patch.object(
-        v1, "search_project_images_at_roboflow"
+        platform_client, "search_project_images_at_roboflow"
     ) as search_mock:
         search_mock.return_value = {"results": [make_candidate()]}
 
@@ -382,9 +422,14 @@ def test_run_resolves_workspace_from_api_key_when_workspace_is_not_provided() ->
 def test_run_returns_numeric_visual_search_score_when_candidate_score_is_string() -> (
     None
 ):
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [make_candidate(score="1.74")]}
 
         result = block.run(
@@ -403,9 +448,14 @@ def test_run_returns_numeric_visual_search_score_when_candidate_score_is_string(
 
 
 def test_run_returns_zero_confidence_when_candidate_score_is_not_finite() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [make_candidate(score=math.nan)]}
 
         result = block.run(
@@ -425,9 +475,14 @@ def test_run_returns_zero_confidence_when_candidate_score_is_not_finite() -> Non
 
 
 def test_run_returns_no_prediction_when_api_returns_no_results() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": []}
 
         result = block.run(
@@ -448,11 +503,16 @@ def test_run_returns_no_prediction_when_api_returns_no_results() -> None:
 
 
 def test_run_returns_error_when_best_candidate_has_no_class_annotation() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
     candidate = make_candidate()
     del candidate["labels"]
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [candidate]}
 
         result = block.run(
@@ -474,12 +534,17 @@ def test_run_returns_error_when_best_candidate_has_no_class_annotation() -> None
 
 
 def test_run_returns_missing_class_error_when_candidate_has_no_score_or_class() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
     candidate = make_candidate()
     del candidate["score"]
     del candidate["labels"]
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": [candidate]}
 
         result = block.run(
@@ -501,9 +566,14 @@ def test_run_returns_missing_class_error_when_candidate_has_no_score_or_class() 
 
 
 def test_run_returns_error_when_project_search_fails() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.side_effect = RuntimeError("boom")
 
         result = block.run(
@@ -521,7 +591,10 @@ def test_run_returns_error_when_project_search_fails() -> None:
 
 
 def test_run_batch_returns_one_classification_per_image() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
     # thread-pooled searches reach the mock out of submission order - key by image
     responses_by_image = {
@@ -533,7 +606,9 @@ def test_run_batch_returns_one_classification_per_image() -> None:
         },
     }
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.side_effect = lambda **kwargs: responses_by_image[
             kwargs["image_base64"]
         ]
@@ -553,7 +628,10 @@ def test_run_batch_returns_one_classification_per_image() -> None:
 
 
 def test_run_batch_searches_images_in_parallel_and_preserves_output_order() -> None:
-    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchClassifierBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
     active_requests = 0
     max_active_requests = 0
     active_requests_lock = threading.Lock()
@@ -582,7 +660,9 @@ def test_run_batch_searches_images_in_parallel_and_preserves_output_order() -> N
             with active_requests_lock:
                 active_requests -= 1
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.side_effect = search_side_effect
 
         result = block.run(

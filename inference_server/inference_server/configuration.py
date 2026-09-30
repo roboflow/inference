@@ -71,6 +71,10 @@ ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = get_boolean_from_env(
 )
 MAX_IMAGE_URL_REDIRECTS = get_integer_from_env("MAX_IMAGE_URL_REDIRECTS", default=3)
 
+# ── Workflows: Roboflow-platform blocks ───────────────────────────────────
+# Reported as `device_id` by the model-monitoring block, as in `inference`.
+DEVICE_ID = os.environ.get("DEVICE_ID")
+
 # ── Auth (auth.py) ────────────────────────────────────────────────────────
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.roboflow.com")
 AUTH_CACHE_TTL_S = get_integer_from_env("AUTH_CACHE_TTL_S", default=3600)
@@ -84,6 +88,12 @@ ENABLE_CONTROL_PLANE_ROUTES = get_boolean_from_env(
 )
 # API key used for INFERENCE_PRELOAD_MODELS startup loads (weight fetch).
 PRELOAD_API_KEY = os.environ.get("PRELOAD_API_KEY", "")
+
+# ── Prometheus (prometheus.py) ────────────────────────────────────────────
+# GET /metrics in Prometheus text format, unauthenticated, like the legacy
+# server (which served it regardless of this flag; its images set it True).
+# Set to false to turn the route and the HTTP instrumentation off.
+ENABLE_PROMETHEUS = get_boolean_from_env("ENABLE_PROMETHEUS", default=True)
 
 # ── Model-stat TTL-LRU cache (framework/model_stat.py) ────────────────────
 MODEL_STAT_CACHE_SIZE = get_integer_from_env(
@@ -152,6 +162,11 @@ LEGACY_CONTROL_PLANE_ROUTES_ENABLED = get_boolean_from_env(
 )
 DISABLE_WORKFLOW_ENDPOINTS = get_boolean_from_env(
     "DISABLE_WORKFLOW_ENDPOINTS", default=False
+)
+# Removes only the experimental `describe_workload` routes; every other Workflow
+# route stays. `DISABLE_WORKFLOW_ENDPOINTS=True` still removes all of them.
+DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS = get_boolean_from_env(
+    "DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS", default=False
 )
 OFFLINE_MODE = get_boolean_from_env("OFFLINE_MODE", default=False)
 ALLOW_URL_INPUT = get_boolean_from_env("ALLOW_URL_INPUT", default=True)
@@ -268,6 +283,14 @@ MODEL_CACHE_DIR = os.environ.get("MODEL_CACHE_DIR", "/tmp/cache")
 ROBOFLOW_API_EXTRA_HEADERS = os.environ.get("ROBOFLOW_API_EXTRA_HEADERS")
 ROBOFLOW_INTERNAL_SERVICE_NAME = os.environ.get("ROBOFLOW_INTERNAL_SERVICE_NAME")
 ROBOFLOW_INTERNAL_SERVICE_SECRET = os.environ.get("ROBOFLOW_INTERNAL_SERVICE_SECRET")
+# api_key -> workspace lookups made by the Workflows platform blocks. Same
+# variables and defaults as the legacy server's `get_roboflow_workspace` cache.
+WORKSPACE_CACHE_TTL_S = get_integer_from_env(
+    "MODELS_CACHE_AUTH_CACHE_TTL", default=15 * 60
+)
+WORKSPACE_CACHE_MAX_SIZE = get_integer_from_env(
+    "MODELS_CACHE_AUTH_CACHE_MAX_SIZE", default=100_000_000
+)
 try:
     SERVER_VERSION = importlib.metadata.version("inference-server")
 except importlib.metadata.PackageNotFoundError:

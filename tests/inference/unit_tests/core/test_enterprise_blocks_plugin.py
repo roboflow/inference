@@ -4,7 +4,6 @@ import subprocess
 import sys
 
 from inference.core.env import ENTERPRISE_BLOCKS_PLUGIN as ENTERPRISE_PLUGIN
-from inference.core.env import ROBOFLOW_BLOCKS_PLUGIN as ROBOFLOW_PLUGIN
 
 MQTT_BLOCK = (
     "inference.enterprise.workflows.enterprise_blocks.sinks.mqtt_writer.v1"
@@ -125,7 +124,6 @@ def test_enterprise_blocks_keep_their_position_between_core_and_custom_plugins()
         for index, (identifier, source) in enumerate(report["blocks"])
         if source == "workflows_core"
         and not identifier.startswith("inference.enterprise.")
-        and not identifier.startswith("inference.roboflow_workflows_plugin.")
     ]
     mqtt_position = identifiers.index(MQTT_BLOCK)
     fake_position = identifiers.index(FAKE_BLOCK)
@@ -134,10 +132,7 @@ def test_enterprise_blocks_keep_their_position_between_core_and_custom_plugins()
     assert max(genuine_core_positions) < mqtt_position
     # ... which in turn precedes the custom plugin's block.
     assert mqtt_position < fake_position
-    # The Roboflow-platform plugin is expanded unconditionally and prepended
-    # ahead of the enterprise one (env.py), so the historical core -> roboflow
-    # -> enterprise -> custom order is preserved.
-    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN},{FAKE_PLUGIN}"
+    assert report["plugins"] == f"{ENTERPRISE_PLUGIN},{FAKE_PLUGIN}"
 
 
 def test_env_expansion_does_not_duplicate_an_already_listed_enterprise_plugin() -> None:
@@ -148,57 +143,6 @@ def test_env_expansion_does_not_duplicate_an_already_listed_enterprise_plugin() 
         LOAD_ENTERPRISE_BLOCKS="True",
         WORKFLOWS_PLUGINS=ENTERPRISE_PLUGIN,
     )
-    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN}"
+    assert report["plugins"] == ENTERPRISE_PLUGIN
     identifiers = [identifier for identifier, _ in report["blocks"]]
     assert identifiers.count(MQTT_BLOCK) == 1
-
-
-def test_env_expansion_does_not_duplicate_an_already_listed_roboflow_plugin() -> None:
-    report = _run_probe(PROBE, WORKFLOWS_PLUGINS=ROBOFLOW_PLUGIN)
-    assert report["plugins"] == ROBOFLOW_PLUGIN
-    identifiers = [identifier for identifier, _ in report["blocks"]]
-    roboflow_blocks = [
-        identifier
-        for identifier in identifiers
-        if identifier.startswith("inference.roboflow_workflows_plugin.")
-    ]
-    assert len(roboflow_blocks) == len(set(roboflow_blocks)) == 9
-
-
-def test_env_expansion_moves_an_already_listed_roboflow_plugin_ahead_of_enterprise() -> (
-    None
-):
-    # An operator who already listed the roboflow plugin explicitly must not
-    # end up with it stuck behind the enterprise expansion: normalisation
-    # removes it from wherever it sits and prepends it exactly once.
-    report = _run_probe(
-        PROBE,
-        LOAD_ENTERPRISE_BLOCKS="True",
-        WORKFLOWS_PLUGINS=ROBOFLOW_PLUGIN,
-    )
-    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN}"
-
-
-def test_env_expansion_moves_roboflow_ahead_of_enterprise_and_a_custom_plugin() -> None:
-    # Same normalisation, this time with the roboflow plugin listed AFTER a
-    # custom plugin - the custom plugin's relative position must be preserved
-    # (it still follows enterprise), only roboflow moves to the front.
-    report = _run_probe(
-        ORDERING_PROBE,
-        LOAD_ENTERPRISE_BLOCKS="True",
-        WORKFLOWS_PLUGINS=f"{FAKE_PLUGIN},{ROBOFLOW_PLUGIN}",
-    )
-    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN},{FAKE_PLUGIN}"
-
-    identifiers = [identifier for identifier, _ in report["blocks"]]
-    roboflow_positions = [
-        index
-        for index, identifier in enumerate(identifiers)
-        if identifier.startswith("inference.roboflow_workflows_plugin.")
-    ]
-    assert len(roboflow_positions) == 9
-    mqtt_position = identifiers.index(MQTT_BLOCK)
-    fake_position = identifiers.index(FAKE_BLOCK)
-    # The 9 roboflow blocks precede the enterprise (MQTT) block, which in turn
-    # precedes the custom plugin's block.
-    assert max(roboflow_positions) < mqtt_position < fake_position

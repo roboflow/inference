@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Optional
 
 from fastapi import Request
@@ -21,6 +22,7 @@ from inference_model_manager.model_manager import ModelManager
 from inference_models.utils.performance import performance_profiler
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
+from inference_server.response_headers import current_model_usage
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +221,12 @@ class ModelManagerGateway:
             )
             drop_dead = True
 
+        # The request that creates the load future is the one that triggered
+        # the load (cold start); requests joining it later are not.
+        usage = current_model_usage()
+
         def _reload() -> None:
+            started = time.perf_counter()
             if drop_dead:
                 try:
                     self.manager.unload(key)
@@ -229,6 +236,10 @@ class ModelManagerGateway:
                         exc_info=True,
                     )
             self._load_sync(key, api_key, device, pinned)
+            if usage is not None:
+                usage.record_model_load(
+                    routed_model_id(key), time.perf_counter() - started
+                )
 
         # Unload+load run as ONE executor job registered before the lock
         # releases: no await window a cancelled caller could exploit, and

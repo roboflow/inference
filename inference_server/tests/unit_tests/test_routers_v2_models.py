@@ -27,7 +27,7 @@ def _reset():
 
 
 def _registry(calls: list):
-    def _metadata(model_id, api_key=None):
+    def _metadata(model_id, api_key=None, **_):
         calls.append((model_id, api_key))
         if model_id not in _STAGE_TASK_TYPES:
             raise ModelNotFoundError(message=model_id, help_url="")
@@ -79,7 +79,7 @@ async def test_interface_of_a_pipeline_id_resolves_without_statting_it():
 async def test_interface_of_a_pipeline_id_with_a_denied_stage_is_401():
     from inference_models.errors import UnauthorizedModelAccessError
 
-    def _metadata(model_id, api_key=None):
+    def _metadata(model_id, api_key=None, **_):
         if model_id == "pp-ocrv6-rec/medium":
             raise UnauthorizedModelAccessError(message=model_id, help_url="")
         return MagicMock(task_type="object-detection")

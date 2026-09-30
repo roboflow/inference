@@ -24,15 +24,6 @@ from tests.unit_tests.test_decontamination_lint import (
     collect_violations,
 )
 
-# Owned by Phase 9 (controller ruling R-S): these trees move to
-# `inference/roboflow_workflows_plugin/`, where importing the server's env
-# module is legitimate. Under R-U Phase 9 has landed, the paths do not exist
-# and this tuple matches nothing; if Phase 5 runs first it skips them.
-PHASE_9_PREFIXES = (
-    "roboflow_workflows/core_steps/sinks/roboflow/",
-    "roboflow_workflows/core_steps/integrations/roboflow/",
-)
-
 # Every direct environment read that remains inside `inference/core/workflows`
 # after Phase 5, with its owner. Phase 5 removes `inference.core.env` IMPORTS;
 # it does not touch these. Adding a row here is a deliberate act.
@@ -50,7 +41,7 @@ PERMITTED_ENVIRONMENT_READS = {
         "roboflow_workflows/core_steps/secrets_providers/environment_secrets_store/v1.py",
         1,
     ),
-    # Phase 9 relocates these two files; if Phase 5 runs first their reads stay.
+    # `EVENT_INGESTION_API_KEY`, the local event-ingestion service key.
     ("roboflow_workflows/core_steps/sinks/roboflow/vision_events/v1.py", 1),
     (
         "roboflow_workflows/core_steps/sinks/roboflow/vision_events/v1_tensor.py",
@@ -64,7 +55,6 @@ def test_no_owned_module_imports_inference_core_env() -> None:
         (path, module)
         for path, module in collect_violations()
         if module.startswith("inference.core.env")
-        and not path.startswith(PHASE_9_PREFIXES)
     )
     assert not offenders, offenders
 
@@ -79,12 +69,6 @@ def test_the_environment_read_inventory_is_frozen() -> None:
         if reads:
             found[path.relative_to(PROJECT_ROOT).as_posix()] = reads
     expected = {path: count for path, count in PERMITTED_ENVIRONMENT_READS}
-    # Phase 9 may already have relocated its two files.
-    expected = {
-        path: count
-        for path, count in expected.items()
-        if (PROJECT_ROOT / path).exists()
-    }
     assert found == expected, {
         "unexpected": {k: v for k, v in found.items() if expected.get(k) != v},
         "missing": {k: v for k, v in expected.items() if found.get(k) != v},

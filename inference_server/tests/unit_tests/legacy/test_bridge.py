@@ -286,7 +286,7 @@ def _recording_stat(monkeypatch, table, calls):
     from inference_models.errors import ModelNotFoundError
     from inference_server.framework import model_stat
 
-    def _metadata(model_id, api_key=None):
+    def _metadata(model_id, api_key=None, **_):
         calls.append((model_id, api_key or ""))
         if model_id.startswith("pp_ocr"):
             raise AssertionError(f"synthetic id statted: {model_id}")

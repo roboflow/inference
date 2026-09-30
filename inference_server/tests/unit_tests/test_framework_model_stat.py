@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import time
+import urllib.parse
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests_mock as rm
 
 from inference_models.errors import (
     ModelNotFoundError,
@@ -12,6 +14,7 @@ from inference_models.errors import (
     RetryError,
     UnauthorizedModelAccessError,
 )
+from inference_models.weights_providers import roboflow as roboflow_provider
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.model_stat import (
     _reset_cache_for_tests,
@@ -185,7 +188,7 @@ _REC_MEDIUM = "pp-ocrv6-rec/medium"
 
 
 def _recording_registry(table: dict, calls: list):
-    def _metadata(model_id: str, api_key=None):
+    def _metadata(model_id: str, api_key=None, **_):
         calls.append((model_id, api_key))
         outcome = table.get(model_id)
         if outcome is None:
@@ -344,3 +347,54 @@ async def test_broken_pipeline_defaults_are_not_a_client_lookup_error():
                 )
     assert not isinstance(exc_info.value, LookupError)
     assert calls == []
+
+
+_GATEWAY = "https://gateway.example.com"
+
+
+def _registry_response() -> dict:
+    return {
+        "modelMetadata": {
+            "type": "external-model-metadata-v1",
+            "modelId": "acme/1",
+            "modelArchitecture": "yolov8",
+            "taskType": "object-detection",
+            "modelPackages": [],
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_registry_lookup_goes_through_secure_gateway_when_configured(
+    monkeypatch,
+):
+    monkeypatch.setattr(roboflow_provider, "SECURE_GATEWAY", _GATEWAY)
+    with rm.Mocker() as m:
+        m.get(rm.ANY, json=_registry_response())
+        result = await stat_model_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="k")
+        )
+    assert result == ("object-detection", "infer")
+    requested = m.request_history[0].url
+    assert requested.startswith(f"{_GATEWAY}/proxy?url=")
+    proxied = urllib.parse.unquote(requested.split("?url=", 1)[1])
+    assert proxied == (
+        f"{roboflow_provider.ROBOFLOW_API_HOST}/models/v1/external/weights"
+        "?modelId=acme%2F1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_registry_lookup_hits_the_api_directly_without_secure_gateway(
+    monkeypatch,
+):
+    monkeypatch.setattr(roboflow_provider, "SECURE_GATEWAY", None)
+    with rm.Mocker() as m:
+        m.get(rm.ANY, json=_registry_response())
+        await stat_model_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="k")
+        )
+    assert m.request_history[0].url == (
+        f"{roboflow_provider.ROBOFLOW_API_HOST}/models/v1/external/weights"
+        "?modelId=acme%2F1"
+    )
