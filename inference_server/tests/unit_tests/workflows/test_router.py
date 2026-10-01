@@ -181,6 +181,58 @@ def test_workflow_routes_hand_the_provider_their_scope_path(
     assert request_paths == [path]
 
 
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/workflows/run", {"specification": PASSTHROUGH_WF, "inputs": {"x": 1}}),
+        ("/infer/workflows", {"specification": PASSTHROUGH_WF, "inputs": {"x": 1}}),
+        ("/ws/workflows/wf", {"inputs": {"x": 1}, "api_key": "k"}),
+        ("/infer/workflows/ws/wf", {"inputs": {"x": 1}, "api_key": "k"}),
+    ],
+)
+@pytest.mark.parametrize(
+    "flag,value,expect_background_tasks",
+    [
+        (None, False, True),
+        ("LAMBDA", True, False),
+        ("GCP_SERVERLESS", True, False),
+    ],
+)
+def test_workflow_run_routes_defer_sinks_unless_serverless(
+    legacy_client, monkeypatch, path, body, flag, value, expect_background_tasks
+):
+    from fastapi import BackgroundTasks
+
+    from inference_server import configuration
+    from inference_server.workflows import execution
+
+    captured = []
+    original = execution.build_init_parameters
+
+    def _capturing(**kwargs):
+        init_parameters = original(**kwargs)
+        captured.append(init_parameters["workflows_core.background_tasks"])
+        return init_parameters
+
+    monkeypatch.setattr(execution, "build_init_parameters", _capturing)
+    monkeypatch.setattr(
+        "inference_server.workflows.host.get_workflow_specification",
+        lambda **kwargs: PASSTHROUGH_WF,
+    )
+    monkeypatch.setattr(configuration, "LAMBDA", False)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", False)
+    if flag is not None:
+        monkeypatch.setattr(configuration, flag, value)
+
+    response = legacy_client(FakeGateway()).post(path, json=body)
+
+    assert response.status_code == 200, response.text
+    assert len(captured) == 1
+    assert isinstance(captured[0], BackgroundTasks) is expect_background_tasks
+    if not expect_background_tasks:
+        assert captured[0] is None
+
+
 def test_two_segment_workflow_paths_beat_catch_all(legacy_client):
     client = legacy_client(FakeGateway())
 
