@@ -16,12 +16,18 @@ from pathlib import Path
 
 # tests/inference/unit_tests/core/interfaces/<file> -> parents[5] is the repo root
 REPO_ROOT = Path(__file__).resolve().parents[5]
-SEARCH_ROOTS = ("inference", "inference_cli", "development", "examples")
+SEARCH_ROOTS = (
+    "inference",
+    "stream_vision/streamvision",
+    "inference_cli",
+    "development",
+    "examples",
+)
 # The standalone engine lives under workflows/, outside these host search roots.
 
 EXPECTED_ROOTS = {
     "inference/core/interfaces/http/http_api.py": 2,
-    "inference/core/interfaces/stream/pipeline.py": 1,
+    "stream_vision/streamvision/stream/pipeline.py": 1,
     "inference_cli/lib/workflows/local_image_adapter.py": 1,
     "development/stream_interface/benchmark_engine_throughput.py": 1,
     "examples/run_perspective_correction.py": 1,

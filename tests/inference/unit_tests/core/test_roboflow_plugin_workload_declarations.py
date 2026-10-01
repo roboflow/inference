@@ -498,6 +498,7 @@ def _run_declarations_probe(tensor_mode: str) -> dict:
             [
                 str(REPO_ROOT / "workflows"),
                 str(REPO_ROOT / "inference_models"),
+                str(REPO_ROOT / "stream_vision"),
                 str(REPO_ROOT),
             ]
         ),

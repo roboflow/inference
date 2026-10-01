@@ -50,7 +50,24 @@ _CONTROLLED_VARIABLES = (
     "VIDEO_SOURCE_BUFFER_SIZE",
     "VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW",
     "VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES",
+    "WEBRTC_DATA_CHANNEL_ACK_WINDOW",
+    "WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY",
+    "WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT",
+    "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION",
+    "WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES",
+    "WEBRTC_MODAL_FUNCTION_TIME_LIMIT",
+    "WEBRTC_MODAL_MIN_CPU_CORES",
+    "WEBRTC_MODAL_MIN_RAM_MB",
+    "WEBRTC_MODAL_PUBLIC_STUN_SERVERS",
+    "WEBRTC_MODAL_RTSP_PLACEHOLDER",
+    "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL",
+    "WEBRTC_MODAL_SHUTDOWN_RESERVE",
+    "WEBRTC_MODAL_USAGE_QUOTA_ENABLED",
+    "WEBRTC_MODAL_WATCHDOG_TIMEMOUT",
+    "WEBRTC_PREVIEW_FRAME_JPEG_QUALITY",
     "WEBRTC_REALTIME_PROCESSING",
+    "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS",
+    "WEBRTC_SESSION_HEARTBEAT_URL",
     "WORKFLOWS_PROFILER_BUFFER_SIZE",
     # inference_models latches OFFLINE_MODE; a child would ignore its own value.
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START",
@@ -69,7 +86,11 @@ def _run_child(script: str, overrides: Optional[Dict[str, str]] = None) -> dict:
             "PYTHONDONTWRITEBYTECODE": "1",
             "DISABLE_VERSION_CHECK": "True",
             "PYTHONPATH": os.pathsep.join(
-                [str(REPO_ROOT / "workflows"), str(REPO_ROOT / "inference_models")]
+                [
+                    str(REPO_ROOT / "workflows"),
+                    str(REPO_ROOT / "inference_models"),
+                    str(REPO_ROOT / "stream_vision"),
+                ]
             ),
         }
     )
@@ -462,6 +483,90 @@ def test_model_config_init_propagates_unparseable_environment_values(
         ModelConfig.init()
 
 
+_WEBRTC_WORKER_BINDINGS_SCRIPT = """
+import json
+
+from inference.core.interfaces.webrtc_worker.cpu import rtc_peer_connection_process  # noqa
+from inference.core.interfaces.webrtc_worker import entities, serializers, webrtc
+
+print(json.dumps({
+    "ack_window": webrtc.WEBRTC_DATA_CHANNEL_ACK_WINDOW,
+    "shutdown_reserve": webrtc.WEBRTC_MODAL_SHUTDOWN_RESERVE,
+    "stun": webrtc.WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
+    "time_limit": entities.WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+    "default_timeout": entities.WebRTCWorkerRequest.model_fields["processing_timeout"].default,
+    "jpeg_quality": serializers.WEBRTC_PREVIEW_FRAME_JPEG_QUALITY,
+}))
+"""
+
+
+def test_webrtc_worker_modules_bind_the_environment_through_the_cpu_target() -> None:
+    # The spawned CPU worker imports its target module first, as this script does.
+    result = _run_child(
+        _WEBRTC_WORKER_BINDINGS_SCRIPT,
+        {
+            "WEBRTC_DATA_CHANNEL_ACK_WINDOW": "4",
+            "WEBRTC_MODAL_SHUTDOWN_RESERVE": "7",
+            "WEBRTC_MODAL_PUBLIC_STUN_SERVERS": "stun:example.test:3478",
+            "WEBRTC_MODAL_FUNCTION_TIME_LIMIT": "120",
+            "WEBRTC_PREVIEW_FRAME_JPEG_QUALITY": "55",
+        },
+    )
+
+    assert result == {
+        "ack_window": 4,
+        "shutdown_reserve": 7,
+        "stun": "stun:example.test:3478",
+        "time_limit": 120,
+        "default_timeout": 120,
+        "jpeg_quality": 55,
+    }
+
+
+_SESSION_RUNNER_SETTINGS_SCRIPT = """
+import json
+
+from inference.core import env
+from streamvision.stream import environment
+
+NAMES = [
+    "WEBRTC_MODAL_MIN_CPU_CORES",
+    "WEBRTC_MODAL_MIN_RAM_MB",
+    "WEBRTC_MODAL_USAGE_QUOTA_ENABLED",
+    "WEBRTC_MODAL_WATCHDOG_TIMEMOUT",
+    "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS",
+    "WEBRTC_SESSION_HEARTBEAT_URL",
+]
+print(json.dumps({
+    "env": [getattr(env, name) for name in NAMES],
+    "facade": [getattr(environment, name) for name in NAMES],
+}))
+"""
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({}, [None, None, False, 60, 30, None]),
+        (
+            {
+                "WEBRTC_MODAL_MIN_CPU_CORES": "4",
+                "WEBRTC_MODAL_MIN_RAM_MB": "2048",
+                "WEBRTC_MODAL_USAGE_QUOTA_ENABLED": "True",
+                "WEBRTC_MODAL_WATCHDOG_TIMEMOUT": "15",
+                "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS": "5",
+                "WEBRTC_SESSION_HEARTBEAT_URL": "https://heartbeat.example",
+            },
+            [4, 2048, True, 15, 5, "https://heartbeat.example"],
+        ),
+    ],
+)
+def test_session_runner_settings_reach_the_facade(overrides, expected) -> None:
+    result = _run_child(_SESSION_RUNNER_SETTINGS_SCRIPT, overrides)
+
+    assert result == {"env": expected, "facade": expected}
+
+
 # Section 2 - the configuration, its facade and the legacy installation
 
 # (facade name, inference.core.env name or None when env.py has no counterpart)
@@ -506,6 +611,38 @@ FIELDS = [
     ("DEBUG_WEBRTC_PROCESSING_LATENCY", "DEBUG_WEBRTC_PROCESSING_LATENCY"),
     ("OFFLINE_MODE", "OFFLINE_MODE"),
     ("WEBRTC_REALTIME_PROCESSING", "WEBRTC_REALTIME_PROCESSING"),
+    ("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "WEBRTC_DATA_CHANNEL_ACK_WINDOW"),
+    (
+        "WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY",
+        "WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY",
+    ),
+    (
+        "WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT",
+        "WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT",
+    ),
+    (
+        "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION",
+        "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION",
+    ),
+    (
+        "WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES",
+        "WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES",
+    ),
+    ("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "WEBRTC_MODAL_FUNCTION_TIME_LIMIT"),
+    ("WEBRTC_MODAL_PUBLIC_STUN_SERVERS", "WEBRTC_MODAL_PUBLIC_STUN_SERVERS"),
+    ("WEBRTC_MODAL_RTSP_PLACEHOLDER", "WEBRTC_MODAL_RTSP_PLACEHOLDER"),
+    ("WEBRTC_MODAL_RTSP_PLACEHOLDER_URL", "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL"),
+    ("WEBRTC_MODAL_SHUTDOWN_RESERVE", "WEBRTC_MODAL_SHUTDOWN_RESERVE"),
+    ("WEBRTC_PREVIEW_FRAME_JPEG_QUALITY", "WEBRTC_PREVIEW_FRAME_JPEG_QUALITY"),
+    ("WEBRTC_MODAL_MIN_CPU_CORES", "WEBRTC_MODAL_MIN_CPU_CORES"),
+    ("WEBRTC_MODAL_MIN_RAM_MB", "WEBRTC_MODAL_MIN_RAM_MB"),
+    ("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "WEBRTC_MODAL_USAGE_QUOTA_ENABLED"),
+    ("WEBRTC_MODAL_WATCHDOG_TIMEMOUT", "WEBRTC_MODAL_WATCHDOG_TIMEMOUT"),
+    (
+        "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS",
+        "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS",
+    ),
+    ("WEBRTC_SESSION_HEARTBEAT_URL", "WEBRTC_SESSION_HEARTBEAT_URL"),
     ("CLASS_AGNOSTIC_NMS_ENV", "CLASS_AGNOSTIC_NMS_ENV"),
     ("CONFIDENCE_ENV", "CONFIDENCE_ENV"),
     ("IOU_THRESHOLD_ENV", "IOU_THRESHOLD_ENV"),
@@ -561,7 +698,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
     tabled = {name for name, _ in FIELDS}
 
     assert tabled == _facade_exports()
-    assert len(FIELDS) == 38
+    assert len(FIELDS) == 55
 
 
 def test_host_only_settings_are_not_package_configuration() -> None:
@@ -669,12 +806,6 @@ from inference.core.interfaces.streams_configuration import build_configuration_
 
 standalone = StreamsConfiguration()
 legacy = build_configuration_from_env()
-# Manager address fields excluded here; each side resolves them differently.
-_DEFERRED_FIELDS = {
-    "stream_manager_host",
-    "stream_manager_port",
-    "stream_manager_socket_timeout",
-}
 pairs = [
     (standalone, legacy),
     (standalone.model_config_defaults, legacy.model_config_defaults),
@@ -682,8 +813,6 @@ pairs = [
 mismatches = []
 for left_group, right_group in pairs:
     for member in fields(left_group):
-        if member.name in _DEFERRED_FIELDS:
-            continue
         left = getattr(left_group, member.name)
         right = getattr(right_group, member.name)
         if left != right or type(left) is not type(right):
@@ -738,15 +867,13 @@ observed = {}
 
 class Recorder:
     def find_spec(self, name, path=None, target=None):
-        if name == "inference.core.interfaces.stream.configuration":
+        if name == "streamvision.stream.configuration":
             env_module = sys.modules.get("inference.core.env")
             observed["env_complete_before_configuration"] = hasattr(
                 env_module, "DEFAULT_BUFFER_SIZE"
             )
-        if name == "inference.core.interfaces.stream.environment":
-            configuration = sys.modules[
-                "inference.core.interfaces.stream.configuration"
-            ]
+        if name == "streamvision.stream.environment":
+            configuration = sys.modules["streamvision.stream.configuration"]
             observed["installed_before_facade"] = (
                 configuration._CONFIGURATION is not None
             )
@@ -813,7 +940,11 @@ def test_manager_app_import_still_rejects_an_invalid_manager_only_setting() -> N
             "PYTHONDONTWRITEBYTECODE": "1",
             "DISABLE_VERSION_CHECK": "True",
             "PYTHONPATH": os.pathsep.join(
-                [str(REPO_ROOT / "workflows"), str(REPO_ROOT / "inference_models")]
+                [
+                    str(REPO_ROOT / "workflows"),
+                    str(REPO_ROOT / "inference_models"),
+                    str(REPO_ROOT / "stream_vision"),
+                ]
             ),
             **_MANAGER_ONLY_INVALID_ENV,
         }
@@ -955,22 +1086,9 @@ def test_falsy_explicit_manager_settings_are_honored_over_the_environment(
 _EXPLICIT_STANDALONE_MANAGER_CONFIGURATION_SCRIPT = """
 import json
 import sys
-import types
-from pathlib import Path
 
-# Bypasses the legacy core/__init__.py bootstrap to test standalone config order.
-root = Path.cwd()
-for package in (
-    "inference",
-    "inference.core",
-    "inference.core.interfaces",
-    "inference.core.interfaces.stream",
-):
-    module = types.ModuleType(package)
-    module.__path__ = [str(root.joinpath(*package.split(".")))]
-    sys.modules[package] = module
-
-from inference.core.interfaces.stream.configuration import (
+# The canonical package skips the legacy core/__init__.py bootstrap.
+from streamvision.stream.configuration import (
     StreamsConfiguration,
     configure_process,
 )
@@ -983,7 +1101,7 @@ configure_process(
     )
 )
 
-from inference.core.interfaces.stream import environment
+from streamvision.stream import environment
 
 print(json.dumps({
     "host": environment.STREAM_MANAGER_HOST,
@@ -1007,26 +1125,16 @@ def test_explicit_standalone_manager_address_configuration_is_not_lost() -> None
     assert result == {"host": "10.0.0.1", "port": 9999, "timeout": 1.5}
 
 
-# Stub parents skip inference's __init__ bootstrap - config installs before any read.
+# The canonical package skips inference's bootstrap - config installs before any read.
 _CANONICAL_FIRST_SCRIPT = """
 import json
 import sys
-import types
-from pathlib import Path
 
-root = Path.cwd()
-for package in (
-    "inference",
-    "inference.core",
-    "inference.core.interfaces",
-    "inference.core.interfaces.stream",
-):
-    module = types.ModuleType(package)
-    module.__path__ = [str(root.joinpath(*package.split(".")))]
-    sys.modules[package] = module
+import streamvision.stream
+
 baseline = set(sys.modules)
 
-from inference.core.interfaces.stream.configuration import (
+from streamvision.stream.configuration import (
     StreamsConfiguration,
     configure_process,
 )
@@ -1038,7 +1146,7 @@ configure_process(
         offline_mode=True,
     )
 )
-from inference.core.interfaces.stream import environment
+from streamvision.stream import environment
 
 print(json.dumps({
     "values": [
@@ -1049,7 +1157,8 @@ print(json.dumps({
     "new_modules": sorted(
         name
         for name in set(sys.modules) - baseline
-        if name.split(".")[0] in {"inference", "cv2", "numpy", "torch", "pydantic"}
+        if name.split(".")[0]
+        in {"streamvision", "inference", "cv2", "numpy", "torch", "pydantic"}
     ),
 }))
 """
@@ -1061,8 +1170,8 @@ def test_a_canonical_configuration_installed_first_reaches_the_facade() -> None:
     assert result == {
         "values": [3, True, True],
         "new_modules": [
-            "inference.core.interfaces.stream.configuration",
-            "inference.core.interfaces.stream.environment",
+            "streamvision.stream.configuration",
+            "streamvision.stream.environment",
         ],
     }
 
@@ -1134,8 +1243,7 @@ def test_buffer_strategy_pickles_keep_the_historical_reference(protocol: int) ->
         payload = pickle.dumps(member, protocol=protocol)
 
         assert pickle.loads(payload) is member
-        # Readable by a process that only has the pre-extraction module.
-        assert b"inference.core.interfaces.camera.video_source" in payload
+        assert b"streamvision.camera.video_source" in payload
         assert b"buffer_strategies" not in payload
 
 
@@ -1162,12 +1270,16 @@ def test_request_entities_do_not_import_the_decoder_webrtc_or_pipeline() -> None
         name for name in new_modules if name.split(".")[0] in {"cv2", "aiortc", "av"}
     }
     # inference.core preloads stream_manager/manager_app via light manager_app.host.
-    assert {name for name in new_modules if name.startswith("inference.")} == {
-        "inference.core.interfaces.camera",
-        "inference.core.interfaces.camera.buffer_strategies",
-        "inference.core.interfaces.camera.source_reference_validation",
-        "inference.core.interfaces.stream.environment",
-        "inference.core.interfaces.stream_manager.manager_app.entities",
+    assert {
+        name for name in new_modules if name.startswith(("inference.", "streamvision."))
+    } == {
+        "streamvision.camera",
+        "streamvision.camera.buffer_strategies",
+        "streamvision.camera.source_reference_validation",
+        "streamvision.stream.environment",
+        "streamvision.stream_manager.manager_app.entities",
+        "inference.core.interfaces.stream_manager",
+        "inference.core.interfaces.stream_manager.manager_app",
     }
 
 
@@ -1207,7 +1319,12 @@ def test_module_logger_reaches_the_inference_logger_handler(module_name: str) ->
     import logging
 
     module = importlib.import_module(module_name)
-    inference_logger = logging.getLogger("inference")
+    # Retained host modules keep their historical logger; moved ones log canonically.
+    if module.__name__.startswith("inference."):
+        expected_logger_name = module_name
+    else:
+        expected_logger_name = module.__name__
+    inference_logger = logging.getLogger(expected_logger_name.split(".")[0])
     probe = _ProbeHandler()
     previous_level = inference_logger.level
     inference_logger.addHandler(probe.handler)
@@ -1218,7 +1335,7 @@ def test_module_logger_reaches_the_inference_logger_handler(module_name: str) ->
         inference_logger.removeHandler(probe.handler)
         inference_logger.setLevel(previous_level)
 
-    assert module.logger.name == module_name
+    assert module.logger.name == expected_logger_name
     assert module.logger.propagate is True
     assert not module.logger.handlers
     assert [record.getMessage() for record in probe.records] == [

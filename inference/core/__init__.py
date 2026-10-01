@@ -3,17 +3,18 @@ import time
 
 import requests
 from packaging import version as packaging_version
+from roboflow_workflows.prototypes.image_codec import set_default_image_codec_factory
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
 
-# Must be installed before any import of inference.core.interfaces.stream.environment.
+# Must be installed before any import of streamvision.stream.environment.
 from inference.core.interfaces.streams_configuration import (
     install_streams_configuration,
 )
 
 # Hand the Workflows module its configuration before anything can READ it.
 # The invariant: `install_workflows_configuration()` runs before any import
-# of `inference.core.workflows.environment` (the constants facade) or any
+# of `roboflow_workflows.environment` (the constants facade) or any
 # other configuration-consuming workflows module, so `core_steps/loader.py`'s
 # import-time tensor branches and every facade constant see the server's
 # values. A few configuration-independent workflows modules are already on
@@ -23,16 +24,13 @@ from inference.core.interfaces.streams_configuration import (
 # `workflows/configuration.py`); they must stay configuration-independent -
 # none of them may import the facade. `inference.core.interfaces
 # .workflows_configuration` imports only `inference.core.env` (already fully
-# imported above) and `inference.core.workflows.configuration`, so this adds
+# imported above) and `roboflow_workflows.configuration`, so this adds
 # no import weight.
 from inference.core.interfaces.workflows_configuration import (
     install_workflows_configuration,
 )
 from inference.core.logger import logger
 from inference.core.version import __version__
-from inference.core.workflows.prototypes.image_codec import (
-    set_default_image_codec_factory,
-)
 
 
 def _resolve_workflows_image_codec():

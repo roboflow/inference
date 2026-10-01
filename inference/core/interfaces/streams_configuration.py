@@ -7,7 +7,7 @@ The three stream-manager address settings have no `env.py` counterpart and are
 left unset (`None`) here on purpose: parsing `STREAM_MANAGER_PORT` /
 `STREAM_MANAGER_SOCKET_TIMEOUT` this early would run on every import of
 `inference.core` (including through `inference.core.exceptions`, ahead of
-`env.py`'s own bootstrap), and `inference.core.interfaces.stream.environment`
+`env.py`'s own bootstrap), and `streamvision.stream.environment`
 is imported far too early too - by the camera and pipeline modules, for
 settings that have nothing to do with the manager - to parse them either.
 They keep the historical timing instead: `manager_app/app.py` resolves them
@@ -16,7 +16,7 @@ import - the only place that actually needs them.
 
 `install_streams_configuration()` is called from `inference/core/__init__.py`
 after `env.py` has completed and before anything imports the constants facade
-(`inference.core.interfaces.stream.environment`). It also installs
+(`streamvision.stream.environment`). It also installs
 `LEGACY_PIPELINE_HOST_DESCRIPTOR` as the process default of the stream
 manager's pipeline host, so `manager_app.app.start()` called without a
 descriptor keeps running pipelines with the `inference` host.
@@ -25,16 +25,17 @@ descriptor keeps running pipelines with the `inference` host.
 import os
 from typing import Optional
 
-from inference.core import env
-from inference.core.interfaces.stream.configuration import (
+from streamvision.stream.configuration import (
     ModelConfigDefaults,
     StreamsConfiguration,
     configure_process,
 )
-from inference.core.interfaces.stream_manager.manager_app.host import (
+from streamvision.stream_manager.manager_app.host import (
     PipelineHostDescriptor,
     install_default_host_descriptor,
 )
+
+from inference.core import env
 
 # Referenced by path: importing the host module here would pull in the models stack.
 LEGACY_PIPELINE_HOST_DESCRIPTOR = PipelineHostDescriptor(
@@ -77,6 +78,23 @@ def build_configuration_from_env() -> StreamsConfiguration:
         debug_webrtc_processing_latency=env.DEBUG_WEBRTC_PROCESSING_LATENCY,
         offline_mode=env.OFFLINE_MODE,
         webrtc_realtime_processing=env.WEBRTC_REALTIME_PROCESSING,
+        webrtc_data_channel_ack_window=env.WEBRTC_DATA_CHANNEL_ACK_WINDOW,
+        webrtc_data_channel_buffer_draining_delay=env.WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
+        webrtc_data_channel_buffer_size_limit=env.WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
+        webrtc_gzip_preview_frame_compression=env.WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION,
+        webrtc_mjpeg_allow_non_global_addresses=env.WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES,
+        webrtc_modal_function_time_limit=env.WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+        webrtc_modal_public_stun_servers=env.WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
+        webrtc_modal_rtsp_placeholder=env.WEBRTC_MODAL_RTSP_PLACEHOLDER,
+        webrtc_modal_rtsp_placeholder_url=env.WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
+        webrtc_modal_shutdown_reserve=env.WEBRTC_MODAL_SHUTDOWN_RESERVE,
+        webrtc_preview_frame_jpeg_quality=env.WEBRTC_PREVIEW_FRAME_JPEG_QUALITY,
+        webrtc_modal_min_cpu_cores=env.WEBRTC_MODAL_MIN_CPU_CORES,
+        webrtc_modal_min_ram_mb=env.WEBRTC_MODAL_MIN_RAM_MB,
+        webrtc_modal_usage_quota_enabled=env.WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
+        webrtc_modal_watchdog_timemout=env.WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+        webrtc_session_heartbeat_interval_seconds=env.WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS,
+        webrtc_session_heartbeat_url=env.WEBRTC_SESSION_HEARTBEAT_URL,
         model_config_defaults=ModelConfigDefaults(
             class_agnostic_nms_env=env.CLASS_AGNOSTIC_NMS_ENV,
             confidence_env=env.CONFIDENCE_ENV,

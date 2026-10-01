@@ -98,6 +98,12 @@ CLAUDE_MODELS = [
         "max_output_tokens": 128000,
     },
     {
+        "id": "claude-sonnet-5-5",
+        "name": "Claude Sonnet 5.5",
+        "exact_version": "claude-sonnet-5-5",
+        "max_output_tokens": 128000,
+    },
+    {
         "id": "claude-fable-5-1",
         "name": "Claude Fable 5.1",
         "exact_version": "claude-fable-5-1",
@@ -380,7 +386,12 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="claude-sonnet-4-5",
         description="Model to be used",
-        examples=["claude-opus-5-5", "claude-sonnet-4-5", "$inputs.claude_model"],
+        examples=[
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-sonnet-4-5",
+            "$inputs.claude_model",
+        ],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },

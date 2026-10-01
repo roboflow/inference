@@ -221,7 +221,7 @@ class LeanPolygonZone:
             self.current_count = 0
             return np.array([], dtype=bool)
 
-        all_anchors = np.ceil(
+        all_anchors = np.rint(
             _stack_anchor_coordinates(xyxy, self.triggering_anchors)
         ).astype(int)
         mask_h, mask_w = self.mask.shape

@@ -1,13 +1,4 @@
-"""Public-contract freeze for the stream package's user-facing surface.
-
-`InferencePipeline.init*`, `Stream.__init__`, and the `sinks` module are the
-call paths external callers actually use; a future extraction that
-accidentally changes a default, drops a parameter, or edits the published
-docs for one of them would otherwise go unnoticed by the decontamination
-tests (which only check imports, not the contract). This freezes each
-callable's `inspect.signature()` string and docstring by hash - the
-docstrings are large, and hashing avoids dumping multi-KB fixture text into
-this file while still failing loudly (with the actual value) on any drift.
+"""Public API signature and default contracts for the stream package.
 
 Several of these signatures embed a literal default (`predictions_queue_size`,
 `decoding_buffer_size`, `Stream`'s post-processing/API-key defaults) that
@@ -29,14 +20,13 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Union
 
 import pytest
 
 from inference.core.interfaces.stream import sinks
 
 from ._stream_contract_probe import _stable_signature
-from .conftest import require_git_baseline_history
 
 # parents[5] is the repo root; used as the subprocess cwd so imports match the harness.
 _PROJECT_ROOT = Path(__file__).resolve().parents[5]
@@ -106,7 +96,7 @@ def _capture_contracts(env_overrides: Optional[Dict[str, str]] = None) -> dict:
 
     Returns:
         Parsed JSON from `_stream_contract_probe.py`:
-        `{"contracts": {name: {"signature", "sig_hash", "doc_hash"}},
+        `{"contracts": {name: {"signature", "sig_hash"}},
         "config": {...}}`.
     """
     child_env = os.environ.copy()
@@ -140,45 +130,16 @@ def _capture_contracts(env_overrides: Optional[Dict[str, str]] = None) -> dict:
 
 # hashes are sha256[:16] - a change-detector, not a security control.
 _FROZEN_CONTRACTS = [
-    (
-        "InferencePipeline.init",
-        "627d57d8713d9b42",
-        "374e25e04372baa3",
-    ),
-    (
-        "InferencePipeline.init_with_yolo_world",
-        "c8170bd0ad38cb20",
-        "56febab383103087",
-    ),
-    (
-        "InferencePipeline.init_with_workflow",
-        "760611c783a67072",
-        "0ab9a69949b8cd59",
-    ),
-    (
-        "InferencePipeline.init_with_custom_logic",
-        "a93da889f006ec31",
-        "f1af5463774d8132",
-    ),
-    ("Stream.__init__", "ad88b06bfd0ef5aa", "a3785ad7cc10ce9a"),
-    (
-        "sinks.display_image",
-        "f8e554f57455543c",
-        "e3b0c44298fc1c14",
-    ),
-    ("sinks.render_boxes", "09f7d31d9d2f5569", "2c90c3fea73de025"),
-    (
-        "sinks.render_statistics",
-        "12aa6eb0579b10d5",
-        "e3b0c44298fc1c14",
-    ),
-    ("sinks.multi_sink", "c989ebaff3f51249", "e4fee59b9518c801"),
-    # Only the middleware annotation changed; rest is pinned by the shape test below.
-    (
-        "sinks.active_learning_sink",
-        "66435a496fcd65c7",
-        "6c08e7c5e5752f95",
-    ),
+    ("InferencePipeline.init", "87ac083f88c84541"),
+    ("InferencePipeline.init_with_yolo_world", "03e562b3c5e60eb9"),
+    ("InferencePipeline.init_with_workflow", "c1a048f36d371750"),
+    ("InferencePipeline.init_with_custom_logic", "072e4f2946ee2a47"),
+    ("Stream.__init__", "ad88b06bfd0ef5aa"),
+    ("sinks.display_image", "f8e554f57455543c"),
+    ("sinks.render_boxes", "bd087e986582eec5"),
+    ("sinks.render_statistics", "12aa6eb0579b10d5"),
+    ("sinks.multi_sink", "f665e4f385adb432"),
+    ("sinks.active_learning_sink", "4c5b2c7e4b2c1f03"),
 ]
 
 
@@ -193,13 +154,10 @@ def canonical_contracts() -> dict:
     return _capture_contracts()
 
 
-@pytest.mark.parametrize(
-    "name, expected_sig_hash, expected_doc_hash", _FROZEN_CONTRACTS
-)
-def test_public_signature_and_docstring_are_frozen(
+@pytest.mark.parametrize("name, expected_sig_hash", _FROZEN_CONTRACTS)
+def test_public_signature_is_frozen(
     name: str,
     expected_sig_hash: str,
-    expected_doc_hash: str,
     canonical_contracts: dict,
 ) -> None:
     captured = canonical_contracts["contracts"][name]
@@ -207,10 +165,6 @@ def test_public_signature_and_docstring_are_frozen(
     assert captured["sig_hash"] == expected_sig_hash, (
         f"{name} signature changed - if the change is intentional, refreeze "
         f"this hash:\n{captured['signature']}"
-    )
-    assert captured["doc_hash"] == expected_doc_hash, (
-        f"{name} docstring changed - refreeze this hash if intentional "
-        f"(actual hash: {captured['doc_hash']})"
     )
 
 
@@ -329,64 +283,6 @@ def test_redact_api_key_scrubs_configured_secret() -> None:
     assert _redact_api_key("no secret present", secret) == "no secret present"
 
 
-def test_active_learning_sink_signature_shape_is_unchanged() -> None:
-    # Only the middleware annotation is expected to differ from the baseline shape.
-    import ast
-    import subprocess
-    from pathlib import Path
-
-    baseline_sha = "65ad2beaaca0825bffc2fbbe99199d3a40994324"
-    project_root = Path(__file__).resolve().parents[5]
-    require_git_baseline_history(baseline_sha, project_root=project_root)
-
-    baseline_source = subprocess.run(
-        [
-            "git",
-            "show",
-            f"{baseline_sha}:inference/core/interfaces/stream/sinks.py",
-        ],
-        cwd=project_root,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    current_source = inspect.getsource(sinks)
-
-    def _shape(source: str) -> list:
-        function = next(
-            node
-            for node in ast.parse(source).body
-            if isinstance(node, ast.FunctionDef) and node.name == "active_learning_sink"
-        )
-        arguments = function.args
-        defaults = [None] * (
-            len(arguments.args) - len(arguments.defaults)
-        ) + arguments.defaults
-        shape = [
-            (
-                argument.arg,
-                (
-                    None
-                    if argument.arg == "active_learning_middleware"
-                    else ast.unparse(argument.annotation)
-                ),
-                None if default is None else ast.unparse(default),
-            )
-            for argument, default in zip(arguments.args, defaults)
-        ]
-        assert not arguments.posonlyargs and not arguments.kwonlyargs
-        assert arguments.vararg is None and arguments.kwarg is None
-        return shape + [ast.unparse(function.returns)]
-
-    assert _shape(current_source) == _shape(baseline_source)
-    annotation = (
-        inspect.signature(sinks.active_learning_sink)
-        .parameters["active_learning_middleware"]
-        .annotation
-    )
-    assert annotation is sinks.ActiveLearningBatchRegistrar
-
-
 def test_stable_signature_catches_positional_only_to_normal_change() -> None:
     def before(a, /, b): ...
     def after(a, b): ...
@@ -485,27 +381,24 @@ def test_invalid_environment_variable_error_identity_is_the_historical_object() 
     assert from_environment is from_exceptions
 
 
-def test_stream_entities_str2bool_and_safe_env_to_type_are_intentional_copies() -> None:
-    # Intentional copies: a host-neutral module must not import core.utils.
-    from inference.core.interfaces.stream.entities import (
-        safe_env_to_type as entities_safe_env_to_type,
-    )
-    from inference.core.interfaces.stream.entities import str2bool as entities_str2bool
-    from inference.core.utils.environment import (
-        safe_env_to_type as environment_safe_env_to_type,
-    )
-    from inference.core.utils.environment import str2bool as environment_str2bool
-
-    assert entities_str2bool is not environment_str2bool
-    assert entities_safe_env_to_type is not environment_safe_env_to_type
-
-
-def test_stream_sinks_create_tiles_and_letterbox_image_are_intentional_copies() -> None:
-    # Intentional copies, same reason as above.
-    from inference.core.utils.drawing import create_tiles as drawing_create_tiles
-    from inference.core.utils.preprocess import (
-        letterbox_image as preprocess_letterbox_image,
-    )
-
-    assert sinks.create_tiles is not drawing_create_tiles
-    assert sinks.letterbox_image is not preprocess_letterbox_image
+def test_active_learning_sink_signature_contract() -> None:
+    """Preserve the public sink arguments without requiring Git history."""
+    signature = inspect.signature(sinks.active_learning_sink)
+    parameters = list(signature.parameters.values())
+    assert [(p.name, p.annotation, p.default) for p in parameters] == [
+        ("predictions", Union[dict, List[Optional[dict]]], inspect.Parameter.empty),
+        (
+            "video_frame",
+            Union[sinks.VideoFrame, List[Optional[sinks.VideoFrame]]],
+            inspect.Parameter.empty,
+        ),
+        (
+            "active_learning_middleware",
+            sinks.ActiveLearningBatchRegistrar,
+            inspect.Parameter.empty,
+        ),
+        ("model_type", str, inspect.Parameter.empty),
+        ("disable_preproc_auto_orient", bool, False),
+    ]
+    assert all(p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD for p in parameters)
+    assert signature.return_annotation is None

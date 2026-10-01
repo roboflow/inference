@@ -328,6 +328,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-
 WORKDIR /build/reqs
 COPY requirements/_requirements.txt \
      requirements/requirements.workflows.txt \
+     requirements/requirements.streamvision.txt \
      requirements/requirements.cli.txt \
      requirements/requirements.http.txt \
      requirements/requirements.clip.txt \
@@ -413,7 +414,7 @@ COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     python -m pip install --break-system-packages setuptools wheel requests && \
     rm -f dist/* && \
-    make create_workflows_wheel && \
+    make create_workflows_wheel create_streamvision_wheel && \
     rm -rf build/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
     rm -rf build/* && \
@@ -425,6 +426,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl && \
     python -m pip install --break-system-packages --find-links dist/ \
         dist/roboflow_workflows*.whl \
+        dist/streamvision*.whl \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
@@ -459,6 +461,7 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         --override /tmp/runtime-overrides.txt \
         -r /build/reqs/_requirements.txt \
         -r /build/reqs/requirements.workflows.txt \
+        -r /build/reqs/requirements.streamvision.txt \
         -r /build/reqs/requirements.cli.txt \
         -r /build/reqs/requirements.http.txt \
         -r /build/reqs/requirements.clip.txt \
@@ -526,7 +529,8 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         /opt/wheels/inference_gpu-*.whl \
         /opt/wheels/inference_cli-*.whl \
         /opt/wheels/inference_sdk-*.whl \
-        /opt/wheels/roboflow_workflows-*.whl && \
+        /opt/wheels/roboflow_workflows-*.whl \
+        /opt/wheels/streamvision-*.whl && \
     # Ship inference-models from this checkout, including unreleased Jetson
     # fixes. The requirements resolver may select an equally-versioned index
     # wheel, so replace it explicitly after all dependency resolution.

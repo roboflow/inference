@@ -55,7 +55,11 @@ def loaded_heavy_modules(module: str) -> List[str]:
         "PYTHONDONTWRITEBYTECODE": "1",
         "DISABLE_VERSION_CHECK": "True",
         "PYTHONPATH": os.pathsep.join(
-            [str(PROJECT_ROOT / "workflows"), str(PROJECT_ROOT / "inference_models")]
+            [
+                str(PROJECT_ROOT / "workflows"),
+                str(PROJECT_ROOT / "inference_models"),
+                str(PROJECT_ROOT / "stream_vision"),
+            ]
         ),
     }
     result = subprocess.run(

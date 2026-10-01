@@ -16,6 +16,16 @@ Rules:
   subtree added later (e.g. ``roboflow_workflows.enterprise_blocks`` reached
   under the historically absent ``inference.core.workflows.enterprise_blocks``)
   must raise ``ModuleNotFoundError`` when resolved as a dotted import.
+- The ``camera``, ``stream`` and ``stream_manager`` trees under
+  ``inference.core.interfaces`` map to ``streamvision``, except four retained
+  names (``stream.inference_pipeline``, ``stream.stream`` and the
+  ``roboflow_models`` / ``yolo_world`` model handlers) that map to host-owned
+  modules under ``inference.core.interfaces.legacy_stream``. Their canonical
+  spellings (e.g. ``streamvision.stream.inference_pipeline``) are mapped too,
+  since ``from <legacy pkg> import <retained module>`` resolves the submodule
+  import against the aliased module's ``__name__``, which is canonical.
+- ``inference.core.interfaces.webrtc_worker`` stays a real package. Only its
+  moved submodules are mapped, one entry each, to ``streamvision.webrtc_worker``.
 - The inventory gate applies to *dotted module resolution* only. Because an
   aliased legacy package IS its canonical module, an already-imported
   canonical child is visible as an attribute on the aliased parent — i.e.
@@ -37,9 +47,11 @@ Rules:
 - ``_HOST_EXPORTS`` restores a historical export that a host-neutral stream
   module no longer imports itself (it must not import the ``inference``
   server): the same finder wraps that exact module's normal loader and binds
-  the ORIGINAL host object onto it right after it executes. Keyed by exact
-  dotted name, never by prefix; the module's own source and metadata are
-  untouched.
+  the ORIGINAL host object onto it right after it executes. Keyed by the
+  exact canonical dotted name, never by prefix or legacy alias; a canonical
+  module imported before the finder existed is bound when its legacy name is
+  first aliased. Names the module already defines are never overwritten; the
+  module's own source and metadata are untouched.
 """
 
 from __future__ import annotations
@@ -47,6 +59,7 @@ from __future__ import annotations
 import importlib
 import importlib.abc
 import importlib.machinery
+import importlib.util
 import sys
 import threading
 from typing import Dict, Optional, Tuple
@@ -57,18 +70,85 @@ from inference._workflows_compat_inventory import (
     _INVENTORY_PACKAGES,
 )
 
-# Longest-prefix first so the enterprise subtree wins the match.
+# Longest-prefix first so retained and enterprise subtrees win the match.
 _PREFIX_MAP: Tuple[Tuple[str, str], ...] = (
+    (
+        "inference.core.interfaces.stream.model_handlers.roboflow_models",
+        "inference.core.interfaces.legacy_stream.model_handlers.roboflow_models",
+    ),
+    (
+        "inference.core.interfaces.stream.model_handlers.yolo_world",
+        "inference.core.interfaces.legacy_stream.model_handlers.yolo_world",
+    ),
+    (
+        "inference.core.interfaces.stream.inference_pipeline",
+        "inference.core.interfaces.legacy_stream.inference_pipeline",
+    ),
+    (
+        "inference.core.interfaces.webrtc_worker.serializers",
+        "streamvision.webrtc_worker.serializers",
+    ),
+    (
+        "streamvision.stream.model_handlers.roboflow_models",
+        "inference.core.interfaces.legacy_stream.model_handlers.roboflow_models",
+    ),
     (
         "inference.enterprise.workflows.enterprise_blocks",
         "roboflow_workflows.enterprise_blocks",
     ),
-    ("inference.core.workflows", "roboflow_workflows"),
+    (
+        "inference.core.interfaces.webrtc_worker.entities",
+        "streamvision.webrtc_worker.entities",
+    ),
+    (
+        "inference.core.interfaces.webrtc_worker.watchdog",
+        "streamvision.webrtc_worker.watchdog",
+    ),
+    (
+        "inference.core.interfaces.webrtc_worker.sources",
+        "streamvision.webrtc_worker.sources",
+    ),
+    (
+        "inference.core.interfaces.webrtc_worker.webrtc",
+        "streamvision.webrtc_worker.webrtc",
+    ),
+    (
+        "streamvision.stream.model_handlers.yolo_world",
+        "inference.core.interfaces.legacy_stream.model_handlers.yolo_world",
+    ),
+    (
+        "inference.core.interfaces.stream_manager",
+        "streamvision.stream_manager",
+    ),
+    (
+        "inference.core.interfaces.stream.stream",
+        "inference.core.interfaces.legacy_stream.stream",
+    ),
+    (
+        "streamvision.stream.inference_pipeline",
+        "inference.core.interfaces.legacy_stream.inference_pipeline",
+    ),
+    (
+        "inference.core.interfaces.camera",
+        "streamvision.camera",
+    ),
+    (
+        "inference.core.interfaces.stream",
+        "streamvision.stream",
+    ),
+    (
+        "streamvision.stream.stream",
+        "inference.core.interfaces.legacy_stream.stream",
+    ),
+    (
+        "inference.core.workflows",
+        "roboflow_workflows",
+    ),
 )
 
 # Historical `ActiveLearningMiddleware` import must still yield the concrete class.
 _HOST_EXPORTS: Dict[str, Tuple[Tuple[str, str], ...]] = {
-    "inference.core.interfaces.stream.sinks": (
+    "streamvision.stream.sinks": (
         ("ActiveLearningMiddleware", "inference.core.active_learning.middlewares"),
     ),
 }
@@ -101,6 +181,14 @@ def _bootstrap_for_enterprise(legacy_name: str) -> None:
     importlib.import_module("inference.core")
 
 
+def _bind_host_exports(module, exports: Tuple[Tuple[str, str], ...]) -> None:
+    for name, host_module in exports:
+        if hasattr(module, name):
+            continue
+
+        setattr(module, name, getattr(importlib.import_module(host_module), name))
+
+
 class _WorkflowsCompatLoader(importlib.abc.Loader):
     """Replace the temporary legacy module without altering canonical metadata."""
 
@@ -113,7 +201,25 @@ class _WorkflowsCompatLoader(importlib.abc.Loader):
 
     def exec_module(self, module) -> None:  # type: ignore[override]
         _bootstrap_for_enterprise(self._legacy_name)
-        sys.modules[self._legacy_name] = importlib.import_module(self._canonical_name)
+        canonical = importlib.import_module(self._canonical_name)
+        if self._canonical_name in _HOST_EXPORTS:
+            _bind_host_exports(canonical, _HOST_EXPORTS[self._canonical_name])
+        sys.modules[self._legacy_name] = canonical
+
+    def get_code(self, fullname):  # type: ignore[override]
+        """Delegate to the canonical module's loader; ``runpy`` needs this."""
+        spec = importlib.util.find_spec(self._canonical_name)
+        return spec.loader.get_code(spec.name)
+
+    def get_source(self, fullname):  # type: ignore[override]
+        """Delegate to the canonical module's loader; ``inspect`` needs this."""
+        spec = importlib.util.find_spec(self._canonical_name)
+        return spec.loader.get_source(spec.name)
+
+    def get_filename(self, fullname):  # type: ignore[override]
+        """Delegate to the canonical module's loader; ``linecache`` needs this."""
+        spec = importlib.util.find_spec(self._canonical_name)
+        return spec.loader.get_filename(spec.name)
 
 
 class _HostExportsLoader(importlib.abc.Loader):
@@ -130,8 +236,7 @@ class _HostExportsLoader(importlib.abc.Loader):
 
     def exec_module(self, module) -> None:  # type: ignore[override]
         self._loader.exec_module(module)
-        for name, host_module in self._exports:
-            setattr(module, name, getattr(importlib.import_module(host_module), name))
+        _bind_host_exports(module, self._exports)
 
     def __getattr__(self, name: str):
         # Keeps get_source/get_filename/etc answering for the real file.
