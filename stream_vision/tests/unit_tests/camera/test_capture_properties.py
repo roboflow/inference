@@ -70,7 +70,7 @@ def test_other_properties_keep_their_given_order_between_fourcc_and_fps() -> Non
     ]
 
 
-@pytest.mark.parametrize("fourcc", ["MJPG", "mjpg", " MJPG ", str(MJPG), float(MJPG)])
+@pytest.mark.parametrize("fourcc", ["MJPG", " MJPG ", str(MJPG), float(MJPG)])
 def test_fourcc_given_as_code_or_number_is_converted_to_int(fourcc: Any) -> None:
     # given
     capture = _RecordingCapture()
@@ -84,6 +84,39 @@ def test_fourcc_given_as_code_or_number_is_converted_to_int(fourcc: Any) -> None
         (cv2.CAP_PROP_FPS, 30),
     ]
     assert isinstance(capture.set_calls[0][1], int)
+
+
+@pytest.mark.parametrize("fourcc", ["avc1", "Y16 ", "pRAA"])
+def test_four_character_codes_are_used_exactly_as_given(fourcc: str) -> None:
+    # given - FOURCC codes are case-sensitive and may end in a space
+    capture = _RecordingCapture()
+
+    # when
+    apply_capture_properties(capture, properties={"fourcc": fourcc})
+
+    # then
+    assert capture.set_calls == [
+        (cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc)),
+    ]
+
+
+def test_rejected_property_is_logged(
+    streamvision_caplog: pytest.LogCaptureFixture,
+) -> None:
+    # given
+    class _RejectingCapture(_RecordingCapture):
+        def set(self, property_id: int, value: Any) -> bool:
+            super().set(property_id, value)
+            return False
+
+    capture = _RejectingCapture()
+
+    # when
+    with streamvision_caplog.at_level(logging.DEBUG):
+        apply_capture_properties(capture, properties={"exposure": -6})
+
+    # then
+    assert "did not accept property exposure=-6" in streamvision_caplog.text
 
 
 @pytest.mark.parametrize(

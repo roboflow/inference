@@ -55,7 +55,10 @@ def apply_capture_properties(
             if value is None:
                 continue
         cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
-        stream.set(cv2_id, value)
+        if not stream.set(cv2_id, value):
+            logger.debug(
+                f"Video source did not accept property {property_id}={value!r}"
+            )
 
     requested_ids = {property_id.lower() for property_id in properties}
     if requested_ids & {FOURCC_PROPERTY, FPS_PROPERTY}:
@@ -86,12 +89,13 @@ def _parse_fourcc(value: Any) -> Optional[int]:
         if math.isfinite(value) and value >= 0 and int(value) == value:
             return int(value)
     elif isinstance(value, str):
-        code = value.strip()
+        # FOURCC codes are case-sensitive (avc1) and may end in a space (Y16 ), so a
+        # four-character value is used exactly as given; only other lengths are trimmed.
+        code = value if len(value) == 4 else value.strip()
         if code.isdigit():
             return int(code)
         if len(code) == 4 and code.isascii():
-            fourcc = cv2.VideoWriter_fourcc(*code.upper())
-            return fourcc
+            return cv2.VideoWriter_fourcc(*code)
 
     logger.warning(
         f"Ignoring invalid fourcc video source property: {value!r}. Expected a "

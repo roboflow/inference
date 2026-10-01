@@ -52,7 +52,9 @@ class GStreamerRtspVideoFrameProducer(VideoFrameProducer):
     def retrieve(self) -> Tuple[bool, ndarray]:
         return self.stream.retrieve()
 
-    def initialize_source_properties(self, properties: Dict[str, float]) -> None:
+    def initialize_source_properties(
+        self, properties: Dict[str, Union[float, str]]
+    ) -> None:
         apply_capture_properties(self.stream, properties=properties)
 
     def discover_source_properties(self) -> SourceProperties:
