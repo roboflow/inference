@@ -1,6 +1,7 @@
 import ast
 import importlib
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -183,3 +184,34 @@ def test_workflow_has_swap_input_defaulting_to_false():
     assert swap["type"] == "boolean"
     assert swap["default"] is False
     assert "legacy image names" in swap["description"]
+
+
+@pytest.mark.parametrize("dockerfile_name", sorted(_DOCKERFILE_ENTRY_MODULES))
+def test_dockerfile_installs_inference_server_with_workflows_and_otel(
+    dockerfile_name,
+):
+    instructions = _instructions(dockerfile_name)
+
+    pip_install_lines = [
+        line
+        for line in instructions
+        if "uv pip install" in line or "pip install" in line
+    ]
+    install_lines = []
+    for line in pip_install_lines:
+        if "inference_server[" in line:
+            install_lines.append(line)
+
+    assert install_lines, f"{dockerfile_name}: no inference_server[ install found"
+
+    for line in install_lines:
+        match = re.search(r"inference_server\[([^\]]+)\]", line)
+        assert (
+            match
+        ), f"{dockerfile_name}: could not parse inference_server[ extras in {line}"
+        extras_str = match.group(1)
+        extras = {extra.strip() for extra in extras_str.split(",")}
+        assert (
+            "workflows" in extras
+        ), f"{dockerfile_name}: workflows extra not found in {extras}"
+        assert "otel" in extras, f"{dockerfile_name}: otel extra not found in {extras}"

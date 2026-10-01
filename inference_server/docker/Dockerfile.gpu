@@ -53,7 +53,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install \
         -e ".[torch-cu124,onnx-cu12,trt10-runtime]" \
         -e "../inference_model_manager" \
-        -e "../inference_server[workflows]"
+        -e "../inference_server[workflows,otel]"
 
 # ── source layer: real packages over the stubs (editable finders already point
 #    at these dirs, so no reinstall needed) ─────────────────────────────────

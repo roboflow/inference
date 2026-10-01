@@ -50,7 +50,7 @@ RUN python -m pip install --no-cache-dir \
         -e ./inference_models \
         -e "./inference_model_manager" \
         -e ./workflows \
-        -e "./inference_server[workflows]"
+        -e "./inference_server[workflows,otel]"
 
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh

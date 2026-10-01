@@ -404,3 +404,41 @@ class TestStartupPreloadEnv:
         apply_legacy_env()
 
         assert os.environ["INFERENCE_MAX_ACTIVE_MODELS"] == "3"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "result,logged",
+    [
+        (
+            ("error", 5, {"error_type": "RetryError", "message": "DETAIL-TEXT"}),
+            "('error', 5)",
+        ),
+        (("error", 5), "('error', 5)"),
+        (None, "None"),
+    ],
+)
+async def test_failed_preload_log_leaves_out_the_failure_description(
+    caplog, result, logged
+):
+    import logging
+    from types import SimpleNamespace
+
+    from inference_server.app import _preload_models
+
+    class _Proxy:
+        async def load(self, mid, api_key="", timeout_s=None, pinned=True):
+            return result
+
+    state = SimpleNamespace(preload_finished=False)
+    with caplog.at_level(logging.DEBUG, logger="inference_server.app"):
+        await _preload_models(state, _Proxy(), [("ds/1", "k")], [])
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "inference_server.app"
+    ]
+    assert messages == [f"Preload of 'ds/1' failed: {logged}"]
+    assert "DETAIL-TEXT" not in caplog.text
+    assert state.preload_finished is True
