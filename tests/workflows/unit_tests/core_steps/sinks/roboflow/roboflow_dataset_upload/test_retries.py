@@ -203,23 +203,39 @@ def test_application_rejections_are_not_retried(
     assert annotation.call_count == (0 if stage == "upload" else 1)
 
 
-def test_already_annotated_after_timeout_preserves_existing_annotation(
+@pytest.mark.parametrize("after_timeout", [False, True])
+def test_annotation_conflict_reports_failure_and_returns_quota(
     implementation: ModuleType,
-    registration: dict,
+    execution: dict,
     requests_mock: Mocker,
+    after_timeout: bool,
 ) -> None:
     upload = requests_mock.post(_UPLOAD_URL, json=_SUCCESS)
+    responses = [{"exc": requests.exceptions.Timeout}] if after_timeout else []
+    responses.append({"status_code": 409})
     annotation = requests_mock.post(
         _ANNOTATION_URL,
-        [{"exc": requests.exceptions.Timeout}, {"status_code": 409}],
+        responses,
     )
 
-    result = implementation.register_datapoint(**registration)
+    error_status, message = implementation.execute_registration(**execution)
 
-    assert result == "Image already annotated"
+    assert error_status is True
+    assert "RoboflowAPIIAlreadyAnnotatedError" in message
     assert upload.call_count == 1
-    assert annotation.call_count == 2
+    assert annotation.call_count == (2 if after_timeout else 1)
     assert all("overwrite" not in request.qs for request in annotation.request_history)
+    for limit_type in StrategyLimitType:
+        assert (
+            get_current_strategy_limit_usage(
+                cache=execution["cache"],
+                workspace="workspace",
+                project="project",
+                strategy_name="quota",
+                limit_type=limit_type,
+            )
+            == 0
+        )
 
 
 def test_duplicate_after_upload_timeout_does_not_reannotate(
