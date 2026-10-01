@@ -340,12 +340,14 @@ async def model_add(
     api_key = resolve_api_key(
         request, request.query_params.get("api_key"), add_model_request.api_key
     )
-    route = await bridge.load(add_model_request.model_id, api_key)
-    bridge.record_request(
-        route,
-        resolve_roboflow_model_alias(add_model_request.model_id),
-        request.scope["path"],
+    row_key = resolve_roboflow_model_alias(add_model_request.model_id)
+    route = await bridge.load(
+        add_model_request.model_id,
+        api_key,
+        row_key=row_key,
+        path=request.scope["path"],
     )
+    bridge.record_request(route, row_key, request.scope["path"])
     return await _models_descriptions(bridge)
 
 
@@ -403,7 +405,9 @@ async def model_add_legacy(
 ) -> Response:
     model_id = f"{dataset_id}/{version_id}"
     resolved_key = resolve_api_key(request, api_key, None)
-    route = await bridge.load(model_id, resolved_key)
+    route = await bridge.load(
+        model_id, resolved_key, row_key=model_id, path=request.scope["path"]
+    )
     bridge.record_request(route, model_id, request.scope["path"])
     return JSONResponse(
         {"status": 200, "message": "inference session started from local memory."}
@@ -421,12 +425,19 @@ async def _run_cv_inference(
         request, request.query_params.get("api_key"), inference_request.api_key
     )
     inference_request.api_key = api_key
-    route = await bridge.resolve(inference_request.model_id, api_key)
+    alias = request_alias_for(inference_request.model_id)
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=inference_request.model_id,
+        path=request.scope["path"],
+        alias=alias,
+    )
     bridge.record_request(
         route,
         inference_request.model_id,
         request.scope["path"],
-        alias=request_alias_for(inference_request.model_id),
+        alias=alias,
     )
     if route.task_type not in expected_task_types:
         raise LegacyHTTPError(
@@ -787,7 +798,9 @@ async def legacy_infer_from_request(
     if overlap >= 1:
         overlap /= 100
     request_image = await _catch_all_image(request, image, image_type)
-    route = await bridge.resolve(model_id, resolved_key)
+    route = await bridge.resolve(
+        model_id, resolved_key, row_key=model_id, path=request.scope["path"]
+    )
     bridge.record_request(route, model_id, request.scope["path"])
     request_type = ObjectDetectionInferenceRequest
     extra_args: dict = {}
@@ -849,7 +862,9 @@ async def _resolve_core_model(
     )
     inference_request.api_key = api_key
     core_model_id = f"{core}/{getattr(inference_request, f'{core}_version_id')}"
-    route = await bridge.resolve(core_model_id, api_key)
+    route = await bridge.resolve(
+        core_model_id, api_key, row_key=core_model_id, path=request.scope["path"]
+    )
     bridge.record_request(route, core_model_id, request.scope["path"])
     return route, core_model_id, api_key
 
@@ -1234,12 +1249,19 @@ async def _run_lmm(
         request, request.query_params.get("api_key"), inference_request.api_key
     )
     inference_request.api_key = api_key
-    route = await bridge.resolve(inference_request.model_id, api_key)
+    alias = request_alias_for(inference_request.model_id)
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=inference_request.model_id,
+        path=request.scope["path"],
+        alias=alias,
+    )
     bridge.record_request(
         route,
         inference_request.model_id,
         request.scope["path"],
-        alias=request_alias_for(inference_request.model_id),
+        alias=alias,
     )
     ensure_request_supported(inference_request.model_id, inference_request, route)
     action = resolve_request_action(route, inference_request)
@@ -1348,7 +1370,12 @@ async def _run_depth_estimation(
         request, request.query_params.get("api_key"), inference_request.api_key
     )
     inference_request.api_key = api_key
-    route = await bridge.resolve(inference_request.model_id, api_key)
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=inference_request.model_id,
+        path=request.scope["path"],
+    )
     bridge.record_request(route, inference_request.model_id, request.scope["path"])
     payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
     started = time.perf_counter()
@@ -1431,7 +1458,9 @@ async def _run_interactive_segmentation(
         request, request.query_params.get("api_key"), inference_request.api_key
     )
     inference_request.api_key = api_key
-    route = await bridge.resolve(model_id, api_key)
+    route = await bridge.resolve(
+        model_id, api_key, row_key=model_id, path=request.scope["path"]
+    )
     bridge.record_request(route, model_id, request.scope["path"])
     action = resolve_request_action(route, inference_request)
     params = build_interactive_segmentation_params(action, inference_request, api_key)

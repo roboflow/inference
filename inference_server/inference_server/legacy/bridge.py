@@ -169,14 +169,27 @@ class LegacyModelBridge:
         self._routes: dict[str, Route] = {}
         self._loaded_ids: set[str] = set()
         self._preloaded_ids: dict[str, dict[str, float]] = {}
+        self._pending_requests: dict[str, tuple[set[str], set[str]]] = {}
 
-    async def resolve(self, model_id: str, api_key: Optional[str]) -> Route:
+    async def resolve(
+        self,
+        model_id: str,
+        api_key: Optional[str],
+        *,
+        row_key: Optional[str] = None,
+        path: str = "",
+        alias: Optional[str] = None,
+    ) -> Route:
         registry_id = registry_id_for(model_id)
         set_requested_model_id(registry_id, requested_model_id=model_id)
         task_type: Optional[str] = None
         action: Optional[str] = None
         if not OFFLINE_MODE:
-            task_type, action = await self._stat(model_id, registry_id, api_key)
+            try:
+                task_type, action = await self._stat(model_id, registry_id, api_key)
+            except (Exception, asyncio.CancelledError):
+                self._hold_pending_request(row_key, path, alias)
+                raise
         route = self._routes.get(registry_id)
         if route is None:
             route = Route(
@@ -187,15 +200,19 @@ class LegacyModelBridge:
             )
         else:
             _apply_stat(route, task_type, action)
-        if OFFLINE_MODE:
-            try:
+        try:
+            if OFFLINE_MODE:
+                try:
+                    await self.ensure_loaded(route, api_key)
+                except LegacyHTTPError as error:
+                    raise LegacyHTTPError(
+                        404, f"Model {model_id} not available offline"
+                    ) from error
+            else:
                 await self.ensure_loaded(route, api_key)
-            except LegacyHTTPError as error:
-                raise LegacyHTTPError(
-                    404, f"Model {model_id} not available offline"
-                ) from error
-        else:
-            await self.ensure_loaded(route, api_key)
+        except (Exception, asyncio.CancelledError):
+            self._hold_pending_request(row_key, path, alias)
+            raise
         route = self._adopt_canonical(route, task_type, action)
         if self._metadata_expired(route) or route.registry_id not in self._loaded_ids:
             await self._refresh_metadata(route)
@@ -245,17 +262,31 @@ class LegacyModelBridge:
                 )
             await asyncio.sleep(LEGACY_LOAD_POLL_INTERVAL_S)
 
-    async def load(self, model_id: str, api_key: Optional[str]) -> Route:
-        route = await self.resolve(model_id, api_key)
-        result = await self.gateway.load(
-            route.registry_id,
-            api_key or "",
-            timeout_s=LEGACY_LOAD_TIMEOUT_S,
-            pinned=False,
+    async def load(
+        self,
+        model_id: str,
+        api_key: Optional[str],
+        *,
+        row_key: Optional[str] = None,
+        path: str = "",
+        alias: Optional[str] = None,
+    ) -> Route:
+        route = await self.resolve(
+            model_id, api_key, row_key=row_key, path=path, alias=alias
         )
-        state = result[0] if result else "error"
-        if state != "ok":
-            raise LegacyHTTPError(500, MODEL_PACKAGE_BROKEN_MESSAGE)
+        try:
+            result = await self.gateway.load(
+                route.registry_id,
+                api_key or "",
+                timeout_s=LEGACY_LOAD_TIMEOUT_S,
+                pinned=False,
+            )
+            state = result[0] if result else "error"
+            if state != "ok":
+                raise LegacyHTTPError(500, MODEL_PACKAGE_BROKEN_MESSAGE)
+        except (Exception, asyncio.CancelledError):
+            self._hold_pending_request(row_key, path, alias)
+            raise
         return route
 
     async def infer(
@@ -430,6 +461,7 @@ class LegacyModelBridge:
         path: str,
         *,
         alias: Optional[str] = None,
+        join_pending: bool = True,
     ) -> None:
         if model_id_as_requested:
             _remember_request(route, model_id_as_requested, path, alias)
@@ -442,6 +474,36 @@ class LegacyModelBridge:
                 route.request_aliases_by_id.setdefault(model_id_as_requested, {})[
                     alias
                 ] = recorded_at
+            if join_pending:
+                self._join_pending_request(route, model_id_as_requested, recorded_at)
+
+    def _hold_pending_request(
+        self, row_key: Optional[str], path: str, alias: Optional[str]
+    ) -> None:
+        if not row_key:
+            return
+
+        paths, aliases = self._pending_requests.setdefault(row_key, (set(), set()))
+        if path:
+            paths.add(path)
+        if alias is not None:
+            aliases.add(alias)
+
+    def _join_pending_request(
+        self, route: Route, row_key: str, recorded_at: float
+    ) -> None:
+        if self._routes.get(route.registry_id) is not route:
+            return
+
+        pending_paths, pending_aliases = self._pending_requests.pop(
+            row_key, (set(), set())
+        )
+        if pending_paths:
+            paths = route.request_paths_by_id.setdefault(row_key, {})
+            paths.update(dict.fromkeys(pending_paths, recorded_at))
+        if pending_aliases:
+            aliases = route.request_aliases_by_id.setdefault(row_key, {})
+            aliases.update(dict.fromkeys(pending_aliases, recorded_at))
 
     def register_preloaded(self, model_id: str) -> None:
         self._preloaded_ids.setdefault(registry_id_for(model_id), {})[
@@ -452,7 +514,13 @@ class LegacyModelBridge:
         current = _CURRENT_REQUEST.get() or {}
         for route, model_id_as_requested, path, alias in list(current.values()):
             if route.registry_id == registry_id:
-                self.record_request(route, model_id_as_requested, path, alias=alias)
+                self.record_request(
+                    route,
+                    model_id_as_requested,
+                    path,
+                    alias=alias,
+                    join_pending=False,
+                )
 
     def __contains__(self, model_id: str) -> bool:
         route = self._routes.get(model_id)
@@ -551,9 +619,13 @@ class SyncLegacyBridge:
         self._loop_bridge = loop_bridge
         self.accepts_ndarray = bridge.accepts_ndarray
 
-    def resolve(self, model_id, api_key) -> Route:
+    def resolve(self, model_id, api_key, *, row_key=None, path="", alias=None) -> Route:
         set_requested_model_id(registry_id_for(model_id), requested_model_id=model_id)
-        return self._run(self._bridge.resolve(model_id, api_key))
+        return self._run(
+            self._bridge.resolve(
+                model_id, api_key, row_key=row_key, path=path, alias=alias
+            )
+        )
 
     def ensure_loaded(self, route, api_key) -> None:
         return self._run(self._bridge.ensure_loaded(route, api_key))

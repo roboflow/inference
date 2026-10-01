@@ -1254,3 +1254,193 @@ def test_start_legacy(legacy_client, fake_stat):
 def test_unknown_model_is_404(legacy_client, fake_stat):
     r = legacy_client(FakeGateway()).post("/model/add", json={"model_id": "nope/1"})
     assert r.status_code == 404 and "message" in r.json()
+
+
+class _FailingLoadGateway(_StampingGateway):
+    def __init__(self, clock, **kwargs):
+        super().__init__(clock, **kwargs)
+        self.ensure_failures = 0
+        self.load_failures = 0
+
+    async def ensure_loaded(self, model_id, instance="", api_key="", device=""):
+        if self.ensure_failures:
+            self.ensure_failures -= 1
+            return ("error", 3)
+        return await super().ensure_loaded(model_id, instance, api_key, device)
+
+    async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+        if self.load_failures:
+            self.load_failures -= 1
+            return ("error", 3)
+        return await super().load(model_id, api_key, timeout_s, pinned)
+
+
+def _object_detection_request(c, model_id):
+    from tests.unit_tests.legacy.test_router_infer import _det, _jpeg_b64
+
+    c.app.state.model_manager.predictions[("coco/3", "infer")] = _det()
+    response = c.post(
+        "/infer/object_detection",
+        json={
+            "model_id": model_id,
+            "api_key": "k",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+        },
+    )
+    return response
+
+
+def test_registry_row_lists_the_path_of_a_request_whose_load_failed(
+    legacy_client, fake_stat, monkeypatch
+):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    clock = _clock(monkeypatch, 10.0)
+    gw = _FailingLoadGateway(clock, model_info=_DESCRIBED_COCO)
+    c = legacy_client(gw)
+
+    gw.ensure_failures = 1
+    assert _object_detection_request(c, "coco/3").status_code == 500
+    assert c.get("/model/registry").json()["models"] == []
+
+    assert c.get("/start/coco/3?api_key=k").status_code == 200
+
+    assert _registry_rows(c.get("/model/registry").json()) == [
+        ("coco/3", [], ["/infer/object_detection", "/start/coco/3"])
+    ]
+
+
+def test_registry_row_lists_the_alias_of_a_request_whose_load_failed(
+    legacy_client, fake_stat, monkeypatch
+):
+    fake_stat[_DEPTH_REGISTRY_ID] = ("depth-estimation", "infer")
+    clock = _clock(monkeypatch, 10.0)
+    gw = _depth_gateway(_FailingLoadGateway, clock)
+    c = legacy_client(gw)
+
+    gw.ensure_failures = 1
+    assert _object_detection_request_through_depth_alias(c).status_code == 500
+    assert c.get("/model/registry").json()["models"] == []
+
+    assert _depth_request(c).status_code == 200
+
+    assert _registry_rows(c.get("/model/registry").json()) == [
+        (_DEPTH_ALIAS, [_DEPTH_REGISTRY_ID], [_DEPTH_PATH, "/infer/object_detection"])
+    ]
+
+
+def test_registry_keeps_a_failed_request_off_another_row_of_the_same_model(
+    legacy_client, fake_stat, monkeypatch
+):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    clock = _clock(monkeypatch, 10.0)
+    gw = _FailingLoadGateway(clock, model_info=_DESCRIBED_COCO)
+    c = legacy_client(gw)
+
+    gw.ensure_failures = 1
+    assert _object_detection_request(c, "yolov8n-640").status_code == 500
+    assert c.get("/start/coco/3?api_key=k").status_code == 200
+
+    assert _registry_rows(c.get("/model/registry").json()) == [
+        ("coco/3", [], ["/start/coco/3"])
+    ]
+
+    assert _object_detection_request(c, "yolov8n-640").status_code == 200
+
+    assert _registry_rows(c.get("/model/registry").json()) == [
+        ("coco/3", [], ["/start/coco/3"]),
+        ("yolov8n-640", ["coco/3"], ["/infer/object_detection"]),
+    ]
+
+
+def test_registry_row_lists_the_path_of_a_request_that_failed_the_model_lookup(
+    legacy_client, fake_stat, monkeypatch
+):
+    clock = _clock(monkeypatch, 10.0)
+    c = legacy_client(_FailingLoadGateway(clock, model_info=_DESCRIBED_COCO))
+
+    assert _object_detection_request(c, "coco/3").status_code == 404
+    assert c.get("/model/registry").json()["models"] == []
+
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    assert c.get("/start/coco/3?api_key=k").status_code == 200
+
+    assert _registry_rows(c.get("/model/registry").json()) == [
+        ("coco/3", [], ["/infer/object_detection", "/start/coco/3"])
+    ]
+
+
+def test_registry_keeps_a_failed_request_across_clear_and_remove(
+    legacy_client, fake_stat, monkeypatch
+):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    clock = _clock(monkeypatch, 10.0)
+    gw = _FailingLoadGateway(clock, model_info=_DESCRIBED_COCO)
+    c = legacy_client(gw)
+
+    gw.ensure_failures = 1
+    assert _object_detection_request(c, "coco/3").status_code == 500
+    assert c.post("/model/clear").json()["models"] == []
+    assert c.post("/model/remove", json={"model_id": "coco/3"}).json()["models"] == []
+    assert c.get("/start/coco/3?api_key=k").status_code == 200
+
+    assert _registry_rows(c.get("/model/registry").json()) == [
+        ("coco/3", [], ["/infer/object_detection", "/start/coco/3"])
+    ]
+
+
+def test_registry_drops_a_joined_failed_request_after_a_reload(
+    legacy_client, fake_stat, monkeypatch
+):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    clock = _clock(monkeypatch, 10.0)
+    gw = _FailingLoadGateway(clock, model_info=_DESCRIBED_COCO)
+    c = legacy_client(gw)
+
+    gw.ensure_failures = 1
+    assert _object_detection_request(c, "coco/3").status_code == 500
+    clock["now"] = 20.0
+    assert c.get("/start/coco/3?api_key=k").status_code == 200
+    assert _registry_rows(c.get("/model/registry").json()) == [
+        ("coco/3", [], ["/infer/object_detection", "/start/coco/3"])
+    ]
+
+    gw.loaded.pop("coco/3")
+    clock["now"] = 30.0
+    response = c.post("/model/add", json={"model_id": "coco/3", "api_key": "k"})
+
+    assert _registry_rows(response.json()) == [("coco/3", [], ["/model/add"])]
+
+
+def test_registry_row_lists_a_model_add_whose_load_failed(
+    legacy_client, fake_stat, monkeypatch
+):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    clock = _clock(monkeypatch, 10.0)
+    gw = _FailingLoadGateway(clock, model_info=_DESCRIBED_COCO)
+    c = legacy_client(gw)
+
+    gw.load_failures = 1
+    response = c.post("/model/add", json={"model_id": "yolov8n-640", "api_key": "k"})
+    assert response.status_code == 500
+    assert c.get("/start/coco/3?api_key=k").status_code == 200
+
+    assert _registry_rows(c.get("/model/registry").json()) == [
+        ("coco/3", [], ["/model/add", "/start/coco/3"])
+    ]
+
+
+def test_registry_row_lists_a_start_whose_load_failed(
+    legacy_client, fake_stat, monkeypatch
+):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    clock = _clock(monkeypatch, 10.0)
+    gw = _FailingLoadGateway(clock, model_info=_DESCRIBED_COCO)
+    c = legacy_client(gw)
+
+    gw.ensure_failures = 1
+    assert c.get("/start/coco/3?api_key=k").status_code == 500
+    assert _object_detection_request(c, "coco/3").status_code == 200
+
+    assert _registry_rows(c.get("/model/registry").json()) == [
+        ("coco/3", [], ["/infer/object_detection", "/start/coco/3"])
+    ]

@@ -607,3 +607,379 @@ async def test_loaded_pipeline_is_reauthorized_on_every_resolve(monkeypatch):
         ("pp_ocr/small-small", "good"),
         ("pp_ocr/small-small", "good"),
     ]
+
+
+def _rows(routes):
+    rows = {
+        row_key: (
+            sorted(route.request_paths_by_id.get(row_key, {})),
+            sorted(route.request_aliases_by_id.get(row_key, {})),
+        )
+        for route in routes
+        for row_key in route.requested_at
+    }
+    return rows
+
+
+async def _failed_resolve(bridge, model_id, **row):
+    bridge.gateway.ensure_results.append(("error", 3))
+    with pytest.raises(LegacyHTTPError):
+        await bridge.resolve(model_id, "k", **row)
+
+
+async def _recorded_resolve(bridge, model_id, path, alias=None):
+    route = await bridge.resolve(
+        model_id, "k", row_key=model_id, path=path, alias=alias
+    )
+    bridge.record_request(route, model_id, path, alias=alias)
+    return route
+
+
+@pytest.mark.asyncio
+async def test_request_whose_load_failed_alone_creates_no_row(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    bridge = LegacyModelBridge(FakeGateway())
+
+    await _failed_resolve(bridge, "coco/3", row_key="coco/3", path="/p1")
+
+    assert await bridge.describe() == []
+
+
+@pytest.mark.asyncio
+async def test_request_whose_load_failed_joins_the_row_of_its_own_key(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    bridge = LegacyModelBridge(FakeGateway())
+
+    await _failed_resolve(
+        bridge, "yolov8n-640", row_key="yolov8n-640", path="/p1", alias="coco/3"
+    )
+    await _recorded_resolve(bridge, "yolov8n-640", "/p2")
+
+    assert _rows(await bridge.describe()) == {
+        "yolov8n-640": (["/p1", "/p2"], ["coco/3"])
+    }
+
+
+@pytest.mark.asyncio
+async def test_request_whose_load_failed_stays_off_another_row_of_the_model(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    bridge = LegacyModelBridge(FakeGateway())
+
+    await _failed_resolve(
+        bridge, "yolov8n-640", row_key="yolov8n-640", path="/p1", alias="coco/3"
+    )
+    await _recorded_resolve(bridge, "coco/3", "/p2")
+
+    assert _rows(await bridge.describe()) == {"coco/3": (["/p2"], [])}
+
+    await _recorded_resolve(bridge, "yolov8n-640", "/p3")
+
+    assert _rows(await bridge.describe()) == {
+        "coco/3": (["/p2"], []),
+        "yolov8n-640": (["/p1", "/p3"], ["coco/3"]),
+    }
+
+
+@pytest.mark.asyncio
+async def test_request_failing_the_model_lookup_keeps_the_request(fake_stat):
+    bridge = LegacyModelBridge(FakeGateway())
+
+    with pytest.raises(LookupError):
+        await bridge.resolve("coco/3", "k", row_key="coco/3", path="/p1")
+
+    assert bridge._pending_requests == {"coco/3": ({"/p1"}, set())}
+    assert await bridge.describe() == []
+
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    await _recorded_resolve(bridge, "coco/3", "/p2")
+
+    assert _rows(await bridge.describe()) == {"coco/3": (["/p1", "/p2"], [])}
+
+
+@pytest.mark.asyncio
+async def test_request_refused_in_the_model_lookup_keeps_the_request(fake_stat):
+    from inference_models.errors import UnauthorizedModelAccessError
+
+    fake_stat["coco/3"] = UnauthorizedModelAccessError(message="coco/3", help_url="")
+    bridge = LegacyModelBridge(FakeGateway())
+
+    with pytest.raises(PermissionError):
+        await bridge.resolve(
+            "coco/3", "k", row_key="coco/3", path="/p1", alias="alias-1"
+        )
+
+    assert bridge._pending_requests == {"coco/3": ({"/p1"}, {"alias-1"})}
+    assert await bridge.describe() == []
+
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    await _recorded_resolve(bridge, "coco/3", "/p2")
+
+    assert _rows(await bridge.describe()) == {"coco/3": (["/p1", "/p2"], ["alias-1"])}
+
+
+@pytest.mark.asyncio
+async def test_request_whose_load_failed_survives_unload_remove_and_unload_all(
+    fake_stat,
+):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    bridge = LegacyModelBridge(FakeGateway())
+
+    await _failed_resolve(bridge, "coco/3", row_key="coco/3", path="/p1")
+    await bridge.remove("coco/3")
+    await bridge.unload("coco/3")
+    await bridge.unload_all()
+    await _recorded_resolve(bridge, "coco/3", "/p2")
+
+    assert _rows(await bridge.describe()) == {"coco/3": (["/p1", "/p2"], [])}
+
+
+@pytest.mark.asyncio
+async def test_request_whose_load_failed_leaves_with_the_removed_row(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    bridge = LegacyModelBridge(FakeGateway())
+
+    await _failed_resolve(bridge, "coco/3", row_key="coco/3", path="/p1")
+    await _recorded_resolve(bridge, "coco/3", "/p2")
+    await bridge.remove("coco/3")
+    await _recorded_resolve(bridge, "coco/3", "/p3")
+
+    assert _rows(await bridge.describe()) == {"coco/3": (["/p3"], [])}
+
+
+@pytest.mark.asyncio
+async def test_load_failing_in_the_gateway_load_keeps_the_request(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+
+    class _FailingLoadGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            return ("error", 3)
+
+    bridge = LegacyModelBridge(_FailingLoadGateway())
+
+    with pytest.raises(LegacyHTTPError):
+        await bridge.load("coco/3", "k", row_key="coco/3", path="/model/add")
+
+    assert _rows(await bridge.describe()) == {}
+
+    await _recorded_resolve(bridge, "coco/3", "/p2")
+
+    assert _rows(await bridge.describe()) == {"coco/3": (["/model/add", "/p2"], [])}
+
+
+@pytest.mark.asyncio
+async def test_load_failing_in_resolve_keeps_the_request_once(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    bridge = LegacyModelBridge(FakeGateway())
+    bridge.gateway.ensure_results.append(("error", 3))
+
+    with pytest.raises(LegacyHTTPError):
+        await bridge.load("coco/3", "k", row_key="coco/3", path="/model/add")
+    route = await bridge.load("coco/3", "k", row_key="coco/3", path="/start/coco/3")
+    bridge.record_request(route, "coco/3", "/start/coco/3")
+
+    assert _rows(await bridge.describe()) == {
+        "coco/3": (["/model/add", "/start/coco/3"], [])
+    }
+
+
+@pytest.mark.asyncio
+async def test_offline_load_failure_keeps_the_request(fake_stat, monkeypatch):
+    monkeypatch.setattr("inference_server.legacy.bridge.OFFLINE_MODE", True)
+    bridge = LegacyModelBridge(FakeGateway())
+    bridge.gateway.ensure_results.append(("error", 5))
+
+    with pytest.raises(LegacyHTTPError) as error:
+        await bridge.resolve("ds/1", None, row_key="ds/1", path="/p1")
+    await _recorded_resolve(bridge, "ds/1", "/p2")
+
+    assert error.value.status_code == 404
+    assert _rows(await bridge.describe()) == {"ds/1": (["/p1", "/p2"], [])}
+
+
+@pytest.mark.asyncio
+async def test_failed_reload_inside_infer_does_not_join_a_failed_request(
+    fake_stat, monkeypatch
+):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    clock = {"now": 10.0}
+    monkeypatch.setattr(bridge_mod, "_clock", lambda: clock["now"])
+    gateway = FakeGateway(predictions={("coco/3", "infer"): "pred"})
+    bridge = LegacyModelBridge(gateway)
+    route = await _recorded_resolve(bridge, "coco/3", "/p2")
+    await _failed_resolve(bridge, "coco/3", row_key="coco/3", path="/p1")
+
+    clock["now"] = 20.0
+    gateway.ensure_results.append(("error", 3))
+    with pytest.raises(LegacyHTTPError):
+        await bridge.infer(route, "k", "infer", [ImagePayload(b"a", 1, 1)], {})
+
+    assert route.request_paths_by_id == {"coco/3": {"/p2": 20.0}}
+
+    clock["now"] = 30.0
+    await _recorded_resolve(bridge, "coco/3", "/p3")
+
+    assert route.request_paths_by_id == {
+        "coco/3": {"/p1": 30.0, "/p2": 30.0, "/p3": 30.0}
+    }
+
+
+@pytest.mark.asyncio
+async def test_successful_reload_inside_infer_leaves_a_failed_request_pending(
+    fake_stat, monkeypatch
+):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    clock = {"now": 10.0}
+    monkeypatch.setattr(bridge_mod, "_clock", lambda: clock["now"])
+    gateway = _StampingGateway(clock, predictions={("coco/3", "infer"): "pred"})
+    bridge = LegacyModelBridge(gateway)
+    route = await _recorded_resolve(bridge, "coco/3", "/p2")
+    await _failed_resolve(bridge, "coco/3", row_key="coco/3", path="/p1")
+    gateway.loaded.pop("coco/3")
+
+    clock["now"] = 20.0
+    await bridge.infer(route, "k", "infer", [ImagePayload(b"a", 1, 1)], {})
+
+    assert bridge._pending_requests == {"coco/3": ({"/p1"}, set())}
+    assert _rows(await bridge.describe()) == {"coco/3": (["/p2"], [])}
+
+    await _recorded_resolve(bridge, "coco/3", "/p3")
+
+    assert bridge._pending_requests == {}
+    assert _rows(await bridge.describe()) == {"coco/3": (["/p1", "/p2", "/p3"], [])}
+
+
+def test_workflow_rerecording_a_discarded_route_leaves_the_failed_request_for_the_new_route(
+    fake_stat, server_loop
+):
+    loop, _ = server_loop
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = FakeGateway()
+    bridge = LegacyModelBridge(gateway)
+    sync = SyncLegacyBridge(bridge, LoopBridge(loop))
+
+    def _failed_request():
+        gateway.ensure_results.append(("error", 3))
+        with pytest.raises(LegacyHTTPError):
+            sync.resolve("ds/1", "k", row_key="ds/1", path="/failed")
+
+    def _workflow():
+        first = sync.resolve("ds/1", "k", row_key="ds/1", path="/workflows/run")
+        sync.record_request(first, "ds/1", "/workflows/run")
+        asyncio.run_coroutine_threadsafe(bridge.unload("ds/1"), loop).result(5)
+        contextvars.copy_context().run(_failed_request)
+        second = sync.resolve("ds/1", "k", row_key="ds/1", path="/workflows/run")
+        sync.record_request(second, "ds/1", "/workflows/run")
+
+    contextvars.copy_context().run(_workflow)
+    routes = asyncio.run_coroutine_threadsafe(bridge.describe(), loop).result(5)
+
+    assert _rows(routes) == {"ds/1": (["/failed", "/workflows/run"], [])}
+    assert bridge._pending_requests == {}
+
+
+@pytest.mark.asyncio
+async def test_pending_request_stays_until_the_current_route_records(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    bridge = LegacyModelBridge(FakeGateway())
+    await _failed_resolve(bridge, "coco/3", row_key="coco/3", path="/p1")
+    first = await bridge.resolve("coco/3", "k")
+    await bridge.unload("coco/3")
+    second = await bridge.resolve("coco/3", "k")
+
+    bridge.record_request(first, "coco/3", "/p2")
+
+    assert bridge._pending_requests == {"coco/3": ({"/p1"}, set())}
+
+    bridge.record_request(second, "coco/3", "/p3")
+
+    assert bridge._pending_requests == {}
+    assert _rows([second]) == {"coco/3": (["/p1", "/p3"], [])}
+
+
+@pytest.mark.asyncio
+async def test_cancelled_resolve_keeps_the_request(fake_stat, monkeypatch):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    bridge = LegacyModelBridge(FakeGateway())
+    started = asyncio.Event()
+    real_stat = bridge._stat
+
+    async def blocking_stat(model_id, registry_id, api_key):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(bridge, "_stat", blocking_stat)
+    task = asyncio.ensure_future(
+        bridge.resolve("coco/3", "k", row_key="coco/3", path="/cancelled")
+    )
+    await started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert bridge._pending_requests == {"coco/3": ({"/cancelled"}, set())}
+
+    monkeypatch.setattr(bridge, "_stat", real_stat)
+    await _recorded_resolve(bridge, "coco/3", "/p2")
+
+    assert _rows(await bridge.describe()) == {"coco/3": (["/cancelled", "/p2"], [])}
+
+
+@pytest.mark.asyncio
+async def test_cancelled_load_keeps_the_request(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    started = asyncio.Event()
+
+    class _BlockingLoadGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            started.set()
+            await asyncio.Event().wait()
+
+    bridge = LegacyModelBridge(_BlockingLoadGateway())
+    task = asyncio.ensure_future(
+        bridge.load("coco/3", "k", row_key="coco/3", path="/cancelled")
+    )
+    await started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert bridge._pending_requests == {"coco/3": ({"/cancelled"}, set())}
+
+
+def test_workflow_registration_whose_load_failed_joins_the_alias_row(
+    fake_stat, server_loop
+):
+    from inference_server.workflows.models_provider import GatewayModelsProvider
+
+    loop, _ = server_loop
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    fake_stat["ds/2"] = ("object-detection", "infer")
+    gateway = FakeGateway()
+    bridge = LegacyModelBridge(gateway)
+    sync = SyncLegacyBridge(bridge, LoopBridge(loop))
+
+    def _failed_workflow():
+        provider = GatewayModelsProvider(sync, "k", "/workflows/run")
+        gateway.ensure_results.append(("error", 3))
+        with pytest.raises(LegacyHTTPError):
+            provider.add_model("ds/1", "k", model_id_alias="alias-1")
+        provider.add_model("ds/2", "k")
+
+    def _workflow():
+        provider = GatewayModelsProvider(sync, "k", "/infer/workflows/ws/wf")
+        provider.add_model("ds/1", "k", model_id_alias="alias-1")
+
+    contextvars.copy_context().run(_failed_workflow)
+    routes = asyncio.run_coroutine_threadsafe(bridge.describe(), loop).result(5)
+
+    assert _rows(routes) == {"ds/2": (["/workflows/run"], [])}
+
+    contextvars.copy_context().run(_workflow)
+    routes = asyncio.run_coroutine_threadsafe(bridge.describe(), loop).result(5)
+
+    assert _rows(routes) == {
+        "ds/2": (["/workflows/run"], []),
+        "alias-1": (["/infer/workflows/ws/wf", "/workflows/run"], ["ds/1"]),
+    }

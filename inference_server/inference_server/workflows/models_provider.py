@@ -130,12 +130,14 @@ class GatewayModelsProvider:
         self._model_keys[model_id] = key
         if model_id_alias is not None:
             self._model_keys[model_id_alias] = key
-        route = self._resolve(model_id, key)
         row_key = model_id if model_id_alias is None else model_id_alias
         alias = model_id if row_key != model_id else None
-        self._bridge.record_request(
-            route, row_key, self._request_path or "", alias=alias
+        path = self._request_path or ""
+        route = self._bridge.resolve(
+            model_id, key, row_key=row_key, path=path, alias=alias
         )
+        self._routes[model_id] = route
+        self._bridge.record_request(route, row_key, path, alias=alias)
 
     def _key_for(self, model_id: str, api_key: Optional[str] = None) -> Optional[str]:
         if api_key is not None:

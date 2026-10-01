@@ -21,8 +21,10 @@ class FakeSyncBridge:
         self.predictions = {}
         self.records = []
         self.recorded_requests = []
+        self.resolved_rows = []
 
-    def resolve(self, model_id, api_key):
+    def resolve(self, model_id, api_key, *, row_key=None, path="", alias=None):
+        self.resolved_rows.append((model_id, row_key, path, alias))
         return self.routes[model_id]
 
     def record_request(self, route, model_id_as_requested, path, *, alias=None):
@@ -143,6 +145,35 @@ def test_add_model_records_nothing_when_the_model_does_not_resolve():
         provider.add_model("ds/1", "k")
 
     assert bridge.recorded_requests == []
+
+
+def test_add_model_hands_the_row_key_path_and_alias_to_the_load():
+    bridge = FakeSyncBridge()
+    provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
+
+    with pytest.raises(KeyError):
+        provider.add_model("ds/1", "k", model_id_alias="alias-1")
+    with pytest.raises(KeyError):
+        provider.add_model("ds/2", "k")
+
+    assert bridge.resolved_rows == [
+        ("ds/1", "alias-1", "/workflows/run", "ds/1"),
+        ("ds/2", "ds/2", "/workflows/run", None),
+    ]
+
+
+def test_inference_hands_no_row_to_the_load():
+    bridge = _od_bridge()
+    provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
+
+    provider.run_object_detection(
+        "ds/1",
+        [{"type": "numpy_object", "value": np.zeros((4, 6, 3), np.uint8)}],
+        api_key="k",
+        confidence=0.5,
+    )
+
+    assert bridge.resolved_rows == [("ds/1", None, "", None)]
 
 
 def test_inference_without_add_model_records_no_request():
@@ -307,9 +338,9 @@ def test_artifact_cache_property_uses_shared_blob_cache(monkeypatch):
 
 def test_key_remembered_by_add_model_is_reused_by_keyless_calls():
     class RecordingBridge(FakeSyncBridge):
-        def resolve(self, model_id, api_key):
+        def resolve(self, model_id, api_key, **row):
             self.calls.append(("resolve", model_id, api_key))
-            return super().resolve(model_id, api_key)
+            return super().resolve(model_id, api_key, **row)
 
     b = RecordingBridge()
     b.routes["depth-anything-v2/small"] = Route(
