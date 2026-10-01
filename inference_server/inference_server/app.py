@@ -330,11 +330,20 @@ class _AuthMiddleware:
         await self.app(scope, receive, send)
 
 
+def _metrics_model_id(registry_id: str) -> str:
+    bridge = getattr(app.state, "legacy_bridge", None)
+    route = bridge._routes.get(registry_id) if bridge is not None else None
+    if route is None:
+        return registry_id
+
+    return route.model_id
+
+
 # Before the legacy catch-all and the root static mount, which would shadow it.
 if _cfg.ENABLE_PROMETHEUS:
     from inference_server.prometheus import install_prometheus_metrics
 
-    install_prometheus_metrics(app)
+    install_prometheus_metrics(app, resolve_model_id=_metrics_model_id)
 
 if _LEGACY_ERROR_HANDLING_ENABLED:
     from inference_server.legacy.errors import (

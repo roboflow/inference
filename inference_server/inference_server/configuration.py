@@ -96,6 +96,9 @@ PRELOAD_API_KEY = os.environ.get("PRELOAD_API_KEY") or os.environ.get(
 # server (which served it regardless of this flag; its images set it True).
 # Set to false to turn the route and the HTTP instrumentation off.
 ENABLE_PROMETHEUS = get_boolean_from_env("ENABLE_PROMETHEUS", default=True)
+METRICS_INCLUDE_SOURCE_LABELS = get_boolean_from_env(
+    "METRICS_INCLUDE_SOURCE_LABELS", default=True
+)
 
 # ── Model-stat TTL-LRU cache (framework/model_stat.py) ────────────────────
 MODEL_STAT_CACHE_SIZE = get_integer_from_env(
@@ -227,6 +230,7 @@ DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS = get_boolean_from_env(
     "DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS", default=False
 )
 OFFLINE_MODE = get_boolean_from_env("OFFLINE_MODE", default=False)
+DISABLE_INFERENCE_CACHE = get_boolean_from_env("DISABLE_INFERENCE_CACHE", default=False)
 
 # ── OpenTelemetry tracing and metrics (telemetry.py) ───────────────────────
 OTEL_TRACING_ENABLED = get_boolean_from_env("OTEL_TRACING_ENABLED", default=False)

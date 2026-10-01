@@ -19,18 +19,21 @@ class FakeSyncBridge:
         self.routes = {}
         self.calls = []
         self.predictions = {}
+        self.records = []
 
     def resolve(self, model_id, api_key):
         return self.routes[model_id]
 
     def ensure_loaded(self, route, api_key): ...
 
-    def infer(self, route, api_key, action, images, params):
+    def infer(self, route, api_key, action, images, params, record=True):
         self.calls.append((route.model_id, action, params, [i.data for i in images]))
+        self.records.append(record)
         return [self.predictions[(route.model_id, action)] for _ in images]
 
-    def infer_params_only(self, route, api_key, action, params):
+    def infer_params_only(self, route, api_key, action, params, record=True):
         self.calls.append((route.model_id, action, params, None))
+        self.records.append(record)
         return self.predictions[(route.model_id, action)]
 
     def fetch_image(self, url):
@@ -255,6 +258,91 @@ def test_clip_comparison_returns_similarity_payload():
         version_id="ViT-B-16",
     )
     assert out["similarity"] == [1.0, 0.0]
+
+
+class _TimedEmbeddingBridge(FakeSyncBridge):
+    def __init__(self, clock, script):
+        super().__init__()
+        self.clock = clock
+        self.script = script
+        self.routes["clip/ViT-B-16"] = Route(
+            model_id="clip/ViT-B-16",
+            registry_id="clip/ViT-B-16",
+            task_type="embedding",
+            action="embed_images",
+            actions={"embed_images", "embed_text", "compare"},
+        )
+
+    def _embed(self, params):
+        duration = self.script.pop(0)
+        if duration is None:
+            raise RuntimeError("model failed")
+        self.clock[0] += duration
+        return np.array([[1.0, 0.0]] * len(params["texts"]))
+
+    def infer(self, route, api_key, action, images, params, record=True):
+        self.records.append(record)
+        return [self._embed(params) for _ in images]
+
+    def infer_params_only(self, route, api_key, action, params, record=True):
+        self.records.append(record)
+        return self._embed(params)
+
+
+@pytest.fixture
+def metrics_clock(monkeypatch):
+    import inference_server.prometheus as prometheus_mod
+
+    now = [1000.0]
+    monkeypatch.setattr(
+        prometheus_mod, "time", SimpleNamespace(monotonic=lambda: now[0])
+    )
+    prometheus_mod.MODEL_METRICS.clear()
+    yield now
+    prometheus_mod.MODEL_METRICS.clear()
+
+
+def _clip_metrics():
+    from inference_server.prometheus import MODEL_METRICS
+
+    MODEL_METRICS.observe_loaded(["clip/ViT-B-16"])
+    return MODEL_METRICS.metrics()["clip/ViT-B-16"]
+
+
+def test_clip_comparison_records_one_event_spanning_every_call(metrics_clock):
+    bridge = _TimedEmbeddingBridge(metrics_clock, [0.01, 0.1])
+
+    out = GatewayModelsProvider(bridge, api_key=None).run_clip_comparison(
+        subject="a",
+        subject_type="text",
+        prompt=["b"],
+        prompt_type="text",
+        version_id="ViT-B-16",
+    )
+
+    assert out["similarity"] == [1.0]
+    assert bridge.records == [False, False]
+    metrics = _clip_metrics()
+    assert metrics["num_inferences"] == 1
+    assert metrics["num_errors"] == 0
+    assert metrics["avg_inference_time"] == pytest.approx(0.11)
+
+
+def test_clip_comparison_with_failing_call_records_one_error(metrics_clock):
+    bridge = _TimedEmbeddingBridge(metrics_clock, [0.01, None])
+
+    with pytest.raises(RuntimeError):
+        GatewayModelsProvider(bridge, api_key=None).run_clip_comparison(
+            subject="a",
+            subject_type="text",
+            prompt=["b"],
+            prompt_type="text",
+            version_id="ViT-B-16",
+        )
+
+    metrics = _clip_metrics()
+    assert metrics["num_inferences"] == 0
+    assert metrics["num_errors"] == 1
 
 
 def test_sam2_segmentation_returns_responses():

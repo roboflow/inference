@@ -23,6 +23,7 @@ from inference_model_manager.model_manager import ModelManager
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.middlewares.model_load import record_model_load
+from inference_server.routing import routed_model_id, routing_key
 
 logger = logging.getLogger(__name__)
 
@@ -38,20 +39,6 @@ _LOAD_DEFAULT_TIMEOUT_S = 30.0
 # Backend.inflight_begin / ModelManager.submit refuse a drained backend with
 # this phrase.
 _NOT_ACCEPTING_MARKER = "not accepting requests"
-
-
-def routing_key(model_id: str, instance: str = "") -> str:
-    """Key a model instance is registered and routed under.
-
-    Matches the MMP wire format exactly: the bare ``model_id`` when no instance
-    is requested, ``model_id:instance`` otherwise.
-    """
-    return f"{model_id}:{instance}" if instance else model_id
-
-
-def routed_model_id(key: str) -> str:
-    """Weights identifier behind a routing key (drops the ``:instance`` suffix)."""
-    return key.rsplit(":", 1)[0]
 
 
 def _translate_manager_infer_error(exc: Exception) -> Exception:

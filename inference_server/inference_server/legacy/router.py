@@ -102,6 +102,7 @@ from inference_server.legacy.translation import (
     resolve_request_action,
 )
 from inference_server.legacy.visualization import render_visualization
+from inference_server.prometheus import measure_inference
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +383,10 @@ async def _run_cv_inference(
     return await _infer_and_repack(inference_request, bridge, route, api_key)
 
 
+def _model_monitoring_enabled(inference_request) -> bool:
+    return not getattr(inference_request, "disable_model_monitoring", False)
+
+
 async def _infer_and_repack(
     inference_request,
     bridge: LegacyModelBridge,
@@ -397,7 +402,14 @@ async def _infer_and_repack(
     payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
     params = build_task_params(route.task_type, route.action, inference_request, route)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, route.action, payloads, params)
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        route.action,
+        payloads,
+        params,
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
     responses = []
     for prediction, payload in zip(predictions, payloads):
@@ -814,22 +826,33 @@ async def _run_embedding(
         ndarray_ok=bridge.accepts_ndarray,
     )
     payload_by_position = dict(zip(image_positions, payloads))
+    await bridge.ensure_loaded(route, api_key)
     started = time.perf_counter()
     results = []
-    for position, call in enumerate(calls):
-        payload = payload_by_position.get(position)
-        if payload is None:
-            results.append(
-                await bridge.infer_params_only(
-                    route, api_key, call["action"], call["params"]
+    with measure_inference(
+        route.registry_id,
+        responses=1,
+        monitoring=_model_monitoring_enabled(inference_request),
+    ):
+        for position, call in enumerate(calls):
+            payload = payload_by_position.get(position)
+            if payload is None:
+                results.append(
+                    await bridge.infer_params_only(
+                        route, api_key, call["action"], call["params"], record=False
+                    )
+                )
+                continue
+            results.extend(
+                await bridge.infer(
+                    route,
+                    api_key,
+                    call["action"],
+                    [payload],
+                    call["params"],
+                    record=False,
                 )
             )
-            continue
-        results.extend(
-            await bridge.infer(
-                route, api_key, call["action"], [payload], call["params"]
-            )
-        )
     elapsed = time.perf_counter() - started
     response = repack_embedding_response(
         action, inference_request, results, prompt_keys
@@ -855,7 +878,14 @@ async def _run_ocr(
     )
     payloads, is_batch = await _load_images(inference_request, bridge)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, route.action, payloads, {})
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        route.action,
+        payloads,
+        {},
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
     responses = []
     for prediction, payload in zip(predictions, payloads):
@@ -891,7 +921,14 @@ async def _run_open_vocabulary_detection(
     class_names = requested_open_vocabulary_classes(inference_request)
     payloads, is_batch = await _load_images(inference_request, bridge)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, route.action, payloads, params)
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        route.action,
+        payloads,
+        params,
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
     responses = []
     for prediction, payload in zip(predictions, payloads):
@@ -1154,7 +1191,14 @@ async def _run_lmm(
         params = build_vlm_params(inference_request)
     payloads, is_batch = await _load_images(inference_request, bridge)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, action, payloads, params)
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        action,
+        payloads,
+        params,
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
     responses = []
     for prediction, payload in zip(predictions, payloads):
@@ -1250,7 +1294,14 @@ async def _run_depth_estimation(
     bridge.record_request(route, inference_request.model_id, request.scope["path"])
     payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, route.action, payloads, {})
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        route.action,
+        payloads,
+        {},
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
     depth = repack_depth_estimation(predictions[0])
     normalized_depth = depth["normalized_depth"]
@@ -1327,13 +1378,25 @@ async def _run_interactive_segmentation(
     action = resolve_request_action(route, inference_request)
     params = build_interactive_segmentation_params(action, inference_request, api_key)
     image = getattr(inference_request, "image", None)
+    model_monitoring = _model_monitoring_enabled(inference_request)
     started = time.perf_counter()
     if image is None:
-        prediction = await bridge.infer_params_only(route, api_key, action, params)
+        prediction = await bridge.infer_params_only(
+            route, api_key, action, params, model_monitoring=model_monitoring
+        )
     else:
         images, _ = as_image_list(image)
         payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
-        prediction = (await bridge.infer(route, api_key, action, payloads, params))[0]
+        prediction = (
+            await bridge.infer(
+                route,
+                api_key,
+                action,
+                payloads,
+                params,
+                model_monitoring=model_monitoring,
+            )
+        )[0]
     elapsed = time.perf_counter() - started
     response = repack_interactive_segmentation_response(
         action, prediction, inference_request, api_key

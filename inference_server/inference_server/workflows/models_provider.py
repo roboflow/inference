@@ -70,6 +70,7 @@ from inference_server.legacy.translation import (
     requested_open_vocabulary_classes,
     resolve_request_action,
 )
+from inference_server.prometheus import measure_inference
 from inference_server.workflows.tensor_native import (
     SUPPORTED_TASK_TYPES,
     assemble_native_result,
@@ -732,22 +733,29 @@ class GatewayModelsProvider:
             [calls[position]["image"] for position in image_positions]
         )
         payload_by_position = dict(zip(image_positions, payloads))
+        self._bridge.ensure_loaded(route, key)
         started = time.perf_counter()
         results = []
-        for position, call in enumerate(calls):
-            payload = payload_by_position.get(position)
-            if payload is None:
-                results.append(
-                    self._bridge.infer_params_only(
-                        route, key, call["action"], call["params"]
+        with measure_inference(route.registry_id, responses=1):
+            for position, call in enumerate(calls):
+                payload = payload_by_position.get(position)
+                if payload is None:
+                    results.append(
+                        self._bridge.infer_params_only(
+                            route, key, call["action"], call["params"], record=False
+                        )
+                    )
+                    continue
+                results.extend(
+                    self._bridge.infer(
+                        route,
+                        key,
+                        call["action"],
+                        [payload],
+                        call["params"],
+                        record=False,
                     )
                 )
-                continue
-            results.extend(
-                self._bridge.infer(
-                    route, key, call["action"], [payload], call["params"]
-                )
-            )
         elapsed = time.perf_counter() - started
         response = repack_embedding_response(action, request, results, prompt_keys)
         return self._stamp(response, route, elapsed)

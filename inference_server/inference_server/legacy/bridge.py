@@ -31,6 +31,7 @@ from inference_server.middlewares.model_load import (
     record_model_load,
     set_requested_model_id,
 )
+from inference_server.prometheus import measure_inference
 
 logger = logging.getLogger(__name__)
 
@@ -227,24 +228,48 @@ class LegacyModelBridge:
         action: str,
         images: list[Optional[ImagePayload]],
         params: dict,
+        *,
+        model_monitoring: bool = True,
+        record: bool = True,
     ) -> list[Any]:
         await self.ensure_loaded(route, api_key)
-        return await gather_bounded(
-            *(
-                self.gateway.infer(
-                    model_id=route.registry_id,
-                    image=image.data if image is not None else None,
-                    action=action,
-                    params=params,
+        with measure_inference(
+            route.registry_id,
+            responses=len(images),
+            monitoring=record and model_monitoring,
+        ):
+            results = await gather_bounded(
+                *(
+                    self.gateway.infer(
+                        model_id=route.registry_id,
+                        image=image.data if image is not None else None,
+                        action=action,
+                        params=params,
+                    )
+                    for image in images
                 )
-                for image in images
             )
-        )
+        return results
 
     async def infer_params_only(
-        self, route: Route, api_key: Optional[str], action: str, params: dict
+        self,
+        route: Route,
+        api_key: Optional[str],
+        action: str,
+        params: dict,
+        *,
+        model_monitoring: bool = True,
+        record: bool = True,
     ) -> Any:
-        results = await self.infer(route, api_key, action, [None], params)
+        results = await self.infer(
+            route,
+            api_key,
+            action,
+            [None],
+            params,
+            model_monitoring=model_monitoring,
+            record=record,
+        )
         return results[0]
 
     async def fetch_image(self, url: str) -> bytes:
@@ -389,11 +414,17 @@ class SyncLegacyBridge:
     def ensure_loaded(self, route, api_key) -> None:
         return self._run(self._bridge.ensure_loaded(route, api_key))
 
-    def infer(self, route, api_key, action, images, params) -> list:
-        return self._run(self._bridge.infer(route, api_key, action, images, params))
+    def infer(self, route, api_key, action, images, params, *, record=True) -> list:
+        return self._run(
+            self._bridge.infer(route, api_key, action, images, params, record=record)
+        )
 
-    def infer_params_only(self, route, api_key, action, params) -> Any:
-        return self._run(self._bridge.infer_params_only(route, api_key, action, params))
+    def infer_params_only(self, route, api_key, action, params, *, record=True) -> Any:
+        return self._run(
+            self._bridge.infer_params_only(
+                route, api_key, action, params, record=record
+            )
+        )
 
     def fetch_image(self, url) -> bytes:
         return self._run(self._bridge.fetch_image(url))
