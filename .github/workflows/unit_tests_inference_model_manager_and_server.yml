@@ -10,6 +10,7 @@ on:
       - inference_model_manager/**
       - inference_server/**
       - workflows/**
+      - scripts/**
   push:
     branches: [main]
     paths:
@@ -17,6 +18,7 @@ on:
       - inference_model_manager/**
       - inference_server/**
       - workflows/**
+      - scripts/**
   workflow_dispatch:
 
 concurrency:

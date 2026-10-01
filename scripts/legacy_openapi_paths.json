@@ -1,0 +1,258 @@
+{
+  "paths": {
+    "/build": [
+      "GET"
+    ],
+    "/build/": [
+      "GET"
+    ],
+    "/build/api": [
+      "GET"
+    ],
+    "/build/api/models": [
+      "GET"
+    ],
+    "/build/api/{workflow_id}": [
+      "DELETE",
+      "GET",
+      "POST"
+    ],
+    "/build/edit/{workflow_id}": [
+      "GET"
+    ],
+    "/build/{workflow_id}": [
+      "GET"
+    ],
+    "/clear_cache": [
+      "GET"
+    ],
+    "/clip/compare": [
+      "POST"
+    ],
+    "/clip/embed_image": [
+      "POST"
+    ],
+    "/clip/embed_text": [
+      "POST"
+    ],
+    "/dashboard.html": [
+      "GET",
+      "HEAD"
+    ],
+    "/device/stats": [
+      "GET"
+    ],
+    "/docs": [
+      "GET"
+    ],
+    "/docs/oauth2-redirect": [
+      "GET"
+    ],
+    "/doctr/ocr": [
+      "POST"
+    ],
+    "/easy_ocr/ocr": [
+      "POST"
+    ],
+    "/gaze/gaze_detection": [
+      "POST"
+    ],
+    "/grounding_dino/infer": [
+      "POST"
+    ],
+    "/healthz": [
+      "GET"
+    ],
+    "/infer/action_recognition": [
+      "POST"
+    ],
+    "/infer/classification": [
+      "POST"
+    ],
+    "/infer/depth-estimation": [
+      "POST"
+    ],
+    "/infer/depth-estimation/{model_id}": [
+      "POST"
+    ],
+    "/infer/instance_segmentation": [
+      "POST"
+    ],
+    "/infer/keypoints_detection": [
+      "POST"
+    ],
+    "/infer/lmm": [
+      "POST"
+    ],
+    "/infer/lmm/{model_id}": [
+      "POST"
+    ],
+    "/infer/object_detection": [
+      "POST"
+    ],
+    "/infer/semantic_segmentation": [
+      "POST"
+    ],
+    "/infer/workflows": [
+      "POST"
+    ],
+    "/infer/workflows/{workspace_name}/{workflow_id}": [
+      "POST"
+    ],
+    "/inference_pipelines/initialise": [
+      "POST"
+    ],
+    "/inference_pipelines/initialise_webrtc": [
+      "POST"
+    ],
+    "/inference_pipelines/list": [
+      "GET"
+    ],
+    "/inference_pipelines/{pipeline_id}/consume": [
+      "GET"
+    ],
+    "/inference_pipelines/{pipeline_id}/pause": [
+      "POST"
+    ],
+    "/inference_pipelines/{pipeline_id}/resume": [
+      "POST"
+    ],
+    "/inference_pipelines/{pipeline_id}/status": [
+      "GET"
+    ],
+    "/inference_pipelines/{pipeline_id}/terminate": [
+      "POST"
+    ],
+    "/info": [
+      "GET"
+    ],
+    "/initialise_webrtc_worker": [
+      "POST"
+    ],
+    "/logs": [
+      "GET"
+    ],
+    "/metrics": [
+      "GET"
+    ],
+    "/model/add": [
+      "POST"
+    ],
+    "/model/clear": [
+      "POST"
+    ],
+    "/model/registry": [
+      "GET"
+    ],
+    "/model/remove": [
+      "POST"
+    ],
+    "/notebook/start": [
+      "GET"
+    ],
+    "/ocr/pp-ocr": [
+      "POST"
+    ],
+    "/ocr/trocr": [
+      "POST"
+    ],
+    "/openapi.json": [
+      "GET"
+    ],
+    "/owlv2/infer": [
+      "POST"
+    ],
+    "/perception_encoder/compare": [
+      "POST"
+    ],
+    "/perception_encoder/embed_image": [
+      "POST"
+    ],
+    "/perception_encoder/embed_text": [
+      "POST"
+    ],
+    "/readiness": [
+      "GET"
+    ],
+    "/redoc": [
+      "GET"
+    ],
+    "/sam/embed_image": [
+      "POST"
+    ],
+    "/sam/segment_image": [
+      "POST"
+    ],
+    "/sam2/embed_image": [
+      "POST"
+    ],
+    "/sam2/segment_image": [
+      "POST"
+    ],
+    "/sam3/concept_segment": [
+      "POST"
+    ],
+    "/sam3/embed_image": [
+      "POST"
+    ],
+    "/sam3/visual_segment": [
+      "POST"
+    ],
+    "/sam3_3d/infer": [
+      "POST"
+    ],
+    "/secure-gateway/health": [
+      "GET"
+    ],
+    "/start/{dataset_id}/{version_id}": [
+      "GET"
+    ],
+    "/webrtc/session/heartbeat": [
+      "POST"
+    ],
+    "/webrtc/session/heartbeat/end": [
+      "POST"
+    ],
+    "/workflows/blocks/describe": [
+      "GET",
+      "POST"
+    ],
+    "/workflows/blocks/dynamic_outputs": [
+      "POST"
+    ],
+    "/workflows/definition/schema": [
+      "GET"
+    ],
+    "/workflows/describe_interface": [
+      "POST"
+    ],
+    "/workflows/describe_workload": [
+      "POST"
+    ],
+    "/workflows/execution_engine/versions": [
+      "GET"
+    ],
+    "/workflows/run": [
+      "POST"
+    ],
+    "/workflows/validate": [
+      "POST"
+    ],
+    "/yolo_world/infer": [
+      "POST"
+    ],
+    "/{dataset_id}/{version_id}": [
+      "GET",
+      "POST"
+    ],
+    "/{workspace_name}/workflows/{workflow_id}": [
+      "POST"
+    ],
+    "/{workspace_name}/workflows/{workflow_id}/describe_interface": [
+      "POST"
+    ],
+    "/{workspace_name}/workflows/{workflow_id}/describe_workload": [
+      "POST"
+    ]
+  }
+}
