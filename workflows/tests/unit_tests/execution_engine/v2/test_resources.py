@@ -7,6 +7,7 @@ from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.data import EntryLayout
 from roboflow_workflows.execution_engine.v2.declaration import Block, spec_of
 from roboflow_workflows.execution_engine.v2.errors import ResourceError
+from roboflow_workflows.execution_engine.v2.implementations import Implementation
 from roboflow_workflows.execution_engine.v2.plan import CompiledWorkflow, PlannedStep
 from roboflow_workflows.execution_engine.v2.resources import (
     Factory,
@@ -322,3 +323,64 @@ def test_provided_value_replaces_a_factory_default() -> None:
     session = plan.create_session({"shared": shared})
 
     assert session.instances[("a",)].shared is shared
+
+
+class Plain(Block):
+    """Ordinary block without constructor resources."""
+
+    type = "test/plain@v1"
+
+    def run(self) -> dict:
+        return {}
+
+
+class Remote(Implementation):
+    name = "remote"
+
+    def __init__(self, *, endpoint) -> None:
+        self.endpoint = endpoint
+
+    def run(self) -> dict:
+        return {}
+
+
+class Local(Implementation):
+    name = "local"
+
+    def run(self) -> dict:
+        return {}
+
+
+class Served(Block):
+    """Contract block: each implementation declares its own resources."""
+
+    type = "test/served@v1"
+    implementations = (Remote, Local)
+
+
+def test_ordinary_block_resources_are_its_only_implementations_resources() -> None:
+    audited, plain = spec_of(UsesAudit), spec_of(Plain)
+
+    assert audited.resources is audited.implementations[0].resources
+    assert [item.name for item in audited.resources] == [
+        "audit",
+        "api_key",
+        "callback",
+    ]
+    # Known to need nothing, which differs from "not described here".
+    assert plain.resources == ()
+    assert plain.describe()["resources"] == []
+
+
+def test_contract_block_resources_are_read_per_implementation() -> None:
+    spec = spec_of(Served)
+    remote, local = spec.implementations
+
+    assert spec.resources is None
+    assert "resources" not in spec.describe()
+    assert [item.name for item in remote.resources] == ["endpoint"]
+    assert local.resources == ()
+    assert [item["resources"] for item in spec.describe()["implementations"]] == [
+        [{"name": "endpoint", "required": True, "annotation": None}],
+        [],
+    ]

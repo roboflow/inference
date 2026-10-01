@@ -115,13 +115,18 @@ def describe_workflow(plan: CompiledWorkflow) -> Dict[str, Any]:
     scoped axes, the steps one pulse runs and the groups it delivers), its
     operators (parameters, inputs with their domains, planned ports, route,
     groups and downstream operators), its output groups (anchor, fields,
-    readiness dependencies) and each step's causal ``domain``.
+    readiness dependencies) and each step's causal ``domain``. Every step
+    names the implementation selected for the plan's ``target``, why each
+    alternative was or was not chosen, its phase graph and the ``execution``
+    it will use (``run`` also when phases were requested but the selected
+    implementation has none).
 
     Args:
         plan: Compiled plan.
 
     Returns:
-        JSON-friendly mapping with ``inputs``, ``sources``, ``operators``,
+        JSON-friendly mapping with ``target``, ``block_execution``,
+        ``inputs``, ``sources``, ``operators``,
         ``child_inputs``
         (outer before inner), ``child_outputs``, ``steps`` (execution order),
         ``outputs``, ``output_groups``, ``axes`` and ``warnings``. Defaults
@@ -129,6 +134,8 @@ def describe_workflow(plan: CompiledWorkflow) -> Dict[str, Any]:
         ``operators`` and ``output_groups`` are empty for a passive plan.
     """
     description = {
+        "target": plan.options.target.describe(),
+        "block_execution": plan.options.block_execution,
         "inputs": {name: _describe_input(item) for name, item in plan.inputs.items()},
         "sources": {
             name: _describe_declared_source(item, plan=plan)
@@ -470,6 +477,19 @@ def _describe_step(step: PlannedStep, *, plan: CompiledWorkflow) -> Dict[str, An
         },
         "dependencies": [format_step_path(path) for path in step.dependencies],
         "domain": _domain_node(step.domain, plan=plan),
+        "implementation": _describe_implementation(step),
+        "execution": step.execution,
+    }
+
+    return description
+
+
+def _describe_implementation(step: PlannedStep) -> Dict[str, Any]:
+    """The selected implementation and, when compiled, every alternative's reason."""
+    choice = step.implementation
+    description = {
+        **step.selected.describe(),
+        "considered": choice.describe()["considered"] if choice is not None else None,
     }
 
     return description

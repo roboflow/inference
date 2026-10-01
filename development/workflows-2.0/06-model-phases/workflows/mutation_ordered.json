@@ -1,0 +1,13 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "image", "kind": ["image"]}],
+  "steps": [
+    {"type": "model_demo/redact_region@v1", "name": "redact", "image": "$inputs.image", "region": [0, 0, 720, 640]},
+    {"type": "model_demo/flip_averaged_classifier@v1", "name": "classify", "image": "$steps.redact.image"}
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "top_class", "selector": "$steps.classify.top_class"},
+    {"type": "JsonField", "name": "predictions", "selector": "$steps.classify.predictions"},
+    {"type": "JsonField", "name": "redacted", "selector": "$steps.redact.image"}
+  ]
+}

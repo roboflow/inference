@@ -1,8 +1,8 @@
 """Catalogue description: what blocks, sources and operators exist and how they wire.
 
 Everything comes from class declarations (``spec_of``, ``spec_of_source``,
-``spec_of_operator``); no block, source, operator, provider or submitted
-dynamic code is touched.
+``spec_of_operator``); no block, implementation, source, operator, provider or
+submitted dynamic code is touched, so no model is loaded.
 """
 
 from typing import Any, Dict, List, Sequence, Tuple
@@ -74,7 +74,10 @@ def describe_catalogue(catalogue: Catalogue) -> Dict[str, Any]:
         the static parameters it accepts (with defaults). Each operator lists
         its identities, accepted input roles and literal parameters (with
         defaults); its ports depend on the bound inputs, so it is no static
-        producer.
+        producer. Each block lists its ``implementations`` in selection
+        order: name, class, required target capabilities, constructor
+        resources and phase graph (``None`` when it only has ``run``). An
+        ordinary block has the single implementation ``default``.
     """
     described = catalogue.describe()
     specs = [catalogue.entry(block_type).spec for block_type in catalogue.block_types]

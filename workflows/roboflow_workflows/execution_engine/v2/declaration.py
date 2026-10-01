@@ -69,6 +69,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import (
     Any,
+    Callable,
     ClassVar,
     Dict,
     Iterable,
@@ -120,10 +121,7 @@ from roboflow_workflows.execution_engine.v2._validation import (
     ParamsValidator,
     clean_errors,
 )
-from roboflow_workflows.execution_engine.v2.context import (
-    ExecutionContext,
-    get_execution_context,
-)
+from roboflow_workflows.execution_engine.v2.context import ExecutionContextReader
 from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
     DeclarationError,
@@ -134,7 +132,19 @@ from roboflow_workflows.execution_engine.v2.errors import (
     StepPath,
     format_step_path,
 )
+from roboflow_workflows.execution_engine.v2.implementations import (
+    DEFAULT_IMPLEMENTATION,
+    RESERVED_PHASE_NAMES,
+    ImplementationSpec,
+    check_keyword_signature,
+    read_implementation_specs,
+)
 from roboflow_workflows.execution_engine.v2.kinds import Kind, normalize_kinds
+from roboflow_workflows.execution_engine.v2.phases import (
+    declare_phases,
+    read_phase_graph,
+)
+from roboflow_workflows.execution_engine.v2.readiness import ResultWrapper
 from roboflow_workflows.execution_engine.v2.resources import (
     ResourceSpec,
     read_resource_specs,
@@ -433,7 +443,7 @@ def _member_index(value: Any) -> Tuple[int, ...]:
 
 
 @dataclass(frozen=True, init=False)
-class Selected:
+class Selected(ResultWrapper):
     """One chosen member of a ``Group``, returned for a ``selected`` output.
 
     The engine resolves the result's sample and temporal context from the
@@ -456,9 +466,26 @@ class Selected:
         object.__setattr__(self, "index", _member_index(index))
         object.__setattr__(self, "value", value)
 
+    def map_payloads(self, function: Callable[[Any], Any]) -> "Selected":
+        """Return the selection with ``function`` applied to its value.
+
+        Args:
+            function: Maps the value; ``SAME_PAYLOAD`` must map to itself.
+
+        Returns:
+            ``self`` when the value is unchanged, otherwise a new ``Selected``.
+        """
+        value = function(self.value)
+        if value is self.value:
+            return self
+
+        mapped = Selected(self.index, value)
+
+        return mapped
+
 
 @dataclass(frozen=True, init=False)
-class Selection:
+class Selection(ResultWrapper):
     """Chosen members of a ``Group``, returned for a ``selected`` expand output.
 
     The result is a new collection with one child per chosen member, in the
@@ -502,6 +529,27 @@ class Selection:
 
         object.__setattr__(self, "indices", normalized)
         object.__setattr__(self, "values", chosen_values)
+
+    def map_payloads(self, function: Callable[[Any], Any]) -> "Selection":
+        """Return the selection with ``function`` applied to its values tuple.
+
+        Args:
+            function: Maps the tuple of values; not called without values.
+
+        Returns:
+            ``self`` when the values are unchanged, otherwise a new
+            ``Selection`` with the same indices.
+        """
+        if self.values is None:
+            return self
+
+        values = function(self.values)
+        if values is self.values:
+            return self
+
+        mapped = Selection(self.indices, values=values)
+
+        return mapped
 
     def chosen(self) -> List[Selected]:
         """Return one ``Selected`` per chosen member, in the requested order."""
@@ -691,7 +739,8 @@ class BlockSpec:
         configured_outputs: Whether ``describe_outputs`` derives outputs from
             literal parameters.
         output_fields: Literal-only fields that shape configured outputs.
-        resources: Constructor resources.
+        implementations: Runnable implementations in preference order: the
+            declared ones, or the block itself as the single ``default``.
         is_control: Whether the block routes control via ``StepRef`` fields.
         accepts_batches: Capability: some selector declares ``always`` or
             ``if_varying`` batch delivery. Whether a particular step receives
@@ -713,7 +762,7 @@ class BlockSpec:
     outputs: Mapping[str, Output]
     configured_outputs: bool
     output_fields: Tuple[str, ...]
-    resources: Tuple[ResourceSpec, ...]
+    implementations: Tuple[ImplementationSpec, ...]
     is_control: bool
     accepts_batches: bool
     accepts_empty: bool
@@ -723,6 +772,19 @@ class BlockSpec:
     metadata: Mapping[str, Any]
     kinds: Tuple[Kind, ...]
     _validator: ParamsValidator = field(repr=False, compare=False)
+
+    @property
+    def resources(self) -> Optional[Tuple[ResourceSpec, ...]]:
+        """Constructor resources of an ordinary block, the block itself.
+
+        ``None`` for a block listing ``implementations``: it is never
+        constructed, and each ``ImplementationSpec`` lists its own resources.
+        """
+        default, *alternatives = self.implementations
+        if alternatives or default.implementation_class is not self.block_class:
+            return None
+
+        return default.resources
 
     @property
     def identities(self) -> Tuple[str, ...]:
@@ -881,33 +943,49 @@ class BlockSpec:
         return outputs
 
     def describe_workload(
-        self, params: BlockParams, *, node_id: str
+        self,
+        params: BlockParams,
+        *,
+        node_id: str,
+        implementation: Optional[ImplementationSpec] = None,
     ) -> WorkloadDeclaration:
         """Normalize the block's workload hooks for one configured step.
 
         ``None`` from a hook means unknown and yields an incomplete discovery.
         A raising hook yields an incomplete discovery with a failure problem;
-        the exception text is not reported.
+        the exception text is not reported. Nothing is constructed.
 
         Args:
             params: Validated parameters of the step.
             node_id: Step selector used in reported problems.
+            implementation: Selected implementation. Each hook it defines
+                replaces the block's; the others stay the block's.
 
         Returns:
             Dependencies, operations and restrictions.
         """
+        owner = implementation.implementation_class if implementation else None
         declaration = WorkloadDeclaration(
             dependencies=self._discover(
                 "discover_dependent_resources",
                 params,
+                owner=owner,
                 node_id=node_id,
                 domain="resources",
             ),
             operations=self._discover(
-                "discover_work_operations", params, node_id=node_id, domain="operations"
+                "discover_work_operations",
+                params,
+                owner=owner,
+                node_id=node_id,
+                domain="operations",
             ),
             restrictions=self._discover(
-                "discover_restrictions", params, node_id=node_id, domain="restrictions"
+                "discover_restrictions",
+                params,
+                owner=owner,
+                node_id=node_id,
+                domain="restrictions",
             ),
         )
 
@@ -924,7 +1002,12 @@ class BlockSpec:
         return schema
 
     def describe(self) -> Dict[str, Any]:
-        """Return a JSON-friendly description without creating an instance."""
+        """Return a JSON-friendly description without creating an instance.
+
+        A block listing implementations has no top-level ``resources``; each
+        entry of ``implementations`` describes its own.
+        """
+        resources = self.resources
         description = {
             "type": self.type,
             "aliases": list(self.aliases),
@@ -937,7 +1020,10 @@ class BlockSpec:
             },
             "configured_outputs": self.configured_outputs,
             "output_fields": list(self.output_fields),
-            "resources": [resource.describe() for resource in self.resources],
+            "resources": [resource.describe() for resource in resources or ()],
+            "implementations": [
+                implementation.describe() for implementation in self.implementations
+            ],
             "is_control": self.is_control,
             "accepts_batches": self.accepts_batches,
             "accepts_empty": self.accepts_empty,
@@ -945,13 +1031,21 @@ class BlockSpec:
             "engine_compatibility": self.engine_compatibility,
             "metadata": dict(self.metadata),
         }
+        if resources is None:
+            del description["resources"]
 
         return description
 
     def _discover(
-        self, hook_name: str, params: BlockParams, *, node_id: str, domain: str
+        self,
+        hook_name: str,
+        params: BlockParams,
+        *,
+        owner: Optional[type],
+        node_id: str,
+        domain: str,
     ) -> Discovery:
-        hook = getattr(self.block_class, hook_name)
+        hook = getattr(owner, hook_name, None) or getattr(self.block_class, hook_name)
         try:
             declared = hook(params)
             discovery = normalize_declaration(
@@ -1085,7 +1179,7 @@ def _selector_candidates(
     return candidates
 
 
-class Block:
+class Block(ExecutionContextReader):
     """Base class of V2 blocks.
 
     A concrete block sets ``type`` in its own class body. Classes without their
@@ -1105,12 +1199,18 @@ class Block:
             filtered. ``True`` invokes the block anyway: missing items arrive
             as ``None`` and groups contain only surviving children, possibly
             none. Genuinely empty groups reach the block under both settings.
-        mutates: Fields whose bound payloads ``run`` may modify in place.
+        mutates: Fields whose bound payloads ``run`` (or any phase of any
+            implementation) may modify in place.
         engine_compatibility: PEP 440 specifier, e.g. ``">=2.0,<3"``.
         metadata: Free-form UI and catalogue metadata.
+        implementations: ``Implementation`` classes in preference order. A
+            block listing them is only the logical contract: it declares no
+            ``run``, phases or ``__init__``; compilation selects one per step.
 
     Resources are the keyword parameters of ``__init__``. The engine creates
     one instance per step per execution session and keeps it across runs.
+    ``run`` may compose ``@phase`` methods, which the engine can also execute
+    from their declared graph (see ``phases``).
 
     ``run`` receives one keyword argument per ``Params`` field and returns a
     mapping of output name to value, or a ``Select`` for control blocks. A
@@ -1129,12 +1229,18 @@ class Block:
     mutates: ClassVar[Tuple[str, ...]] = ()
     engine_compatibility: ClassVar[Optional[str]] = None
     metadata: ClassVar[Mapping[str, Any]] = MappingProxyType({})
+    implementations: ClassVar[Tuple[type, ...]] = ()
 
     __block_spec__: ClassVar[Optional[BlockSpec]] = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         cls.__block_spec__ = None
+        declare_phases(
+            cls,
+            reserved=RESERVED_PHASE_NAMES,
+            fail=lambda message: DeclarationError(message, block_class=cls.__name__),
+        )
         if "type" not in cls.__dict__:
             return
 
@@ -1194,19 +1300,6 @@ class Block:
             ``None``, a complete list of ``RuntimeRestriction`` or a ``Discovery``.
         """
         return None
-
-    @property
-    def execution_context(self) -> ExecutionContext:
-        """Context of the constructor or call running now (read-only).
-
-        Available inside ``__init__`` (``run_id`` is ``None``) and ``run``.
-
-        Raises:
-            NoExecutionContextError: When read outside a constructor or call.
-        """
-        context = get_execution_context()
-
-        return context
 
     def run(self, **kwargs: Any) -> Any:
         """Execute one invocation; concrete blocks must override it."""
@@ -1297,12 +1390,7 @@ def _build_spec(block_class: type) -> BlockSpec:
     engine_compatibility = _validate_compatibility(
         block_class.engine_compatibility, fail=fail
     )
-    _validate_run_signature(block_class, fields=fields, fail=fail)
-
-    try:
-        resources = read_resource_specs(block_class)
-    except ContractError as error:
-        raise fail(str(error)) from error
+    implementations = _read_implementations(block_class, fields=fields, fail=fail)
 
     metadata = block_class.metadata
     if not isinstance(metadata, Mapping):
@@ -1317,7 +1405,7 @@ def _build_spec(block_class: type) -> BlockSpec:
         outputs=static_outputs,
         configured_outputs=configured_outputs,
         output_fields=output_fields,
-        resources=resources,
+        implementations=implementations,
         is_control=is_control,
         accepts_batches=accepts_batches,
         accepts_empty=accepts_empty,
@@ -1568,46 +1656,43 @@ def _validate_compatibility(value: Any, *, fail) -> Optional[str]:
     return value
 
 
-def _validate_run_signature(
+def _read_implementations(
     block_class: type, *, fields: Mapping[str, FieldSpec], fail
-) -> None:
-    run = block_class.run
-    if run is Block.run:
+) -> Tuple[ImplementationSpec, ...]:
+    """The declared implementations, or the block itself as ``default``."""
+    declared = block_class.implementations
+    own_init = block_class.__init__ is not Block.__init__
+    own_phases = read_phase_graph(block_class, external=fields, fail=fail)
+    if declared:
+        if block_class.run is not Block.run or own_init or own_phases is not None:
+            raise fail(
+                "lists implementations, so it is only the logical contract; move "
+                "run(), phases and __init__ resources into the implementations"
+            )
+        specs = read_implementation_specs(declared, fields=fields, fail=fail)
+        return specs
+
+    if block_class.run is Block.run:
         raise fail("does not implement run()")
+    check_keyword_signature(block_class.run, name="run", fields=fields, fail=fail)
+    try:
+        resources = read_resource_specs(block_class)
+    except ContractError as error:
+        raise fail(str(error)) from error
 
-    _validate_keyword_signature(run, name="run", fields=fields, fail=fail)
+    default = ImplementationSpec(
+        name=DEFAULT_IMPLEMENTATION,
+        implementation_class=block_class,
+        requires=frozenset(),
+        resources=resources,
+        phases=own_phases,
+    )
+
+    return (default,)
 
 
-def _validate_keyword_signature(
-    method: Any, *, name: str, fields: Mapping[str, FieldSpec], fail
-) -> None:
-    """Check that ``method`` takes every ``Params`` field as a keyword argument."""
-    parameters = list(inspect.signature(method).parameters.values())[1:]
-    accepts_any_keyword = False
-    accepted_names = set()
-    for parameter in parameters:
-        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
-            accepts_any_keyword = True
-            continue
-        if parameter.kind in (
-            inspect.Parameter.VAR_POSITIONAL,
-            inspect.Parameter.POSITIONAL_ONLY,
-        ):
-            raise fail(
-                f"{name}() parameter {parameter.name!r} must be passable by keyword"
-            )
-        accepted_names.add(parameter.name)
-        if (
-            parameter.name not in fields
-            and parameter.default is inspect.Parameter.empty
-        ):
-            raise fail(
-                f"{name}() requires {parameter.name!r}, which is not a Params field"
-            )
-
-    missing = [field_name for field_name in fields if field_name not in accepted_names]
-    if missing and not accepts_any_keyword:
-        raise fail(f"{name}() does not accept Params field(s) {missing}")
+_validate_keyword_signature = check_keyword_signature
+"""Kept for ``sources``, which checks ``open`` the same way."""
 
 
 def _collect_kinds(

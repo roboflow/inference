@@ -208,6 +208,8 @@ class StepExecutionError(WorkflowExecutionError):
         step_path: Failing step.
         block_type: Block type of that step.
         index: Logical invocation index; ``None`` for a vectorized call.
+        phase: Phase that failed, when the failure happened in one, in
+            either execution mode.
     """
 
     def __init__(
@@ -217,6 +219,7 @@ class StepExecutionError(WorkflowExecutionError):
         step_path: StepPath,
         block_type: str,
         index: Optional[Tuple[int, ...]] = None,
+        phase: Optional[str] = None,
     ):
         location = format_step_path(step_path)
         if index is not None:
@@ -225,6 +228,7 @@ class StepExecutionError(WorkflowExecutionError):
         self.step_path = step_path
         self.block_type = block_type
         self.index = index
+        self.phase = phase
 
 
 class WorkflowInputError(WorkflowExecutionError):
@@ -289,6 +293,7 @@ class ActiveRunError(WorkflowExecutionError):
         operator: Declared operator involved, when any: the operator whose
             own code failed (stage ``operator``) or whose emitted pulse was
             being processed.
+        phase: Phase of the failing step, when a phase failed.
     """
 
     def __init__(
@@ -301,6 +306,7 @@ class ActiveRunError(WorkflowExecutionError):
         group: Optional[str] = None,
         step_path: Optional[StepPath] = None,
         operator: Optional[str] = None,
+        phase: Optional[str] = None,
     ):
         where = [f"stage {stage}"]
         if source is not None:
@@ -313,6 +319,8 @@ class ActiveRunError(WorkflowExecutionError):
             where.append(f"group {group!r}")
         if step_path is not None:
             where.append(format_step_path(step_path))
+        if phase is not None:
+            where.append(f"phase {phase!r}")
         super().__init__(f"Active run failed ({', '.join(where)}): {message}")
         self.stage = stage
         self.source = source
@@ -320,4 +328,5 @@ class ActiveRunError(WorkflowExecutionError):
         self.group = group
         self.step_path = step_path
         self.operator = operator
+        self.phase = phase
         self.suppressed: Tuple[BaseException, ...] = ()

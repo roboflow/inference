@@ -59,16 +59,25 @@ lists the groups anchored on it. No step or group joins two sources until an
 alignment operator exists. ``ExecutionSession.start`` drives such a plan; it
 delegates to ``roboflow_workflows.execution_engine.v2.active.runtime``.
 
+Implementations: every compiled step records the ``ImplementationChoice`` made
+for ``CompileOptions.target`` (``targets``) and its ``execution``: ``phases``
+only when ``block_execution="phases"`` and the selected implementation has a
+phase graph, else ``run``. ``PlannedStep.selected`` is what ``create_session``
+resolves resources for and constructs; nothing else is constructed. Plans
+reject a choice that differs from the deterministic selection for its target,
+a target or mode differing from the plan's options, and a contract block
+without a choice. A hand-built step of an ordinary block may omit the choice.
+
 The executor, not this module, implements execution and row construction.
 ``run`` and ``rows`` delegate to ``roboflow_workflows.execution_engine.v2.execution``.
 """
 
 import importlib
 import uuid
-from concurrent.futures import Future
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -92,13 +101,11 @@ from roboflow_workflows.execution_engine.v2.data import (
     AXIS_KIND_STATIC_NESTING,
     AXIS_KIND_TIME,
     Axis,
-    Batch,
     EntryLayout,
     Index,
     WorkflowsBuffer,
 )
 from roboflow_workflows.execution_engine.v2.declaration import (
-    Block,
     BlockParams,
     BlockSpec,
     ContextPolicy,
@@ -116,6 +123,11 @@ from roboflow_workflows.execution_engine.v2.errors import (
     format_step_path,
 )
 from roboflow_workflows.execution_engine.v2.kinds import Kind, kinds_compatible
+
+# Re-exported: callers import the shared readiness helper from here as before.
+from roboflow_workflows.execution_engine.v2.readiness import (  # noqa: F401
+    resolve_futures,
+)
 from roboflow_workflows.execution_engine.v2.resources import (
     ResolvedResource,
     ResourceResolver,
@@ -125,9 +137,23 @@ from roboflow_workflows.execution_engine.v2.sources import (
     SourceSpec,
     source_step_path,
 )
+from roboflow_workflows.execution_engine.v2.targets import (
+    ImplementationChoice,
+    Target,
+    check_choice,
+    default_implementation,
+)
+
+if TYPE_CHECKING:
+    from roboflow_workflows.execution_engine.v2.implementations import (
+        ImplementationSpec,
+    )
 
 EXECUTION_MODULE = "roboflow_workflows.execution_engine.v2.execution"
 ACTIVE_RUNTIME_MODULE = "roboflow_workflows.execution_engine.v2.active.runtime"
+
+BlockExecution = Literal["run", "phases"]
+BLOCK_EXECUTIONS: Tuple[str, ...] = ("run", "phases")
 
 BindingMode = Literal["element", "ancestor", "constant", "group", "constant_group"]
 BINDING_MODES: Tuple[str, ...] = (
@@ -626,10 +652,16 @@ class PlannedStep:
             through its data, gates or nested boundaries; ``None`` for a
             static step, which runs once per admitted pulse of every source.
             Always ``None`` in a plan without sources.
+        implementation: Implementation selected for the compile target. The
+            compiler records it for every step; ``None`` is accepted only for an
+            ordinary block, whose single implementation is the block itself.
+        execution: ``run`` calls the selected implementation's ``run``;
+            ``phases`` executes its phase graph and needs one.
 
     Raises:
-        ContractError: When names, bindings, outputs or control data
-            contradict the declaration or the invocation layout.
+        ContractError: When names, bindings, outputs, control data, the
+            implementation or the execution mode contradict the declaration
+            or the invocation layout.
     """
 
     path: StepPath
@@ -645,6 +677,8 @@ class PlannedStep:
     )
     dependencies: Tuple[StepPath, ...] = ()
     domain: Optional[str] = None
+    implementation: Optional[ImplementationChoice] = None
+    execution: BlockExecution = "run"
 
     def __post_init__(self) -> None:
         if not self.path or not all(is_selector_segment(part) for part in self.path):
@@ -673,11 +707,20 @@ class PlannedStep:
         if self.control_targets and not self.spec.is_control:
             raise ContractError(f"{location}: control_targets on a non-control block")
         self._check_invocation(location=location)
+        self._check_implementation(location=location)
 
     @property
     def block_type(self) -> str:
         """Canonical block type."""
         return self.spec.type
+
+    @property
+    def selected(self) -> "ImplementationSpec":
+        """The implementation this step constructs and calls."""
+        if self.implementation is None:
+            return default_implementation(self.spec)
+
+        return self.implementation.spec
 
     @property
     def delivers_batches(self) -> bool:
@@ -742,9 +785,31 @@ class PlannedStep:
             "domain": self.domain,
             "accepts_empty": self.spec.accepts_empty,
             "mutates": list(self.spec.mutates),
+            "implementation": (
+                self.implementation.describe()
+                if self.implementation is not None
+                else {"name": self.selected.name}
+            ),
+            "execution": self.execution,
         }
 
         return description
+
+    def _check_implementation(self, *, location: str) -> None:
+        if self.execution not in BLOCK_EXECUTIONS:
+            raise ContractError(
+                f"{location}: execution must be one of {list(BLOCK_EXECUTIONS)}, "
+                f"got {self.execution!r}"
+            )
+        try:
+            check_choice(self.spec, self.implementation)
+        except ContractError as error:
+            raise ContractError(f"{location}: {error}") from error
+        if self.execution == "phases" and self.selected.phases is None:
+            raise ContractError(
+                f"{location}: execution 'phases' needs a phase graph, but "
+                f"implementation {self.selected.name!r} declares no phases"
+            )
 
     def _check_binding(self, binding: Binding, *, location: str) -> None:
         field_spec = self.spec.fields.get(binding.field)
@@ -1383,21 +1448,38 @@ class CompileOptions:
         max_nested_count: Maximum number of nested workflow steps (V1 default 32).
         allow_local_code: Whether dynamic blocks may execute submitted Python
             when a session is created and run.
+        target: Capabilities of the intended environment; every step runs the
+            first declared implementation whose requirements it satisfies.
+        block_execution: ``run`` calls each step's ``run``; ``phases``
+            executes the phase graph of every selected implementation that has
+            one and calls ``run`` of the others.
 
     Raises:
-        ContractError: On an unknown policy or a negative limit.
+        ContractError: On an unknown policy or mode, a negative limit or a
+            target that is not a ``Target``.
     """
 
     mutation_conflicts: Literal["warn", "error"] = "warn"
     max_nested_depth: int = 4
     max_nested_count: int = 32
     allow_local_code: bool = False
+    target: Target = field(default_factory=Target.cpu)
+    block_execution: BlockExecution = "run"
 
     def __post_init__(self) -> None:
         if self.mutation_conflicts not in ("warn", "error"):
             raise ContractError(
                 "mutation_conflicts must be 'warn' or 'error', "
                 f"got {self.mutation_conflicts!r}"
+            )
+        if not isinstance(self.target, Target):
+            raise ContractError(
+                f"target must be a Target, got {type(self.target).__name__}"
+            )
+        if self.block_execution not in BLOCK_EXECUTIONS:
+            raise ContractError(
+                f"block_execution must be one of {list(BLOCK_EXECUTIONS)}, "
+                f"got {self.block_execution!r}"
             )
         for name in ("max_nested_depth", "max_nested_count"):
             value = getattr(self, name)
@@ -1439,7 +1521,9 @@ class CompiledWorkflow:
             whose recorded domain differs from its derived one, a step, gate
             or group joining two domains, or an operator whose inputs are
             static, come from itself or a later operator, or whose recorded
-            domains differ from the derived ones.
+            domains differ from the derived ones, or a step whose
+            implementation was selected for another target or whose execution
+            mode does not follow ``options.block_execution``.
     """
 
     inputs: Mapping[str, PlannedInput]
@@ -1480,6 +1564,7 @@ class CompiledWorkflow:
         _check_plan_references(self)
         _check_active_shape(self)
         _check_operators(self)
+        _check_selections(self)
         object.__setattr__(self, "_axis_origins", _collect_axis_origins(self))
 
     @property
@@ -1874,6 +1959,46 @@ def _check_plan_references(plan: CompiledWorkflow) -> None:
                 boundaries=boundaries,
                 location=f"$operators.{operator.name} input {item.name!r}",
             )
+
+
+def _check_selections(plan: CompiledWorkflow) -> None:
+    """Every step's selection and mode must follow the plan's options."""
+    options = plan.options
+    for step in plan.steps:
+        location = format_step_path(step.path)
+        choice = step.implementation
+        if choice is not None and choice.target != options.target:
+            raise ContractError(
+                f"{location} selected {choice.name!r} for target "
+                f"{choice.target.describe()}, but the plan targets "
+                f"{options.target.describe()}"
+            )
+        expected = step_execution(step.selected, options=options)
+        if step.execution != expected:
+            raise ContractError(
+                f"{location} records execution {step.execution!r}, but "
+                f"block_execution={options.block_execution!r} with implementation "
+                f"{step.selected.name!r} gives {expected!r}"
+            )
+
+
+def step_execution(
+    implementation: "ImplementationSpec", *, options: CompileOptions
+) -> BlockExecution:
+    """Return how a step runs its selected implementation under ``options``.
+
+    Args:
+        implementation: The step's selected implementation.
+        options: Compile options of the plan.
+
+    Returns:
+        ``phases`` when phases are requested and the implementation has a
+        graph; ``run`` otherwise.
+    """
+    phased = options.block_execution == "phases" and implementation.phases is not None
+    execution: BlockExecution = "phases" if phased else "run"
+
+    return execution
 
 
 def _check_active_shape(plan: CompiledWorkflow) -> None:
@@ -2712,7 +2837,8 @@ class ExecutionSession:
 
     Args:
         plan: The compiled plan.
-        instances: One constructed block per step path.
+        instances: One constructed instance of the selected implementation
+            per step path.
         resources: Resources chosen per step, for inspection.
         observer: Observer receiving run notifications.
         error_handler: Optional callback for step errors.
@@ -2727,7 +2853,7 @@ class ExecutionSession:
         self,
         *,
         plan: CompiledWorkflow,
-        instances: Mapping[StepPath, Block],
+        instances: Mapping[StepPath, Any],
         resources: Mapping[StepPath, Mapping[str, ResolvedResource]],
         observer: ExecutionObserver = NULL_OBSERVER,
         error_handler: Optional[ErrorHandler] = None,
@@ -2880,11 +3006,14 @@ def create_session(
         )
         source_resources[planned_source.name] = MappingProxyType(resolved_for_source)
 
-    instances: Dict[StepPath, Block] = {}
+    instances: Dict[StepPath, Any] = {}
     chosen: Dict[StepPath, Mapping[str, ResolvedResource]] = {}
     for step in plan.steps:
+        # Only the selected implementation is resolved and constructed; its
+        # resource keys keep the logical block's namespace and type.
+        implementation = step.selected
         resolved = resolver.resolve(
-            step.spec.resources,
+            implementation.resources,
             namespace=step.namespace,
             step_path=step.path,
             block_type=step.block_type,
@@ -2893,12 +3022,13 @@ def create_session(
         context = ExecutionContext(
             step_path=step.path, block_type=step.block_type, session_id=session_id
         )
+        constructor = implementation.implementation_class
         try:
             with use_execution_context(context):
-                instance = step.spec.block_class(**arguments)
+                instance = constructor(**arguments)
         except Exception as error:
             raise ResourceError(
-                f"constructor of {step.spec.block_class.__qualname__} failed: "
+                f"constructor of {constructor.__qualname__} failed: "
                 f"{type(error).__name__}: {error}",
                 step_path=step.path,
                 block_type=step.block_type,
@@ -3000,53 +3130,6 @@ class RunResult:
         rows = execution.build_rows(self, serialize=serialize)
 
         return rows
-
-
-def resolve_futures(value: Any) -> Any:
-    """Wait for ``concurrent.futures.Future`` objects inside a block result.
-
-    Looks at the value itself, mapping values, list and tuple items and
-    ``Batch`` contents, recursively. Containers without futures are returned
-    as the same objects; payloads are never copied.
-
-    Args:
-        value: A block result or part of one.
-
-    Returns:
-        ``value`` with every future replaced by its result.
-
-    Raises:
-        Exception: Whatever a future raised.
-    """
-    if isinstance(value, Future):
-        resolved = resolve_futures(value.result())
-        return resolved
-    if isinstance(value, Batch):
-        content = [resolve_futures(item) for item in value.content]
-        if all(new is old for new, old in zip(content, value.content)):
-            return value
-        rebuilt = Batch(
-            content,
-            indices=value.indices,
-            layout=value.layout,
-            metadata=value.metadata,
-            parent_index=value.parent_index,
-        )
-        return rebuilt
-    if isinstance(value, Mapping):
-        items = {key: resolve_futures(item) for key, item in value.items()}
-        if all(items[key] is item for key, item in value.items()):
-            return value
-        rebuilt_mapping = type(value)(items) if isinstance(value, dict) else items
-        return rebuilt_mapping
-    if isinstance(value, (list, tuple)):
-        items = [resolve_futures(item) for item in value]
-        if all(new is old for new, old in zip(items, value)):
-            return value
-        rebuilt_sequence = type(value)(items)
-        return rebuilt_sequence
-
-    return value
 
 
 def _describe_source(source: Source) -> Any:

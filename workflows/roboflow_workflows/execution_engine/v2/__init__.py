@@ -19,6 +19,11 @@ Root ``operators`` (class-owned ``Operator`` plugins, such as the built-in
 ``v2/align@v1`` and ``v2/window@v1``) turn pulses of sources into pulses of
 their own domain; ``$operators.<name>.<port>`` selects their outputs.
 
+A block may list alternative implementations; ``CompileOptions(target=...)``
+selects one per step from caller-declared capabilities, and
+``block_execution="phases"`` runs a selected implementation's phase graph
+instead of its ``run``.
+
 V1 defaults and discovery are unaffected. Native image blocks live in the
 separately imported ``v2.blocks`` catalogue; this generic entry point loads no
 image libraries, native block implementations or V1 engine. The lightweight
@@ -81,6 +86,10 @@ from roboflow_workflows.execution_engine.v2.errors import (
     WorkflowExecutionError,
     WorkflowInputError,
 )
+from roboflow_workflows.execution_engine.v2.implementations import (
+    Implementation,
+    ImplementationSpec,
+)
 from roboflow_workflows.execution_engine.v2.kinds import Kind
 from roboflow_workflows.execution_engine.v2.operators import (
     Arrival,
@@ -93,6 +102,14 @@ from roboflow_workflows.execution_engine.v2.operators import (
     OperatorPulse,
     OperatorSpec,
     spec_of_operator,
+)
+from roboflow_workflows.execution_engine.v2.phases import (
+    PhaseFailure,
+    PhaseGraph,
+    PhaseSpec,
+    phase,
+    read_phase_graph,
+    run_phases,
 )
 from roboflow_workflows.execution_engine.v2.plan import (
     CompiledWorkflow,
@@ -117,6 +134,12 @@ from roboflow_workflows.execution_engine.v2.sources import (
     SourceParams,
     SourceSpec,
     spec_of_source,
+)
+from roboflow_workflows.execution_engine.v2.targets import (
+    ImplementationChoice,
+    Target,
+    UnsupportedTargetError,
+    select_implementation,
 )
 
 __all__ = [
@@ -145,6 +168,9 @@ __all__ = [
     "Group",
     "GroupHandler",
     "GroupResult",
+    "Implementation",
+    "ImplementationChoice",
+    "ImplementationSpec",
     "Index",
     "InputValue",
     "Kind",
@@ -160,6 +186,9 @@ __all__ = [
     "OperatorPulse",
     "OperatorSpec",
     "Output",
+    "PhaseFailure",
+    "PhaseGraph",
+    "PhaseSpec",
     "PlannedOperator",
     "PlannedOperatorInput",
     "PlannedOutputGroup",
@@ -181,9 +210,11 @@ __all__ = [
     "SourceSpec",
     "StepRef",
     "Stop",
+    "Target",
     "TemporalContext",
     "TimeSpan",
     "Timestamp",
+    "UnsupportedTargetError",
     "WorkflowCompileError",
     "WorkflowExecutionError",
     "WorkflowInputError",
@@ -191,6 +222,10 @@ __all__ = [
     "WorkflowsBuffer",
     "compile_workflow",
     "get_execution_context",
+    "phase",
+    "read_phase_graph",
+    "run_phases",
+    "select_implementation",
     "spec_of",
     "spec_of_operator",
     "spec_of_source",

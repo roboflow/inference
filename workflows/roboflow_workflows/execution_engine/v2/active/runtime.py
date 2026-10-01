@@ -591,6 +591,7 @@ def _attributed(
             operator=operator,
             pulse=pulse,
             step_path=raised.step_path,
+            phase=raised.phase,
         )
     else:
         error = ActiveRunError(

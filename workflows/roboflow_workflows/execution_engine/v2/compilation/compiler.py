@@ -54,6 +54,12 @@ ports depends on it. Planning walks one topological order of steps and
 operators; an operator is planned when its inputs' layouts are known and
 before any consumer of its ports.
 
+Implementations: every step records the implementation selected for
+``CompileOptions.target`` (``targets.select_implementation``; children use the
+same target) and whether it runs ``run`` or its phase graph
+(``plan.step_execution``). Step parameters never take part in the selection,
+and mutation analysis keeps reading the logical block's ``mutates``.
+
 Nothing here constructs a block, a source, or executes submitted code.
 """
 
@@ -140,7 +146,9 @@ from roboflow_workflows.execution_engine.v2.plan import (
     derive_domain,
     is_operator_port,
     operator_step_path,
+    step_execution,
 )
+from roboflow_workflows.execution_engine.v2.targets import select_implementation
 
 Site = Union["_Site", OperatorSite]
 """A node of the compile graph: a block step or an operator."""
@@ -256,6 +264,7 @@ def compile_composition(
             gate_edges=gate_edges.get(path, []),
             order=order,
             catalogue=catalogue,
+            options=options,
         )
     check_operator_kinds(operators, catalogue=catalogue)
     steps = tuple(planned.values())
@@ -492,7 +501,11 @@ def _plan_step(
     gate_edges: List[Tuple[StepPath, str]],
     order: Tuple[StepPath, ...],
     catalogue: Catalogue,
+    options: CompileOptions,
 ) -> PlannedStep:
+    implementation = select_implementation(
+        site.entry.spec, target=options.target, step_path=site.path
+    )
     bound = [
         _bind(
             site,
@@ -539,6 +552,8 @@ def _plan_step(
                 if path in site.dependencies and path in boundaries.planned
             ),
             domain=domain,
+            implementation=implementation,
+            execution=step_execution(implementation.spec, options=options),
         )
     except ContractError as error:
         raise LineageError(str(error), step_path=site.path) from error

@@ -23,6 +23,7 @@ from roboflow_workflows.execution_engine.v2.errors import StepPath, format_step_
 
 __all__ = [
     "ExecutionContext",
+    "ExecutionContextReader",
     "NoExecutionContextError",
     "get_execution_context",
     "use_execution_context",
@@ -113,3 +114,26 @@ def use_execution_context(context: ExecutionContext) -> Iterator[ExecutionContex
         yield context
     finally:
         _CURRENT.reset(token)
+
+
+class ExecutionContextReader:
+    """Gives block code ``self.execution_context``.
+
+    Shared by ``Block`` and ``Implementation``, so an alternative
+    implementation reads the same context as an ordinary block: the logical
+    step, block type, session, run and indices of the current call.
+    """
+
+    @property
+    def execution_context(self) -> ExecutionContext:
+        """Context of the constructor or call running now (read-only).
+
+        Available inside ``__init__`` (``run_id`` is ``None``), ``run`` and
+        the phases a call runs.
+
+        Raises:
+            NoExecutionContextError: When read outside a constructor or call.
+        """
+        context = get_execution_context()
+
+        return context

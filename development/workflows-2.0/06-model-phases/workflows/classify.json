@@ -1,0 +1,36 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowBatchInput", "name": "images", "kind": ["image"]},
+    {"type": "WorkflowBatchInput", "name": "regions", "kind": ["list_of_values"]}
+  ],
+  "steps": [
+    {"type": "model_demo/flip_averaged_classifier@v1", "name": "classify", "image": "$inputs.images"},
+    {"type": "v2/crop", "name": "crop", "image": "$inputs.images", "regions": "$inputs.regions"},
+    {
+      "type": "roboflow_core/inner_workflow@v1", "name": "refine",
+      "parameter_bindings": {"images": "$steps.crop.crops"},
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"type": "WorkflowBatchInput", "name": "images", "kind": ["image"]}],
+        "steps": [
+          {"type": "v2/has_brightness", "name": "lit", "image": "$inputs.images", "minimum": 120.0},
+          {"type": "v2/continue_if", "name": "gate", "condition": "$steps.lit.keep", "next_steps": ["$steps.classify"]},
+          {"type": "model_demo/flip_averaged_classifier@v1", "name": "classify", "image": "$inputs.images"}
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "predictions", "selector": "$steps.classify.predictions"},
+          {"type": "JsonField", "name": "top_class", "selector": "$steps.classify.top_class"}
+        ]
+      }
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "predictions", "selector": "$steps.classify.predictions"},
+    {"type": "JsonField", "name": "top_class", "selector": "$steps.classify.top_class"},
+    {"type": "JsonField", "name": "confidence", "selector": "$steps.classify.confidence"},
+    {"type": "JsonField", "name": "crops", "selector": "$steps.crop.crops"},
+    {"type": "JsonField", "name": "crop_predictions", "selector": "$steps.refine.predictions"},
+    {"type": "JsonField", "name": "crop_top_class", "selector": "$steps.refine.top_class"}
+  ]
+}

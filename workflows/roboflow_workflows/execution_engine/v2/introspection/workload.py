@@ -25,6 +25,11 @@ the hook as that literal. Root workflow inputs stay selectors even when they
 have defaults, because the caller may override them. Hooks do not know their
 step, so problems they report get the step's ``node_id`` added here.
 
+Each step answers with the hooks of the implementation selected for the
+plan's target; a hook the implementation does not override falls back to the
+logical block's. The report names that implementation, the step's execution
+mode and its constructor resources. Selection never constructs anything.
+
 Declared sources have no workload hooks; the report lists each source's
 constructor resources (what a session must provide before ``start``) read
 from its class signature, without constructing anything.
@@ -95,6 +100,11 @@ class StepWorkload:
         resources: ``Discovery`` of ``DependentResource``.
         operations: ``Discovery`` of ``WorkOperation``.
         restrictions: ``Discovery`` of portable ``RestrictionMetadata``.
+        implementation: Name of the implementation selected for the plan's
+            target; its hooks answered, falling back to the block's own.
+        execution: ``run`` or ``phases``, as the step will execute.
+        constructor_resources: Keyword resources of the selected
+            implementation's ``__init__``, resolved by ``create_session``.
     """
 
     node_id: str
@@ -102,11 +112,19 @@ class StepWorkload:
     resources: Discovery
     operations: Discovery
     restrictions: Discovery
+    implementation: str = "default"
+    execution: str = "run"
+    constructor_resources: Tuple[ResourceSpec, ...] = ()
 
     def describe(self) -> Dict[str, Any]:
         """Return a JSON-friendly description."""
         description = {
             "block_type": self.block_type,
+            "implementation": self.implementation,
+            "execution": self.execution,
+            "constructor_resources": [
+                resource.describe() for resource in self.constructor_resources
+            ],
             "resources": self.resources.model_dump(mode="json"),
             "operations": self.operations.model_dump(mode="json"),
             "restrictions": self.restrictions.model_dump(mode="json"),
@@ -227,8 +245,11 @@ def discover_workload(plan: CompiledWorkflow) -> WorkloadReport:
 
 def _step_workload(step: PlannedStep, *, plan: CompiledWorkflow) -> StepWorkload:
     node_id = format_step_path(step.path)
+    implementation = step.selected
     declared = step.spec.describe_workload(
-        _params_with_constants(step, plan=plan), node_id=node_id
+        _params_with_constants(step, plan=plan),
+        node_id=node_id,
+        implementation=implementation,
     )
 
     def validated(
@@ -263,6 +284,9 @@ def _step_workload(step: PlannedStep, *, plan: CompiledWorkflow) -> StepWorkload
             domain="restrictions",
             project=_portable_restriction,
         ),
+        implementation=implementation.name,
+        execution=step.execution,
+        constructor_resources=implementation.resources,
     )
 
     return workload

@@ -12,9 +12,13 @@
               BlockSpec.validate_resolved_arguments (decision 018), before
               batch packaging and before any call of the step
     call      per invocation, or once for a batch-delivering step, inside an
-              ExecutionContext with the run id and the call's indices
-    ready     futures in the result are resolved right after each call, in
-              the same context (decision 023)
+              ExecutionContext with the run id and the call's indices: the
+              selected implementation's run(), or for execution "phases"
+              run_phases over its graph with the same arguments; a phase
+              failure names the phase in both modes
+    ready     futures in the result, including Selected/Selection payloads,
+              are resolved in one pass right after each call, in the same
+              context (decision 023)
     record    one Entry per output (or the controller's decisions), keeping
               skipped and denied indices as filtered positions; a
               ``selected`` output resolves Selected/Selection to the chosen
@@ -77,6 +81,7 @@ from roboflow_workflows.execution_engine.v2.execution.inputs import (
     decode_payload,
     kinds_named,
 )
+from roboflow_workflows.execution_engine.v2.phases import PhaseFailure, run_phases
 from roboflow_workflows.execution_engine.v2.plan import (
     ChildInputPort,
     ChildOutputPort,
@@ -90,8 +95,8 @@ from roboflow_workflows.execution_engine.v2.plan import (
     PulseKey,
     Source,
     SourcePort,
-    resolve_futures,
 )
+from roboflow_workflows.execution_engine.v2.readiness import resolve_futures
 
 
 @dataclass
@@ -537,6 +542,10 @@ def _prepare_calls(
 class _BlockFailure(Exception):
     """A block call or one of its futures failed; the cause is chained."""
 
+    def __init__(self, message: str, *, phase: Optional[str] = None):
+        super().__init__(message)
+        self.phase = phase
+
 
 def _invoke(run: RunState, step: PlannedStep, call: _Call) -> Dict[Index, Any]:
     """Call the block once, wait for its futures and split the result per index."""
@@ -555,9 +564,16 @@ def _invoke(run: RunState, step: PlannedStep, call: _Call) -> Dict[Index, Any]:
         indices=call.indices,
     )
     try:
-        result = _ready_result(run.session.instances[step.path], call, context=context)
+        result = _ready_result(run, step, call, context=context)
     except _BlockFailure as failure:
-        _fail(run, step, str(failure), index=index, cause=failure.__cause__)
+        _fail(
+            run,
+            step,
+            str(failure),
+            index=index,
+            cause=failure.__cause__,
+            phase=failure.phase,
+        )
     run.session.observer.on_invocation(
         step=step.path, index=index, arguments=call.arguments, result=result
     )
@@ -578,18 +594,25 @@ def _invoke(run: RunState, step: PlannedStep, call: _Call) -> Dict[Index, Any]:
     return split
 
 
-def _ready_result(instance: Any, call: _Call, *, context: ExecutionContext) -> Any:
-    """Run the block and wait for its futures, inside the call's context."""
+def _ready_result(
+    run: RunState, step: PlannedStep, call: _Call, *, context: ExecutionContext
+) -> Any:
+    """Call the block and wait for its futures, inside the call's context."""
     with use_execution_context(context):
         try:
-            raw = instance.run(**call.arguments)
+            raw = _call_block(run, step, call)
+        except PhaseFailure as failure:
+            original = failure.__cause__
+            raise _BlockFailure(str(failure), phase=failure.phase) from original
         except Exception as error:
             raise _BlockFailure(
                 f"block raised {type(error).__name__}: {error}"
             ) from error
         try:
-            result = _resolve_chosen_values(resolve_futures(raw))
+            result = resolve_futures(raw)
         except Exception as error:
+            # The failure's traceback keeps this frame; it must not keep the result.
+            raw = None
             raise _BlockFailure(
                 f"a future returned by the block failed with "
                 f"{type(error).__name__}: {error}"
@@ -598,36 +621,26 @@ def _ready_result(instance: Any, call: _Call, *, context: ExecutionContext) -> A
     return result
 
 
-def _resolve_chosen_values(result: Any) -> Any:
-    """Wait for futures given as ``Selected`` / ``Selection`` values.
+def _call_block(run: RunState, step: PlannedStep, call: _Call) -> Any:
+    """The one place where execution modes differ: ``run()`` or the phase graph."""
+    instance = run.session.instances[step.path]
+    if step.execution == "run":
+        raw = instance.run(**call.arguments)
+        return raw
 
-    ``resolve_futures`` does not look inside the wrappers. Only output values
-    of a result (or of each result of a batch call) can be wrappers. Chosen
-    payloads (``SAME_PAYLOAD``) are untouched; wrappers without futures stay
-    the same objects.
-    """
-    if isinstance(result, (list, tuple)):
-        resolved = [_resolve_chosen_values(item) for item in result]
-        return resolved
-    if isinstance(result, Batch) or not isinstance(result, Mapping):
-        return result
+    def record_phase(name: str) -> None:
+        run.record(
+            "phase",
+            step=list(step.path),
+            indices=[list(index) for index in call.indices],
+            phase=name,
+        )
 
-    resolved = {name: _resolved_choice(value) for name, value in result.items()}
+    raw = run_phases(
+        instance, step.selected.phases, call.arguments, on_phase=record_phase
+    )
 
-    return resolved
-
-
-def _resolved_choice(value: Any) -> Any:
-    if isinstance(value, Selected) and value.value is not SAME_PAYLOAD:
-        ready = resolve_futures(value.value)
-        return value if ready is value.value else Selected(value.index, ready)
-    if isinstance(value, Selection) and value.values is not None:
-        ready = [resolve_futures(item) for item in value.values]
-        if all(new is old for new, old in zip(ready, value.values)):
-            return value
-        return Selection(value.indices, values=ready)
-
-    return value
+    return raw
 
 
 def _record_outputs(
@@ -1198,16 +1211,22 @@ def _fail(
     *,
     index: Optional[Index],
     cause: Optional[BaseException] = None,
+    phase: Optional[str] = None,
 ) -> NoReturn:
     """Report a step failure to the host hooks, then raise it."""
     error = StepExecutionError(
-        message, step_path=step.path, block_type=step.block_type, index=index
+        message,
+        step_path=step.path,
+        block_type=step.block_type,
+        index=index,
+        phase=phase,
     )
     error.__cause__ = cause
     run.record(
         "step_failed",
         step=list(step.path),
         index=list(index) if index is not None else None,
+        phase=phase,
         error=str(error),
     )
     if run.session.error_handler is not None:
