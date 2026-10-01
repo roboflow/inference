@@ -12,11 +12,6 @@ from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
-from inference.core.workflows.execution_engine.entities.base import (
-    Batch,
-    ImageParentMetadata,
-    WorkflowImageData,
-)
 from inference.roboflow_workflows_plugin.sinks.dataset_upload import (
     v1,
     v1_tensor,
@@ -36,6 +31,11 @@ from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1_tensor import (
 )
 from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1_tensor import (
     execute_registration as tensor_execute_registration,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    ImageParentMetadata,
+    WorkflowImageData,
 )
 
 _TENSOR_ONLY = pytest.mark.skipif(
@@ -371,7 +371,6 @@ def test_register_datapoint_when_prediction_registration_should_be_successful(
         annotation_content=expected_registered_prediction,
         annotation_file_type="json",
         is_prediction=True,
-        enable_retries=True,
     )
 
 
@@ -465,7 +464,6 @@ def test_register_datapoint_when_prediction_registration_should_be_successful_bu
         annotation_content=expected_registered_prediction,
         annotation_file_type="json",
         is_prediction=True,
-        enable_retries=True,
     )
 
 
@@ -549,7 +547,6 @@ def test_register_datapoint_when_classification_prediction_registration_should_b
         annotation_content=expected_registered_prediction,
         annotation_file_type="txt",
         is_prediction=True,
-        enable_retries=True,
     )
 
 
@@ -596,7 +593,6 @@ def test_register_datapoint_when_classification_prediction_registration_should_b
         annotation_content=expected_registered_prediction,
         annotation_file_type="txt",
         is_prediction=True,
-        enable_retries=True,
     )
 
 

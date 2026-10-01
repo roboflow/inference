@@ -145,12 +145,6 @@ This block uploads workflow images and predictions to your Roboflow dataset for 
 
 The block supports active learning workflows by implementing usage quotas that prevent excessive data collection, helping focus on collecting valuable training data within rate limits. Images are organized into labeling batches that can be automatically recreated on a schedule (daily, weekly, monthly), making it easier to manage and review collected data over time. The block can operate in fire-and-forget mode for asynchronous execution, allowing workflows to continue processing without waiting for uploads to complete, or synchronously for debugging and error handling.
 
-## Upload reliability
-
-Image upload and annotation upload are separate requests. By default, each request is attempted up to three times for connection errors, timeouts, and HTTP 500, 502, 503, or 504 responses. Retries use the shared API retry count and interval, with jitter, and the configured API request timeout, so uploads can take longer during an outage. Once the image is registered, annotation retries use its existing image ID. Other errors, including HTTP 409 (already annotated), are reported without retrying.
-
-Retries run inside the current upload task; pending data is not saved to disk and does not survive a process restart. If all annotation attempts fail, the image can remain unannotated. Duplicate images retain their existing skip behavior, so replaying the block does not repair older partial uploads. Keep a separate local copy of images and predictions when data must survive outages. With `fire_and_forget=True`, the block reports that work was scheduled, and final failures appear in the server logs. Use `fire_and_forget=False` to receive the final error status and message.
-
 ## Requirements
 
 **API Key Required**: This block requires a valid Roboflow API key to upload data. The API key must be configured in your environment or workflow configuration. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve an API key.
@@ -647,24 +641,6 @@ def register_datapoint(
     tags: List[str],
     metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Register an image and optional prediction, retrying each failed stage.
-
-    Args:
-        target_project: Dataset URL identifier.
-        encoded_image: JPEG image bytes to upload.
-        local_image_id: Stable filename stem used by both requests.
-        prediction: Tensor-native prediction to attach to a new image, if any.
-        api_key: Roboflow API key.
-        batch_name: Labeling batch receiving the image.
-        tags: Tags attached to the image.
-        metadata: Optional custom image metadata.
-
-    Returns:
-        Registration status, including duplicate images.
-
-    Raises:
-        RoboflowAPIRequestError: If a request fails permanently or exhausts retries.
-    """
     inference_id = None
     if _is_tensor_native_classification_prediction(prediction):
         inference_id = _read_classification_inference_id(prediction=prediction)
@@ -690,7 +666,7 @@ def register_datapoint(
     if is_prediction_registration_forbidden(prediction=prediction):
         return "Successfully registered image"
     encoded_prediction, prediction_format = encode_prediction(prediction=prediction)
-    annotate_image_at_roboflow(
+    _ = annotate_image_at_roboflow(
         api_key=api_key,
         dataset_id=target_project,
         local_image_id=local_image_id,
@@ -698,9 +674,7 @@ def register_datapoint(
         annotation_content=encoded_prediction,
         annotation_file_type=prediction_format,
         is_prediction=True,
-        enable_retries=True,
     )
-
     return "Successfully registered image and annotation"
 
 
@@ -714,24 +688,6 @@ def safe_register_image_at_roboflow(
     inference_id: Optional[str],
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
-    """Upload an image with bounded retries while preserving duplicate handling.
-
-    Args:
-        target_project: Dataset URL identifier.
-        encoded_image: JPEG image bytes, reused for every attempt.
-        local_image_id: Stable filename stem used for every attempt.
-        api_key: Roboflow API key.
-        batch_name: Labeling batch receiving the image.
-        tags: Tags attached to the image.
-        inference_id: Optional inference identifier for the prediction.
-        metadata: Optional custom image metadata.
-
-    Returns:
-        Registered image ID, or None if the server reports a duplicate.
-
-    Raises:
-        RoboflowAPIRequestError: If a request fails permanently or exhausts retries.
-    """
     registration_response = register_image_at_roboflow(
         api_key=api_key,
         dataset_id=target_project,
@@ -741,7 +697,6 @@ def safe_register_image_at_roboflow(
         tags=tags,
         inference_id=inference_id,
         metadata=metadata,
-        enable_retries=True,
     )
     image_duplicated = registration_response.get("duplicate", False)
     if image_duplicated:

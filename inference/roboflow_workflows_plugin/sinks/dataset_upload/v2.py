@@ -84,12 +84,6 @@ The block supports active learning workflows by implementing usage quotas that p
 - By default, `data_percentage` is set to 100, so v2 behaves identically to v1 unless sampling is explicitly configured
 - The block now uses probabilistic sampling before quota checking and image preparation, allowing efficient filtering before resource-intensive operations
 
-## Upload reliability
-
-Image upload and annotation upload are separate requests. By default, each request is attempted up to three times for connection errors, timeouts, and HTTP 500, 502, 503, or 504 responses. Retries use the shared API retry count and interval, with jitter, and the configured API request timeout, so uploads can take longer during an outage. Once the image is registered, annotation retries use its existing image ID. Other errors, including HTTP 409 (already annotated), are reported without retrying.
-
-Retries run inside the current upload task; pending data is not saved to disk and does not survive a process restart. If all annotation attempts fail, the image can remain unannotated. Duplicate images retain their existing skip behavior, so replaying the block does not repair older partial uploads. Keep a separate local copy of images and predictions when data must survive outages. With `fire_and_forget=True`, the block reports that work was scheduled, and final failures appear in the server logs. Use `fire_and_forget=False` to receive the final error status and message.
-
 ## Requirements
 
 **API Key Required**: This block requires a valid Roboflow API key to upload data. The API key must be configured in your environment or workflow configuration. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve an API key.
