@@ -2,7 +2,7 @@
 
 **Author:** Damian Kosowski, with an agent-prepared draft for review.
 
-**Status:** Proposed plan. D2 records Damian's confirmed paths and permission to replace undeployed V2 behavior directly. D3 records the confirmed flat `outputs` list, a server-generated top-level `inference_id` per direct model inference batch, and separate HTTP correlation through `X-Request-ID`. Other metadata details and D1/D4–D6 remain open. This draft PR contains the plan only; it does not implement the API, schema catalogue or fixture suite.
+**Status:** Proposed plan. D2 records Damian's confirmed paths and permission to replace undeployed V2 behavior directly. D3 records the confirmed flat `outputs` list, a server-generated top-level `inference_id` per direct model inference batch, separate HTTP correlation through `X-Request-ID`, and optional client-provided per-image `source_id`. Other metadata details and D1/D4–D6 remain open. This draft PR contains the plan only; it does not implement the API, schema catalogue or fixture suite.
 
 **Scope update:** PR 01 covers model and server contracts only. The new Workflows functionality is not yet included, as clarified by Damian. V2 Workflows routes, their route-specific contracts/schemas, executable fixtures and live direct-inference parity checks are offloaded to separate roadmap PRs 12 and 13 and are **on hold**. The design's shared input/result requirement still constrains the model contract; D3 reviews that requirement using illustrative examples. They do not block this plan or active model/server implementation. Resume that work only once the new functionality is included and the team explicitly agrees to resume.
 
@@ -140,7 +140,7 @@ Classification field names/threshold algorithms, exact loader options/cache iden
 
 ## 3. Decisions to make before writing the contract
 
-**D2 is decided by Damian for this plan:** use the proposed paths and replace existing V2 behavior directly because V2 is not deployed. Update affected integration tests; no old-V2 compatibility or migration layer is required. Assess loading/error-state listing in PR 02 planning, with the option to defer it further. **D3 shape and ID scope are also decided by Damian:** a flat `outputs` list without named wrappers or a `batch` key, and one `inference_id` per batch for a specific model inference, shared by that batch's results. The linked draft response example is incorrect. The direct response carries a server-generated `inference_id` at the top level; HTTP correlation uses `X-Request-ID`. Other D3 metadata details and D1/D4–D6 remain **Open**. Review those remaining questions without reopening the chosen shape or ID scope. Record each answer and its discussion reference before turning examples into required behavior.
+**D2 is decided by Damian for this plan:** use the proposed paths and replace existing V2 behavior directly because V2 is not deployed. Update affected integration tests; no old-V2 compatibility or migration layer is required. Assess loading/error-state listing in PR 02 planning, with the option to defer it further. **D3 shape and ID scope are also decided by Damian:** a flat `outputs` list without named wrappers or a `batch` key, and one `inference_id` per batch for a specific model inference, shared by that batch's results. The linked draft response example is incorrect. The direct response carries a server-generated `inference_id` at the top level; HTTP correlation uses `X-Request-ID`. A client-provided per-image `source_id` is echoed when supplied and omitted when absent; the server does not generate it. Other D3 metadata details and D1/D4–D6 remain **Open**. Review those remaining questions without reopening the chosen shape or ID scope. Record each answer and its discussion reference before turning examples into required behavior.
 
 ### D1 Where should the contract live and how should we check it
 
@@ -212,14 +212,14 @@ Both calls should accept the following runtime input body with the same meaning:
   "inputs": {
     "image": [
       {"type": "url", "value": "https://example.com/first.jpg"},
-      {"type": "url", "value": "https://example.com/second.jpg"}
+      {"type": "url", "value": "https://example.com/second.jpg", "source_id": "camera-7/frame-1043"}
     ],
     "confidence": 0.5
   }
 }
 ```
 
-Direct inference selects the model in its URL; a predefined workflow selects the workflow and its definition selects the same model. An inline workflow additionally supplies its definition. Those routing/setup fields differ; the caller should not have to re-encode the images or rename `confidence` inside `inputs`. Input validation, default values, threshold meaning and rich/compact/transport choices must match. When a value is omitted, the workflow wrapper must not silently introduce a different default. Per-item overrides remain outside scope.
+Direct inference selects the model in its URL; a predefined workflow selects the workflow and its definition selects the same model. An inline workflow additionally supplies its definition. Those routing/setup fields differ; the caller should not have to re-encode the images or rename `confidence` inside `inputs`. Input validation, default values, threshold meaning and rich/compact/transport choices must match. When a value is omitted, the workflow wrapper must not silently introduce a different default. Per-item model parameter overrides remain outside scope; `source_id` is correlation metadata, not an inference option.
 
 #### Return a flat list of model results
 
@@ -246,6 +246,7 @@ For the two-image example, the direct response should have this shape. An equiva
     },
     {
       "type": "roboflow-object-detection-rich-v1",
+      "source_id": "camera-7/frame-1043",
       "detections": []
     }
   ]
@@ -259,6 +260,32 @@ This is a synthetic direct-response example, not an executed workflow response. 
 Flatten only the result containers. Do not concatenate detections from different images or flatten an embedding's vector/tensor dimensions. Different model actions can return different result types, but that does not mean one current action needs separate named prediction and embedding slots. Action-specific input/result alignment must still be described by discovery; do not mistake tensor dimensions for the request batch.
 
 An equivalent single-step workflow must preserve this result structure under the unified-execution requirement. How general workflows expose multiple declared outputs, filters, short-circuits or skipped positions remains in the held workflow plan; those broader cases do not justify a named wrapper in the current model response. The workflow draft's output-keying prose must be reconciled with this clarification when workflow planning resumes, rather than overriding this decision.
+
+#### Optional client image correlation
+
+**Confirmed by Damian:** `source_id` is optional, client-provided image correlation metadata, independent of `X-Request-ID` and `inference_id`. Echo a supplied value unchanged on the corresponding image result, including an empty prediction result. When the client omits it, omit it from the result: do not generate a value or emit `null`. The two-image example above intentionally mixes an image without a source ID and one with a source ID whose result has no detections.
+
+Batch order remains authoritative: `inputs.image[i]` maps to `outputs[i]`. Without a source ID, the client can identify the result by `inference_id` plus its batch index. A source ID does not select a stored image, prove equal image content, or deduplicate requests. Clients can carry their correlation value across retries or model calls. It is not the Roboflow dataset upload `sourceId` contract.
+
+The same rule applies to URL/base64 image descriptors and multipart images. The multipart part reference locates bytes within a request; it is not automatically a source ID. For example, this proposed `inputs` part represents the same ordered batch as the JSON request above:
+
+```json
+{
+  "image": [
+    {"type": "multipart", "value": "$part.photo_a"},
+    {
+      "type": "multipart",
+      "value": "$part.photo_b",
+      "source_id": "camera-7/frame-1043"
+    }
+  ],
+  "confidence": 0.5
+}
+```
+
+Binary parts named `photo_a` and `photo_b` hold the two images. This descriptor spelling extends the original draft's bare `$part.<name>` references and remains an illustrative proposal for the input-format contract. Simple image parts or references without `source_id` remain without a public source ID; do not derive one from a filename, URL, multipart name or image hash. Query-format mapping and source-ID validation limits must be specified when finalizing the request representations; the omission/echo rule is already decided.
+
+Keep the metadata on each result regardless of rich/compact formatting, including the JSON envelope of a multipart response, without adding a result wrapper. Workflow lineage remains separate. Handling source IDs for derived crops, and exposing them through general workflows, stays in held PR 13.
 
 #### Keep execution metadata separate from predictions
 
@@ -319,7 +346,7 @@ flowchart LR
 
 Dashed paths are future Workflows work. Model-side schemas and illustrative input/result examples can be reviewed now. In held PR 13, use the same fixtures to check live direct/workflow parity after the new functionality is available. Deterministic fake results can establish exact structure and decoding; real-model comparisons must account for documented numerical/stochastic behavior with explicit tolerances where needed. No workflow routes or executable parity suite are added in PR 01.
 
-**Remaining decisions:** Agree the other execution-metadata fields and exceptions for equivalent runs. Direct-response ID placement, server generation, per-model-batch scope and separate `X-Request-ID` correlation are decided. Independently generated inference IDs can differ between equivalent calls; a caller may deliberately reuse a correlation value. The metadata discussion must not reintroduce named-output or `batch` wrappers. Workflow propagation and detailed batching/retry rules belong to held PR 13.
+**Remaining decisions:** Agree the other execution-metadata fields and exceptions for equivalent runs. Direct-response ID placement, server generation, per-model-batch scope, separate `X-Request-ID` correlation, and optional client-provided per-image `source_id` echo/omission are decided. Independently generated inference IDs can differ between equivalent calls; a caller may deliberately reuse a correlation value. The metadata discussion must not reintroduce named-output or `batch` wrappers. Workflow propagation and detailed batching/retry rules belong to held PR 13.
 
 ### D4 Where do parameters go and which value wins
 
@@ -483,9 +510,9 @@ After the decisions are recorded, author the following artifacts in this PR. The
 | `design/00_inference_api_v2/decisions.md` | D1–D6 answers, discussion references, the pre-deployment replacement decision and later-PR boundaries |
 | `inference_server/tests/contract/` | Offline schema/reference checks and semantic assertions for the shared contract, without importing model weights or starting MMP |
 
-The fixture suite should cover all three input format skeletons, rich/compact response selection, singleton and multi-item model batches, typed empty model results, preserved inner detection/tensor structure, explicit unsupported-control behavior, optional metadata, common errors and discovery filters. Validate JSON inside multipart `inputs` with quoted `$part.<name>` references. Correct mask-example array lengths, but do not claim that a placeholder RLE object establishes the final mask contract.
+The fixture suite should cover all three input format skeletons, rich/compact response selection, singleton and multi-item model batches, typed empty model results, mixed present/absent source IDs, preserved inner detection/tensor structure, explicit unsupported-control behavior, optional metadata, common errors and discovery filters. Validate JSON inside multipart `inputs` with quoted `$part.<name>` references. Correct mask-example array lengths, but do not claim that a placeholder RLE object establishes the final mask contract.
 
-Schema validation alone is insufficient. Add focused semantic checks for a flat outer result list with no named wrappers or `batch` key, input/result-position preservation, checking that every schema reference resolves, filter behavior and parameter conflicts. Check that the direct response has one top-level `inference_id` for all image results, including empty results; a distinct executed batch has a distinct ID. Cover supplied/generated `X-Request-ID`, response-header echo, and repeated correlation values with independent inference IDs in later HTTP checks. Verify monitoring, dataset upload and custom metadata preserve the same batch identity. Include negative fixtures that demonstrate these checks fail for the intended reason. Validate schemas and resolve references offline; no remote schema retrieval. Maintain a route/access inventory covering the ten active model/server endpoints. Do not add old-V2 compatibility routes or claim that the planned routes exist at runtime yet. The six held Workflows routes require no route schemas or executable acceptance tests in PR 01. D3 includes an illustrative equivalent-input/result case to check the model contract against the original design principle.
+Schema validation alone is insufficient. Add focused semantic checks for a flat outer result list with no named wrappers or `batch` key, input/result-position preservation, checking that every schema reference resolves, filter behavior and parameter conflicts. Check that the direct response has one top-level `inference_id` for all image results, including empty results; a distinct executed batch has a distinct ID. Cover supplied/generated `X-Request-ID`, response-header echo, and repeated correlation values with independent inference IDs in later HTTP checks. Check exact per-image source-ID echo and omission for JSON and multipart inputs, including empty results, without server generation or `null` placeholders. Verify monitoring, dataset upload and custom metadata preserve the same batch inference identity; do not substitute `source_id` for `inference_id`. Include negative fixtures that demonstrate these checks fail for the intended reason. Validate schemas and resolve references offline; no remote schema retrieval. Maintain a route/access inventory covering the ten active model/server endpoints. Do not add old-V2 compatibility routes or claim that the planned routes exist at runtime yet. The six held Workflows routes require no route schemas or executable acceptance tests in PR 01. D3 includes an illustrative equivalent-input/result case to check the model contract against the original design principle.
 
 Record the actual validation command when the tooling is implemented. Later feature PRs add live HTTP conformance tests against the same approved examples, plus real-model/backend evidence appropriate to their scope. Existing implementation tests and the earlier audit's passing checks are not substitutes for these new contract checks.
 
