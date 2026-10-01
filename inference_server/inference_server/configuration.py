@@ -111,6 +111,7 @@ MODEL_STAT_CACHE_TTL_S = get_float_from_env(
 # ── HTTP (app.py) ─────────────────────────────────────────────────────────
 APP_PORT_DEFAULT = 9001
 PORT_ENV = "PORT"
+HOST = os.environ.get("HOST", "0.0.0.0")
 NUM_WORKERS = get_integer_from_env("NUM_WORKERS", default=1)
 CORRELATION_ID_HEADER = os.environ.get("CORRELATION_ID_HEADER", "X-Request-ID")
 API_LOGGING_ENABLED = get_boolean_from_env("API_LOGGING_ENABLED", default=False)

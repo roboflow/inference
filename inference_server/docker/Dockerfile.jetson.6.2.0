@@ -47,8 +47,24 @@ RUN uv venv --python 3.10 --system-site-packages /opt/venv \
 
 RUN python /app/workflows/build_scripts/download_fonts.py
 
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
+COPY inference_server/inference_server/entrypoints/cpu_http.py inference_server/inference_server/entrypoints/gpu_http.py /app/inference_server/
+
 WORKDIR /app/inference_server
+
+# Same defaults as the legacy server image.
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False \
+    CORE_MODEL_SAM2_ENABLED=True \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    API_LOGGING_ENABLED=True \
+    DISABLE_WORKFLOW_ENDPOINTS=false \
+    RUNNING_ON_JETSON=True
 
 EXPOSE 9001
 
-CMD ["python", "-m", "inference_server.app"]
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

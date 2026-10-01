@@ -72,6 +72,7 @@ without a code change here:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `HOST` | `0.0.0.0` | HTTP bind address (`__main__` dev runner) |
 | `PORT` | `9001` | HTTP port (`__main__` dev runner) |
 | `NUM_WORKERS` | `1` | uvicorn worker processes (`__main__` dev runner) |
 | `INFERENCE_GATEWAY` | `direct` | Gateway resolved by `gateway_resolver.resolve_gateway()` |

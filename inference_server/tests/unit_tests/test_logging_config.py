@@ -2,6 +2,7 @@ import importlib
 import io
 import json
 import logging
+import logging.config
 import sys
 import time
 from types import SimpleNamespace
@@ -227,6 +228,71 @@ def test_uvicorn_default_configuration_would_replace_the_handlers(structured):
 
     assert uvicorn_handler not in logging.getLogger("uvicorn").handlers
     assert _handlers("uvicorn.access") != []
+
+
+def _apply_uvicorn_command_line_configuration() -> None:
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(name).handlers = []
+    logging.config.dictConfig(uvicorn.config.LOGGING_CONFIG)
+
+
+def test_uvicorn_command_line_configuration_leaves_one_handler_per_logger(
+    monkeypatch,
+):
+    monkeypatch.setattr(configuration, "STRUCTURED_API_LOGGING", False)
+    _apply_uvicorn_command_line_configuration()
+
+    logging_config.configure_logging()
+
+    uvicorn_handlers = logging.getLogger("uvicorn").handlers
+    access_handlers = logging.getLogger("uvicorn.access").handlers
+    assert len(uvicorn_handlers) == 1
+    assert len(access_handlers) == 1
+    stream = io.StringIO()
+    uvicorn_handlers[0].setStream(stream)
+
+    logging.getLogger("uvicorn.error").info("Started server process")
+
+    assert stream.getvalue().splitlines() == ["INFO:     Started server process"]
+
+
+def test_repeated_configuration_after_uvicorn_command_line_keeps_one_handler(
+    monkeypatch,
+):
+    monkeypatch.setattr(configuration, "STRUCTURED_API_LOGGING", False)
+    _apply_uvicorn_command_line_configuration()
+
+    logging_config.configure_logging()
+    logging_config.configure_logging()
+
+    assert len(logging.getLogger("uvicorn").handlers) == 1
+    assert len(logging.getLogger("uvicorn.access").handlers) == 1
+
+
+def test_configuration_without_foreign_handlers_installs_one_owned_handler_each(
+    monkeypatch,
+):
+    monkeypatch.setattr(configuration, "STRUCTURED_API_LOGGING", False)
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(name).handlers = []
+
+    logging_config.configure_logging()
+    logging_config.configure_logging()
+
+    assert len(logging.getLogger("uvicorn").handlers) == 1
+    assert len(_owned("uvicorn")) == 1
+    assert len(logging.getLogger("uvicorn.access").handlers) == 1
+    assert len(_owned("uvicorn.access")) == 1
+
+
+def test_structured_access_log_clears_access_handlers_set_by_uvicorn(monkeypatch):
+    monkeypatch.setattr(configuration, "API_LOGGING_ENABLED", True)
+    monkeypatch.setattr(configuration, "STRUCTURED_API_LOGGING", True)
+    _apply_uvicorn_command_line_configuration()
+
+    logging_config.configure_logging()
+
+    assert logging.getLogger("uvicorn.access").handlers == []
 
 
 def test_entry_point_runs_uvicorn_without_its_logging_config(monkeypatch):

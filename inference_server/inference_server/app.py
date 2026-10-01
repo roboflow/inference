@@ -479,7 +479,7 @@ _LANDING_ROOT_MOUNTED = mount_landing_root(app)
 
 
 def main() -> None:
-    """Serve the application with uvicorn on ``PORT`` with ``NUM_WORKERS``.
+    """Serve the application with uvicorn on ``HOST`` and ``PORT`` with ``NUM_WORKERS``.
 
     Passes ``log_config=None`` so uvicorn keeps the handlers installed by
     ``configure_logging()`` instead of applying its default logging config.
@@ -490,7 +490,7 @@ def main() -> None:
     workers = _cfg.NUM_WORKERS
     uvicorn.run(
         "inference_server.app:app",
-        host="0.0.0.0",
+        host=_cfg.HOST,
         port=port,
         workers=workers,
         log_config=None,

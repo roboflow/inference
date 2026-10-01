@@ -70,8 +70,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
 
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
+COPY inference_server/inference_server/entrypoints/cpu_http.py inference_server/inference_server/entrypoints/gpu_http.py /app/inference_server/
+
 WORKDIR /app/inference_server
+
+# Same defaults as the legacy server image.
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False \
+    PROJECT=roboflow-platform \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    API_LOGGING_ENABLED=True \
+    CORE_MODEL_SAM2_ENABLED=True \
+    CORE_MODEL_OWLV2_ENABLED=True \
+    ENABLE_PROMETHEUS=True \
+    CORE_MODEL_SAM3_ENABLED=False
 
 EXPOSE 9001
 
-CMD ["python", "-m", "inference_server.app"]
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "cpu_http:app"]

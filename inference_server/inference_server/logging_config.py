@@ -249,6 +249,22 @@ def _replace_owned_handlers(
     target.handlers = foreign + handlers
 
 
+def _install_unless_foreign(
+    target: logging.Logger, handler: _OwnedStreamHandler
+) -> None:
+    foreign = [
+        existing
+        for existing in target.handlers
+        if not isinstance(existing, _OwnedStreamHandler)
+    ]
+    if any(
+        isinstance(existing.formatter, type(handler.formatter)) for existing in foreign
+    ):
+        target.handlers = foreign
+    else:
+        target.handlers = foreign + [handler]
+
+
 def _owned_handler(stream: Any, formatter: logging.Formatter) -> _OwnedStreamHandler:
     handler = _OwnedStreamHandler(stream)
     handler.setFormatter(formatter)
@@ -258,9 +274,9 @@ def _owned_handler(stream: Any, formatter: logging.Formatter) -> _OwnedStreamHan
 
 def _configure_uvicorn_loggers() -> None:
     uvicorn_logger = logging.getLogger(UVICORN_LOGGER_NAME)
-    _replace_owned_handlers(
+    _install_unless_foreign(
         uvicorn_logger,
-        [_owned_handler(sys.stderr, DefaultFormatter(UVICORN_DEFAULT_LOG_FORMAT))],
+        _owned_handler(sys.stderr, DefaultFormatter(UVICORN_DEFAULT_LOG_FORMAT)),
     )
     uvicorn_logger.setLevel(logging.INFO)
     uvicorn_logger.propagate = False
@@ -277,9 +293,9 @@ def _configure_uvicorn_loggers() -> None:
         access_logger.handlers = []
         return
 
-    _replace_owned_handlers(
+    _install_unless_foreign(
         access_logger,
-        [_owned_handler(sys.stdout, AccessFormatter(UVICORN_ACCESS_LOG_FORMAT))],
+        _owned_handler(sys.stdout, AccessFormatter(UVICORN_ACCESS_LOG_FORMAT)),
     )
 
 
@@ -292,8 +308,9 @@ def configure_logging() -> None:
     uvicorn's loggers uvicorn's default handlers and ``INFO`` level, silencing
     the access line only when the structured access log replaces it. A later
     call replaces only the handlers an earlier call installed and keeps any
-    other handler in place; the silenced access logger drops every handler,
-    as the legacy server does.
+    other handler in place; a uvicorn logger that already has another handler
+    gets no second one; the silenced access logger drops every handler, as
+    the legacy server does.
     """
     level = _resolve_level(configuration.LOG_LEVEL)
     if configuration.LOG_LEVEL.upper() in ("ERROR", "FATAL"):
