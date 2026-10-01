@@ -14,14 +14,16 @@ V-JEPA enables overlapping windows and an end-aligned final window through that 
 
 ## Confidence and spans
 
-Set `confidence` between 0 and 1 in `/infer/action_recognition`, the legacy model route, or the action-recognition workflow block.
-Omit it to use the threshold recorded in the model package.
+Set `confidence` between 0 and 1, `"best"`, or `"default"` in `/infer/action_recognition`, the legacy model route, or the action-recognition workflow block.
+`"best"` uses model-eval per-class thresholds, then the global recommendation, then the package default, like detection models.
+Omit confidence or use `"default"` to use the threshold recorded in the model package.
+An explicit numeric threshold overrides all recommendations.
 Filtering happens before touching or overlapping same-class spans merge, and different classes can overlap.
 Merged confidence is the maximum candidate confidence, not a calibrated probability for the merged span.
 
 Set `include_candidates: true` to receive scored, unmerged candidates for threshold replay.
 The returned `timeline` still uses the selected threshold, while `candidates` includes candidates below it.
-Cosmos returns no scored candidates and rejects an explicit confidence threshold.
+Cosmos returns no scored candidates and rejects numeric thresholds and `"best"`. Omitted confidence and `"default"` leave its behavior unchanged.
 The response identifies V-JEPA span semantics as `class_union`.
 
 The public response uses inclusive source-frame indices, with continuous boundaries rounded outward to source frames.

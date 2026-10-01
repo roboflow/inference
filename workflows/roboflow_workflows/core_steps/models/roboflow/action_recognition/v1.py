@@ -62,6 +62,7 @@ from roboflow_workflows.prototypes.block import (
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.utils.action_recognition import merge_window_segments
 
+from inference_models.entities import Confidence
 from inference_models.models.base.action_recognition import WHOLE_VIDEO_MODE
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
@@ -135,7 +136,7 @@ class _ActionRecognitionBookkeeping:
     last_fire_frame_number: Optional[int] = None
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
-    signature: Tuple[Tuple[str, ...], float, float, Optional[float]] = field(
+    signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence]] = field(
         default_factory=lambda: ((), 0.0, 0.0, None)
     )
 
@@ -178,9 +179,14 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
-    confidence: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
+    confidence: Union[
+        Optional[Confidence], Selector(kind=[FLOAT_KIND, STRING_KIND])
+    ] = Field(
         default=None,
-        description="Candidate confidence threshold before merging; empty uses the model default",
+        description=(
+            'Candidate threshold before merging. "best" uses model-eval thresholds, '
+            '"default" or empty uses the model built-in, or pass a float.'
+        ),
     )
     stride_seconds: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
         default=None,
@@ -364,13 +370,26 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         model_id: str,
         class_filter: Optional[List[str]] = None,
         stride_seconds: Optional[float] = None,
-        confidence: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
     ) -> BlockResult:
+        """Process video frames using detection's confidence modes.
+
+        Args:
+            images: Batch of frames carrying video metadata.
+            model_id: Action-recognition model identifier.
+            class_filter: Optional subset of model classes.
+            stride_seconds: Time between model calls.
+            confidence: Numeric override, "best" recommendations, or the
+                built-in default with "default" or None.
+
+        Returns:
+            A timeline and error status for each input frame.
+        """
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
         if (
-            confidence is not None
+            confidence not in (None, "default")
             and getattr(model, "confidence_threshold", None) is None
         ):
             raise ValueError(
@@ -413,7 +432,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         id_vocabulary: Optional[List[str]],
         video_sampling: VideoSampling,
         stride_seconds: Optional[float],
-        confidence: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
     ) -> dict:
         metadata = image.video_metadata
         requested_window_seconds = float(video_sampling.window_seconds)
@@ -563,7 +582,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         id_vocabulary: Optional[List[str]],
         effective_sample_fps: float,
         sampling_stride: float,
-        confidence: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
         frame_limit: Optional[int] = None,
     ) -> str:
         if not bookkeeping.sampled:
@@ -572,7 +591,11 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             [frame for _, frame in bookkeeping.sampled]
         )
         try:
-            infer_kwargs = {"confidence": confidence} if confidence is not None else {}
+            infer_kwargs = (
+                {"confidence": confidence}
+                if confidence not in (None, "default")
+                else {}
+            )
             if (
                 getattr(model, "span_semantics", None) == "class_union"
                 and frame_limit is not None

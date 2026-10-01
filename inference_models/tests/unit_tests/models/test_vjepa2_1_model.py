@@ -9,6 +9,7 @@ from inference_models.models.vjepa2_1.model import (
     VJepaActionRecognition,
     validate_config,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 def config():
@@ -142,6 +143,23 @@ def test_infer_thresholds_candidates_and_masks_padded_queries(side):
     assert captured[0][0, 0, 0, side // 2, 0] > 0
     assert captured[0][0, 1, 0, side // 2, -1] > 0
     assert torch.equal(captured[0][:, :, 1], captured[0][:, :, 3])
+
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.9, per_class_confidence={"b": 0.1}
+    )
+    assert model.infer([frame, frame]) == predictions
+    assert model.infer([frame, frame], confidence="default") == predictions
+    assert model.infer([frame, frame], confidence=0.5) == predictions
+    recommended = model.infer([frame, frame], confidence="best")
+    assert len(recommended) == 2
+    assert all(row.class_name == "b" for row in recommended)
+
+    model.recommended_parameters = RecommendedParameters(confidence=0.9)
+    assert model.infer([frame, frame], confidence="best") == []
+    model.recommended_parameters = RecommendedParameters(confidence=0.0)
+    assert len(model.infer([frame, frame], confidence="best")) == 4
+    model.recommended_parameters = None
+    assert model.infer([frame, frame], confidence="best") == predictions
 
 
 def test_contract_rejects_mismatched_or_unaligned_frame_side():

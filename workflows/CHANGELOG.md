@@ -16,6 +16,8 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- Action Recognition Model accepts `confidence="best"` for model-eval thresholds and `"default"` for the package default, like detection blocks. Numeric overrides and unscored Cosmos behavior stay unchanged.
+
 ### Added
 
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.

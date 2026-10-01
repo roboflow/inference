@@ -4911,15 +4911,6 @@ class HttpInterface(BaseInterface):
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
                 if task_type == "action-recognition":
-                    if action_confidence == "best":
-                        raise HTTPException(
-                            status_code=400,
-                            detail=(
-                                'Action recognition does not support confidence="best". '
-                                'Pass a numeric threshold or "default" instead.'
-                            ),
-                        )
-
                     # The payload is a clip, so none of the image-shaped
                     # arguments below apply to it. The `image` query parameter
                     # carries a URL here, which is the transport to prefer: a

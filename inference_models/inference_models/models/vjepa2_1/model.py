@@ -5,6 +5,7 @@ import math
 from contextlib import nullcontext
 from pathlib import Path
 from threading import Lock
+from typing import Optional
 
 import numpy as np
 import torch
@@ -14,12 +15,15 @@ from torch import nn
 from torchvision.transforms import v2
 
 from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.entities import Confidence
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     ActionRecognitionPrediction,
     VideoSampling,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
+from inference_models.weights_providers.entities import RecommendedParameters
 
 from .architecture import VJepaEncoder
 from .head import SpanHead
@@ -171,7 +175,25 @@ class VJepaActionRecognition(ActionRecognitionModel):
     span_semantics = "class_union"
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path, device=DEFAULT_DEVICE, **kwargs):
+    def from_pretrained(
+        cls,
+        model_name_or_path,
+        *,
+        device=DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
+        **kwargs,
+    ):
+        """Load the exported model and its platform recommendations.
+
+        Args:
+            model_name_or_path: Directory containing the exported model package.
+            device: Device used for inference.
+            recommended_parameters: Model-eval thresholds supplied by the loader.
+            **kwargs: Additional loader parameters.
+
+        Returns:
+            The loaded action-recognition model.
+        """
         files = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=["model.safetensors", "inference_config.json", "class_names.txt"],
@@ -193,11 +215,17 @@ class VJepaActionRecognition(ActionRecognitionModel):
         model.load_state_dict(
             load_file(files["model.safetensors"], device="cpu"), strict=True
         )
-        return cls(
-            model.to(device).float().eval(), config, classes, torch.device(device)
+        loaded_model = cls(
+            model.to(device).float().eval(),
+            config,
+            classes,
+            torch.device(device),
+            recommended_parameters=recommended_parameters,
         )
 
-    def __init__(self, model, config, classes, device):
+        return loaded_model
+
+    def __init__(self, model, config, classes, device, *, recommended_parameters=None):
         self._model, self._config, self._classes, self._device = (
             model,
             config,
@@ -205,6 +233,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
             device,
         )
         self._lock = Lock()
+        self.recommended_parameters = recommended_parameters
         inputs = config["network_input"]
         self._dtype = getattr(torch, inputs["autocast"])
         self._transform = v2.Compose(
@@ -245,10 +274,24 @@ class VJepaActionRecognition(ActionRecognitionModel):
         frames,
         class_names=None,
         fps=None,
-        confidence=None,
+        confidence: Optional[Confidence] = None,
         duration_seconds=None,
         **kwargs,
     ):
+        """Predict scored spans using detection's confidence modes.
+
+        Args:
+            frames: RGB frames from one sampled window.
+            class_names: Optional subset of the model's class vocabulary.
+            fps: Sampling rate of the supplied frames.
+            confidence: Numeric override, model-eval recommendations with "best",
+                or the package default with "default" or None.
+            duration_seconds: Duration used to clip the output spans.
+            **kwargs: Additional inference parameters.
+
+        Returns:
+            Scored spans in sampled-frame coordinates.
+        """
         sampling = self.video_sampling
         if not frames or len(frames) > sampling.max_frames:
             raise ValueError(
@@ -258,9 +301,20 @@ class VJepaActionRecognition(ActionRecognitionModel):
             raise ValueError("V-JEPA input FPS must match its recorded sampling rate")
         if class_names is not None and not set(class_names) <= set(self._classes):
             raise ValueError("Unknown V-JEPA class filter")
-        threshold = self.confidence_threshold if confidence is None else confidence
-        if not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
-            raise ValueError("Confidence must be a number between zero and one")
+        if confidence is None:
+            confidence = "default"
+        elif isinstance(confidence, (int, float)):
+            if not 0 <= confidence <= 1:
+                raise ValueError("Confidence must be a number between zero and one")
+            confidence = float(confidence)
+        elif confidence not in ("best", "default"):
+            raise ValueError('Confidence must be a number, "best", or "default"')
+
+        threshold = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=self.confidence_threshold,
+        ).get_threshold(self._classes)
         images = []
         for frame in frames:
             if isinstance(frame, torch.Tensor):
@@ -291,6 +345,8 @@ class VJepaActionRecognition(ActionRecognitionModel):
         if not torch.isfinite(logits).all() or not torch.isfinite(intervals).all():
             raise FloatingPointError("V-JEPA produced nonfinite predictions")
         scores = logits[0, :count].float().sigmoid()
+        if isinstance(threshold, torch.Tensor):
+            threshold = threshold.to(scores.device)
         rows, columns = (scores >= threshold).nonzero(as_tuple=True)
         spans = intervals[0, rows, columns].float().clamp(0, end_limit).cpu().tolist()
         confidences = scores[rows, columns].cpu().tolist()

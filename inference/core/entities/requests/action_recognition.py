@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Annotated, Any, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -48,11 +48,15 @@ class ActionRecognitionInferenceRequest(BaseRequest):
         description="The model to classify with",
     )
     video: InferenceRequestVideo
-    confidence: Optional[float] = Field(
+    confidence: Optional[
+        Union[Annotated[float, Field(ge=0, le=1)], Literal["best", "default"]]
+    ] = Field(
         default=None,
-        ge=0,
-        le=1,
-        description="Candidate threshold before merging; absent uses the model default",
+        examples=[0.5, "best", "default"],
+        description=(
+            'Candidate threshold before merging. "best" uses model-eval thresholds, '
+            '"default" or absent uses the model built-in, or pass a float.'
+        ),
     )
     include_candidates: bool = Field(
         default=False,

@@ -126,6 +126,7 @@ from inference_models.models.base.semantic_segmentation import (
 )
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -2062,10 +2063,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
     ) -> ActionRecognitionInferenceResponse:
         sampling = self._model.video_sampling
         default_confidence = getattr(self._model, "confidence_threshold", None)
-        threshold = (
-            default_confidence if request.confidence is None else request.confidence
-        )
-        if default_confidence is None and request.confidence is not None:
+        if default_confidence is None and request.confidence not in (None, "default"):
             raise ValueError(
                 "This action-recognition model does not produce confidence scores"
             )
@@ -2075,6 +2073,22 @@ class InferenceModelsActionRecognitionAdapter(Model):
         # answers in its own words, so a caption that happens to match one of
         # the requested names would otherwise be given that name's index.
         id_vocabulary = self._model.class_names or None
+        threshold = None
+        per_class_thresholds = None
+        if default_confidence is not None:
+            thresholds = ConfidenceFilter(
+                confidence=(
+                    "default" if request.confidence is None else request.confidence
+                ),
+                recommended_parameters=getattr(
+                    self._model, "recommended_parameters", None
+                ),
+                default_confidence=default_confidence,
+            ).get_threshold(id_vocabulary or [])
+            if isinstance(thresholds, torch.Tensor):
+                per_class_thresholds = dict(zip(id_vocabulary, thresholds.tolist()))
+            else:
+                threshold = thresholds
         with video_source_path(
             video_type=request.video.type, value=request.video.value
         ) as path:
@@ -2117,9 +2131,15 @@ class InferenceModelsActionRecognitionAdapter(Model):
                             + window_duration_seconds * source_fps
                         ),
                     )
-                if threshold is not None:
+                if default_confidence is not None:
                     infer_kwargs["confidence"] = (
-                        0.0 if request.include_candidates else threshold
+                        0.0
+                        if request.include_candidates
+                        else (
+                            "default"
+                            if request.confidence is None
+                            else request.confidence
+                        )
                     )
                 segments = self._model.infer(
                     frames=frames,
@@ -2141,7 +2161,12 @@ class InferenceModelsActionRecognitionAdapter(Model):
                     segments = [
                         segment
                         for segment in segments
-                        if segment.confidence >= threshold
+                        if segment.confidence
+                        >= (
+                            per_class_thresholds[segment.class_name]
+                            if per_class_thresholds is not None
+                            else threshold
+                        )
                     ]
                 merge_window_segments(
                     timeline=timeline,
@@ -2160,6 +2185,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
             windows_classified=windows_classified,
             span_semantics=getattr(self._model, "span_semantics", "instances"),
             confidence_threshold=threshold,
+            per_class_confidence_thresholds=per_class_thresholds,
             candidates=candidates,
         )
         self._attach_resolved_model_metadata(response)

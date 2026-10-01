@@ -122,7 +122,15 @@ def test_lambda_request_model_id_really_does_differ(monkeypatch) -> None:
 
 @pytest.mark.parametrize(
     "confidence, expected",
-    [(None, None), ("default", None), (0.5, 0.5), (50, 0.5), (1, 0.01), (0, 0)],
+    [
+        (None, None),
+        ("default", None),
+        ("best", "best"),
+        (0.5, 0.5),
+        (50, 0.5),
+        (1, 0.01),
+        (0, 0),
+    ],
 )
 @pytest.mark.parametrize("include_candidates", [False, True])
 def test_legacy_action_recognition_normalizes_confidence(
@@ -144,24 +152,3 @@ def test_legacy_action_recognition_normalizes_confidence(
     action_request = model_manager.infer_from_request_sync.call_args.args[1]
     assert action_request.confidence == expected
     assert action_request.include_candidates is include_candidates
-
-
-def test_legacy_action_recognition_rejects_best_confidence(monkeypatch) -> None:
-    interface, model_manager = _build_interface(monkeypatch, lambda_mode=False)
-
-    with TestClient(interface.app) as client:
-        response = client.post(
-            f"/{PATH_MODEL_ID}",
-            params={
-                "api_key": "query-api-key",
-                "image": "https://example.com/clip.mp4",
-                "confidence": "best",
-            },
-        )
-
-    assert response.status_code == 400, response.text
-    assert response.json()["detail"] == (
-        'Action recognition does not support confidence="best". '
-        'Pass a numeric threshold or "default" instead.'
-    )
-    model_manager.infer_from_request_sync.assert_not_called()
