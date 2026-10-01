@@ -38,6 +38,7 @@ from roboflow_workflows.environment import (
     SAM3_EXEC_MODE,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -514,7 +515,25 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
+        """Run per-image SAM3 requests with bounded SDK concurrency.
+
+        Args:
+            images: Images in workflow batch order.
+            model_id: SAM3 model identifier.
+            class_names: Text prompts in class order.
+            confidence: Default minimum prediction confidence.
+            per_class_confidence: Optional confidence overrides in prompt order.
+            apply_nms: Whether the server suppresses overlapping masks.
+            nms_iou_threshold: Mask overlap threshold for suppression.
+            output_format: Requested RLE or polygon response representation.
+
+        Returns:
+            Predictions aligned with the input image order.
+        """
         ensure_builtin_remote_execution_allowed("SAM3 remote execution")
+        if len(images) == 0:
+            return []
+
         if class_names is None:
             class_names = []
         if len(class_names) == 0:
@@ -530,31 +549,46 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             api_key=self._api_key,
         )
         client.configure(
-            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+            InferenceConfiguration(
+                api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+                # The endpoint segments exactly one image per request, so a
+                # batch must never be packed into a single payload; the whole
+                # batch still goes out in one SDK call so the per-image
+                # requests are issued concurrently rather than one at a time.
+                max_batch_size=1,
+                max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            )
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
         model_format = "rle" if output_format == "rle" else "polygon"
 
-        all_detections = []
-        for single_image in images:
-            http_prompts: List[dict] = []
-            for idx, class_name in enumerate(class_names):
-                prompt_data = {"type": "text", "text": class_name}
-                if per_class_confidence is not None:
-                    prompt_data["output_prob_thresh"] = per_class_confidence[idx]
-                http_prompts.append(prompt_data)
+        http_prompts: List[dict] = []
+        for idx, class_name in enumerate(class_names):
+            prompt_data = {"type": "text", "text": class_name}
+            if per_class_confidence is not None:
+                prompt_data["output_prob_thresh"] = per_class_confidence[idx]
+            http_prompts.append(prompt_data)
 
-            resp_json = client.sam3_concept_segment(
-                inference_input=single_image.base64_image,
-                prompts=http_prompts,
-                model_id=model_id,
-                output_prob_thresh=confidence,
-                nms_iou_threshold=nms_iou_threshold if apply_nms else None,
-                format=model_format,
+        responses = client.sam3_concept_segment(
+            inference_input=[single_image.base64_image for single_image in images],
+            prompts=http_prompts,
+            model_id=model_id,
+            output_prob_thresh=confidence,
+            nms_iou_threshold=nms_iou_threshold if apply_nms else None,
+            format=model_format,
+        )
+        # A single-image batch comes back as a bare dict.
+        if not isinstance(responses, list):
+            responses = [responses]
+        if len(responses) != len(images):
+            raise ValueError(
+                f"SAM3 returned {len(responses)} responses for {len(images)} images"
             )
 
+        all_detections = []
+        for single_image, resp_json in zip(images, responses):
             image_width = single_image.numpy_image.shape[1]
             image_height = single_image.numpy_image.shape[0]
 

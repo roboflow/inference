@@ -76,6 +76,7 @@ from roboflow_workflows.environment import (
     SAM3_EXEC_MODE,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -511,7 +512,26 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float,
         mask_representation: str,
     ) -> BlockResult:
+        """Run per-image SAM3 requests with bounded SDK concurrency.
+
+        Args:
+            images: Images in workflow batch order.
+            model_id: SAM3 model identifier.
+            class_names: Text prompts in class order.
+            class_mapping: Optional output class-name mapping.
+            confidence: Default minimum prediction confidence.
+            per_class_confidence: Optional confidence overrides in prompt order.
+            apply_nms: Whether the server suppresses overlapping masks.
+            nms_iou_threshold: Mask overlap threshold for suppression.
+            mask_representation: Representation for the returned native masks.
+
+        Returns:
+            Predictions aligned with the input image order.
+        """
         ensure_builtin_remote_execution_allowed("SAM3 remote execution")
+        if len(images) == 0:
+            return []
+
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -519,21 +539,37 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
         client.configure(
-            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+            InferenceConfiguration(
+                api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+                # The endpoint segments exactly one image per request, so a
+                # batch must never be packed into a single payload; the whole
+                # batch still goes out in one SDK call so the per-image
+                # requests are issued concurrently rather than one at a time.
+                max_batch_size=1,
+                max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            )
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         http_prompts = _build_http_prompts(class_names, per_class_confidence)
 
-        results: List[dict] = []
-        for single_image in images:
-            resp_json = client.sam3_concept_segment(
-                inference_input=single_image.base64_image,
-                prompts=http_prompts,
-                model_id=model_id,
-                output_prob_thresh=confidence,
-                nms_iou_threshold=nms_iou_threshold if apply_nms else None,
+        responses = client.sam3_concept_segment(
+            inference_input=[single_image.base64_image for single_image in images],
+            prompts=http_prompts,
+            model_id=model_id,
+            output_prob_thresh=confidence,
+            nms_iou_threshold=nms_iou_threshold if apply_nms else None,
+        )
+        # A single-image batch comes back as a bare dict.
+        if not isinstance(responses, list):
+            responses = [responses]
+        if len(responses) != len(images):
+            raise ValueError(
+                f"SAM3 returned {len(responses)} responses for {len(images)} images"
             )
+
+        results: List[dict] = []
+        for single_image, resp_json in zip(images, responses):
             results.append(
                 self._build_from_polygon_response(
                     resp_json=resp_json,
