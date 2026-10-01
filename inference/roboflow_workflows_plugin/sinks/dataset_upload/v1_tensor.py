@@ -105,9 +105,6 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_project,
 )
 from inference.core.workflows.prototypes.cache import WorkflowsCache
-from inference.roboflow_workflows_plugin.sinks.dataset_upload._retry import (
-    _retry_api_request,
-)
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -151,7 +148,7 @@ The block supports active learning workflows by implementing usage quotas that p
 
 ## Upload reliability
 
-Image upload and annotation upload are separate requests. Each request is attempted up to three times for connection errors, timeouts, and HTTP 500, 502, 503, or 504 responses, with exponential backoff and jitter. Retries use the configured API request timeout, so uploads can take longer during an outage. Once the image is registered, annotation retries use its existing image ID. An already-annotated response preserves the existing annotation. Other errors are reported without retrying.
+Image upload and annotation upload are separate requests. By default, each request is attempted up to three times for connection errors, timeouts, and HTTP 500, 502, 503, or 504 responses. Retries use the shared API retry count and interval, with jitter, and the configured API request timeout, so uploads can take longer during an outage. Once the image is registered, annotation retries use its existing image ID. An already-annotated response preserves the existing annotation. Other errors are reported without retrying.
 
 Retries run inside the current upload task; pending data is not saved to disk and does not survive a process restart. If all annotation attempts fail, the image can remain unannotated. Duplicate images retain their existing skip behavior, so replaying the block does not repair older partial uploads. Keep a separate local copy of images and predictions when data must survive outages. With `fire_and_forget=True`, the block reports that work was scheduled, and final failures appear in the server logs. Use `fire_and_forget=False` to receive the final error status and message.
 
@@ -695,8 +692,7 @@ def register_datapoint(
         return "Successfully registered image"
     encoded_prediction, prediction_format = encode_prediction(prediction=prediction)
     try:
-        _retry_api_request(
-            annotate_image_at_roboflow,
+        annotate_image_at_roboflow(
             api_key=api_key,
             dataset_id=target_project,
             local_image_id=local_image_id,
@@ -704,6 +700,7 @@ def register_datapoint(
             annotation_content=encoded_prediction,
             annotation_file_type=prediction_format,
             is_prediction=True,
+            enable_retries=True,
         )
     except RoboflowAPIIAlreadyAnnotatedError:
         return "Image already annotated"
@@ -739,8 +736,7 @@ def safe_register_image_at_roboflow(
     Raises:
         RoboflowAPIRequestError: If a request fails permanently or exhausts retries.
     """
-    registration_response = _retry_api_request(
-        register_image_at_roboflow,
+    registration_response = register_image_at_roboflow(
         api_key=api_key,
         dataset_id=target_project,
         local_image_id=local_image_id,
@@ -749,6 +745,7 @@ def safe_register_image_at_roboflow(
         tags=tags,
         inference_id=inference_id,
         metadata=metadata,
+        enable_retries=True,
     )
     image_duplicated = registration_response.get("duplicate", False)
     if image_duplicated:

@@ -86,7 +86,7 @@ The block supports active learning workflows by implementing usage quotas that p
 
 ## Upload reliability
 
-Image upload and annotation upload are separate requests. Each request is attempted up to three times for connection errors, timeouts, and HTTP 500, 502, 503, or 504 responses, with exponential backoff and jitter. Retries use the configured API request timeout, so uploads can take longer during an outage. Once the image is registered, annotation retries use its existing image ID. An already-annotated response preserves the existing annotation. Other errors are reported without retrying.
+Image upload and annotation upload are separate requests. By default, each request is attempted up to three times for connection errors, timeouts, and HTTP 500, 502, 503, or 504 responses. Retries use the shared API retry count and interval, with jitter, and the configured API request timeout, so uploads can take longer during an outage. Once the image is registered, annotation retries use its existing image ID. An already-annotated response preserves the existing annotation. Other errors are reported without retrying.
 
 Retries run inside the current upload task; pending data is not saved to disk and does not survive a process restart. If all annotation attempts fail, the image can remain unannotated. Duplicate images retain their existing skip behavior, so replaying the block does not repair older partial uploads. Keep a separate local copy of images and predictions when data must survive outages. With `fire_and_forget=True`, the block reports that work was scheduled, and final failures appear in the server logs. Use `fire_and_forget=False` to receive the final error status and message.
 
