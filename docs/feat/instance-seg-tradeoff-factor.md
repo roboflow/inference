@@ -74,23 +74,23 @@ consumer relies on that coincidence, and nothing scales mask coordinates into im
 
 ```mermaid
 flowchart LR
-    A[protos 160x160<br/>+ coefficients] --> B[crop to boxes<br/>at proto res]
-    B --> C[resize ALL instances<br/>to full image res]
-    C --> D[binarize to bool<br/>n x H x W]
-    D --> E[masks2poly / RLE encode]
-    E --> F[response points<br/>correct only because<br/>mask res == image res]
+    A["protos 160x160 + coefficients"] --> B["crop to boxes, at proto res"]
+    B --> C["resize ALL instances to full image res"]
+    C --> D["binarize to bool: n x H x W"]
+    D --> E["masks2poly / RLE encode"]
+    E --> F["response points<br>correct only because mask res == image res"]
 ```
 
 ### After
 
 ```mermaid
 flowchart LR
-    A[protos + coefficients] --> B[crop to boxes<br/>at proto res]
-    B --> C[resize to t-scaled target<br/>h = mh + t*&#40;H-mh&#41;]
-    C --> D[bool n x h x w<br/>+ explicit mask canvas]
-    D --> E[masks2poly / RLE encode<br/>at reduced res]
-    E --> F[scale coords by<br/>image/mask ratio]
-    F --> G[response points<br/>in image space]
+    A["protos + coefficients"] --> B["crop to boxes, at proto res"]
+    B --> C["resize to t-scaled target<br>h = mh + t * [H - mh]"]
+    C --> D["bool n x h x w<br>+ explicit mask canvas"]
+    D --> E["masks2poly / RLE encode<br>at reduced res"]
+    E --> F["scale coords by image/mask ratio"]
+    F --> G["response points in image space"]
 ```
 
 Adapter mapping: `accurate → 1.0`, `fast → 0.0`, `tradeoff → tradeoff_factor` (validated, raising
