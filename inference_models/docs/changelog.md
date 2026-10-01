@@ -4,6 +4,15 @@
 
 ### Added
 
+- `ImageEmbeddingModel` and the `image_embeddings` capability for existing
+  single-label and multi-label ResNet, ViT and DINOv3 classifiers.
+  `AutoModel.from_pretrained` accepts `required_capabilities=["image_embeddings"]`
+  to select a compatible ONNX, PyTorch or Hugging Face package, with
+  `output_type="feature_vector"` or `output_type="logits"` selecting features or
+  pre-activation logits using the model's original preprocessing. Recoverable
+  ONNX classifier boundaries are
+  extracted into separately cached graphs without retraining. Classification-only
+  TensorRT engines are excluded from embedding package negotiation.
 - RF-DETR Torch and ONNX object detection now use the five-stage execution plan,
   sharing Triton Universal preprocessing, reference fallback, compatibility checks
   and per-request selection metadata with TensorRT.

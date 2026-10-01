@@ -68,6 +68,18 @@ def test_manifest_matches_clip_image_ports():
         )
 
 
+def test_list_and_tensor_manifests_offer_single_and_multi_label_classifiers():
+    from roboflow_workflows.core_steps.models.roboflow.embedding.v1_tensor import (
+        BlockManifest as TensorBlockManifest,
+    )
+
+    for manifest in (BlockManifest, TensorBlockManifest):
+        assert manifest.get_compatible_task_types() == [
+            "classification",
+            "multi-label-classification",
+        ]
+
+
 @pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
 def test_local_batch_uses_embedding_capability_and_preserves_order(output_type):
     manager = MagicMock()

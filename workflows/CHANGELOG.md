@@ -18,6 +18,11 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
+- Embedding Model (`roboflow_core/embedding_model@v1`): extract feature vectors
+  before the final linear layer or logits before Softmax/Sigmoid from existing
+  single-label and multi-label ResNet, ViT and DINOv3 classifiers, including
+  pretrained ResNet aliases. List and tensor variants return embeddings compatible
+  with Cosine Similarity and metadata identifying their embedding space.
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
 ### Changed
 

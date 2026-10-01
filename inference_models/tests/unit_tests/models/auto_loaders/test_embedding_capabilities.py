@@ -10,6 +10,7 @@ from inference_models.models.auto_loaders.auto_negotiation import (
 from inference_models.models.auto_loaders.capabilities import supports_capabilities
 from inference_models.models.auto_loaders.core import load_model_with_capabilities
 from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.models.auto_loaders.models_registry import resolve_model_class
 from inference_models.models.base.image_embeddings import ImageEmbeddingModel
 from inference_models.weights_providers.entities import (
     ModelPackageMetadata,
@@ -32,6 +33,17 @@ from inference_models.weights_providers.entities import (
 def test_supported_classifier_capabilities(architecture, backend, task):
     assert supports_capabilities(architecture, task, backend, ["image_embeddings"])
     assert not supports_capabilities(architecture, task, "trt", ["image_embeddings"])
+
+
+@pytest.mark.parametrize("backend", [BackendType.ONNX, BackendType.TORCH])
+@pytest.mark.parametrize("task", ["classification", "multi-label-classification"])
+def test_dinov3_package_registry_and_embedding_capability_agree(backend, task):
+    model_class = resolve_model_class(
+        model_architecture="dinov3_probe", task_type=task, backend=backend
+    )
+
+    assert issubclass(model_class, ImageEmbeddingModel)
+    assert supports_capabilities("dinov3_probe", task, backend, ["image_embeddings"])
 
 
 def test_pinned_classifier_engine_is_rejected():

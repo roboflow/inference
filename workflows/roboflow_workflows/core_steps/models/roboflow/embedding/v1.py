@@ -125,7 +125,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_compatible_task_types(cls) -> Optional[List[str]]:
-        return ["classification"]
+        return ["classification", "multi-label-classification"]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:

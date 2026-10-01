@@ -1376,11 +1376,29 @@ class InferenceHTTPClient:
         model_id: str,
         output_type: Literal["feature_vector", "logits"] = "feature_vector",
     ) -> Union[dict, List[dict]]:
-        """Get classifier features or logits with embedding-space metadata, one result per image.
+        """Get classifier features or logits with embedding-space metadata.
 
-        Requires a server exposing POST /infer/embeddings. Model IDs may be workspace
-        versions or pretrained aliases such as resnet101. output_type selects
-        feature_vector (default) or logits before Softmax/Sigmoid.
+        Requires a server exposing ``POST /infer/embeddings``. Compare vectors
+        only when their ``embedding_info.space_id`` values match.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Image
+                or images to embed, using supported SDK image references.
+            model_id (str): Workspace model version or pretrained classification
+                alias, such as ``resnet101``.
+            output_type (Literal["feature_vector", "logits"]): Select features
+                before the final linear layer or logits before Softmax/Sigmoid.
+                Defaults to ``feature_vector``.
+
+        Returns:
+            Union[dict, List[dict]]: One result per image, in input order, with
+                ``embeddings`` containing one vector and ``embedding_info``
+                describing its space. A single-image result is returned as a dict.
+
+        Raises:
+            HTTPCallErrorError: If the server rejects the request, including an
+                unsupported model, unavailable embedding package, or invalid key.
+            HTTPClientError: If connecting to the inference server fails.
         """
         result = self._post_images(
             inference_input=inference_input,
@@ -1400,7 +1418,30 @@ class InferenceHTTPClient:
         model_id: str,
         output_type: Literal["feature_vector", "logits"] = "feature_vector",
     ) -> Union[dict, List[dict]]:
-        """Asynchronous version of get_image_embeddings."""
+        """Get classifier features or logits asynchronously.
+
+        Requires a server exposing ``POST /infer/embeddings``. Compare vectors
+        only when their ``embedding_info.space_id`` values match.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Image
+                or images to embed, using supported SDK image references.
+            model_id (str): Workspace model version or pretrained classification
+                alias, such as ``resnet101``.
+            output_type (Literal["feature_vector", "logits"]): Select features
+                before the final linear layer or logits before Softmax/Sigmoid.
+                Defaults to ``feature_vector``.
+
+        Returns:
+            Union[dict, List[dict]]: One result per image, in input order, with
+                ``embeddings`` containing one vector and ``embedding_info``
+                describing its space. A single-image result is returned as a dict.
+
+        Raises:
+            HTTPCallErrorError: If the server rejects the request, including an
+                unsupported model, unavailable embedding package, or invalid key.
+            HTTPClientError: If connecting to the inference server fails.
+        """
         result = await self._post_images_async(
             inference_input=inference_input,
             endpoint="/infer/embeddings",
