@@ -6,7 +6,7 @@ from streamvision.camera.buffer_strategies import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
 )
-from streamvision.camera.capture_properties import FOURCC_PROPERTY, parse_fourcc
+from streamvision.camera.fourcc import FOURCC_PROPERTY, parse_fourcc
 from streamvision.camera.source_reference_validation import validate_video_references
 from streamvision.stream.environment import (
     ALLOW_UNSAFE_GSTREAMER_PIPELINES,

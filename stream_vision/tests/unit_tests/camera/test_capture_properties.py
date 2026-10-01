@@ -317,3 +317,8 @@ def test_video_configuration_accepts_valid_fourcc(fourcc: Any) -> None:
     assert parse_fourcc(config.video_source_properties["fourcc"]) == parse_fourcc(
         fourcc
     )
+
+
+@pytest.mark.parametrize("code", ["MJPG", "YUYV", "avc1", "Y16 ", "pRAA"])
+def test_fourcc_matches_opencv_packing(code: str) -> None:
+    assert parse_fourcc(code) == cv2.VideoWriter_fourcc(*code)
