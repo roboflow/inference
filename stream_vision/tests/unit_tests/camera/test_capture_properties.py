@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List, Tuple
 
 import cv2
+import numpy as np
 import pytest
 from pydantic import ValidationError
 from streamvision.camera import gstreamer_rtsp_producer, video_source
@@ -286,7 +287,20 @@ def test_video_configuration_rejects_invalid_fourcc(fourcc: Any) -> None:
         )
 
 
-@pytest.mark.parametrize("fourcc", ["avc1", "Y16 ", MJPG, str(MJPG)])
+@pytest.mark.parametrize(
+    "fourcc",
+    [
+        "avc1",
+        "Y16 ",
+        MJPG,
+        str(MJPG),
+        # Numeric forms the previous Dict[str, float] model accepted.
+        f"{MJPG}.0",
+        "1.196444237e9",
+        f"+{MJPG}",
+        np.int64(MJPG),
+    ],
+)
 def test_video_configuration_accepts_valid_fourcc(fourcc: Any) -> None:
     # when
     config = VideoConfiguration(
