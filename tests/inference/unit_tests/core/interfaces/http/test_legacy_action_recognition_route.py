@@ -118,3 +118,37 @@ def test_lambda_request_model_id_really_does_differ(monkeypatch) -> None:
 
     assert model_manager.add_model.call_args.args[0] == RESOLVED_REQUEST_MODEL_ID
     assert RESOLVED_REQUEST_MODEL_ID != PATH_MODEL_ID
+
+
+@pytest.mark.parametrize(
+    "confidence, expected",
+    [
+        (None, None),
+        ("default", None),
+        ("best", "best"),
+        (0.5, 0.5),
+        (50, 0.5),
+        (1, 0.01),
+        (0, 0),
+    ],
+)
+@pytest.mark.parametrize("include_candidates", [False, True])
+def test_legacy_action_recognition_normalizes_confidence(
+    monkeypatch, confidence, expected, include_candidates: bool
+) -> None:
+    interface, model_manager = _build_interface(monkeypatch, lambda_mode=False)
+    params = {
+        "api_key": "query-api-key",
+        "image": "https://example.com/clip.mp4",
+        "include_candidates": str(include_candidates).lower(),
+    }
+    if confidence is not None:
+        params["confidence"] = confidence
+
+    with TestClient(interface.app) as client:
+        response = client.post(f"/{PATH_MODEL_ID}", params=params)
+
+    assert response.status_code == 200, response.text
+    action_request = model_manager.infer_from_request_sync.call_args.args[1]
+    assert action_request.confidence == expected
+    assert action_request.include_candidates is include_candidates
