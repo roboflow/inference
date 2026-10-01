@@ -27,10 +27,11 @@ class FakeGateway:
         self.calls.append(("ensure_loaded", model_id, api_key))
         if self.ensure_results:
             return self.ensure_results.pop(0)
+        fresh = model_id not in self.loaded
         self.loaded.setdefault(
             model_id, dict(self.model_info.get(model_id, {}), state="loaded")
         )
-        return ("model_ready",)
+        return ("model_ready", {"loaded": fresh, "load_time_s": 0.5 if fresh else 0.0})
 
     async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
         self.calls.append(("load", model_id, api_key))

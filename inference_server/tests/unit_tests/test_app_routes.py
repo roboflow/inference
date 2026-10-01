@@ -96,7 +96,11 @@ def test_default_configuration_has_no_hosted_middleware(reloaded_app):
     names = [middleware.cls.__name__ for middleware in module.app.user_middleware]
     assert "ServerlessAuthMiddleware" not in names
     assert "DedicatedAuthMiddleware" not in names
-    assert names[0] == "PathAwareCORSMiddleware"
+    assert names[:3] == [
+        "CorrelationIdMiddleware",
+        "ModelLoadHeadersMiddleware",
+        "PathAwareCORSMiddleware",
+    ]
     assert names.index("BillingIntentMiddleware") == names.index("_AuthMiddleware") - 1
     assert set(HIDDEN_ON_ANY_HOSTED_FLAG + HIDDEN_ON_LAMBDA_ONLY) <= route_paths(
         module.app
@@ -107,7 +111,11 @@ def test_serverless_middleware_is_outermost_under_gcp_serverless(reloaded_app):
     module = reloaded_app(GCP_SERVERLESS=True)
 
     names = [middleware.cls.__name__ for middleware in module.app.user_middleware]
-    assert names[0] == "ServerlessAuthMiddleware"
+    assert names[:3] == [
+        "CorrelationIdMiddleware",
+        "ModelLoadHeadersMiddleware",
+        "ServerlessAuthMiddleware",
+    ]
     assert "DedicatedAuthMiddleware" not in names
 
 
@@ -122,7 +130,7 @@ def test_dedicated_middleware_added_by_allow_list(reloaded_app, overrides):
     module = reloaded_app(**overrides)
 
     names = [middleware.cls.__name__ for middleware in module.app.user_middleware]
-    assert names[0] == "DedicatedAuthMiddleware"
+    assert names[2] == "DedicatedAuthMiddleware"
     assert "ServerlessAuthMiddleware" not in names
 
 
@@ -130,7 +138,7 @@ def test_dedicated_wraps_serverless_when_both_configured(reloaded_app):
     module = reloaded_app(GCP_SERVERLESS=True, DEDICATED_DEPLOYMENT_WORKSPACE_URL="ws")
 
     names = [middleware.cls.__name__ for middleware in module.app.user_middleware]
-    assert names[:2] == ["DedicatedAuthMiddleware", "ServerlessAuthMiddleware"]
+    assert names[2:4] == ["DedicatedAuthMiddleware", "ServerlessAuthMiddleware"]
 
 
 def test_lambda_alone_adds_no_middleware(reloaded_app):

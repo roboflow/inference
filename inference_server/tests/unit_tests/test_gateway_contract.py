@@ -1,5 +1,7 @@
 import inspect
 
+import pytest
+
 REQUIRED = object()
 
 # Exact normalized signatures: (name, parameter kind, default VALUE or REQUIRED).
@@ -52,3 +54,32 @@ def test_direct_gateway_satisfies_contract():
         fn = getattr(ModelManagerGateway, name)
         assert inspect.iscoroutinefunction(fn), name
         assert _normalized(fn) == expected, name
+
+
+class _Manager:
+    def __init__(self):
+        self.loaded = set()
+        self.executor = None
+
+    def __contains__(self, key):
+        return key in self.loaded
+
+    def load(self, key, api_key, **kwargs):
+        self.loaded.add(key)
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_reports_fresh_load_then_already_loaded():
+    from inference_server.gateway import ModelManagerGateway
+
+    gateway = ModelManagerGateway(_Manager())
+
+    fresh = await gateway.ensure_loaded("m")
+    again = await gateway.ensure_loaded("m")
+
+    assert fresh[0] == "model_ready"
+    assert set(fresh[1]) == {"loaded", "load_time_s"}
+    assert fresh[1]["loaded"] is True
+    assert isinstance(fresh[1]["load_time_s"], float)
+    assert fresh[1]["load_time_s"] >= 0.0
+    assert again == ("model_ready", {"loaded": False, "load_time_s": 0.0})

@@ -5,6 +5,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
+from inference_sdk.config import execution_id
+
 from inference_server import configuration, platform_http
 from inference_server.auth import validate_api_key
 from inference_server.hosted.assume_identity import (
@@ -24,6 +26,11 @@ from inference_server.hosted.common import (
     workspace_id_is_valid,
 )
 from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.middlewares.correlation_id import (
+    correlation_id,
+    request_start_time,
+)
+from inference_server.middlewares.headers import PROCESSING_TIME_HEADER
 
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
@@ -329,6 +336,18 @@ async def _authorize(
     return None, entry, enforce
 
 
+def _attach_observability_headers(response: Any) -> None:
+    request_id = correlation_id.get()
+    if request_id is not None:
+        response.headers[configuration.CORRELATION_ID_HEADER] = request_id
+    started_at = request_start_time.get()
+    if started_at is not None:
+        response.headers[PROCESSING_TIME_HEADER] = str(time.perf_counter() - started_at)
+    execution_id_value = execution_id.get()
+    if configuration.EXECUTION_ID_HEADER and execution_id_value is not None:
+        response.headers[configuration.EXECUTION_ID_HEADER] = execution_id_value
+
+
 class ServerlessAuthMiddleware:
     """Raw ASGI middleware enforcing the serverless usage check per request.
 
@@ -355,6 +374,7 @@ class ServerlessAuthMiddleware:
         api_key = await resolve_api_key(request)
         if api_key is None:
             response = error_response(401, UNAUTHORIZED_MESSAGE)
+            _attach_observability_headers(response)
             await response(scope, request.receive, send)
             return
 
@@ -363,6 +383,7 @@ class ServerlessAuthMiddleware:
             response = error_response(
                 denial.status_code, denial.message, workspace_id=denial.workspace_id
             )
+            _attach_observability_headers(response)
             await response(scope, request.receive, send)
             return
 

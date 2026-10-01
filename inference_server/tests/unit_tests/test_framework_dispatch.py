@@ -49,7 +49,9 @@ def _request(query: bytes = b"", headers=None, body: bytes = b""):
 
 def _mock_proxy():
     proxy = MagicMock()
-    proxy.ensure_loaded = AsyncMock(return_value=("model_ready",))
+    proxy.ensure_loaded = AsyncMock(
+        return_value=("model_ready", {"loaded": False, "load_time_s": 0.0})
+    )
     proxy.infer = AsyncMock(return_value=MagicMock())
     return proxy
 
@@ -579,6 +581,28 @@ async def test_happy_path_invokes_full_pipeline(fake_handler_entry):
     proxy.ensure_loaded.assert_awaited_once()
     fake_handler_entry["handler"].assert_awaited_once()
     fake_handler_entry["serializer"].assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_load_reported_by_the_gateway_is_recorded(fake_handler_entry):
+    from inference_server.middlewares.model_load import MODEL_LOAD_EVENTS
+
+    proxy = _mock_proxy()
+    proxy.ensure_loaded.return_value = (
+        "model_ready",
+        {"loaded": True, "load_time_s": 1.5},
+    )
+    events = []
+    token = MODEL_LOAD_EVENTS.set(events)
+    try:
+        with _stat_returns(("fake-task", "infer")):
+            r = await handle_model_inference_request(
+                _request(query=b"model_id=acme/1"), proxy
+            )
+    finally:
+        MODEL_LOAD_EVENTS.reset(token)
+    assert r.status_code == 200
+    assert events == [("acme/1", True, 1.5)]
 
 
 @pytest.mark.asyncio

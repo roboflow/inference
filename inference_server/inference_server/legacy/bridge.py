@@ -27,6 +27,10 @@ from inference_server.legacy.errors import (
     MODEL_PACKAGE_BROKEN_MESSAGE,
     LegacyHTTPError,
 )
+from inference_server.middlewares.model_load import (
+    record_model_load,
+    set_requested_model_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +140,7 @@ class LegacyModelBridge:
 
     async def resolve(self, model_id: str, api_key: Optional[str]) -> Route:
         registry_id = registry_id_for(model_id)
+        set_requested_model_id(registry_id, requested_model_id=model_id)
         task_type: Optional[str] = None
         action: Optional[str] = None
         if not OFFLINE_MODE:
@@ -180,6 +185,7 @@ class LegacyModelBridge:
         return canonical
 
     async def ensure_loaded(self, route: Route, api_key: Optional[str]) -> None:
+        record_model_load(route.registry_id, cold_start=False, load_time_s=0.0)
         deadline = time.monotonic() + LEGACY_LOAD_TIMEOUT_S
         while True:
             result = await self.gateway.ensure_loaded(
@@ -187,6 +193,12 @@ class LegacyModelBridge:
             )
             state = result[0] if result else "error"
             if state == "model_ready":
+                if result[1]["loaded"]:
+                    record_model_load(
+                        route.registry_id,
+                        cold_start=True,
+                        load_time_s=result[1]["load_time_s"],
+                    )
                 return
             if state == "error":
                 code = result[1] if len(result) > 1 else None
@@ -377,6 +389,7 @@ class SyncLegacyBridge:
         self.accepts_ndarray = bridge.accepts_ndarray
 
     def resolve(self, model_id, api_key) -> Route:
+        set_requested_model_id(registry_id_for(model_id), requested_model_id=model_id)
         return self._run(self._bridge.resolve(model_id, api_key))
 
     def ensure_loaded(self, route, api_key) -> None:

@@ -233,6 +233,7 @@ definition; the last column is the new reader.
 | `BUILDER_ORIGIN` | `env.py:823-826` | `configuration.py:117-124` | `https://app.roboflow.com` for the us/prod case; the module derives the other cases, see note 1 |
 | `ENABLE_DASHBOARD` | `env.py:841` | `configuration.py:111` | `False` |
 | `NUM_WORKERS` | `env.py:844` | `configuration.py:99` | `1` |
+| `CORRELATION_ID_HEADER` | `env.py:660` | `configuration.py:102`; `middlewares/correlation_id.py` | `X-Request-ID` |
 | `PORT` | `env.py:852` | `configuration.py:98`; `app.py:354` | `9001` |
 | `SAM_VERSION_ID` | `env.py:882` | `configuration.py:178` | `vit_h` |
 | `SAM2_VERSION_ID` | `env.py:883` | `configuration.py:179` | `hiera_large` |
@@ -453,7 +454,6 @@ No new package reads these. They never get an alias or a default row.
 | `CACHE_METADATA_LOCK_TIMEOUT` | `env.py:1453` | legacy model cache lock; `inference_models` uses `INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT` with different semantics |
 | `CELERY_LOG_LEVEL` | `env.py:989` | legacy celery; none in the new stack |
 | `CORE_MODEL_BUCKET` | `env.py:927` | legacy AWS-era setting |
-| `CORRELATION_ID_HEADER` | `env.py:660` | legacy structured logging; unread (hosting summary lists `CORRELATION_ID_LOG_KEY`) |
 | `CORRELATION_ID_LOG_KEY` | `env.py:663` | legacy structured logging; unread (hosting summary) |
 | `DEBUG_AIORTC_QUEUES` | `env.py:978` | `StreamsConfiguration` field; no new package reads the env name today |
 | `DEBUG_WEBRTC_PROCESSING_LATENCY` | `env.py:979` | `StreamsConfiguration` field; no new package reads the env name today |

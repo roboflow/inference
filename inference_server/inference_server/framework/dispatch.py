@@ -28,6 +28,7 @@ from inference_server.framework.registry import (
     has_handler_for_model_type,
     supported_actions_for,
 )
+from inference_server.middlewares.model_load import record_model_load
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,11 @@ async def handle_model_inference_request(
         )
     if status[0] == "error":
         return error_response(500, "LOAD_FAILED", "model load failed")
+    record_model_load(
+        common.model_id,
+        cold_start=status[1]["loaded"],
+        load_time_s=status[1]["load_time_s"],
+    )
 
     try:
         prediction = await description.handler(action, input_data, proxy, server_hooks)

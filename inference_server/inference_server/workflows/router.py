@@ -38,6 +38,7 @@ from inference_server import configuration
 from inference_server.legacy.bridge import SyncLegacyBridge
 from inference_server.legacy.common import orjson_response, resolve_api_key
 from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.middlewares.model_load import REQUEST_WORKFLOW_ID
 from inference_server.workflows import execution, host
 from inference_server.workflows.errors import with_workflow_errors
 from inference_server.workflows.models_provider import GatewayModelsProvider
@@ -77,6 +78,8 @@ async def _run_workflow(
     api_key: Optional[str],
     profiler,
 ) -> Response:
+    if workflow_request.workflow_id:
+        REQUEST_WORKFLOW_ID.set(workflow_request.workflow_id)
     init_parameters = execution.build_init_parameters(
         provider=_models_provider(request, api_key),
         api_key=api_key,

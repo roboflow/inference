@@ -35,6 +35,13 @@ from inference_server.legacy.bridge import (  # noqa: E402
     LoopBridge,
     registry_id_for,
 )
+from inference_server.middlewares.correlation_id import (  # noqa: E402
+    CorrelationIdMiddleware,
+)
+from inference_server.middlewares.headers import CORS_EXPOSE_HEADERS  # noqa: E402
+from inference_server.middlewares.model_load import (  # noqa: E402
+    ModelLoadHeadersMiddleware,
+)
 from inference_server.routers import v2_models, v2_server  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -169,6 +176,27 @@ async def _lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 # App + middleware
 # ---------------------------------------------------------------------------
+
+
+def _ensure_offline_mode_is_supported() -> None:
+    if _cfg.OFFLINE_MODE and (_cfg.LAMBDA or _cfg.GCP_SERVERLESS):
+        raise RuntimeError(
+            "OFFLINE_MODE is not supported together with LAMBDA / "
+            "GCP_SERVERLESS deployments because authentication and usage "
+            "accounting require API connectivity."
+        )
+    if _cfg.OFFLINE_MODE and (
+        _cfg.DEDICATED_DEPLOYMENT_WORKSPACE_URL
+        or _cfg.WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+    ):
+        raise RuntimeError(
+            "OFFLINE_MODE is not supported together with dedicated or "
+            "workspace-whitelist authentication because API keys cannot be "
+            "mapped to workspaces without API connectivity."
+        )
+
+
+_ensure_offline_mode_is_supported()
 
 app = FastAPI(
     title="Roboflow Inference Server",
@@ -309,6 +337,7 @@ if _cfg.ALLOW_ORIGINS:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=CORS_EXPOSE_HEADERS,
     )
 
 if _cfg.ENABLE_BUILDER:
@@ -334,6 +363,9 @@ if (
     from inference_server.hosted.dedicated_auth import DedicatedAuthMiddleware
 
     app.add_middleware(DedicatedAuthMiddleware)
+
+app.add_middleware(ModelLoadHeadersMiddleware)
+app.add_middleware(CorrelationIdMiddleware)
 
 
 def mount_landing_assets(app: FastAPI) -> bool:

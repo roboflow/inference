@@ -372,10 +372,13 @@ async def test_dead_backend_is_unloaded_and_reloaded():
 
     mgr = _Manager()
     wrapper = ModelManagerGateway(mgr)
-    assert await wrapper.ensure_loaded("m") == ("model_ready",)
+    assert (await wrapper.ensure_loaded("m"))[1]["loaded"] is True
     assert mgr.unload_calls == 1
     assert mgr.load_calls == 1
-    assert await wrapper.ensure_loaded("m") == ("model_ready",)
+    assert await wrapper.ensure_loaded("m") == (
+        "model_ready",
+        {"loaded": False, "load_time_s": 0.0},
+    )
     assert mgr.unload_calls == 1
     assert mgr.load_calls == 1
 
@@ -1147,10 +1150,12 @@ class TestInferRetriesLostModel:
         mgr = _EvictingManager(KeyError("Model 'm' is not loaded"))
         wrapper = ModelManagerGateway(mgr)
 
-        assert await wrapper.ensure_loaded("m", "", "authorized-key", "cuda:1") == (
+        loaded = await wrapper.ensure_loaded("m", "", "authorized-key", "cuda:1")
+        assert loaded[0] == "model_ready"
+        assert await wrapper.ensure_loaded("m") == (
             "model_ready",
+            {"loaded": False, "load_time_s": 0.0},
         )
-        assert await wrapper.ensure_loaded("m") == ("model_ready",)
 
         assert await wrapper.infer(model_id="m", image=b"x") == {"served": "m"}
         assert mgr.load_calls == [
