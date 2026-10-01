@@ -294,7 +294,7 @@ def test_video_configuration_rejects_invalid_fourcc(fourcc: Any) -> None:
         "Y16 ",
         MJPG,
         str(MJPG),
-        # Numeric forms the previous Dict[str, float] model accepted.
+        # A number may come as any string float() reads, or as a numpy integer.
         f"{MJPG}.0",
         "1.196444237e9",
         f"+{MJPG}",
