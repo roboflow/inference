@@ -146,7 +146,7 @@ class InferencePipeline:
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
-        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
+        video_source_properties: Optional[Dict[str, float]] = None,
         disable_sinks: bool = False,
         workflows_thread_pool_workers: int = 4,
         execution_engine_thread_pool_workers: int = 4,
@@ -327,7 +327,7 @@ class InferencePipeline:
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
-        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
+        video_source_properties: Optional[Dict[str, float]] = None,
         batch_collection_timeout: Optional[float] = None,
         video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
         max_staleness: Optional[float] = None,
@@ -380,7 +380,7 @@ class InferencePipeline:
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
                 Please find detailed explanation in docs of [`VideoSource`](https://docs.roboflow.com/reference/inference-python/inference-pipeline#video-source-buffering)
-            video_source_properties (Optional[Union[Dict[str, Union[float, str]], List[Optional[Dict[str, Union[float, str]]]]]]):
+            video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
                 Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
                 cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
                 It is optional and if provided can be provided as single dict (applicable for all sources) or
