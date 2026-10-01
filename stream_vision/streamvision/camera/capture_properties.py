@@ -18,7 +18,6 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
-
 from streamvision.camera.fourcc import FOURCC_PROPERTY, parse_fourcc
 
 logger = logging.getLogger(__name__)

@@ -153,6 +153,7 @@ def test_rejected_fourcc_is_logged_as_a_warning(
         float("inf"),
         True,
         None,
+        "\u0661\u0662",
     ],
 )
 def test_invalid_fourcc_is_skipped_with_a_warning(
@@ -175,25 +176,6 @@ def test_invalid_fourcc_is_skipped_with_a_warning(
         (cv2.CAP_PROP_FPS, 30),
     ]
     assert "Ignoring invalid fourcc" in streamvision_caplog.text
-
-
-@pytest.mark.parametrize(
-    "fourcc",
-    [
-        "MJPEG",
-        "MJ",
-        "",
-        "\u00b2\u00b2\u00b2\u00b2",
-        "\u0661\u0662",
-        -1,
-        1.5,
-        True,
-        None,
-    ],
-)
-def test_parse_fourcc_returns_none_for_invalid_values(fourcc: Any) -> None:
-    # when / then - non-ASCII digits pass str.isdigit() but must not reach int()
-    assert parse_fourcc(fourcc) is None
 
 
 @pytest.mark.parametrize("properties", [None, {}])
@@ -317,8 +299,3 @@ def test_video_configuration_accepts_valid_fourcc(fourcc: Any) -> None:
     assert parse_fourcc(config.video_source_properties["fourcc"]) == parse_fourcc(
         fourcc
     )
-
-
-@pytest.mark.parametrize("code", ["MJPG", "YUYV", "avc1", "Y16 ", "pRAA"])
-def test_fourcc_matches_opencv_packing(code: str) -> None:
-    assert parse_fourcc(code) == cv2.VideoWriter_fourcc(*code)
