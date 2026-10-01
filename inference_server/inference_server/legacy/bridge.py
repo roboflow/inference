@@ -45,6 +45,8 @@ _CURRENT_REQUEST: contextvars.ContextVar[
     Optional[dict[tuple[str, str], tuple[Route, str, str, Optional[str]]]]
 ] = contextvars.ContextVar("legacy_current_request", default=None)
 _SYNC_TIMEOUT_MARGIN_S = 30
+_MAX_PENDING_REQUEST_KEYS = 256
+_MAX_PENDING_VALUES_PER_KEY = 64
 
 
 def _remember_request(
@@ -505,11 +507,15 @@ class LegacyModelBridge:
         if not row_key:
             return
 
-        paths, aliases = self._pending_requests.setdefault(row_key, (set(), set()))
-        if path:
+        paths, aliases = self._pending_requests.pop(row_key, (set(), set()))
+        if path and len(paths) < _MAX_PENDING_VALUES_PER_KEY:
             paths.add(path)
-        if alias is not None:
+        if alias is not None and len(aliases) < _MAX_PENDING_VALUES_PER_KEY:
             aliases.add(alias)
+        self._pending_requests[row_key] = (paths, aliases)
+
+        while len(self._pending_requests) > _MAX_PENDING_REQUEST_KEYS:
+            del self._pending_requests[next(iter(self._pending_requests))]
 
     def _join_pending_request(
         self, route: Route, row_key: str, recorded_at: float

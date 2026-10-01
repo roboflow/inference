@@ -786,6 +786,47 @@ async def test_request_refused_in_the_model_lookup_keeps_the_request(fake_stat):
     assert _rows(await bridge.describe()) == {"coco/3": (["/p1", "/p2"], ["alias-1"])}
 
 
+def test_pending_request_bounds_are_fixed():
+    assert bridge_mod._MAX_PENDING_REQUEST_KEYS == 256
+    assert bridge_mod._MAX_PENDING_VALUES_PER_KEY == 64
+
+
+def test_pending_requests_drop_the_least_recently_held_keys(monkeypatch):
+    monkeypatch.setattr(bridge_mod, "_MAX_PENDING_REQUEST_KEYS", 4)
+    bridge = LegacyModelBridge(FakeGateway())
+
+    for index in range(4 + 5):
+        bridge._hold_pending_request(f"m/{index}", "/p", None)
+
+    assert list(bridge._pending_requests) == [f"m/{index}" for index in range(5, 9)]
+
+
+def test_pending_request_held_again_moves_to_the_newest_position(monkeypatch):
+    monkeypatch.setattr(bridge_mod, "_MAX_PENDING_REQUEST_KEYS", 3)
+    bridge = LegacyModelBridge(FakeGateway())
+    bridge._hold_pending_request("m/0", "/p1", None)
+    bridge._hold_pending_request("m/1", "/p1", None)
+    bridge._hold_pending_request("m/2", "/p1", None)
+
+    bridge._hold_pending_request("m/0", "/p2", None)
+    bridge._hold_pending_request("m/3", "/p1", None)
+
+    assert list(bridge._pending_requests) == ["m/2", "m/0", "m/3"]
+    assert bridge._pending_requests["m/0"] == ({"/p1", "/p2"}, set())
+
+
+def test_pending_request_values_per_key_are_bounded(monkeypatch):
+    monkeypatch.setattr(bridge_mod, "_MAX_PENDING_VALUES_PER_KEY", 3)
+    bridge = LegacyModelBridge(FakeGateway())
+
+    for index in range(3 + 5):
+        bridge._hold_pending_request("m/0", f"/p{index}", f"a{index}")
+
+    assert bridge._pending_requests == {
+        "m/0": ({"/p0", "/p1", "/p2"}, {"a0", "a1", "a2"})
+    }
+
+
 @pytest.mark.asyncio
 async def test_request_whose_load_failed_survives_unload_remove_and_unload_all(
     fake_stat,
