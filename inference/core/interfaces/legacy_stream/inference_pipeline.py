@@ -298,7 +298,10 @@ class InferencePipeline(HostNeutralInferencePipeline):
         tradeoff_factor: Optional[float] = 0.0,
         active_learning_enabled: Optional[bool] = None,
         video_source_properties: Optional[
-            Union[Dict[str, float], List[Optional[Dict[str, float]]]]
+            Union[
+                Dict[str, Union[float, str]],
+                List[Optional[Dict[str, Union[float, str]]]],
+            ]
         ] = None,
         active_learning_target_dataset: Optional[str] = None,
         batch_collection_timeout: Optional[float] = None,
@@ -396,7 +399,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
                 `ACTIVE_LEARNING_ENABLED` will be used. Please point out that Active Learning will be forcefully
                 disabled in a scenario when Roboflow API key is not given, as Roboflow account is required
                 for this feature to be operational.
-            video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
+            video_source_properties (Optional[Union[Dict[str, Union[float, str]], List[Optional[Dict[str, Union[float, str]]]]]]):
                 Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
                 cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
                 It is optional and if provided can be provided as single dict (applicable for all sources) or
@@ -539,7 +542,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
         iou_threshold: Optional[float] = None,
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
         batch_collection_timeout: Optional[float] = None,
         video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
         max_staleness: Optional[float] = None,
@@ -596,7 +599,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
                 env variable "MAX_CANDIDATES" with default "3000"
             max_detections (Optional[int]): Parameter of model post-processing. If not given - value checked in
                 env variable "MAX_DETECTIONS" with default "300"
-            video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
+            video_source_properties (Optional[Union[Dict[str, Union[float, str]], List[Optional[Dict[str, Union[float, str]]]]]]):
                 Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
                 cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
                 It is optional and if provided can be provided as single dict (applicable for all sources) or
@@ -709,7 +712,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
         workflow_init_parameters: Optional[Dict[str, Any]] = None,
         disable_sinks: bool = False,
         workflows_thread_pool_workers: int = 4,
