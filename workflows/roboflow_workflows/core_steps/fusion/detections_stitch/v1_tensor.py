@@ -183,6 +183,18 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[0.2, 0.3, 0.4, 0.5, "$inputs.iou_threshold"],
     )
 
+    use_compact_masks: bool = Field(
+        default=False,
+        title="Use Compact Masks",
+        description=(
+            "Preserve CompactMask output when all non-empty inputs have compact "
+            "masks. Enable only with compact-compatible downstream consumers. "
+            "Defaults to dense NumPy output; dense or mixed inputs and "
+            "tensor-native execution are unchanged."
+        ),
+        examples=[False, True],
+    )
+
     @classmethod
     def get_dimensionality_reference_property(cls) -> Optional[str]:
         return "reference_image"
@@ -233,7 +245,21 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         predictions: Batch[TensorNativeDetections],
         overlap_filtering_strategy: Optional[Literal["none", "nms", "nmm"]],
         iou_threshold: Optional[float],
+        use_compact_masks: bool = False,
     ) -> BlockResult:
+        """Stitch crop detections while retaining the default output representation.
+
+        Args:
+            reference_image: Original image defining the destination canvas.
+            predictions: Detections in crop coordinates with parent metadata.
+            overlap_filtering_strategy: No filtering, NMS, or NMM.
+            iou_threshold: Overlap threshold used for filtering.
+            use_compact_masks: Opt in to compact NumPy-path output for compact
+                inputs. Accepted but unused by the tensor-native sibling.
+
+        Returns:
+            Predictions positioned in the reference image.
+        """
         # Use reference image to ensure all masks have the same dimensions
         reference_height, reference_width = read_image_shape(reference_image)
         resolution_wh = (reference_width, reference_height)

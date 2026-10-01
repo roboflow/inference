@@ -249,3 +249,24 @@ def test_polygon_visualization_draws_rle_contour_not_box(block_cls) -> None:
     result = output["image"].numpy_image
     assert result[contour_y, contour_x].any(), "expected the mask contour to be drawn"
     assert not result[35, 35].any(), "box corner should stay empty for an RLE circle"
+
+
+@pytest.mark.parametrize(
+    "box", [[20, 10, 80, 70], [25, 15, 50, 40], [-30, -30, 90, 90], [80, 80, 90, 90]]
+)
+def test_polygon_compact_crops_match_dense_slicing(box, monkeypatch):
+    mask = np.zeros((1, 100, 100), dtype=bool)
+    mask[0, 10:70, 20:80] = True
+    mask[0, 20:30, 30:40] = False
+    masks = sv.CompactMask.from_dense(mask, np.array([[20, 10, 80, 70]]), (100, 100))
+    dense = sv.Detections(xyxy=np.array([box]), mask=mask, class_id=np.array([0]))
+    compact = sv.Detections(xyxy=dense.xyxy, mask=masks, class_id=dense.class_id)
+    scene = np.zeros((100, 100, 3), dtype=np.uint8)
+    annotator = PolygonAnnotator()
+    expected = annotator.annotate(scene.copy(), dense)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Polygon rendering must use the compact crop")
+
+    monkeypatch.setattr(sv.CompactMask, "__getitem__", forbidden)
+    np.testing.assert_array_equal(annotator.annotate(scene.copy(), compact), expected)
