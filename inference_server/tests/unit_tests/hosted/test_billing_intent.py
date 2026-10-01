@@ -109,7 +109,7 @@ def test_contextvar_reset_after_request(client, secret):
 def stat_recorder(monkeypatch):
     calls = []
 
-    def _metadata(model_id, api_key=None, extra_headers=None):
+    def _metadata(model_id, api_key=None, extra_headers=None, proxy_url_builder=None):
         calls.append(extra_headers)
         return MagicMock(task_type="object-detection")
 

@@ -262,7 +262,7 @@ async def test_param_defaults_injected_when_absent(fake_handler_entry):
         r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
     assert r.status_code == 200
     passed = fake_handler_entry["handler"].await_args.args[1]["params"]
-    assert passed["mask_format"] is "rle"
+    assert passed["mask_format"] == "rle"
 
 
 @pytest.mark.asyncio
@@ -639,7 +639,7 @@ def _pipeline_registry(calls: list):
         "pp-ocrv6-rec/medium": "text-only-ocr",
     }
 
-    def _metadata(model_id, api_key=None):
+    def _metadata(model_id, api_key=None, **_):
         calls.append((model_id, api_key))
         if model_id not in table:
             raise ModelNotFoundError(message=model_id, help_url="")

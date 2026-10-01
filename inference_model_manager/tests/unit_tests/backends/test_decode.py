@@ -12,6 +12,9 @@ import pytest
 from inference_model_manager.backends.decode import (
     _decode_ic,
     _select_codec,
+    apply_exif_orientation,
+    decoded_dims,
+    exif_orientation,
     make_decoder,
 )
 
@@ -169,6 +172,321 @@ class TestMakeDecoder:
     def test_unknown_name_raises(self):
         with pytest.raises(ValueError, match="Unknown decoder"):
             make_decoder("cv2")
+
+
+# ---------------------------------------------------------------------------
+# EXIF orientation — the decoder must return upright pixels, like cv2.imdecode
+# ---------------------------------------------------------------------------
+
+
+def _upright_blocks(h: int = 32, w: int = 48) -> np.ndarray:
+    """Four flat quadrants: survive JPEG and reveal any rotation or flip."""
+    image = np.zeros((h, w, 3), dtype=np.uint8)
+    image[: h // 2, : w // 2] = (255, 0, 0)
+    image[: h // 2, w // 2 :] = (0, 255, 0)
+    image[h // 2 :, : w // 2] = (0, 0, 255)
+    image[h // 2 :, w // 2 :] = (255, 255, 0)
+    return image
+
+
+def _jpeg_with_orientation(pixels: np.ndarray, orientation: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    buffer = io.BytesIO()
+    Image.fromarray(pixels).save(buffer, format="JPEG", quality=95, exif=exif)
+    return buffer.getvalue()
+
+
+def _assert_close(actual: np.ndarray, expected: np.ndarray) -> None:
+    assert actual.shape == expected.shape
+    diff = np.abs(actual.astype(np.int16) - expected.astype(np.int16))
+    assert diff.mean() < 8, f"mean abs diff {diff.mean():.1f}"
+
+
+class TestExifOrientation:
+    @pytest.mark.parametrize(
+        "orientation,stored",
+        [
+            # Pixels stored so that applying the tag restores the upright image.
+            (3, lambda u: u[::-1, ::-1]),
+            (6, lambda u: np.rot90(u, k=1)),
+            (8, lambda u: np.rot90(u, k=-1)),
+        ],
+    )
+    def test_decoder_returns_upright_bgr(self, orientation, stored):
+        pytest.importorskip("imagecodecs")
+        upright = _upright_blocks()
+        pixels = np.ascontiguousarray(stored(upright))
+        data = _jpeg_with_orientation(pixels, orientation)
+        result = make_decoder("imagecodecs")(data)
+        _assert_close(result, upright[..., ::-1])
+        assert result.flags["C_CONTIGUOUS"]
+
+    @pytest.mark.parametrize("orientation", range(1, 9))
+    def test_matches_pil_exif_transpose(self, orientation):
+        pytest.importorskip("imagecodecs")
+        import io
+
+        from PIL import Image, ImageOps
+
+        data = _jpeg_with_orientation(_upright_blocks(), orientation)
+        with Image.open(io.BytesIO(data)) as image:
+            expected = np.asarray(ImageOps.exif_transpose(image).convert("RGB"))
+        _assert_close(_decode_ic(data), expected)
+
+    def test_reads_tag_from_pil_jpeg(self):
+        for orientation in range(1, 9):
+            data = _jpeg_with_orientation(_upright_blocks(), orientation)
+            assert exif_orientation(data) == orientation
+
+    def test_reads_big_endian_tiff_block(self):
+        tiff = (
+            b"MM\x00\x2a\x00\x00\x00\x08"  # header, IFD0 at offset 8
+            + b"\x00\x01"  # one entry
+            + b"\x01\x12\x00\x03\x00\x00\x00\x01\x00\x06\x00\x00"
+            + b"\x00\x00\x00\x00"
+        )
+        payload = b"Exif\x00\x00" + tiff
+        app1 = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+        assert exif_orientation(b"\xff\xd8" + app1 + b"\xff\xda\x00\x02") == 6
+
+    def test_missing_or_malformed_exif_is_upright(self, jpeg_bytes, png_bytes):
+        assert exif_orientation(jpeg_bytes) == 1
+        assert exif_orientation(png_bytes) == 1
+        assert exif_orientation(b"") == 1
+        tagged = _jpeg_with_orientation(_upright_blocks(), 6)
+        exif_at = tagged.index(b"Exif")
+        # Truncated inside the TIFF block.
+        assert exif_orientation(tagged[: exif_at + 12]) == 1
+        # Out-of-range tag value.
+        payload = b"Exif\x00\x00" + (
+            b"II\x2a\x00\x08\x00\x00\x00\x01\x00"
+            + b"\x12\x01\x03\x00\x01\x00\x00\x00\x09\x00\x00\x00"
+        )
+        app1 = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+        assert exif_orientation(b"\xff\xd8" + app1 + b"\xff\xda\x00\x02") == 1
+
+
+# ---------------------------------------------------------------------------
+# EXIF orientation per format — exactly what cv2.imdecode(IMREAD_COLOR) does:
+# JPEG, PNG and TIFF are oriented, WebP is not.
+# ---------------------------------------------------------------------------
+
+_ORIENTED_FORMATS = {"JPEG": True, "PNG": True, "TIFF": True, "WEBP": False}
+
+
+def _encode_with_orientation(fmt: str, orientation: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    options = {"JPEG": {"quality": 95}, "WEBP": {"lossless": True}}.get(fmt, {})
+    buffer = io.BytesIO()
+    Image.fromarray(_upright_blocks()).save(buffer, fmt, exif=exif.tobytes(), **options)
+    data = buffer.getvalue()
+    with Image.open(io.BytesIO(data)) as image:
+        assert image.getexif().get(0x0112) == orientation, "tag not written"
+    return data
+
+
+def _png_chunk(chunk_type: bytes, payload: bytes) -> bytes:
+    import zlib
+
+    crc = zlib.crc32(chunk_type + payload)
+    return (
+        len(payload).to_bytes(4, "big") + chunk_type + payload + crc.to_bytes(4, "big")
+    )
+
+
+def _png_with_exif_chunk(payload: bytes, *, after_idat: bool = False) -> bytes:
+    """PNG whose eXIf chunk carries ``payload``, before or after the IDAT."""
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.fromarray(_upright_blocks()).save(buffer, "PNG")
+    png = buffer.getvalue()
+    iend = png.rindex(b"IEND") - 4
+    exif_chunk = _png_chunk(b"eXIf", payload)
+    if after_idat:
+        return png[:iend] + exif_chunk + png[iend:]
+    ihdr_end = 8 + 12 + 13
+    return png[:ihdr_end] + exif_chunk + png[ihdr_end:]
+
+
+def _orientation_6_tiff_block() -> bytes:
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    return exif.tobytes()[len(b"Exif\x00\x00") :]
+
+
+class TestExifOrientationMatchesOpenCV:
+    @pytest.mark.parametrize("orientation", [3, 6, 8])
+    @pytest.mark.parametrize("fmt", sorted(_ORIENTED_FORMATS))
+    def test_decoded_pixels_equal_cv2_imdecode(self, fmt, orientation):
+        pytest.importorskip("imagecodecs")
+        cv2 = pytest.importorskip("cv2")
+        data = _encode_with_orientation(fmt, orientation)
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        result = make_decoder("imagecodecs")(data)
+        if fmt == "JPEG":
+            _assert_close(result, expected)
+        else:
+            np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("orientation", [3, 6, 8])
+    @pytest.mark.parametrize("fmt", sorted(_ORIENTED_FORMATS))
+    def test_orientation_is_format_aware(self, fmt, orientation):
+        data = _encode_with_orientation(fmt, orientation)
+        expected = orientation if _ORIENTED_FORMATS[fmt] else 1
+        assert exif_orientation(data) == expected
+        # Batch decoders hand over memoryviews.
+        assert exif_orientation(memoryview(data)) == expected
+
+    @pytest.mark.parametrize("orientation", [3, 6, 8])
+    @pytest.mark.parametrize("fmt", sorted(_ORIENTED_FORMATS))
+    def test_decoded_dims_match_decoded_pixels(self, fmt, orientation):
+        import io
+
+        from PIL import Image
+
+        pytest.importorskip("imagecodecs")
+        data = _encode_with_orientation(fmt, orientation)
+        with Image.open(io.BytesIO(data)) as image:
+            width, height = image.size
+        result = make_decoder("imagecodecs")(data)
+        assert decoded_dims(data, width, height) == (
+            result.shape[1],
+            result.shape[0],
+        )
+
+    @pytest.mark.parametrize("orientation", range(1, 9))
+    @pytest.mark.parametrize("fmt", ["PNG", "TIFF"])
+    def test_every_orientation_is_pixel_exact(self, fmt, orientation):
+        pytest.importorskip("imagecodecs")
+        cv2 = pytest.importorskip("cv2")
+        data = _encode_with_orientation(fmt, orientation)
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        np.testing.assert_array_equal(make_decoder("imagecodecs")(data), expected)
+
+    @pytest.mark.parametrize(
+        "case,expected",
+        [("before_idat", 6), ("after_idat", 6), ("exif_prefix", 1), ("bad_crc", 1)],
+    )
+    def test_png_exif_chunk_placement_and_validity(self, case, expected):
+        """libpng reads eXIf anywhere, but rejects a prefixed or corrupt one."""
+        tiff = _orientation_6_tiff_block()
+        if case == "exif_prefix":
+            data = _png_with_exif_chunk(b"Exif\x00\x00" + tiff)
+        else:
+            data = _png_with_exif_chunk(tiff, after_idat=case == "after_idat")
+        if case == "bad_crc":
+            at = data.index(b"eXIf") + 4 + len(tiff)
+            data = data[:at] + bytes(4) + data[at + 4 :]
+        assert exif_orientation(data) == expected
+        cv2 = pytest.importorskip("cv2")
+        decoded = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        stored_shape = decoded.shape[:2] == _upright_blocks().shape[:2]
+        assert stored_shape == (expected == 1)
+
+    def test_decoded_dims_ignores_pillow_tiff_swap(self):
+        """Pillow reports TIFF size already swapped; the stored size is used."""
+        data = _encode_with_orientation("TIFF", 6)
+        h, w = _upright_blocks().shape[:2]
+        # Same result whether the caller passes the stored or the swapped size.
+        assert decoded_dims(data, w, h) == (h, w)
+        assert decoded_dims(data, h, w) == (h, w)
+
+
+# ---------------------------------------------------------------------------
+# TIFFs that libtiff converts to RGB itself (CMYK, YCbCr) arrive already
+# flipped by libtiff: the decoder must add only what is still missing.
+# ---------------------------------------------------------------------------
+
+
+def _tiff_variant(variant: str, orientation: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    upright = _upright_blocks()
+    if variant.startswith("ycbcr"):
+        tifffile = pytest.importorskip("tifffile")
+        buffer = io.BytesIO()
+        tifffile.imwrite(
+            buffer,
+            upright,
+            photometric="ycbcr",
+            subsampling=(1, 1),
+            compression="zlib" if variant == "ycbcr_deflate" else None,
+            extratags=[(0x0112, 3, 1, orientation, True)],
+        )
+        return buffer.getvalue()
+    options = {
+        "cmyk": {},
+        "cmyk_lzw": {"compression": "tiff_lzw"},
+        "cmyk_jpeg": {"compression": "jpeg"},
+    }[variant]
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    buffer = io.BytesIO()
+    Image.fromarray(upright).convert("CMYK").save(
+        buffer, "TIFF", exif=exif.tobytes(), **options
+    )
+    return buffer.getvalue()
+
+
+# CMYK+JPEG is decoded by libjpeg, not by libtiff's RGBA reader: nothing is
+# pre-flipped there, and imagecodecs' colours differ from OpenCV's.
+_LIBTIFF_RGB_VARIANTS = ["cmyk", "cmyk_lzw", "ycbcr", "ycbcr_deflate"]
+_TIFF_VARIANTS = _LIBTIFF_RGB_VARIANTS + ["cmyk_jpeg"]
+
+
+class TestTiffPreOrientedByLibtiff:
+    @pytest.mark.parametrize("orientation", range(1, 9))
+    @pytest.mark.parametrize("variant", _LIBTIFF_RGB_VARIANTS)
+    def test_pixel_exact_vs_cv2_imdecode(self, variant, orientation):
+        pytest.importorskip("imagecodecs")
+        cv2 = pytest.importorskip("cv2")
+        data = _tiff_variant(variant, orientation)
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        np.testing.assert_array_equal(make_decoder("imagecodecs")(data), expected)
+
+    @pytest.mark.parametrize("orientation", range(1, 9))
+    @pytest.mark.parametrize("variant", _TIFF_VARIANTS)
+    def test_output_is_stored_image_oriented_once(self, variant, orientation):
+        pytest.importorskip("imagecodecs")
+        decode = make_decoder("imagecodecs")
+        stored = decode(_tiff_variant(variant, 1))
+        expected = apply_exif_orientation(stored, orientation)
+        result = decode(_tiff_variant(variant, orientation))
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("orientation", range(1, 9))
+    @pytest.mark.parametrize("variant", _TIFF_VARIANTS)
+    def test_decoded_dims_match_decoded_pixels(self, variant, orientation):
+        import io
+
+        from PIL import Image
+
+        pytest.importorskip("imagecodecs")
+        data = _tiff_variant(variant, orientation)
+        with Image.open(io.BytesIO(data)) as image:
+            width, height = image.size
+        result = make_decoder("imagecodecs")(data)
+        assert decoded_dims(data, width, height) == (
+            result.shape[1],
+            result.shape[0],
+        )
 
 
 # ---------------------------------------------------------------------------

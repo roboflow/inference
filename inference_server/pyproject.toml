@@ -13,6 +13,8 @@ dependencies = [
   "filetype>=1.2.0",
   "aiohttp>=3.9.0",
   "python-multipart>=0.0.9",
+  "prometheus-client>=0.16.0",
+  "prometheus-fastapi-instrumentator>=8.1.0,<9.0.0",
 ]
 
 [project.optional-dependencies]

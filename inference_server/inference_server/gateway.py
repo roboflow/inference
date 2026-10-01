@@ -223,6 +223,7 @@ class ModelManagerGateway:
         timing: dict = {}
 
         def _reload() -> None:
+            started = time.perf_counter()
             if drop_dead:
                 try:
                     self.manager.unload(key)

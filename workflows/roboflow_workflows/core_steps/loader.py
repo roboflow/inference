@@ -1,6 +1,9 @@
 from typing import List, Type
 
-from roboflow_workflows._compat_names import to_legacy_module
+from roboflow_workflows._compat_names import (
+    to_historic_plugin_module,
+    to_legacy_module,
+)
 from roboflow_workflows.configuration import get_configuration
 from roboflow_workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
@@ -445,6 +448,20 @@ if not ENABLE_TENSOR_DATA_REPRESENTATION:
 else:
     from roboflow_workflows.core_steps.math.cosine_similarity.v1_tensor import (
         CosineSimilarityBlockV1,
+    )
+
+# visual_search emits only dict/scalar/image outputs, so it needs no _tensor sibling.
+from roboflow_workflows.core_steps.integrations.roboflow.visual_search.v1 import (
+    RoboflowVisualSearchBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
+        RoboflowVisualSearchClassifierBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.integrations.roboflow.visual_search_classifier.v1_tensor import (
+        RoboflowVisualSearchClassifierBlockV1,
     )
 
 from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v1 import (
@@ -985,6 +1002,59 @@ if not ENABLE_TENSOR_DATA_REPRESENTATION:
 else:
     from roboflow_workflows.core_steps.sinks.onvif_movement.v1_tensor import (
         ONVIFSinkBlockV1,
+    )
+
+from roboflow_workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
+    RoboflowAssetLibraryAttributesBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
+        RoboflowCustomMetadataBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1_tensor import (
+        RoboflowCustomMetadataBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
+        RoboflowDatasetUploadBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+        RoboflowDatasetUploadBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
+        RoboflowDatasetUploadBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2_tensor import (
+        RoboflowDatasetUploadBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
+        ModelMonitoringInferenceAggregatorBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1_tensor import (
+        ModelMonitoringInferenceAggregatorBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1 import (
+        RoboflowVisionEventsBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1_tensor import (
+        RoboflowVisionEventsBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
+        VisionEventBundleSinkBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
+        VisionEventBundleSinkBlockV1,
     )
 
 from roboflow_workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
@@ -1641,22 +1711,28 @@ def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
         # 2. The full module path
         # 3. The block name from schema if available
         block_class_name = block_class.__name__.lower()
-        # Match against BOTH the canonical (`roboflow_workflows.*`) and the
-        # historic (`inference.core.workflows.*` / `inference.enterprise.*`)
-        # module paths. Operator-supplied WORKFLOW_DISABLED_BLOCK_PATTERNS
-        # values reference the historic paths; canonical paths appear here
-        # because `class.__module__` is left canonical for pickling.
-        canonical_module = block_class.__module__.lower()
-        legacy_module = to_legacy_module(block_class.__module__).lower()
+        # Match against the canonical (`roboflow_workflows.*`) module path and
+        # every historic one: `inference.core.workflows.*` /
+        # `inference.enterprise.*`, plus - for the Roboflow-platform blocks -
+        # the `inference.roboflow_workflows_plugin.*` path of 1.6.1-1.7.2.
+        # Operator-supplied WORKFLOW_DISABLED_BLOCK_PATTERNS values reference
+        # the historic paths; canonical paths appear here because
+        # `class.__module__` is left canonical for pickling.
+        module_names = [
+            block_class.__module__.lower(),
+            to_legacy_module(block_class.__module__).lower(),
+        ]
+        plugin_module = to_historic_plugin_module(block_class.__module__)
+        if plugin_module is not None:
+            module_names.append(plugin_module.lower())
         block_name = schema.get("name", "").lower()
 
         for pattern in WORKFLOW_DISABLED_BLOCK_PATTERNS:
             pattern_lower = pattern.lower()
             if (
                 pattern_lower in block_class_name
-                or pattern_lower in canonical_module
-                or pattern_lower in legacy_module
                 or pattern_lower in block_name
+                or any(pattern_lower in module for module in module_names)
             ):
                 return True
 
@@ -1676,9 +1752,13 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionOffsetBlockV1,
         PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,
+        RoboflowVisualSearchBlockV1,
+        RoboflowVisualSearchClassifierBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
+        RoboflowDatasetUploadBlockV1,
+        RoboflowAssetLibraryAttributesBlockV1,
         ContinueIfBlockV1,
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,
@@ -1791,6 +1871,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PolygonZoneVisualizationBlockV1,
         QRCodeDetectorBlockV1,
         RoboflowClassificationModelBlockV1,
+        RoboflowCustomMetadataBlockV1,
+        ModelMonitoringInferenceAggregatorBlockV1,
+        RoboflowDatasetUploadBlockV2,
         RoboflowInstanceSegmentationModelBlockV1,
         RoboflowKeypointDetectionModelBlockV1,
         RoboflowMultiLabelClassificationModelBlockV1,
@@ -1898,6 +1981,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
+        RoboflowVisionEventsBlockV1,
+        VisionEventBundleSinkBlockV1,
         GLMOCRBlockV1,
         EasyOCRBlockV1,
         PPOCRBlockV1,

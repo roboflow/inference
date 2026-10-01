@@ -6,7 +6,11 @@ Server imports are covered by test_decontamination_lint.
 import ast
 
 from tests.unit_tests.test_configuration import environment_reads
-from tests.unit_tests.test_decontamination_lint import PROJECT_ROOT, WORKFLOWS_ROOT
+from tests.unit_tests.test_decontamination_lint import (
+    PROJECT_ROOT,
+    WORKFLOWS_ROOT,
+    collect_violations,
+)
 
 # Every direct environment read that remains inside `inference/core/workflows`
 # after Phase 5, with its owner. Phase 5 removes `inference.core.env` IMPORTS;
@@ -25,13 +29,22 @@ PERMITTED_ENVIRONMENT_READS = {
         "roboflow_workflows/core_steps/secrets_providers/environment_secrets_store/v1.py",
         1,
     ),
-    # Phase 9 relocates these two files; if Phase 5 runs first their reads stay.
+    # `EVENT_INGESTION_API_KEY`, the local event-ingestion service key.
     ("roboflow_workflows/core_steps/sinks/roboflow/vision_events/v1.py", 1),
     (
         "roboflow_workflows/core_steps/sinks/roboflow/vision_events/v1_tensor.py",
         1,
     ),
 }
+
+
+def test_no_owned_module_imports_inference_core_env() -> None:
+    offenders = sorted(
+        (path, module)
+        for path, module in collect_violations()
+        if module.startswith("inference.core.env")
+    )
+    assert not offenders, offenders
 
 
 def test_the_environment_read_inventory_is_frozen() -> None:
@@ -44,12 +57,6 @@ def test_the_environment_read_inventory_is_frozen() -> None:
         if reads:
             found[path.relative_to(PROJECT_ROOT).as_posix()] = reads
     expected = {path: count for path, count in PERMITTED_ENVIRONMENT_READS}
-    # Phase 9 may already have relocated its two files.
-    expected = {
-        path: count
-        for path, count in expected.items()
-        if (PROJECT_ROOT / path).exists()
-    }
     assert found == expected, {
         "unexpected": {k: v for k, v in found.items() if expected.get(k) != v},
         "missing": {k: v for k, v in expected.items() if found.get(k) != v},

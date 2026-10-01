@@ -1,6 +1,6 @@
 import asyncio
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import requests
@@ -161,7 +161,7 @@ async def test_model_stat_has_no_extra_headers_by_default():
             CommonRequestParams(model_id="acme/1", api_key="k")
         )
 
-    fetch.assert_called_once_with(model_id="acme/1", api_key="k")
+    fetch.assert_called_once_with(model_id="acme/1", api_key="k", proxy_url_builder=ANY)
 
 
 @pytest.mark.asyncio
@@ -178,6 +178,7 @@ async def test_model_stat_sends_credits_header_when_enforced(monkeypatch):
     fetch.assert_called_once_with(
         model_id="acme/1",
         api_key="k",
+        proxy_url_builder=ANY,
         extra_headers={"x-enforce-credits-verification": "true"},
     )
 
@@ -199,7 +200,7 @@ async def test_model_stat_skips_credits_header_for_non_billable_request(
     finally:
         enforce_credits_verification.reset(reset)
 
-    fetch.assert_called_once_with(model_id="acme/1", api_key="k")
+    fetch.assert_called_once_with(model_id="acme/1", api_key="k", proxy_url_builder=ANY)
 
 
 @pytest.mark.asyncio
@@ -219,6 +220,7 @@ async def test_model_stat_sends_assume_identity_headers(token):
     fetch.assert_called_once_with(
         model_id="acme/1",
         api_key="k",
+        proxy_url_builder=ANY,
         extra_headers={
             "x-assume-identity-access-token": "tok",
             "x-assume-identity-authorised-workspace": "db-1",
@@ -227,7 +229,7 @@ async def test_model_stat_sends_assume_identity_headers(token):
 
 
 def _recording_fetch(calls, delay=0.0):
-    def _fetch(model_id, api_key=None, extra_headers=None):
+    def _fetch(model_id, api_key=None, extra_headers=None, proxy_url_builder=None):
         calls.append(extra_headers)
         if delay:
             time.sleep(delay)

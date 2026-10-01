@@ -17,7 +17,10 @@ from inference_models.errors import (
     RetryError,
     UnauthorizedModelAccessError,
 )
-from inference_models.weights_providers.roboflow import get_one_page_of_model_metadata
+from inference_models.weights_providers.roboflow import (
+    get_one_page_of_model_metadata,
+    roboflow_secure_gateway_proxy_url_builder,
+)
 from inference_server import configuration
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.fanout import gather_bounded
@@ -155,6 +158,7 @@ async def _fetch_and_map(
     fetch_kwargs: dict = {
         "model_id": common_params.model_id,
         "api_key": common_params.api_key or None,
+        "proxy_url_builder": roboflow_secure_gateway_proxy_url_builder,
     }
     if extra_headers:
         fetch_kwargs["extra_headers"] = extra_headers

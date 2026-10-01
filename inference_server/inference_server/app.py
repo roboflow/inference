@@ -3,6 +3,7 @@
 Routes are split into routers:
   - routers/v2_models.py  — /v2/models/* (load, unload, list, infer, interface)
   - routers/v2_server.py  — /v2/server/* (health, ready, info, metrics)
+  - prometheus.py         — /metrics (Prometheus text format)
 
 Per-process gateway state lives in whatever gateway_resolver.resolve_gateway()
 returns.
@@ -316,6 +317,12 @@ class _AuthMiddleware:
 
         await self.app(scope, receive, send)
 
+
+# Before the legacy catch-all and the root static mount, which would shadow it.
+if _cfg.ENABLE_PROMETHEUS:
+    from inference_server.prometheus import install_prometheus_metrics
+
+    install_prometheus_metrics(app)
 
 if _LEGACY_ERROR_HANDLING_ENABLED:
     from inference_server.legacy.errors import (

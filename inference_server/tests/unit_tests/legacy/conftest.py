@@ -104,7 +104,7 @@ def fake_stat(monkeypatch):
 
     table = {}
 
-    def _metadata(model_id: str, api_key: Optional[str] = None):
+    def _metadata(model_id: str, api_key: Optional[str] = None, **_):
         outcome = table.get(model_id)
         if outcome is None:
             raise ModelNotFoundError(message=model_id, help_url="")

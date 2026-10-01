@@ -8,6 +8,9 @@ from roboflow_workflows.execution_engine.core import (
     get_available_versions,
 )
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
+from roboflow_workflows.execution_engine.introspection.workload_entities import (
+    WorkflowIntrospection,
+)
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
 )
@@ -39,7 +42,7 @@ from inference_server.legacy.bridge import SyncLegacyBridge
 from inference_server.legacy.common import orjson_response, resolve_api_key
 from inference_server.legacy.errors import LegacyHTTPError
 from inference_server.middlewares.model_load import REQUEST_WORKFLOW_ID
-from inference_server.workflows import execution, host
+from inference_server.workflows import execution, host, workload
 from inference_server.workflows.errors import with_workflow_errors
 from inference_server.workflows.models_provider import GatewayModelsProvider
 
@@ -147,6 +150,65 @@ async def describe_workflow_specification_interface(
     return await run_in_threadpool(
         describe_workflow_interface, definition=workflow_request.specification
     )
+
+
+if not configuration.DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS:
+
+    @router.post(
+        "/{workspace_name}/workflows/{workflow_id}/describe_workload",
+        response_model=WorkflowIntrospection,
+        summary="[EXPERIMENTAL] Endpoint to describe compile-time workload of predefined workflow",
+        description="[EXPERIMENTAL] Checks Roboflow API for workflow definition, once acquired - inspects it structurally "
+        "and describes the graph, per-step work operations, restrictions, dependent resources and model "
+        "inventory. Nothing is executed: no block is initialised, no model is loaded and no custom Python "
+        "code is evaluated.",
+    )
+    @with_workflow_errors
+    async def describe_predefined_workflow_workload(
+        request: Request,
+        workspace_name: str,
+        workflow_id: str,
+        workflow_request: workload.PredefinedWorkflowDescribeWorkloadRequest,
+    ) -> WorkflowIntrospection:
+        api_key = resolve_api_key(request, None, workflow_request.api_key)
+        if api_key is None:
+            raise LegacyHTTPError(400, MISSING_API_KEY_MESSAGE)
+        specification = await run_in_threadpool(
+            host.get_workflow_specification,
+            api_key=api_key,
+            workspace_id=workspace_name,
+            workflow_id=workflow_id,
+            use_cache=workflow_request.use_cache,
+            workflow_version_id=workflow_request.workflow_version_id,
+        )
+        return await run_in_threadpool(
+            workload.describe_workload, definition=specification, api_key=api_key
+        )
+
+    @router.post(
+        "/workflows/describe_workload",
+        response_model=WorkflowIntrospection,
+        summary="[EXPERIMENTAL] Endpoint to describe compile-time workload of workflow given in request",
+        description="[EXPERIMENTAL] Parses and structurally inspects the workflow definition, describing the graph, "
+        "per-step work operations, restrictions, dependent resources and model inventory. Nothing is "
+        "executed: no block is initialised, no model is loaded and no custom Python code is evaluated.",
+    )
+    @with_workflow_errors
+    async def describe_workflow_specification_workload(
+        request: Request,
+        workflow_request: workload.WorkflowSpecificationDescribeWorkloadRequest,
+    ) -> WorkflowIntrospection:
+        # Same key contract as `describe_interface`: body or Bearer header, one
+        # of the two is required. The key is also the credential the optional
+        # model metadata lookup runs under.
+        api_key = resolve_api_key(request, None, workflow_request.api_key)
+        if api_key is None:
+            raise LegacyHTTPError(400, MISSING_API_KEY_MESSAGE)
+        return await run_in_threadpool(
+            workload.describe_workload,
+            definition=workflow_request.specification,
+            api_key=api_key,
+        )
 
 
 @router.post(
