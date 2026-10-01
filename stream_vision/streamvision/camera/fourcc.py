@@ -17,7 +17,8 @@ def _encode_fourcc(code: str) -> int:
 
 
 def _integral(value: float) -> Optional[int]:
-    if math.isfinite(value) and value >= 0 and float(value).is_integer():
+    # A FOURCC is a 32-bit unsigned code: finite, non-negative and whole.
+    if math.isfinite(value) and value >= 0 and value.is_integer():
         return int(value)
     return None
 
