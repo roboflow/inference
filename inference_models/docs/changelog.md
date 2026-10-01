@@ -52,6 +52,9 @@
 
 ### Fixed
 
+- RF-DETR Core ML loaders validate the model's actual input dimensions before
+  compilation and runtime loading, preserving input-size alignment when package
+  metadata disagrees with the model.
 - RF-DETR Triton preprocessing no longer falls back for dataset-version resize
   metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
   flags disabling already-inactive crop, contrast, and grayscale transforms.

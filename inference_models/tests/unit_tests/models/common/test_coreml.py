@@ -44,7 +44,7 @@ def loaded_paths(monkeypatch) -> List[str]:
     """Record the bundle each load reads (instead of loading it with coremltools)."""
     paths = []
 
-    def fake_load(mlpackage_path: str, compute_units: str) -> str:
+    def fake_load(mlpackage_path: str, compute_units: str, **kwargs) -> str:
         paths.append(mlpackage_path)
         return mlpackage_path
 
@@ -137,7 +137,7 @@ def test_load_coreml_package_extracts_and_loads_under_the_package_coreml_cache_l
     lock_path = os.path.join(package_dir, ".coreml_cache.lock")
     held_during_load = []
 
-    def fake_load(mlpackage_path: str, compute_units: str) -> str:
+    def fake_load(mlpackage_path: str, compute_units: str, **kwargs) -> str:
         probe = FileLock(lock_path, timeout=0)
         try:
             probe.acquire()
