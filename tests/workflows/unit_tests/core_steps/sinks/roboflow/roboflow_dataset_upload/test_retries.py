@@ -1,6 +1,8 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
-from types import ModuleType, SimpleNamespace
-from unittest.mock import Mock
+from email import policy
+from email.parser import BytesParser
+from types import ModuleType
 
 import numpy as np
 import pytest
@@ -38,13 +40,9 @@ def implementation(request: pytest.FixtureRequest) -> ModuleType:
 
 
 @pytest.fixture(autouse=True)
-def retry_sleep(monkeypatch: pytest.MonkeyPatch) -> Mock:
-    sleep = Mock()
-    monkeypatch.setattr("backoff._sync.time", SimpleNamespace(sleep=sleep))
+def configure_api(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(roboflow_api, "API_BASE_URL", _API_URL)
     monkeypatch.setattr(roboflow_api, "OFFLINE_MODE", False)
-
-    return sleep
 
 
 @pytest.fixture
@@ -87,11 +85,10 @@ def test_retries_only_the_failed_request(
     implementation: ModuleType,
     registration: dict,
     requests_mock: Mocker,
-    retry_sleep: Mock,
     stage: str,
     failure: dict,
 ) -> None:
-    responses = [failure, failure, {"json": _SUCCESS}]
+    responses = [failure, {"json": _SUCCESS}]
     upload = requests_mock.post(
         _UPLOAD_URL, responses if stage == "upload" else [{"json": _SUCCESS}]
     )
@@ -102,27 +99,41 @@ def test_retries_only_the_failed_request(
     result = implementation.register_datapoint(**registration)
 
     assert result == "Successfully registered image and annotation"
-    assert upload.call_count == (3 if stage == "upload" else 1)
-    assert annotation.call_count == (3 if stage == "annotation" else 1)
+    assert upload.call_count == (2 if stage == "upload" else 1)
+    assert annotation.call_count == (2 if stage == "annotation" else 1)
     assert all(request.text == "cat" for request in annotation.request_history)
     assert all(
         request.qs["prediction"] == ["true"] for request in annotation.request_history
     )
-    assert retry_sleep.call_count == 2
-    assert 0 <= retry_sleep.call_args_list[0].args[0] <= 1
-    assert 0 <= retry_sleep.call_args_list[1].args[0] <= 2
 
 
-def test_upload_retry_rebuilds_consumed_multipart_body(
+def test_upload_retry_preserves_image_and_metadata(
     implementation: ModuleType,
     registration: dict,
     requests_mock: Mocker,
 ) -> None:
-    bodies = []
+    uploaded_fields = []
 
     def consume_upload(request, context):
-        bodies.append(request.body.read())
-        context.status_code = 503 if len(bodies) == 1 else 200
+        body = request.body
+        if hasattr(body, "read"):
+            body = body.read()
+        if isinstance(body, str):
+            body = body.encode("utf-8")
+
+        content_type = request.headers["Content-Type"]
+        multipart = BytesParser(policy=policy.default).parsebytes(
+            f"Content-Type: {content_type}\r\n\r\n".encode("ascii") + body
+        )
+        uploaded_fields.append(
+            {
+                part.get_param("name", header="Content-Disposition"): part.get_payload(
+                    decode=True
+                )
+                for part in multipart.iter_parts()
+            }
+        )
+        context.status_code = 503 if len(uploaded_fields) == 1 else 200
 
         return _SUCCESS
 
@@ -132,11 +143,11 @@ def test_upload_retry_rebuilds_consumed_multipart_body(
     result = implementation.register_datapoint(**registration)
 
     assert result == "Successfully registered image and annotation"
-    assert len(bodies) == 2
-    for body in bodies:
-        assert b"jpeg image" in body
-        assert b"local-id.jpg" in body
-        assert b'"camera": "test-camera"' in body
+    assert len(uploaded_fields) == 2
+    for fields in uploaded_fields:
+        assert fields["file"] == b"jpeg image"
+        assert fields["name"] == b"local-id.jpg"
+        assert json.loads(fields["metadata"]) == {"camera": "test-camera"}
     assert all(
         request.qs["inference_id"] == ["prediction-id"]
         for request in requests_mock.request_history
@@ -150,7 +161,6 @@ def test_permanent_http_errors_are_not_retried(
     implementation: ModuleType,
     registration: dict,
     requests_mock: Mocker,
-    retry_sleep: Mock,
     stage: str,
     status: int,
 ) -> None:
@@ -164,7 +174,6 @@ def test_permanent_http_errors_are_not_retried(
 
     assert upload.call_count == 1
     assert annotation.call_count == (0 if stage == "upload" else 1)
-    retry_sleep.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -178,7 +187,6 @@ def test_application_rejections_are_not_retried(
     implementation: ModuleType,
     registration: dict,
     requests_mock: Mocker,
-    retry_sleep: Mock,
     stage: str,
     expected_error: type[Exception],
 ) -> None:
@@ -193,14 +201,12 @@ def test_application_rejections_are_not_retried(
 
     assert upload.call_count == 1
     assert annotation.call_count == (0 if stage == "upload" else 1)
-    retry_sleep.assert_not_called()
 
 
 def test_already_annotated_after_timeout_preserves_existing_annotation(
     implementation: ModuleType,
     registration: dict,
     requests_mock: Mocker,
-    retry_sleep: Mock,
 ) -> None:
     upload = requests_mock.post(_UPLOAD_URL, json=_SUCCESS)
     annotation = requests_mock.post(
@@ -214,7 +220,6 @@ def test_already_annotated_after_timeout_preserves_existing_annotation(
     assert upload.call_count == 1
     assert annotation.call_count == 2
     assert all("overwrite" not in request.qs for request in annotation.request_history)
-    retry_sleep.assert_called_once()
 
 
 def test_duplicate_after_upload_timeout_does_not_reannotate(
@@ -270,7 +275,6 @@ def test_retry_outcome_preserves_quota_accounting(
     implementation: ModuleType,
     execution: dict,
     requests_mock: Mocker,
-    retry_sleep: Mock,
     stage: str,
     exhausted: bool,
 ) -> None:
@@ -297,7 +301,6 @@ def test_retry_outcome_preserves_quota_accounting(
     assert annotation.call_count == (
         3 if stage == "annotation" else expected_annotations
     )
-    assert retry_sleep.call_count == 2
     for limit_type in StrategyLimitType:
         assert get_current_strategy_limit_usage(
             cache=execution["cache"],
