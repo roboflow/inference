@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 
+from inference_models.errors import ModelInputError
 from inference_server.configuration import (
     ALLOW_URL_INPUT,
     INFER_TIMEOUT_S,
@@ -17,6 +18,7 @@ from inference_server.configuration import (
     LEGACY_ROUTE_METADATA_TTL_S,
     OFFLINE_MODE,
 )
+from inference_server.errors import PayloadTooLargeError
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.fanout import gather_bounded
 from inference_server.framework.input_parsers.url_fetch import fetch_images_from_urls
@@ -331,17 +333,24 @@ class LegacyModelBridge:
             responses=len(images),
             monitoring=record and model_monitoring,
         ):
-            results = await gather_bounded(
-                *(
-                    self.gateway.infer(
-                        model_id=route.registry_id,
-                        image=image.data if image is not None else None,
-                        action=action,
-                        params=params,
+            try:
+                results = await gather_bounded(
+                    *(
+                        self.gateway.infer(
+                            model_id=route.registry_id,
+                            image=image.data if image is not None else None,
+                            action=action,
+                            params=params,
+                        )
+                        for image in images
                     )
-                    for image in images
                 )
-            )
+            except PayloadTooLargeError:
+                raise
+            except ValueError as error:
+                if isinstance(error.__cause__, ModelInputError):
+                    raise error.__cause__ from error
+                raise ModelInputError(str(error)) from error
         return results
 
     async def infer_params_only(

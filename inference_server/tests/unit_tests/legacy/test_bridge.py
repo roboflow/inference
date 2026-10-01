@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
+from inference_models.errors import ModelInputError
 
 from inference_server.legacy import bridge as bridge_mod
 from inference_server.legacy.bridge import (
@@ -225,6 +226,58 @@ async def test_infer_fans_out_per_image(fake_stat):
         {"confidence": 0.5},
     )
     assert out == [("pred", b"a"), ("pred", b"b")]
+
+
+def _raising(error):
+    def _raise(image, params):
+        raise error
+
+    return _raise
+
+
+@pytest.mark.asyncio
+async def test_infer_wraps_a_gateway_value_error_as_a_model_input_error(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(predictions={("ds/1", "infer"): _raising(ValueError("bad shape"))})
+    bridge = LegacyModelBridge(gw)
+    route = await bridge.resolve("ds/1", None)
+
+    with pytest.raises(ModelInputError) as exc:
+        await bridge.infer(route, None, "infer", [ImagePayload(b"a", 1, 1)], {})
+
+    assert str(exc.value) == "bad shape"
+    assert exc.value.help_url is None
+
+
+@pytest.mark.asyncio
+async def test_infer_raises_the_model_input_error_a_gateway_value_error_was_caused_by(
+    fake_stat,
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    original = ModelInputError("bad", help_url="https://x")
+    try:
+        raise ValueError(str(original)) from original
+    except ValueError as error:
+        raised = error
+    gw = FakeGateway(predictions={("ds/1", "infer"): _raising(raised)})
+    bridge = LegacyModelBridge(gw)
+    route = await bridge.resolve("ds/1", None)
+
+    with pytest.raises(ModelInputError) as exc:
+        await bridge.infer(route, None, "infer", [ImagePayload(b"a", 1, 1)], {})
+
+    assert exc.value is original
+
+
+@pytest.mark.asyncio
+async def test_infer_leaves_other_gateway_errors_unchanged(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(predictions={("ds/1", "infer"): _raising(RuntimeError("boom"))})
+    bridge = LegacyModelBridge(gw)
+    route = await bridge.resolve("ds/1", None)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await bridge.infer(route, None, "infer", [ImagePayload(b"a", 1, 1)], {})
 
 
 @pytest.mark.asyncio

@@ -299,6 +299,17 @@ def test_step_error_handler_maps_legacy_http_error_and_sdk_error():
     assert host.step_error_handler("step", ValueError("unmapped")) is None
 
 
+def test_step_error_handler_leaves_a_model_input_error_unconverted():
+    from inference_models.errors import ModelInputError
+
+    import inference_server.workflows.host as host
+
+    assert (
+        host.step_error_handler("step", ModelInputError("bad shape", help_url="u"))
+        is None
+    )
+
+
 def test_step_error_handler_maps_feature_deprecated():
     from roboflow_workflows.errors import ClientCausedStepExecutionError
     from roboflow_workflows.prototypes.platform_errors import FeatureDeprecatedError

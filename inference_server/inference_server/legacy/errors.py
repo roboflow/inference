@@ -4,20 +4,31 @@ import asyncio
 import functools
 import json
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Tuple
 
 import pydantic
+import requests
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from inference_model_manager.pipelines import InvalidPipelineIdError
 from starlette.exceptions import HTTPException
 
 from inference_models.errors import (
+    EnvironmentConfigurationError,
+    FileHashSumMissmatch,
+    InvalidEnvVariable,
+    InvalidParameterError,
+    MissingDependencyError,
     ModelInputError,
+    ModelLoadingError,
     ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageNegotiationError,
     ModelPackageRestrictedError,
     ModelRetrievalError,
     RetryError,
     UnauthorizedModelAccessError,
+    UntrustedFileError,
 )
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
@@ -42,8 +53,12 @@ MODEL_RESTRICTED_MESSAGE = (
 )
 MODEL_PACKAGE_BROKEN_MESSAGE = "Model package is broken."
 REGISTRY_UNREACHABLE_MESSAGE = "Internal error. Could not connect to Roboflow API."
+REGISTRY_REQUEST_FAILED_MESSAGE = "Internal error. Request to Roboflow API failed."
+REGISTRY_TIMEOUT_MESSAGE = "Timeout when attempting to connect to Roboflow API."
+SERVICE_MISCONFIGURATION_MESSAGE = "Service misconfiguration."
 INFERENCE_TIMEOUT_MESSAGE = "Timed out waiting for inference result."
 INTERNAL_ERROR_MESSAGE = "Internal error."
+INVALID_MODEL_ID_MESSAGE = "Invalid Model ID sent in request."
 
 MODEL_ACCESS_ERROR_MESSAGES = {
     402: "Not enough credits to perform this request. Verify your workspace billing page.",
@@ -85,45 +100,130 @@ def legacy_error_response(error: BaseException) -> JSONResponse:
             content={"message": str(error)},
             headers={"Retry-After": "1"},
         )
-    if isinstance(error, (PermissionError, UnauthorizedModelAccessError)):
-        return JSONResponse(status_code=401, content={"message": UNAUTHORIZED_MESSAGE})
-    if isinstance(error, (LookupError, ModelNotFoundError)):
-        return JSONResponse(status_code=404, content={"message": NOT_FOUND_MESSAGE})
-    if isinstance(error, ModelPackageRestrictedError):
-        return JSONResponse(
-            status_code=507, content={"message": MODEL_RESTRICTED_MESSAGE}
-        )
-    if isinstance(error, ModelRetrievalError):
-        access_response = _model_access_response(error)
-        if access_response is not None:
-            return access_response
-    if isinstance(error, (ModelInputError, ValueError, pydantic.ValidationError)):
-        return JSONResponse(status_code=400, content={"message": str(error)})
     if isinstance(error, asyncio.TimeoutError):
         return JSONResponse(
             status_code=504, content={"message": INFERENCE_TIMEOUT_MESSAGE}
         )
-    if isinstance(error, RuntimeError):
-        cause = error.__cause__
-        if isinstance(cause, (RetryError, ModelRetrievalError, OSError)):
-            access_response = _model_access_response(cause)
-            if access_response is not None:
-                return access_response
-            return JSONResponse(
-                status_code=503, content={"message": REGISTRY_UNREACHABLE_MESSAGE}
-            )
-    logger.error("Unhandled legacy route error", exc_info=error)
-    return JSONResponse(status_code=500, content={"message": INTERNAL_ERROR_MESSAGE})
+
+    answer = _mapped_answer(error)
+    if answer is None:
+        logger.error("Unhandled legacy route error", exc_info=error)
+        return JSONResponse(
+            status_code=500, content={"message": INTERNAL_ERROR_MESSAGE}
+        )
+
+    status_code, content = answer
+    if status_code == 402 and isinstance(error, RuntimeError):
+        logger.warning("%s: %s", type(error).__name__, error)
+    else:
+        logger.error("%s: %s", type(error).__name__, error, exc_info=error)
+
+    return JSONResponse(status_code=status_code, content=content)
 
 
-def _model_access_response(error: BaseException) -> Optional[JSONResponse]:
+def _mapped_answer(error: BaseException) -> Optional[Tuple[int, dict]]:
+    cause = error.__cause__
+    if isinstance(error, ModelInputError):
+        return 400, {
+            "message": f"Error with model input. Cause: {error}",
+            "help_url": error.help_url,
+        }
+    if isinstance(error, UnauthorizedModelAccessError) or (
+        isinstance(error, PermissionError)
+        and isinstance(cause, UnauthorizedModelAccessError)
+    ):
+        return 401, {"message": UNAUTHORIZED_MESSAGE}
+    if isinstance(error, ModelNotFoundError) or (
+        isinstance(error, LookupError) and isinstance(cause, ModelNotFoundError)
+    ):
+        return 404, {"message": NOT_FOUND_MESSAGE}
+    if isinstance(error, LookupError) and isinstance(cause, InvalidPipelineIdError):
+        return 400, {"message": INVALID_MODEL_ID_MESSAGE}
+    if isinstance(error, ModelPackageNegotiationError):
+        return 500, {
+            "message": f"Could not negotiate model package - {error}",
+            "help_url": error.help_url,
+        }
+    if isinstance(
+        error,
+        (
+            EnvironmentConfigurationError,
+            InvalidEnvVariable,
+            MissingDependencyError,
+            InvalidParameterError,
+        ),
+    ):
+        return 500, {"message": SERVICE_MISCONFIGURATION_MESSAGE}
+    if isinstance(error, ModelPackageRestrictedError):
+        return 507, {"message": MODEL_RESTRICTED_MESSAGE}
+    if isinstance(error, ModelPackageAlternativesExhaustedError):
+        if any(
+            isinstance(alternative_error, ModelPackageRestrictedError)
+            for alternative_error in error.alternatives_errors or []
+        ):
+            return 507, {
+                "message": MODEL_RESTRICTED_MESSAGE,
+                "help_url": error.help_url,
+            }
+        return 500, {
+            "message": f"Model loading failed: {error}",
+            "help_url": error.help_url,
+        }
+    if isinstance(error, ModelLoadingError):
+        return 500, {
+            "message": f"Model loading failed: {error}",
+            "help_url": error.help_url,
+        }
+    if isinstance(error, (UntrustedFileError, FileHashSumMissmatch)):
+        return 500, {
+            "message": f"Issue with model package file: {error}",
+            "help_url": error.help_url,
+        }
+    if isinstance(error, ModelRetrievalError):
+        access_answer = _model_access_answer(error)
+        if access_answer is not None:
+            return access_answer
+        return 500, {
+            "message": f"Could not retrieve model {error}",
+            "help_url": error.help_url,
+        }
+    if isinstance(error, RuntimeError) and isinstance(
+        cause, (RetryError, ModelRetrievalError, OSError)
+    ):
+        registry_answer = _registry_failure_answer(cause)
+        return registry_answer
+    return None
+
+
+def _registry_failure_answer(cause: BaseException) -> Optional[Tuple[int, dict]]:
+    access_answer = _model_access_answer(cause)
+    if access_answer is not None:
+        return access_answer
+    if isinstance(cause, OSError):
+        return _network_failure_answer(cause)
+    if isinstance(cause, RetryError):
+        if cause.__cause__ is not None:
+            return _network_failure_answer(cause.__cause__)
+        return 502, {"message": REGISTRY_REQUEST_FAILED_MESSAGE}
+    if isinstance(cause.__cause__, (KeyError, pydantic.ValidationError)):
+        return None
+    return 502, {"message": REGISTRY_REQUEST_FAILED_MESSAGE}
+
+
+def _network_failure_answer(error: BaseException) -> Optional[Tuple[int, dict]]:
+    if isinstance(error, requests.exceptions.Timeout):
+        return 504, {"message": REGISTRY_TIMEOUT_MESSAGE}
+    if isinstance(error, (requests.exceptions.ConnectionError, ConnectionError)):
+        return 503, {"message": REGISTRY_UNREACHABLE_MESSAGE}
+    return None
+
+
+def _model_access_answer(error: BaseException) -> Optional[Tuple[int, dict]]:
     status_code = getattr(error, "status_code", None)
     if status_code not in MODEL_ACCESS_ERROR_MESSAGES:
         return None
-    return JSONResponse(
-        status_code=status_code,
-        content={"message": MODEL_ACCESS_ERROR_MESSAGES[status_code]},
-    )
+
+    return status_code, {"message": MODEL_ACCESS_ERROR_MESSAGES[status_code]}
 
 
 def with_legacy_errors(fn: Callable) -> Callable:

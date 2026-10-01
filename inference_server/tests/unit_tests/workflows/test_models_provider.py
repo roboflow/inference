@@ -1,4 +1,6 @@
+import asyncio
 import inspect
+import threading
 from types import SimpleNamespace
 
 import numpy as np
@@ -8,8 +10,17 @@ from roboflow_workflows.prototypes.models_provider import (
     ModelsProvider,
 )
 
-from inference_server.legacy.bridge import Route
+from inference_models.errors import ModelInputError
+
+from inference_server.legacy.bridge import (
+    LegacyModelBridge,
+    LoopBridge,
+    Route,
+    SyncLegacyBridge,
+)
+from inference_server.legacy.errors import LegacyHTTPError
 from inference_server.workflows.models_provider import GatewayModelsProvider
+from tests.unit_tests.legacy import conftest as legacy_conftest
 
 
 class FakeSyncBridge:
@@ -552,3 +563,42 @@ def test_provider_covers_protocol():
         assert list(inspect.signature(impl).parameters) == list(
             inspect.signature(member).parameters
         ), name
+
+
+fake_stat = legacy_conftest.fake_stat
+
+
+def test_provider_inference_raises_model_input_error_for_a_gateway_value_error(
+    fake_stat,
+):
+    def _reject(image, params):
+        raise ValueError("bad shape")
+
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = legacy_conftest.FakeGateway(
+        predictions={("ds/1", "infer"): _reject},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
+    )
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
+        sync = SyncLegacyBridge(LegacyModelBridge(gateway), LoopBridge(loop))
+        provider = GatewayModelsProvider(sync, api_key="k")
+        provider.add_model("ds/1", "k")
+        image = np.zeros((4, 6, 3), dtype=np.uint8)
+
+        with pytest.raises(ModelInputError) as exc:
+            provider.run_object_detection(
+                "ds/1",
+                [{"type": "numpy_object", "value": image}],
+                api_key="k",
+                confidence=0.5,
+            )
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
+        loop.close()
+
+    assert not isinstance(exc.value, LegacyHTTPError)
+    assert str(exc.value) == "bad shape"
