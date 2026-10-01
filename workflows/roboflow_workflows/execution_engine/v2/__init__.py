@@ -24,11 +24,23 @@ selects one per step from caller-declared capabilities, and
 ``block_execution="phases"`` runs a selected implementation's phase graph
 instead of its ``run``.
 
+Serial execution is the default and the reference. ``PipelineOptions`` opts
+into bounded pipelining: different pulses (or passive submissions) overlap at
+different steps and phases, each stage taking one call at a time in order::
+
+    run = session.start(inputs, handlers=handlers, pipeline=PipelineOptions())
+    with session.pipeline(options=PipelineOptions(max_in_flight=2)) as pipeline:
+        future = pipeline.submit({"image": image})
+
 V1 defaults and discovery are unaffected. Native image blocks live in the
 separately imported ``v2.blocks`` catalogue; this generic entry point loads no
 image libraries, native block implementations or V1 engine. The lightweight
-active runtime is imported to expose its public lifecycle and result types.
+active runtime is imported to expose its public lifecycle and result types;
+the passive pipeline (``PassivePipeline`` and its errors) loads on first use.
 """
+
+import importlib
+from typing import Any
 
 from roboflow_workflows.execution_engine.v2.active.runtime import (
     ActiveRun,
@@ -45,6 +57,7 @@ from roboflow_workflows.execution_engine.v2.compilation import (
 from roboflow_workflows.execution_engine.v2.context import (
     ExecutionContext,
     NoExecutionContextError,
+    current_pulse_run_id,
     get_execution_context,
 )
 from roboflow_workflows.execution_engine.v2.data import (
@@ -111,6 +124,11 @@ from roboflow_workflows.execution_engine.v2.phases import (
     read_phase_graph,
     run_phases,
 )
+from roboflow_workflows.execution_engine.v2.pipelining.options import (
+    OverloadPolicy,
+    PipelineOptions,
+)
+from roboflow_workflows.execution_engine.v2.pipelining.stages import PipelineCounters
 from roboflow_workflows.execution_engine.v2.plan import (
     CompiledWorkflow,
     CompileOptions,
@@ -186,9 +204,15 @@ __all__ = [
     "OperatorPulse",
     "OperatorSpec",
     "Output",
+    "OverloadPolicy",
+    "PassivePipeline",
     "PhaseFailure",
     "PhaseGraph",
     "PhaseSpec",
+    "PipelineAbortedError",
+    "PipelineCounters",
+    "PipelineFullError",
+    "PipelineOptions",
     "PlannedOperator",
     "PlannedOperatorInput",
     "PlannedOutputGroup",
@@ -221,6 +245,7 @@ __all__ = [
     "WorkflowReference",
     "WorkflowsBuffer",
     "compile_workflow",
+    "current_pulse_run_id",
     "get_execution_context",
     "phase",
     "read_phase_graph",
@@ -231,3 +256,19 @@ __all__ = [
     "spec_of_source",
     "validate_entry",
 ]
+
+_LAZY = {
+    "PassivePipeline": "roboflow_workflows.execution_engine.v2.pipelining.passive",
+    "PipelineAbortedError": "roboflow_workflows.execution_engine.v2.pipelining.passive",
+    "PipelineFullError": "roboflow_workflows.execution_engine.v2.pipelining.passive",
+}
+
+
+def __getattr__(name: str) -> Any:
+    module = _LAZY.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    value = getattr(importlib.import_module(module), name)
+
+    return value

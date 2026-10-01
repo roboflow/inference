@@ -16,6 +16,10 @@
               selected implementation's run(), or for execution "phases"
               run_phases over its graph with the same arguments; a phase
               failure names the phase in both modes
+    stages    in a pipelined run each call takes the pulse's turn at the
+              step's stages (pipelining.stages): one per phase when the
+              implementation allows phase_overlap, else one for the whole
+              call including readiness; serially nothing waits
     ready     futures in the result, including Selected/Selection payloads,
               are resolved in one pass right after each call, in the same
               context (decision 023)
@@ -33,6 +37,8 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import (
     Any,
+    Callable,
+    ContextManager,
     Dict,
     FrozenSet,
     List,
@@ -82,11 +88,21 @@ from roboflow_workflows.execution_engine.v2.execution.inputs import (
     kinds_named,
 )
 from roboflow_workflows.execution_engine.v2.phases import PhaseFailure, run_phases
+from roboflow_workflows.execution_engine.v2.pipelining.stages import (
+    SERIAL,
+    WHOLE_CALL,
+    Coordination,
+    StepStages,
+    Ticket,
+    gates_each_phase,
+)
 from roboflow_workflows.execution_engine.v2.plan import (
     ChildInputPort,
     ChildOutputPort,
     CompiledWorkflow,
     Constant,
+    ErrorHandler,
+    ExecutionObserver,
     ExecutionSession,
     Gate,
     InputPort,
@@ -116,6 +132,10 @@ class RunState:
         causes: Upstream pulses whose arrivals produced this operator
             emission, in contribution order; empty for source pulses and
             passive runs.
+        coordination: How this run shares stages and callbacks with other
+            runs; ``SERIAL`` unless the run is pipelined.
+        ticket: The run's place in the per-domain stage order; required
+            by a pipelined coordination, ``None`` serially.
     """
 
     session: ExecutionSession
@@ -124,6 +144,8 @@ class RunState:
     pulse: Optional[PulseKey] = None
     ports: Dict[SourcePort, Entry] = field(default_factory=dict)
     causes: Tuple[PulseKey, ...] = ()
+    coordination: Coordination = SERIAL
+    ticket: Optional[Ticket] = None
     outputs: Dict[Tuple[StepPath, str], Entry] = field(default_factory=dict)
     decisions: Dict[StepPath, Entry] = field(default_factory=dict)
     constants: Dict[int, Tuple[Constant, Entry]] = field(default_factory=dict)
@@ -135,6 +157,20 @@ class RunState:
     def plan(self) -> CompiledWorkflow:
         """The executed plan."""
         return self.session.plan
+
+    @property
+    def observer(self) -> ExecutionObserver:
+        """The session's observer; serialized with other callbacks when pipelined."""
+        observer = self.coordination.observer(self.session)
+
+        return observer
+
+    @property
+    def error_handler(self) -> Optional[ErrorHandler]:
+        """The session's error handler; serialized like the observer."""
+        handler = self.coordination.error_handler(self.session)
+
+        return handler
 
     def entry_for(self, source: Source) -> Entry:
         """Return the entry of a bound or output source.
@@ -325,8 +361,19 @@ def execute_step(run: RunState, step: PlannedStep) -> None:
     Raises:
         StepExecutionError: When an argument violates the declaration, the
             block raises, a future fails or the result violates the outputs.
+        RunAborted: When the run's pipelined coordination aborts.
     """
-    observer = run.session.observer
+    run.coordination.checkpoint()
+    try:
+        _execute_step(run, step)
+    except BaseException as error:
+        # Later pulses may wait for this one's turn; they must not wait forever.
+        run.coordination.abort(error)
+        raise
+
+
+def _execute_step(run: RunState, step: PlannedStep) -> None:
+    observer = run.observer
     location = list(step.path)
     observer.on_step_started(step=step.path, block_type=step.block_type)
     run.record("step_started", step=location, block_type=step.block_type)
@@ -359,9 +406,11 @@ def execute_step(run: RunState, step: PlannedStep) -> None:
 
     _validate_invocations(run, step, leaves=leaves)
     calls = _prepare_calls(step, admitted=admitted, leaves=leaves, entries=entries)
+    stages = run.coordination.step_stages(run, step, calls=len(calls))
     results: Dict[Index, Any] = {}
     for call in calls:
-        results.update(_invoke(run, step, call))
+        results.update(_invoke(run, step, call, stages=stages))
+    stages.finish()
 
     _record_outputs(
         run,
@@ -547,7 +596,9 @@ class _BlockFailure(Exception):
         self.phase = phase
 
 
-def _invoke(run: RunState, step: PlannedStep, call: _Call) -> Dict[Index, Any]:
+def _invoke(
+    run: RunState, step: PlannedStep, call: _Call, *, stages: StepStages
+) -> Dict[Index, Any]:
     """Call the block once, wait for its futures and split the result per index."""
     index = None if call.batched else call.indices[0]
     run.record(
@@ -564,7 +615,13 @@ def _invoke(run: RunState, step: PlannedStep, call: _Call) -> Dict[Index, Any]:
         indices=call.indices,
     )
     try:
-        result = _ready_result(run, step, call, context=context)
+        if gates_each_phase(step):
+            result = _ready_result(
+                run, step, call, context=context, around_phase=stages.call
+            )
+        else:
+            with stages.call(WHOLE_CALL):
+                result = _ready_result(run, step, call, context=context)
     except _BlockFailure as failure:
         _fail(
             run,
@@ -574,7 +631,7 @@ def _invoke(run: RunState, step: PlannedStep, call: _Call) -> Dict[Index, Any]:
             cause=failure.__cause__,
             phase=failure.phase,
         )
-    run.session.observer.on_invocation(
+    run.observer.on_invocation(
         step=step.path, index=index, arguments=call.arguments, result=result
     )
 
@@ -595,12 +652,17 @@ def _invoke(run: RunState, step: PlannedStep, call: _Call) -> Dict[Index, Any]:
 
 
 def _ready_result(
-    run: RunState, step: PlannedStep, call: _Call, *, context: ExecutionContext
+    run: RunState,
+    step: PlannedStep,
+    call: _Call,
+    *,
+    context: ExecutionContext,
+    around_phase: Optional[Callable[[str], ContextManager[None]]] = None,
 ) -> Any:
     """Call the block and wait for its futures, inside the call's context."""
     with use_execution_context(context):
         try:
-            raw = _call_block(run, step, call)
+            raw = _call_block(run, step, call, around_phase=around_phase)
         except PhaseFailure as failure:
             original = failure.__cause__
             raise _BlockFailure(str(failure), phase=failure.phase) from original
@@ -621,7 +683,13 @@ def _ready_result(
     return result
 
 
-def _call_block(run: RunState, step: PlannedStep, call: _Call) -> Any:
+def _call_block(
+    run: RunState,
+    step: PlannedStep,
+    call: _Call,
+    *,
+    around_phase: Optional[Callable[[str], ContextManager[None]]],
+) -> Any:
     """The one place where execution modes differ: ``run()`` or the phase graph."""
     instance = run.session.instances[step.path]
     if step.execution == "run":
@@ -637,7 +705,11 @@ def _call_block(run: RunState, step: PlannedStep, call: _Call) -> Any:
         )
 
     raw = run_phases(
-        instance, step.selected.phases, call.arguments, on_phase=record_phase
+        instance,
+        step.selected.phases,
+        call.arguments,
+        on_phase=record_phase,
+        around_phase=around_phase,
     )
 
     return raw
@@ -1229,8 +1301,9 @@ def _fail(
         phase=phase,
         error=str(error),
     )
-    if run.session.error_handler is not None:
-        run.session.error_handler(error)
-    run.session.observer.on_error(error=error)
+    error_handler = run.error_handler
+    if error_handler is not None:
+        error_handler(error)
+    run.observer.on_error(error=error)
 
     raise error

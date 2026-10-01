@@ -73,6 +73,7 @@ The executor, not this module, implements execution and row construction.
 """
 
 import importlib
+import threading
 import uuid
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -123,6 +124,7 @@ from roboflow_workflows.execution_engine.v2.errors import (
     format_step_path,
 )
 from roboflow_workflows.execution_engine.v2.kinds import Kind, kinds_compatible
+from roboflow_workflows.execution_engine.v2.pipelining.options import PipelineOptions
 
 # Re-exported: callers import the shared readiness helper from here as before.
 from roboflow_workflows.execution_engine.v2.readiness import (  # noqa: F401
@@ -151,6 +153,7 @@ if TYPE_CHECKING:
 
 EXECUTION_MODULE = "roboflow_workflows.execution_engine.v2.execution"
 ACTIVE_RUNTIME_MODULE = "roboflow_workflows.execution_engine.v2.active.runtime"
+PASSIVE_PIPELINE_MODULE = "roboflow_workflows.execution_engine.v2.pipelining.passive"
 
 BlockExecution = Literal["run", "phases"]
 BLOCK_EXECUTIONS: Tuple[str, ...] = ("run", "phases")
@@ -2867,6 +2870,10 @@ class ExecutionSession:
         self.error_handler = error_handler
         self.session_id = session_id if session_id is not None else uuid.uuid4().hex
         self.source_resources = MappingProxyType(dict(source_resources or {}))
+        # Passive use of the instances: direct runs or one open pipeline.
+        self._use_lock = threading.Lock()
+        self._direct_runs = 0
+        self._pipeline_open = False
 
     def run(self, inputs: Mapping[str, Any]) -> "RunResult":
         """Execute the plan once with this session's block instances.
@@ -2880,6 +2887,7 @@ class ExecutionSession:
         Raises:
             WorkflowInputError: When the plan declares sources; such a plan is
                 driven by ``start``.
+            ContractError: While a ``pipeline()`` of this session is open.
         """
         if self.plan.is_active:
             raise WorkflowInputError(
@@ -2888,9 +2896,85 @@ class ExecutionSession:
             )
 
         execution = importlib.import_module(EXECUTION_MODULE)
-        result = execution.run_session(self, inputs=inputs)
+        self._claim_direct_run()
+        try:
+            result = execution.run_session(self, inputs=inputs)
+        finally:
+            self._release_direct_run()
 
         return result
+
+    def pipeline(self, *, options: Optional[PipelineOptions] = None) -> Any:
+        """Open a bounded pipeline of passive runs sharing this session's instances.
+
+        Up to ``options.max_in_flight`` submissions execute at once, each at
+        its own stage of the plan. While the pipeline is open, ``run`` and a
+        second ``pipeline`` raise; use it as a context manager::
+
+            with session.pipeline(options=PipelineOptions(max_in_flight=2)) as p:
+                futures = [p.submit({"image": image}) for image in images]
+
+        Args:
+            options: Pipeline bounds; ``PipelineOptions()`` when omitted.
+                Overload policies apply to active sources and are ignored.
+
+        Returns:
+            The open ``PassivePipeline`` (``pipelining.passive``).
+
+        Raises:
+            WorkflowInputError: When the plan declares sources.
+            ContractError: When ``options`` is not ``PipelineOptions``, a direct
+                run is in progress or another pipeline is open.
+        """
+        if self.plan.is_active:
+            raise WorkflowInputError(
+                f"The plan declares sources {list(self.plan.sources)}; pass "
+                "pipeline=PipelineOptions(...) to session.start(...) instead"
+            )
+        options = _pipeline_options(options, default_when_none=True)
+
+        passive = importlib.import_module(PASSIVE_PIPELINE_MODULE)
+        pipeline = passive.open_pipeline(self, options=options)
+
+        return pipeline
+
+    def _claim_direct_run(self) -> None:
+        """Count a direct ``run``; refused while a pipeline is open."""
+        with self._use_lock:
+            if self._pipeline_open:
+                raise ContractError(
+                    f"Session {self.session_id} has an open pipeline; submit to it, "
+                    "or close it before calling run()"
+                )
+            self._direct_runs += 1
+
+    def _release_direct_run(self) -> None:
+        with self._use_lock:
+            self._direct_runs -= 1
+
+    def _claim_pipeline(self) -> None:
+        """Reserve the session for one pipeline (``pipelining.passive`` only).
+
+        Raises:
+            ContractError: When a pipeline is open or a direct run is running.
+        """
+        with self._use_lock:
+            if self._pipeline_open:
+                raise ContractError(
+                    f"Session {self.session_id} already has an open pipeline; "
+                    "close it before opening another"
+                )
+            if self._direct_runs:
+                raise ContractError(
+                    f"Session {self.session_id} is running {self._direct_runs} "
+                    "direct run(s); a pipeline opens only when they finished"
+                )
+            self._pipeline_open = True
+
+    def _release_pipeline(self) -> None:
+        """Release the reservation once the pipeline's workers are quiescent."""
+        with self._use_lock:
+            self._pipeline_open = False
 
     def start(
         self,
@@ -2898,6 +2982,7 @@ class ExecutionSession:
         *,
         handlers: Optional[Mapping[str, Callable[[Any], None]]] = None,
         admission_bound: int = 2,
+        pipeline: Optional[PipelineOptions] = None,
     ) -> Any:
         """Open the declared sources and process their pulses until they end.
 
@@ -2916,6 +3001,10 @@ class ExecutionSession:
                 without a handler are not built.
             admission_bound: Emissions of one source admitted for processing
                 at a time; a reader waits beyond it (bounded backpressure).
+            pipeline: ``None`` (default) processes one pulse at a time, the
+                serial reference. ``PipelineOptions`` processes up to
+                ``max_in_flight`` pulses at once, each at its own stage, with
+                the options' overload policy per source.
 
         Returns:
             The active run.
@@ -2923,6 +3012,7 @@ class ExecutionSession:
         Raises:
             WorkflowInputError: When the plan declares no sources, an input or
                 handler is invalid, or a run of this session is still active.
+            ContractError: When ``pipeline`` is not ``PipelineOptions``.
         """
         if not self.plan.is_active:
             raise WorkflowInputError(
@@ -2936,6 +3026,7 @@ class ExecutionSession:
             inputs=inputs if inputs is not None else {},
             handlers=handlers if handlers is not None else {},
             admission_bound=admission_bound,
+            pipeline=_pipeline_options(pipeline, default_when_none=False),
         )
 
         return run
@@ -2961,6 +3052,22 @@ class ExecutionSession:
 
         runtime = importlib.import_module(ACTIVE_RUNTIME_MODULE)
         runtime.stop_session(self)
+
+
+def _pipeline_options(
+    options: Optional[PipelineOptions], *, default_when_none: bool
+) -> Optional[PipelineOptions]:
+    """Type-check pipeline options; ``None`` gives defaults if ``default_when_none``."""
+    if options is None:
+        default = PipelineOptions() if default_when_none else None
+        return default
+    if not isinstance(options, PipelineOptions):
+        raise ContractError(
+            f"pipeline options must be PipelineOptions(...), got "
+            f"{type(options).__name__}"
+        )
+
+    return options
 
 
 def create_session(

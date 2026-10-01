@@ -27,9 +27,12 @@ value is the complete block result, the same as ``run`` returns::
 
 ``run`` stays the explicit, directly callable composition. ``run_phases``
 executes the same graph from its declaration: serially, each phase once per
-call, in a deterministic topological order. Phase results are private
-values of that call; they are never workflow outputs or selectors, and each
-is released after its last consumer, or when a phase fails.
+call, in a deterministic topological order. A pipelined run wraps each phase
+(``around_phase``) in that phase's stage, so another pulse may run an earlier
+phase of the same instance meanwhile; ``phase_overlap = False`` on the class
+forbids that. Phase results are private values of that call; they are never
+workflow outputs or selectors, and each is released after its last consumer,
+or when a phase fails.
 
 A phase behaves the same when ``run`` calls it and when ``run_phases`` does:
 
@@ -50,7 +53,17 @@ import functools
 import inspect
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import (
+    Any,
+    Callable,
+    ContextManager,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+)
 
 from roboflow_workflows.execution_engine.v2.errors import ContractError
 from roboflow_workflows.execution_engine.v2.readiness import resolve_futures
@@ -397,6 +410,7 @@ def run_phases(
     arguments: Mapping[str, Any],
     *,
     on_phase: Optional[Callable[[str], None]] = None,
+    around_phase: Optional[Callable[[str], ContextManager[None]]] = None,
 ) -> Any:
     """Execute a phase graph once on ``instance`` and return the result phase's value.
 
@@ -410,6 +424,9 @@ def run_phases(
         graph: Graph read from the instance's class.
         arguments: Call arguments by name; extra names are ignored.
         on_phase: Called with each phase name before the phase runs.
+        around_phase: Context manager factory entered with each phase name
+            around that phase's call, which includes resolving its futures;
+            a pipelined run holds the phase's stage with it.
 
     Returns:
         The result phase's ready value.
@@ -434,7 +451,12 @@ def run_phases(
                 name: produced[name] if name in spec.upstream else arguments[name]
                 for name in spec.parameters
             }
-            produced[spec.name] = getattr(instance, spec.name)(**inputs)
+            method = getattr(instance, spec.name)
+            if around_phase is None:
+                produced[spec.name] = method(**inputs)
+            else:
+                with around_phase(spec.name):
+                    produced[spec.name] = method(**inputs)
             for name in spec.upstream:
                 consumers[name] -= 1
                 if not consumers[name]:

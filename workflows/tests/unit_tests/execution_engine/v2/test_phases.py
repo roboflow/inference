@@ -833,6 +833,7 @@ def test_contract_lists_implementations_with_their_own_resources_and_graphs() ->
         "requires": ["cpu"],
         "resources": [],
         "phases": None,
+        "phase_overlap": True,
     }
     assert Fast(accelerator=None).run(value=2.0) == Portable().run(value=2.0)
 

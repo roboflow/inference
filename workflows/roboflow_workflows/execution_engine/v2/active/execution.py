@@ -26,7 +26,9 @@ skip it and group fields selecting it come out ``filtered``.
 
 These primitives are what the active runtime uses per pulse and what the
 same-session two-pulse experiment drives by hand. They do not make pulses
-concurrent: a block instance is shared by every pulse of its session.
+concurrent: a block instance is shared by every pulse of its session. A
+pipelined run passes its ``coordination``; each pulse then carries the ticket
+``(domain, sequence)`` that orders it at every stage it visits.
 """
 
 import time
@@ -61,6 +63,11 @@ from roboflow_workflows.execution_engine.v2.execution.steps import (
     execute_step,
 )
 from roboflow_workflows.execution_engine.v2.operators import Arrival, OperatorPulse
+from roboflow_workflows.execution_engine.v2.pipelining.stages import (
+    SERIAL,
+    Coordination,
+    Ticket,
+)
 from roboflow_workflows.execution_engine.v2.plan import (
     CompiledWorkflow,
     ExecutionSession,
@@ -99,6 +106,7 @@ def begin_pulse(
     emission: Emission,
     inputs: Mapping[str, Entry],
     observed: Optional[Timestamp] = None,
+    coordination: Coordination = SERIAL,
 ) -> RunState:
     """Create the run state of one pulse from an emission.
 
@@ -109,6 +117,7 @@ def begin_pulse(
         inputs: Static input entries prepared once per active run.
         observed: When the runtime received the emission; the engine clock
             now when omitted.
+        coordination: The run's coordination; ``SERIAL`` gates nothing.
 
     Returns:
         A fresh run state holding the static inputs and the emitted ports;
@@ -131,6 +140,8 @@ def begin_pulse(
         inputs=dict(inputs),
         pulse=pulse,
         ports=ports,
+        coordination=coordination,
+        ticket=pulse_ticket(pulse),
     )
     run.record(
         "pulse_started",
@@ -141,6 +152,21 @@ def begin_pulse(
     )
 
     return run
+
+
+def pulse_ticket(pulse: PulseKey) -> Ticket:
+    """Return the pulse's place in its domain's order at every stage.
+
+    Args:
+        pulse: Identity of the pulse.
+
+    Returns:
+        ``Ticket(domain=pulse.source, ordinal=pulse.sequence)``; sequences
+        of a domain have no gaps, so the ticket order has none either.
+    """
+    ticket = Ticket(domain=pulse.source, ordinal=pulse.sequence)
+
+    return ticket
 
 
 def port_entries(
@@ -216,6 +242,7 @@ def begin_operator_pulse(
     pulse: PulseKey,
     emission: OperatorPulse,
     inputs: Mapping[str, Entry],
+    coordination: Coordination = SERIAL,
 ) -> RunState:
     """Create the run state of one pulse an operator emitted.
 
@@ -224,6 +251,7 @@ def begin_operator_pulse(
         pulse: Identity of the pulse; ``pulse.source`` names the operator.
         emission: What the operator emitted.
         inputs: Static input entries prepared once per active run.
+        coordination: The run's coordination; ``SERIAL`` gates nothing.
 
     Returns:
         A fresh run state holding the static inputs and the operator's
@@ -242,6 +270,8 @@ def begin_operator_pulse(
         pulse=pulse,
         ports=ports,
         causes=emission.causes,
+        coordination=coordination,
+        ticket=pulse_ticket(pulse),
     )
     run.record(
         "pulse_started",

@@ -33,8 +33,9 @@ Mutation analysis: a step declaring ``mutates`` for a field conflicts with
 another step that may see the same payload without an ordering dependency
 between the two. Payloads are shared through the same source, the same child
 input over a constant, or an output declaring ``source=`` a field bound to it.
-Other child inputs pass their source's payload on. The policy
-comes from ``CompileOptions.mutation_conflicts``.
+Other child inputs pass their source's payload on. In an active definition,
+mutating a workflow input conflicts on its own: every pulse shares it. The
+policy comes from ``CompileOptions.mutation_conflicts``.
 
 Active definitions: declared sources are planned first (``compilation.sources``)
 and their ports are ordinary value sources with the port's scoped layout. Each
@@ -281,6 +282,7 @@ def compile_composition(
         ancestors=_ancestor_closure(nodes, order=order),
         boundaries=boundaries.records,
         options=options,
+        active=bool(sources),
     )
 
     try:
@@ -1403,6 +1405,7 @@ def _check_mutations(
     ancestors: Mapping[StepPath, Set[StepPath]],
     boundaries: Mapping[BoundaryPort, Union[PlannedChildInput, PlannedChildOutput]],
     options: CompileOptions,
+    active: bool,
 ) -> Tuple[str, ...]:
     """Report in-place mutations another step or a later pulse may observe.
 
@@ -1413,6 +1416,14 @@ def _check_mutations(
     may also be retained or emitted again by that operator (overlapping
     windows, held references, reused alignment matches), so mutating it in
     place is reported even without a second reader.
+
+    An active run prepares its workflow inputs once and shares them with
+    every pulse, so mutating one in place is reported even without a second
+    reader: serially a later pulse sees the change, and pipelined pulses may
+    mutate it concurrently. The engine materializes constants per run state
+    (each passive run, each pulse). It does not copy caller-supplied passive
+    inputs: passing one mutable object to two runs shares it, and that reuse
+    is the caller's responsibility, so it is not reported here.
     """
     by_path = {step.path: step for step in steps}
     by_node = {operator.step_path: operator for operator in operators.values()}
@@ -1470,6 +1481,19 @@ def _check_mutations(
                 f"({mutated.selector}) is mutated in place, but the payload passed "
                 f"{retaining}; an operator may retain or emit it again in a later "
                 "pulse (overlapping windows, held values, reused matches)",
+                mutator=mutator,
+                mutated=mutated,
+            )
+        shared_inputs = sorted(
+            origin.describe() for origin in origins if isinstance(origin, InputPort)
+        )
+        if active and shared_inputs:
+            report(
+                f"{format_step_path(mutator.path)} {_field_text(mutated.field_path)} "
+                f"({mutated.selector}) is mutated in place, but the payload passed "
+                f"{shared_inputs}; an active run shares its workflow inputs with "
+                "every pulse, so later pulses see the change and pipelined pulses "
+                "may mutate it concurrently",
                 mutator=mutator,
                 mutated=mutated,
             )

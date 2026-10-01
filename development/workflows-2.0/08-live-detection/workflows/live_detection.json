@@ -1,0 +1,21 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowParameter", "name": "image", "kind": ["image"]},
+    {"type": "WorkflowParameter", "name": "confidence", "kind": ["float"], "default_value": 0.4}
+  ],
+  "steps": [
+    {"type": "live_detection/object_detector@v1", "name": "detector", "image": "$inputs.image", "confidence": "$inputs.confidence"},
+    {"type": "live_detection/box_visualization@v1", "name": "boxes", "image": "$inputs.image", "predictions": "$steps.detector.predictions"},
+    {"type": "live_detection/label_visualization@v1", "name": "labels", "image": "$steps.boxes.image", "predictions": "$steps.detector.predictions"}
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "annotated", "selector": "$steps.labels.image"},
+    {"type": "JsonField", "name": "predictions", "selector": "$steps.detector.predictions"},
+    {"type": "JsonField", "name": "pre_ms", "selector": "$steps.detector.pre_ms"},
+    {"type": "JsonField", "name": "model_ms", "selector": "$steps.detector.model_ms"},
+    {"type": "JsonField", "name": "post_ms", "selector": "$steps.detector.post_ms"},
+    {"type": "JsonField", "name": "boxes_ms", "selector": "$steps.boxes.draw_ms"},
+    {"type": "JsonField", "name": "labels_ms", "selector": "$steps.labels.draw_ms"}
+  ]
+}

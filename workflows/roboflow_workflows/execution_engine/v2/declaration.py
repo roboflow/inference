@@ -134,10 +134,12 @@ from roboflow_workflows.execution_engine.v2.errors import (
 )
 from roboflow_workflows.execution_engine.v2.implementations import (
     DEFAULT_IMPLEMENTATION,
+    PHASE_OVERLAP_ATTRIBUTE,
     RESERVED_PHASE_NAMES,
     ImplementationSpec,
     check_keyword_signature,
     read_implementation_specs,
+    read_phase_overlap,
 )
 from roboflow_workflows.execution_engine.v2.kinds import Kind, normalize_kinds
 from roboflow_workflows.execution_engine.v2.phases import (
@@ -1205,7 +1207,12 @@ class Block(ExecutionContextReader):
         metadata: Free-form UI and catalogue metadata.
         implementations: ``Implementation`` classes in preference order. A
             block listing them is only the logical contract: it declares no
-            ``run``, phases or ``__init__``; compilation selects one per step.
+            ``run``, phases, ``__init__`` or ``phase_overlap``; compilation
+            selects one per step.
+        phase_overlap: Whether a pipelined run may execute different phases
+            of this block's one instance at once, for different pulses
+            (default ``True``); see ``Implementation``. ``False`` holds the
+            whole call, every phase and its futures, per pulse.
 
     Resources are the keyword parameters of ``__init__``. The engine creates
     one instance per step per execution session and keeps it across runs.
@@ -1230,6 +1237,7 @@ class Block(ExecutionContextReader):
     engine_compatibility: ClassVar[Optional[str]] = None
     metadata: ClassVar[Mapping[str, Any]] = MappingProxyType({})
     implementations: ClassVar[Tuple[type, ...]] = ()
+    phase_overlap: ClassVar[bool] = True
 
     __block_spec__: ClassVar[Optional[BlockSpec]] = None
 
@@ -1669,6 +1677,15 @@ def _read_implementations(
                 "lists implementations, so it is only the logical contract; move "
                 "run(), phases and __init__ resources into the implementations"
             )
+        if any(
+            PHASE_OVERLAP_ATTRIBUTE in vars(klass)
+            for klass in block_class.__mro__
+            if klass is not Block and issubclass(klass, Block)
+        ):
+            raise fail(
+                "lists implementations, so phase_overlap belongs to each "
+                "Implementation class that has phases, not to the block"
+            )
         specs = read_implementation_specs(declared, fields=fields, fail=fail)
         return specs
 
@@ -1686,6 +1703,7 @@ def _read_implementations(
         requires=frozenset(),
         resources=resources,
         phases=own_phases,
+        phase_overlap=read_phase_overlap(block_class, fail=fail),
     )
 
     return (default,)

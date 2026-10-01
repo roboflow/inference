@@ -12,6 +12,10 @@ The value lives in a ``ContextVar`` and is reset in ``finally``, so it never
 leaks past an error or out of a nested call, and no process-global
 "current step" record exists. Reading it outside an active call is an
 explicit error rather than stale metadata.
+
+``current_pulse_run_id()`` attributes observer callbacks: with pulses of a
+pipelined run on several threads, it names the run of the pulse executing on
+the calling thread (``None`` elsewhere, e.g. on a source reader).
 """
 
 from contextlib import contextmanager
@@ -25,8 +29,10 @@ __all__ = [
     "ExecutionContext",
     "ExecutionContextReader",
     "NoExecutionContextError",
+    "current_pulse_run_id",
     "get_execution_context",
     "use_execution_context",
+    "use_pulse_run_id",
 ]
 
 
@@ -137,3 +143,41 @@ class ExecutionContextReader:
         context = get_execution_context()
 
         return context
+
+
+_PULSE_RUN_ID: ContextVar[Optional[str]] = ContextVar(
+    "workflows_v2_pulse_run_id", default=None
+)
+
+
+def current_pulse_run_id() -> Optional[str]:
+    """Return the run id of the pulse or passive run executing on this thread.
+
+    Observer callbacks keep their signatures; a callback that needs to know
+    which pulse a step notification belongs to reads this. Serial and
+    pipelined runs both set it.
+
+    Returns:
+        ``PulseKey.run_id`` of the executing pulse, the run id of the
+        executing passive run (serial or pipelined), or ``None`` elsewhere.
+    """
+    run_id = _PULSE_RUN_ID.get()
+
+    return run_id
+
+
+@contextmanager
+def use_pulse_run_id(run_id: str) -> Iterator[str]:
+    """Attribute the ``with`` block to one run (engine-internal).
+
+    Args:
+        run_id: Run id of the pulse or submission about to execute.
+
+    Yields:
+        ``run_id``. The previous value is restored on exit, also on errors.
+    """
+    token = _PULSE_RUN_ID.set(run_id)
+    try:
+        yield run_id
+    finally:
+        _PULSE_RUN_ID.reset(token)

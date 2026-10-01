@@ -25,7 +25,9 @@ the caller's target (``targets.select_implementation``)::
         implementations = (TorchMps, TorchCpu)       # preference order
 
 An implementation restates none of the contract, may have its own phase
-graph or none, and may share phases through a common base class. A block
+graph or none, and may share phases through a common base class. Its
+``phase_overlap`` says whether a pipelined run may execute different phases
+of its one instance for different pulses at the same time. A block
 without ``implementations`` is its own single ``default`` implementation.
 Reading the declarations constructs nothing and loads no model.
 """
@@ -53,11 +55,13 @@ from roboflow_workflows.execution_engine.v2.resources import (
 __all__ = [
     "CONTRACT_ATTRIBUTES",
     "DEFAULT_IMPLEMENTATION",
+    "PHASE_OVERLAP_ATTRIBUTE",
     "RESERVED_PHASE_NAMES",
     "Implementation",
     "ImplementationSpec",
     "check_keyword_signature",
     "read_implementation_specs",
+    "read_phase_overlap",
 ]
 
 DEFAULT_IMPLEMENTATION = "default"
@@ -78,9 +82,13 @@ CONTRACT_ATTRIBUTES: Tuple[str, ...] = (
 )
 """Block attributes forming the logical contract; implementations may not set them."""
 
+PHASE_OVERLAP_ATTRIBUTE = "phase_overlap"
+"""Class attribute allowing concurrent phases of one instance (see ``Implementation``)."""
+
 RESERVED_PHASE_NAMES: Tuple[str, ...] = CONTRACT_ATTRIBUTES + (
     "name",
     "requires",
+    PHASE_OVERLAP_ATTRIBUTE,
     "run",
     "execution_context",
     "discover_dependent_resources",
@@ -100,6 +108,16 @@ class Implementation(ExecutionContextReader):
             digits, ``_``, ``-`` and ``.``.
         requires: Capabilities the compile target must have, e.g.
             ``("cpu", "torch")``.
+        phase_overlap: ``True`` (default) lets a pipelined run execute
+            different phases of this one instance at the same time, for
+            different pulses: pulse 1 may run ``tensor`` while pulse 0 runs
+            ``logits``. One phase never runs twice at once. Set ``False``
+            when phases share mutable state on ``self`` across a call; a
+            pipelined run then holds the whole call, all phases and their
+            futures, before the next pulse enters. Serial runs and
+            ``run``-mode steps always execute one whole call at a time.
+            Phase signatures describe data flow, not the safety of ``self``;
+            a resource shared with other steps needs its own lock.
 
     Resources are the keyword parameters of ``__init__``, resolved only for
     the selected implementation. ``run`` takes the block's ``Params`` fields
@@ -113,6 +131,7 @@ class Implementation(ExecutionContextReader):
 
     name: ClassVar[str]
     requires: ClassVar[Tuple[str, ...]] = ()
+    phase_overlap: ClassVar[bool] = True
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -140,6 +159,8 @@ class ImplementationSpec:
         requires: Capabilities a target needs to select it.
         resources: Constructor resources of ``implementation_class``.
         phases: Phase graph, or ``None`` without phases.
+        phase_overlap: Whether a pipelined run may overlap different phases
+            of one instance; meaningful only with ``phases``.
     """
 
     name: str
@@ -147,6 +168,7 @@ class ImplementationSpec:
     requires: FrozenSet[str]
     resources: Tuple[ResourceSpec, ...]
     phases: Optional[PhaseGraph]
+    phase_overlap: bool = True
 
     def describe(self) -> Dict[str, Any]:
         """Return a JSON-friendly description without constructing anything."""
@@ -157,9 +179,33 @@ class ImplementationSpec:
             "requires": sorted(self.requires),
             "resources": [resource.describe() for resource in self.resources],
             "phases": self.phases.describe() if self.phases is not None else None,
+            "phase_overlap": self.phase_overlap,
         }
 
         return description
+
+
+def read_phase_overlap(owner: type, *, fail: Callable[[str], Exception]) -> bool:
+    """Read and validate the ``phase_overlap`` class attribute.
+
+    Args:
+        owner: ``Implementation`` subclass or block class.
+        fail: Builds the exception to raise from a message.
+
+    Returns:
+        The declared value.
+
+    Raises:
+        Exception: ``fail(message)`` when the value is not a bool.
+    """
+    value = getattr(owner, PHASE_OVERLAP_ATTRIBUTE, True)
+    if not isinstance(value, bool):
+        raise fail(
+            f"phase_overlap must be True or False, got {value!r}; False keeps "
+            "one whole call (every phase) of an instance at a time when pipelined"
+        )
+
+    return value
 
 
 def read_implementation_specs(
@@ -258,6 +304,7 @@ def _read_implementation(
         requires=frozenset(requires),
         resources=resources,
         phases=read_phase_graph(implementation, external=fields, fail=fail_here),
+        phase_overlap=read_phase_overlap(implementation, fail=fail_here),
     )
 
     return spec
