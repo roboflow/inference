@@ -20,13 +20,13 @@ from inference_models.models.common.roboflow.post_processing import (
     ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
-    scale_polygons_to_image,
     post_process_nms_fused_model_output,
     rescale_image_detections,
     rescale_key_points_detections,
     run_nms_for_instance_segmentation,
     run_nms_for_key_points_detection,
     run_nms_for_object_detection,
+    scale_polygons_to_image,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
 
