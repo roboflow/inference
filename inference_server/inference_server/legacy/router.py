@@ -16,9 +16,15 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from starlette.datastructures import UploadFile
 
+from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 from inference_server import configuration
 from inference_server.dependencies import get_model_manager
-from inference_server.legacy.bridge import LegacyModelBridge, Route, resolved_model_for
+from inference_server.legacy.bridge import (
+    LegacyModelBridge,
+    Route,
+    request_alias_for,
+    resolved_model_for,
+)
 from inference_server.legacy.common import (
     as_image_list,
     load_request_images,
@@ -257,16 +263,54 @@ async def readiness(
 
 
 async def _models_descriptions(bridge: LegacyModelBridge) -> ModelsDescriptions:
-    return ModelsDescriptions.from_models_descriptions(
-        [
-            ModelDescriptionEntity(
-                model_id=route.registry_id,
-                task_type=route.task_type,
-                request_aliases=sorted(route.request_aliases - {route.registry_id}),
-                request_paths=sorted(route.request_paths),
+    routes = await bridge.describe()
+    descriptions = []
+    for route in routes:
+        if not route.requested_at:
+            descriptions.append(
+                _model_description(
+                    route,
+                    model_id=route.registry_id,
+                    request_aliases=[],
+                    request_paths=[],
+                )
             )
-            for route in await bridge.describe()
-        ]
+            continue
+        for model_id in sorted(route.requested_at):
+            descriptions.append(
+                _model_description(
+                    route,
+                    model_id=model_id,
+                    request_aliases=sorted(
+                        route.request_aliases_by_id.get(model_id, ())
+                    ),
+                    request_paths=sorted(route.request_paths_by_id.get(model_id, {})),
+                )
+            )
+
+    models_descriptions = ModelsDescriptions.from_models_descriptions(
+        descriptions,
+        model_vram_bytes=[route.vram_bytes for route in routes],
+    )
+
+    return models_descriptions
+
+
+def _model_description(
+    route: Route,
+    *,
+    model_id: str,
+    request_aliases: list[str],
+    request_paths: list[str],
+) -> ModelDescriptionEntity:
+    return ModelDescriptionEntity(
+        model_id=model_id,
+        task_type=route.task_type,
+        input_height=route.input_height,
+        input_width=route.input_width,
+        vram_bytes=route.vram_bytes,
+        request_aliases=request_aliases,
+        request_paths=request_paths,
     )
 
 
@@ -297,7 +341,11 @@ async def model_add(
         request, request.query_params.get("api_key"), add_model_request.api_key
     )
     route = await bridge.load(add_model_request.model_id, api_key)
-    bridge.record_request(route, add_model_request.model_id, request.scope["path"])
+    bridge.record_request(
+        route,
+        resolve_roboflow_model_alias(add_model_request.model_id),
+        request.scope["path"],
+    )
     return await _models_descriptions(bridge)
 
 
@@ -312,7 +360,7 @@ async def model_remove(
     clear_model_request: ClearModelRequest,
     bridge: LegacyModelBridge = Depends(get_bridge),
 ):
-    await bridge.unload(clear_model_request.model_id)
+    await bridge.remove(clear_model_request.model_id)
     return await _models_descriptions(bridge)
 
 
@@ -374,7 +422,12 @@ async def _run_cv_inference(
     )
     inference_request.api_key = api_key
     route = await bridge.resolve(inference_request.model_id, api_key)
-    bridge.record_request(route, inference_request.model_id, request.scope["path"])
+    bridge.record_request(
+        route,
+        inference_request.model_id,
+        request.scope["path"],
+        alias=request_alias_for(inference_request.model_id),
+    )
     if route.task_type not in expected_task_types:
         raise LegacyHTTPError(
             400,
@@ -1182,7 +1235,12 @@ async def _run_lmm(
     )
     inference_request.api_key = api_key
     route = await bridge.resolve(inference_request.model_id, api_key)
-    bridge.record_request(route, inference_request.model_id, request.scope["path"])
+    bridge.record_request(
+        route,
+        inference_request.model_id,
+        request.scope["path"],
+        alias=request_alias_for(inference_request.model_id),
+    )
     ensure_request_supported(inference_request.model_id, inference_request, route)
     action = resolve_request_action(route, inference_request)
     if action == "detect":

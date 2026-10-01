@@ -1871,10 +1871,15 @@ class ModelsDescriptions(BaseModel):
 
     @classmethod
     def from_models_descriptions(
-        cls, models_descriptions: List[ModelDescriptionEntity]
+        cls,
+        models_descriptions: List[ModelDescriptionEntity],
+        *,
+        model_vram_bytes: Optional[List[Optional[int]]] = None,
     ) -> "ModelsDescriptions":
         model_entities = list(models_descriptions)
-        vram_values = [m.vram_bytes for m in model_entities if m.vram_bytes is not None]
+        if model_vram_bytes is None:
+            model_vram_bytes = [m.vram_bytes for m in model_entities]
+        vram_values = [v for v in model_vram_bytes if v is not None]
         total_vram = sum(vram_values) if vram_values else None
         (
             gpu_used,

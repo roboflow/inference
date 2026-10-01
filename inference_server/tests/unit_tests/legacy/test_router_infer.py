@@ -89,8 +89,8 @@ def test_infer_response_carries_resolved_model_and_registry_tracks_alias(
     )
     assert r.json()["resolved_model"] == {"model_id": "coco/3"}
     entry = c.get("/model/registry").json()["models"][0]
-    assert entry["model_id"] == "coco/3"
-    assert entry["request_aliases"] == ["yolov8n-640"]
+    assert entry["model_id"] == "yolov8n-640"
+    assert entry["request_aliases"] == ["coco/3"]
     assert entry["request_paths"] == ["/infer/object_detection"]
 
 

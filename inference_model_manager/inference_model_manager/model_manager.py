@@ -694,12 +694,23 @@ class ModelManager:
                 s["actions"] = self.get_supported_actions(model_id)
             except Exception:
                 s["actions"] = {}
+            for key in (
+                "input_height",
+                "input_width",
+                "vram_bytes",
+                "loaded_monotonic",
+            ):
+                s.setdefault(key, None)
             models.append(s)
+
+        vram_values = [s["vram_bytes"] for s in models if s["vram_bytes"] is not None]
+        total_vram_bytes = sum(vram_values) if vram_values else None
 
         return {
             "gpus": gpu_info,
             "models_loaded": self.loaded_models,
             "models": models,
+            "total_vram_bytes": total_vram_bytes,
         }
 
     def model_stats(self, model_id: str) -> Dict[str, Any]:

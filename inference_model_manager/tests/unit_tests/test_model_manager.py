@@ -305,6 +305,47 @@ class TestModelManagerObservability:
         assert model_stats["model-a"]["inference_count"] == 1
         assert model_stats["model-b"]["inference_count"] == 0
 
+    def test_stats_carry_model_description_keys_on_every_entry(self):
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+
+        mm.load("model-a", api_key="")
+        mm.load("model-b", api_key="")
+
+        for entry in mm.stats()["models"]:
+            for key in (
+                "input_height",
+                "input_width",
+                "vram_bytes",
+                "loaded_monotonic",
+            ):
+                assert key in entry
+                assert entry[key] is None
+
+    def test_total_vram_bytes_sums_reported_models(self):
+        mm = ModelManager()
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("model-a", api_key="")
+        mm.load("model-b", api_key="")
+        original_stats = backends["model-a"].stats
+        backends["model-a"].stats = lambda: {**original_stats(), "vram_bytes": 250}
+
+        s = mm.stats()
+
+        assert s["total_vram_bytes"] == 250
+        model_stats = {m["model_id"]: m for m in s["models"]}
+        assert model_stats["model-a"]["vram_bytes"] == 250
+        assert model_stats["model-b"]["vram_bytes"] is None
+
+    def test_total_vram_bytes_is_none_when_no_model_reports_it(self):
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+        mm.load("model-b", api_key="")
+
+        assert mm.stats()["total_vram_bytes"] is None
+
     def test_model_stats(self):
         mm = ModelManager()
         backends = {}

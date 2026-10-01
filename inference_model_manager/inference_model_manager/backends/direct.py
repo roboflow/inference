@@ -12,9 +12,23 @@ from inference_model_manager.backends.base import (
     Backend,
     BackendState,
     attach_model_caches,
+    detect_input_size,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _device_memory_in_use() -> Optional[int]:
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return None
+        free, total = torch.cuda.mem_get_info()
+    except Exception:
+        return None
+
+    return total - free
 
 
 class DirectBackend(Backend):
@@ -68,12 +82,20 @@ class DirectBackend(Backend):
             device or "default",
             decoder,
         )
+        vram_before = _device_memory_in_use()
         try:
             self._model = load_model(model_id, api_key, **load_kwargs)
             attach_model_caches(self._model)
         except Exception:
             self._model = None
             raise
+        vram_after = _device_memory_in_use()
+        self.loaded_monotonic = time.monotonic()
+        self.vram_bytes: Optional[int] = (
+            vram_after - vram_before
+            if vram_before is not None and vram_after is not None
+            else None
+        )
         self._state_value = BackendState.LOADED
 
         self._device_str = self._detect_device()
@@ -230,6 +252,8 @@ class DirectBackend(Backend):
             idx = min(int(len(sorted_lats) * p / 100), len(sorted_lats) - 1)
             return sorted_lats[idx] * 1000
 
+        input_height, input_width = detect_input_size(self._model)
+
         return {
             "model_id": self._model_id,
             "backend_type": "direct",
@@ -249,6 +273,10 @@ class DirectBackend(Backend):
             "inference_count": self._inference_count,
             "error_count": self._error_count,
             "last_inference_ts": self._last_inference_ts,
+            "input_height": input_height,
+            "input_width": input_width,
+            "vram_bytes": self.vram_bytes,
+            "loaded_monotonic": self.loaded_monotonic,
             "model_class_name": type(self._model).__name__ if self._model else None,
             "resolved_model": (
                 dataclasses.asdict(self._model.resolved_model)

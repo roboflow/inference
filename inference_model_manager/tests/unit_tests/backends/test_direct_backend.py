@@ -95,6 +95,81 @@ class TestResolvedModelInStats:
             mm.shutdown()
 
 
+def _load_direct_backend(monkeypatch, memory_samples):
+    import inference_model_manager.backends.direct as direct_mod
+    import inference_model_manager.pipelines as pipelines_mod
+
+    model = SimpleNamespace(
+        _inference_config=SimpleNamespace(
+            network_input=SimpleNamespace(
+                dynamic_spatial_size_supported=False,
+                training_input_size=SimpleNamespace(height=480, width=640),
+            ),
+        )
+    )
+    samples = iter(memory_samples)
+    monkeypatch.setattr(direct_mod, "_device_memory_in_use", lambda: next(samples))
+    monkeypatch.setattr(
+        direct_mod,
+        "time",
+        SimpleNamespace(monotonic=lambda: 1234.5),
+    )
+    monkeypatch.setattr(pipelines_mod, "load_model", lambda *args, **kwargs: model)
+
+    backend = DirectBackend("m", "k", device="cpu")
+
+    return backend
+
+
+class TestModelDescriptionInStats:
+    def test_stats_report_input_size_and_vram_delta(self, monkeypatch):
+        backend = _load_direct_backend(monkeypatch, [100, 350])
+
+        stats = backend.stats()
+
+        assert stats["input_height"] == 480
+        assert stats["input_width"] == 640
+        assert stats["vram_bytes"] == 250
+        assert stats["loaded_monotonic"] == 1234.5
+
+    def test_stats_report_no_vram_when_memory_is_unavailable(self, monkeypatch):
+        backend = _load_direct_backend(monkeypatch, [None, None])
+
+        assert backend.stats()["vram_bytes"] is None
+
+    def test_memory_sampler_reports_none_without_cuda(self, monkeypatch):
+        import torch
+
+        from inference_model_manager.backends.direct import _device_memory_in_use
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+        assert _device_memory_in_use() is None
+
+    def test_memory_sampler_reports_device_memory_in_use(self, monkeypatch):
+        import torch
+
+        from inference_model_manager.backends.direct import _device_memory_in_use
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "mem_get_info", lambda: (300, 1000))
+
+        assert _device_memory_in_use() == 700
+
+    def test_memory_sampler_reports_none_when_query_raises(self, monkeypatch):
+        import torch
+
+        from inference_model_manager.backends.direct import _device_memory_in_use
+
+        def _raise():
+            raise RuntimeError("no device")
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "mem_get_info", _raise)
+
+        assert _device_memory_in_use() is None
+
+
 class TestRequestedDeviceReporting:
     def test_explicit_device_is_reported(self):
         backend = DirectBackend.__new__(DirectBackend)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import time
 from dataclasses import dataclass, field
@@ -36,6 +37,9 @@ from inference_server.prometheus import measure_inference
 logger = logging.getLogger(__name__)
 
 _ERR_NOT_LOADED = 6
+_CURRENT_REQUEST: contextvars.ContextVar[
+    Optional[tuple[Route, str, str, Optional[str]]]
+] = contextvars.ContextVar("legacy_current_request", default=None)
 _SYNC_TIMEOUT_MARGIN_S = 30
 
 
@@ -51,8 +55,13 @@ class Route:
     model_class_name: Optional[str] = None
     model_mro_names: list[str] = field(default_factory=list)
     class_colors: Optional[dict] = None
-    request_aliases: set[str] = field(default_factory=set)
-    request_paths: set[str] = field(default_factory=set)
+    requested_at: dict[str, float] = field(default_factory=dict)
+    request_paths_by_id: dict[str, dict[str, float]] = field(default_factory=dict)
+    request_aliases_by_id: dict[str, dict[str, float]] = field(default_factory=dict)
+    loaded_monotonic: Optional[float] = None
+    input_height: Optional[int] = None
+    input_width: Optional[int] = None
+    vram_bytes: Optional[int] = None
     resolved_model: Optional[dict] = None
     metadata_ts: float = 0.0
 
@@ -109,6 +118,14 @@ def registry_id_for(model_id: str) -> str:
     return f"{alias}{separator}{version}"
 
 
+def request_alias_for(model_id: str) -> Optional[str]:
+    legacy_model_id = resolve_roboflow_model_alias(model_id)
+    if legacy_model_id == model_id:
+        return None
+
+    return legacy_model_id
+
+
 def resolved_model_for(route: Route) -> ResolvedModel:
     if route.resolved_model:
         return ResolvedModel(**route.resolved_model)
@@ -138,6 +155,7 @@ class LegacyModelBridge:
         self.accepts_ndarray = isinstance(gateway, ModelManagerGateway)
         self._routes: dict[str, Route] = {}
         self._loaded_ids: set[str] = set()
+        self._preloaded_ids: dict[str, dict[str, float]] = {}
 
     async def resolve(self, model_id: str, api_key: Optional[str]) -> Route:
         registry_id = registry_id_for(model_id)
@@ -186,6 +204,12 @@ class LegacyModelBridge:
         return canonical
 
     async def ensure_loaded(self, route: Route, api_key: Optional[str]) -> None:
+        try:
+            await self._ensure_loaded(route, api_key)
+        finally:
+            self._refresh_current_request()
+
+    async def _ensure_loaded(self, route: Route, api_key: Optional[str]) -> None:
         record_model_load(route.registry_id, cold_start=False, load_time_s=0.0)
         deadline = time.monotonic() + LEGACY_LOAD_TIMEOUT_S
         while True:
@@ -231,6 +255,31 @@ class LegacyModelBridge:
         *,
         model_monitoring: bool = True,
         record: bool = True,
+    ) -> list[Any]:
+        try:
+            results = await self._infer(
+                route,
+                api_key,
+                action,
+                images,
+                params,
+                model_monitoring=model_monitoring,
+                record=record,
+            )
+        finally:
+            self._refresh_current_request()
+        return results
+
+    async def _infer(
+        self,
+        route: Route,
+        api_key: Optional[str],
+        action: str,
+        images: list[Optional[ImagePayload]],
+        params: dict,
+        *,
+        model_monitoring: bool,
+        record: bool,
     ) -> list[Any]:
         await self.ensure_loaded(route, api_key)
         with measure_inference(
@@ -295,6 +344,26 @@ class LegacyModelBridge:
         ]:
             del self._routes[key]
         self._loaded_ids.discard(registry_id)
+        self._preloaded_ids.pop(registry_id, None)
+
+    async def remove(self, model_id: str) -> None:
+        registry_id = registry_id_for(model_id)
+        legacy_model_id = resolve_roboflow_model_alias(model_id)
+        routes = {route.registry_id: route for route in await self.describe()}
+        route = routes.get(registry_id)
+        if route is None:
+            return
+
+        if route.requested_at:
+            if legacy_model_id not in route.requested_at:
+                return
+            del route.requested_at[legacy_model_id]
+            route.request_paths_by_id.pop(legacy_model_id, None)
+            self._preloaded_ids.get(registry_id, {}).pop(legacy_model_id, None)
+            if route.requested_at:
+                return
+
+        await self.unload(registry_id)
 
     async def unload_all(self) -> None:
         models = await self._stats_models()
@@ -302,6 +371,7 @@ class LegacyModelBridge:
             await self.gateway.unload(model_id)
         self._routes.clear()
         self._loaded_ids.clear()
+        self._preloaded_ids.clear()
 
     async def describe(self) -> list[Route]:
         models = await self._stats_models()
@@ -322,15 +392,54 @@ class LegacyModelBridge:
             route.task_type = _task_type_from_mro(route.model_mro_names)
             route.action = _DEFAULT_ACTION_BY_TASK_TYPE.get(route.task_type, "infer")
             routes.append(route)
+        for route in routes:
+            preloaded = self._preloaded_ids.get(route.registry_id, {})
+            for preloaded_id, registered_at in preloaded.items():
+                _record_latest(route.requested_at, preloaded_id, registered_at)
+                alias = request_alias_for(preloaded_id)
+                if alias is not None:
+                    _record_latest(
+                        route.request_aliases_by_id.setdefault(preloaded_id, {}),
+                        alias,
+                        registered_at,
+                    )
+            _drop_stale(route.requested_at, route.loaded_monotonic)
+            for paths in route.request_paths_by_id.values():
+                _drop_stale(paths, route.loaded_monotonic)
+            for aliases in route.request_aliases_by_id.values():
+                _drop_stale(aliases, route.loaded_monotonic)
         return routes
 
     def record_request(
-        self, route: Route, model_id_as_requested: str, path: str
+        self,
+        route: Route,
+        model_id_as_requested: str,
+        path: str,
+        *,
+        alias: Optional[str] = None,
     ) -> None:
-        if model_id_as_requested and model_id_as_requested != route.registry_id:
-            route.request_aliases.add(model_id_as_requested)
-        if path:
-            route.request_paths.add(path)
+        if model_id_as_requested:
+            _CURRENT_REQUEST.set((route, model_id_as_requested, path, alias))
+            recorded_at = _clock()
+            route.requested_at[model_id_as_requested] = recorded_at
+            paths = route.request_paths_by_id.setdefault(model_id_as_requested, {})
+            if path:
+                paths[path] = recorded_at
+            if alias is not None:
+                route.request_aliases_by_id.setdefault(model_id_as_requested, {})[
+                    alias
+                ] = recorded_at
+
+    def register_preloaded(self, model_id: str) -> None:
+        self._preloaded_ids.setdefault(registry_id_for(model_id), {})[
+            model_id
+        ] = _clock()
+
+    def _refresh_current_request(self) -> None:
+        current = _CURRENT_REQUEST.get()
+        if current is not None:
+            route, model_id_as_requested, path, alias = current
+            self.record_request(route, model_id_as_requested, path, alias=alias)
 
     def __contains__(self, model_id: str) -> bool:
         route = self._routes.get(model_id)
@@ -388,7 +497,29 @@ def _apply_metadata(route: Route, entry: dict) -> None:
     route.model_mro_names = list(entry.get("model_mro_names") or [])
     route.class_colors = entry.get("class_colors")
     route.resolved_model = entry.get("resolved_model")
+    route.input_height = entry.get("input_height")
+    route.input_width = entry.get("input_width")
+    route.vram_bytes = entry.get("vram_bytes")
+    route.loaded_monotonic = entry.get("loaded_monotonic")
     route.metadata_ts = time.monotonic()
+
+
+def _clock() -> float:
+    return time.monotonic()
+
+
+def _record_latest(recorded: dict[str, float], key: str, recorded_at: float) -> None:
+    recorded[key] = max(recorded_at, recorded.get(key, recorded_at))
+
+
+def _drop_stale(recorded: dict[str, float], loaded_monotonic: Optional[float]) -> None:
+    if loaded_monotonic is None:
+        return
+
+    for key in [
+        key for key, recorded_at in recorded.items() if recorded_at < loaded_monotonic
+    ]:
+        del recorded[key]
 
 
 def _task_type_from_mro(model_mro_names: list[str]) -> str:

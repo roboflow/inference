@@ -83,8 +83,10 @@ async def test_alias_resolves_to_canonical_route_keeping_recorded_requests(fake_
     alias_route = await bridge.resolve("yolov8n-640", "k")
     assert alias_route is canonical
     bridge.record_request(alias_route, "yolov8n-640", "/yolov8n-640")
-    assert canonical.request_aliases == {"yolov8n-640"}
-    assert canonical.request_paths == {"/infer/object_detection", "/yolov8n-640"}
+    assert set(canonical.requested_at) == {"coco/3", "yolov8n-640"}
+    assert {
+        path for paths in canonical.request_paths_by_id.values() for path in paths
+    } == {"/infer/object_detection", "/yolov8n-640"}
 
 
 @pytest.mark.asyncio

@@ -108,6 +108,9 @@ async def _preload_models(
 
         if result and result[0] == "ok":
             logger.info("Preload of '%s': %s", mid, result)
+            bridge = getattr(state, "legacy_bridge", None)
+            if bridge is not None:
+                bridge.register_preloaded(mid)
         else:
             logger.error("Preload of '%s' failed: %s", mid, result)
 
