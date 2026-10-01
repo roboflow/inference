@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import torch
 
+from inference_models.entities import ResolvedModelMetadata
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.base.action_recognition import (
     SLIDING_WINDOW_MODE,
@@ -375,6 +376,79 @@ def test_from_pretrained_reads_the_recorded_sampling(monkeypatch, tmp_path) -> N
     wrapper.infer(frames=large_frames, fps=2.0)
     sent_frames = reasoner.calls[0]["frames"]
     assert all(frame.shape == (56, 100, 3) for frame in sent_frames)
+
+
+_RESOLVED_MODEL = ResolvedModelMetadata(
+    model_id="workspace/actions/1",
+    model_package_id="hf-package",
+    backend="hugging-face",
+    quantization="bf16",
+)
+
+
+def _loaded_reasoner(package_dir=None, class_names=(), resolved_model=_RESOLVED_MODEL):
+    """A reasoner as the auto-loader hands it over: stamped after loading."""
+    reasoner = _FakeReasoner(tokenizer=_FakeTokenizer(class_names=class_names))
+    reasoner.package_dir = package_dir
+    if resolved_model is not None:
+        reasoner.resolved_model = resolved_model
+    return reasoner
+
+
+def test_from_reasoner_over_a_hosted_base_exposes_the_reasoner_package() -> None:
+    wrapper = Cosmos3EdgeActionRecognition.from_reasoner(reasoner=_loaded_reasoner())
+
+    assert wrapper.class_names is None
+    assert wrapper.resolved_model is _RESOLVED_MODEL
+
+
+def test_from_reasoner_over_a_fine_tune_exposes_the_reasoner_package(tmp_path) -> None:
+    (tmp_path / "class_names.txt").write_text("walking\nrunning\n")
+    reasoner = _loaded_reasoner(
+        package_dir=str(tmp_path), class_names=["walking", "running"]
+    )
+
+    wrapper = Cosmos3EdgeActionRecognition.from_reasoner(reasoner=reasoner)
+
+    assert wrapper.class_names == ["walking", "running"]
+    assert wrapper.resolved_model is _RESOLVED_MODEL
+
+
+def test_from_reasoner_over_a_base_package_exposes_the_reasoner_package(
+    tmp_path,
+) -> None:
+    reasoner = _loaded_reasoner(package_dir=str(tmp_path))
+
+    wrapper = Cosmos3EdgeActionRecognition.from_reasoner(reasoner=reasoner)
+
+    assert wrapper.class_names is None
+    assert wrapper.resolved_model is _RESOLVED_MODEL
+
+
+def test_a_reasoner_loaded_outside_the_auto_loader_resolves_to_nothing() -> None:
+    reasoner = _loaded_reasoner(resolved_model=None)
+
+    from_reasoner = Cosmos3EdgeActionRecognition.from_reasoner(reasoner=reasoner)
+    constructed = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    assert not hasattr(reasoner, "resolved_model")
+    assert from_reasoner.resolved_model is None
+    assert constructed.resolved_model is None
+
+
+def test_the_package_the_loader_stamps_on_the_wrapper_wins() -> None:
+    wrapper = Cosmos3EdgeActionRecognition.from_reasoner(reasoner=_loaded_reasoner())
+    stamped_by_loader = ResolvedModelMetadata(
+        model_id="workspace/actions/2",
+        model_package_id="trt-package",
+        backend="trt",
+        quantization="fp16",
+    )
+
+    wrapper.resolved_model = stamped_by_loader
+
+    assert wrapper.resolved_model is stamped_by_loader
+    assert wrapper._reasoner.resolved_model is _RESOLVED_MODEL
 
 
 def test_fine_tune_parser_accepts_trailing_end_token(monkeypatch) -> None:

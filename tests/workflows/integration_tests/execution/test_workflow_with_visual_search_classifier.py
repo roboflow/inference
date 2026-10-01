@@ -12,10 +12,10 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 # sibling, which binds its own copies of the roboflow_api helpers - patch the
 # module that actually runs.
 _VISUAL_SEARCH_CLASSIFIER_MODULE = (
-    "inference.core.workflows.core_steps.integrations.roboflow."
+    "inference.roboflow_workflows_plugin.integrations."
     "visual_search_classifier.v1_tensor"
     if ENABLE_TENSOR_DATA_REPRESENTATION
-    else "inference.core.workflows.core_steps.integrations.roboflow."
+    else "inference.roboflow_workflows_plugin.integrations."
     "visual_search_classifier.v1"
 )
 

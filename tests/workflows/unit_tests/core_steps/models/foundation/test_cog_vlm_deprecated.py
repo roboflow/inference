@@ -1,7 +1,5 @@
 """Behavioural tests for the deprecated CogVLM workflow block."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from inference.core.exceptions import FeatureDeprecatedError
@@ -16,7 +14,6 @@ def test_cog_vlm_block_run_raises_feature_deprecated_error_with_removal_release(
 ):
     # given
     block = CogVLMBlockV1(
-        model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
     )

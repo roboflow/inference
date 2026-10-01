@@ -21,6 +21,9 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
@@ -214,7 +217,7 @@ def model_manager() -> ModelManager:
     registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
     manager = ModelManager(model_registry=registry)
 
-    return manager
+    return ModelManagerModelsProvider(manager)
 
 
 def _run_workflow(

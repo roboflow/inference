@@ -11,10 +11,10 @@ from inference.core.utils.image_utils import load_image_base64
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     execute_operations,
 )
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier import (
+from inference.roboflow_workflows_plugin.integrations.visual_search_classifier import (
     v1,
 )
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
+from inference.roboflow_workflows_plugin.integrations.visual_search_classifier.v1 import (
     BlockManifest,
     RoboflowVisualSearchClassifierBlockV1,
 )

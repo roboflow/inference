@@ -11,7 +11,18 @@ import urllib.parse
 from contextvars import ContextVar
 from datetime import datetime
 from functools import partial
-from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+    cast,
+)
 
 import torch
 from filelock import FileLock
@@ -26,6 +37,7 @@ from inference_models.configuration import (
     OFFLINE_MODE_WARM_UP,
     ROBOFLOW_API_KEY,
 )
+from inference_models.entities import ResolvedModelMetadata
 from inference_models.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
@@ -1671,6 +1683,10 @@ class AutoModel:
                 - TextImageEmbeddingModel: For vision-language embeddings (CLIP, etc.)
                 - OpenVocabularyObjectDetectionModel: For open-vocabulary detection
 
+            Models loaded from registered packages expose `resolved_model` with the
+            canonical model ID, package ID, backend, and package quantization.
+            Direct local-path loads do not infer a package ID.
+
         Raises:
             UnauthorizedModelAccessError: If API key is invalid or model access is denied.
             ModelPackageNotFoundError: If no compatible model package is found for your
@@ -2271,6 +2287,9 @@ def attempt_loading_model_with_auto_load_cache(
         )
         invalidate_cache_entry("cached requested-model identity does not match")
         return None
+    if cache_entry.backend_type is None:
+        invalidate_cache_entry("cached package backend is missing")
+        return None
     if not allow_untrusted_packages and cache_entry.trusted_source is not True:
         verbose_info(
             message=(
@@ -2418,6 +2437,12 @@ def attempt_loading_model_with_auto_load_cache(
                 model_class=model_class,
                 model_init_kwargs=model_init_kwargs,
             ),
+        )
+        model.resolved_model = ResolvedModelMetadata(
+            model_id=cast(str, cache_entry.canonical_model_id),
+            model_package_id=cache_entry.model_package_id,
+            backend=cache_entry.backend_type.value,
+            quantization=package_config.quantization or Quantization.UNKNOWN.value,
         )
         if point_model_directory:
             point_model_directory(model_package_cache_dir)
@@ -3215,6 +3240,12 @@ def initialize_model(
             model_class=model_class,
             model_init_kwargs=model_init_kwargs,
         ),
+    )
+    model.resolved_model = ResolvedModelMetadata(
+        model_id=model_id,
+        model_package_id=model_package.package_id,
+        backend=model_package.backend.value,
+        quantization=quantization,
     )
     if OFFLINE_MODE:
         # Read-only leg: nothing was downloaded and the manifest is not

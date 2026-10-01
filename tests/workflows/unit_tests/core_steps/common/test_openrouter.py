@@ -23,6 +23,17 @@ from inference.core.workflows.core_steps.common.openrouter import (
     get_native_quantizations,
     validate_task_type_required_fields,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
+
 
 # Real error strings captured live from OpenRouter (2026-08-19):
 # qwen/qwen3.8-max rejecting `reasoning: {"enabled": false}`:
@@ -271,12 +282,13 @@ def test_execute_openrouter_batch_attaches_native_quantizations(
 # ---------------------------------------------------------------------------
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_sends_expected_payload_to_roboflow(mock_post):
+def test_proxied_request_sends_expected_payload_to_roboflow():
+    mock_post = platform_client.post_mock
     mock_post.return_value = {"choices": [{"message": {"content": "hello world"}}]}
 
     out = _execute_proxied_openrouter_request(
         roboflow_api_key="ws-key-xyz",
+        platform_client=platform_client,
         openrouter_api_key="rf_key:account",
         model="moonshotai/kimi-k2.6",
         messages=[{"role": "user", "content": "hi"}],
@@ -303,13 +315,14 @@ def test_proxied_request_sends_expected_payload_to_roboflow(mock_post):
     assert "provider" not in payload
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_raises_when_choices_empty(mock_post):
+def test_proxied_request_raises_when_choices_empty():
+    mock_post = platform_client.post_mock
     mock_post.return_value = {"choices": [], "error": {"message": "providers down"}}
 
     with pytest.raises(RuntimeError, match="providers down"):
         _execute_proxied_openrouter_request(
             roboflow_api_key="k",
+            platform_client=platform_client,
             openrouter_api_key="rf_key:account",
             model="m",
             messages=[],
@@ -324,14 +337,15 @@ def test_proxied_request_raises_when_choices_empty(mock_post):
 # ---------------------------------------------------------------------------
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_populates_reasoning_trace(mock_post):
+def test_proxied_request_populates_reasoning_trace():
+    mock_post = platform_client.post_mock
     mock_post.return_value = {
         "choices": [{"message": {"content": "answer", "reasoning": "trace"}}]
     }
 
     out = _execute_proxied_openrouter_request(
         roboflow_api_key="k",
+        platform_client=platform_client,
         openrouter_api_key="rf_key:account",
         model="qwen/qwen3.7-plus",
         messages=[{"role": "user", "content": "hi"}],
@@ -367,11 +381,13 @@ def test_direct_request_returns_empty_trace_when_reasoning_missing(mock_openai_c
     assert out == OpenRouterResult(content="answer")
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_returns_usage_and_none_when_omitted(mock_post):
+def test_proxied_request_returns_usage_and_none_when_omitted():
+    mock_post = platform_client.post_mock
+
     def call():
         return _execute_proxied_openrouter_request(
             roboflow_api_key="k",
+            platform_client=platform_client,
             openrouter_api_key="rf_key:account",
             model="qwen/qwen3.7-plus",
             messages=[{"role": "user", "content": "hi"}],
@@ -544,12 +560,13 @@ def test_direct_request_sends_quantizations_even_when_privacy_allows(mock_openai
     }
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_forwards_quantizations_in_payload(mock_post):
+def test_proxied_request_forwards_quantizations_in_payload():
+    mock_post = platform_client.post_mock
     mock_post.return_value = {"choices": [{"message": {"content": "ok"}}]}
 
     _execute_proxied_openrouter_request(
         roboflow_api_key="ws-key",
+        platform_client=platform_client,
         openrouter_api_key="rf_key:account",
         model="z-ai/glm-5.3-flash",
         messages=[{"role": "user", "content": "hi"}],
@@ -656,12 +673,13 @@ def test_reasoning_error_ignores_unrelated_client_errors():
 # ---------------------------------------------------------------------------
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_includes_reasoning_and_omits_none_temperature(mock_post):
+def test_proxied_request_includes_reasoning_and_omits_none_temperature():
+    mock_post = platform_client.post_mock
     mock_post.return_value = {"choices": [{"message": {"content": "ok"}}]}
 
     _execute_proxied_openrouter_request(
         roboflow_api_key="ws-key",
+        platform_client=platform_client,
         openrouter_api_key="rf_key:account",
         model="qwen/qwen3.7-flash",
         messages=[{"role": "user", "content": "hi"}],
@@ -703,8 +721,8 @@ def test_direct_request_includes_reasoning_and_omits_none_temperature(mock_opena
 
 
 @patch("inference.core.workflows.core_steps.common.openrouter.logger")
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_retries_without_reasoning_on_rejection(mock_post, mock_logger):
+def test_proxied_request_retries_without_reasoning_on_rejection(mock_logger):
+    mock_post = platform_client.post_mock
     mock_post.side_effect = [
         _proxy_error(MANDATORY_REASONING_ERROR, status_code=400),
         {"choices": [{"message": {"content": "ok"}}]},
@@ -712,6 +730,7 @@ def test_proxied_request_retries_without_reasoning_on_rejection(mock_post, mock_
 
     out = _execute_proxied_openrouter_request(
         roboflow_api_key="ws-key",
+        platform_client=platform_client,
         openrouter_api_key="rf_key:account",
         model="qwen/qwen3.8-max",
         messages=[{"role": "user", "content": "hi"}],
@@ -729,9 +748,9 @@ def test_proxied_request_retries_without_reasoning_on_rejection(mock_post, mock_
 
 
 @patch("inference.core.workflows.core_steps.common.openrouter.logger")
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_retry_without_reasoning_keeps_quantizations(mock_post, mock_logger):
+def test_proxied_retry_without_reasoning_keeps_quantizations(mock_logger):
     """Dropping a rejected reasoning config must not drop the precision filter."""
+    mock_post = platform_client.post_mock
     mock_post.side_effect = [
         _proxy_error(MANDATORY_REASONING_ERROR, status_code=400),
         {"choices": [{"message": {"content": "ok"}}]},
@@ -739,6 +758,7 @@ def test_proxied_retry_without_reasoning_keeps_quantizations(mock_post, mock_log
 
     _execute_proxied_openrouter_request(
         roboflow_api_key="ws-key",
+        platform_client=platform_client,
         openrouter_api_key="rf_key:account",
         model="z-ai/glm-5.3-flash",
         messages=[{"role": "user", "content": "hi"}],
@@ -754,8 +774,8 @@ def test_proxied_retry_without_reasoning_keeps_quantizations(mock_post, mock_log
     assert retry_payload["quantizations"] == ["fp8", "bf16", "fp32"]
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_does_not_retry_on_relayed_502(mock_post):
+def test_proxied_request_does_not_retry_on_relayed_502():
+    mock_post = platform_client.post_mock
     # Regression: the proxy relays upstream 5xx with the provider message
     # preserved; a reasoning-flavored 502 must not fire a duplicate request.
     mock_post.side_effect = _proxy_error(MANDATORY_REASONING_ERROR, status_code=502)
@@ -763,6 +783,7 @@ def test_proxied_request_does_not_retry_on_relayed_502(mock_post):
     with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
         _execute_proxied_openrouter_request(
             roboflow_api_key="ws-key",
+            platform_client=platform_client,
             openrouter_api_key="rf_key:account",
             model="qwen/qwen3.8-max",
             messages=[],
@@ -775,13 +796,14 @@ def test_proxied_request_does_not_retry_on_relayed_502(mock_post):
     assert mock_post.call_count == 1
 
 
-@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
-def test_proxied_request_does_not_retry_when_no_reasoning_sent(mock_post):
+def test_proxied_request_does_not_retry_when_no_reasoning_sent():
+    mock_post = platform_client.post_mock
     mock_post.side_effect = _proxy_error(MANDATORY_REASONING_ERROR, status_code=400)
 
     with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
         _execute_proxied_openrouter_request(
             roboflow_api_key="ws-key",
+            platform_client=platform_client,
             openrouter_api_key="rf_key:account",
             model="qwen/qwen3.8-max",
             messages=[],

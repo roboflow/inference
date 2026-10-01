@@ -1,23 +1,21 @@
 aiortc>=1.9.0
 av==14.2.0 # pinning due to: https://github.com/PyAV-Org/PyAV/issues/2082
 APScheduler>=3.10.1,<4.0.0
-asyncua~=1.1.5
 cachetools<6.0.0
 cython~=3.0.0
 python-dotenv>=1.2.2,<2.0.0
 tzdata>=2024.1
-fastapi>=0.100,<0.129  # be careful with upper pin - fastapi might remove support for on_event
+fastapi>=0.134,<0.142  # be careful with upper pin - fastapi might remove support for on_event
 numpy>=2.0.0,<2.4.0
 opencv-python>=4.8.1.78,<4.13.0
 opencv-contrib-python>=4.8.1.78,<4.13.0  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here
 pillow>=12.3.0,<13.0.0
 prometheus-fastapi-instrumentator<=6.0.0
 psutil>=7.0.0
-psycopg[binary]>=3.2,<4
 redis~=5.0.0
 requests>=2.33.0,<3.0.0
 rich>=13.0.0,<15.0.0
-supervision>=0.29.0,<0.30.0  # 0.30 changed __setitem__ validation, from_inference polygon skips, PolygonZone anchors, CompactMask degeneracy and NMM tie-breaks - conformance tracked separately
+supervision>=0.30.6,<0.31.0  # roboflow-workflows ports mirror 0.30 PolygonZone, CompactMask and NMM semantics - re-run their parity tests before raising the cap
 pybase64~=1.0.0
 scikit-image>=0.19.0,<=0.25.2
 requests-toolbelt~=1.0.0
@@ -28,7 +26,8 @@ pydantic>=2.8.0,<2.12.0
 pydantic-settings<2.8
 openai>=1.17.0,<2.0.0
 structlog>=24.1.0,<25.0.0
-zxing-cpp~=2.2.0
+zxing-cpp~=2.2.0; python_version < "3.13"
+zxing-cpp==2.3.0; python_version >= "3.13"
 boto3>=1.40.0,<=1.41.5
 botocore>=1.40.0,<=1.41.5
 typing_extensions>=4.8.0,<=4.15.0
@@ -38,7 +37,6 @@ tldextract~=5.1.2
 packaging~=24.0
 anthropic~=0.49.0
 pandas>=2.2.3,<3.0.0
-paho-mqtt~=1.6.1
 pytest>=9.0.3,<10.0.0  # this is not a joke, sam2 requires this as the fork we are using is dependent on that, yet
 # do not mark the dependency: https://github.com/SauravMaheshkar/samv2/blob/main/sam2/utils/download.py
 tokenizers>=0.19.0,<0.23.0
@@ -52,8 +50,6 @@ msgpack
 # websocket-client was previously only present transitively via the docker SDK,
 # which made an opt-in transport depend on an unrelated package's dependency.
 websocket-client~=1.9.0
-pylogix==1.0.5
-pymodbus>=3.6.9,<=3.8.3
 backoff~=2.2.0
 filelock>=3.20.3,<=4.0.0
 onvif-zeep-async==2.0.0 # versions > 2.0.0 will not work with Python 3.9 despite docs

@@ -301,6 +301,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         data = infer_func(**request.dict())
         response = make_response_func(data)
         response.time = perf_counter() - t1
+        self._attach_resolved_model_metadata(response)
         return response
 
     def make_response(self, embeddings, *args, **kwargs) -> InferenceResponse:

@@ -1156,12 +1156,16 @@ def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
     assert (
         len(fps_monitor.all_timestamps) == 2
     ), "FPS monitor tick must be emitted on success"
-    assert buffer.get_nowait() == VideoFrame(
-        image=image,
-        frame_id=1,
-        frame_timestamp=frame_timestamp,
-        source_id=3,
+    decoded_frame = buffer.get_nowait()
+    assert isinstance(
+        decoded_frame, VideoFrame
     ), "Decoded frame must be saved into buffer"
+    assert decoded_frame.image is image, "Decoded frame must carry the retrieved image"
+    assert decoded_frame.frame_id == 1, "Decoded frame must carry the frame id"
+    assert (
+        decoded_frame.frame_timestamp == frame_timestamp
+    ), "Decoded frame must carry the frame timestamp"
+    assert decoded_frame.source_id == 3, "Decoded frame must carry the source id"
 
 
 def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:

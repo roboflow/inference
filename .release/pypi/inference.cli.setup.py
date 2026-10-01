@@ -12,10 +12,6 @@ shutil.copyfile(
     os.path.join(root, "inference/core/version.py"),
     os.path.join(root, "inference_cli/version.py"),
 )
-shutil.copyfile(
-    os.path.join(root, "inference/core/version.py"),
-    os.path.join(root, "inference_sdk/version.py"),
-)
 
 # Read the version without importing the package - `inference/__init__.py`
 # pulls in the full runtime (inference_models, torch, cv2), which wheel-build
@@ -61,7 +57,17 @@ setuptools.setup(
             "development",
             "development.*",
             "inference_models",
-            "inference_models.*"
+            "inference_models.*",
+            "stream_vision",
+            "stream_vision.*",
+            "streamvision",
+            "streamvision.*",
+            "inference_sdk",
+            "inference_sdk.*",
+            "roboflow_workflows",
+            "roboflow_workflows.*",
+            "workflows",
+            "workflows.*",
         ),
     ),
     entry_points={
@@ -71,13 +77,18 @@ setuptools.setup(
     },
     extras_require={
         "cloud-deploy": read_requirements("requirements/requirements.cloud_deploy.txt"),
-        "cloud-storage": read_requirements("requirements/requirements.cloud_storage.txt"),
+        "cloud-storage": read_requirements(
+            "requirements/requirements.cloud_storage.txt"
+        ),
     },
     package_data={"": ["configs/*.yml"]},
-    install_requires=read_requirements([
-        "requirements/requirements.cli.txt",
-        "requirements/requirements.sdk.http.txt",
-    ]),
+    install_requires=read_requirements(
+        [
+            "requirements/requirements.cli.txt",
+            "requirements/requirements.sdk.http.txt",
+        ]
+    )
+    + [f"inference-sdk=={__version__}"],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
@@ -93,5 +104,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.10,<3.13"
+    python_requires=">=3.10,<3.14",
 )

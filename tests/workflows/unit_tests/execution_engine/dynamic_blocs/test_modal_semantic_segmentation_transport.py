@@ -19,15 +19,15 @@ import supervision as sv
 from fastapi.testclient import TestClient
 from pycocotools import mask as mask_utils
 
-from inference.core.workflows.core_steps.common.serializers import (
+from roboflow_workflows.core_steps.common.serializers import (
     serialise_sv_detections_for_transport,
 )
-from inference.core.workflows.execution_engine.constants import (
+from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
     RLE_MASK_KEY_IN_SV_DETECTIONS,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     _deserialize_msgpack_result,
     serialize_for_modal_remote_execution,
     serialize_inputs_for_msgpack,

@@ -252,3 +252,21 @@ def test_pp_ocrv6_detection_is_registered_as_onnx_object_detection() -> None:
         == "inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx"
     )
     assert lazy_class._class_name == "PPOCRv6DetectionOnnx"
+
+
+@pytest.mark.parametrize(
+    "model_architecture, class_name",
+    [
+        ("patchcore", "PatchCoreForAnomalyDetectionTorch"),
+        ("foundad", "FoundADForAnomalyDetectionTorch"),
+    ],
+)
+def test_anomaly_detection_architectures_resolve_to_torch_classifiers(
+    model_architecture: str, class_name: str
+) -> None:
+    cls = resolve_model_class(
+        model_architecture=model_architecture,
+        task_type="classification",
+        backend=BackendType.TORCH,
+    )
+    assert cls.__name__ == class_name

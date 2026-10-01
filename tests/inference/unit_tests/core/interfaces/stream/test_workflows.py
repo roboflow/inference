@@ -14,6 +14,9 @@ from inference.core.interfaces.stream.model_handlers.workflows import (
     _index_list_parameters_by_frame_id,
     wrap_workflow_runner_for_stream_pipeline,
 )
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
     RoboflowInstanceSegmentationModelBlockV3,
@@ -315,6 +318,21 @@ class _FakeModelManager:
         assert model_id == "model"
         return self.model
 
+    # The stream-pipeline port methods (Phase 11 Task 11.1) mirror
+    # `ModelManager`'s bodies over the single fake model.
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        return model_id in self and self.model._pipeline_depth > 1
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        return self.model._pipeline_depth if model_id in self else 1
+
+    def flush_model_stream_pipeline(self, model_id: str):
+        return self.model.flush() if model_id in self else None
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        if model_id in self:
+            self.model.shutdown_pipeline()
+
 
 class _ContextAwareModelManager(_FakeModelManager):
     def __init__(self, mode: str) -> None:
@@ -445,10 +463,13 @@ def test_index_list_parameters_by_frame_id_returns_input_for_empty_batch() -> No
     assert indexed is params
 
 
-def test_index_list_parameters_by_frame_id_warns_once_per_key(caplog) -> None:
+def test_index_list_parameters_by_frame_id_warns_once_per_key(
+    inference_caplog,
+) -> None:
     frames = [_make_frame(5)]
     params = {"cached_preds": ["p0", "p1", "p2"]}
     warned_keys = set()
+    caplog = inference_caplog
 
     with caplog.at_level(logging.WARNING):
         _index_list_parameters_by_frame_id(
@@ -717,7 +738,9 @@ def test_instance_segmentation_stream_pipeline_activation_requires_depth_above_o
     monkeypatch,
 ) -> None:
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=_FakeModelManager(inference_results=[]),
+        model_manager=ModelManagerModelsProvider(
+            _FakeModelManager(inference_results=[])
+        ),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -745,7 +768,7 @@ def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workf
         ]
     )
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=manager,
+        model_manager=ModelManagerModelsProvider(manager),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -816,7 +839,7 @@ def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workf
 def test_instance_segmentation_stream_pipeline_uses_response_context_id() -> None:
     manager = _ContextAwareModelManager(mode="previous")
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=manager,
+        model_manager=ModelManagerModelsProvider(manager),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -870,7 +893,7 @@ def test_instance_segmentation_stream_pipeline_uses_response_context_id() -> Non
 def test_instance_segmentation_stream_pipeline_rejects_unknown_context_id() -> None:
     manager = _ContextAwareModelManager(mode="missing")
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=manager,
+        model_manager=ModelManagerModelsProvider(manager),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -922,7 +945,7 @@ def test_instance_segmentation_stream_pipeline_rejects_image_metadata_mismatch()
 ):
     manager = _ContextAwareModelManager(mode="current-with-old-size")
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=manager,
+        model_manager=ModelManagerModelsProvider(manager),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )

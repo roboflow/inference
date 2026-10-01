@@ -526,6 +526,7 @@ class SegmentAnything3(RoboflowCoreModel):
                 nms_iou_threshold=request.nms_iou_threshold,
             )
             # segment_image now returns either bytes or a response model
+            self._attach_resolved_model_metadata(result)
             return result
         else:
             raise ValueError(f"Invalid request type {type(request)}")

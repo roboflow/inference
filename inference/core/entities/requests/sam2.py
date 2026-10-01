@@ -1,12 +1,18 @@
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Union
 
-from pydantic import BaseModel, Field, root_validator, validator
+from pydantic import Field, root_validator, validator
 
 from inference.core.entities.requests.inference import (
     BaseRequest,
     InferenceRequestImage,
 )
 from inference.core.env import SAM2_VERSION_ID
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (  # noqa: F401
+    Box,
+    Point,
+    Sam2Prompt,
+    Sam2PromptSet,
+)
 
 
 class Sam2InferenceRequest(BaseRequest):
@@ -54,72 +60,6 @@ class Sam2EmbeddingRequest(Sam2InferenceRequest):
         examples=["image_id"],
         description="The ID of the image to be embedded used to cache the embedding.",
     )
-
-
-class Box(BaseModel):
-    x: float
-    y: float
-    width: float
-    height: float
-
-
-class Point(BaseModel):
-    x: float
-    y: float
-    positive: bool
-
-    def to_hashable(self) -> Tuple[float, float, bool]:
-        return (self.x, self.y, self.positive)
-
-
-class Sam2Prompt(BaseModel):
-    box: Optional[Box] = Field(default=None)
-    points: Optional[List[Point]] = Field(default=None)
-
-    def num_points(self) -> int:
-        return len(self.points or [])
-
-
-class Sam2PromptSet(BaseModel):
-    prompts: Optional[List[Sam2Prompt]] = Field(
-        default=None,
-        description="An optional list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points",
-    )
-
-    def num_points(self) -> int:
-        if not self.prompts:
-            return 0
-        return sum(prompt.num_points() for prompt in self.prompts)
-
-    def to_sam2_inputs(self):
-        if self.prompts is None:
-            return {"point_coords": None, "point_labels": None, "box": None}
-        return_dict = {"point_coords": [], "point_labels": [], "box": []}
-        for prompt in self.prompts:
-            if prompt.box is not None:
-                x1 = prompt.box.x - prompt.box.width / 2
-                y1 = prompt.box.y - prompt.box.height / 2
-                x2 = prompt.box.x + prompt.box.width / 2
-                y2 = prompt.box.y + prompt.box.height / 2
-                return_dict["box"].append([x1, y1, x2, y2])
-            if prompt.points is not None:
-                return_dict["point_coords"].append(
-                    list([point.x, point.y] for point in prompt.points)
-                )
-                return_dict["point_labels"].append(
-                    list(int(point.positive) for point in prompt.points)
-                )
-            else:
-                return_dict["point_coords"].append([])
-                return_dict["point_labels"].append([])
-
-        if not any(return_dict["point_coords"]):
-            return_dict["point_coords"] = None
-        if not any(return_dict["point_labels"]):
-            return_dict["point_labels"] = None
-
-        return_dict = {k: v if v else None for k, v in return_dict.items()}
-        return return_dict
 
 
 class Sam2SegmentationRequest(Sam2InferenceRequest):

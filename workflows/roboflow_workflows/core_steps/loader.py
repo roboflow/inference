@@ -1,0 +1,2009 @@
+from typing import List, Type
+
+from roboflow_workflows._compat_names import to_legacy_module
+from roboflow_workflows.configuration import get_configuration
+from roboflow_workflows.core_steps.analytics.data_aggregator.v1 import (
+    DataAggregatorBlockV1,
+)
+from roboflow_workflows.environment import (
+    ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
+    ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    API_KEY,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    SAM3_3D_OBJECTS_ENABLED,
+    WORKFLOW_BLOCKS_WRITE_DIRECTORY,
+    WORKFLOW_DISABLED_BLOCK_PATTERNS,
+    WORKFLOW_DISABLED_BLOCK_TYPES,
+    WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
+    WORKFLOWS_STEP_EXECUTION_MODE,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.analytics.detection_event_log.v1 import (
+        DetectionEventLogBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.analytics.detection_event_log.v1_tensor import (
+        DetectionEventLogBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.analytics.line_counter.v1 import (
+        LineCounterBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.analytics.line_counter.v1_tensor import (
+        LineCounterBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.analytics.line_counter.v2 import (
+        LineCounterBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.analytics.line_counter.v2_tensor import (
+        LineCounterBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.analytics.overlap.v1 import OverlapBlockV1
+    from roboflow_workflows.core_steps.analytics.path_deviation.v1 import (
+        PathDeviationAnalyticsBlockV1,
+    )
+    from roboflow_workflows.core_steps.analytics.path_deviation.v2 import (
+        PathDeviationAnalyticsBlockV2,
+    )
+    from roboflow_workflows.core_steps.analytics.time_in_zone.v1 import (
+        TimeInZoneBlockV1,
+    )
+    from roboflow_workflows.core_steps.analytics.time_in_zone.v2 import (
+        TimeInZoneBlockV2,
+    )
+    from roboflow_workflows.core_steps.analytics.time_in_zone.v3 import (
+        TimeInZoneBlockV3,
+    )
+    from roboflow_workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
+else:
+    from roboflow_workflows.core_steps.analytics.overlap.v1_tensor import (
+        OverlapBlockV1,
+    )
+    from roboflow_workflows.core_steps.analytics.path_deviation.v1_tensor import (
+        PathDeviationAnalyticsBlockV1,
+    )
+    from roboflow_workflows.core_steps.analytics.path_deviation.v2_tensor import (
+        PathDeviationAnalyticsBlockV2,
+    )
+    from roboflow_workflows.core_steps.analytics.time_in_zone.v1_tensor import (
+        TimeInZoneBlockV1,
+    )
+    from roboflow_workflows.core_steps.analytics.time_in_zone.v2_tensor import (
+        TimeInZoneBlockV2,
+    )
+    from roboflow_workflows.core_steps.analytics.time_in_zone.v3_tensor import (
+        TimeInZoneBlockV3,
+    )
+    from roboflow_workflows.core_steps.analytics.velocity.v1_tensor import (
+        VelocityBlockV1,
+    )
+
+from roboflow_workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
+from roboflow_workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from roboflow_workflows.core_steps.classical_cv.auto_rotate_on_edges.v1 import (
+    AutoRotateOnEdgesBlockV1,
+)
+from roboflow_workflows.core_steps.classical_cv.background_subtraction.v1 import (
+    BackgroundSubtractionBlockV1,
+)
+from roboflow_workflows.core_steps.classical_cv.camera_focus.v1 import (
+    CameraFocusBlockV1,
+)
+from roboflow_workflows.core_steps.classical_cv.camera_focus.v2 import (
+    CameraFocusBlockV2,
+)
+from roboflow_workflows.core_steps.classical_cv.contours.v1 import (
+    ImageContoursDetectionBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.contrast_enhancement.v1 import (
+        ContrastEnhancementBlock,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.contrast_enhancement.v1_tensor import (
+        ContrastEnhancementBlock,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.contrast_equalization.v1 import (
+        ContrastEqualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.contrast_equalization.v1_tensor import (
+        ContrastEqualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.convert_grayscale.v1 import (
+        ConvertGrayscaleBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.convert_grayscale.v1_tensor import (
+        ConvertGrayscaleBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
+        DetectionsNearestNeighborBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.detections_nearest_neighbor.v1_tensor import (
+        DetectionsNearestNeighborBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.distance_measurement.v1 import (
+        DistanceMeasurementBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.distance_measurement.v1_tensor import (
+        DistanceMeasurementBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.dominant_color.v1 import (
+        DominantColorBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.dominant_color.v1_tensor import (
+        DominantColorBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.image_blur.v1 import (
+        ImageBlurBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.image_blur.v1_tensor import (
+        ImageBlurBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.image_preprocessing.v1 import (
+        ImagePreprocessingBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.image_preprocessing.v1_tensor import (
+        ImagePreprocessingBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
+        MaskAreaMeasurementBlockV1,
+    )
+    from roboflow_workflows.core_steps.classical_cv.mask_edge_snap.v1 import (
+        MaskEdgeSnapBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.mask_area_measurement.v1_tensor import (
+        MaskAreaMeasurementBlockV1,
+    )
+    from roboflow_workflows.core_steps.classical_cv.mask_edge_snap.v1_tensor import (
+        MaskEdgeSnapBlockV1,
+    )
+
+from roboflow_workflows.core_steps.classical_cv.morphological_transformation.v1 import (
+    MorphologicalTransformationBlockV1,
+)
+from roboflow_workflows.core_steps.classical_cv.morphological_transformation.v2 import (
+    MorphologicalTransformationBlockV2,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.motion_detection.v1 import (
+        MotionDetectionBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.motion_detection.v1_tensor import (
+        MotionDetectionBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.pixel_color_count.v1 import (
+        PixelationCountBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.pixel_color_count.v1_tensor import (
+        PixelationCountBlockV1,
+    )
+
+from roboflow_workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
+from roboflow_workflows.core_steps.classical_cv.sift_comparison.v1 import (
+    SIFTComparisonBlockV1,
+)
+from roboflow_workflows.core_steps.classical_cv.sift_comparison.v2 import (
+    SIFTComparisonBlockV2,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.size_measurement.v1 import (
+        SizeMeasurementBlockV1,
+    )
+    from roboflow_workflows.core_steps.classical_cv.template_matching.v1 import (
+        TemplateMatchingBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.size_measurement.v1_tensor import (
+        SizeMeasurementBlockV1,
+    )
+    from roboflow_workflows.core_steps.classical_cv.template_matching.v1_tensor import (
+        TemplateMatchingBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.classical_cv.threshold.v1 import (
+        ImageThresholdBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.classical_cv.threshold.v1_tensor import (
+        ImageThresholdBlockV1,
+    )
+
+from roboflow_workflows.core_steps.common.deserializers import (
+    deserialize_action_recognition_prediction_kind,
+    deserialize_boolean_kind,
+    deserialize_bytes_kind,
+    deserialize_classification_prediction_kind,
+    deserialize_dictionary_kind,
+    deserialize_float_kind,
+    deserialize_float_zero_to_one_kind,
+    deserialize_integer_kind,
+    deserialize_labeled_points_kind,
+    deserialize_list_of_values_kind,
+    deserialize_numpy_array,
+    deserialize_optional_string_kind,
+    deserialize_point_kind,
+    deserialize_rgb_color_kind,
+    deserialize_string_kind,
+    deserialize_timestamp,
+    deserialize_video_metadata_kind,
+    deserialize_zone_kind,
+)
+from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.serializers import (
+    serialise_image,
+    serialize_action_recognition_prediction_kind,
+    serialize_secret,
+    serialize_timestamp,
+    serialize_video_metadata_kind,
+)
+from roboflow_workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_KIND,
+    TENSOR_NATIVE_BAR_CODE_DETECTION_KIND,
+    TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
+    TENSOR_NATIVE_DETECTION_KIND,
+    TENSOR_NATIVE_EMBEDDING_KIND,
+    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_QR_CODE_DETECTION_KIND,
+    TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND,
+)
+
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.common.deserializers_tensor import (
+        deserialize_detections_kind,
+        deserialize_image_kind,
+        deserialize_native_classification_prediction_kind,
+        deserialize_native_embedding_kind,
+        deserialize_native_tensor_kind,
+        deserialize_rle_detections_kind,
+    )
+    from roboflow_workflows.core_steps.common.serializers_tensor import (
+        serialise_native_classification,
+        serialise_native_embedding,
+        serialise_native_keypoint_detection,
+        serialise_native_rle_detections,
+        serialise_native_tensor,
+        serialise_numpy_array_kind,
+        serialise_rle_sv_detections,
+        serialise_sv_detections,
+        serialize_wildcard_kind,
+    )
+else:
+    from roboflow_workflows.core_steps.common.deserializers import (
+        deserialize_detections_kind,
+        deserialize_image_kind,
+        deserialize_rle_detections_kind,
+    )
+    from roboflow_workflows.core_steps.common.serializers import (
+        serialise_rle_sv_detections,
+        serialise_sv_detections,
+        serialize_wildcard_kind,
+    )
+
+from roboflow_workflows.core_steps.flow_control.continue_if.v1 import ContinueIfBlockV1
+from roboflow_workflows.core_steps.flow_control.delta_filter.v1 import (
+    DeltaFilterBlockV1,
+)
+from roboflow_workflows.core_steps.flow_control.inner_workflow.v1 import (
+    InnerWorkflowBlockV1,
+)
+from roboflow_workflows.core_steps.flow_control.rate_limiter.v1 import (
+    RateLimiterBlockV1,
+)
+from roboflow_workflows.core_steps.flow_control.switch_case.v1 import SwitchCaseBlockV1
+from roboflow_workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
+from roboflow_workflows.core_steps.formatters.current_time.v1 import CurrentTimeBlockV1
+from roboflow_workflows.core_steps.formatters.expression.v1 import ExpressionBlockV1
+from roboflow_workflows.core_steps.formatters.first_non_empty_or_default.v1 import (
+    FirstNonEmptyOrDefaultBlockV1,
+)
+from roboflow_workflows.core_steps.formatters.json_parser.v1 import JSONParserBlockV1
+from roboflow_workflows.core_steps.formatters.property_definition.v1 import (
+    PropertyDefinitionBlockV1,
+)
+from roboflow_workflows.core_steps.formatters.string_template.v1 import (
+    StringTemplateBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.formatters.vlm_as_classifier.v1 import (
+        VLMAsClassifierBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.formatters.vlm_as_classifier.v1_tensor import (
+        VLMAsClassifierBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.formatters.vlm_as_classifier.v2 import (
+        VLMAsClassifierBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.formatters.vlm_as_classifier.v2_tensor import (
+        VLMAsClassifierBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.formatters.vlm_as_detector.v1 import (
+        VLMAsDetectorBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.formatters.vlm_as_detector.v1_tensor import (
+        VLMAsDetectorBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.formatters.vlm_as_detector.v2 import (
+        VLMAsDetectorBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.formatters.vlm_as_detector.v2_tensor import (
+        VLMAsDetectorBlockV2,
+    )
+
+from roboflow_workflows.core_steps.fusion.buffer.v1 import BufferBlockV1
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.fusion.detections_classes_replacement.v1 import (
+        DetectionsClassesReplacementBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
+        DetectionsClassesReplacementBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.fusion.detections_consensus.v1 import (
+        DetectionsConsensusBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.fusion.detections_consensus.v1_tensor import (
+        DetectionsConsensusBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.fusion.detections_list_rollup.v1 import (
+        DetectionsListRollUpBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.fusion.detections_list_rollup.v1_tensor import (
+        DetectionsListRollUpBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.fusion.detections_stitch.v1 import (
+        DetectionsStitchBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.fusion.detections_stitch.v1_tensor import (
+        DetectionsStitchBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.fusion.detections_difference.v1 import (
+        DetectionsDifferenceBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.fusion.detections_difference.v1_tensor import (
+        DetectionsDifferenceBlockV1,
+    )
+
+from roboflow_workflows.core_steps.fusion.dimension_collapse.v1 import (
+    DimensionCollapseBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.fusion.frame_delay.v1 import FrameDelayBlockV1
+else:
+    from roboflow_workflows.core_steps.fusion.frame_delay.v1_tensor import (
+        FrameDelayBlockV1,
+    )
+
+from roboflow_workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.fusion.overlap_analysis.v1 import (
+        OverlapAnalysisBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.fusion.overlap_analysis.v1_tensor import (
+        OverlapAnalysisBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.math.cosine_similarity.v1 import (
+        CosineSimilarityBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.math.cosine_similarity.v1_tensor import (
+        CosineSimilarityBlockV1,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v1 import (
+    AnthropicClaudeBlockV1,
+)
+from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v2 import (
+    AnthropicClaudeBlockV2,
+)
+from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v3 import (
+    AnthropicClaudeBlockV3,
+)
+from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v4 import (
+    AnthropicClaudeBlockV4,
+)
+from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v5 import (
+    AnthropicClaudeBlockV5,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.clip.v1 import ClipModelBlockV1
+else:
+    from roboflow_workflows.core_steps.models.foundation.clip.v1_tensor import (
+        ClipModelBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.clip_comparison.v1 import (
+        ClipComparisonBlockV1,
+    )
+    from roboflow_workflows.core_steps.models.foundation.clip_comparison.v2 import (
+        ClipComparisonBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.clip_comparison.v1_tensor import (
+        ClipComparisonBlockV1,
+    )
+    from roboflow_workflows.core_steps.models.foundation.clip_comparison.v2_tensor import (
+        ClipComparisonBlockV2,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.cog_vlm.v1 import CogVLMBlockV1
+from roboflow_workflows.core_steps.models.foundation.cosmos3.v1 import (
+    Cosmos3EdgeBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.depth_estimation.v1 import (
+        DepthEstimationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.depth_estimation.v1_tensor import (
+        DepthEstimationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.easy_ocr.v1 import (
+        EasyOCRBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.easy_ocr.v1_tensor import (
+        EasyOCRBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.florence2.v1 import (
+        Florence2BlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.florence2.v1_tensor import (
+        Florence2BlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.florence2.v2 import (
+        Florence2BlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.florence2.v2_tensor import (
+        Florence2BlockV2,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
+from roboflow_workflows.core_steps.models.foundation.glm_ocr.v1 import GLMOCRBlockV1
+from roboflow_workflows.core_steps.models.foundation.google_gemini.v1 import (
+    GoogleGeminiBlockV1,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemini.v2 import (
+    GoogleGeminiBlockV2,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemini.v3 import (
+    GoogleGeminiBlockV3,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemini.v4 import (
+    GoogleGeminiBlockV4,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemini.v5 import (
+    GoogleGeminiBlockV5,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
+    GoogleGeminiBlockV6,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemma.v1 import (
+    GoogleGemmaBlockV1,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemma.v2 import (
+    GoogleGemmaBlockV2,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemma.v3 import (
+    GoogleGemmaBlockV3,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemma.v4 import (
+    GoogleGemmaBlockV4,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
+        GoogleVisionOCRBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.google_vision_ocr.v1_tensor import (
+        GoogleVisionOCRBlockV1,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.kimi_openrouter.v1 import (
+    KimiOpenRouterBlockV1,
+)
+from roboflow_workflows.core_steps.models.foundation.kimi_openrouter.v2 import (
+    KimiOpenrouterBlockV2,
+)
+from roboflow_workflows.core_steps.models.foundation.kimi_openrouter.v3 import (
+    KimiOpenrouterBlockV3,
+)
+from roboflow_workflows.core_steps.models.foundation.llama_vision.v1 import (
+    LlamaVisionBlockV1,
+)
+from roboflow_workflows.core_steps.models.foundation.llama_vision.v2 import (
+    LlamaVisionBlockV2,
+)
+from roboflow_workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
+from roboflow_workflows.core_steps.models.foundation.lmm_classifier.v1 import (
+    LMMForClassificationBlockV1,
+)
+from roboflow_workflows.core_steps.models.foundation.meta_vlm.v1 import MetaVlmBlockV1
+from roboflow_workflows.core_steps.models.foundation.meta_vlm.v2 import MetaVlmBlockV2
+from roboflow_workflows.core_steps.models.foundation.meta_vlm.v3 import MetaVlmBlockV3
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.moondream2.v1 import (
+        Moondream2BlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.moondream2.v1_tensor import (
+        Moondream2BlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
+else:
+    from roboflow_workflows.core_steps.models.foundation.ocr.v1_tensor import (
+        OCRModelBlockV1,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.openai.v1 import OpenAIBlockV1
+from roboflow_workflows.core_steps.models.foundation.openai.v2 import OpenAIBlockV2
+from roboflow_workflows.core_steps.models.foundation.openai.v3 import OpenAIBlockV3
+from roboflow_workflows.core_steps.models.foundation.openai.v4 import OpenAIBlockV4
+from roboflow_workflows.core_steps.models.foundation.openai.v5 import OpenAIBlockV5
+from roboflow_workflows.core_steps.models.foundation.openai.v6 import OpenAIBlockV6
+from roboflow_workflows.core_steps.models.foundation.openai.v7 import OpenAIBlockV7
+from roboflow_workflows.core_steps.models.foundation.openai_compatible.v1 import (
+    OpenAICompatibleBlockV1,
+)
+from roboflow_workflows.core_steps.models.foundation.openrouter.v1 import (
+    OpenRouterBlockV1,
+)
+from roboflow_workflows.core_steps.models.foundation.openrouter.v2 import (
+    OpenRouterBlockV2,
+)
+from roboflow_workflows.core_steps.models.foundation.openrouter.v3 import (
+    OpenRouterBlockV3,
+)
+from roboflow_workflows.core_steps.models.foundation.spacexai.v1 import SpaceXAIBlockV1
+from roboflow_workflows.core_steps.models.foundation.spacexai.v2 import SpaceXAIBlockV2
+from roboflow_workflows.core_steps.models.foundation.spacexai.v3 import SpaceXAIBlockV3
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.perception_encoder.v1 import (
+        PerceptionEncoderModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.perception_encoder.v1_tensor import (
+        PerceptionEncoderModelBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.pp_ocr.v1 import PPOCRBlockV1
+else:
+    from roboflow_workflows.core_steps.models.foundation.pp_ocr.v1_tensor import (
+        PPOCRBlockV1,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
+    Qwen35OpenRouterBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
+        Qwen35VLBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.qwen3_5vl.v1_tensor import (
+        Qwen35VLBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
+        Qwen35VLBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.qwen3_5vl.v2_tensor import (
+        Qwen35VLBlockV2,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
+    Qwen36OpenRouterBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.qwen3vl.v1 import (
+        Qwen3VLBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.qwen3vl.v1_tensor import (
+        Qwen3VLBlockV1,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.qwen.v1 import Qwen25VLBlockV1
+from roboflow_workflows.core_steps.models.foundation.qwen_vlm.v1 import QwenVlmBlockV1
+from roboflow_workflows.core_steps.models.foundation.qwen_vlm.v2 import QwenVlmBlockV2
+from roboflow_workflows.core_steps.models.foundation.qwen_vlm.v3 import QwenVlmBlockV3
+from roboflow_workflows.core_steps.models.foundation.qwen_vlm.v4 import QwenVlmBlockV4
+from roboflow_workflows.core_steps.models.foundation.zai_vlm.v1 import ZaiVlmBlockV1
+from roboflow_workflows.core_steps.models.foundation.zai_vlm.v2 import ZaiVlmBlockV2
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.seg_preview.v1 import (
+        SegPreviewBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.seg_preview.v1_tensor import (
+        SegPreviewBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.segment_anything2.v1 import (
+        SegmentAnything2BlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.segment_anything2.v1_tensor import (
+        SegmentAnything2BlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+        SegmentAnything2VideoBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.segment_anything2_video.v1_tensor import (
+        SegmentAnything2VideoBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3.v1 import (
+        SegmentAnything3BlockV1,
+    )
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3.v2 import (
+        SegmentAnything3BlockV2,
+    )
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3.v3 import (
+        SegmentAnything3BlockV3,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
+        SegmentAnything3BlockV1,
+    )
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3.v2_tensor import (
+        SegmentAnything3BlockV2,
+    )
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3.v3_tensor import (
+        SegmentAnything3BlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v4_tensor import (
+        RoboflowInstanceSegmentationModelBlockV4,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
+        RoboflowInstanceSegmentationModelBlockV4,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
+        SegmentAnything3InteractiveBlockV1,
+    )
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+        SegmentAnything3VideoBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3_interactive.v1_tensor import (
+        SegmentAnything3InteractiveBlockV1,
+    )
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1_tensor import (
+        SegmentAnything3VideoBlockV1,
+    )
+
+if SAM3_3D_OBJECTS_ENABLED:
+    if not ENABLE_TENSOR_DATA_REPRESENTATION:
+        from roboflow_workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
+            SegmentAnything3_3D_ObjectsBlockV1,
+        )
+    else:
+        from roboflow_workflows.core_steps.models.foundation.segment_anything3_3d.v1_tensor import (
+            SegmentAnything3_3D_ObjectsBlockV1,
+        )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.smolvlm.v1 import (
+        SmolVLM2BlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.smolvlm.v1_tensor import (
+        SmolVLM2BlockV1,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
+    StabilityAIImageGenBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
+        StabilityAIInpaintingBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.stability_ai.inpainting.v1_tensor import (
+        StabilityAIInpaintingBlockV1,
+    )
+
+from roboflow_workflows.core_steps.models.foundation.stability_ai.outpainting.v1 import (
+    StabilityAIOutpaintingBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.yolo_world.v1 import (
+        YoloWorldModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.yolo_world.v1_tensor import (
+        YoloWorldModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v1_tensor import (
+        RoboflowInstanceSegmentationModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
+        RoboflowInstanceSegmentationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v2_tensor import (
+        RoboflowInstanceSegmentationModelBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
+        RoboflowInstanceSegmentationModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v3_tensor import (
+        RoboflowInstanceSegmentationModelBlockV3,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
+        RoboflowInstanceSegmentationModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v1_tensor import (
+        RoboflowKeypointDetectionModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
+        RoboflowKeypointDetectionModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v2_tensor import (
+        RoboflowKeypointDetectionModelBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
+        RoboflowKeypointDetectionModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v3_tensor import (
+        RoboflowKeypointDetectionModelBlockV3,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
+        RoboflowKeypointDetectionModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v1_tensor import (
+        RoboflowClassificationModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
+        RoboflowClassificationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v2_tensor import (
+        RoboflowClassificationModelBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v2 import (
+        RoboflowClassificationModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v3_tensor import (
+        RoboflowClassificationModelBlockV3,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v3 import (
+        RoboflowClassificationModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v1_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
+        RoboflowMultiLabelClassificationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v2_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
+        RoboflowMultiLabelClassificationModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v3_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV3,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
+        RoboflowMultiLabelClassificationModelBlockV3,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
+        ActionRecognitionModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
+        ActionRecognitionModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
+        RoboflowObjectDetectionModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.object_detection.v1 import (
+        RoboflowObjectDetectionModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.object_detection.v2_tensor import (
+        RoboflowObjectDetectionModelBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.object_detection.v2 import (
+        RoboflowObjectDetectionModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.object_detection.v3_tensor import (
+        RoboflowObjectDetectionModelBlockV3,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.object_detection.v3 import (
+        RoboflowObjectDetectionModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.semantic_segmentation.v1_tensor import (
+        RoboflowSemanticSegmentationModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
+        RoboflowSemanticSegmentationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.semantic_segmentation.v2_tensor import (
+        RoboflowSemanticSegmentationModelBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
+        RoboflowSemanticSegmentationModelBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.third_party.barcode_detection.v1 import (
+        BarcodeDetectorBlockV1,
+    )
+    from roboflow_workflows.core_steps.models.third_party.qr_code_detection.v1 import (
+        QRCodeDetectorBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.third_party.barcode_detection.v1_tensor import (
+        BarcodeDetectorBlockV1,
+    )
+    from roboflow_workflows.core_steps.models.third_party.qr_code_detection.v1_tensor import (
+        QRCodeDetectorBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.sampling.identify_changes.v1 import (
+        IdentifyChangesBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.sampling.identify_changes.v1_tensor import (
+        IdentifyChangesBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.sampling.identify_outliers.v1 import (
+        IdentifyOutliersBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.sampling.identify_outliers.v1_tensor import (
+        IdentifyOutliersBlockV1,
+    )
+
+from roboflow_workflows.core_steps.secrets_providers.environment_secrets_store.v1 import (
+    EnvironmentSecretsStoreBlockV1,
+)
+from roboflow_workflows.core_steps.sinks.email_notification.v1 import (
+    EmailNotificationBlockV1,
+)
+from roboflow_workflows.core_steps.sinks.email_notification.v2 import (
+    EmailNotificationBlockV2,
+)
+from roboflow_workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
+else:
+    from roboflow_workflows.core_steps.sinks.onvif_movement.v1_tensor import (
+        ONVIFSinkBlockV1,
+    )
+
+from roboflow_workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
+from roboflow_workflows.core_steps.sinks.slack.notification.v1 import (
+    SlackNotificationBlockV1,
+)
+from roboflow_workflows.core_steps.sinks.twilio.sms.v1 import (
+    TwilioSMSNotificationBlockV1,
+)
+from roboflow_workflows.core_steps.sinks.twilio.sms.v2 import (
+    TwilioSMSNotificationBlockV2,
+)
+from roboflow_workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.trackers.botsort.v1 import (
+        BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.trackers.botsort.v1_tensor import (
+        BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.trackers.bytetrack.v1 import (
+        ByteTrackBlockV1 as TrackerByteTrackBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.trackers.bytetrack.v1_tensor import (
+        ByteTrackBlockV1 as TrackerByteTrackBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.trackers.ocsort.v1 import (
+        OCSORTBlockV1 as TrackerOCSORTBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.trackers.ocsort.v1_tensor import (
+        OCSORTBlockV1 as TrackerOCSORTBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.trackers.sort.v1 import (
+        SORTBlockV1 as TrackerSORTBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.trackers.sort.v1_tensor import (
+        SORTBlockV1 as TrackerSORTBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.absolute_static_crop.v1 import (
+        AbsoluteStaticCropBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.absolute_static_crop.v1_tensor import (
+        AbsoluteStaticCropBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.bounding_rect.v1 import (
+        BoundingRectBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.bounding_rect.v1_tensor import (
+        BoundingRectBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.byte_tracker.v1 import (
+        ByteTrackerBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.byte_tracker.v1_tensor import (
+        ByteTrackerBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.byte_tracker.v2 import (
+        ByteTrackerBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.byte_tracker.v2_tensor import (
+        ByteTrackerBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.byte_tracker.v3 import (
+        ByteTrackerBlockV3,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.byte_tracker.v3_tensor import (
+        ByteTrackerBlockV3,
+    )
+
+from roboflow_workflows.core_steps.transformations.camera_calibration.v1 import (
+    CameraCalibrationBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.detection_offset.v1 import (
+        DetectionOffsetBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.detection_offset.v1_tensor import (
+        DetectionOffsetBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.detections_combine.v1 import (
+        DetectionsCombineBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.detections_combine.v1_tensor import (
+        DetectionsCombineBlockV1,
+    )
+
+from roboflow_workflows.core_steps.transformations.detections_filter.v1 import (
+    DetectionsFilterBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.detections_merge.v1 import (
+        DetectionsMergeBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.detections_merge.v1_tensor import (
+        DetectionsMergeBlockV1,
+    )
+
+from roboflow_workflows.core_steps.transformations.detections_transformation.v1 import (
+    DetectionsTransformationBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.dynamic_crop.v1 import (
+        DynamicCropBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.dynamic_crop.v1_tensor import (
+        DynamicCropBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.dynamic_zones.v1 import (
+        DynamicZonesBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.dynamic_zones.v1_tensor import (
+        DynamicZonesBlockV1,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.geotag_detection.v1 import (
+        GeoTagDetectionBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.geotag_detection.v1_tensor import (
+        GeoTagDetectionBlockV1,
+    )
+
+from roboflow_workflows.core_steps.transformations.image_slicer.v1 import (
+    ImageSlicerBlockV1,
+)
+from roboflow_workflows.core_steps.transformations.image_slicer.v2 import (
+    ImageSlicerBlockV2,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.per_class_confidence_filter.v1 import (
+        PerClassConfidenceFilterBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.per_class_confidence_filter.v1_tensor import (
+        PerClassConfidenceFilterBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.perspective_correction.v1 import (
+        PerspectiveCorrectionBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.perspective_correction.v1_tensor import (
+        PerspectiveCorrectionBlockV1,
+    )
+
+from roboflow_workflows.core_steps.transformations.qr_code_generator.v1 import (
+    QRCodeGeneratorBlockV1,
+)
+from roboflow_workflows.core_steps.transformations.relative_static_crop.v1 import (
+    RelativeStaticCropBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.stabilize_detections.v1 import (
+        StabilizeTrackedDetectionsBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.stabilize_detections.v1_tensor import (
+        StabilizeTrackedDetectionsBlockV1,
+    )
+
+from roboflow_workflows.core_steps.transformations.stitch_images.v1 import (
+    StitchImagesBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.stitch_ocr_detections.v1 import (
+        StitchOCRDetectionsBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.stitch_ocr_detections.v1_tensor import (
+        StitchOCRDetectionsBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
+        StitchOCRDetectionsBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.stitch_ocr_detections.v2_tensor import (
+        StitchOCRDetectionsBlockV2,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.track_class_lock.v1 import (
+        TrackClassLockBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.track_class_lock.v1_tensor import (
+        TrackClassLockBlockV1,
+    )
+
+# Visualizers
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.background_color.v1 import (
+        BackgroundColorVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.background_color.v1_tensor import (
+        BackgroundColorVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.blur.v1 import (
+        BlurVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.blur.v1_tensor import (
+        BlurVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.bounding_box.v1 import (
+        BoundingBoxVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.bounding_box.v1_tensor import (
+        BoundingBoxVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.circle.v1 import (
+        CircleVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.circle.v1_tensor import (
+        CircleVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.classification_label.v1 import (
+        ClassificationLabelVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.classification_label.v1_tensor import (
+        ClassificationLabelVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.color.v1 import (
+        ColorVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.color.v1_tensor import (
+        ColorVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.corner.v1 import (
+        CornerVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.corner.v1_tensor import (
+        CornerVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.crop.v1 import (
+        CropVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.crop.v1_tensor import (
+        CropVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.dot.v1 import (
+        DotVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.dot.v1_tensor import (
+        DotVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.ellipse.v1 import (
+        EllipseVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.ellipse.v1_tensor import (
+        EllipseVisualizationBlockV1,
+    )
+
+from roboflow_workflows.core_steps.visualizations.grid.v1 import (
+    GridVisualizationBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.halo.v1 import (
+        HaloVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.halo.v1_tensor import (
+        HaloVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.halo.v2 import (
+        HaloVisualizationBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.halo.v2_tensor import (
+        HaloVisualizationBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.heatmap.v1 import (
+        HeatmapVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.heatmap.v1_tensor import (
+        HeatmapVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.icon.v1 import (
+        IconVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.icon.v1_tensor import (
+        IconVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.keypoint.v1 import (
+        KeypointVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.keypoint.v1_tensor import (
+        KeypointVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.label.v1 import (
+        LabelVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.label.v1_tensor import (
+        LabelVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.label.v2 import (
+        LabelVisualizationBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.label.v2_tensor import (
+        LabelVisualizationBlockV2,
+    )
+
+from roboflow_workflows.core_steps.visualizations.line_zone.v1 import (
+    LineCounterZoneVisualizationBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.mask.v1 import (
+        MaskVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.mask.v1_tensor import (
+        MaskVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.model_comparison.v1 import (
+        ModelComparisonVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.model_comparison.v1_tensor import (
+        ModelComparisonVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.pixelate.v1 import (
+        PixelateVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.pixelate.v1_tensor import (
+        PixelateVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.polygon.v1 import (
+        PolygonVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.polygon.v1_tensor import (
+        PolygonVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.polygon.v2 import (
+        PolygonVisualizationBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.polygon.v2_tensor import (
+        PolygonVisualizationBlockV2,
+    )
+
+from roboflow_workflows.core_steps.visualizations.polygon_zone.v1 import (
+    PolygonZoneVisualizationBlockV1,
+)
+from roboflow_workflows.core_steps.visualizations.reference_path.v1 import (
+    ReferencePathVisualizationBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.rich_label.v1 import (
+        RichLabelVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.rich_label.v1_tensor import (
+        RichLabelVisualizationBlockV1,
+    )
+
+from roboflow_workflows.core_steps.visualizations.text_display.v1 import (
+    TextDisplayVisualizationBlockV1,
+)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.trace.v1 import (
+        TraceVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.trace.v1_tensor import (
+        TraceVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.triangle.v1 import (
+        TriangleVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.triangle.v1_tensor import (
+        TriangleVisualizationBlockV1,
+    )
+
+from roboflow_workflows.execution_engine.entities.types import (
+    ACTION_RECOGNITION_PREDICTION_KIND,
+    BAR_CODE_DETECTION_KIND,
+    BOOLEAN_KIND,
+    BYTES_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
+    CONTOURS_KIND,
+    DETECTION_KIND,
+    DETECTIONS_OVERLAPS_KIND,
+    DICTIONARY_KIND,
+    EMBEDDING_KIND,
+    FLOAT_KIND,
+    FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KEYPOINTS_KIND,
+    IMAGE_KIND,
+    IMAGE_METADATA_KIND,
+    INFERENCE_ID_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    LABELED_POINTS_KIND,
+    LANGUAGE_MODEL_OUTPUT_KIND,
+    LIST_OF_VALUES_KIND,
+    NUMPY_ARRAY_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
+    PARENT_ID_KIND,
+    POINT_KIND,
+    PREDICTION_TYPE_KIND,
+    QR_CODE_DETECTION_KIND,
+    RGB_COLOR_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    ROBOFLOW_API_KEY_KIND,
+    ROBOFLOW_MANAGED_KEY,
+    ROBOFLOW_MODEL_ID_KIND,
+    ROBOFLOW_PROJECT_KIND,
+    ROBOFLOW_SOLUTION_KIND,
+    SECRET_KIND,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND,
+    SERIALISED_PAYLOADS_KIND,
+    STRING_KIND,
+    TIMESTAMP_KIND,
+    TOP_CLASS_KIND,
+    VIDEO_METADATA_KIND,
+    WILDCARD_KIND,
+    ZONE_KIND,
+    Kind,
+)
+from roboflow_workflows.prototypes.block import WorkflowBlock
+from roboflow_workflows.prototypes.observer import NULL_EXECUTION_OBSERVER
+from roboflow_workflows.prototypes.platform_client import OFFLINE_PLATFORM_CLIENT
+from roboflow_workflows.utils.in_memory_cache import InMemoryWorkflowsCache
+
+REGISTERED_INITIALIZERS = {
+    "api_key": API_KEY,
+    # Standalone default. Every server composition root overrides it with
+    # `workflows_core.cache` (the shared, Redis-backed singleton) through
+    # install_workflows_platform_bindings(); a per-process cache here would
+    # make sink cooldown and dedup state per-worker.
+    "cache": InMemoryWorkflowsCache(),
+    "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
+    "background_tasks": None,
+    # A no-op by default: billing and tracing are the host's, and a host binds
+    # its own through `workflows_core.execution_observer`.
+    "execution_observer": NULL_EXECUTION_OBSERVER,
+    "thread_pool_executor": None,
+    "inner_workflow_remote_target": WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
+    "inner_workflow_dispatch_depth": 0,
+    "disable_sinks": False,
+    # Standalone default. The server overrides it with
+    # `workflows_core.platform_client` at every composition root. An object,
+    # not a function: call_if_callable() would invoke a function registered
+    # here with no arguments.
+    "platform_client": OFFLINE_PLATFORM_CLIENT,
+    "update_attributes_offloader": None,
+    "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
+    "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
+    # The whole configuration, for core blocks that want more than the values
+    # this dict spells out. It resolves for blocks whose `block_source` is
+    # `workflows_core` - every core block, plus a plugin that declares
+    # `BLOCKS_SOURCE = "workflows_core"`. An ordinary plugin must import
+    # `roboflow_workflows.configuration.get_configuration` instead;
+    # see `steps_initialiser.retrieve_init_parameter_values`.
+    "configuration": get_configuration(),
+}
+
+KINDS_SERIALIZERS = {
+    IMAGE_KIND.name: serialise_image,
+    VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
+    ACTION_RECOGNITION_PREDICTION_KIND.name: serialize_action_recognition_prediction_kind,
+    OBJECT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
+    KEYPOINT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
+    QR_CODE_DETECTION_KIND.name: serialise_sv_detections,
+    BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
+    SECRET_KIND.name: serialize_secret,
+    WILDCARD_KIND.name: serialize_wildcard_kind,
+    DETECTIONS_OVERLAPS_KIND.name: serialize_wildcard_kind,
+    TIMESTAMP_KIND.name: serialize_timestamp,
+}
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    # Tensor-native producers emit native dataclasses for these kinds, which the
+    # numpy serialisers cannot handle. Classification has no numpy serialiser at all;
+    # keypoint produces a (KeyPoints, Detections) tuple; semantic-seg uses the
+    # per-class RLE InstanceDetections carrier.
+    KINDS_SERIALIZERS[CLASSIFICATION_PREDICTION_KIND.name] = (
+        serialise_native_classification
+    )
+    KINDS_SERIALIZERS[KEYPOINT_DETECTION_PREDICTION_KIND.name] = (
+        serialise_native_keypoint_detection
+    )
+    # Emit the native COCO RLE per box (no polygon collapse).
+    KINDS_SERIALIZERS[SEMANTIC_SEGMENTATION_PREDICTION_KIND.name] = (
+        serialise_native_rle_detections
+    )
+    # instance-seg blocks declare the RLE kind too; the numpy `serialise_rle_sv_detections`
+    # cannot handle a native InstanceDetections.
+    KINDS_SERIALIZERS[RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name] = (
+        serialise_native_rle_detections
+    )
+    # Tensor-native embedding/tensor kinds serialise to plain Python lists.
+    KINDS_SERIALIZERS[EMBEDDING_KIND.name] = serialise_native_embedding
+    KINDS_SERIALIZERS[TENSOR_KIND.name] = serialise_native_tensor
+    # `numpy_array` has NO numpy-side serialiser (ndarrays pass through raw to
+    # the HTTP layer). Flag-on, the depth-estimation block carries a
+    # `torch.Tensor` under the same kind name, which the HTTP layer cannot
+    # serialise - materialise it to the flag-off-identical ndarray. Numpy
+    # producers of this kind (SIFT, contours) keep the raw pass-through.
+    KINDS_SERIALIZERS[NUMPY_ARRAY_KIND.name] = serialise_numpy_array_kind
+    # The wildcard (`*`) serialiser needs no override here: the same-name symbol
+    # swap above already selects serializers_tensor.serialize_wildcard_kind, whose
+    # native arms serialise native values routed to `*` outputs to the standard dicts.
+KINDS_DESERIALIZERS = {
+    IMAGE_KIND.name: deserialize_image_kind,
+    VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
+    ACTION_RECOGNITION_PREDICTION_KIND.name: deserialize_action_recognition_prediction_kind,
+    OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_detections_kind,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
+    KEYPOINT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
+    QR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
+    BAR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
+    NUMPY_ARRAY_KIND.name: deserialize_numpy_array,
+    ROBOFLOW_MODEL_ID_KIND.name: deserialize_string_kind,
+    ROBOFLOW_PROJECT_KIND.name: deserialize_string_kind,
+    ROBOFLOW_SOLUTION_KIND.name: deserialize_string_kind,
+    ROBOFLOW_API_KEY_KIND.name: deserialize_optional_string_kind,
+    ROBOFLOW_MANAGED_KEY.name: deserialize_optional_string_kind,
+    FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
+    LIST_OF_VALUES_KIND.name: deserialize_list_of_values_kind,
+    DETECTIONS_OVERLAPS_KIND.name: deserialize_list_of_values_kind,
+    BOOLEAN_KIND.name: deserialize_boolean_kind,
+    INTEGER_KIND.name: deserialize_integer_kind,
+    STRING_KIND.name: deserialize_string_kind,
+    TOP_CLASS_KIND.name: deserialize_string_kind,
+    FLOAT_KIND.name: deserialize_float_kind,
+    DICTIONARY_KIND.name: deserialize_dictionary_kind,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
+    CLASSIFICATION_PREDICTION_KIND.name: deserialize_classification_prediction_kind,
+    POINT_KIND.name: deserialize_point_kind,
+    LABELED_POINTS_KIND.name: deserialize_labeled_points_kind,
+    ZONE_KIND.name: deserialize_zone_kind,
+    RGB_COLOR_KIND.name: deserialize_rgb_color_kind,
+    LANGUAGE_MODEL_OUTPUT_KIND.name: deserialize_string_kind,
+    PREDICTION_TYPE_KIND.name: deserialize_string_kind,
+    PARENT_ID_KIND.name: deserialize_string_kind,
+    BYTES_KIND.name: deserialize_bytes_kind,
+    INFERENCE_ID_KIND.name: deserialize_string_kind,
+    TIMESTAMP_KIND.name: deserialize_timestamp,
+}
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    # Tensor-native consumers expect native dataclasses / torch tensors for these
+    # kinds. The numpy classification deserialiser returns a plain dict; embedding /
+    # tensor kinds have NO numpy deserialiser at all (a serialised JSON list would
+    # reach a tensor consumer as a list and break on `.shape` / `torch.dot`).
+    KINDS_DESERIALIZERS[CLASSIFICATION_PREDICTION_KIND.name] = (
+        deserialize_native_classification_prediction_kind
+    )
+    KINDS_DESERIALIZERS[EMBEDDING_KIND.name] = deserialize_native_embedding_kind
+    KINDS_DESERIALIZERS[TENSOR_KIND.name] = deserialize_native_tensor_kind
+
+
+def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
+    """
+    Check if a block should be filtered out based on configuration.
+
+    Returns True if the block should be filtered (removed), False if it should be kept.
+    """
+    if not WORKFLOW_DISABLED_BLOCK_TYPES and not WORKFLOW_DISABLED_BLOCK_PATTERNS:
+        return False
+
+    try:
+        # Get block manifest to check block type
+        manifest_class = block_class.get_manifest()
+        schema = manifest_class.model_json_schema()
+        # Note: Pydantic puts json_schema_extra values at top level of schema
+        block_type = schema.get("block_type", "")
+
+        # Check if block type category is disabled
+        if block_type and block_type.lower() in WORKFLOW_DISABLED_BLOCK_TYPES:
+            return True
+
+        # Get the block identifier for pattern matching
+        # We'll check multiple identifiers to be thorough:
+        # 1. The block class name
+        # 2. The full module path
+        # 3. The block name from schema if available
+        block_class_name = block_class.__name__.lower()
+        # Match against BOTH the canonical (`roboflow_workflows.*`) and the
+        # historic (`inference.core.workflows.*` / `inference.enterprise.*`)
+        # module paths. Operator-supplied WORKFLOW_DISABLED_BLOCK_PATTERNS
+        # values reference the historic paths; canonical paths appear here
+        # because `class.__module__` is left canonical for pickling.
+        canonical_module = block_class.__module__.lower()
+        legacy_module = to_legacy_module(block_class.__module__).lower()
+        block_name = schema.get("name", "").lower()
+
+        for pattern in WORKFLOW_DISABLED_BLOCK_PATTERNS:
+            pattern_lower = pattern.lower()
+            if (
+                pattern_lower in block_class_name
+                or pattern_lower in canonical_module
+                or pattern_lower in legacy_module
+                or pattern_lower in block_name
+            ):
+                return True
+
+    except Exception:
+        # If we can't determine block info, don't filter it
+        # This ensures we don't accidentally filter blocks due to errors
+        pass
+
+    return False
+
+
+def load_blocks() -> List[Type[WorkflowBlock]]:
+    blocks = [
+        AbsoluteStaticCropBlockV1,
+        DynamicCropBlockV1,
+        DetectionsFilterBlockV1,
+        DetectionOffsetBlockV1,
+        PerClassConfidenceFilterBlockV1,
+        DepthEstimationBlockV1,
+        ByteTrackerBlockV1,
+        RelativeStaticCropBlockV1,
+        DetectionsTransformationBlockV1,
+        ContinueIfBlockV1,
+        InnerWorkflowBlockV1,
+        RateLimiterBlockV1,
+        SwitchCaseBlockV1,
+        PerspectiveCorrectionBlockV1,
+        DeltaFilterBlockV1,
+        CameraCalibrationBlockV1,
+        DynamicZonesBlockV1,
+        SizeMeasurementBlockV1,
+        BufferBlockV1,
+        FrameDelayBlockV1,
+        ImageStackBlockV1,
+        DetectionsClassesReplacementBlockV1,
+        ExpressionBlockV1,
+        PropertyDefinitionBlockV1,
+        StringTemplateBlockV1,
+        DimensionCollapseBlockV1,
+        DetectionsListRollUpBlockV1,
+        FirstNonEmptyOrDefaultBlockV1,
+        CurrentTimeBlockV1,
+        AnthropicClaudeBlockV1,
+        AnthropicClaudeBlockV2,
+        AnthropicClaudeBlockV3,
+        AnthropicClaudeBlockV4,
+        AnthropicClaudeBlockV5,
+        SpaceXAIBlockV1,
+        SpaceXAIBlockV2,
+        SpaceXAIBlockV3,
+        CosineSimilarityBlockV1,
+        BackgroundColorVisualizationBlockV1,
+        BarcodeDetectorBlockV1,
+        BlurVisualizationBlockV1,
+        BoundingBoxVisualizationBlockV1,
+        BoundingRectBlockV1,
+        DetectionsMergeBlockV1,
+        ByteTrackerBlockV2,
+        CacheGetBlockV1,
+        CacheSetBlockV1,
+        CameraFocusBlockV1,
+        CameraFocusBlockV2,
+        CircleVisualizationBlockV1,
+        ClipComparisonBlockV1,
+        ClipComparisonBlockV2,
+        ClipModelBlockV1,
+        PerceptionEncoderModelBlockV1,
+        CogVLMBlockV1,
+        ColorVisualizationBlockV1,
+        ConvertGrayscaleBlockV1,
+        ContrastEqualizationBlockV1,
+        CornerVisualizationBlockV1,
+        CropVisualizationBlockV1,
+        DetectionsConsensusBlockV1,
+        DetectionsDifferenceBlockV1,
+        DetectionsStitchBlockV1,
+        OverlapAnalysisBlockV1,
+        DistanceMeasurementBlockV1,
+        DetectionsNearestNeighborBlockV1,
+        DominantColorBlockV1,
+        DotVisualizationBlockV1,
+        EllipseVisualizationBlockV1,
+        Florence2BlockV1,
+        Florence2BlockV2,
+        GoogleGeminiBlockV1,
+        GoogleGeminiBlockV2,
+        GoogleGeminiBlockV3,
+        GoogleGeminiBlockV4,
+        GoogleGeminiBlockV5,
+        GoogleGeminiBlockV6,
+        GoogleVisionOCRBlockV1,
+        GridVisualizationBlockV1,
+        HaloVisualizationBlockV1,
+        HaloVisualizationBlockV2,
+        IconVisualizationBlockV1,
+        ImageBlurBlockV1,
+        ImageContoursDetectionBlockV1,
+        AutoRotateOnEdgesBlockV1,
+        ImagePreprocessingBlockV1,
+        ImageSlicerBlockV1,
+        HeatmapVisualizationBlockV1,
+        ImageThresholdBlockV1,
+        MotionDetectionBlockV1,
+        BackgroundSubtractionBlockV1,
+        JSONParserBlockV1,
+        LMMBlockV1,
+        LMMForClassificationBlockV1,
+        LabelVisualizationBlockV1,
+        LabelVisualizationBlockV2,
+        RichLabelVisualizationBlockV1,
+        ClassificationLabelVisualizationBlockV1,
+        LineCounterBlockV1,
+        LineCounterBlockV2,
+        LineCounterZoneVisualizationBlockV1,
+        MaskVisualizationBlockV1,
+        ModelComparisonVisualizationBlockV1,
+        MorphologicalTransformationBlockV1,
+        OCRModelBlockV1,
+        OpenAIBlockV1,
+        OpenAIBlockV2,
+        OpenAIBlockV3,
+        OpenAIBlockV4,
+        OpenAIBlockV5,
+        OpenAIBlockV6,
+        OpenAIBlockV7,
+        PathDeviationAnalyticsBlockV1,
+        PathDeviationAnalyticsBlockV2,
+        PixelateVisualizationBlockV1,
+        PixelationCountBlockV1,
+        PolygonVisualizationBlockV1,
+        PolygonVisualizationBlockV2,
+        PolygonZoneVisualizationBlockV1,
+        QRCodeDetectorBlockV1,
+        RoboflowClassificationModelBlockV1,
+        RoboflowInstanceSegmentationModelBlockV1,
+        RoboflowKeypointDetectionModelBlockV1,
+        RoboflowMultiLabelClassificationModelBlockV1,
+        RoboflowObjectDetectionModelBlockV1,
+        SIFTBlockV1,
+        SIFTComparisonBlockV1,
+        SIFTComparisonBlockV2,
+        SegmentAnything2BlockV1,
+        SegmentAnything2VideoBlockV1,
+        SegmentAnything3BlockV1,
+        SegmentAnything3BlockV2,
+        SegmentAnything3BlockV3,
+        SegmentAnything3InteractiveBlockV1,
+        SegmentAnything3VideoBlockV1,
+        SegPreviewBlockV1,
+        StabilityAIInpaintingBlockV1,
+        StabilityAIImageGenBlockV1,
+        StabilityAIOutpaintingBlockV1,
+        StabilizeTrackedDetectionsBlockV1,
+        GeoTagDetectionBlockV1,
+        StitchImagesBlockV1,
+        StitchOCRDetectionsBlockV2,
+        StitchOCRDetectionsBlockV1,
+        TemplateMatchingBlockV1,
+        TimeInZoneBlockV1,
+        TimeInZoneBlockV2,
+        TimeInZoneBlockV3,
+        TrackClassLockBlockV1,
+        TriangleVisualizationBlockV1,
+        TextDisplayVisualizationBlockV1,
+        VLMAsClassifierBlockV1,
+        VLMAsDetectorBlockV1,
+        YoloWorldModelBlockV1,
+        KeypointVisualizationBlockV1,
+        DataAggregatorBlockV1,
+        DetectionEventLogBlockV1,
+        CSVFormatterBlockV1,
+        EmailNotificationBlockV1,
+        EmailNotificationBlockV2,
+        LocalFileSinkBlockV1,
+        S3SinkBlockV1,
+        TraceVisualizationBlockV1,
+        ReferencePathVisualizationBlockV1,
+        ByteTrackerBlockV3,
+        TrackerByteTrackBlockV1,
+        TrackerBoTSORTBlockV1,
+        TrackerSORTBlockV1,
+        TrackerOCSORTBlockV1,
+        WebhookSinkBlockV1,
+        VelocityBlockV1,
+        RoboflowInstanceSegmentationModelBlockV2,
+        RoboflowInstanceSegmentationModelBlockV3,
+        RoboflowInstanceSegmentationModelBlockV4,
+        RoboflowSemanticSegmentationModelBlockV1,
+        RoboflowSemanticSegmentationModelBlockV2,
+        RoboflowKeypointDetectionModelBlockV2,
+        RoboflowKeypointDetectionModelBlockV3,
+        RoboflowClassificationModelBlockV2,
+        RoboflowClassificationModelBlockV3,
+        RoboflowMultiLabelClassificationModelBlockV2,
+        RoboflowMultiLabelClassificationModelBlockV3,
+        ActionRecognitionModelBlockV1,
+        RoboflowObjectDetectionModelBlockV2,
+        RoboflowObjectDetectionModelBlockV3,
+        VLMAsClassifierBlockV2,
+        VLMAsDetectorBlockV2,
+        IdentifyOutliersBlockV1,
+        IdentifyChangesBlockV1,
+        EnvironmentSecretsStoreBlockV1,
+        SlackNotificationBlockV1,
+        TwilioSMSNotificationBlockV1,
+        TwilioSMSNotificationBlockV2,
+        GazeBlockV1,
+        LlamaVisionBlockV1,
+        LlamaVisionBlockV2,
+        MetaVlmBlockV1,
+        MetaVlmBlockV2,
+        MetaVlmBlockV3,
+        GoogleGemmaBlockV1,
+        GoogleGemmaBlockV2,
+        GoogleGemmaBlockV3,
+        GoogleGemmaBlockV4,
+        ImageSlicerBlockV2,
+        Cosmos3EdgeBlockV1,
+        Qwen25VLBlockV1,
+        Qwen3VLBlockV1,
+        Qwen35VLBlockV1,
+        Qwen35VLBlockV2,
+        Qwen35OpenRouterBlockV1,
+        Qwen36OpenRouterBlockV1,
+        QwenVlmBlockV1,
+        QwenVlmBlockV2,
+        QwenVlmBlockV3,
+        QwenVlmBlockV4,
+        ZaiVlmBlockV1,
+        ZaiVlmBlockV2,
+        OpenAICompatibleBlockV1,
+        KimiOpenRouterBlockV1,
+        KimiOpenrouterBlockV2,
+        KimiOpenrouterBlockV3,
+        OpenRouterBlockV1,
+        OpenRouterBlockV2,
+        OpenRouterBlockV3,
+        SmolVLM2BlockV1,
+        Moondream2BlockV1,
+        OverlapBlockV1,
+        ONVIFSinkBlockV1,
+        GLMOCRBlockV1,
+        EasyOCRBlockV1,
+        PPOCRBlockV1,
+        QRCodeGeneratorBlockV1,
+        DetectionsCombineBlockV1,
+        MaskAreaMeasurementBlockV1,
+        MaskEdgeSnapBlockV1,
+        ContrastEnhancementBlock,
+        MorphologicalTransformationBlockV2,
+    ]
+    if SAM3_3D_OBJECTS_ENABLED:
+        blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
+
+    # Filter blocks if any disable configuration is set
+    if WORKFLOW_DISABLED_BLOCK_TYPES or WORKFLOW_DISABLED_BLOCK_PATTERNS:
+        filtered_blocks = [block for block in blocks if not _should_filter_block(block)]
+        return filtered_blocks
+
+    return blocks
+
+
+def load_kinds() -> List[Kind]:
+    return [
+        WILDCARD_KIND,
+        IMAGE_KIND,
+        VIDEO_METADATA_KIND,
+        ACTION_RECOGNITION_PREDICTION_KIND,
+        ROBOFLOW_MODEL_ID_KIND,
+        ROBOFLOW_PROJECT_KIND,
+        ROBOFLOW_SOLUTION_KIND,
+        ROBOFLOW_API_KEY_KIND,
+        FLOAT_ZERO_TO_ONE_KIND,
+        LIST_OF_VALUES_KIND,
+        SERIALISED_PAYLOADS_KIND,
+        BOOLEAN_KIND,
+        INTEGER_KIND,
+        STRING_KIND,
+        TOP_CLASS_KIND,
+        FLOAT_KIND,
+        DICTIONARY_KIND,
+        (
+            DETECTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_DETECTION_KIND
+        ),
+        (
+            CLASSIFICATION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND
+        ),
+        DETECTIONS_OVERLAPS_KIND,
+        POINT_KIND,
+        LABELED_POINTS_KIND,
+        ZONE_KIND,
+        (
+            OBJECT_DETECTION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND
+        ),
+        (
+            INSTANCE_SEGMENTATION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND
+        ),
+        (
+            RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND
+        ),
+        (
+            KEYPOINT_DETECTION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND
+        ),
+        (
+            SEMANTIC_SEGMENTATION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND
+        ),
+        RGB_COLOR_KIND,
+        IMAGE_KEYPOINTS_KIND,
+        CONTOURS_KIND,
+        LANGUAGE_MODEL_OUTPUT_KIND,
+        NUMPY_ARRAY_KIND,
+        TENSOR_KIND,
+        (
+            QR_CODE_DETECTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_QR_CODE_DETECTION_KIND
+        ),
+        (
+            BAR_CODE_DETECTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_BAR_CODE_DETECTION_KIND
+        ),
+        PREDICTION_TYPE_KIND,
+        ROBOFLOW_MANAGED_KEY,
+        PARENT_ID_KIND,
+        IMAGE_METADATA_KIND,
+        BYTES_KIND,
+        INFERENCE_ID_KIND,
+        SECRET_KIND,
+        (
+            EMBEDDING_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_EMBEDDING_KIND
+        ),
+        TIMESTAMP_KIND,
+    ]

@@ -28,6 +28,9 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 from pydantic import ValidationError
+from roboflow_workflows.execution_engine.introspection.workload_entities import (
+    WorkflowIntrospection,
+)
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -93,9 +96,11 @@ from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
     PredefinedWorkflowDescribeInterfaceRequest,
+    PredefinedWorkflowDescribeWorkloadRequest,
     PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
     WorkflowSpecificationDescribeInterfaceRequest,
+    WorkflowSpecificationDescribeWorkloadRequest,
     WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -107,6 +112,7 @@ from inference.core.entities.responses.clip import (
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.inference import (
+    AnomalyDetectionResponse,
     ClassificationInferenceResponse,
     DepthEstimationResponse,
     InferenceResponse,
@@ -176,6 +182,7 @@ from inference.core.env import (
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DEPTH_ESTIMATION_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
+    DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS,
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
     ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG,
@@ -255,6 +262,7 @@ from inference.core.interfaces.http.handlers.secure_gateway import (
 )
 from inference.core.interfaces.http.handlers.workflows import (
     filter_out_unwanted_workflow_outputs,
+    handle_describe_workflow_workload,
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
@@ -269,6 +277,9 @@ from inference.core.interfaces.http.request_metrics import (
     REMOTE_PROCESSING_TIMES_HEADER,
     GCPServerlessMiddleware,
     build_model_response_headers,
+)
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
 )
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandContext,
@@ -297,6 +308,16 @@ from inference.core.interfaces.webrtc_worker.entities import (
 from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     refresh_webrtc_session,
+)
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
+from inference.core.interfaces.workflows_image_codec import bind_image_codec
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.cuda_memory_watchdog import CudaMemoryReclamationWatchdog
@@ -364,7 +385,9 @@ from inference.core.workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
 )
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
-    get_workflow_schema_description,
+    get_workflow_schema as build_workflow_blocks_schema,
+)
+from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     parse_workflow_definition,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
@@ -381,6 +404,9 @@ if LAMBDA and not OFFLINE_MODE:
 
 import time
 
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 from inference_sdk.http.entities import Confidence
@@ -1591,15 +1617,26 @@ class HttpInterface(BaseInterface):
             if workflow_request.workflow_id:
                 request_workflow_id.set(workflow_request.workflow_id)
 
-            workflow_init_parameters = {
-                "workflows_core.model_manager": model_manager,
-                "workflows_core.api_key": workflow_request.api_key,
-                "workflows_core.background_tasks": background_tasks,
-                "workflows_core.disable_sinks": workflow_request.disable_sinks,
-                "workflows_core.inner_workflow_dispatch_depth": (
-                    workflow_request.inner_workflow_dispatch_depth
-                ),
-            }
+            workflow_init_parameters = install_workflows_platform_bindings(
+                {
+                    "workflows_core.model_manager": ModelManagerModelsProvider(
+                        model_manager
+                    ),
+                    "workflows_core.api_key": workflow_request.api_key,
+                    "workflows_core.background_tasks": background_tasks,
+                    "workflows_core.disable_sinks": workflow_request.disable_sinks,
+                    "workflows_core.inner_workflow_dispatch_depth": (
+                        workflow_request.inner_workflow_dispatch_depth
+                    ),
+                    "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+                    "workflows_core.configuration": server_workflows_configuration(),
+                }
+            )
+            # One codec for both injection paths - the engine deserializes the
+            # input with it, and WorkflowImageData / the block-level loaders
+            # re-load any stored reference with it (see
+            # workflows/prototypes/image_codec.py). Idempotent per request.
+            bind_image_codec(workflow_init_parameters)
             with start_span(
                 "workflow.init",
                 {"workflow.id": workflow_request.workflow_id or ""},
@@ -1612,6 +1649,7 @@ class HttpInterface(BaseInterface):
                     profiler=profiler,
                     executor=self.shared_thread_pool_executor,
                     workflow_id=workflow_request.workflow_id,
+                    step_error_handler=resolve_step_error_handler(),
                 )
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
@@ -2099,6 +2137,7 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/infer/classification",
                 response_model=Union[
+                    AnomalyDetectionResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
                     StubResponse,
@@ -2316,6 +2355,74 @@ class HttpInterface(BaseInterface):
                     definition=workflow_request.specification,
                 )
 
+            if not DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS:
+
+                @app.post(
+                    "/{workspace_name}/workflows/{workflow_id}/describe_workload",
+                    response_model=WorkflowIntrospection,
+                    summary="[EXPERIMENTAL] Endpoint to describe compile-time workload of predefined workflow",
+                    description="[EXPERIMENTAL] Checks Roboflow API for workflow definition, once acquired - inspects it structurally "
+                    "and describes the graph, per-step work operations, restrictions, dependent resources and model "
+                    "inventory. Nothing is executed: no block is initialised, no model is loaded and no custom Python "
+                    "code is evaluated.",
+                )
+                @with_route_exceptions
+                def describe_predefined_workflow_workload(
+                    workspace_name: str,
+                    workflow_id: str,
+                    workflow_request: PredefinedWorkflowDescribeWorkloadRequest,
+                ) -> WorkflowIntrospection:
+                    workflow_request.api_key = api_key_override(
+                        workflow_request.api_key
+                    )
+                    if workflow_request.api_key is None:
+                        raise MissingApiKeyError(
+                            "Required Roboflow API key is missing. Pass it as the "
+                            "`api_key` field of the request payload or as the "
+                            "`Authorization: Bearer <api_key>` header."
+                        )
+                    workflow_specification = get_workflow_specification(
+                        api_key=workflow_request.api_key,
+                        workspace_id=workspace_name,
+                        workflow_id=workflow_id,
+                        use_cache=workflow_request.use_cache,
+                        workflow_version_id=workflow_request.workflow_version_id,
+                    )
+                    return handle_describe_workflow_workload(
+                        definition=workflow_specification,
+                        api_key=workflow_request.api_key,
+                    )
+
+                @app.post(
+                    "/workflows/describe_workload",
+                    response_model=WorkflowIntrospection,
+                    summary="[EXPERIMENTAL] Endpoint to describe compile-time workload of workflow given in request",
+                    description="[EXPERIMENTAL] Parses and structurally inspects the workflow definition, describing the graph, "
+                    "per-step work operations, restrictions, dependent resources and model inventory. Nothing is "
+                    "executed: no block is initialised, no model is loaded and no custom Python code is evaluated.",
+                )
+                @with_route_exceptions
+                def describe_workflow_workload_route(
+                    workflow_request: WorkflowSpecificationDescribeWorkloadRequest,
+                ) -> WorkflowIntrospection:
+                    # Mirrors `describe_workflow_interface`: the key may arrive in
+                    # the body or the Bearer header, and one of the two channels is
+                    # required. Here the key is also the credential the optional
+                    # model-metadata lookup runs under.
+                    workflow_request.api_key = api_key_override(
+                        workflow_request.api_key
+                    )
+                    if workflow_request.api_key is None:
+                        raise MissingApiKeyError(
+                            "Required Roboflow API key is missing. Pass it as the "
+                            "`api_key` field of the request payload or as the "
+                            "`Authorization: Bearer <api_key>` header."
+                        )
+                    return handle_describe_workflow_workload(
+                        definition=workflow_request.specification,
+                        api_key=workflow_request.api_key,
+                    )
+
             @app.post(
                 "/{workspace_name}/workflows/{workflow_id}",
                 response_model=WorkflowInferenceResponse,
@@ -2498,7 +2605,9 @@ class HttpInterface(BaseInterface):
             def get_workflow_schema(
                 request: Request,
             ) -> WorkflowsBlocksSchemaDescription:
-                result = get_workflow_schema_description()
+                result = WorkflowsBlocksSchemaDescription(
+                    schema=build_workflow_blocks_schema()
+                )
                 return gzip_response_if_requested(request, response=result)
 
             @app.post(
@@ -2546,17 +2655,25 @@ class HttpInterface(BaseInterface):
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 api_key = api_key_fallback(api_key)
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
-                workflow_init_parameters = {
-                    "workflows_core.model_manager": model_manager,
-                    "workflows_core.api_key": api_key,
-                    "workflows_core.background_tasks": None,
-                    "workflows_core.step_execution_mode": step_execution_mode,
-                }
+                workflow_init_parameters = install_workflows_platform_bindings(
+                    {
+                        "workflows_core.model_manager": ModelManagerModelsProvider(
+                            model_manager
+                        ),
+                        "workflows_core.api_key": api_key,
+                        "workflows_core.background_tasks": None,
+                        "workflows_core.step_execution_mode": step_execution_mode,
+                        "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+                        "workflows_core.configuration": server_workflows_configuration(),
+                    }
+                )
+                bind_image_codec(workflow_init_parameters)
                 _ = ExecutionEngine.init(
                     workflow_definition=specification,
                     init_parameters=workflow_init_parameters,
                     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                     prevent_local_images_loading=True,
+                    step_error_handler=resolve_step_error_handler(),
                 )
                 return WorkflowValidationStatus(status="ok")
 
@@ -4216,6 +4333,7 @@ class HttpInterface(BaseInterface):
                             depth_data["normalized_depth"]
                         )
                     return DepthEstimationResponse(
+                        resolved_model=getattr(response, "resolved_model", None),
                         normalized_depth=serialized_depth,
                         depth_map_format=inference_request.depth_map_format,
                         image=depth_data["image"].base64_image,
@@ -4534,6 +4652,7 @@ class HttpInterface(BaseInterface):
                     InstanceSegmentationInferenceResponse,
                     KeypointsDetectionInferenceResponse,
                     ObjectDetectionInferenceResponse,
+                    AnomalyDetectionResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
                     SemanticSegmentationInferenceResponse,
@@ -4549,6 +4668,7 @@ class HttpInterface(BaseInterface):
                     InstanceSegmentationInferenceResponse,
                     KeypointsDetectionInferenceResponse,
                     ObjectDetectionInferenceResponse,
+                    AnomalyDetectionResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
                     SemanticSegmentationInferenceResponse,
@@ -4662,6 +4782,10 @@ class HttpInterface(BaseInterface):
                 active_learning_target_dataset: Optional[str] = Query(
                     default=None,
                     description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
+                ),
+                include_anomaly_map: Optional[bool] = Query(
+                    default=False,
+                    description="Anomaly detection only: include the raw anomaly heatmap in original image coordinates",
                 ),
                 source: Optional[str] = Query(
                     "external",
@@ -4812,6 +4936,7 @@ class HttpInterface(BaseInterface):
                         args["response_mask_format"] = response_mask_format
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
+                    args = {"include_anomaly_map": include_anomaly_map}
                 elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}

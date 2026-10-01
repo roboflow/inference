@@ -5,10 +5,10 @@ from unittest import mock
 import pytest
 
 from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes import (
+from inference.roboflow_workflows_plugin.sinks.asset_library_attributes import (
     v1,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
+from inference.roboflow_workflows_plugin.sinks.asset_library_attributes.v1 import (
     SKIPPED_EMPTY_UPDATE_MESSAGE,
     UPDATE_SUCCESS_MESSAGE,
     BlockManifest,

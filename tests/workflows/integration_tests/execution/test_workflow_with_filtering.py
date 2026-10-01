@@ -3,6 +3,9 @@ import pytest
 import supervision as sv
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.errors import (
@@ -311,6 +314,7 @@ def test_filtering_workflow_when_model_id_cannot_be_resolved_to_valid_model(
         workflow_definition=FILTERING_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        step_error_handler=resolve_step_error_handler(),
     )
 
     # when

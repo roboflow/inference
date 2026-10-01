@@ -1,7 +1,6 @@
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
-from requests import Response
 from starlette.testclient import TestClient
 
 from inference.core.workflows.core_steps.sinks.webhook import v1 as webhook_v1
@@ -56,8 +55,9 @@ WEBHOOK_WORKFLOW = {
 }
 
 
-@mock.patch.dict(webhook_v1.METHOD_TO_HANDLER, {"POST": MagicMock()}, clear=True)
+@mock.patch.object(webhook_v1, "execute_request")
 def test_workflow_run_injects_sink_disabling_policy(
+    execute_request_mock,
     monkeypatch,
 ) -> None:
     client = _build_test_client(monkeypatch)
@@ -75,14 +75,15 @@ def test_workflow_run_injects_sink_disabling_policy(
     assert response.json()["outputs"] == [
         {"message": "Sink was disabled by workflow execution policy"}
     ]
-    webhook_v1.METHOD_TO_HANDLER["POST"].assert_not_called()
+    execute_request_mock.assert_not_called()
 
 
-@mock.patch.dict(webhook_v1.METHOD_TO_HANDLER, {"POST": MagicMock()}, clear=True)
-def test_workflow_run_keeps_sinks_enabled_by_default(monkeypatch) -> None:
-    response_from_webhook = Response()
-    response_from_webhook.status_code = 200
-    webhook_v1.METHOD_TO_HANDLER["POST"].return_value = response_from_webhook
+@mock.patch.object(webhook_v1, "execute_request")
+def test_workflow_run_keeps_sinks_enabled_by_default(
+    execute_request_mock,
+    monkeypatch,
+) -> None:
+    execute_request_mock.return_value = (False, "Notification sent successfully")
     client = _build_test_client(monkeypatch)
 
     response = client.post(
@@ -95,4 +96,4 @@ def test_workflow_run_keeps_sinks_enabled_by_default(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["outputs"] == [{"message": "Notification sent successfully"}]
-    webhook_v1.METHOD_TO_HANDLER["POST"].assert_called_once()
+    execute_request_mock.assert_called_once()

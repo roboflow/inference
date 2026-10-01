@@ -211,14 +211,18 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())
             inference_time = perf_counter() - t1
-            return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+            response = Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+            self._attach_resolved_model_metadata(response)
+            return response
         elif isinstance(request, Sam2SegmentationRequest):
             masks, scores, low_resolution_logits = self.segment_image(**request.dict())
             predictions = _masks_to_predictions(masks, scores, request.format)
-            return Sam2SegmentationResponse(
+            response = Sam2SegmentationResponse(
                 time=perf_counter() - t1,
                 predictions=predictions,
             )
+            self._attach_resolved_model_metadata(response)
+            return response
         else:
             raise ValueError(f"Invalid request type {type(request)}")
 

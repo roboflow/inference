@@ -12,11 +12,11 @@ from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import (
+from inference.roboflow_workflows_plugin.sinks.dataset_upload import (
     v1,
     v1_tensor,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
+from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1 import (
     BatchCreationFrequency,
     RoboflowDatasetUploadBlockV1,
     encode_prediction,
@@ -26,10 +26,10 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
     is_prediction_registration_forbidden,
     register_datapoint,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1_tensor import (
     RoboflowDatasetUploadBlockV1 as TensorRoboflowDatasetUploadBlockV1,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1_tensor import (
     execute_registration as tensor_execute_registration,
 )
 from inference.core.workflows.execution_engine.entities.base import (

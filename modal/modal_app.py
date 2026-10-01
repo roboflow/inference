@@ -628,6 +628,11 @@ import os
 import requests
 import cv2
 import shapely
+# The pinned Modal image uses the Inference server distribution, and
+# releases predating the workflows split do NOT ship the roboflow_workflows
+# distribution. Import from the compat namespace so the same scaffolding
+# works on both old images (real inference.core.workflows) and new ones
+# (compat shim re-exporting from roboflow_workflows).
 from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData
 from inference.core.workflows.prototypes.block import BlockResult
 {tensor_native_imports}

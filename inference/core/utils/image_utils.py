@@ -158,6 +158,24 @@ def extract_image_payload_and_type(value: Any) -> Tuple[Any, Optional[ImageType]
     return value, ImageType(image_type.lower())
 
 
+def ensure_local_file_load_allowed() -> None:
+    """Raise unless this deployment permits reading images off the local disk.
+
+    The single owner of `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM` on the read
+    path. Called by `load_image_with_known_type` below, and by the Workflows
+    image-codec adapter (`inference.core.interfaces.workflows_image_codec`),
+    which needs the permission without the load: Workflows keeps its own two
+    local decoders (`cv2.imread` and `torchvision.io.read_file` +
+    `decode_image`) whose EXIF behaviour must not change.
+    """
+    if not ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
+        message = "Loading images from local filesystem is disabled."
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
+
+
 def load_image_with_known_type(
     value: Any,
     image_type: ImageType,
@@ -175,11 +193,8 @@ def load_image_with_known_type(
     Returns:
         Tuple[np.ndarray, bool]: A tuple of the loaded image as a numpy array and a boolean indicating if the image is in BGR format.
     """
-    if image_type is ImageType.FILE and not ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
-        raise InputImageLoadError(
-            message="Loading images from local filesystem is disabled.",
-            public_message="Loading images from local filesystem is disabled.",
-        )
+    if image_type is ImageType.FILE:
+        ensure_local_file_load_allowed()
     loader = IMAGE_LOADERS[image_type]
     is_bgr = True if image_type is not ImageType.PILLOW else False
     image = loader(value, cv_imread_flags)

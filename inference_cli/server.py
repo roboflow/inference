@@ -5,7 +5,9 @@ from typing_extensions import Annotated
 
 from inference_cli.lib import check_inference_server_status, start_inference_container
 from inference_cli.lib.container_adapter import (
-    ensure_docker_is_running,
+    CONTAINER_RUNTIME_PODMAN,
+    detect_container_runtime,
+    ensure_container_runtime_is_running,
     stop_inference_containers,
 )
 from inference_cli.lib.tunnel_adapter import start_tunnel, stop_tunnel_container
@@ -57,7 +59,12 @@ def start(
         typer.Option(
             "--dev",
             "-d",
-            help="Run inference server in development mode (default is False).",
+            help="Run inference server in development mode (default is False). "
+            "Also sets ENABLE_BUILDER=True and NOTEBOOK_ENABLED=True in the "
+            "container, which turns on the Workflows builder UI (/build) and "
+            "the Jupyter notebook server. Set those two variables directly "
+            "(for example with --env-file) to enable them without the rest "
+            "of development mode.",
         ),
     ] = False,
     api_key: Annotated[
@@ -109,10 +116,20 @@ def start(
 ) -> None:
 
     try:
-        ensure_docker_is_running()
+        ensure_container_runtime_is_running()
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
+
+    if tunnel and detect_container_runtime() == CONTAINER_RUNTIME_PODMAN:
+        # Fail before the inference container launches: the tunnel image is
+        # only driven through the Docker SDK.
+        typer.echo(
+            "The tunnel image is only launched through Docker; the podman "
+            "runtime path for it is not implemented yet. Start the tunnel "
+            "manually or run the server on a Docker host."
+        )
+        raise typer.Exit(code=1)
 
     if tunnel and bind_address != "0.0.0.0":
         typer.echo(
@@ -166,7 +183,7 @@ def start(
 def status() -> None:
     typer.echo("Checking status of the inference server.")
     try:
-        ensure_docker_is_running()
+        ensure_container_runtime_is_running()
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
@@ -182,7 +199,7 @@ def status() -> None:
 def stop() -> None:
     typer.echo("Terminating running inference containers.")
     try:
-        ensure_docker_is_running()
+        ensure_container_runtime_is_running()
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error

@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "InferenceImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "model_id", "default_value": "coco/3"},
+    {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.4}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/roboflow_object_detection_model@v2",
+      "name": "detector",
+      "images": "$inputs.image",
+      "model_id": "$inputs.model_id",
+      "confidence": "$inputs.confidence"
+    },
+    {
+      "type": "roboflow_core/dynamic_crop@v1",
+      "name": "cropper",
+      "images": "$inputs.image",
+      "predictions": "$steps.detector.predictions"
+    },
+    {
+      "type": "roboflow_core/property_definition@v1",
+      "name": "detections_count",
+      "data": "$steps.detector.predictions",
+      "operations": [{"type": "SequenceLength"}]
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "predictions", "selector": "$steps.detector.predictions"},
+    {"type": "JsonField", "name": "detections_count", "selector": "$steps.detections_count.output"}
+  ]
+}

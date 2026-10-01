@@ -2,9 +2,94 @@
 
 ## Unreleased
 
+### Added
+
+- RF-DETR Torch and ONNX object detection now use the five-stage execution plan,
+  sharing Triton Universal preprocessing, reference fallback, compatibility checks
+  and per-request selection metadata with TensorRT.
+- Explicit `pillow-simd-v1` preprocessing with isolated Pillow-SIMD >=12.3.0.post0,
+  Linux x86/SSE4.1 compatibility checks and numerical-difference metadata.
+- RF-DETR TensorRT models accept a typed or canonical mapping execution plan
+  through the `execution_plan` loader argument, replacing
+  `rfdetr_execution_plan`. The old name remains a deprecated alias until
+  October 24, 2026, and emits a `FutureWarning` directing callers to
+  `execution_plan`. Supplying the alias together with a non-`None`
+  `execution_plan` raises a `TypeError` to avoid silently discarding either
+  argument. Execution plans support canonical
+  parsing and strict profiling validation, while versioned `optimization_runtime_metadata`
+  reports requested, effective, and request-time stage selections together
+  with fallback details.
+
+### Changed
+
+- Reference RF-DETR NumPy preprocessing swaps BGR/RGB channels after resizing,
+  preserving pixel values while avoiding a full-resolution channel copy.
+- Removed the unused `threaded-exact-v1` RF-DETR preprocessor and its worker-count options.
+
+### Fixed
+
+- RF-DETR Triton preprocessing no longer falls back for dataset-version resize
+  metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
+  flags disabling already-inactive crop, contrast, and grayscale transforms.
+
 ---
 
-## `0.37.0`
+## `0.38.0`
+
+### Added
+
+- Python 3.13 support (`requires-python` is now `>=3.10,<3.14`). The Jetson
+  JetPack 6 extras (`torch-jp6-cu126`, `onnx-jp6-cu126`) keep `numpy<2.0.0` on
+  Python 3.10–3.12 and require `numpy>=2.1.0` on Python 3.13.
+
+### Fixed
+
+- RF-DETR Triton preprocessing now rejects request shapes that would create
+  unbounded pinned-host and CUDA staging buffers, falling back to the base
+  preprocessor when compatibility fallback is enabled.
+
+---
+
+## `0.37.4`
+
+### Fixed
+
+- Bumped `anyio` to version above `4.14.2`
+
+---
+
+## `0.37.3`
+
+### Added
+
+- PatchCore and FoundAD anomaly detection models trained on Roboflow
+  (`patchcore` and `foundad` architectures, `classification` task, `torch`
+  backend). Predictions are `ClassificationPrediction` over `normal` and
+  `anomalous`; the raw score, the saved threshold, the decision and an
+  optional heatmap (`include_anomaly_map=True`) are returned in
+  `images_metadata`. Both models run on the base dependencies: PatchCore
+  nearest-neighbour search is done in PyTorch, so FAISS is not needed.
+
+---
+
+## `0.37.2`
+
+### Added
+
+- `AutoModel.from_pretrained` exposes `resolved_model` metadata for the loaded
+  package: canonical model ID, package ID, backend, and quantization. The public
+  `ResolvedModelMetadata` entity describes this metadata.
+
+- `Cosmos3EdgeActionRecognition` wrapped over an already loaded reasoner
+  (`from_reasoner`) exposes that reasoner's `resolved_model`.
+
+### Fixed
+
+- `YOLONasForObjectDetectionTRT` concatenated TRT outputs on the default CUDA stream without ordering against the post-processing stream, which could yield phantom detections under GPU contention. Concatenation now runs on the inference stream and is synchronised before post-processing.
+
+---
+
+## `0.37.1`
 
 ### Fixed
 

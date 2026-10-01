@@ -297,6 +297,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         if not isinstance(request.image, list):
             responses = responses[0]
 
+        self._attach_resolved_model_metadata(responses)
         return responses
 
     def make_response(
