@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Any, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -10,6 +10,7 @@ from inference_models.errors import (
     AmbiguousModelPackageResolutionError,
     InvalidRequestedBatchSizeError,
     ModelPackageNegotiationError,
+    ModelPackagePolicyError,
     NoModelPackagesAvailableError,
     UnknownBackendTypeError,
     UnknownQuantizationError,
@@ -4362,3 +4363,62 @@ def test_filter_model_packages_based_on_model_features_when_package_not_should_b
     # then
     assert len(remaining_packages) == 1
     assert len(discarded_packages) == 0
+
+
+@pytest.mark.parametrize("validate_model_package", [False, True])
+def test_pinned_package_respects_backend_policy_only_when_validation_enabled(
+    validate_model_package: bool,
+) -> None:
+    package = ModelPackageMetadata(
+        package_id="pinned-trt",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        static_batch_size=1,
+        package_artefacts=[],
+        trusted_source=True,
+    )
+    kwargs: dict[str, Any] = dict(
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        model_packages=[package],
+        requested_model_package_id="pinned-trt",
+        requested_backends=["onnx"],
+        validate_model_package=validate_model_package,
+    )
+    if validate_model_package:
+        with pytest.raises(ModelPackagePolicyError):
+            negotiate_model_packages(**kwargs)
+    else:
+        assert negotiate_model_packages(**kwargs) == [package]
+
+
+@mock.patch.object(
+    auto_negotiation, "filter_model_packages_matching_runtime_environment"
+)
+@pytest.mark.parametrize("runtime_compatible", [False, True])
+def test_pinned_package_runtime_validation(
+    runtime_filter, runtime_compatible: bool
+) -> None:
+    package = ModelPackageMetadata(
+        package_id="pinned-trt",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        static_batch_size=1,
+        package_artefacts=[],
+        trusted_source=True,
+    )
+    runtime_filter.return_value = ([package] if runtime_compatible else [], [])
+    kwargs: dict[str, Any] = dict(
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        model_packages=[package],
+        requested_model_package_id="pinned-trt",
+        requested_backends=["trt"],
+        validate_model_package=True,
+    )
+    if runtime_compatible:
+        assert negotiate_model_packages(**kwargs) == [package]
+    else:
+        with pytest.raises(ModelPackagePolicyError):
+            negotiate_model_packages(**kwargs)
+    runtime_filter.assert_called_once()

@@ -386,6 +386,7 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     )
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     model_manager = MagicMock()
+    model_manager.load_model.return_value = "florence-2-base"
     model_manager.pingback = None
     model_manager.num_errors = 0
     model_manager.infer_from_request_sync.return_value = _DummyResponse()
@@ -408,7 +409,7 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
-    model_manager.add_model.assert_called_once_with(
+    model_manager.load_model.assert_called_once_with(
         "florence-pretrains/3",
         "query-api-key",
         model_id_alias="florence-2-base",
@@ -1970,7 +1971,7 @@ def test_serverless_auth_middleware_query_key_wins_over_bearer_header(
 def test_route_level_api_key_reaches_model_manager(
     monkeypatch, location, expected_api_key
 ) -> None:
-    # The api_key handed to model_manager.add_model is the same value the
+    # The api_key handed to model_manager.load_model is the same value the
     # usage collector attributes billing to - this matrix is the guard for
     # the chokepoint fallbacks.
     interface, model_manager = _build_plain_interface(monkeypatch)
@@ -1985,8 +1986,8 @@ def test_route_level_api_key_reaches_model_manager(
         )
 
     assert response.status_code == 200, f"location={location}"
-    assert model_manager.add_model.call_count == 1
-    assert model_manager.add_model.call_args.args[1] == expected_api_key
+    assert model_manager.load_model.call_count == 1
+    assert model_manager.load_model.call_args.args[1] == expected_api_key
 
 
 def test_route_level_query_key_wins_over_bearer_header(monkeypatch) -> None:
@@ -2001,7 +2002,7 @@ def test_route_level_query_key_wins_over_bearer_header(monkeypatch) -> None:
         )
 
     assert response.status_code == 200
-    assert model_manager.add_model.call_args.args[1] == "query-key"
+    assert model_manager.load_model.call_args.args[1] == "query-key"
 
 
 def test_route_level_bearer_header_wins_over_body_key(monkeypatch) -> None:
@@ -2017,7 +2018,7 @@ def test_route_level_bearer_header_wins_over_body_key(monkeypatch) -> None:
         )
 
     assert response.status_code == 200
-    assert model_manager.add_model.call_args.args[1] == "header-key"
+    assert model_manager.load_model.call_args.args[1] == "header-key"
 
 
 def test_serverless_middleware_bearer_header_wins_over_body_key(

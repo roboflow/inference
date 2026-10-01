@@ -363,3 +363,40 @@ def test_load_action_recognition_model_passes_the_zero_shot_id_through() -> None
         auto_model.from_pretrained.call_args.kwargs["model_id_or_path"]
         == "nvidia/cosmos-3-edge-action-recognition"
     )
+
+
+@pytest.mark.parametrize(
+    "selectors",
+    [
+        {"backend": "torch", "quantization": "fp16"},
+        {"model_package_id": "video-package"},
+    ],
+)
+def test_action_loader_preserves_package_selection_when_wrapping_a_reasoner(selectors):
+    from inference.core.models import inference_models_adapters as adapters
+
+    resolved = SimpleNamespace(
+        model_id="workspace/model",
+        model_package_id="video-package",
+        backend="torch",
+        quantization="fp16",
+    )
+    reasoner = SimpleNamespace(resolved_model=resolved)
+    wrapped = _FakeModel(responses=[])
+
+    def from_pretrained(model_id_or_path, validate_model_package=False, **kwargs):
+        return reasoner
+
+    with patch.object(
+        adapters.AutoModel,
+        "from_pretrained",
+        autospec=from_pretrained,
+        return_value=reasoner,
+    ) as load, patch.object(
+        adapters, "_as_action_recognition_model", return_value=wrapped
+    ):
+        model = adapters.load_action_recognition_model("workspace/model", **selectors)
+
+    assert getattr(model, "resolved_model", None) == resolved
+    for name, value in selectors.items():
+        assert load.call_args.kwargs[name] == value

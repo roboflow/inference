@@ -294,7 +294,7 @@ def test_inlined_continue_if_echo_matches_inner_workflow(
     )
     inner = echo_child_workflow()
 
-    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+    with mock.patch.object(model_manager, "add_model"), mock.patch.object(
         ModelManager,
         "infer_from_request_sync",
         new=infer_mock,
@@ -413,7 +413,7 @@ def test_inlined_continue_if_echo_matches_inner_workflow_tensor_native(
     )
     inner = echo_child_workflow()
 
-    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+    with mock.patch.object(model_manager, "add_model"), mock.patch.object(
         ModelManager,
         "get_class_names",
         new=mock.MagicMock(side_effect=_get_class_names_factory()),

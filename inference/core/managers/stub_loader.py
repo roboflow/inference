@@ -1,5 +1,6 @@
 from typing import Optional
 
+from inference.core.exceptions import ModelPackageSelectionError
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.core.roboflow_api import ModelEndpointType
@@ -30,6 +31,10 @@ class StubLoaderManager(ModelManager):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_package_id: Optional[str] = None,
+        backend: Optional[str] = None,
+        quantization: Optional[str] = None,
+        model_cache_key: Optional[str] = None,
     ) -> None:
         """Adds a new model to the manager.
 
@@ -38,6 +43,12 @@ class StubLoaderManager(ModelManager):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
+        if any(
+            value is not None for value in (model_package_id, backend, quantization)
+        ):
+            raise ModelPackageSelectionError(
+                "Model package selection is unavailable in parallel stub mode."
+            )
         if model_id in self._models:
             return
         model_class = self.model_registry.get_model(

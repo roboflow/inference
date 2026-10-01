@@ -6,8 +6,15 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import API_KEY
-from inference.core.managers.base import Model, ModelManager
+from inference.core.managers.base import (
+    Model,
+    ModelManager,
+    _should_resolve_model_package,
+    model_load_options,
+    validate_public_model_id,
+)
 from inference.core.managers.model_load_collector import request_model_ids
+from inference.core.managers.model_selection import public_model_id
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import ModelEndpointType
 
@@ -55,6 +62,28 @@ class ModelManagerDecorator(ModelManager):
     def content_addressed_artifact_cache(self):
         return self.model_manager.content_addressed_artifact_cache
 
+    def model_selection_lock(self, model_id):
+        return self.model_manager.model_selection_lock(model_id)
+
+    def get_model_cache_key(self, model_id):
+        return self.model_manager.get_model_cache_key(model_id)
+
+    def get_model_registry_key(self, cache_key):
+        return self.model_manager.get_model_registry_key(cache_key)
+
+    def set_automatic_model_key(self, model_id, cache_key):
+        return self.model_manager.set_automatic_model_key(model_id, cache_key)
+
+    def resolve_model_packages(self, model_id, api_key, selectors, **kwargs):
+        return self.model_manager.resolve_model_packages(
+            model_id, api_key, selectors, **kwargs
+        )
+
+    def supports_package_selection(self, model_id, api_key, **kwargs):
+        return self.model_manager.supports_package_selection(
+            model_id, api_key, **kwargs
+        )
+
     def add_model(
         self,
         model_id: str,
@@ -63,6 +92,10 @@ class ModelManagerDecorator(ModelManager):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_package_id: Optional[str] = None,
+        backend: Optional[str] = None,
+        quantization: Optional[str] = None,
+        model_cache_key: Optional[str] = None,
     ):
         """Adds a model to the manager.
 
@@ -71,15 +104,25 @@ class ModelManagerDecorator(ModelManager):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if model_id in self:
+        validate_public_model_id(model_id, model_id_alias)
+        cache_key = model_cache_key or model_id
+        if cache_key in self and not _should_resolve_model_package(
+            model_cache_key, endpoint_type
+        ):
+            self.validate_model_selection(
+                cache_key,
+                model_package_id=model_package_id,
+                backend=backend,
+                quantization=quantization,
+            )
             self.model_manager.record_request_metadata(
-                model_id=model_id,
+                model_id=cache_key,
                 original_model_id=model_id,
                 model_id_alias=model_id_alias,
             )
             ids_collector = request_model_ids.get(None)
             if ids_collector is not None:
-                ids_collector.add(model_id)
+                ids_collector.add(public_model_id(cache_key))
             return
         self.model_manager.add_model(
             model_id,
@@ -88,7 +131,13 @@ class ModelManagerDecorator(ModelManager):
             endpoint_type=endpoint_type,
             countinference=countinference,
             service_secret=service_secret,
+            **model_load_options(
+                model_package_id, backend, quantization, model_cache_key
+            ),
         )
+
+    def validate_model_selection(self, model_id: str, **selectors) -> None:
+        self.model_manager.validate_model_selection(model_id, **selectors)
 
     def load_action_recognition_model(
         self, model_id: str, api_key: Optional[str] = None, **kwargs

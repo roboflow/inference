@@ -110,6 +110,8 @@ class Model(BaseInference):
         clear_cache(): Clears any cache if necessary.
     """
 
+    supports_model_package_selection = False
+
     @property
     def resolved_model(self) -> Any:
         model = getattr(self, "_model", None)

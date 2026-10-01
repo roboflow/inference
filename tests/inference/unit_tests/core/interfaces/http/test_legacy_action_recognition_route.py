@@ -69,6 +69,10 @@ def _build_interface(monkeypatch, lambda_mode: bool):
         # patching LAMBDA after import leaves the name unbound.
         monkeypatch.setattr(http_api, "trackUsage", MagicMock(), raising=False)
     model_manager = MagicMock()
+    model_manager.load_model.side_effect = (
+        lambda model_id, api_key, model_id_alias=None, **kwargs: model_id_alias
+        or model_id
+    )
     model_manager.pingback = None
     model_manager.num_errors = 0
     model_manager.get_task_type.return_value = "action-recognition"
@@ -78,9 +82,13 @@ def _build_interface(monkeypatch, lambda_mode: bool):
 
 
 @pytest.mark.parametrize("lambda_mode", [False, True])
+@pytest.mark.parametrize("selectors", [{}, {"model_package_id": "video-package"}])
 def test_legacy_action_recognition_infers_with_the_registered_identifier(
-    monkeypatch, lambda_mode: bool
+    monkeypatch, lambda_mode: bool, selectors
 ) -> None:
+    from inference.core import env
+
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", True)
     interface, model_manager = _build_interface(monkeypatch, lambda_mode=lambda_mode)
     app = _LambdaScope(interface.app) if lambda_mode else interface.app
 
@@ -90,17 +98,20 @@ def test_legacy_action_recognition_infers_with_the_registered_identifier(
             params={
                 "api_key": "query-api-key",
                 "image": "https://example.com/clip.mp4",
+                **selectors,
             },
         )
 
     assert response.status_code == 200, response.text
     # add_model registers under model_id_alias when one is given.
-    add_model_call = model_manager.add_model.call_args
+    add_model_call = model_manager.load_model.call_args
     registered_under = add_model_call.kwargs["model_id_alias"]
     assert registered_under == PATH_MODEL_ID
     # The inference call has to name that same identifier.
     inferred_with = model_manager.infer_from_request_sync.call_args.args[0]
-    assert inferred_with == registered_under
+    assert inferred_with == add_model_call.kwargs.get(
+        "model_cache_key", registered_under
+    )
 
 
 def test_lambda_request_model_id_really_does_differ(monkeypatch) -> None:
@@ -116,5 +127,5 @@ def test_lambda_request_model_id_really_does_differ(monkeypatch) -> None:
             },
         )
 
-    assert model_manager.add_model.call_args.args[0] == RESOLVED_REQUEST_MODEL_ID
+    assert model_manager.load_model.call_args.args[0] == RESOLVED_REQUEST_MODEL_ID
     assert RESOLVED_REQUEST_MODEL_ID != PATH_MODEL_ID

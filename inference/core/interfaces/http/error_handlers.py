@@ -23,6 +23,8 @@ from inference.core.exceptions import (
     ModelArtefactError,
     ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
+    ModelPackageNotFoundError,
+    ModelPackageSelectionError,
     OnnxProviderNotAvailable,
     PayloadTooLargeError,
     PaymentRequiredError,
@@ -499,6 +501,13 @@ def with_route_exceptions(route):
                 status_code=502,
                 content={"message": "Internal error. Request to Roboflow API failed."},
             )
+        except ModelPackageNotFoundError:
+            resp = JSONResponse(
+                status_code=404,
+                content={"message": "Model or model package not found."},
+            )
+        except ModelPackageSelectionError as error:
+            resp = JSONResponse(status_code=400, content={"message": str(error)})
         except InferenceModelNotFound as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -979,6 +988,13 @@ def with_route_exceptions_async(route):
                 status_code=502,
                 content={"message": "Internal error. Request to Roboflow API failed."},
             )
+        except ModelPackageNotFoundError:
+            resp = JSONResponse(
+                status_code=404,
+                content={"message": "Model or model package not found."},
+            )
+        except ModelPackageSelectionError as error:
+            resp = JSONResponse(status_code=400, content={"message": str(error)})
         except InferenceModelNotFound as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(

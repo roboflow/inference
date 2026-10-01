@@ -440,7 +440,7 @@ def test_inlined_continue_if_inside_inner_matches_flat_workflow(
     )
     inner = _inner_continue_if_then_pick()
 
-    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+    with mock.patch.object(model_manager, "add_model"), mock.patch.object(
         ModelManager,
         "infer_from_request_sync",
         new=infer_mock,
@@ -568,7 +568,7 @@ def test_inlined_continue_if_inside_inner_matches_flat_workflow_tensor_native(
     )
     inner = _inner_continue_if_then_pick()
 
-    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+    with mock.patch.object(model_manager, "add_model"), mock.patch.object(
         ModelManager, "get_class_names", side_effect=_get_class_names_native
     ), mock.patch.object(
         ModelManager,
@@ -610,7 +610,7 @@ def test_inlined_continue_if_last_in_inner_echo_on_outer_matches_flat_workflow(
     )
     inner = _inner_continue_if_only_outer_echo_name_matches_parent()
 
-    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+    with mock.patch.object(model_manager, "add_model"), mock.patch.object(
         ModelManager,
         "infer_from_request_sync",
         new=infer_mock,
@@ -666,7 +666,7 @@ def test_inlined_continue_if_last_in_inner_echo_on_outer_matches_flat_workflow_t
     )
     inner = _inner_continue_if_only_outer_echo_name_matches_parent()
 
-    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+    with mock.patch.object(model_manager, "add_model"), mock.patch.object(
         ModelManager, "get_class_names", side_effect=_get_class_names_native
     ), mock.patch.object(
         ModelManager,

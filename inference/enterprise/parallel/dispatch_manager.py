@@ -11,6 +11,7 @@ from inference.core.entities.requests.inference import (
 )
 from inference.core.entities.responses.inference import response_from_type
 from inference.core.env import NUM_PARALLEL_TASKS
+from inference.core.exceptions import ModelPackageSelectionError
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import get_model_type
@@ -156,6 +157,11 @@ class DispatchModelManager(ModelManager):
             return responses
         return responses[0]
 
+    def supports_package_selection(
+        self, model_id: str, api_key: Optional[str], **kwargs
+    ) -> bool:
+        return False
+
     def add_model(
         self,
         model_id: str,
@@ -164,8 +170,17 @@ class DispatchModelManager(ModelManager):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_package_id: Optional[str] = None,
+        backend: Optional[str] = None,
+        quantization: Optional[str] = None,
+        model_cache_key: Optional[str] = None,
     ) -> None:
-        pass
+        if any(
+            value is not None for value in (model_package_id, backend, quantization)
+        ):
+            raise ModelPackageSelectionError(
+                "Model package selection is unavailable in parallel mode."
+            )
 
     def __contains__(self, model_id: str) -> bool:
         return True

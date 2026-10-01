@@ -456,13 +456,17 @@ def test_engine_run_reaches_raw_manager_through_wired_provider(wrapped):
             "model_id": MODEL_ID,
         }
     )
-    # The decorator short-circuits to `record_request_metadata` when the
-    # model is already present; the raw manager takes `add_model`. Either
-    # way, the translated request must reach the inner manager.
-    if wrapped:
-        inner.record_request_metadata.assert_called_once()
-    else:
-        inner.add_model.assert_called_once_with(model_id=MODEL_ID, api_key=API_KEY)
+    # Package resolution must reach the manager even for a warm model so
+    # that it can authorize the current caller before sharing the instance.
+    assert isinstance(inner.add_model, MagicMock)
+    inner.add_model.assert_called_once()
+    load_call = inner.add_model.call_args
+    assert (
+        load_call.args[0] if load_call.args else load_call.kwargs["model_id"]
+    ) == MODEL_ID
+    assert (
+        load_call.args[1] if load_call.args else load_call.kwargs["api_key"]
+    ) == API_KEY
     call = inner.infer_from_request_sync.call_args
     request = call.kwargs.get("request") or call.args[1]
     assert isinstance(request, ObjectDetectionInferenceRequest)

@@ -214,6 +214,62 @@ def _get_enabled_inference_models_backends() -> List[str]:
     )
 
 
+def _get_requested_inference_models_backends(kwargs: dict) -> Union[str, List[str]]:
+    from inference.core.exceptions import ModelPackageSelectionError
+
+    if kwargs.get("model_package_id") is not None:
+        if (
+            "validate_model_package"
+            not in signature(AutoModel.from_pretrained).parameters
+        ):
+            raise ModelPackageSelectionError(
+                "This inference-models version cannot validate pinned package policy."
+            )
+        kwargs["validate_model_package"] = True
+    requested_backend = kwargs.pop("backend", None)
+    enabled_backends = _get_enabled_inference_models_backends()
+    if requested_backend is None:
+        return enabled_backends
+    if requested_backend not in enabled_backends:
+        raise ModelPackageSelectionError(
+            f"Backend {requested_backend!r} is not enabled on this server."
+        )
+    return requested_backend
+
+
+def resolve_model_packages(
+    model_id: str, api_key: Optional[str], selectors: dict, **kwargs
+):
+    """Resolve packages under this server's backend and trust policy.
+
+    Args:
+        model_id: Public model identifier or alias.
+        api_key: Credentials for the current request.
+        selectors: Optional package ID, backend, or quantization constraints.
+        **kwargs: Provider context for credit checks and internal requests.
+
+    Returns:
+        Ranked package descriptors, or None with an older library.
+    """
+    if not callable(getattr(AutoModel, "resolve_model_packages", None)):
+        return None
+    selection = dict(selectors)
+    backend = _get_requested_inference_models_backends(
+        {"backend": selection.pop("backend", None)}
+    )
+    return AutoModel.resolve_model_packages(
+        model_id=resolve_roboflow_model_alias(model_id),
+        api_key=api_key or API_KEY,
+        backend=backend,
+        allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+        weights_provider_extra_headers=get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        ),
+        **selection,
+    )
+
+
 def _supports_independent_stage_execution(pre_process) -> bool:
     """Return whether preprocessing declares the composed-execution control."""
     try:
@@ -257,6 +313,8 @@ def _fixed_input_hw_from_backend(backend: Any) -> Optional[Tuple[int, int]]:
 
 
 class InferenceModelsObjectDetectionAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -271,7 +329,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = _get_enabled_inference_models_backends()
+        backend = _get_requested_inference_models_backends(kwargs)
         self._model: ObjectDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -423,6 +481,8 @@ class InferenceModelsObjectDetectionAdapter(Model):
 
 
 class InferenceModelsInstanceSegmentationAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -437,7 +497,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = _get_enabled_inference_models_backends()
+        backend = _get_requested_inference_models_backends(kwargs)
         self._model: InstanceSegmentationModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -1136,6 +1196,8 @@ def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
 
 
 class InferenceModelsKeyPointsDetectionAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1150,7 +1212,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = _get_enabled_inference_models_backends()
+        backend = _get_requested_inference_models_backends(kwargs)
         self._model: KeyPointsDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -1357,6 +1419,8 @@ def model_keypoints_to_response(
 
 
 class InferenceModelsClassificationAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1370,7 +1434,7 @@ class InferenceModelsClassificationAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = _get_enabled_inference_models_backends()
+        backend = _get_requested_inference_models_backends(kwargs)
         self._model: Union[ClassificationModel, MultiLabelClassificationModel] = (
             AutoModel.from_pretrained(
                 model_id_or_path=model_id,
@@ -1760,6 +1824,8 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
 
 
 class InferenceModelsSemanticSegmentationAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1774,7 +1840,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = _get_enabled_inference_models_backends()
+        backend = _get_requested_inference_models_backends(kwargs)
         self._model: SemanticSegmentationModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -2048,6 +2114,8 @@ class InferenceModelsActionRecognitionAdapter(Model):
     and the trailing remainder is dropped, which is how training validates.
     """
 
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
@@ -2172,10 +2240,14 @@ def load_action_recognition_model(
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         ),
-        backend=_get_enabled_inference_models_backends(),
+        backend=_get_requested_inference_models_backends(kwargs),
         **kwargs,
     )
-    return _as_action_recognition_model(model=loaded_model, model_id=model_id)
+    model = _as_action_recognition_model(model=loaded_model, model_id=model_id)
+    resolved_model = getattr(loaded_model, "resolved_model", None)
+    if resolved_model is not None:
+        setattr(model, "resolved_model", resolved_model)
+    return model
 
 
 def _as_action_recognition_model(model: Any, model_id: str) -> ActionRecognitionModel:

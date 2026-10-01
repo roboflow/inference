@@ -48,6 +48,22 @@ class InferenceModelNotFound(Exception):
     """
 
 
+class ModelPackageSelectionError(Exception):
+    """Raised when the requested model package selection cannot be satisfied.
+
+    Attributes:
+        message (str): Optional message describing the error.
+    """
+
+
+class ModelPackageNotFoundError(Exception):
+    """Raised when the requested model package is not found.
+
+    Attributes:
+        message (str): Optional message describing the error.
+    """
+
+
 class InvalidMaskDecodeArgument(Exception):
     """Raised when an invalid argument is provided for mask decoding.
 

@@ -3,7 +3,7 @@ from typing import Any, Optional
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.logger import logger
-from inference.core.managers.base import Model
+from inference.core.managers.base import Model, model_load_options
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.roboflow_api import ModelEndpointType
 
@@ -19,6 +19,10 @@ class WithLogger(ModelManagerDecorator):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_package_id: Optional[str] = None,
+        backend: Optional[str] = None,
+        quantization: Optional[str] = None,
+        model_cache_key: Optional[str] = None,
     ):
         """Adds a model to the manager and logs the action.
 
@@ -37,6 +41,9 @@ class WithLogger(ModelManagerDecorator):
             endpoint_type=endpoint_type,
             countinference=countinference,
             service_secret=service_secret,
+            **model_load_options(
+                model_package_id, backend, quantization, model_cache_key
+            ),
         )
 
     async def infer_from_request(

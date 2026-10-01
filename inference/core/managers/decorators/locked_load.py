@@ -1,6 +1,7 @@
 from typing import Optional
 
 from inference.core.cache import cache
+from inference.core.managers.base import model_load_options
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.roboflow_api import ModelEndpointType
 
@@ -18,6 +19,10 @@ class LockedLoadModelManagerDecorator(ModelManagerDecorator):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_package_id: Optional[str] = None,
+        backend: Optional[str] = None,
+        quantization: Optional[str] = None,
+        model_cache_key: Optional[str] = None,
     ):
         with cache.lock(lock_str(model_id), expire=180.0):
             return super().add_model(
@@ -27,4 +32,7 @@ class LockedLoadModelManagerDecorator(ModelManagerDecorator):
                 endpoint_type=endpoint_type,
                 countinference=countinference,
                 service_secret=service_secret,
+                **model_load_options(
+                    model_package_id, backend, quantization, model_cache_key
+                ),
             )
