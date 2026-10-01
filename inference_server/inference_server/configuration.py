@@ -113,6 +113,11 @@ CORRELATION_ID_HEADER = os.environ.get("CORRELATION_ID_HEADER", "X-Request-ID")
 API_LOGGING_ENABLED = get_boolean_from_env("API_LOGGING_ENABLED", default=False)
 EXECUTION_ID_HEADER = os.environ.get("EXECUTION_ID_HEADER", "execution_id")
 
+# ── Logging (logging_config.py) ────────────────────────────────────────────
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING")
+STRUCTURED_API_LOGGING = get_boolean_from_env("STRUCTURED_API_LOGGING", default=False)
+CORRELATION_ID_LOG_KEY = os.environ.get("CORRELATION_ID_LOG_KEY", "request_id")
+
 # ── Landing page (app.py) ──────────────────────────────────────────────────
 LANDING_DIR = os.environ.get(
     "LANDING_DIR",
@@ -222,6 +227,25 @@ DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS = get_boolean_from_env(
     "DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS", default=False
 )
 OFFLINE_MODE = get_boolean_from_env("OFFLINE_MODE", default=False)
+
+# ── OpenTelemetry tracing and metrics (telemetry.py) ───────────────────────
+OTEL_TRACING_ENABLED = get_boolean_from_env("OTEL_TRACING_ENABLED", default=False)
+OTEL_SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "inference-server")
+OTEL_EXPORTER_PROTOCOL = os.environ.get("OTEL_EXPORTER_PROTOCOL", "grpc")
+OTEL_EXPORTER_ENDPOINT = os.environ.get("OTEL_EXPORTER_ENDPOINT", "localhost:4317")
+OTEL_SAMPLING_RATE = get_float_from_env("OTEL_SAMPLING_RATE", default=1.0)
+OTEL_TRACE_EXPORT_INTERVAL_MS = get_integer_from_env(
+    "OTEL_TRACE_EXPORT_INTERVAL_MS", default=5000
+)
+OTEL_METRICS_ENABLED = get_boolean_from_env("OTEL_METRICS_ENABLED", default=True)
+if OFFLINE_MODE:
+    OTEL_TRACING_ENABLED = False
+    OTEL_METRICS_ENABLED = False
+OTEL_METRIC_EXPORTER_ENDPOINT = os.environ.get("OTEL_METRIC_EXPORTER_ENDPOINT", "")
+OTEL_METRIC_EXPORT_INTERVAL_MS = get_integer_from_env(
+    "OTEL_METRIC_EXPORT_INTERVAL_MS", default=10000
+)
+
 ALLOW_URL_INPUT = get_boolean_from_env("ALLOW_URL_INPUT", default=True)
 ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM = get_boolean_from_env(
     "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM", default=False

@@ -977,6 +977,30 @@ def test_serverless_credit_denial_carries_workspace_header(monkeypatch):
     assert re.fullmatch(r"[0-9a-f]{32}", echoed[0])
 
 
+def test_serverless_denial_carries_the_trace_id_of_the_active_span(monkeypatch):
+    from inference_server import telemetry
+
+    monkeypatch.setattr(serverless_auth, "_cache", {})
+    monkeypatch.setattr(telemetry, "get_trace_id", lambda: "ab" * 16)
+    inner = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @inner.api_route("/{full_path:path}", methods=["GET", "POST"])
+    async def _probe(request: Request):
+        return JSONResponse({"ok": True})
+
+    inner.add_middleware(ServerlessAuthMiddleware)
+    inner.add_middleware(ModelLoadHeadersMiddleware)
+    inner.add_middleware(CorrelationIdMiddleware)
+    inner.add_middleware(telemetry.TraceIdResponseMiddleware)
+
+    response = TestClient(inner).post("/infer/object_detection", json={})
+
+    assert response.status_code == 401
+    assert response.headers["X-Trace-Id"] == "ab" * 16
+    assert float(response.headers["X-Processing-Time"]) >= 0.0
+    assert len(response.headers.get_list("x-request-id")) == 2
+
+
 def test_observability_middlewares_wrap_every_other_middleware():
     classes = [entry.cls for entry in app_mod.app.user_middleware]
 

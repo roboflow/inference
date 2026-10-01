@@ -22,6 +22,13 @@ from inference_server.legacy_env import apply_legacy_env
 
 apply_legacy_env()
 
+from inference_server.logging_config import (  # noqa: E402
+    configure_logging,
+    install_structured_access_log,
+)
+
+configure_logging()
+
 from fastapi import FastAPI, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
@@ -44,6 +51,10 @@ from inference_server.middlewares.model_load import (  # noqa: E402
     ModelLoadHeadersMiddleware,
 )
 from inference_server.routers import v2_models, v2_server  # noqa: E402
+from inference_server.telemetry import (  # noqa: E402
+    setup_telemetry,
+    shutdown_telemetry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +177,7 @@ async def _lifespan(app: FastAPI):
             if not task.done():
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        shutdown_telemetry()
         try:
             await proxy.shutdown()
         finally:
@@ -373,6 +385,8 @@ if (
 
 app.add_middleware(ModelLoadHeadersMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
+setup_telemetry(app)
+install_structured_access_log(app)
 
 
 def mount_landing_assets(app: FastAPI) -> bool:
@@ -451,7 +465,13 @@ _LANDING_ROOT_MOUNTED = mount_landing_root(app)
 # Entry point
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+
+def main() -> None:
+    """Serve the application with uvicorn on ``PORT`` with ``NUM_WORKERS``.
+
+    Passes ``log_config=None`` so uvicorn keeps the handlers installed by
+    ``configure_logging()`` instead of applying its default logging config.
+    """
     import uvicorn
 
     port = int(os.environ.get(_cfg.PORT_ENV, str(_cfg.APP_PORT_DEFAULT)))
@@ -461,4 +481,9 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port,
         workers=workers,
+        log_config=None,
     )
+
+
+if __name__ == "__main__":
+    main()

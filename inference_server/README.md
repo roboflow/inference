@@ -22,7 +22,8 @@ uv pip install -e ".[torch-cpu,onnx-cpu]"
 uv pip install -e ".[torch-cu124,onnx-cu12]"
 ```
 
-Extras cascade through `inference-model-manager` to `inference-models`.
+Extras cascade through `inference-model-manager` to `inference-models`. The
+`otel` extra installs the OpenTelemetry packages behind `OTEL_TRACING_ENABLED`.
 
 ## Quick start
 
@@ -117,7 +118,19 @@ are dropped at startup instead of registered.
 | `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM` | `false` | Allow images to be loaded from a local path |
 | `ALLOW_ORIGINS` | `*` | Comma-separated CORS origins |
 | `CORRELATION_ID_HEADER` | `X-Request-ID` | Request header read as the correlation id and echoed on every response; generated when absent. Honoured only with `API_LOGGING_ENABLED=true`; otherwise the header is always `X-Request-ID`, like the legacy server's library defaults |
-| `API_LOGGING_ENABLED` | `false` | When `true`, the correlation id comes from `CORRELATION_ID_HEADER` and any non-empty value is accepted; when `false`, it comes from `X-Request-ID` and a value that is not a UUID is replaced |
+| `API_LOGGING_ENABLED` | `false` | When `true`, the correlation id comes from `CORRELATION_ID_HEADER` and any non-empty value is accepted, and application logs are one JSON object per line carrying `CORRELATION_ID_LOG_KEY`, `execution_id`, `trace_id` and `span_id` when present; when `false`, it comes from `X-Request-ID`, a value that is not a UUID is replaced, and logs are plain lines |
+| `LOG_LEVEL` | `WARNING` | Level of the `inference_server` logger; uvicorn's own loggers keep uvicorn's defaults |
+| `STRUCTURED_API_LOGGING` | `false` | With `API_LOGGING_ENABLED=true`, replaces uvicorn's access line with one JSON object per response logged at `INFO` through the application logger (`method`, `path`, `status`, `duration_ms`, the correlation key and the legacy `processing_time`, `model_*`, `workflow_id`, `workspace_id`, `execution_id` and `trace_id` fields read from the response headers); health paths log at `DEBUG` |
+| `CORRELATION_ID_LOG_KEY` | `request_id` | JSON log field carrying the correlation id with `API_LOGGING_ENABLED=true` |
+| `OTEL_TRACING_ENABLED` | `false` | OpenTelemetry tracing: FastAPI and `requests` instrumentation, OTLP span export, `X-Trace-Id` on every response and `X-Force-Trace: true` to sample one request. Needs the `otel` extra; forced off under `OFFLINE_MODE` |
+| `OTEL_SERVICE_NAME` | `inference-server` | `service.name` resource attribute; `service.instance.id` is `INFERENCE_SERVER_ID` or a per-process id |
+| `OTEL_EXPORTER_PROTOCOL` | `grpc` | `grpc` or `http` OTLP transport |
+| `OTEL_EXPORTER_ENDPOINT` | `localhost:4317` | OTLP collector `host:port` for spans |
+| `OTEL_SAMPLING_RATE` | `1.0` | Root span sampling ratio; parent decisions are honoured |
+| `OTEL_TRACE_EXPORT_INTERVAL_MS` | `5000` | Span batch export interval |
+| `OTEL_METRICS_ENABLED` | `true` | With tracing enabled, exports the model load, inference, API-call and error metrics over OTLP; forced off under `OFFLINE_MODE` |
+| `OTEL_METRIC_EXPORTER_ENDPOINT` | `OTEL_EXPORTER_ENDPOINT` | OTLP collector `host:port` for metrics when it differs from the span collector |
+| `OTEL_METRIC_EXPORT_INTERVAL_MS` | `10000` | Metric export interval |
 | `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS` | `16` | Thread-pool size backing workflow execution |
 | `WORKFLOWS_MAX_CONCURRENT_STEPS` | `8` | Max concurrent steps per workflow run |
 | `LANDING_DIR` | `<checkout>/inference/landing/out` | Directory of the exported legacy landing page served at `/`; the Docker images set it to `/app/landing` |

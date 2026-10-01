@@ -177,8 +177,7 @@ Hosted names from the summary that are legacy-only today and therefore need an
 infra decision rather than a mapping: `HTTP_API_THREADPOOL_WORKERS` (vLLM pools
 set 128), `GCP_SERVERLESS`,
 `ENFORCE_CREDITS_VERIFICATION`, `MODELS_CACHE_AUTH_*`,
-`STRUCTURED_API_LOGGING`, `CORRELATION_ID_LOG_KEY`, `OTEL_*`, `METRICS_ENABLED`,
-`ENABLE_PROMETHEUS`, `REDIS_*`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
+`METRICS_ENABLED`, `ENABLE_PROMETHEUS`, `REDIS_*`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
 `VLLM_PROXY_ENABLED`. Each is in the (d) table.
 
 ## (a) Shared names
@@ -233,7 +232,9 @@ definition; the last column is the new reader.
 | `BUILDER_ORIGIN` | `env.py:823-826` | `configuration.py:117-124` | `https://app.roboflow.com` for the us/prod case; the module derives the other cases, see note 1 |
 | `ENABLE_DASHBOARD` | `env.py:841` | `configuration.py:111` | `False` |
 | `NUM_WORKERS` | `env.py:844` | `configuration.py:99` | `1` |
-| `API_LOGGING_ENABLED` | `env.py:653` | `configuration.py:113`; `middlewares/correlation_id.py`: selects `CORRELATION_ID_HEADER` and accepts any non-empty id when true, `X-Request-ID` and UUID-only ids when false, like the legacy correlation library defaults | `False` |
+| `API_LOGGING_ENABLED` | `env.py:653` | `configuration.py:113`; `middlewares/correlation_id.py`: selects `CORRELATION_ID_HEADER` and accepts any non-empty id when true, `X-Request-ID` and UUID-only ids when false, like the legacy correlation library defaults; `logging_config.py`: JSON application logs when true | `False` |
+| `STRUCTURED_API_LOGGING` | `env.py:657` | `configuration.py:118`; `logging_config.py`: with `API_LOGGING_ENABLED`, the structured access log middleware replaces uvicorn's access line, health paths at `DEBUG`, like the legacy `structured_access_log` middleware | `False` |
+| `CORRELATION_ID_LOG_KEY` | `env.py:663` | `configuration.py:119`; `logging_config.py`: JSON field of the correlation id | `request_id` |
 | `CORRELATION_ID_HEADER` | `env.py:660` | `configuration.py:102`; `middlewares/correlation_id.py`, honoured only with `API_LOGGING_ENABLED=true` | `X-Request-ID` |
 | `PORT` | `env.py:852` | `configuration.py:98`; `app.py:354` | `9001` |
 | `SAM_VERSION_ID` | `env.py:882` | `configuration.py:178` | `vit_h` |
@@ -255,6 +256,16 @@ definition; the last column is the new reader.
 | `CONFIDENCE_LOWER_BOUND_OOM_PREVENTION` | `env.py:1478` | `configuration.py:170` | `0.01` |
 | `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS` | `env.py:1651` | `configuration.py:249` | `16` |
 | `OFFLINE_MODE` | `env.py:509` (owned by `inference_models._offline`) | `configuration.py:156`; `host.py:63`; `inference_models/configuration.py:109` | `False` |
+| `LOG_LEVEL` | `env.py:705` | `configuration.py:117`; `logging_config.py`: level of the `inference_server` logger, like legacy's `inference` logger; uvicorn's loggers keep uvicorn's defaults; `inference_models` reads it separately, see its table | `WARNING` |
+| `OTEL_TRACING_ENABLED` | `env.py:768` | `configuration.py:232,241-243` (forced off under `OFFLINE_MODE`); `telemetry.py` | `False` |
+| `OTEL_SERVICE_NAME` | `env.py:769` | `configuration.py:233`; `telemetry.py` | `inference-server` |
+| `OTEL_EXPORTER_PROTOCOL` | `env.py:770` | `configuration.py:234`; `telemetry.py` | `grpc` |
+| `OTEL_EXPORTER_ENDPOINT` | `env.py:771` | `configuration.py:235`; `telemetry.py` | `localhost:4317` |
+| `OTEL_SAMPLING_RATE` | `env.py:772` | `configuration.py:236`; `telemetry.py` | `1.0` |
+| `OTEL_TRACE_EXPORT_INTERVAL_MS` | `env.py:773` | `configuration.py:237-239`; `telemetry.py` | `5000` |
+| `OTEL_METRICS_ENABLED` | `env.py:774` | `configuration.py:240,241-243` (forced off under `OFFLINE_MODE`); `telemetry.py` | `True` |
+| `OTEL_METRIC_EXPORTER_ENDPOINT` | `env.py:778` | `configuration.py:244`; `telemetry.py` (falls back to `OTEL_EXPORTER_ENDPOINT`) | unset |
+| `OTEL_METRIC_EXPORT_INTERVAL_MS` | `env.py:779` | `configuration.py:245-247`; `telemetry.py` | `10000` |
 
 ### Read by `build_workflows_configuration` (`inference_server/workflows/host.py`)
 
@@ -454,7 +465,6 @@ No new package reads these. They never get an alias or a default row.
 | `CACHE_METADATA_LOCK_TIMEOUT` | `env.py:1453` | legacy model cache lock; `inference_models` uses `INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT` with different semantics |
 | `CELERY_LOG_LEVEL` | `env.py:989` | legacy celery; none in the new stack |
 | `CORE_MODEL_BUCKET` | `env.py:927` | legacy AWS-era setting |
-| `CORRELATION_ID_LOG_KEY` | `env.py:663` | legacy structured logging; unread (hosting summary) |
 | `DEBUG_AIORTC_QUEUES` | `env.py:978` | `StreamsConfiguration` field; no new package reads the env name today |
 | `DEBUG_WEBRTC_PROCESSING_LATENCY` | `env.py:979` | `StreamsConfiguration` field; no new package reads the env name today |
 | `DEDICATED_DEPLOYMENT_ID` | `env.py:1329` | legacy dedicated-deployment auth; the new `auth.py` validates keys against `API_BASE_URL` only |
@@ -532,15 +542,6 @@ No new package reads these. They never get an alias or a default row.
 | `NUM_CELERY_WORKERS` | `env.py:988` | legacy celery |
 | `NUM_PARALLEL_TASKS` | `env.py:952` | legacy async model manager |
 | `ORT_TENSORRT_CACHE_PATH` | `env.py:918` (written, not read) | legacy ORT TensorRT cache; no new package reads it |
-| `OTEL_EXPORTER_ENDPOINT` | `env.py:771` | unread (hosting summary) |
-| `OTEL_EXPORTER_PROTOCOL` | `env.py:770` | unread (hosting summary) |
-| `OTEL_METRICS_ENABLED` | `env.py:774` | unread (hosting summary) |
-| `OTEL_METRIC_EXPORTER_ENDPOINT` | `env.py:778` | unread (hosting summary) |
-| `OTEL_METRIC_EXPORT_INTERVAL_MS` | `env.py:779` | unread (hosting summary) |
-| `OTEL_SAMPLING_RATE` | `env.py:772` | unread (hosting summary) |
-| `OTEL_SERVICE_NAME` | `env.py:769` | unread (hosting summary) |
-| `OTEL_TRACE_EXPORT_INTERVAL_MS` | `env.py:773` | unread (hosting summary) |
-| `OTEL_TRACING_ENABLED` | `env.py:768` | unread (hosting summary) |
 | `OWLV2_COMPILE_MODEL` | `env.py:274` | legacy OWLv2 implementation knob |
 | `OWLV2_CPU_IMAGE_CACHE_SIZE` | `env.py:271` | legacy OWLv2 implementation knob |
 | `PALIGEMMA_ENABLED` | `env.py:390` | legacy model-route gate; `roboflow_workflows` `ModelsConfiguration` has no such field |
@@ -570,7 +571,6 @@ No new package reads these. They never get an alias or a default row.
 | `STREAM_MANAGER_MAX_ACTIVE_PIPELINES` | `env.py:1447` | `StreamsConfiguration` field; no new package reads the env name today |
 | `STREAM_MANAGER_MAX_RAM_MB` | `env.py:1431` | `StreamsConfiguration` field; no new package reads the env name today |
 | `STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE` | `env.py:1438` | `StreamsConfiguration` field; no new package reads the env name today |
-| `STRUCTURED_API_LOGGING` | `env.py:657` | unread (hosting summary) |
 | `STUB_CACHE_SIZE` | `env.py:953` | legacy stub model cache |
 | `TAGS` | `env.py:912` | legacy device management |
 | `TENSORRT_CACHE_PATH` | `env.py:915` | legacy ORT TensorRT cache |
