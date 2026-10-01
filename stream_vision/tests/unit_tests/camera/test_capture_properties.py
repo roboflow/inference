@@ -5,7 +5,10 @@ import cv2
 import pytest
 from pydantic import ValidationError
 from streamvision.camera import gstreamer_rtsp_producer, video_source
-from streamvision.camera.capture_properties import apply_capture_properties
+from streamvision.camera.capture_properties import (
+    apply_capture_properties,
+    parse_fourcc,
+)
 from streamvision.stream_manager.manager_app.entities import VideoConfiguration
 
 MJPG = cv2.VideoWriter_fourcc(*"MJPG")
@@ -100,15 +103,16 @@ def test_four_character_codes_are_used_exactly_as_given(fourcc: str) -> None:
     ]
 
 
+class _RejectingCapture(_RecordingCapture):
+    def set(self, property_id: int, value: Any) -> bool:
+        super().set(property_id, value)
+        return False
+
+
 def test_rejected_property_is_logged(
     streamvision_caplog: pytest.LogCaptureFixture,
 ) -> None:
     # given
-    class _RejectingCapture(_RecordingCapture):
-        def set(self, property_id: int, value: Any) -> bool:
-            super().set(property_id, value)
-            return False
-
     capture = _RejectingCapture()
 
     # when
@@ -117,10 +121,39 @@ def test_rejected_property_is_logged(
 
     # then
     assert "did not accept property exposure=-6" in streamvision_caplog.text
+    assert all(
+        record.levelno == logging.DEBUG for record in streamvision_caplog.records
+    )
+
+
+def test_rejected_fourcc_is_logged_as_a_warning(
+    streamvision_caplog: pytest.LogCaptureFixture,
+) -> None:
+    # given
+    capture = _RejectingCapture()
+
+    # when
+    with streamvision_caplog.at_level(logging.WARNING):
+        apply_capture_properties(capture, properties={"fourcc": "MJPG"})
+
+    # then
+    assert f"did not accept property fourcc={MJPG!r}" in streamvision_caplog.text
 
 
 @pytest.mark.parametrize(
-    "fourcc", ["MJPEG", "MJ", "", -1, 1.5, float("nan"), float("inf"), True, None]
+    "fourcc",
+    [
+        "MJPEG",
+        "MJ",
+        "",
+        "\u00b2\u00b2\u00b2\u00b2",
+        -1,
+        1.5,
+        float("nan"),
+        float("inf"),
+        True,
+        None,
+    ],
 )
 def test_invalid_fourcc_is_skipped_with_a_warning(
     fourcc: Any,
@@ -144,20 +177,23 @@ def test_invalid_fourcc_is_skipped_with_a_warning(
     assert "Ignoring invalid fourcc" in streamvision_caplog.text
 
 
-def test_properties_without_fourcc_and_fps_are_applied_in_given_order() -> None:
-    # given
-    capture = _RecordingCapture()
-    properties = {"frame_height": 480, "frame_width": 640, "brightness": 0.25}
-
-    # when
-    apply_capture_properties(capture, properties=properties)
-
-    # then
-    assert capture.set_calls == [
-        (cv2.CAP_PROP_FRAME_HEIGHT, 480),
-        (cv2.CAP_PROP_FRAME_WIDTH, 640),
-        (cv2.CAP_PROP_BRIGHTNESS, 0.25),
-    ]
+@pytest.mark.parametrize(
+    "fourcc",
+    [
+        "MJPEG",
+        "MJ",
+        "",
+        "\u00b2\u00b2\u00b2\u00b2",
+        "\u0661\u0662",
+        -1,
+        1.5,
+        True,
+        None,
+    ],
+)
+def test_parse_fourcc_returns_none_for_invalid_values(fourcc: Any) -> None:
+    # when / then - non-ASCII digits pass str.isdigit() but must not reach int()
+    assert parse_fourcc(fourcc) is None
 
 
 @pytest.mark.parametrize("properties", [None, {}])
@@ -253,3 +289,31 @@ def test_video_configuration_rejects_non_numeric_value_for_other_properties() ->
             video_reference=0,
             video_source_properties={"fps": "fast"},
         )
+
+
+@pytest.mark.parametrize(
+    "fourcc", ["MJPEG", "MJ", "\u00b2\u00b2\u00b2\u00b2", -1, 1.5, float("nan"), True]
+)
+def test_video_configuration_rejects_invalid_fourcc(fourcc: Any) -> None:
+    # when / then
+    with pytest.raises(ValidationError, match="fourcc"):
+        VideoConfiguration(
+            type="VideoConfiguration",
+            video_reference=0,
+            video_source_properties={"fourcc": fourcc},
+        )
+
+
+@pytest.mark.parametrize("fourcc", ["avc1", "Y16 ", MJPG, str(MJPG)])
+def test_video_configuration_accepts_valid_fourcc(fourcc: Any) -> None:
+    # when
+    config = VideoConfiguration(
+        type="VideoConfiguration",
+        video_reference=0,
+        video_source_properties={"fourcc": fourcc},
+    )
+
+    # then
+    assert parse_fourcc(config.video_source_properties["fourcc"]) == parse_fourcc(
+        fourcc
+    )

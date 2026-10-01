@@ -34,9 +34,12 @@ def apply_capture_properties(
     """Set capture properties on ``stream`` with ``fourcc`` first and ``fps`` last.
 
     Properties other than ``fourcc`` and ``fps`` keep their given order.
-    ``fourcc`` may be a four-character code (``"MJPG"``, ``"mjpg"``) or its
-    numeric value; an invalid ``fourcc`` is logged and skipped. When ``fourcc``
-    or ``fps`` is requested, the effective format is read back and logged.
+    ``fourcc`` may be a four-character code such as ``"MJPG"`` or its numeric
+    value. Codes are case-sensitive and used exactly as given, so ``"mjpg"`` is
+    a different format from ``"MJPG"``. An invalid ``fourcc`` is logged and
+    skipped, and a ``fourcc`` the device rejects is logged as a warning. When
+    ``fourcc`` or ``fps`` is requested, the effective format is read back and
+    logged.
 
     Args:
         stream (cv2.VideoCapture): Opened capture to configure.
@@ -50,15 +53,23 @@ def apply_capture_properties(
         return
 
     for property_id, value in _order_capture_properties(properties=properties):
-        if property_id.lower() == FOURCC_PROPERTY:
-            value = _parse_fourcc(value)
-            if value is None:
+        is_fourcc = property_id.lower() == FOURCC_PROPERTY
+        if is_fourcc:
+            parsed_fourcc = parse_fourcc(value)
+            if parsed_fourcc is None:
+                logger.warning(
+                    f"Ignoring invalid fourcc video source property: {value!r}. "
+                    "Expected a case-sensitive four-character code (e.g. 'MJPG') "
+                    "or its numeric value."
+                )
                 continue
+            value = parsed_fourcc
         cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
         if not stream.set(cv2_id, value):
-            logger.debug(
-                f"Video source did not accept property {property_id}={value!r}"
-            )
+            # A rejected fourcc leaves the device in its default pixel format,
+            # which usually caps the frame rate, so it is surfaced by default.
+            log = logger.warning if is_fourcc else logger.debug
+            log(f"Video source did not accept property {property_id}={value!r}")
 
     requested_ids = {property_id.lower() for property_id in properties}
     if requested_ids & {FOURCC_PROPERTY, FPS_PROPERTY}:
@@ -83,8 +94,17 @@ def _order_capture_properties(
     return ordered_properties
 
 
-def _parse_fourcc(value: Any) -> Optional[int]:
-    """Return the numeric FOURCC for ``value``, or ``None`` when it is invalid."""
+def parse_fourcc(value: Any) -> Optional[int]:
+    """Return the numeric FOURCC for ``value``, or ``None`` when it is invalid.
+
+    Args:
+        value (Any): A case-sensitive four-character ASCII code (e.g. ``"MJPG"``)
+            or a non-negative integral number, possibly given as a string.
+
+    Returns:
+        Optional[int]: The FOURCC as an integer, or ``None`` if ``value`` is not
+            a valid code.
+    """
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if math.isfinite(value) and value >= 0 and int(value) == value:
             return int(value)
@@ -92,15 +112,12 @@ def _parse_fourcc(value: Any) -> Optional[int]:
         # FOURCC codes are case-sensitive (avc1) and may end in a space (Y16 ), so a
         # four-character value is used exactly as given; only other lengths are trimmed.
         code = value if len(value) == 4 else value.strip()
-        if code.isdigit():
+        # isdigit() alone accepts characters such as "²" that int() rejects.
+        if code.isascii() and code.isdigit():
             return int(code)
         if len(code) == 4 and code.isascii():
             return cv2.VideoWriter_fourcc(*code)
 
-    logger.warning(
-        f"Ignoring invalid fourcc video source property: {value!r}. Expected a "
-        "four-character code (e.g. 'MJPG') or its numeric value."
-    )
     return None
 
 

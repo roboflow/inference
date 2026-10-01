@@ -6,6 +6,7 @@ from streamvision.camera.buffer_strategies import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
 )
+from streamvision.camera.capture_properties import FOURCC_PROPERTY, parse_fourcc
 from streamvision.camera.source_reference_validation import validate_video_references
 from streamvision.stream.environment import (
     ALLOW_UNSAFE_GSTREAMER_PIPELINES,
@@ -77,20 +78,25 @@ class VideoConfiguration(BaseModel):
     @classmethod
     def validate_video_source_properties(cls, value):
         # Every property is numeric except ``fourcc``, which may also be given
-        # as a four-character code such as "MJPG".
+        # as a case-sensitive four-character code such as "MJPG".
         if not isinstance(value, dict):
             return value
 
         validated = {}
         for property_id, property_value in value.items():
+            is_fourcc = (
+                isinstance(property_id, str) and property_id.lower() == FOURCC_PROPERTY
+            )
+            if is_fourcc and parse_fourcc(property_value) is None:
+                raise ValueError(
+                    f"Video source property {property_id!r} must be a "
+                    "case-sensitive four-character code (e.g. 'MJPG') or its "
+                    f"numeric value, got {property_value!r}."
+                )
             try:
                 validated[property_id] = float(property_value)
             except (TypeError, ValueError):
-                if not (
-                    isinstance(property_id, str)
-                    and property_id.lower() == "fourcc"
-                    and isinstance(property_value, str)
-                ):
+                if not (is_fourcc and isinstance(property_value, str)):
                     raise ValueError(
                         f"Video source property {property_id!r} must be a "
                         f"number, got {property_value!r}."
