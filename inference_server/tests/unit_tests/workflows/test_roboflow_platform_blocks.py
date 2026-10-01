@@ -20,6 +20,7 @@ from roboflow_workflows.prototypes.platform_errors import (
 )
 
 from inference_server.workflows import host
+from inference_server.workflows.errors import with_workflow_errors
 from tests.unit_tests.legacy.conftest import FakeGateway
 
 ROBOFLOW_PLATFORM_BLOCKS = {
@@ -483,3 +484,97 @@ def test_offline_mode_refuses_generic_platform_posts(monkeypatch) -> None:
             host.PLATFORM_CLIENT.post("x/y", api_key="k", payload={"a": 1})
 
     assert m.call_count == 0
+
+
+def _raw_response(status_code: int, content: bytes) -> requests.Response:
+    response = requests.Response()
+    response.status_code = status_code
+    response._content = content
+    response.url = API_URL
+
+    return response
+
+
+@pytest.mark.parametrize(
+    "platform_response, status, message",
+    [
+        (
+            _raw_response(401, b"{}"),
+            401,
+            "Unauthorized access to roboflow API - check API key and make sure the "
+            "key is valid for workspace you use. Visit "
+            "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+            "to learn how to retrieve one.",
+        ),
+        (
+            _raw_response(402, b"{}"),
+            402,
+            "Not enough credits to perform this request. Verify your workspace "
+            "billing page.",
+        ),
+        (
+            _raw_response(403, b"{}"),
+            403,
+            "Unauthorized access to roboflow API - check API key and make sure the "
+            "key is valid and have required scopes. Visit "
+            "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+            "to learn how to retrieve one.",
+        ),
+        (
+            _raw_response(404, b"{}"),
+            404,
+            "Requested Roboflow resource not found. Make sure that workspace, "
+            "project or model you referred in request exists.",
+        ),
+        (
+            _raw_response(423, b"{}"),
+            423,
+            "Roboflow API usage is paused. Please contact your workspace "
+            "administrator to re-enable api keys.",
+        ),
+        (
+            _raw_response(500, b"{}"),
+            502,
+            "Internal error. Request to Roboflow API failed.",
+        ),
+        (
+            _raw_response(200, b"not json"),
+            502,
+            "Internal error. Request to Roboflow API failed.",
+        ),
+        (
+            _raw_response(200, b"{}"),
+            502,
+            "Internal error. Request to Roboflow API failed.",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_workspace_lookup_failure_is_mapped_by_the_workflow_error_decorator(
+    platform_response, status, message
+) -> None:
+    @with_workflow_errors
+    async def handler():
+        return _RecordingPlatformClient().get_roboflow_workspace(api_key="my-key")
+
+    with mock.patch.object(host.requests, "get", return_value=platform_response):
+        response = await handler()
+
+    assert response.status_code == status
+    assert json.loads(response.body) == {"message": message}
+
+
+@pytest.mark.asyncio
+async def test_workspace_lookup_without_key_is_mapped_by_the_workflow_error_decorator() -> (
+    None
+):
+    @with_workflow_errors
+    async def handler():
+        return _RecordingPlatformClient().get_roboflow_workspace(api_key="")
+
+    response = await handler()
+
+    assert response.status_code == 502
+    assert json.loads(response.body) == {
+        "message": "Internal error. Request to Roboflow API failed."
+    }

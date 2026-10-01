@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import requests
 from PIL import Image
 
 from inference_models.errors import UnauthorizedModelAccessError
@@ -268,6 +269,129 @@ def test_describe_interface_requires_key(legacy_client):
 
     assert response.status_code == 400
     assert "API key is missing" in response.json()["message"]
+
+
+MISSING_API_KEY = (
+    "Required Roboflow API key is missing. Visit "
+    "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+    "to learn how to retrieve one."
+)
+
+
+@pytest.mark.parametrize(
+    "path,payload",
+    [
+        ("/ws/workflows/wf/describe_interface", {}),
+        ("/workflows/describe_interface", {"specification": PASSTHROUGH_WF}),
+        ("/ws/workflows/wf/describe_workload", {}),
+        ("/workflows/describe_workload", {"specification": PASSTHROUGH_WF}),
+    ],
+)
+def test_describe_route_without_key_answers_like_legacy(legacy_client, path, payload):
+    response = legacy_client(FakeGateway()).post(path, json=payload)
+
+    assert response.status_code == 400
+    assert response.json() == {"message": MISSING_API_KEY}
+
+
+UNAUTHORIZED = (
+    "Unauthorized access to roboflow API - check API key and make sure the key is "
+    "valid for workspace you use. Visit "
+    "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+    "to learn how to retrieve one."
+)
+PAYMENT_REQUIRED = (
+    "Not enough credits to perform this request. Verify your workspace billing page."
+)
+FORBIDDEN = (
+    "Unauthorized access to roboflow API - check API key and make sure the key is "
+    "valid and have required scopes. Visit "
+    "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+    "to learn how to retrieve one."
+)
+NOT_FOUND = (
+    "Requested Roboflow resource not found. Make sure that workspace, project or "
+    "model you referred in request exists."
+)
+USAGE_PAUSED = (
+    "Roboflow API usage is paused. Please contact your workspace administrator to "
+    "re-enable api keys."
+)
+REQUEST_FAILED = "Internal error. Request to Roboflow API failed."
+INTERNAL_ERROR = "Internal error."
+
+
+def _platform_response(status_code, content):
+    response = requests.Response()
+    response.status_code = status_code
+    response._content = content
+
+    return response
+
+
+@pytest.mark.parametrize(
+    "platform_status,platform_content,status,message",
+    [
+        (401, b'{"message": "platform text"}', 401, UNAUTHORIZED),
+        (402, b'{"message": "platform text"}', 402, PAYMENT_REQUIRED),
+        (403, b'{"message": "platform text"}', 403, FORBIDDEN),
+        (404, b'{"message": "platform text"}', 404, NOT_FOUND),
+        (423, b'{"message": "platform text"}', 423, USAGE_PAUSED),
+        (400, b'{"message": "platform text"}', 502, REQUEST_FAILED),
+        (429, b'{"message": "platform text"}', 502, REQUEST_FAILED),
+        (500, b'{"message": "platform text"}', 502, REQUEST_FAILED),
+        (503, b"", 502, REQUEST_FAILED),
+        (504, b"", 502, REQUEST_FAILED),
+        (200, b"not json", 502, REQUEST_FAILED),
+        (200, b"{}", 502, REQUEST_FAILED),
+        (200, b"[]", 502, REQUEST_FAILED),
+        (200, b'"abc"', 502, REQUEST_FAILED),
+        (200, b'"a workflow"', 500, INTERNAL_ERROR),
+        (200, b"null", 500, INTERNAL_ERROR),
+        (200, b"5", 500, INTERNAL_ERROR),
+        (200, b'{"workflow": null}', 500, INTERNAL_ERROR),
+        (200, b'{"workflow": 5}', 500, INTERNAL_ERROR),
+        (200, b'{"workflow": []}', 502, REQUEST_FAILED),
+        (200, b'{"workflow": "abc"}', 502, REQUEST_FAILED),
+        (200, b'{"workflow": "a config"}', 502, REQUEST_FAILED),
+        (200, b'{"workflow": ["config"]}', 502, REQUEST_FAILED),
+        (200, b'{"workflow": {}}', 502, REQUEST_FAILED),
+        (200, b'{"workflow": {"config": null}}', 502, REQUEST_FAILED),
+        (200, b'{"workflow": {"config": 5}}', 502, REQUEST_FAILED),
+        (200, b'{"workflow": {"config": "[]"}}', 502, REQUEST_FAILED),
+        (200, b'{"workflow": {"config": "not json"}}', 502, REQUEST_FAILED),
+        (200, b'{"workflow": {"config": "{}"}}', 502, REQUEST_FAILED),
+        (
+            200,
+            b'{"workflow": {"config": "{\\"specification\\": 1}"}}',
+            502,
+            REQUEST_FAILED,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/ws/workflows/wf",
+        "/ws/workflows/wf/describe_interface",
+        "/ws/workflows/wf/describe_workload",
+    ],
+)
+def test_workflow_definition_fetch_failure_answers_like_legacy(
+    legacy_client, monkeypatch, path, platform_status, platform_content, status, message
+):
+    monkeypatch.setattr(
+        host,
+        "_platform_request",
+        lambda *args, **kwargs: _platform_response(platform_status, platform_content),
+    )
+
+    response = legacy_client(FakeGateway()).post(
+        path, json={"api_key": "k", "use_cache": False, "inputs": {}}
+    )
+
+    assert response.status_code == status, response.text
+    assert response.json() == {"message": message}
 
 
 def test_schema_route_gzips_when_requested(legacy_client):

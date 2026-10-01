@@ -395,7 +395,6 @@ from roboflow_workflows.prototypes.platform_errors import (  # noqa: E402
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
-    RoboflowAPIRequestError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
 )
@@ -424,13 +423,23 @@ from inference_server.framework.model_stat import _TtlLruCache  # noqa: E402
 from inference_server.legacy import bridge as legacy_bridge  # noqa: E402
 from inference_server.legacy.bridge import LoopBridge  # noqa: E402
 from inference_server.legacy.errors import (  # noqa: E402
+    MODEL_ACCESS_ERROR_MESSAGES,
+    NOT_FOUND_MESSAGE,
+    REGISTRY_REQUEST_FAILED_MESSAGE,
     REGISTRY_UNREACHABLE_MESSAGE,
+    UNAUTHORIZED_MESSAGE,
     LegacyHTTPError,
 )
 from inference_server.platform_http import (  # noqa: E402
     API_REQUEST_TIMEOUT_S,
     _add_params_to_url,
     _platform_request,
+)
+from inference_server.workflows.errors import (  # noqa: E402
+    MalformedRoboflowAPIResponseError,
+    PaymentRequiredError,
+    RoboflowAPIUsagePausedError,
+    WorkspaceLoadError,
 )
 
 _URL_FETCH_BRIDGE_TIMEOUT_S = URL_FETCH_TIMEOUT_S + 5
@@ -527,7 +536,7 @@ _FORBIDDEN_MESSAGE = (
 _PLATFORM_API_ERRORS: Dict[int, Tuple[type, str]] = {
     401: (RoboflowAPINotAuthorizedError, _NOT_AUTHORIZED_MESSAGE),
     402: (
-        RoboflowAPIUnsuccessfulRequestError,
+        PaymentRequiredError,
         "Not enough credits to perform this request. Verify your workspace billing page.",
     ),
     403: (RoboflowAPIForbiddenError, _FORBIDDEN_MESSAGE),
@@ -538,10 +547,17 @@ _PLATFORM_API_ERRORS: Dict[int, Tuple[type, str]] = {
         "the correct permissions.",
     ),
     423: (
-        RoboflowAPIUnsuccessfulRequestError,
+        RoboflowAPIUsagePausedError,
         "Roboflow API usage is paused. Please contact your workspace administrator "
         "to re-enable api keys.",
     ),
+}
+
+
+_WORKFLOW_FETCH_FAILURE_MESSAGES = {
+    401: UNAUTHORIZED_MESSAGE,
+    404: NOT_FOUND_MESSAGE,
+    **MODEL_ACCESS_ERROR_MESSAGES,
 }
 
 
@@ -580,7 +596,7 @@ def _translate_platform_api_errors(
             f"Unsuccessful request to Roboflow API with response code: {status_code}"
         ) from error
     except (requests.exceptions.InvalidJSONError, ValueError) as error:
-        raise RoboflowAPIRequestError(
+        raise MalformedRoboflowAPIResponseError(
             "Could not decode JSON response from Roboflow API."
         ) from error
 
@@ -688,9 +704,7 @@ class ServerRoboflowPlatformClient:
 
     def get_roboflow_workspace(self, api_key: str) -> str:
         if not api_key:
-            raise RoboflowAPIRequestError(
-                "Empty workspace encountered, check your API key."
-            )
+            raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
         cache_key = sha256(api_key.encode("utf-8")).hexdigest()
         with _WORKSPACE_CACHE_LOCK:
             cached_workspace_id = _WORKSPACE_CACHE.get(cache_key)
@@ -722,9 +736,7 @@ class ServerRoboflowPlatformClient:
         if not isinstance(workspace_id, str) or not _WORKSPACE_ID_PATTERN.fullmatch(
             workspace_id
         ):
-            raise RoboflowAPIRequestError(
-                "Empty workspace encountered, check your API key."
-            )
+            raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
         return workspace_id
 
     def add_custom_metadata(
@@ -1072,6 +1084,14 @@ def _local_workflow_response(workflow_id: str) -> dict:
             os.close(descriptor)
 
 
+def _workflow_fetch_failure(status_code: int) -> LegacyHTTPError:
+    message = _WORKFLOW_FETCH_FAILURE_MESSAGES.get(status_code)
+    if message is None:
+        return LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE)
+
+    return LegacyHTTPError(status_code, message)
+
+
 def _fetch_workflow_response(
     api_key: Optional[str],
     workspace_id: str,
@@ -1094,10 +1114,13 @@ def _fetch_workflow_response(
         timeout=API_REQUEST_TIMEOUT_S,
     )
     if not _is_successful(response):
-        raise LegacyHTTPError(
-            response.status_code, _api_error_message(response, api_key)
-        )
-    return response.json()
+        raise _workflow_fetch_failure(response.status_code)
+    try:
+        payload = response.json()
+    except ValueError as error:
+        raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE) from error
+
+    return payload
 
 
 def get_workflow_specification(
@@ -1124,6 +1147,8 @@ def get_workflow_specification(
             workflow_id=workflow_id,
             workflow_version_id=workflow_version_id,
         )
+    if "workflow" not in response or "config" not in response["workflow"]:
+        raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE)
     try:
         raw_config = response["workflow"]["config"]
         config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
@@ -1131,9 +1156,7 @@ def get_workflow_specification(
         if not isinstance(specification, dict):
             raise TypeError("Workflow specification must be a dictionary")
     except (KeyError, TypeError, ValueError) as error:
-        raise LegacyHTTPError(
-            502, "Could not find workflow specification in API response"
-        ) from error
+        raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE) from error
     specification["id"] = response["workflow"].get("id")
     if use_cache:
         WORKFLOWS_CACHE.set(

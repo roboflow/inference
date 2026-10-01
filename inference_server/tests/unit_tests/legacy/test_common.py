@@ -99,7 +99,7 @@ def test_decode_inline_image_numpy_object_becomes_npy_bytes_when_not_allowed():
 def test_decode_inline_image_pickled_numpy_refused():
     with pytest.raises(LegacyHTTPError) as exc:
         decode_inline_image({"type": "numpy", "value": b"x"}, ndarray_ok=False)
-    assert exc.value.status_code == 501
+    assert exc.value.status_code == 400
 
 
 @pytest.mark.asyncio

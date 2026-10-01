@@ -49,8 +49,9 @@ from inference_server.workflows.models_provider import GatewayModelsProvider
 router = APIRouter(tags=["workflows"])
 
 MISSING_API_KEY_MESSAGE = (
-    "Required Roboflow API key is missing. Pass it as the `api_key` field of the "
-    "request payload or as the `Authorization: Bearer <api_key>` header."
+    "Required Roboflow API key is missing. Visit "
+    "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+    "to learn how to retrieve one."
 )
 
 

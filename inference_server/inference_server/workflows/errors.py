@@ -13,6 +13,7 @@ from roboflow_workflows.prototypes.platform_errors import (
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIRequestError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
 )
@@ -30,6 +31,22 @@ from inference_server.legacy.errors import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class PaymentRequiredError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
+class RoboflowAPIUsagePausedError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
+class MalformedRoboflowAPIResponseError(RoboflowAPIRequestError):
+    pass
+
+
+class WorkspaceLoadError(RoboflowAPIRequestError):
+    pass
 
 
 def with_workflow_errors(fn: Callable) -> Callable:
@@ -58,13 +75,24 @@ def with_workflow_errors(fn: Callable) -> Callable:
 def _platform_error_payload(error: BaseException) -> Optional[Tuple[int, dict]]:
     if isinstance(error, RoboflowAPINotAuthorizedError):
         return 401, {"message": UNAUTHORIZED_MESSAGE}
+    if isinstance(error, PaymentRequiredError):
+        return 402, {"message": MODEL_ACCESS_ERROR_MESSAGES[402]}
     if isinstance(error, RoboflowAPIForbiddenError):
         return 403, {"message": MODEL_ACCESS_ERROR_MESSAGES[403]}
+    if isinstance(error, RoboflowAPIUsagePausedError):
+        return 423, {"message": MODEL_ACCESS_ERROR_MESSAGES[423]}
     if isinstance(error, RoboflowAPINotNotFoundError):
         return 404, {"message": NOT_FOUND_MESSAGE}
     if isinstance(error, WorkflowsInvalidEnvironmentValueError):
         return 500, {"message": SERVICE_MISCONFIGURATION_MESSAGE}
-    if isinstance(error, RoboflowAPIUnsuccessfulRequestError):
+    if isinstance(
+        error,
+        (
+            MalformedRoboflowAPIResponseError,
+            RoboflowAPIUnsuccessfulRequestError,
+            WorkspaceLoadError,
+        ),
+    ):
         return 502, {"message": REGISTRY_REQUEST_FAILED_MESSAGE}
     if isinstance(error, RoboflowAPIConnectionError):
         return 503, {"message": REGISTRY_UNREACHABLE_MESSAGE}

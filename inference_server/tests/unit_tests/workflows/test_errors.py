@@ -24,7 +24,13 @@ from roboflow_workflows.prototypes.platform_errors import (
 
 from inference_models.errors import ModelInputError, ModelLoadingError
 
-from inference_server.workflows.errors import with_workflow_errors
+from inference_server.workflows.errors import (
+    MalformedRoboflowAPIResponseError,
+    PaymentRequiredError,
+    RoboflowAPIUsagePausedError,
+    WorkspaceLoadError,
+    with_workflow_errors,
+)
 
 
 @pytest.mark.asyncio
@@ -134,6 +140,32 @@ NOT_FOUND = (
             {"message": "Timeout when attempting to connect to Roboflow API."},
         ),
         (RoboflowAPIRequestError("x"), 500, {"message": "Internal error."}),
+        (
+            PaymentRequiredError("x"),
+            402,
+            {
+                "message": "Not enough credits to perform this request. Verify "
+                "your workspace billing page."
+            },
+        ),
+        (
+            RoboflowAPIUsagePausedError("x"),
+            423,
+            {
+                "message": "Roboflow API usage is paused. Please contact your "
+                "workspace administrator to re-enable api keys."
+            },
+        ),
+        (
+            MalformedRoboflowAPIResponseError("x"),
+            502,
+            {"message": "Internal error. Request to Roboflow API failed."},
+        ),
+        (
+            WorkspaceLoadError("x"),
+            502,
+            {"message": "Internal error. Request to Roboflow API failed."},
+        ),
         (
             ModelLoadingError("broken"),
             500,

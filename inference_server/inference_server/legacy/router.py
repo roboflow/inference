@@ -27,6 +27,7 @@ from inference_server.legacy.bridge import (
 )
 from inference_server.legacy.common import (
     as_image_list,
+    image_load_error,
     load_request_images,
     orjson_response,
     resolve_api_key,
@@ -156,11 +157,11 @@ _CORE_MODEL_ROUTER_GROUPS = (
 )
 
 _VISUALIZATION_FORMATS = ("image", "image_and_json")
-_CONTENT_TYPE_MISSING_MESSAGE = "Request must include a Content-Type header"
+_CONTENT_TYPE_MISSING_MESSAGE = "Content-Type header not provided with request."
+_CONTENT_TYPE_INVALID_MESSAGE = "Invalid Content-Type header provided with request."
 _MULTIPART_PART_MISSING_MESSAGE = (
     "Expected image to be send in part named 'file' of multipart/form-data request"
 )
-_EMPTY_BODY_MESSAGE = "Image not found in request body."
 _YOLO_WORLD_UNSUPPORTED_MESSAGE = (
     "YOLO-World is not supported by this inference server configuration."
 )
@@ -649,23 +650,26 @@ async def infer_owlv2(request: Request) -> Response:
 async def _catch_all_image(
     request: Request, image: Optional[str], image_type: Optional[str]
 ) -> InferenceRequestImage:
+    content_type = request.headers.get("Content-Type")
+    part = None
+    if content_type is not None and "multipart/form-data" in content_type:
+        form = await request.form()
+        if "file" not in form:
+            raise image_load_error(_MULTIPART_PART_MISSING_MESSAGE)
+        part = form["file"]
     if image is not None:
         return InferenceRequestImage(type="url", value=image)
-    content_type = request.headers.get("Content-Type")
     if content_type is None:
         raise LegacyHTTPError(400, _CONTENT_TYPE_MISSING_MESSAGE)
-    if "multipart/form-data" in content_type:
-        form = await request.form()
-        part = form.get("file")
-        if part is None:
-            raise LegacyHTTPError(400, _MULTIPART_PART_MISSING_MESSAGE)
-        data = await part.read() if isinstance(part, UploadFile) else part.encode()
+    if isinstance(part, UploadFile):
+        data = await part.read()
         return InferenceRequestImage(
             type="base64", value=base64.b64encode(data).decode("ascii")
         )
+    if part is not None:
+        raise LegacyHTTPError(400, _CONTENT_TYPE_INVALID_MESSAGE)
+
     body = await request.body()
-    if not body:
-        raise LegacyHTTPError(400, _EMPTY_BODY_MESSAGE)
     return InferenceRequestImage(type=image_type, value=body)
 
 

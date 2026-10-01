@@ -196,6 +196,7 @@ async def fetch_image_from_url(
                     current
                 )
                 if destination_error is not None:
+                    destination_error.failed_url = current
                     return None, destination_error
                 host, addresses = validated
                 pinned[host] = addresses

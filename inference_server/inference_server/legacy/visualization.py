@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
 
 from inference_server.legacy.bridge import Route
-from inference_server.legacy.common import ImagePayload
+from inference_server.legacy.common import ImagePayload, image_load_error
 from inference_server.legacy.errors import LegacyHTTPError
 
 DEFAULT_COLOR_PALETTE = [
@@ -27,7 +27,7 @@ DEFAULT_COLOR_PALETTE = [
 _FALLBACK_COLOR = "#4892EA"
 _JPEG_QUALITY = 90
 _NPY_MAGIC = b"\x93NUMPY"
-_IMAGE_ERROR = "Could not load valid image from request."
+_IMAGE_ERROR = "Malformed base64 input image."
 _DETECTION_TASK_TYPES = frozenset(
     [
         "object-detection",
@@ -88,7 +88,7 @@ def payload_to_rgb(payload: ImagePayload) -> np.ndarray:
     else:
         image_bgr = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
     if image_bgr is None:
-        raise LegacyHTTPError(400, _IMAGE_ERROR)
+        raise image_load_error(_IMAGE_ERROR)
     return cv2.cvtColor(np.asarray(image_bgr, dtype=np.uint8), cv2.COLOR_BGR2RGB)
 
 
