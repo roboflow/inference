@@ -14,6 +14,7 @@ from fastapi import (
     Response,
 )
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
@@ -824,28 +825,31 @@ async def legacy_infer_from_request(
         extra_args = {"keypoint_confidence": keypoint_confidence}
     elif route.task_type == "semantic-segmentation":
         request_type = SemanticSegmentationInferenceRequest
-    inference_request = request_type(
-        api_key=resolved_key,
-        model_id=model_id,
-        image=request_image,
-        confidence=confidence,
-        iou_threshold=overlap,
-        max_detections=max_detections,
-        visualization_labels=labels,
-        visualization_stroke_width=stroke,
-        visualize_predictions=format in _VISUALIZATION_FORMATS,
-        disable_preproc_auto_orient=disable_preproc_auto_orient,
-        disable_preproc_contrast=disable_preproc_contrast,
-        disable_preproc_grayscale=disable_preproc_grayscale,
-        disable_preproc_static_crop=disable_preproc_static_crop,
-        disable_active_learning=disable_active_learning,
-        active_learning_target_dataset=active_learning_target_dataset,
-        source=source,
-        source_info=source_info,
-        usage_billable=countinference,
-        disable_model_monitoring=disable_model_monitoring,
-        **extra_args,
-    )
+    try:
+        inference_request = request_type(
+            api_key=resolved_key,
+            model_id=model_id,
+            image=request_image,
+            confidence=confidence,
+            iou_threshold=overlap,
+            max_detections=max_detections,
+            visualization_labels=labels,
+            visualization_stroke_width=stroke,
+            visualize_predictions=format in _VISUALIZATION_FORMATS,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
+            source=source,
+            source_info=source_info,
+            usage_billable=countinference,
+            disable_model_monitoring=disable_model_monitoring,
+            **extra_args,
+        )
+    except ValidationError as error:
+        raise LegacyHTTPError(400, str(error)) from error
     return await _infer_and_repack(
         inference_request,
         bridge,

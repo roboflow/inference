@@ -701,10 +701,13 @@ def build_embedding_calls(
     max_batch_size = configuration.CLIP_MAX_BATCH_SIZE
     if action == "embed_images":
         if isinstance(request.image, list):
+            if not request.image:
+                raise LegacyHTTPError(400, "At least one image is required")
             if len(request.image) > max_batch_size:
-                raise ValueError(
+                raise LegacyHTTPError(
+                    400,
                     f"The maximum number of images that can be embedded at once is "
-                    f"{max_batch_size}"
+                    f"{max_batch_size}",
                 )
             images = request.image
         else:
@@ -712,11 +715,13 @@ def build_embedding_calls(
         return [_embed_image_call(image) for image in images], None
     if action == "embed_text":
         texts = request.text if isinstance(request.text, list) else [request.text]
+        if not texts:
+            raise LegacyHTTPError(400, "At least one text is required")
         return [_embed_text_call(texts)], None
     if action != "compare":
         raise LegacyHTTPError(501, f"Embedding action '{action}' is not supported.")
     if request.subject_type not in ("image", "text"):
-        raise ValueError("subject_type must be either 'image' or 'text'")
+        raise LegacyHTTPError(400, "subject_type must be either 'image' or 'text'")
     prompt = request.prompt
     prompt_keys = None
     if isinstance(prompt, dict) and not ("type" in prompt and "value" in prompt):
@@ -724,10 +729,13 @@ def build_embedding_calls(
         prompt = [prompt[key] for key in prompt_keys]
     elif not isinstance(prompt, list):
         prompt = [prompt]
+    if not prompt:
+        raise LegacyHTTPError(400, "At least one prompt is required")
     if len(prompt) > max_batch_size:
-        raise ValueError(
+        raise LegacyHTTPError(
+            400,
             f"The maximum number of prompts that can be compared at once is "
-            f"{max_batch_size}"
+            f"{max_batch_size}",
         )
     if request.subject_type == "image":
         calls = [_embed_image_call(request.subject)]
@@ -738,7 +746,7 @@ def build_embedding_calls(
     elif request.prompt_type == "text":
         calls.append(_embed_text_call(prompt))
     else:
-        raise ValueError("prompt_type must be either 'image' or 'text'")
+        raise LegacyHTTPError(400, "prompt_type must be either 'image' or 'text'")
     return calls, prompt_keys
 
 
@@ -948,7 +956,9 @@ def _build_sam_segment_params(request: Any, api_key: Optional[str]) -> dict:
     image = getattr(request, "image", None)
     image_id = getattr(request, "image_id", None)
     if not image and not image_id:
-        raise ValueError("Must provide either image, cached image_id, or embeddings")
+        raise LegacyHTTPError(
+            400, "Must provide either image, cached image_id, or embeddings"
+        )
     params: dict = {"multi_mask_output": False}
     if getattr(request, "has_mask_input", False):
         if getattr(request, "mask_input", None) is not None:
@@ -960,7 +970,9 @@ def _build_sam_segment_params(request: Any, api_key: Optional[str]) -> dict:
                 "inference_server.",
             )
         if not image_id:
-            raise ValueError("Must provide either mask_input or cached image_id")
+            raise LegacyHTTPError(
+                400, "Must provide either mask_input or cached image_id"
+            )
         params["enforce_mask_input"] = True
     point_coords = getattr(request, "point_coords", None)
     if point_coords is not None:
@@ -972,14 +984,14 @@ def _build_sam_segment_params(request: Any, api_key: Optional[str]) -> dict:
         params["image_hashes"] = [namespace_client_hash_id(image_id, api_key)]
     response_format = getattr(request, "format", None)
     if response_format != "json":
-        raise ValueError(f"Invalid format {response_format}")
+        raise LegacyHTTPError(400, f"Invalid format {response_format}")
     return params
 
 
 def _build_sam2_segment_params(request: Any, api_key: Optional[str]) -> dict:
     response_format = getattr(request, "format", None)
     if response_format not in ("json", "rle"):
-        raise ValueError(f"Invalid format {response_format}")
+        raise LegacyHTTPError(400, f"Invalid format {response_format}")
     params = _build_visual_prompt_params(request, api_key)
     if not any(key in params for key in ("point_coordinates", "point_labels", "boxes")):
         params["point_coordinates"] = [[[0, 0]]]

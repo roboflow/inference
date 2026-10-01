@@ -110,8 +110,9 @@ def test_embedding_calls_for_images_are_one_per_image():
 def test_embedding_calls_enforce_max_batch_size(monkeypatch):
     monkeypatch.setattr("inference_server.configuration.CLIP_MAX_BATCH_SIZE", 1)
     req = ClipImageEmbeddingRequest(image=[IMG, IMG])
-    with pytest.raises(ValueError):
+    with pytest.raises(LegacyHTTPError) as caught:
         build_embedding_calls("embed_images", req)
+    assert caught.value.status_code == 400
 
 
 def test_repack_embeddings_stacks_results():
