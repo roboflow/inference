@@ -1,9 +1,12 @@
 import asyncio
+import contextvars
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
 
+from inference_server.legacy import bridge as bridge_mod
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
     LoopBridge,
@@ -251,6 +254,220 @@ async def test_sync_bridge_runs_from_plain_thread_pool_worker(fake_stat):
     assert result.task_type == "object-detection"
     with pytest.raises(RuntimeError):
         sync.resolve("ds/1", None)
+
+
+class _StampingGateway(FakeGateway):
+    def __init__(self, clock, **kwargs):
+        super().__init__(**kwargs)
+        self.clock = clock
+
+    async def ensure_loaded(self, model_id, instance="", api_key="", device=""):
+        fresh = model_id not in self.loaded
+        result = await super().ensure_loaded(model_id, instance, api_key, device)
+        if fresh:
+            self.loaded[model_id]["loaded_monotonic"] = self.clock["now"]
+        return result
+
+
+@pytest.fixture
+def server_loop():
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    yield loop, thread
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join(timeout=5)
+    loop.close()
+
+
+def test_sync_bridge_records_the_request_on_the_loop_thread(
+    fake_stat, monkeypatch, server_loop
+):
+    loop, loop_thread = server_loop
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    recording_threads = []
+
+    def _clock():
+        recording_threads.append(threading.get_ident())
+        return 10.0
+
+    monkeypatch.setattr(bridge_mod, "_clock", _clock)
+    sync = SyncLegacyBridge(LegacyModelBridge(FakeGateway()), LoopBridge(loop))
+
+    def _step():
+        route = sync.resolve("ds/1", "k")
+        sync.record_request(route, "alias-1", "/workflows/run", alias="ds/1")
+        return route, bridge_mod._CURRENT_REQUEST.get()
+
+    route, current = contextvars.copy_context().run(_step)
+
+    assert route.requested_at == {"alias-1": 10.0}
+    assert route.request_paths_by_id == {"alias-1": {"/workflows/run": 10.0}}
+    assert route.request_aliases_by_id == {"alias-1": {"ds/1": 10.0}}
+    assert current == {
+        ("ds/1", "alias-1"): (route, "alias-1", "/workflows/run", "ds/1")
+    }
+    assert recording_threads == [loop_thread.ident]
+    assert loop_thread.ident != threading.get_ident()
+    assert bridge_mod._CURRENT_REQUEST.get() is None
+
+
+def test_sync_bridge_ignores_a_request_without_model_id(fake_stat, server_loop):
+    loop, _ = server_loop
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    sync = SyncLegacyBridge(LegacyModelBridge(FakeGateway()), LoopBridge(loop))
+
+    def _step():
+        route = sync.resolve("ds/1", "k")
+        sync.record_request(route, "", "/workflows/run")
+        return route, bridge_mod._CURRENT_REQUEST.get()
+
+    route, current = contextvars.copy_context().run(_step)
+
+    assert route.requested_at == {} and current is None
+
+
+def test_sync_bridge_row_survives_a_reload_triggered_by_a_later_infer(
+    fake_stat, monkeypatch, server_loop
+):
+    loop, _ = server_loop
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    clock = {"now": 10.0}
+    monkeypatch.setattr(bridge_mod, "_clock", lambda: clock["now"])
+    gateway = _StampingGateway(clock, predictions={("ds/1", "infer"): "pred"})
+    bridge = LegacyModelBridge(gateway)
+    sync = SyncLegacyBridge(bridge, LoopBridge(loop))
+
+    def _step():
+        route = sync.resolve("ds/1", "k")
+        sync.record_request(route, "ds/1", "/workflows/run")
+        gateway.loaded.pop("ds/1")
+        clock["now"] = 20.0
+        return sync.infer(route, "k", "infer", [ImagePayload(b"a", 1, 1)], {})
+
+    assert contextvars.copy_context().run(_step) == ["pred"]
+
+    routes = asyncio.run_coroutine_threadsafe(bridge.describe(), loop).result(5)
+    assert gateway.loaded["ds/1"]["loaded_monotonic"] == 20.0
+    assert [
+        (route.registry_id, route.requested_at, route.request_paths_by_id)
+        for route in routes
+    ] == [("ds/1", {"ds/1": 20.0}, {"ds/1": {"/workflows/run": 20.0}})]
+
+
+def _row(routes, registry_id):
+    return next(route for route in routes if route.registry_id == registry_id)
+
+
+def test_sync_bridge_does_not_refresh_an_earlier_model_when_a_later_one_loads(
+    fake_stat, monkeypatch, server_loop
+):
+    loop, _ = server_loop
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    fake_stat["ds/2"] = ("object-detection", "infer")
+    clock = {"now": 10.0}
+    monkeypatch.setattr(bridge_mod, "_clock", lambda: clock["now"])
+    gateway = _StampingGateway(clock)
+    bridge = LegacyModelBridge(gateway)
+    sync = SyncLegacyBridge(bridge, LoopBridge(loop))
+
+    def _step():
+        route_a = sync.resolve("ds/1", "k")
+        sync.record_request(route_a, "ds/1", "/workflows/run")
+        gateway.loaded["ds/1"]["loaded_monotonic"] = 15.0
+        clock["now"] = 20.0
+        route_b = sync.resolve("ds/2", "k")
+        sync.record_request(route_b, "ds/2", "/workflows/run")
+
+    contextvars.copy_context().run(_step)
+
+    routes = asyncio.run_coroutine_threadsafe(bridge.describe(), loop).result(5)
+    assert _row(routes, "ds/1").request_paths_by_id.get("ds/1", {}) == {}
+    assert _row(routes, "ds/2").request_paths_by_id == {
+        "ds/2": {"/workflows/run": 20.0}
+    }
+
+
+def test_sync_bridge_reload_of_an_earlier_model_keeps_its_row_and_leaves_others(
+    fake_stat, monkeypatch, server_loop
+):
+    loop, _ = server_loop
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    fake_stat["ds/2"] = ("object-detection", "infer")
+    clock = {"now": 10.0}
+    monkeypatch.setattr(bridge_mod, "_clock", lambda: clock["now"])
+    gateway = _StampingGateway(
+        clock, predictions={("ds/1", "infer"): "pred", ("ds/2", "infer"): "pred"}
+    )
+    bridge = LegacyModelBridge(gateway)
+    sync = SyncLegacyBridge(bridge, LoopBridge(loop))
+
+    def _step():
+        route_a = sync.resolve("ds/1", "k")
+        sync.record_request(route_a, "ds/1", "/workflows/run")
+        route_b = sync.resolve("ds/2", "k")
+        sync.record_request(route_b, "ds/2", "/workflows/run")
+        gateway.loaded.pop("ds/1")
+        clock["now"] = 20.0
+        return sync.infer(route_a, "k", "infer", [ImagePayload(b"a", 1, 1)], {})
+
+    assert contextvars.copy_context().run(_step) == ["pred"]
+
+    routes = asyncio.run_coroutine_threadsafe(bridge.describe(), loop).result(5)
+    assert _row(routes, "ds/1").request_paths_by_id == {
+        "ds/1": {"/workflows/run": 20.0}
+    }
+    assert _row(routes, "ds/2").request_paths_by_id == {
+        "ds/2": {"/workflows/run": 10.0}
+    }
+
+
+def test_sync_bridge_reload_keeps_every_id_requested_for_the_same_model(
+    fake_stat, monkeypatch, server_loop
+):
+    loop, _ = server_loop
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    clock = {"now": 10.0}
+    monkeypatch.setattr(bridge_mod, "_clock", lambda: clock["now"])
+    gateway = _StampingGateway(clock, predictions={("ds/1", "infer"): "pred"})
+    bridge = LegacyModelBridge(gateway)
+    sync = SyncLegacyBridge(bridge, LoopBridge(loop))
+
+    def _step():
+        route = sync.resolve("ds/1", "k")
+        sync.record_request(route, "ds/1", "/workflows/run")
+        sync.record_request(route, "alias-1", "/infer/object_detection")
+        gateway.loaded.pop("ds/1")
+        clock["now"] = 20.0
+        return sync.infer(route, "k", "infer", [ImagePayload(b"a", 1, 1)], {})
+
+    assert contextvars.copy_context().run(_step) == ["pred"]
+
+    routes = asyncio.run_coroutine_threadsafe(bridge.describe(), loop).result(5)
+    assert _row(routes, "ds/1").request_paths_by_id == {
+        "ds/1": {"/workflows/run": 20.0},
+        "alias-1": {"/infer/object_detection": 20.0},
+    }
+
+
+def test_recorded_requests_are_copy_on_write_across_contexts(fake_stat, server_loop):
+    loop, _ = server_loop
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    fake_stat["ds/2"] = ("object-detection", "infer")
+    sync = SyncLegacyBridge(LegacyModelBridge(FakeGateway()), LoopBridge(loop))
+
+    def _step():
+        route_a = sync.resolve("ds/1", "k")
+        sync.record_request(route_a, "ds/1", "/workflows/run")
+        snapshot = contextvars.copy_context()
+        route_b = sync.resolve("ds/2", "k")
+        sync.record_request(route_b, "ds/2", "/workflows/run")
+        return snapshot, bridge_mod._CURRENT_REQUEST.get()
+
+    snapshot, current = contextvars.copy_context().run(_step)
+
+    assert sorted(key for key in current) == [("ds/1", "ds/1"), ("ds/2", "ds/2")]
+    assert list(snapshot.run(bridge_mod._CURRENT_REQUEST.get)) == [("ds/1", "ds/1")]
 
 
 @pytest.mark.asyncio

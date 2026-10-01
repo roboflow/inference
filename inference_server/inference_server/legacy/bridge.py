@@ -38,9 +38,22 @@ logger = logging.getLogger(__name__)
 
 _ERR_NOT_LOADED = 6
 _CURRENT_REQUEST: contextvars.ContextVar[
-    Optional[tuple[Route, str, str, Optional[str]]]
+    Optional[dict[tuple[str, str], tuple[Route, str, str, Optional[str]]]]
 ] = contextvars.ContextVar("legacy_current_request", default=None)
 _SYNC_TIMEOUT_MARGIN_S = 30
+
+
+def _remember_request(
+    route: "Route", model_id_as_requested: str, path: str, alias: Optional[str]
+) -> None:
+    requests = dict(_CURRENT_REQUEST.get() or {})
+    requests[(route.registry_id, model_id_as_requested)] = (
+        route,
+        model_id_as_requested,
+        path,
+        alias,
+    )
+    _CURRENT_REQUEST.set(requests)
 
 
 @dataclass
@@ -207,7 +220,7 @@ class LegacyModelBridge:
         try:
             await self._ensure_loaded(route, api_key)
         finally:
-            self._refresh_current_request()
+            self._refresh_current_request(route.registry_id)
 
     async def _ensure_loaded(self, route: Route, api_key: Optional[str]) -> None:
         record_model_load(route.registry_id, cold_start=False, load_time_s=0.0)
@@ -267,7 +280,7 @@ class LegacyModelBridge:
                 record=record,
             )
         finally:
-            self._refresh_current_request()
+            self._refresh_current_request(route.registry_id)
         return results
 
     async def _infer(
@@ -419,7 +432,7 @@ class LegacyModelBridge:
         alias: Optional[str] = None,
     ) -> None:
         if model_id_as_requested:
-            _CURRENT_REQUEST.set((route, model_id_as_requested, path, alias))
+            _remember_request(route, model_id_as_requested, path, alias)
             recorded_at = _clock()
             route.requested_at[model_id_as_requested] = recorded_at
             paths = route.request_paths_by_id.setdefault(model_id_as_requested, {})
@@ -435,11 +448,11 @@ class LegacyModelBridge:
             model_id
         ] = _clock()
 
-    def _refresh_current_request(self) -> None:
-        current = _CURRENT_REQUEST.get()
-        if current is not None:
-            route, model_id_as_requested, path, alias = current
-            self.record_request(route, model_id_as_requested, path, alias=alias)
+    def _refresh_current_request(self, registry_id: str) -> None:
+        current = _CURRENT_REQUEST.get() or {}
+        for route, model_id_as_requested, path, alias in list(current.values()):
+            if route.registry_id == registry_id:
+                self.record_request(route, model_id_as_requested, path, alias=alias)
 
     def __contains__(self, model_id: str) -> bool:
         route = self._routes.get(model_id)
@@ -559,6 +572,16 @@ class SyncLegacyBridge:
 
     def fetch_image(self, url) -> bytes:
         return self._run(self._bridge.fetch_image(url))
+
+    def record_request(self, route, model_id_as_requested, path, *, alias=None) -> None:
+        if not model_id_as_requested:
+            return
+
+        _remember_request(route, model_id_as_requested, path, alias)
+        self._run(self._record_request(route, model_id_as_requested, path, alias))
+
+    async def _record_request(self, route, model_id_as_requested, path, alias) -> None:
+        self._bridge.record_request(route, model_id_as_requested, path, alias=alias)
 
     def __contains__(self, model_id) -> bool:
         return model_id in self._bridge

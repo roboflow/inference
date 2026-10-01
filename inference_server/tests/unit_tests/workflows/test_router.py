@@ -85,6 +85,101 @@ def test_run_workflow_with_object_detection_block(legacy_client, fake_stat):
     assert predictions["image"] == {"width": 8, "height": 6}
 
 
+def _od_gateway():
+    detections = SimpleNamespace(
+        xyxy=np.array([[1, 1, 3, 5]], dtype=float),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+    )
+    gateway = FakeGateway(
+        predictions={("ds/1", "infer"): detections},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
+    )
+    return gateway
+
+
+def _registry_rows(client):
+    return [
+        (model["model_id"], model["request_aliases"], model["request_paths"])
+        for model in client.get("/model/registry").json()["models"]
+    ]
+
+
+def test_run_workflow_records_the_step_model_under_the_request_path(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    client = legacy_client(_od_gateway())
+
+    response = client.post(
+        "/workflows/run",
+        json={
+            "specification": OD_WF,
+            "inputs": {"image": {"type": "base64", "value": _jpeg_b64()}},
+            "api_key": "k",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert _registry_rows(client) == [("ds/1", [], ["/workflows/run"])]
+
+
+def test_predefined_workflow_records_the_step_model_under_the_request_path(
+    legacy_client, fake_stat, monkeypatch
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    monkeypatch.setattr(
+        "inference_server.workflows.host.get_workflow_specification",
+        lambda **kwargs: OD_WF,
+    )
+    client = legacy_client(_od_gateway())
+
+    response = client.post(
+        "/ws/workflows/wf",
+        json={
+            "inputs": {"image": {"type": "base64", "value": _jpeg_b64()}},
+            "api_key": "k",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert _registry_rows(client) == [("ds/1", [], ["/ws/workflows/wf"])]
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/workflows/run", {"specification": PASSTHROUGH_WF, "inputs": {"x": 1}}),
+        ("/infer/workflows", {"specification": PASSTHROUGH_WF, "inputs": {"x": 1}}),
+        ("/ws/workflows/wf", {"inputs": {"x": 1}, "api_key": "k"}),
+        ("/infer/workflows/ws/wf", {"inputs": {"x": 1}, "api_key": "k"}),
+        ("/workflows/validate", PASSTHROUGH_WF),
+    ],
+)
+def test_workflow_routes_hand_the_provider_their_scope_path(
+    legacy_client, monkeypatch, path, body
+):
+    from inference_server.workflows import router as router_mod
+
+    request_paths = []
+
+    class _CapturingProvider(router_mod.GatewayModelsProvider):
+        def __init__(self, bridge, api_key, request_path=None):
+            request_paths.append(request_path)
+            super().__init__(bridge, api_key, request_path)
+
+    monkeypatch.setattr(router_mod, "GatewayModelsProvider", _CapturingProvider)
+    monkeypatch.setattr(
+        "inference_server.workflows.host.get_workflow_specification",
+        lambda **kwargs: PASSTHROUGH_WF,
+    )
+
+    response = legacy_client(FakeGateway()).post(path, json=body)
+
+    assert response.status_code == 200, response.text
+    assert request_paths == [path]
+
+
 def test_two_segment_workflow_paths_beat_catch_all(legacy_client):
     client = legacy_client(FakeGateway())
 

@@ -98,9 +98,15 @@ def _passed(**arguments: Any) -> Dict[str, Any]:
 class GatewayModelsProvider:
     """Implements roboflow_workflows.prototypes.models_provider.ModelsProvider on top of SyncLegacyBridge. One instance per workflow request."""
 
-    def __init__(self, bridge: SyncLegacyBridge, api_key: Optional[str]) -> None:
+    def __init__(
+        self,
+        bridge: SyncLegacyBridge,
+        api_key: Optional[str],
+        request_path: Optional[str] = None,
+    ) -> None:
         self._bridge = bridge
         self._api_key = api_key
+        self._request_path = request_path
         self._model_keys: Dict[str, Optional[str]] = {}
         self._routes: Dict[str, Route] = {}
         self._artifact_cache: Any = None
@@ -124,7 +130,12 @@ class GatewayModelsProvider:
         self._model_keys[model_id] = key
         if model_id_alias is not None:
             self._model_keys[model_id_alias] = key
-        self._resolve(model_id, key)
+        route = self._resolve(model_id, key)
+        row_key = model_id if model_id_alias is None else model_id_alias
+        alias = model_id if row_key != model_id else None
+        self._bridge.record_request(
+            route, row_key, self._request_path or "", alias=alias
+        )
 
     def _key_for(self, model_id: str, api_key: Optional[str] = None) -> Optional[str]:
         if api_key is not None:

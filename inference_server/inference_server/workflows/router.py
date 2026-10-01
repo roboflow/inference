@@ -58,7 +58,7 @@ def _models_provider(request: Request, api_key: Optional[str]) -> GatewayModelsP
     bridge = SyncLegacyBridge(
         request.app.state.legacy_bridge, request.app.state.loop_bridge
     )
-    return GatewayModelsProvider(bridge, api_key)
+    return GatewayModelsProvider(bridge, api_key, request.scope["path"])
 
 
 def _gzip_if_requested(

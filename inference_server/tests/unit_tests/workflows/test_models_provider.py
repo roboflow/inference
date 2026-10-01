@@ -20,9 +20,15 @@ class FakeSyncBridge:
         self.calls = []
         self.predictions = {}
         self.records = []
+        self.recorded_requests = []
 
     def resolve(self, model_id, api_key):
         return self.routes[model_id]
+
+    def record_request(self, route, model_id_as_requested, path, *, alias=None):
+        self.recorded_requests.append(
+            (route.registry_id, model_id_as_requested, path, alias)
+        )
 
     def ensure_loaded(self, route, api_key): ...
 
@@ -74,6 +80,134 @@ def test_run_object_detection_returns_legacy_dicts():
         and out[0]["predictions"][0]["class"] == "cat"
     )
     assert bridge.calls[0][2]["confidence"] == 0.5 and bridge.calls[0][3][0] is img
+
+
+def test_add_model_records_the_request_under_the_model_id():
+    bridge = _od_bridge()
+    provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
+
+    provider.add_model("ds/1", "k")
+
+    assert bridge.recorded_requests == [("ds/1", "ds/1", "/workflows/run", None)]
+
+
+def test_add_model_with_alias_records_the_alias_row_and_the_model_id_as_alias():
+    bridge = _od_bridge()
+    provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
+
+    provider.add_model("ds/1", "k", model_id_alias="alias-1")
+
+    assert bridge.recorded_requests == [("ds/1", "alias-1", "/workflows/run", "ds/1")]
+
+
+def test_add_model_with_alias_equal_to_the_model_id_records_no_alias():
+    bridge = _od_bridge()
+    provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
+
+    provider.add_model("ds/1", "k", model_id_alias="ds/1")
+
+    assert bridge.recorded_requests == [("ds/1", "ds/1", "/workflows/run", None)]
+
+
+def test_add_model_without_request_path_records_the_row_with_no_path():
+    bridge = _od_bridge()
+    provider = GatewayModelsProvider(bridge, api_key="req-key")
+
+    provider.add_model("ds/1", "k")
+
+    assert bridge.recorded_requests == [("ds/1", "ds/1", "", None)]
+
+
+def test_add_model_records_an_sdk_alias_as_passed():
+    bridge = FakeSyncBridge()
+    bridge.routes["yolov8n-640"] = Route(
+        model_id="yolov8n-640",
+        registry_id="coco/3",
+        task_type="object-detection",
+        action="infer",
+    )
+    provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
+
+    provider.add_model("yolov8n-640", "k")
+
+    assert bridge.recorded_requests == [
+        ("coco/3", "yolov8n-640", "/workflows/run", None)
+    ]
+
+
+def test_add_model_records_nothing_when_the_model_does_not_resolve():
+    bridge = FakeSyncBridge()
+    provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
+
+    with pytest.raises(KeyError):
+        provider.add_model("ds/1", "k")
+
+    assert bridge.recorded_requests == []
+
+
+def test_inference_without_add_model_records_no_request():
+    bridge = _od_bridge()
+    provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
+
+    provider.run_object_detection(
+        "ds/1",
+        [{"type": "numpy_object", "value": np.zeros((4, 6, 3), np.uint8)}],
+        api_key="k",
+        confidence=0.5,
+    )
+    provider.get_class_names("ds/1")
+
+    assert bridge.calls and bridge.recorded_requests == []
+
+
+def test_clip_comparison_records_the_core_model_it_registers():
+    bridge = FakeSyncBridge()
+    bridge.routes["clip/ViT-B-16"] = Route(
+        model_id="clip/ViT-B-16",
+        registry_id="clip/ViT-B-16",
+        task_type="embedding",
+        action="embed_images",
+        actions={"embed_images", "embed_text", "compare"},
+    )
+    bridge.predictions[("clip/ViT-B-16", "embed_text")] = np.array([[1.0, 0.0]])
+    provider = GatewayModelsProvider(bridge, None, "/workflows/run")
+
+    provider.run_clip_comparison(
+        subject="a",
+        subject_type="text",
+        prompt=["b"],
+        prompt_type="text",
+        version_id="ViT-B-16",
+    )
+
+    assert bridge.recorded_requests == [
+        ("clip/ViT-B-16", "clip/ViT-B-16", "/workflows/run", None)
+    ]
+
+
+def test_pp_ocr_records_the_core_model_it_registers():
+    bridge = FakeSyncBridge()
+    bridge.routes["pp_ocr/small-small"] = Route(
+        model_id="pp_ocr/small-small",
+        registry_id="pp_ocr/small-small",
+        task_type="structured-ocr",
+        action="infer",
+        actions={"infer"},
+    )
+    bridge.predictions[("pp_ocr/small-small", "infer")] = (["hello"], None)
+    provider = GatewayModelsProvider(bridge, None, "/ws/workflows/wf")
+
+    out = provider.run_pp_ocr(
+        {"type": "numpy_object", "value": np.zeros((4, 6, 3), np.uint8)},
+        api_key="k",
+        text_detection="small",
+        text_recognition="small",
+    )
+
+    assert out["result"] == "hello"
+    assert bridge.recorded_requests == [
+        ("pp_ocr/small-small", "pp_ocr/small-small", "/ws/workflows/wf", None)
+    ]
 
 
 def test_instance_segmentation_raw_responses():
