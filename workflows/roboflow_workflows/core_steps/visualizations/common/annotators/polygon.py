@@ -7,6 +7,7 @@ from supervision import (
     Color,
     ColorLookup,
     ColorPalette,
+    CompactMask,
     Detections,
     draw_polygon,
     mask_to_polygons,
@@ -115,12 +116,26 @@ class PolygonAnnotator(BaseAnnotator):
                     thickness=self.thickness,
                 )
             else:
-                mask = detections.mask[detection_idx]
-
-                # Crop mask to bounding box — findContours only scans the detection
-                # area instead of the full frame
                 x1, y1, x2, y2 = detections.xyxy[detection_idx].astype(int)
-                mask_crop = mask[y1:y2, x1:x2]
+                if isinstance(detections.mask, CompactMask):
+                    # Preserve NumPy's bounding-box slicing semantics without
+                    # materialising a full-frame mask for every instance.
+                    _, height, width = detections.mask.shape
+                    sx1, sx2, _ = slice(x1, x2).indices(width)
+                    sy1, sy2, _ = slice(y1, y2).indices(height)
+                    ox, oy = detections.mask.offsets[detection_idx]
+                    crop = detections.mask.crop(detection_idx)
+                    left, top = max(sx1, ox), max(sy1, oy)
+                    right = min(sx2, ox + crop.shape[1])
+                    bottom = min(sy2, oy + crop.shape[0])
+                    if right <= left or bottom <= top:
+                        continue
+
+                    mask_crop = crop[top - oy : bottom - oy, left - ox : right - ox]
+                    x1, y1 = x1 + left - sx1, y1 + top - sy1
+                else:
+                    mask = detections.mask[detection_idx]
+                    mask_crop = mask[y1:y2, x1:x2]
 
                 polygons = list(mask_to_polygons(mask=mask_crop))
 

@@ -199,6 +199,19 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["rle", "polygons"],
     )
 
+    use_compact_masks: bool = Field(
+        default=False,
+        title="Use Compact Masks",
+        description=(
+            "Opt in to crop-scoped CompactMask objects instead of dense NumPy masks "
+            "for RLE predictions. Enable only when downstream blocks support "
+            "CompactMask; custom blocks requiring NumPy arrays must explicitly "
+            "convert with np.asarray(predictions.mask). Polygon output and "
+            "tensor-native execution are unchanged."
+        ),
+        examples=[False, True],
+    )
+
     @validator("nms_iou_threshold")
     def _validate_nms_iou_threshold(cls, v):
         if isinstance(v, (int, float)) and (v < 0.0 or v > 1.0):
@@ -360,7 +373,25 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
+        use_compact_masks: bool = False,
     ) -> BlockResult:
+        """Run SAM3 with an opt-in compact representation for RLE predictions.
+
+        Args:
+            images: Images in workflow batch order.
+            model_id: SAM3 model identifier.
+            class_names: Text prompts in class order.
+            confidence: Minimum prediction confidence.
+            class_mapping: Optional mapping of predicted class names.
+            per_class_confidence: Optional confidence thresholds in prompt order.
+            apply_nms: Whether to suppress overlapping masks.
+            nms_iou_threshold: Mask overlap threshold for suppression.
+            output_format: RLE or polygon prediction format.
+            use_compact_masks: Use CompactMask for RLE output; defaults to dense NumPy masks.
+
+        Returns:
+            Predictions aligned with the input image order.
+        """
 
         if isinstance(class_names, str):
             class_names = class_names.split(",")
@@ -379,6 +410,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 apply_nms=apply_nms,
                 nms_iou_threshold=nms_iou_threshold,
                 output_format=output_format,
+                use_compact_masks=use_compact_masks,
             )
         elif self._step_execution_mode is StepExecutionMode.LOCAL:
             logger.debug(f"Running SAM3 v3 locally with output_format={output_format}")
@@ -391,6 +423,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 apply_nms=apply_nms,
                 nms_iou_threshold=nms_iou_threshold,
                 output_format=output_format,
+                use_compact_masks=use_compact_masks,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             logger.debug("Running SAM3 v3 remotely via SDK")
@@ -403,6 +436,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 apply_nms=apply_nms,
                 nms_iou_threshold=nms_iou_threshold,
                 output_format=output_format,
+                use_compact_masks=use_compact_masks,
             )
         else:
             raise ValueError(
@@ -423,7 +457,24 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
+        use_compact_masks: bool = False,
     ) -> BlockResult:
+        """Run SAM3 locally and prepare workflow predictions.
+
+        Args:
+            images: Images in workflow batch order.
+            model_id: SAM3 model identifier.
+            class_names: Text prompts in class order.
+            confidence: Minimum prediction confidence.
+            per_class_confidence: Optional confidence thresholds in prompt order.
+            apply_nms: Whether to suppress overlapping masks.
+            nms_iou_threshold: Mask overlap threshold for suppression.
+            output_format: RLE or polygon prediction format.
+            use_compact_masks: Use CompactMask for RLE output; defaults to dense NumPy masks.
+
+        Returns:
+            Predictions aligned with the input image order.
+        """
         if class_names is None:
             class_names = []
         if len(class_names) == 0:
@@ -502,6 +553,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             images=images,
             predictions=all_detections,
             output_format=output_format,
+            use_compact_masks=use_compact_masks,
         )
 
     def run_remotely(
@@ -514,6 +566,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
+        use_compact_masks: bool = False,
     ) -> BlockResult:
         """Run per-image SAM3 requests with bounded SDK concurrency.
 
@@ -526,6 +579,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             apply_nms: Whether the server suppresses overlapping masks.
             nms_iou_threshold: Mask overlap threshold for suppression.
             output_format: Requested RLE or polygon response representation.
+            use_compact_masks: Opt in to compact masks for RLE predictions.
 
         Returns:
             Predictions aligned with the input image order.
@@ -627,6 +681,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             images=images,
             predictions=all_detections,
             output_format=output_format,
+            use_compact_masks=use_compact_masks,
         )
 
     def run_via_request(
@@ -638,7 +693,23 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
+        use_compact_masks: bool = False,
     ) -> BlockResult:
+        """Run SAM3 through the inference proxy and prepare predictions.
+
+        Args:
+            images: Images in workflow batch order.
+            class_names: Text prompts in class order.
+            confidence: Minimum prediction confidence.
+            per_class_confidence: Optional confidence thresholds in prompt order.
+            apply_nms: Whether to suppress overlapping masks.
+            nms_iou_threshold: Mask overlap threshold for suppression.
+            output_format: RLE or polygon prediction format.
+            use_compact_masks: Use CompactMask for RLE output; defaults to dense NumPy masks.
+
+        Returns:
+            Predictions aligned with the input image order.
+        """
         ensure_builtin_remote_execution_allowed("SAM3 inference proxy execution")
         if class_names is None:
             class_names = []
@@ -736,6 +807,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             images=images,
             predictions=all_detections,
             output_format=output_format,
+            use_compact_masks=use_compact_masks,
         )
 
     @staticmethod
@@ -968,6 +1040,8 @@ class SegmentAnything3BlockV3(WorkflowBlock):
     def _decode_and_cache_rle_masks(
         self,
         predictions: List[sv.Detections],
+        *,
+        use_compact_masks: bool = False,
     ) -> List[sv.Detections]:
         for detection in predictions:
             if (
@@ -975,7 +1049,17 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 and RLE_MASK_KEY_IN_SV_DETECTIONS in detection.data
             ):
                 rle_masks = detection.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
-                detection.mask = self.decode_rle_masks(rle_masks)
+                if use_compact_masks:
+                    # Boxes were computed from these RLE masks with toBbox, so
+                    # cropping preserves all foreground pixels, including edges.
+                    image_shape = tuple(detection.data[IMAGE_DIMENSIONS_KEY][0])
+                    detection.mask = sv.CompactMask.from_coco_rle(
+                        rles=list(rle_masks),
+                        xyxy=detection.xyxy,
+                        image_shape=image_shape,
+                    )
+                else:
+                    detection.mask = self.decode_rle_masks(rle_masks)
         return predictions
 
     @staticmethod
@@ -1006,6 +1090,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         images: Batch[WorkflowImageData],
         predictions: List[sv.Detections],
         output_format: Literal["rle", "polygons"],
+        use_compact_masks: bool = False,
     ) -> BlockResult:
         prediction_type = (
             "rle-instance-segmentation"
@@ -1021,5 +1106,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             predictions=predictions,
         )
         if output_format == "rle":
-            predictions = self._decode_and_cache_rle_masks(predictions)
+            predictions = self._decode_and_cache_rle_masks(
+                predictions, use_compact_masks=use_compact_masks
+            )
         return [{"predictions": prediction} for prediction in predictions]

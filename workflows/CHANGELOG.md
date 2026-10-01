@@ -18,6 +18,8 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
+- SAM3 v3: opt-in `use_compact_masks` for RLE predictions avoids allocating a dense mask stack. Defaults to false; polygon output and tensor-native predictions are unchanged. Enable only with compact-compatible downstream consumers. Detections Stitch also requires `use_compact_masks=true` to preserve compact output when all non-empty inputs are compact; dense or mixed inputs retain dense output. Polygon visualization reads compact crops directly.
+
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
 ### Changed
 

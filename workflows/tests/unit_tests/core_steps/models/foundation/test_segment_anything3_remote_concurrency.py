@@ -239,3 +239,44 @@ def test_remote_response_count_mismatch_fails_instead_of_dropping_frames(
         block.run(
             images=_images(2), model_id="sam3/sam3_final", class_names=["box"], **kwargs
         )
+
+
+@pytest.mark.parametrize("variant", ["v3", "v3_tensor"])
+def test_compact_opt_in_through_real_sdk_preserves_batch_order(monkeypatch, variant):
+    block, kwargs = _block(monkeypatch, variant, 2)
+    images = _images(2)
+    indices = {image.base64_image: i for i, image in enumerate(images)}
+    requests = []
+    barrier = Barrier(2)
+
+    def transport(request_data, request_method):
+        requests.append(request_data)
+        barrier.wait(timeout=5)
+        idx = indices[request_data.payload["image"]["value"]]
+        return _response(idx, request_data.payload["format"])
+
+    monkeypatch.setattr(executors, "make_request", transport)
+    baseline = block.run(
+        images=images, model_id="sam3/sam3_final", class_names=["box"], **kwargs
+    )
+    requests.clear()
+    result = block.run(
+        images=images,
+        model_id="sam3/sam3_final",
+        class_names=["box"],
+        use_compact_masks=True,
+        **kwargs,
+    )
+    assert len(result) == len(requests) == 2
+    for idx, item in enumerate(result):
+        detections = item["predictions"]
+        assert float(detections.xyxy[0, 0]) == idx + 1
+        if variant == "v3":
+            from supervision import CompactMask
+
+            assert isinstance(detections.mask, CompactMask)
+            assert detections.data["parent_id"][0] == f"frame-{idx}"
+            assert detections.data["class_name"][0] == "product"
+        else:
+            assert type(detections.mask) is type(baseline[idx]["predictions"].mask)
+    assert all("use_compact_masks" not in request.payload for request in requests)

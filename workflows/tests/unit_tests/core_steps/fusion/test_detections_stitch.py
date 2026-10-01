@@ -697,3 +697,75 @@ def test_detections_stitch_peak_memory_is_bounded_for_sliced_segmentation() -> N
     # the dense path measured ~3 GiB here; survivors alone are ~2 MB each
     survivors_bytes = len(result) * height * width
     assert peak < survivors_bytes + 512 * 1024 * 1024, f"peak={peak / 2**30:.2f} GiB"
+
+
+@pytest.mark.parametrize("strategy", ["none", "nms", "nmm"])
+@pytest.mark.parametrize("mixed", [False, True])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_stitch_preserves_compact_opt_in_and_dense_fallback(
+    strategy, mixed, enabled, monkeypatch
+):
+    from copy import deepcopy
+
+    from supervision import CompactMask
+
+    rng = np.random.default_rng(17)
+    dense_predictions = [
+        _random_slice_detections(
+            rng,
+            count=6,
+            slice_shape=(100, 100),
+            parent_offset=offset,
+            parent_dims=(200, 300),
+        )
+        for offset in [(0, 0), (40, 30), (-20, -30), (270, 180)]
+    ]
+    block = DetectionsStitchBlockV1()
+    arguments = dict(
+        reference_image=make_test_image(width=300, height=200),
+        overlap_filtering_strategy=strategy,
+        iou_threshold=0.3,
+    )
+    expected = block.run(predictions=dense_predictions, **arguments)["predictions"]
+    predictions = deepcopy(dense_predictions)
+    for index, detection in enumerate(predictions):
+        if mixed and index == 0:
+            continue
+        detection.mask = CompactMask.from_dense(
+            detection.mask, sv.mask_to_xyxy(detection.mask), (100, 100)
+        )
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("All-compact stitching must not densify masks")
+
+    with monkeypatch.context() as patch:
+        # Supervision NMM currently densifies merge candidates internally.
+        # NMS and unfiltered stitching must remain entirely compact.
+        if enabled and not mixed and strategy != "nmm":
+            patch.setattr(CompactMask, "to_dense", forbidden)
+            patch.setattr(CompactMask, "__array__", forbidden)
+        actual = block.run(
+            predictions=predictions, use_compact_masks=enabled, **arguments
+        )["predictions"]
+    assert isinstance(actual.mask, CompactMask if enabled and not mixed else np.ndarray)
+    np.testing.assert_array_equal(actual.xyxy, expected.xyxy)
+    np.testing.assert_array_equal(actual.confidence, expected.confidence)
+    np.testing.assert_array_equal(np.asarray(actual.mask), expected.mask)
+    np.testing.assert_array_equal(
+        np.asarray(predictions[-1].mask), dense_predictions[-1].mask
+    )
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+def test_compact_stitch_manifest_is_opt_in(tensor):
+    from roboflow_workflows.core_steps.fusion.detections_stitch import v1, v1_tensor
+
+    manifest = (v1_tensor if tensor else v1).BlockManifest
+    fields = dict(
+        type="roboflow_core/detections_stitch@v1",
+        name="stitch",
+        reference_image="$inputs.image",
+        predictions="$steps.sam3.predictions",
+    )
+    assert manifest(**fields).use_compact_masks is False
+    assert manifest(**fields, use_compact_masks=True).use_compact_masks is True

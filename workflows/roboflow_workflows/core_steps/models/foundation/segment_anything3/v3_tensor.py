@@ -203,6 +203,19 @@ class BlockManifest(WorkflowBlockManifest):
         description="IoU threshold for cross-prompt NMS. Must be in [0.0, 1.0]",
         examples=[0.5, 0.9],
     )
+    use_compact_masks: bool = Field(
+        default=False,
+        title="Use Compact Masks",
+        description=(
+            "Opt in to crop-scoped CompactMask objects instead of dense NumPy masks "
+            "for RLE predictions. Enable only when downstream blocks support "
+            "CompactMask; custom blocks requiring NumPy arrays must explicitly "
+            "convert with np.asarray(predictions.mask). Polygon output and "
+            "tensor-native execution are unchanged."
+        ),
+        examples=[False, True],
+    )
+
     # NOTE (BREAKING CHANGE, tensor path): this field mirrors the numpy v3 sibling's
     # `output_format: Literal["rle", "polygons"]` verbatim so existing workflow
     # definitions validate identically. At runtime 'polygons' is NOT honored — RLE
@@ -386,7 +399,27 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         apply_nms: bool,
         nms_iou_threshold: float,
         output_format: Literal["rle", "polygons"],
+        use_compact_masks: bool = False,
     ) -> BlockResult:
+        """Run SAM3 while preserving the tensor-native prediction representation.
+
+        Args:
+            images: Images in workflow batch order.
+            model_id: SAM3 model identifier.
+            class_names: Text prompts in class order.
+            class_mapping: Optional predicted class-name mapping.
+            confidence: Default minimum prediction confidence.
+            per_class_confidence: Optional thresholds in prompt order.
+            apply_nms: Whether to suppress overlapping masks.
+            nms_iou_threshold: Mask overlap threshold for suppression.
+            output_format: Requested output format; tensor behavior is unchanged.
+            use_compact_masks: NumPy-only option, accepted for workflow portability.
+
+        Returns:
+            Tensor-native predictions aligned with input images.
+        """
+        # use_compact_masks configures the NumPy sibling only. Tensor-native
+        # predictions retain their existing mask representation.
         # BREAKING CHANGE (tensor path): RLE mask output is enforced ALWAYS. The
         # manifest keeps numpy v3's `output_format: Literal["rle", "polygons"]`
         # verbatim, but `run_tensor_native_inference` has no polygon analog, so
