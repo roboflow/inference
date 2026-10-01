@@ -1,7 +1,13 @@
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 from streamvision.camera.buffer_strategies import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
@@ -77,33 +83,55 @@ class VideoConfiguration(BaseModel):
     @field_validator("video_source_properties", mode="before")
     @classmethod
     def validate_video_source_properties(cls, value):
-        # Every property is numeric except ``fourcc``, which may also be given
+        # Every property is a float except ``fourcc``, which may also be given
         # as a case-sensitive four-character code such as "MJPG".
         if not isinstance(value, dict):
             return value
 
-        validated = {}
-        for property_id, property_value in value.items():
-            is_fourcc = (
-                isinstance(property_id, str) and property_id.lower() == FOURCC_PROPERTY
+        return {
+            property_id: (
+                _validate_fourcc(property_id, property_value)
+                if isinstance(property_id, str)
+                and property_id.lower() == FOURCC_PROPERTY
+                else _validate_number(property_id, property_value)
             )
-            if is_fourcc and parse_fourcc(property_value) is None:
-                raise ValueError(
-                    f"Video source property {property_id!r} must be a "
-                    "case-sensitive four-character code (e.g. 'MJPG') or its "
-                    f"numeric value, got {property_value!r}."
-                )
-            try:
-                validated[property_id] = float(property_value)
-            except (TypeError, ValueError):
-                if not (is_fourcc and isinstance(property_value, str)):
-                    raise ValueError(
-                        f"Video source property {property_id!r} must be a "
-                        f"number, got {property_value!r}."
-                    )
-                validated[property_id] = property_value
+            for property_id, property_value in value.items()
+        }
 
-        return validated
+
+_FLOAT_ADAPTER = TypeAdapter(float)
+
+
+def _validate_number(property_id: Any, property_value: Any) -> float:
+    try:
+        return _FLOAT_ADAPTER.validate_python(property_value)
+    except ValidationError:
+        raise ValueError(
+            f"Video source property {property_id!r} must be a number, "
+            f"got {property_value!r}."
+        ) from None
+
+
+def _validate_fourcc(property_id: Any, property_value: Any) -> Union[float, str]:
+    # A number is accepted in any form a float field takes, as long as it is a
+    # valid FOURCC; any other string must be a four-character code.
+    if not isinstance(property_value, bool):
+        try:
+            number = _FLOAT_ADAPTER.validate_python(property_value)
+        except ValidationError:
+            if (
+                isinstance(property_value, str)
+                and parse_fourcc(property_value) is not None
+            ):
+                return property_value
+        else:
+            if parse_fourcc(number) is not None:
+                return number
+    raise ValueError(
+        f"Video source property {property_id!r} must be a "
+        "case-sensitive four-character code (e.g. 'MJPG') or its "
+        f"numeric value, got {property_value!r}."
+    )
 
 
 class MemorySinkConfiguration(BaseModel):

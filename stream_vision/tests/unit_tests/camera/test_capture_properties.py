@@ -1,4 +1,6 @@
 import logging
+from decimal import Decimal
+from fractions import Fraction
 from typing import Any, Dict, List, Tuple
 
 import cv2
@@ -155,6 +157,7 @@ def test_rejected_fourcc_is_logged_as_a_warning(
         True,
         None,
         "\u0661\u0662",
+        10**400,
     ],
 )
 def test_invalid_fourcc_is_skipped_with_a_warning(
@@ -264,18 +267,37 @@ def test_video_configuration_accepts_string_fourcc_and_coerces_numbers() -> None
     assert isinstance(config.video_source_properties["fps"], float)
 
 
-def test_video_configuration_rejects_non_numeric_value_for_other_properties() -> None:
+@pytest.mark.parametrize(
+    "value",
+    # Validated like a float field: non-ASCII digits, bytearrays and numbers
+    # too large for a float are rejected.
+    ["fast", "\u0661\u0662", bytearray(b"12"), 10**400, -(10**400)],
+)
+def test_video_configuration_rejects_non_numeric_value_for_other_properties(
+    value: Any,
+) -> None:
     # when / then
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="must be a number"):
         VideoConfiguration(
             type="VideoConfiguration",
             video_reference=0,
-            video_source_properties={"fps": "fast"},
+            video_source_properties={"fps": value},
         )
 
 
 @pytest.mark.parametrize(
-    "fourcc", ["MJPEG", "MJ", "\u00b2\u00b2\u00b2\u00b2", -1, 1.5, float("nan"), True]
+    "fourcc",
+    [
+        "MJPEG",
+        "MJ",
+        "\u00b2\u00b2\u00b2\u00b2",
+        -1,
+        1.5,
+        float("nan"),
+        True,
+        10**400,
+        -(10**400),
+    ],
 )
 def test_video_configuration_rejects_invalid_fourcc(fourcc: Any) -> None:
     # when / then
@@ -299,6 +321,9 @@ def test_video_configuration_rejects_invalid_fourcc(fourcc: Any) -> None:
         "1.196444237e9",
         f"+{MJPG}",
         np.int64(MJPG),
+        str(MJPG).encode(),
+        Decimal(MJPG),
+        Fraction(MJPG),
     ],
 )
 def test_video_configuration_accepts_valid_fourcc(fourcc: Any) -> None:
