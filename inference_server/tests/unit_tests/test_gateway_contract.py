@@ -79,3 +79,35 @@ async def test_ensure_loaded_reports_model_ready_for_fresh_and_present_models():
 
     assert fresh == ("model_ready",)
     assert again == ("model_ready",)
+
+
+class _FailingManager(_Manager):
+    def load(self, key, api_key, **kwargs):
+        raise RuntimeError("weights download failed")
+
+
+@pytest.mark.asyncio
+async def test_failed_load_reports_error_and_code_before_the_optional_description():
+    import json
+
+    from inference_server.gateway import ModelManagerGateway
+
+    gateway = ModelManagerGateway(_FailingManager())
+
+    ensured = await gateway.ensure_loaded("m")
+    loaded = await gateway.load("m")
+
+    for result in (ensured, loaded):
+        assert result[:2] == ("error", 5)
+        assert set(result[2]) == {
+            "error_type",
+            "message",
+            "help_url",
+            "status_code",
+            "restricted",
+        }
+        assert json.loads(json.dumps(result[2])) == result[2]
+
+
+def test_last_load_failure_is_not_part_of_the_required_surface():
+    assert "last_load_failure" not in EXPECTED_GATEWAY_SIGNATURES

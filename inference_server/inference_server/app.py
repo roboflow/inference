@@ -112,7 +112,9 @@ async def _preload_models(
             if bridge is not None:
                 bridge.register_preloaded(mid)
         else:
-            logger.error("Preload of '%s' failed: %s", mid, result)
+            logger.error(
+                "Preload of '%s' failed: %s", mid, result[:2] if result else result
+            )
 
     try:
         await asyncio.gather(

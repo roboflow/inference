@@ -13,6 +13,18 @@ gateway's responsibility: the in-process gateway calls
 load it runs for the request that started it, and an out-of-process gateway
 must record its own loads the same way, or no cold-start headers appear for
 it. Callers record the attempted model id before the load themselves.
+
+A failed load is reported as ``("error", code)`` by ``ensure_loaded`` and
+``load``. A gateway may append a third element, a dict of JSON-serialisable
+values describing the error that failed the load: ``error_type`` (class
+name), ``message`` (without the help link), ``help_url`` (or None),
+``status_code`` (of a model access error, else None) and ``restricted``
+(true when the load was refused by a limit of the server configuration).
+The element is optional: callers that read it treat a two-element tuple as
+a failure of unknown cause. A gateway may also expose
+``last_load_failure(model_id, instance="")`` returning the failure tuple of
+the latest load of a model while no newer load has been started, or None;
+callers treat a gateway without it as having nothing to report.
 """
 
 from __future__ import annotations

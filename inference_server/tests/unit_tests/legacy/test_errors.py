@@ -474,6 +474,16 @@ def test_legacy_answer(error, status, body):
     assert "retry-after" not in response.headers
 
 
+def test_own_error_answer_carries_its_headers():
+    response = legacy_error_response(
+        LegacyHTTPError(503, "not ready", headers={"Retry-After": "1"})
+    )
+
+    assert response.status_code == 503
+    assert json.loads(response.body) == {"message": "not ready"}
+    assert response.headers["retry-after"] == "1"
+
+
 def test_server_busy_answer_carries_retry_after():
     response = legacy_error_response(ServerBusyError("busy"))
 

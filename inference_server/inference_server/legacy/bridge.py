@@ -30,6 +30,7 @@ from inference_server.legacy.errors import (
     MODEL_PACKAGE_BROKEN_MESSAGE,
     LegacyHTTPError,
 )
+from inference_server.legacy.load_failures import load_failure_error
 from inference_server.middlewares.model_load import (
     record_model_load,
     set_requested_model_id,
@@ -39,6 +40,7 @@ from inference_server.prometheus import measure_inference
 logger = logging.getLogger(__name__)
 
 _ERR_NOT_LOADED = 6
+_NOT_READY_MESSAGE = "Model is temporarily not ready - retry request."
 _CURRENT_REQUEST: contextvars.ContextVar[
     Optional[dict[tuple[str, str], tuple[Route, str, str, Optional[str]]]]
 ] = contextvars.ContextVar("legacy_current_request", default=None)
@@ -254,15 +256,23 @@ class LegacyModelBridge:
             if state == "error":
                 code = result[1] if len(result) > 1 else None
                 if code == _ERR_NOT_LOADED:
-                    raise LegacyHTTPError(
-                        503, "Model is temporarily not ready - retry request."
-                    )
-                raise LegacyHTTPError(500, MODEL_PACKAGE_BROKEN_MESSAGE)
+                    raise _not_ready_error()
+                raise _load_error(result)
             if time.monotonic() >= deadline:
-                raise LegacyHTTPError(
-                    503, "Model is temporarily not ready - retry request."
-                )
+                raise _not_ready_error()
             await asyncio.sleep(LEGACY_LOAD_POLL_INTERVAL_S)
+            failure = self._last_load_failure(route.registry_id)
+            if failure is not None:
+                raise _load_error(failure)
+
+    def _last_load_failure(self, registry_id: str) -> Optional[tuple]:
+        last_load_failure = getattr(self.gateway, "last_load_failure", None)
+        if last_load_failure is None:
+            return None
+
+        failure = last_load_failure(registry_id)
+
+        return failure
 
     async def load(
         self,
@@ -277,15 +287,18 @@ class LegacyModelBridge:
             model_id, api_key, row_key=row_key, path=path, alias=alias
         )
         try:
-            result = await self.gateway.load(
-                route.registry_id,
-                api_key or "",
-                timeout_s=LEGACY_LOAD_TIMEOUT_S,
-                pinned=False,
-            )
+            try:
+                result = await self.gateway.load(
+                    route.registry_id,
+                    api_key or "",
+                    timeout_s=LEGACY_LOAD_TIMEOUT_S,
+                    pinned=False,
+                )
+            except asyncio.TimeoutError as error:
+                raise _not_ready_error() from error
             state = result[0] if result else "error"
             if state != "ok":
-                raise LegacyHTTPError(500, MODEL_PACKAGE_BROKEN_MESSAGE)
+                raise _load_error(result)
         except (Exception, asyncio.CancelledError):
             self._hold_pending_request(row_key, path, alias)
             raise
@@ -570,6 +583,18 @@ class LegacyModelBridge:
         if entry is None:
             return
         _apply_metadata(route, entry)
+
+
+def _not_ready_error() -> LegacyHTTPError:
+    return LegacyHTTPError(503, _NOT_READY_MESSAGE, headers={"Retry-After": "1"})
+
+
+def _load_error(result: tuple) -> Exception:
+    error = load_failure_error(result)
+    if error is None:
+        return LegacyHTTPError(500, MODEL_PACKAGE_BROKEN_MESSAGE)
+
+    return error
 
 
 def _apply_stat(route: Route, task_type: Optional[str], action: Optional[str]) -> None:

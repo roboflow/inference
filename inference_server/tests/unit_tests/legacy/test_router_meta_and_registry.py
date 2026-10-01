@@ -1,4 +1,13 @@
+import asyncio
+
+import pytest
+
+from inference_server.gateway import ModelManagerGateway
 from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
+from tests.unit_tests.legacy.test_router_infer import (
+    LOAD_FAILURE_MATRIX,
+    FailingLoadManager,
+)
 
 
 def test_info(legacy_client, monkeypatch):
@@ -1444,3 +1453,91 @@ def test_registry_row_lists_a_start_whose_load_failed(
     assert _registry_rows(c.get("/model/registry").json()) == [
         ("coco/3", [], ["/infer/object_detection", "/start/coco/3"])
     ]
+
+
+@pytest.mark.parametrize("error,status,body", LOAD_FAILURE_MATRIX)
+def test_load_failure_on_model_add_answers_like_legacy(
+    legacy_client, fake_stat, error, status, body
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    manager = FailingLoadManager(error)
+    c = legacy_client(ModelManagerGateway(manager))
+
+    response = c.post("/model/add", json={"model_id": "ds/1", "api_key": "k"})
+
+    assert response.status_code == status
+    assert response.json() == body
+    assert response.headers["content-type"] == "application/json"
+    assert "retry-after" not in response.headers
+    assert manager.load_calls == 1
+
+
+class _ExplicitLoadGateway(FakeGateway):
+    def __init__(self, outcome):
+        super().__init__()
+        self.outcome = outcome
+
+    async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+        if isinstance(self.outcome, BaseException):
+            raise self.outcome
+        return self.outcome
+
+
+@pytest.mark.parametrize(
+    "outcome,status,body",
+    [
+        (("error", 5), 500, {"message": "Model package is broken."}),
+        (("error", 6), 500, {"message": "Model package is broken."}),
+        (
+            (
+                "error",
+                5,
+                {"error_type": "ModelNotFoundError", "message": "missing"},
+            ),
+            404,
+            {
+                "message": "Requested Roboflow resource not found. Make sure that "
+                "workspace, project or model you referred in request exists."
+            },
+        ),
+        (
+            ("error", 5, {"error_type": "KeyError", "message": "'x'"}),
+            500,
+            {"message": "Internal error."},
+        ),
+    ],
+)
+@pytest.mark.parametrize("path", ["/model/add", "/start/ds/1"])
+def test_failure_of_the_explicit_load_answers_like_legacy(
+    legacy_client, fake_stat, path, outcome, status, body
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    c = legacy_client(_ExplicitLoadGateway(outcome))
+
+    if path == "/model/add":
+        response = c.post(path, json={"model_id": "ds/1", "api_key": "k"})
+    else:
+        response = c.get(f"{path}?api_key=k")
+
+    assert response.status_code == status
+    assert response.json() == body
+    assert "retry-after" not in response.headers
+
+
+@pytest.mark.parametrize("path", ["/model/add", "/start/ds/1"])
+def test_explicit_load_timeout_answers_not_ready_with_retry_after(
+    legacy_client, fake_stat, path
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    c = legacy_client(_ExplicitLoadGateway(asyncio.TimeoutError()))
+
+    if path == "/model/add":
+        response = c.post(path, json={"model_id": "ds/1", "api_key": "k"})
+    else:
+        response = c.get(f"{path}?api_key=k")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "message": "Model is temporarily not ready - retry request."
+    }
+    assert response.headers["retry-after"] == "1"

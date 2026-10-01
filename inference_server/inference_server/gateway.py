@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
+import re
 import time
 from typing import Any, Optional
 
@@ -20,6 +21,11 @@ from fastapi import Request
 
 from inference_model_manager.errors import INPUT_ERROR_PREFIX
 from inference_model_manager.model_manager import ModelManager
+from inference_models.errors import (
+    BaseInferenceModelsError,
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageRestrictedError,
+)
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.middlewares.model_load import record_model_load
@@ -39,6 +45,22 @@ _LOAD_DEFAULT_TIMEOUT_S = 30.0
 # Backend.inflight_begin / ModelManager.submit refuse a drained backend with
 # this phrase.
 _NOT_ACCEPTING_MARKER = "not accepting requests"
+
+_MAX_REMEMBERED_LOAD_FAILURES = 256
+_URL = re.compile(r"""([a-zA-Z][a-zA-Z0-9+.-]*)://([^\s"<>]*)""")
+_AUTHORIZATION_VALUE = re.compile(
+    r"""((?<![A-Za-z0-9])authorization[ \t]*(?:=|:|%3D)[ \t]*)(?!["'])[^\r\n]+""",
+    re.IGNORECASE,
+)
+_SECRET_VALUE = re.compile(
+    r"""(?<![A-Za-z0-9])
+    (?P<name>api_key|apikey|api-key|service_secret|access_token|token|secret
+    |password|signature)
+    (?P<name_quote>["']?)
+    (?P<separator>[ \t]*(?:=|:|%3D)[ \t]*)
+    (?:(?P<quote>["'])[^"']*(?P=quote)|[^\s&,;}"']+)""",
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 def _translate_manager_infer_error(exc: Exception) -> Exception:
@@ -64,6 +86,61 @@ def _model_route_lost(exc: Exception) -> bool:
     if isinstance(exc, KeyError):
         return True
     return isinstance(exc, RuntimeError) and _NOT_ACCEPTING_MARKER in str(exc)
+
+
+def _redact_url(match: re.Match) -> str:
+    scheme, rest = match.group(1), match.group(2)
+    authority = re.split(r"[/?#]", rest, maxsplit=1)[0]
+    if rest in (authority, authority + "/"):
+        return match.group(0)
+
+    host = re.sub(r":\d*$", "", authority.rpartition("@")[2])
+
+    redacted_url = f"{scheme}://{host}/***"
+
+    return redacted_url
+
+
+def _redact_secret_value(match: re.Match) -> str:
+    quote = match.group("quote") or ""
+    prefix = match.group("name") + match.group("name_quote") + match.group("separator")
+
+    return f"{prefix}{quote}***{quote}"
+
+
+def _redact_secrets(text: str) -> str:
+    without_urls = _URL.sub(_redact_url, text)
+    without_authorization = _AUTHORIZATION_VALUE.sub(r"\1***", without_urls)
+    redacted = _SECRET_VALUE.sub(_redact_secret_value, without_authorization)
+
+    return redacted
+
+
+def _load_failure(error: Optional[BaseException]) -> tuple:
+    """Lifecycle tuple of a failed load, describing the error in JSON-ready values."""
+    help_url = getattr(error, "help_url", None)
+    status_code = getattr(error, "status_code", None)
+    alternatives = getattr(error, "alternatives_errors", None) or []
+    restricted = isinstance(error, ModelPackageRestrictedError) or (
+        isinstance(error, ModelPackageAlternativesExhaustedError)
+        and any(
+            isinstance(alternative, ModelPackageRestrictedError)
+            for alternative in alternatives
+        )
+    )
+    detail = {
+        "error_type": type(error).__name__,
+        "message": _redact_secrets(
+            Exception.__str__(error)
+            if isinstance(error, BaseInferenceModelsError)
+            else str(error)
+        ),
+        "help_url": help_url if isinstance(help_url, str) else None,
+        "status_code": status_code if isinstance(status_code, int) else None,
+        "restricted": restricted,
+    }
+
+    return ("error", _ERR_LOAD_FAILED, detail)
 
 
 def _try_pin(pin: Any, model_id: str) -> bool:
@@ -113,6 +190,8 @@ class ModelManagerGateway:
         # api_key/device the model last loaded with, for a mid-request
         # reload to reuse instead of falling back to anonymous defaults.
         self._load_context: dict[str, tuple[str, str]] = {}
+        self._load_failures: dict[str, tuple] = {}
+        self._shutting_down = False
 
     # ------------------------------------------------------------------
     # Lifecycle (lifespan)
@@ -127,7 +206,10 @@ class ModelManagerGateway:
         Runs off the manager's own pool on purpose: manager.shutdown() joins
         that pool, which would deadlock if submitted to it.
         """
+        self._shutting_down = True
+        self._load_failures.clear()
         await asyncio.get_running_loop().run_in_executor(None, self.manager.shutdown)
+        self._load_failures.clear()
 
     # ------------------------------------------------------------------
     # Gateway duck surface
@@ -227,6 +309,7 @@ class ModelManagerGateway:
         )
         self._load_context[key] = (api_key, device or "")
         self._pending_loads[key] = future
+        self._load_failures.pop(key, None)
 
         def _forget(_f: asyncio.Future) -> None:
             # A finished future stays registered until this callback runs on
@@ -234,6 +317,8 @@ class ModelManagerGateway:
             # identity check keeps a stale callback from dropping a newer load.
             if self._pending_loads.get(key) is future:
                 del self._pending_loads[key]
+                if not _f.cancelled() and _f.exception() is not None:
+                    self._remember_load_failure(key, _load_failure(_f.exception()))
 
         future.add_done_callback(_forget)
         return future
@@ -273,11 +358,38 @@ class ModelManagerGateway:
             logger.warning(
                 "ModelManagerGateway: load failed", exc_info=future.exception()
             )
-            return ("error", _ERR_LOAD_FAILED)
-        except Exception:
+            return _load_failure(future.exception())
+        except Exception as error:
             logger.warning("ModelManagerGateway: load failed", exc_info=True)
-            return ("error", _ERR_LOAD_FAILED)
+            return _load_failure(error)
         return None
+
+    def _remember_load_failure(self, key: str, failure: tuple) -> None:
+        if self._shutting_down:
+            return
+
+        self._load_failures.pop(key, None)
+        self._load_failures[key] = failure
+        while len(self._load_failures) > _MAX_REMEMBERED_LOAD_FAILURES:
+            del self._load_failures[next(iter(self._load_failures))]
+
+    def last_load_failure(self, model_id: str, instance: str = "") -> Optional[tuple]:
+        """Report the failure of the latest load of a model.
+
+        Lets a caller that polls ``ensure_loaded`` learn about a load that
+        failed between two of its calls, instead of starting the load again.
+
+        Args:
+            model_id: Model the load was started for.
+            instance: Instance part of the routing key.
+
+        Returns:
+            The failure tuple of the latest load when that load failed and no
+            load of the model was started since, otherwise None.
+        """
+        failure = self._load_failures.get(routing_key(model_id, instance))
+
+        return failure
 
     async def ensure_loaded(
         self,
@@ -352,6 +464,7 @@ class ModelManagerGateway:
         return ("error", _ERR_LOAD_FAILED)
 
     async def unload(self, model_id: str) -> tuple:
+        self._load_failures.pop(model_id, None)
         try:
             await asyncio.get_running_loop().run_in_executor(
                 self._model_executor, lambda: self.manager.unload(model_id)

@@ -49,4 +49,8 @@ async def preload_hf_models(
         if result and result[0] == "ok":
             logger.info("Preload of HF model '%s' as '%s': %s", hf_id, model_id, result)
         else:
-            logger.error("Preload of HF model '%s' failed: %s", hf_id, result)
+            logger.error(
+                "Preload of HF model '%s' failed: %s",
+                hf_id,
+                result[:2] if result else result,
+            )

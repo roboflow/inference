@@ -5,8 +5,20 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
-from inference_models.errors import ModelInputError
+from inference_models.errors import (
+    ForbiddenModelAccessError,
+    ModelInputError,
+    ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageRestrictedError,
+    ModelRetrievalError,
+    NoModelPackagesAvailableError,
+    PaymentRequiredModelAccessError,
+    UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
+)
 
+from inference_server.gateway import ModelManagerGateway
 from inference_server.legacy import bridge as bridge_mod
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
@@ -16,6 +28,10 @@ from inference_server.legacy.bridge import (
 )
 from inference_server.legacy.common import ImagePayload
 from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.legacy.load_failures import (
+    ModelLoadFailedError,
+    load_failure_error,
+)
 from tests.unit_tests.legacy.conftest import FakeGateway
 
 
@@ -1036,3 +1052,258 @@ def test_workflow_registration_whose_load_failed_joins_the_alias_row(
         "ds/2": (["/workflows/run"], []),
         "alias-1": (["/infer/workflows/ws/wf", "/workflows/run"], ["ds/1"]),
     }
+
+
+HELP_URL = "https://help.example/errors"
+
+
+def _failure(error_type, message="boom", **detail):
+    return ("error", 5, {"error_type": error_type, "message": message, **detail})
+
+
+@pytest.mark.parametrize(
+    "error_class,status_code",
+    [
+        (UnauthorizedModelAccessError, None),
+        (ModelNotFoundError, None),
+        (PaymentRequiredModelAccessError, 402),
+        (ForbiddenModelAccessError, 403),
+        (UsagePausedModelAccessError, 423),
+        (NoModelPackagesAvailableError, None),
+        (ModelPackageRestrictedError, None),
+    ],
+)
+def test_load_failure_error_rebuilds_the_described_class(error_class, status_code):
+    error = load_failure_error(
+        _failure(
+            error_class.__name__,
+            "boom",
+            help_url=HELP_URL,
+            status_code=status_code,
+            restricted=False,
+        )
+    )
+
+    assert type(error) is error_class
+    assert error.args == ("boom",)
+    assert error.help_url == HELP_URL
+    assert str(error) == f"boom - VISIT {HELP_URL} FOR FURTHER SUPPORT"
+    assert getattr(error, "status_code", None) == status_code
+
+
+def test_load_failure_error_keeps_a_status_the_class_does_not_carry():
+    error = load_failure_error(_failure("ModelRetrievalError", status_code=403))
+
+    assert type(error) is ModelRetrievalError
+    assert error.status_code == 403
+    assert str(error) == "boom"
+
+
+@pytest.mark.parametrize("restricted", [True, False])
+def test_load_failure_error_rebuilds_exhausted_alternatives(restricted):
+    error = load_failure_error(
+        _failure(
+            "ModelPackageAlternativesExhaustedError",
+            help_url=HELP_URL,
+            restricted=restricted,
+        )
+    )
+
+    assert type(error) is ModelPackageAlternativesExhaustedError
+    assert error.help_url == HELP_URL
+    assert [type(alternative) for alternative in error.alternatives_errors] == (
+        [ModelPackageRestrictedError] if restricted else []
+    )
+
+
+@pytest.mark.parametrize(
+    "error_type",
+    ["RuntimeError", "PermissionError", "LookupError", "Optional", "List", None, 7],
+)
+def test_load_failure_error_of_an_unknown_kind_is_a_plain_load_failure(error_type):
+    error = load_failure_error(_failure(error_type))
+
+    assert type(error) is ModelLoadFailedError
+    assert str(error) == "boom"
+    assert not isinstance(error, (RuntimeError, LookupError, PermissionError))
+
+
+@pytest.mark.parametrize(
+    "result", [("error",), ("error", 5), ("error", 5, None), ("error", 5, "text")]
+)
+def test_load_failure_error_without_a_description_is_none(result):
+    assert load_failure_error(result) is None
+
+
+def _route(registry_id="ds/1"):
+    return SimpleNamespace(registry_id=registry_id)
+
+
+def _assert_not_ready(error):
+    assert error.status_code == 503
+    assert error.message == "Model is temporarily not ready - retry request."
+    assert error.extra == {}
+    assert error.headers == {"Retry-After": "1"}
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_raises_the_error_the_gateway_described():
+    gateway = FakeGateway()
+    gateway.ensure_results = [_failure("ModelNotFoundError", "missing")]
+
+    with pytest.raises(ModelNotFoundError) as exc:
+        await LegacyModelBridge(gateway).ensure_loaded(_route(), None)
+
+    assert str(exc.value) == "missing"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result", [("error", 5), ("error", 3), ("error",), ()])
+async def test_ensure_loaded_failure_without_a_description_is_a_broken_package(result):
+    gateway = FakeGateway()
+    gateway.ensure_loaded = lambda *args: _returning(result)
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await LegacyModelBridge(gateway).ensure_loaded(_route(), None)
+
+    assert exc.value.status_code == 500
+    assert exc.value.message == "Model package is broken."
+    assert exc.value.extra == {}
+    assert exc.value.headers == {}
+
+
+async def _returning(result):
+    return result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "result", [("error", 6), ("error", 6, {"error_type": "KeyError", "message": "m"})]
+)
+async def test_ensure_loaded_not_loaded_code_is_not_ready_with_retry_after(result):
+    gateway = FakeGateway()
+    gateway.ensure_results = [result]
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await LegacyModelBridge(gateway).ensure_loaded(_route(), None)
+
+    _assert_not_ready(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_deadline_is_not_ready_with_retry_after(monkeypatch):
+    monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_POLL_INTERVAL_S", 0)
+    monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_TIMEOUT_S", 0)
+    gateway = FakeGateway()
+    gateway.ensure_results = [("load_timeout", 10)]
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await LegacyModelBridge(gateway).ensure_loaded(_route(), None)
+
+    _assert_not_ready(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_explicit_load_timeout_is_not_ready_with_retry_after(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    class _TimingOutGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            raise asyncio.TimeoutError()
+
+    bridge = LegacyModelBridge(_TimingOutGateway())
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await bridge.load("ds/1", "k", row_key="ds/1", path="/model/add")
+
+    _assert_not_ready(exc.value)
+    assert bridge._pending_requests == {"ds/1": ({"/model/add"}, set())}
+
+
+@pytest.mark.asyncio
+async def test_inference_timeout_is_not_turned_into_not_ready(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    def _time_out(image, params):
+        raise asyncio.TimeoutError()
+
+    bridge = LegacyModelBridge(FakeGateway(predictions={("ds/1", "infer"): _time_out}))
+    route = await bridge.resolve("ds/1", None)
+
+    with pytest.raises(asyncio.TimeoutError):
+        await bridge.infer(route, None, "infer", [ImagePayload(b"a", 1, 1)], {})
+
+
+@pytest.mark.asyncio
+async def test_explicit_load_raises_the_error_the_gateway_described(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    class _FailingLoadGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            return _failure("PaymentRequiredModelAccessError", "no credits")
+
+    bridge = LegacyModelBridge(_FailingLoadGateway())
+
+    with pytest.raises(PaymentRequiredModelAccessError) as exc:
+        await bridge.load("ds/1", "k", row_key="ds/1", path="/model/add")
+
+    assert exc.value.status_code == 402
+    assert bridge._pending_requests == {"ds/1": ({"/model/add"}, set())}
+
+
+class _SlowFailingManager:
+    def __init__(self, error, fail_after_s):
+        self.error = error
+        self.fail_after_s = fail_after_s
+        self.load_calls = 0
+        self.executor = None
+
+    def __contains__(self, key):
+        return False
+
+    def load(self, key, api_key, **kwargs):
+        import time
+
+        self.load_calls += 1
+        time.sleep(self.fail_after_s)
+        raise self.error
+
+
+@pytest.mark.asyncio
+async def test_load_failing_between_two_polls_is_reported_and_not_started_again(
+    monkeypatch,
+):
+    monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_POLL_INTERVAL_S", 0.4)
+    monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_TIMEOUT_S", 3)
+    manager = _SlowFailingManager(ModelNotFoundError("missing"), fail_after_s=0.2)
+    bridge = LegacyModelBridge(ModelManagerGateway(manager, load_wait_s=0.05))
+
+    with pytest.raises(ModelNotFoundError) as exc:
+        await bridge.ensure_loaded(_route(), None)
+
+    assert str(exc.value) == "missing"
+    assert manager.load_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_poll_ignores_a_gateway_that_reports_no_last_failure(monkeypatch):
+    monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_POLL_INTERVAL_S", 0)
+    gateway = FakeGateway()
+    gateway.ensure_results = [("load_timeout", 10)]
+    gateway.last_load_failure = lambda model_id, instance="": None
+
+    await LegacyModelBridge(gateway).ensure_loaded(_route(), None)
+
+    assert [call[0] for call in gateway.calls] == ["ensure_loaded", "ensure_loaded"]
+
+
+def test_workflow_thread_gets_the_error_the_gateway_described(server_loop):
+    loop, _ = server_loop
+    manager = _SlowFailingManager(UnauthorizedModelAccessError("denied"), 0)
+    bridge = LegacyModelBridge(ModelManagerGateway(manager))
+    sync = SyncLegacyBridge(bridge, LoopBridge(loop))
+
+    with pytest.raises(UnauthorizedModelAccessError) as exc:
+        sync.ensure_loaded(_route(), "k")
+
+    assert str(exc.value) == "denied"

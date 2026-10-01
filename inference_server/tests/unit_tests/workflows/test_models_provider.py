@@ -10,8 +10,9 @@ from roboflow_workflows.prototypes.models_provider import (
     ModelsProvider,
 )
 
-from inference_models.errors import ModelInputError
+from inference_models.errors import ModelInputError, ModelNotFoundError
 
+from inference_server.gateway import ModelManagerGateway
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
     LoopBridge,
@@ -602,3 +603,61 @@ def test_provider_inference_raises_model_input_error_for_a_gateway_value_error(
 
     assert not isinstance(exc.value, LegacyHTTPError)
     assert str(exc.value) == "bad shape"
+
+
+class _FailingManager:
+    executor = None
+
+    def __init__(self, error):
+        self.error = error
+
+    def __contains__(self, key):
+        return False
+
+    def load(self, key, api_key, **kwargs):
+        raise self.error
+
+
+def _provider_over(gateway, loop):
+    sync = SyncLegacyBridge(LegacyModelBridge(gateway), LoopBridge(loop))
+    provider = GatewayModelsProvider(sync, api_key="k")
+    return provider
+
+
+@pytest.fixture
+def server_loop():
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    yield loop
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join(timeout=5)
+    loop.close()
+
+
+def test_provider_load_failure_raises_the_class_the_load_failed_with(
+    fake_stat, server_loop
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = ModelManagerGateway(_FailingManager(ModelNotFoundError("missing")))
+    provider = _provider_over(gateway, server_loop)
+
+    with pytest.raises(ModelNotFoundError) as exc:
+        provider.add_model("ds/1", "k")
+
+    assert str(exc.value) == "missing"
+
+
+def test_provider_load_failure_without_a_description_is_a_broken_package(
+    fake_stat, server_loop
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = legacy_conftest.FakeGateway()
+    gateway.ensure_results = [("error", 5)]
+    provider = _provider_over(gateway, server_loop)
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        provider.add_model("ds/1", "k")
+
+    assert exc.value.status_code == 500
+    assert exc.value.message == "Model package is broken."

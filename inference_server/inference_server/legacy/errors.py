@@ -76,12 +76,17 @@ class BodyTooLargeHTTPException(HTTPException):
 
 class LegacyHTTPError(Exception):
     def __init__(
-        self, status_code: int, message: str, extra: Optional[dict] = None
+        self,
+        status_code: int,
+        message: str,
+        extra: Optional[dict] = None,
+        headers: Optional[dict] = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.message = message
         self.extra = extra or {}
+        self.headers = headers or {}
 
 
 def legacy_error_response(error: BaseException) -> JSONResponse:
@@ -89,6 +94,7 @@ def legacy_error_response(error: BaseException) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,
             content={"message": error.message, **error.extra},
+            headers=error.headers or None,
         )
     if isinstance(error, (PayloadTooLargeError, BodyTooLargeHTTPException)):
         return JSONResponse(

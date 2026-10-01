@@ -3,9 +3,40 @@ import io
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    EnvironmentConfigurationError,
+    FileHashSumMissmatch,
+    ForbiddenModelAccessError,
+    InvalidParameterError,
+    MissingDependencyError,
+    ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageRestrictedError,
+    ModelRetrievalError,
+    NoModelPackagesAvailableError,
+    PaymentRequiredModelAccessError,
+    RetryError,
+    UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
+)
 from PIL import Image
 
+from inference_server.gateway import ModelManagerGateway
 from tests.unit_tests.legacy.conftest import FakeGateway
+from tests.unit_tests.legacy.test_errors import (
+    FORBIDDEN,
+    HELP_SUFFIX,
+    HELP_URL,
+    INTERNAL_ERROR,
+    MISCONFIGURATION,
+    NOT_FOUND,
+    PAYMENT_REQUIRED,
+    RESTRICTED,
+    UNAUTHORIZED,
+    USAGE_PAUSED,
+)
 
 
 def _jpeg_b64(w=8, h=6):
@@ -169,3 +200,332 @@ def test_unsupported_legacy_param_is_501(legacy_client, fake_stat):
         },
     )
     assert r.status_code == 501
+
+
+class FailingLoadManager:
+    def __init__(self, error):
+        self.error = error
+        self.load_calls = 0
+        self.executor = None
+
+    def __contains__(self, key):
+        return False
+
+    def load(self, key, api_key, **kwargs):
+        self.load_calls += 1
+        raise self.error
+
+    def unload(self, key):
+        raise KeyError(key)
+
+    def stats(self):
+        return {"models": []}
+
+    def shutdown(self):
+        pass
+
+
+LOAD_FAILURE_MATRIX = [
+    pytest.param(
+        UnauthorizedModelAccessError("denied"),
+        401,
+        {"message": UNAUTHORIZED},
+        id="unauthorized",
+    ),
+    pytest.param(
+        PaymentRequiredModelAccessError("no credits"),
+        402,
+        {"message": PAYMENT_REQUIRED},
+        id="payment-required",
+    ),
+    pytest.param(
+        ForbiddenModelAccessError("denied"),
+        403,
+        {"message": FORBIDDEN},
+        id="forbidden",
+    ),
+    pytest.param(
+        UsagePausedModelAccessError("paused"),
+        423,
+        {"message": USAGE_PAUSED},
+        id="usage-paused",
+    ),
+    pytest.param(
+        ModelNotFoundError("missing"), 404, {"message": NOT_FOUND}, id="not-found"
+    ),
+    pytest.param(
+        ModelRetrievalError("empty package list", help_url=HELP_URL),
+        500,
+        {
+            "message": f"Could not retrieve model empty package list{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="retrieval",
+    ),
+    pytest.param(
+        RetryError("Connectivity error"), 500, INTERNAL_ERROR, id="registry-retry"
+    ),
+    pytest.param(
+        ModelPackageAlternativesExhaustedError(
+            "none loaded",
+            help_url=HELP_URL,
+            alternatives_errors=[RetryError("Connectivity error for URL")],
+        ),
+        500,
+        {
+            "message": f"Model loading failed: none loaded{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="alternatives-exhausted",
+    ),
+    pytest.param(
+        ModelPackageAlternativesExhaustedError(
+            "none loaded",
+            help_url=HELP_URL,
+            alternatives_errors=[
+                RuntimeError("no cuda"),
+                ModelPackageRestrictedError("too big"),
+            ],
+        ),
+        507,
+        {"message": RESTRICTED, "help_url": HELP_URL},
+        id="alternatives-exhausted-restricted",
+    ),
+    pytest.param(
+        ModelPackageRestrictedError("too big", help_url=HELP_URL),
+        507,
+        {"message": RESTRICTED},
+        id="restricted",
+    ),
+    pytest.param(
+        NoModelPackagesAvailableError("no package", help_url=HELP_URL),
+        500,
+        {
+            "message": f"Could not negotiate model package - no package{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="negotiation",
+    ),
+    pytest.param(
+        MissingDependencyError("no pycuda"),
+        500,
+        MISCONFIGURATION,
+        id="missing-dependency",
+    ),
+    pytest.param(
+        EnvironmentConfigurationError("no provider"),
+        500,
+        MISCONFIGURATION,
+        id="environment",
+    ),
+    pytest.param(
+        InvalidParameterError("bad device"),
+        500,
+        MISCONFIGURATION,
+        id="invalid-parameter",
+    ),
+    pytest.param(
+        CorruptedModelPackageError("bad file", help_url=HELP_URL),
+        500,
+        {
+            "message": f"Model loading failed: bad file{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="corrupted-package",
+    ),
+    pytest.param(
+        FileHashSumMissmatch("md5 differs", help_url=HELP_URL),
+        500,
+        {
+            "message": f"Issue with model package file: md5 differs{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="file-hash",
+    ),
+    pytest.param(ValueError("unsafe id"), 500, INTERNAL_ERROR, id="value-error"),
+    pytest.param(TimeoutError("lock"), 500, INTERNAL_ERROR, id="timeout-in-load"),
+]
+
+
+def _infer_request(client):
+    response = client.post(
+        "/infer/object_detection",
+        json={
+            "model_id": "ds/1",
+            "api_key": "k",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+        },
+    )
+    return response
+
+
+@pytest.mark.parametrize("error,status,body", LOAD_FAILURE_MATRIX)
+def test_load_failure_on_an_inference_route_answers_like_legacy(
+    legacy_client, fake_stat, error, status, body
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    manager = FailingLoadManager(error)
+
+    response = _infer_request(legacy_client(ModelManagerGateway(manager)))
+
+    assert response.status_code == status
+    assert response.json() == body
+    assert response.headers["content-type"] == "application/json"
+    assert "retry-after" not in response.headers
+    assert manager.load_calls == 1
+
+
+@pytest.mark.parametrize("failure", [("error", 5), ("error", 3), ("error",)])
+def test_load_failure_without_a_description_is_a_broken_package(
+    legacy_client, fake_stat, failure
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    gw.ensure_results = [failure]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 500
+    assert response.json() == {"message": "Model package is broken."}
+    assert "retry-after" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        {"error_type": "SomethingElseError", "message": "boom"},
+        {"error_type": "Optional", "message": "boom"},
+        {"error_type": "PermissionError", "message": "denied"},
+        {"message": "boom"},
+        {},
+    ],
+)
+def test_load_failure_of_an_unknown_kind_is_an_internal_error(
+    legacy_client, fake_stat, detail
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    gw.ensure_results = [("error", 5, detail)]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 500
+    assert response.json() == INTERNAL_ERROR
+    assert "retry-after" not in response.headers
+
+
+def test_model_reported_as_not_loaded_answers_not_ready_with_retry_after(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    gw.ensure_results = [("error", 6)]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "message": "Model is temporarily not ready - retry request."
+    }
+    assert response.headers["retry-after"] == "1"
+
+
+def test_load_deadline_answers_not_ready_with_retry_after(
+    legacy_client, fake_stat, monkeypatch
+):
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_LOAD_POLL_INTERVAL_S", 0)
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_LOAD_TIMEOUT_S", 0)
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    gw.ensure_results = [("load_timeout", 10)]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "message": "Model is temporarily not ready - retry request."
+    }
+    assert response.headers["retry-after"] == "1"
+
+
+@pytest.mark.parametrize(
+    "error,message",
+    [
+        (
+            ModelPackageAlternativesExhaustedError(
+                "none loaded: Connectivity error for URL: "
+                "https://host/x?api_key=SECRET&y=1 and "
+                "https://storage.example/a/b.onnx?X-Goog-Signature=SECRET",
+                alternatives_errors=[RetryError("https://host/x?api_key=SECRET")],
+            ),
+            "Model loading failed: none loaded: Connectivity error for URL: "
+            "https://host/*** and https://storage.example/***",
+        ),
+        (
+            ModelRetrievalError("failed for https://host/x?api_key=SECRET&y=1"),
+            "Could not retrieve model failed for https://host/***",
+        ),
+        (
+            FileHashSumMissmatch(
+                "bad md5 for url: https://storage.example/a/b.onnx"
+                "?X-Goog-Signature=SECRET&X-Goog-Expires=60"
+            ),
+            "Issue with model package file: bad md5 for url: "
+            "https://storage.example/***",
+        ),
+        (
+            ModelRetrievalError("request with api_key=SECRET failed"),
+            "Could not retrieve model request with api_key=*** failed",
+        ),
+        (
+            ModelRetrievalError("denied\nAuthorization: Bearer SECRET"),
+            "Could not retrieve model denied\nAuthorization: ***",
+        ),
+    ],
+)
+def test_load_failure_answer_hides_urls_and_secret_values(
+    legacy_client, fake_stat, error, message
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    client = legacy_client(ModelManagerGateway(FailingLoadManager(error)))
+
+    response = _infer_request(client)
+
+    assert response.status_code == 500
+    assert response.json() == {"message": message, "help_url": None}
+    assert "SECRET" not in response.text
+
+
+def test_offline_load_failure_with_a_description_answers_by_its_cause(
+    legacy_client, fake_stat, monkeypatch
+):
+    monkeypatch.setattr("inference_server.legacy.bridge.OFFLINE_MODE", True)
+    error = ModelRetrievalError(
+        "Cannot fetch Roboflow model metadata - OFFLINE_MODE is enabled. All "
+        "models must be pre-cached locally.",
+        help_url=HELP_URL,
+    )
+    manager = FailingLoadManager(error)
+
+    response = _infer_request(legacy_client(ModelManagerGateway(manager)))
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "message": "Could not retrieve model Cannot fetch Roboflow model metadata "
+        f"- OFFLINE_MODE is enabled. All models must be pre-cached locally.{HELP_SUFFIX}",
+        "help_url": HELP_URL,
+    }
+    assert fake_stat == {}
+
+
+def test_offline_load_failure_without_a_description_is_404(
+    legacy_client, fake_stat, monkeypatch
+):
+    monkeypatch.setattr("inference_server.legacy.bridge.OFFLINE_MODE", True)
+    gw = FakeGateway()
+    gw.ensure_results = [("error", 5)]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 404
+    assert response.json() == {"message": "Model ds/1 not available offline"}

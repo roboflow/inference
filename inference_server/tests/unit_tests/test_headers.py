@@ -17,6 +17,14 @@ import pytest
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from inference_models.errors import (
+    ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageRestrictedError,
+    NoModelPackagesAvailableError,
+    PaymentRequiredModelAccessError,
+    UnauthorizedModelAccessError,
+)
 from inference_sdk.config import execution_id
 from PIL import Image
 
@@ -418,7 +426,17 @@ async def test_failed_load_records_no_cold_start():
     finally:
         MODEL_LOAD_EVENTS.reset(token)
 
-    assert status == ("error", 5)
+    assert status == (
+        "error",
+        5,
+        {
+            "error_type": "RuntimeError",
+            "message": "weights download failed",
+            "help_url": None,
+            "status_code": None,
+            "restricted": False,
+        },
+    )
     assert events == []
 
 
@@ -561,9 +579,199 @@ def test_failed_load_still_reports_the_requested_model_id(legacy_client, fake_st
     assert response.headers["X-Model-Cold-Start-Count"] == "0"
 
 
+class _FailingManager(_Manager):
+    def __init__(self, error):
+        super().__init__()
+        self.error = error
+
+    def load(self, key, api_key, **kwargs):
+        raise self.error
+
+
+_LOAD_ERRORS = [
+    UnauthorizedModelAccessError("denied"),
+    PaymentRequiredModelAccessError("no credits"),
+    ModelNotFoundError("missing"),
+    ModelPackageRestrictedError("too big", help_url="https://help.example"),
+    ModelPackageAlternativesExhaustedError(
+        "none loaded",
+        help_url="https://help.example",
+        alternatives_errors=[ModelPackageRestrictedError("too big")],
+    ),
+    NoModelPackagesAvailableError("no package", help_url="https://help.example"),
+    ValueError("unsafe id"),
+]
+
+
+@pytest.mark.parametrize("error", _LOAD_ERRORS, ids=lambda e: type(e).__name__)
+def test_v2_explicit_load_answers_every_load_failure_the_same(
+    legacy_client, monkeypatch, error
+):
+    monkeypatch.setattr(app_mod._cfg, "ENABLE_CONTROL_PLANE_ROUTES", True)
+    monkeypatch.setattr(
+        app_mod, "validate_api_key", AsyncMock(return_value=(True, "ws-1"))
+    )
+    client = legacy_client(ModelManagerGateway(_FailingManager(error)))
+
+    response = client.post(
+        "/v2/models/load?model_id=ds/1", headers={"Authorization": "Bearer k"}
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "error_code": "LOAD_FAILED",
+        "description": "model load failed",
+    }
+    assert "retry-after" not in response.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", _LOAD_ERRORS, ids=lambda e: type(e).__name__)
+async def test_v2_inference_answers_every_load_failure_the_same(error):
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/v2/models/infer",
+        "query_string": b"model_id=ds/1",
+        "headers": [(b"authorization", b"Bearer k1")],
+    }
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    interface = ModelInterfaceDescription(task="t", params={}, output_schema={})
+    _HANDLERS[("fake-task", "infer")] = ModelHandlerDescription(
+        input_parser=AsyncMock(return_value={"images": [b"x"], "params": {}}),
+        handler=AsyncMock(),
+        output_serializer=MagicMock(),
+        interface_provider=lambda: interface,
+    )
+    try:
+        with patch(
+            "inference_server.framework.dispatch.stat_model_while_checking_auth",
+            new=AsyncMock(return_value=("fake-task", "infer")),
+        ):
+            response = await handle_model_inference_request(
+                Request(scope, _receive),
+                ModelManagerGateway(_FailingManager(error)),
+            )
+    finally:
+        del _HANDLERS[("fake-task", "infer")]
+
+    assert response.status_code == 500
+    assert json.loads(response.body) == {
+        "error_code": "LOAD_FAILED",
+        "description": "model load failed",
+    }
+    assert "retry-after" not in response.headers
+
+
+def _workflow_run(client):
+    response = client.post(
+        "/workflows/run",
+        json={
+            "specification": OD_WF,
+            "inputs": {"image": {"type": "base64", "value": _jpeg_b64()}},
+            "api_key": "k",
+        },
+    )
+    return response
+
+
+@pytest.mark.parametrize(
+    "error,status,error_type,inner_error_type,message",
+    [
+        (
+            UnauthorizedModelAccessError("denied"),
+            401,
+            "ClientCausedStepExecutionError",
+            "UnauthorizedModelAccessError",
+            "Unauthorized error occurred while execution of step det - details of "
+            "error: denied. This error usually mean the problem with Roboflow API "
+            "key.",
+        ),
+        (
+            PaymentRequiredModelAccessError("no credits"),
+            402,
+            "ClientCausedStepExecutionError",
+            "PaymentRequiredModelAccessError",
+            "Not enough credits to execute step det. Verify your workspace billing "
+            "page. Details: no credits",
+        ),
+        (
+            ModelNotFoundError("missing"),
+            404,
+            "ClientCausedStepExecutionError",
+            "ModelNotFoundError",
+            "Could not find requested Roboflow resource while execution of step det "
+            "- details of error: missing. This error usually mean the problem with "
+            "not existing model.",
+        ),
+        (
+            ModelPackageRestrictedError("too big"),
+            507,
+            "RuntimeLimitsCausedStepExecutionError",
+            "ModelPackageRestrictedError",
+            "Model loading failed due to restrictions of server configuration - "
+            "usually due to excessive runtime memory requirement of the model (for "
+            "instance caused by large input size).",
+        ),
+        (
+            NoModelPackagesAvailableError("no package"),
+            500,
+            "StepExecutionError",
+            "NoModelPackagesAvailableError",
+            "no package",
+        ),
+        (
+            ValueError("unsafe id"),
+            500,
+            "StepExecutionError",
+            "ModelLoadFailedError",
+            "unsafe id",
+        ),
+    ],
+)
+def test_workflow_step_load_failure_is_answered_by_its_cause(
+    legacy_client, fake_stat, error, status, error_type, inner_error_type, message
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    client = legacy_client(ModelManagerGateway(_FailingManager(error)))
+
+    response = _workflow_run(client)
+
+    assert response.status_code == status
+    body = response.json()
+    assert body["message"] == message
+    assert body["error_type"] == error_type
+    assert body["inner_error_type"] == inner_error_type
+    assert "retry-after" not in response.headers
+
+
+def test_workflow_step_load_failure_without_a_description_is_a_broken_package(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = FakeGateway()
+    gateway.ensure_results = [("error", 5)]
+
+    response = _workflow_run(legacy_client(gateway))
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["message"] == "Model package is broken."
+    assert body["error_type"] == "ClientCausedStepExecutionError"
+    assert body["inner_error_type"] == "LegacyHTTPError"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "status,status_code", [(("error", 5), 500), (("load_timeout", 1), 503)]
+    "status,status_code",
+    [
+        (("error", 5), 500),
+        (("error", 5, {"error_type": "ModelNotFoundError", "message": "x"}), 500),
+        (("load_timeout", 1), 503),
+    ],
 )
 async def test_v2_dispatch_records_the_model_id_before_a_failed_load(
     status, status_code
