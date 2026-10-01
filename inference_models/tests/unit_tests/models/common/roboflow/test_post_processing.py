@@ -3,8 +3,10 @@ Tests for post_processing helpers:
 
   - ConfidenceFilter: 4-tier priority chain and `get_threshold()`
   - NMS helpers: per-class `conf_thresh` tensor path
+  - Mask geometry: characterization of the output contract
 """
 
+import numpy as np
 import pytest
 import torch
 
@@ -17,6 +19,8 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     ConfidenceFilter,
     align_instance_segmentation_results,
+    crop_masks_to_boxes,
+    scale_polygons_to_image,
     post_process_nms_fused_model_output,
     rescale_image_detections,
     rescale_key_points_detections,
@@ -518,3 +522,217 @@ class TestAlignInstanceSegmentationResultsChunking:
         # then
         assert torch.equal(out_bboxes, ref_bboxes)
         assert torch.equal(out_masks, ref_masks)
+
+
+class TestAlignInstanceSegmentationResultsGeometry:
+    """Characterization of the mask output contract.
+
+    The chunking tests above are invariance tests: they compare chunked output
+    against monolithic output, so a change to the resize target moves both sides
+    and both keep passing. These tests pin the geometry itself, which is what a
+    resolution change would alter.
+    """
+
+    GOLDEN_SET_PIXELS = 210077
+    GOLDEN_PER_INSTANCE = [30206, 30285, 30006, 29972, 29811, 30015, 29782]
+
+    @staticmethod
+    def _run(static_crop: bool = False, orig_h: int = 200, orig_w: int = 300):
+        torch.manual_seed(42)
+        n = 7
+        bboxes = torch.rand((n, 6), dtype=torch.float32) * 100
+        masks = torch.randn((n, 160, 160), dtype=torch.float32)
+        static_crop_offset = StaticCropOffset(
+            offset_x=13 if static_crop else 0,
+            offset_y=7 if static_crop else 0,
+            crop_width=orig_w,
+            crop_height=orig_h,
+        )
+        return align_instance_segmentation_results(
+            image_bboxes=bboxes.clone(),
+            masks=masks.clone(),
+            padding=(0, 0, 0, 0),
+            scale_width=1.0,
+            scale_height=1.0,
+            original_size=ImageDimensions(
+                height=orig_h + (7 if static_crop else 0),
+                width=orig_w + (13 if static_crop else 0),
+            ),
+            size_after_pre_processing=ImageDimensions(height=orig_h, width=orig_w),
+            inference_size=ImageDimensions(height=640, width=640),
+            static_crop_offset=static_crop_offset,
+            binarization_threshold=0.0,
+            mask_chunk_size=1000,
+        )
+
+    def test_masks_are_sized_to_size_after_pre_processing(self) -> None:
+        # given / when
+        _, masks = self._run()
+
+        # then
+        assert masks.shape[1:] == (200, 300)
+
+    def test_masks_are_bool(self) -> None:
+        # given / when
+        _, masks = self._run()
+
+        # then
+        assert masks.dtype == torch.bool
+
+    def test_non_square_image_preserves_axis_order(self) -> None:
+        # given / when
+        # a transposed resize would return (300, 200) and is invisible on a square image
+        _, masks = self._run(orig_h=200, orig_w=300)
+
+        # then
+        assert masks.shape[1] == 200
+        assert masks.shape[2] == 300
+
+    def test_golden_output_for_fixed_seed(self) -> None:
+        # given / when
+        _, masks = self._run()
+
+        # then
+        assert int(masks.sum().item()) == self.GOLDEN_SET_PIXELS
+        assert [int(v) for v in masks.flatten(1).sum(1)] == self.GOLDEN_PER_INSTANCE
+
+    def test_static_crop_pastes_onto_original_size_canvas(self) -> None:
+        # given / when
+        _, masks = self._run(static_crop=True)
+
+        # then
+        assert masks.shape[1:] == (207, 313)
+
+    def test_static_crop_preserves_set_pixel_count(self) -> None:
+        # given / when
+        # the paste relocates content onto a larger canvas; it must not lose
+        # or add pixels
+        _, masks = self._run(static_crop=True)
+
+        # then
+        assert int(masks.sum().item()) == self.GOLDEN_SET_PIXELS
+
+
+class TestCropMasksToBoxes:
+    """First coverage for crop_masks_to_boxes."""
+
+    @staticmethod
+    def _masks_and_boxes():
+        masks = torch.ones((2, 40, 60), dtype=torch.float32)
+        boxes = torch.tensor(
+            [[4.0, 8.0, 40.0, 24.0], [0.0, 0.0, 8.0, 8.0]], dtype=torch.float32
+        )
+        return masks, boxes
+
+    def test_preserves_mask_shape(self) -> None:
+        # given
+        masks, boxes = self._masks_and_boxes()
+
+        # when
+        result = crop_masks_to_boxes(boxes.clone(), masks.clone())
+
+        # then
+        assert result.shape == (2, 40, 60)
+
+    def test_zeroes_everything_outside_the_scaled_box(self) -> None:
+        # given
+        # the default scaling of 0.25 maps box 0 to (1, 2, 10, 6) -> 9 x 4 = 36 pixels
+        masks, boxes = self._masks_and_boxes()
+
+        # when
+        result = crop_masks_to_boxes(boxes.clone(), masks.clone())
+
+        # then
+        assert int((result[0] > 0).sum().item()) == 36
+
+    def test_box_at_origin_is_cropped_from_zero(self) -> None:
+        # given
+        # box 1 is (0, 0, 8, 8) -> scaled (0, 0, 2, 2) -> 2 x 2 = 4 pixels
+        masks, boxes = self._masks_and_boxes()
+
+        # when
+        result = crop_masks_to_boxes(boxes.clone(), masks.clone())
+
+        # then
+        assert int((result[1] > 0).sum().item()) == 4
+
+    def test_scaling_is_a_single_scalar_for_both_axes(self) -> None:
+        # given
+        # documents current behaviour: one scalar is applied to x and y alike, so a
+        # proto grid whose stride differs from 4, or differs per axis, is mis-cropped
+        masks, boxes = self._masks_and_boxes()
+
+        # when
+        default_scaling = crop_masks_to_boxes(boxes.clone(), masks.clone())
+        explicit_quarter = crop_masks_to_boxes(
+            boxes.clone(), masks.clone(), scaling=0.25
+        )
+
+        # then
+        assert torch.equal(default_scaling, explicit_quarter)
+
+
+class TestScalePolygonsToImage:
+    """Mask-space polygon coordinates must be lifted into image space.
+
+    The legacy path does this via `post_process_polygons` / `scale_polygons`
+    (inference/core/utils/postprocess.py:449, :500). The inference_models rewrite
+    dropped it, which is harmless only while masks happen to be image-sized.
+    """
+
+    def test_identity_when_mask_matches_image(self) -> None:
+        # given
+        polygons = [np.array([[0.0, 0.0], [10.0, 20.0]], dtype=np.float32)]
+
+        # when
+        result = scale_polygons_to_image(
+            polygons=polygons,
+            mask_size=ImageDimensions(height=200, width=300),
+            image_size=ImageDimensions(height=200, width=300),
+        )
+
+        # then
+        assert np.allclose(result[0], polygons[0])
+
+    def test_scales_each_axis_independently(self) -> None:
+        # given
+        # a non-square ratio: x by 300/150 = 2.0, y by 200/50 = 4.0
+        polygons = [np.array([[10.0, 10.0], [50.0, 25.0]], dtype=np.float32)]
+
+        # when
+        result = scale_polygons_to_image(
+            polygons=polygons,
+            mask_size=ImageDimensions(height=50, width=150),
+            image_size=ImageDimensions(height=200, width=300),
+        )
+
+        # then
+        assert np.allclose(result[0], np.array([[20.0, 40.0], [100.0, 100.0]]))
+
+    def test_reduced_mask_coords_reach_image_extent(self) -> None:
+        # given
+        # the defect this phase fixes: a polygon touching the edge of a half-size
+        # mask must land on the edge of the image, not halfway across it
+        polygons = [np.array([[0.0, 0.0], [960.0, 540.0]], dtype=np.float32)]
+
+        # when
+        result = scale_polygons_to_image(
+            polygons=polygons,
+            mask_size=ImageDimensions(height=540, width=960),
+            image_size=ImageDimensions(height=1080, width=1920),
+        )
+
+        # then
+        assert result[0][:, 0].max() == pytest.approx(1920.0)
+        assert result[0][:, 1].max() == pytest.approx(1080.0)
+
+    def test_empty_polygon_list(self) -> None:
+        # given / when
+        result = scale_polygons_to_image(
+            polygons=[],
+            mask_size=ImageDimensions(height=50, width=150),
+            image_size=ImageDimensions(height=200, width=300),
+        )
+
+        # then
+        assert result == []

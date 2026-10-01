@@ -1,5 +1,6 @@
 from typing import Dict, Generator, List, Literal, Optional, Tuple, Union
 
+import numpy as np
 import torch
 import torchvision
 from torchvision.transforms import functional
@@ -390,6 +391,38 @@ def crop_masks_to_boxes(
     cols = torch.arange(h, device=masks.device)[None, :, None]  # shape: [1, h, 1]
     crop_mask = (rows >= x1) & (rows < x2) & (cols >= y1) & (cols < y2)
     return masks * crop_mask
+
+
+def scale_polygons_to_image(
+    polygons: List[np.ndarray],
+    mask_size: ImageDimensions,
+    image_size: ImageDimensions,
+) -> List[np.ndarray]:
+    """Lift polygon coordinates from mask space into image space.
+
+    Mask contours are extracted in the coordinate system of the mask they came
+    from. When that mask is smaller than the image it describes, the contour
+    must be rescaled before it can be reported as a prediction. Each axis is
+    scaled independently, since the mask and the image need not share an aspect
+    ratio.
+
+    Args:
+        polygons: Contours in mask coordinates, each of shape `(k, 2)` as `(x, y)`.
+        mask_size: Dimensions of the mask the contours were extracted from.
+        image_size: Dimensions of the image the contours should be reported in.
+
+    Returns:
+        Contours in image coordinates. The input is returned unchanged when the
+        two sizes already match.
+    """
+    if not polygons:
+        return []
+    x_scale = image_size.width / mask_size.width
+    y_scale = image_size.height / mask_size.height
+    if x_scale == 1.0 and y_scale == 1.0:
+        return polygons
+    scale = np.array([x_scale, y_scale], dtype=np.float32)
+    return [polygon * scale for polygon in polygons]
 
 
 def align_instance_segmentation_results(
