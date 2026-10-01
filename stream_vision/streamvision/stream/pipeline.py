@@ -385,10 +385,10 @@ class InferencePipeline:
                 without re-raising. Default: None.
             source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
                 video stream decoding behaviour. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#streamvision.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](https://docs.roboflow.com/reference/inference-python/inference-pipeline#video-source-buffering)
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#streamvision.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](https://docs.roboflow.com/reference/inference-python/inference-pipeline#video-source-buffering)
             video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
                 Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
                 cv2.CAP_PROP_*. If not given, defaults for the video source will be used.

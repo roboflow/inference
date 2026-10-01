@@ -50,6 +50,17 @@ _CONTROLLED_VARIABLES = (
     "VIDEO_SOURCE_BUFFER_SIZE",
     "VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW",
     "VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES",
+    "WEBRTC_DATA_CHANNEL_ACK_WINDOW",
+    "WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY",
+    "WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT",
+    "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION",
+    "WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES",
+    "WEBRTC_MODAL_FUNCTION_TIME_LIMIT",
+    "WEBRTC_MODAL_PUBLIC_STUN_SERVERS",
+    "WEBRTC_MODAL_RTSP_PLACEHOLDER",
+    "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL",
+    "WEBRTC_MODAL_SHUTDOWN_RESERVE",
+    "WEBRTC_PREVIEW_FRAME_JPEG_QUALITY",
     "WEBRTC_REALTIME_PROCESSING",
     "WORKFLOWS_PROFILER_BUFFER_SIZE",
     # inference_models latches OFFLINE_MODE; a child would ignore its own value.
@@ -466,6 +477,46 @@ def test_model_config_init_propagates_unparseable_environment_values(
         ModelConfig.init()
 
 
+_WEBRTC_WORKER_BINDINGS_SCRIPT = """
+import json
+
+from inference.core.interfaces.webrtc_worker.cpu import rtc_peer_connection_process  # noqa
+from inference.core.interfaces.webrtc_worker import entities, serializers, webrtc
+
+print(json.dumps({
+    "ack_window": webrtc.WEBRTC_DATA_CHANNEL_ACK_WINDOW,
+    "shutdown_reserve": webrtc.WEBRTC_MODAL_SHUTDOWN_RESERVE,
+    "stun": webrtc.WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
+    "time_limit": entities.WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+    "default_timeout": entities.WebRTCWorkerRequest.model_fields["processing_timeout"].default,
+    "jpeg_quality": serializers.WEBRTC_PREVIEW_FRAME_JPEG_QUALITY,
+}))
+"""
+
+
+def test_webrtc_worker_modules_bind_the_environment_through_the_cpu_target() -> None:
+    # The spawned CPU worker imports its target module first, as this script does.
+    result = _run_child(
+        _WEBRTC_WORKER_BINDINGS_SCRIPT,
+        {
+            "WEBRTC_DATA_CHANNEL_ACK_WINDOW": "4",
+            "WEBRTC_MODAL_SHUTDOWN_RESERVE": "7",
+            "WEBRTC_MODAL_PUBLIC_STUN_SERVERS": "stun:example.test:3478",
+            "WEBRTC_MODAL_FUNCTION_TIME_LIMIT": "120",
+            "WEBRTC_PREVIEW_FRAME_JPEG_QUALITY": "55",
+        },
+    )
+
+    assert result == {
+        "ack_window": 4,
+        "shutdown_reserve": 7,
+        "stun": "stun:example.test:3478",
+        "time_limit": 120,
+        "default_timeout": 120,
+        "jpeg_quality": 55,
+    }
+
+
 # Section 2 - the configuration, its facade and the legacy installation
 
 # (facade name, inference.core.env name or None when env.py has no counterpart)
@@ -509,6 +560,29 @@ FIELDS = [
     ("DEBUG_WEBRTC_PROCESSING_LATENCY", "DEBUG_WEBRTC_PROCESSING_LATENCY"),
     ("OFFLINE_MODE", "OFFLINE_MODE"),
     ("WEBRTC_REALTIME_PROCESSING", "WEBRTC_REALTIME_PROCESSING"),
+    ("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "WEBRTC_DATA_CHANNEL_ACK_WINDOW"),
+    (
+        "WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY",
+        "WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY",
+    ),
+    (
+        "WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT",
+        "WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT",
+    ),
+    (
+        "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION",
+        "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION",
+    ),
+    (
+        "WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES",
+        "WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES",
+    ),
+    ("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "WEBRTC_MODAL_FUNCTION_TIME_LIMIT"),
+    ("WEBRTC_MODAL_PUBLIC_STUN_SERVERS", "WEBRTC_MODAL_PUBLIC_STUN_SERVERS"),
+    ("WEBRTC_MODAL_RTSP_PLACEHOLDER", "WEBRTC_MODAL_RTSP_PLACEHOLDER"),
+    ("WEBRTC_MODAL_RTSP_PLACEHOLDER_URL", "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL"),
+    ("WEBRTC_MODAL_SHUTDOWN_RESERVE", "WEBRTC_MODAL_SHUTDOWN_RESERVE"),
+    ("WEBRTC_PREVIEW_FRAME_JPEG_QUALITY", "WEBRTC_PREVIEW_FRAME_JPEG_QUALITY"),
     ("CLASS_AGNOSTIC_NMS_ENV", "CLASS_AGNOSTIC_NMS_ENV"),
     ("CONFIDENCE_ENV", "CONFIDENCE_ENV"),
     ("IOU_THRESHOLD_ENV", "IOU_THRESHOLD_ENV"),
@@ -564,7 +638,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
     tabled = {name for name, _ in FIELDS}
 
     assert tabled == _facade_exports()
-    assert len(FIELDS) == 37
+    assert len(FIELDS) == 48
 
 
 def test_host_only_settings_are_not_package_configuration() -> None:

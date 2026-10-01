@@ -58,6 +58,25 @@ DEBUG_AIORTC_QUEUES = _CONFIGURATION.debug_aiortc_queues
 DEBUG_WEBRTC_PROCESSING_LATENCY = _CONFIGURATION.debug_webrtc_processing_latency
 OFFLINE_MODE = _CONFIGURATION.offline_mode
 WEBRTC_REALTIME_PROCESSING = _CONFIGURATION.webrtc_realtime_processing
+WEBRTC_DATA_CHANNEL_ACK_WINDOW = _CONFIGURATION.webrtc_data_channel_ack_window
+WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = (
+    _CONFIGURATION.webrtc_data_channel_buffer_draining_delay
+)
+WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = (
+    _CONFIGURATION.webrtc_data_channel_buffer_size_limit
+)
+WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION = (
+    _CONFIGURATION.webrtc_gzip_preview_frame_compression
+)
+WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES = (
+    _CONFIGURATION.webrtc_mjpeg_allow_non_global_addresses
+)
+WEBRTC_MODAL_FUNCTION_TIME_LIMIT = _CONFIGURATION.webrtc_modal_function_time_limit
+WEBRTC_MODAL_PUBLIC_STUN_SERVERS = _CONFIGURATION.webrtc_modal_public_stun_servers
+WEBRTC_MODAL_RTSP_PLACEHOLDER = _CONFIGURATION.webrtc_modal_rtsp_placeholder
+WEBRTC_MODAL_RTSP_PLACEHOLDER_URL = _CONFIGURATION.webrtc_modal_rtsp_placeholder_url
+WEBRTC_MODAL_SHUTDOWN_RESERVE = _CONFIGURATION.webrtc_modal_shutdown_reserve
+WEBRTC_PREVIEW_FRAME_JPEG_QUALITY = _CONFIGURATION.webrtc_preview_frame_jpeg_quality
 
 # --- ModelConfig compatibility defaults and env-variable names ---
 CLASS_AGNOSTIC_NMS_ENV = _CONFIGURATION.model_config_defaults.class_agnostic_nms_env

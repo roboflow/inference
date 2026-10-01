@@ -3,12 +3,11 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
-
-from inference.core.env import (
+from streamvision.stream.environment import (
     WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
     WEBRTC_REALTIME_PROCESSING,
 )
-from inference.core.interfaces.stream_manager.manager_app.entities import (
+from streamvision.stream_manager.manager_app.entities import (
     WebRTCOffer,
     WebRTCTURNConfig,
     WorkflowConfiguration,

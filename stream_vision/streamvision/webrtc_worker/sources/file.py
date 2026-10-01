@@ -1,6 +1,7 @@
 """Video file source for WebRTC - handles uploaded video files."""
 
 import asyncio
+import logging
 import queue
 import threading
 from typing import Dict, Optional
@@ -8,9 +9,9 @@ from typing import Dict, Optional
 import av
 from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
 from av import VideoFrame
+from streamvision.webrtc_worker.entities import VideoFileUploadState
 
-from inference.core import logger
-from inference.core.interfaces.webrtc_worker.entities import VideoFileUploadState
+logger = logging.getLogger(__name__)
 
 VIDEO_FRAME_QUEUE_SIZE = 60
 

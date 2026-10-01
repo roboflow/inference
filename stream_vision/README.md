@@ -66,10 +66,12 @@ verifies an installed wheel runs without `inference`.
 
 | Extra | Needed for |
 |---|---|
-| `workflows` | `InferencePipeline.init_with_workflow`, `build_workflows_profiler`, the stream manager server |
-| `webrtc` | the stream manager server (`python -m streamvision`) |
-| `nvdec` | `PyNvVideoCodecFrameProducer` (Linux x86_64 and Windows x64) |
+| `workflows` | `InferencePipeline.init_with_workflow`, `build_workflows_profiler`, the stream manager server, the WebRTC worker |
+| `webrtc` | the stream manager server (`python -m streamvision`) and the WebRTC worker (`streamvision.webrtc_worker`) |
+| `nvdec` | PyNvVideoCodec and Torch for `PyNvVideoCodecFrameProducer` (Linux x86_64 and Windows x64); ensure Torch is a compatible CUDA build |
 | `test` | running the package tests |
+
+The WebRTC worker (`streamvision.webrtc_worker`) requires `streamvision[webrtc,workflows]`.
 
 Without `workflows`, cameras, `InferencePipeline.init_with_custom_logic`, sinks, the
 watchdog and the stream manager client work. The two workflow functions raise
