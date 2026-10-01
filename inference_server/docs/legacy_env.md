@@ -176,7 +176,7 @@ pool summary lists only `VLLM_PROXY_ENABLED`, `VLLM_BASE_URL` and
 Hosted names from the summary that are legacy-only today and therefore need an
 infra decision rather than a mapping: `HTTP_API_THREADPOOL_WORKERS` (vLLM pools
 set 128), `GCP_SERVERLESS`,
-`ENFORCE_CREDITS_VERIFICATION`, `MODELS_CACHE_AUTH_*`, `API_LOGGING_ENABLED`,
+`ENFORCE_CREDITS_VERIFICATION`, `MODELS_CACHE_AUTH_*`,
 `STRUCTURED_API_LOGGING`, `CORRELATION_ID_LOG_KEY`, `OTEL_*`, `METRICS_ENABLED`,
 `ENABLE_PROMETHEUS`, `REDIS_*`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
 `VLLM_PROXY_ENABLED`. Each is in the (d) table.
@@ -233,7 +233,8 @@ definition; the last column is the new reader.
 | `BUILDER_ORIGIN` | `env.py:823-826` | `configuration.py:117-124` | `https://app.roboflow.com` for the us/prod case; the module derives the other cases, see note 1 |
 | `ENABLE_DASHBOARD` | `env.py:841` | `configuration.py:111` | `False` |
 | `NUM_WORKERS` | `env.py:844` | `configuration.py:99` | `1` |
-| `CORRELATION_ID_HEADER` | `env.py:660` | `configuration.py:102`; `middlewares/correlation_id.py` | `X-Request-ID` |
+| `API_LOGGING_ENABLED` | `env.py:653` | `configuration.py:113`; `middlewares/correlation_id.py`: selects `CORRELATION_ID_HEADER` and accepts any non-empty id when true, `X-Request-ID` and UUID-only ids when false, like the legacy correlation library defaults | `False` |
+| `CORRELATION_ID_HEADER` | `env.py:660` | `configuration.py:102`; `middlewares/correlation_id.py`, honoured only with `API_LOGGING_ENABLED=true` | `X-Request-ID` |
 | `PORT` | `env.py:852` | `configuration.py:98`; `app.py:354` | `9001` |
 | `SAM_VERSION_ID` | `env.py:882` | `configuration.py:178` | `vit_h` |
 | `SAM2_VERSION_ID` | `env.py:883` | `configuration.py:179` | `hiera_large` |
@@ -445,7 +446,6 @@ No new package reads these. They never get an alias or a default row.
 | `ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS` | `env.py:732` | legacy models-cache auth; unread by any new package (hosting summary) |
 | `ALLOW_UNSAFE_GSTREAMER_PIPELINES` | `env.py:1242` | `StreamsConfiguration` field; no new package reads the env name today, spelling reserved |
 | `API_DEBUG` | `env.py:219` | legacy debug flag with no consumer in the new stack |
-| `API_LOGGING_ENABLED` | `env.py:653` | legacy access-logging middleware; unread (hosting summary) |
 | `API_PROXY_BASE_URL` | `env.py:199` | legacy weights-proxy URL; unread (hosting summary) |
 | `ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1335` | legacy assume-identity headers; unread (hosting summary) |
 | `ATOMIC_CACHE_WRITES_ENABLED` | `env.py:207` | legacy artifact cache internals; `inference_models` has its own cache settings |

@@ -11,6 +11,7 @@ Sync ModelManager methods (load / unload / stats) are wrapped via
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import time
 from typing import Any, Optional
@@ -21,10 +22,7 @@ from inference_model_manager.errors import INPUT_ERROR_PREFIX
 from inference_model_manager.model_manager import ModelManager
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
-from inference_server.middlewares.model_load import (
-    MODEL_LOAD_EVENTS,
-    record_model_load,
-)
+from inference_server.middlewares.model_load import record_model_load
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +126,6 @@ class ModelManagerGateway:
         # api_key/device the model last loaded with, for a mid-request
         # reload to reuse instead of falling back to anonymous defaults.
         self._load_context: dict[str, tuple[str, str]] = {}
-        self._load_owners: dict[str, tuple[object, dict]] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle (lifespan)
@@ -183,7 +180,6 @@ class ModelManagerGateway:
         api_key: str,
         device: Optional[str] = None,
         pinned: bool = False,
-        owner: Optional[object] = None,
     ) -> Optional[asyncio.Future]:
         """None when the model is present and healthy; else the shared load.
 
@@ -196,9 +192,7 @@ class ModelManagerGateway:
         """
         lock = self._load_locks.setdefault(key, asyncio.Lock())
         async with lock:
-            return self._acquire_load_future_locked(
-                key, api_key, device, pinned, owner=owner
-            )
+            return self._acquire_load_future_locked(key, api_key, device, pinned)
 
     def _acquire_load_future_locked(
         self,
@@ -206,7 +200,6 @@ class ModelManagerGateway:
         api_key: str,
         device: Optional[str],
         pinned: bool = False,
-        owner: Optional[object] = None,
     ) -> Optional[asyncio.Future]:
         future = self._pending_loads.get(key)
         if future is not None and not future.done():
@@ -220,10 +213,10 @@ class ModelManagerGateway:
                 "ModelManagerGateway: backend for '%s' is dead — reloading", key
             )
             drop_dead = True
-        timing: dict = {}
+        model_id = routed_model_id(key)
+        request_context = contextvars.copy_context()
 
         def _reload() -> None:
-            started = time.perf_counter()
             if drop_dead:
                 try:
                     self.manager.unload(key)
@@ -234,7 +227,10 @@ class ModelManagerGateway:
                     )
             load_started = time.perf_counter()
             self._load_sync(key, api_key, device, pinned)
-            timing["load_time_s"] = time.perf_counter() - load_started
+            load_time_s = time.perf_counter() - load_started
+            request_context.run(
+                record_model_load, model_id, cold_start=True, load_time_s=load_time_s
+            )
 
         # Unload+load run as ONE executor job registered before the lock
         # releases: no await window a cancelled caller could exploit, and
@@ -244,8 +240,6 @@ class ModelManagerGateway:
         )
         self._load_context[key] = (api_key, device or "")
         self._pending_loads[key] = future
-        if owner is not None:
-            self._load_owners[key] = (owner, timing)
 
         def _forget(_f: asyncio.Future) -> None:
             # A finished future stays registered until this callback runs on
@@ -306,33 +300,18 @@ class ModelManagerGateway:
         device: str = "",
     ) -> tuple:
         key = routing_key(model_id, instance)
-        owner = MODEL_LOAD_EVENTS.get()
-        if owner is None:
-            owner = object()
-        future = await self._acquire_load_future(
-            key, api_key, device or None, owner=owner
-        )
-        if future is not None:
-            failure = await self._await_load(
-                future,
-                self.load_wait_s,
-                deadline_result=("load_timeout", int(self.load_wait_s)),
-            )
-            if failure is not None:
-                if failure[0] == "error":
-                    self._release_load_owner(key, owner)
-                return failure
-        load = self._release_load_owner(key, owner)
-        return ("model_ready", load)
+        future = await self._acquire_load_future(key, api_key, device or None)
+        if future is None:
+            return ("model_ready",)
 
-    def _release_load_owner(self, key: str, owner: object) -> dict:
-        """Report the load to the caller that started it, exactly once."""
-        entry = self._load_owners.get(key)
-        if entry is None or entry[0] is not owner:
-            return {"loaded": False, "load_time_s": 0.0}
-        del self._load_owners[key]
-        load = {"loaded": True, "load_time_s": entry[1].get("load_time_s", 0.0)}
-        return load
+        failure = await self._await_load(
+            future,
+            self.load_wait_s,
+            deadline_result=("load_timeout", int(self.load_wait_s)),
+        )
+        if failure is not None:
+            return failure
+        return ("model_ready",)
 
     async def _pinned_load(
         self, model_id: str, api_key: str, timeout_s: float
@@ -477,11 +456,6 @@ class ModelManagerGateway:
                         raise ServerBusyError(f"reload timed out for '{key}'")
                     if status[0] == "error":
                         raise RuntimeError("reload after eviction failed")
-                    record_model_load(
-                        model_id,
-                        cold_start=status[1]["loaded"],
-                        load_time_s=status[1]["load_time_s"],
-                    )
                     return await _process()
             except asyncio.CancelledError:
                 raise

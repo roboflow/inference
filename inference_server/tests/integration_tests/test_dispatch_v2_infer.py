@@ -18,9 +18,7 @@ _JPEG = bytes(
 
 class _FakeProxy:
     def __init__(self):
-        self.ensure_loaded = AsyncMock(
-            return_value=("model_ready", {"loaded": False, "load_time_s": 0.0})
-        )
+        self.ensure_loaded = AsyncMock(return_value=("model_ready",))
         self.infer = AsyncMock()
         self.load = AsyncMock(return_value=("ok",))
         self.unload = AsyncMock(return_value=("ok",))

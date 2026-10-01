@@ -49,9 +49,7 @@ def _request(query: bytes = b"", headers=None, body: bytes = b""):
 
 def _mock_proxy():
     proxy = MagicMock()
-    proxy.ensure_loaded = AsyncMock(
-        return_value=("model_ready", {"loaded": False, "load_time_s": 0.0})
-    )
+    proxy.ensure_loaded = AsyncMock(return_value=("model_ready",))
     proxy.infer = AsyncMock(return_value=MagicMock())
     return proxy
 
@@ -584,14 +582,10 @@ async def test_happy_path_invokes_full_pipeline(fake_handler_entry):
 
 
 @pytest.mark.asyncio
-async def test_load_reported_by_the_gateway_is_recorded(fake_handler_entry):
+async def test_dispatch_records_the_model_id_before_the_load(fake_handler_entry):
     from inference_server.middlewares.model_load import MODEL_LOAD_EVENTS
 
     proxy = _mock_proxy()
-    proxy.ensure_loaded.return_value = (
-        "model_ready",
-        {"loaded": True, "load_time_s": 1.5},
-    )
     events = []
     token = MODEL_LOAD_EVENTS.set(events)
     try:
@@ -602,7 +596,7 @@ async def test_load_reported_by_the_gateway_is_recorded(fake_handler_entry):
     finally:
         MODEL_LOAD_EVENTS.reset(token)
     assert r.status_code == 200
-    assert events == [("acme/1", True, 1.5)]
+    assert events == [("acme/1", False, 0.0)]
 
 
 @pytest.mark.asyncio

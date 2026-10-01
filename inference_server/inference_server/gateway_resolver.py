@@ -3,6 +3,16 @@
 GATEWAY_API_VERSION is the versioned seam external gateway factories assert
 against. Any change to EXPECTED_GATEWAY_SIGNATURES (test_gateway_contract.py)
 bumps this version.
+
+Contract under version 2: ``ensure_loaded`` returns ``("model_ready",)`` both
+when the model was already loaded and when this call loaded it; callers read
+only the first element, so a gateway returning extra elements is ignored,
+not reported. Reporting a load (cold start, load time, requested id) is the
+gateway's responsibility: the in-process gateway calls
+``inference_server.middlewares.model_load.record_model_load`` from inside the
+load it runs for the request that started it, and an out-of-process gateway
+must record its own loads the same way, or no cold-start headers appear for
+it. Callers record the attempted model id before the load themselves.
 """
 
 from __future__ import annotations

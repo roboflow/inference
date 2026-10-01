@@ -213,6 +213,7 @@ async def handle_model_inference_request(
         return err
     _apply_param_defaults(params_spec, input_data["params"])
 
+    record_model_load(common.model_id, cold_start=False, load_time_s=0.0)
     status = await proxy.ensure_loaded(
         common.model_id, common.instance, common.api_key, common.device
     )
@@ -226,11 +227,6 @@ async def handle_model_inference_request(
         )
     if status[0] == "error":
         return error_response(500, "LOAD_FAILED", "model load failed")
-    record_model_load(
-        common.model_id,
-        cold_start=status[1]["loaded"],
-        load_time_s=status[1]["load_time_s"],
-    )
 
     try:
         prediction = await description.handler(action, input_data, proxy, server_hooks)

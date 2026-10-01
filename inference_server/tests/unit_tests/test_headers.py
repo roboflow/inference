@@ -1,17 +1,20 @@
 import asyncio
 import base64
+import contextvars
 import importlib
 import io
 import json
 import re
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from inference_sdk.config import execution_id
@@ -20,12 +23,19 @@ from PIL import Image
 import inference_server.app as app_mod
 from inference_server import configuration
 from inference_server.cors import PathAwareCORSMiddleware
+from inference_server.framework.dispatch import handle_model_inference_request
+from inference_server.framework.entities import (
+    ModelHandlerDescription,
+    ModelInterfaceDescription,
+)
+from inference_server.framework.registry import _HANDLERS
 from inference_server.gateway import ModelManagerGateway
 from inference_server.hosted import serverless_auth
 from inference_server.hosted.serverless_auth import ServerlessAuthMiddleware
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
     LoopBridge,
+    Route,
     SyncLegacyBridge,
 )
 from inference_server.middlewares.correlation_id import (
@@ -193,15 +203,72 @@ def test_incoming_correlation_id_is_echoed_by_the_app(legacy_client):
     assert response.headers["X-Request-ID"] == request_id
 
 
+def test_non_uuid_correlation_id_is_replaced_by_the_app_when_logging_is_disabled(
+    legacy_client, monkeypatch
+):
+    monkeypatch.setattr(configuration, "API_LOGGING_ENABLED", False)
+    client = legacy_client(FakeGateway())
+
+    response = client.get("/v2/server/health", headers={"X-Request-ID": "trace-42"})
+
+    assert re.fullmatch(r"[0-9a-f]{32}", response.headers["X-Request-ID"])
+    assert response.headers.get_list("x-request-id") == [
+        response.headers["X-Request-ID"]
+    ]
+
+
+def test_legacy_project_version_route_carries_model_headers(legacy_client, fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    client = legacy_client(ModelManagerGateway(_Manager()))
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 6)).save(buffer, format="JPEG")
+
+    response = client.post(
+        "/ds/1?api_key=k",
+        content=base64.b64encode(buffer.getvalue()),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["X-Model-Id"] == "ds/1"
+    assert response.headers["X-Model-Cold-Start"] == "true"
+    assert response.headers["X-Model-Cold-Start-Count"] == "1"
+    assert float(response.headers["X-Model-Load-Time"]) >= 0.0
+
+
+def test_explicit_load_reports_one_cold_start_and_the_model_id(
+    legacy_client, monkeypatch
+):
+    monkeypatch.setattr(app_mod._cfg, "ENABLE_CONTROL_PLANE_ROUTES", True)
+    monkeypatch.setattr(
+        app_mod, "validate_api_key", AsyncMock(return_value=(True, "ws-1"))
+    )
+    client = legacy_client(ModelManagerGateway(_Manager()))
+    headers = {"Authorization": "Bearer k"}
+
+    cold = client.post("/v2/models/load?model_id=ds/1", headers=headers)
+    warm = client.post("/v2/models/load?model_id=ds/1", headers=headers)
+
+    assert cold.status_code == warm.status_code == 200, cold.text
+    assert _model_headers(cold) == MODEL_HEADERS_COLD
+    assert cold.headers["X-Model-Id"] == "ds/1"
+    assert cold.headers["X-Model-Cold-Start"] == "true"
+    assert cold.headers["X-Model-Cold-Start-Count"] == "1"
+    load_time = float(cold.headers["X-Model-Load-Time"])
+    assert cold.headers["X-Model-Load-Details"] == json.dumps(
+        [{"m": "ds/1", "t": load_time}]
+    )
+    assert _model_headers(warm) == MODEL_HEADERS_WARM
+    assert warm.headers["X-Model-Id"] == "ds/1"
+    assert warm.headers["X-Model-Cold-Start"] == "false"
+
+
 def test_alias_and_canonical_requests_report_their_own_model_id(
     legacy_client, fake_stat
 ):
     fake_stat["coco/3"] = ("object-detection", "infer")
-    gateway = FakeGateway(
-        predictions={("coco/3", "infer"): _det()},
-        model_info={"coco/3": {"class_names": ["cat"]}},
-    )
-    client = legacy_client(gateway)
+    manager = _Manager()
+    client = legacy_client(ModelManagerGateway(manager))
     image = {"type": "base64", "value": _jpeg_b64()}
 
     aliased = client.post(
@@ -212,9 +279,12 @@ def test_alias_and_canonical_requests_report_their_own_model_id(
     )
 
     assert aliased.status_code == canonical.status_code == 200
+    assert manager.loaded == {"coco/3"}
     assert aliased.headers["X-Model-Id"] == "yolov8n-640"
+    assert aliased.headers["X-Model-Cold-Start"] == "true"
+    load_time = float(aliased.headers["X-Model-Load-Time"])
     assert aliased.headers["X-Model-Load-Details"] == json.dumps(
-        [{"m": "yolov8n-640", "t": 0.5}]
+        [{"m": "yolov8n-640", "t": load_time}]
     )
     assert canonical.headers["X-Model-Id"] == "coco/3"
     assert canonical.headers["X-Model-Cold-Start"] == "false"
@@ -239,11 +309,7 @@ def test_predefined_workflow_sets_workflow_id_header(legacy_client, monkeypatch)
 
 def test_workflow_model_load_is_reported(legacy_client, fake_stat):
     fake_stat["ds/1"] = ("object-detection", "infer")
-    gateway = FakeGateway(
-        predictions={("ds/1", "infer"): _det()},
-        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
-    )
-    client = legacy_client(gateway)
+    client = legacy_client(ModelManagerGateway(_Manager()))
     body = {
         "specification": OD_WF,
         "inputs": {"image": {"type": "base64", "value": _jpeg_b64()}},
@@ -266,37 +332,94 @@ class _SlowManager(_Manager):
         super().load(key, api_key, **kwargs)
 
 
+async def _ensure_loaded_in_own_request(gateway, model_id):
+    events = []
+    token = MODEL_LOAD_EVENTS.set(events)
+    try:
+        status = await gateway.ensure_loaded(model_id)
+    finally:
+        MODEL_LOAD_EVENTS.reset(token)
+
+    return status, events
+
+
+async def _wait_for_events(events, count):
+    for _ in range(200):
+        if len(events) >= count:
+            return
+        await asyncio.sleep(0.01)
+
+
 @pytest.mark.asyncio
-async def test_only_the_initiating_call_reports_the_load():
+async def test_only_the_request_that_started_the_load_records_it():
     gateway = ModelManagerGateway(_SlowManager())
 
-    first, second = await asyncio.gather(
-        gateway.ensure_loaded("m"), gateway.ensure_loaded("m")
+    (first, first_events), (second, second_events) = await asyncio.gather(
+        _ensure_loaded_in_own_request(gateway, "m"),
+        _ensure_loaded_in_own_request(gateway, "m"),
     )
 
-    assert first[0] == second[0] == "model_ready"
-    assert first[1]["loaded"] is True
-    assert first[1]["load_time_s"] > 0.0
-    assert second[1] == {"loaded": False, "load_time_s": 0.0}
+    assert first == second == ("model_ready",)
+    assert [(model_id, cold) for model_id, cold, _ in first_events] == [("m", True)]
+    assert first_events[0][2] >= 0.2
+    assert second_events == []
 
 
 @pytest.mark.asyncio
-async def test_initiator_that_timed_out_reports_the_load_on_a_later_poll():
+async def test_request_that_already_has_the_model_records_nothing():
+    gateway = ModelManagerGateway(_SlowManager())
+
+    _, first_events = await _ensure_loaded_in_own_request(gateway, "m")
+    _, second_events = await _ensure_loaded_in_own_request(gateway, "m")
+
+    assert len(first_events) == 1
+    assert second_events == []
+
+
+@pytest.mark.asyncio
+async def test_load_outside_a_request_records_nothing():
+    manager = _SlowManager()
+    gateway = ModelManagerGateway(manager)
+
+    assert MODEL_LOAD_EVENTS.get() is None
+    assert await gateway.ensure_loaded("m") == ("model_ready",)
+    assert "m" in manager.loaded
+
+
+@pytest.mark.asyncio
+async def test_initiator_that_timed_out_still_gets_the_load_recorded():
     gateway = ModelManagerGateway(_SlowManager(), load_wait_s=0.01)
     events = []
     token = MODEL_LOAD_EVENTS.set(events)
     try:
         timed_out = await gateway.ensure_loaded("m")
-        await asyncio.sleep(0.3)
+        await _wait_for_events(events, 1)
         ready = await gateway.ensure_loaded("m")
-        again = await gateway.ensure_loaded("m")
     finally:
         MODEL_LOAD_EVENTS.reset(token)
 
     assert timed_out == ("load_timeout", 0)
-    assert ready[1]["loaded"] is True
-    assert ready[1]["load_time_s"] >= 0.2
-    assert again[1] == {"loaded": False, "load_time_s": 0.0}
+    assert ready == ("model_ready",)
+    assert [(model_id, cold) for model_id, cold, _ in events] == [("m", True)]
+    assert events[0][2] >= 0.2
+
+
+@pytest.mark.asyncio
+async def test_failed_load_records_no_cold_start():
+    class _FailingManager(_Manager):
+        def load(self, key, api_key, **kwargs):
+            raise RuntimeError("weights download failed")
+
+    gateway = ModelManagerGateway(_FailingManager())
+    events = []
+    token = MODEL_LOAD_EVENTS.set(events)
+    try:
+        status = await gateway.ensure_loaded("m")
+    finally:
+        MODEL_LOAD_EVENTS.reset(token)
+
+    assert status == ("error", 5)
+    assert events == []
 
 
 @pytest.mark.asyncio
@@ -338,42 +461,57 @@ async def test_load_time_excludes_executor_queue_wait():
         manager.loaded.add(key)
 
     manager.load = _load
+    events = []
+    token = MODEL_LOAD_EVENTS.set(events)
     try:
         manager.executor.submit(time.sleep, 0.4)
         status = await gateway.ensure_loaded("m")
     finally:
+        MODEL_LOAD_EVENTS.reset(token)
         manager.executor.shutdown(wait=True)
 
-    assert status[1]["loaded"] is True
-    assert 0.1 <= status[1]["load_time_s"] < 0.3
+    assert status == ("model_ready",)
+    assert [(model_id, cold) for model_id, cold, _ in events] == [("m", True)]
+    assert 0.1 <= events[0][2] < 0.3
 
 
-class _BarrierGateway(FakeGateway):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.arrived = 0
-        self.both_arrived = asyncio.Event()
+class _UnloadingManager(_Manager):
+    def __init__(self):
+        super().__init__()
+        self.healthy = False
 
-    async def ensure_loaded(self, model_id, instance="", api_key="", device=""):
-        self.calls.append(("ensure_loaded", model_id, api_key))
-        self.loaded.setdefault(
-            model_id, dict(self.model_info.get(model_id, {}), state="loaded")
-        )
-        self.arrived += 1
-        if self.arrived > 2:
-            return ("model_ready", {"loaded": False, "load_time_s": 0.0})
-        if self.arrived == 2:
-            self.both_arrived.set()
-        await self.both_arrived.wait()
-        return ("model_ready", {"loaded": True, "load_time_s": 0.25})
+    def is_healthy(self, key):
+        return self.healthy
+
+    def unload(self, key):
+        time.sleep(0.2)
+        super().unload(key)
+
+    def load(self, key, api_key, **kwargs):
+        self.healthy = True
+        super().load(key, api_key, **kwargs)
 
 
-def test_concurrent_alias_and_canonical_operations_keep_their_own_ids(fake_stat):
+@pytest.mark.asyncio
+async def test_load_time_excludes_dead_backend_unload():
+    manager = _UnloadingManager()
+    manager.loaded.add("m")
+    gateway = ModelManagerGateway(manager)
+    events = []
+    token = MODEL_LOAD_EVENTS.set(events)
+    try:
+        status = await gateway.ensure_loaded("m")
+    finally:
+        MODEL_LOAD_EVENTS.reset(token)
+
+    assert status == ("model_ready",)
+    assert [(model_id, cold) for model_id, cold, _ in events] == [("m", True)]
+    assert events[0][2] < 0.1
+
+
+def test_concurrent_alias_and_canonical_operations_share_one_load(fake_stat):
     fake_stat["coco/3"] = ("object-detection", "infer")
-    gateway = _BarrierGateway(
-        predictions={("coco/3", "infer"): _det()},
-        model_info={"coco/3": {"class_names": ["cat"]}},
-    )
+    gateway = ModelManagerGateway(_SlowManager())
     bridge = LegacyModelBridge(gateway)
     inner = FastAPI()
 
@@ -397,9 +535,11 @@ def test_concurrent_alias_and_canonical_operations_keep_their_own_ids(fake_stat)
 
     assert response.status_code == 200
     assert response.headers["X-Model-Id"] == "coco/3,yolov8n-640"
-    assert response.headers["X-Model-Cold-Start-Count"] == "2"
+    assert response.headers["X-Model-Cold-Start"] == "true"
+    assert response.headers["X-Model-Cold-Start-Count"] == "1"
     details = json.loads(response.headers["X-Model-Load-Details"])
-    assert sorted(entry["m"] for entry in details) == ["coco/3", "yolov8n-640"]
+    assert [entry["m"] for entry in details] in (["coco/3"], ["yolov8n-640"])
+    assert details[0]["t"] >= 0.2
 
 
 def test_failed_load_still_reports_the_requested_model_id(legacy_client, fake_stat):
@@ -422,12 +562,53 @@ def test_failed_load_still_reports_the_requested_model_id(legacy_client, fake_st
 
 
 @pytest.mark.asyncio
-async def test_bridge_records_reported_load_and_warm_hit():
+@pytest.mark.parametrize(
+    "status,status_code", [(("error", 5), 500), (("load_timeout", 1), 503)]
+)
+async def test_v2_dispatch_records_the_model_id_before_a_failed_load(
+    status, status_code
+):
+    proxy = MagicMock()
+    proxy.ensure_loaded = AsyncMock(return_value=status)
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/v2/models/infer",
+        "query_string": b"model_id=ds/1",
+        "headers": [(b"authorization", b"Bearer k1")],
+    }
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    interface = ModelInterfaceDescription(task="t", params={}, output_schema={})
+    _HANDLERS[("fake-task", "infer")] = ModelHandlerDescription(
+        input_parser=AsyncMock(return_value={"images": [b"x"], "params": {}}),
+        handler=AsyncMock(),
+        output_serializer=MagicMock(),
+        interface_provider=lambda: interface,
+    )
+    events = []
+    token = MODEL_LOAD_EVENTS.set(events)
+    try:
+        with patch(
+            "inference_server.framework.dispatch.stat_model_while_checking_auth",
+            new=AsyncMock(return_value=("fake-task", "infer")),
+        ):
+            response = await handle_model_inference_request(
+                Request(scope, _receive), proxy
+            )
+    finally:
+        MODEL_LOAD_EVENTS.reset(token)
+        del _HANDLERS[("fake-task", "infer")]
+
+    assert response.status_code == status_code
+    assert events == [("ds/1", False, 0.0)]
+
+
+@pytest.mark.asyncio
+async def test_bridge_records_the_attempted_model_before_each_load():
     gateway = FakeGateway()
-    gateway.ensure_results = [
-        ("model_ready", {"loaded": True, "load_time_s": 2.5}),
-        ("model_ready", {"loaded": False, "load_time_s": 0.0}),
-    ]
     bridge = LegacyModelBridge(gateway)
     route = SimpleNamespace(registry_id="ds/1")
     events = []
@@ -438,11 +619,43 @@ async def test_bridge_records_reported_load_and_warm_hit():
     finally:
         MODEL_LOAD_EVENTS.reset(token)
 
-    assert events == [
-        ("ds/1", False, 0.0),
-        ("ds/1", True, 2.5),
-        ("ds/1", False, 0.0),
-    ]
+    assert events == [("ds/1", False, 0.0), ("ds/1", False, 0.0)]
+
+
+def test_workflow_thread_load_is_recorded_into_the_request_events():
+    loop = asyncio.new_event_loop()
+    loop_thread = threading.Thread(target=loop.run_forever, daemon=True)
+    loop_thread.start()
+    try:
+        bridge = LegacyModelBridge(ModelManagerGateway(_SlowManager()))
+        sync_bridge = SyncLegacyBridge(bridge, LoopBridge(loop))
+        route = Route(
+            model_id="ds/1",
+            registry_id="ds/1",
+            task_type="object-detection",
+            action="infer",
+        )
+        events = []
+        token = MODEL_LOAD_EVENTS.set(events)
+        try:
+            context = contextvars.copy_context()
+            worker = threading.Thread(
+                target=lambda: context.run(sync_bridge.ensure_loaded, route, "k")
+            )
+            worker.start()
+            worker.join(timeout=10)
+        finally:
+            MODEL_LOAD_EVENTS.reset(token)
+
+        assert [(model_id, cold) for model_id, cold, _ in events] == [
+            ("ds/1", False),
+            ("ds/1", True),
+        ]
+        assert events[1][2] >= 0.2
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        loop_thread.join(timeout=5)
+        loop.close()
 
 
 @pytest.mark.asyncio
@@ -570,15 +783,20 @@ def test_correlation_id_keeps_a_valid_uuid_when_api_logging_is_disabled(monkeypa
 
 
 def test_correlation_id_replaces_an_invalid_value_when_api_logging_is_disabled(
-    monkeypatch,
+    monkeypatch, caplog
 ):
     monkeypatch.setattr(configuration, "API_LOGGING_ENABLED", False)
 
-    response = _correlation_app().get("/probe", headers={"X-Request-ID": "req-1"})
+    with caplog.at_level("WARNING", logger="inference_server.middlewares"):
+        response = _correlation_app().get("/probe", headers={"X-Request-ID": "req-1"})
 
     replaced = response.headers["X-Request-ID"]
     assert re.fullmatch(r"[0-9a-f]{32}", replaced)
     assert response.json() == {"correlation_id": replaced, "request_header": replaced}
+    assert [record.getMessage() for record in caplog.records] == [
+        f"Generated new request ID ({replaced}), since request header value "
+        "'req-1' was invalid"
+    ]
 
 
 def test_correlation_id_accepts_any_value_when_api_logging_is_enabled(monkeypatch):
@@ -599,6 +817,71 @@ def test_correlation_id_uses_configured_header(monkeypatch):
     assert response.headers["X-Correlation"] == "abc"
     assert response.json() == {"correlation_id": "abc", "request_header": "abc"}
     assert "X-Request-ID" not in response.headers
+
+
+def test_correlation_id_header_is_x_request_id_when_api_logging_is_disabled(
+    monkeypatch,
+):
+    monkeypatch.setattr(configuration, "CORRELATION_ID_HEADER", "X-Correlation")
+    monkeypatch.setattr(configuration, "API_LOGGING_ENABLED", False)
+    inner = FastAPI()
+
+    @inner.get("/probe")
+    async def _probe(request: Request):
+        return {
+            "correlation_id": correlation_id.get(),
+            "x_request_id": request.headers.get("X-Request-ID"),
+            "x_correlation": request.headers.get("X-Correlation"),
+        }
+
+    inner.add_middleware(CorrelationIdMiddleware)
+    incoming = uuid.uuid4().hex
+
+    response = TestClient(inner).get(
+        "/probe", headers={"X-Request-ID": incoming, "X-Correlation": "abc"}
+    )
+
+    assert response.headers["X-Request-ID"] == incoming
+    assert "X-Correlation" not in response.headers
+    assert response.json() == {
+        "correlation_id": incoming,
+        "x_request_id": incoming,
+        "x_correlation": "abc",
+    }
+
+
+def test_correlation_id_is_appended_to_a_response_that_already_carries_one():
+    inner = FastAPI()
+
+    @inner.get("/probe")
+    async def _probe():
+        return Response(content=b"{}", headers={"X-Request-ID": "route-set"})
+
+    inner.add_middleware(CorrelationIdMiddleware)
+
+    response = TestClient(inner).get("/probe")
+
+    echoed = response.headers.get_list("x-request-id")
+    assert len(echoed) == 2
+    assert echoed[0] == "route-set"
+    assert re.fullmatch(r"[0-9a-f]{32}", echoed[1])
+
+
+def test_correlation_id_already_echoed_by_the_app_is_appended_again():
+    inner = FastAPI()
+
+    @inner.get("/probe")
+    async def _probe():
+        return Response(content=b"{}", headers={"X-Request-ID": correlation_id.get()})
+
+    inner.add_middleware(CorrelationIdMiddleware)
+
+    response = TestClient(inner).get("/probe")
+
+    echoed = response.headers.get_list("x-request-id")
+    assert len(echoed) == 2
+    assert echoed[0] == echoed[1]
+    assert re.fullmatch(r"[0-9a-f]{32}", echoed[0])
 
 
 @pytest.fixture
@@ -624,11 +907,32 @@ def test_serverless_denial_echoes_supplied_execution_id(serverless_app):
 
     assert response.status_code == 401
     assert response.headers["execution_id"] == "exec-7"
-    assert response.headers["X-Request-ID"] == request_id
+    assert response.headers.get_list("x-request-id") == [request_id, request_id]
     assert float(response.headers["X-Processing-Time"]) >= 0.0
     assert response.headers["X-Model-Cold-Start"] == "false"
     assert response.headers["x-inference-engine"] == "inference-models"
     assert execution_id.get() is None
+
+
+@pytest.mark.parametrize(
+    "api_logging_enabled,custom_count,request_id_count",
+    [(False, 1, 1), (True, 2, 0)],
+)
+def test_serverless_denial_carries_the_legacy_correlation_header_pair(
+    serverless_app, monkeypatch, api_logging_enabled, custom_count, request_id_count
+):
+    monkeypatch.setattr(configuration, "CORRELATION_ID_HEADER", "X-Custom")
+    monkeypatch.setattr(configuration, "API_LOGGING_ENABLED", api_logging_enabled)
+
+    response = TestClient(serverless_app).post("/infer/object_detection", json={})
+
+    assert response.status_code == 401
+    custom = response.headers.get_list("x-custom")
+    request_id = response.headers.get_list("x-request-id")
+    assert len(custom) == custom_count
+    assert len(request_id) == request_id_count
+    assert len(set(custom + request_id)) == 1
+    assert re.fullmatch(r"[0-9a-f]{32}", custom[0])
 
 
 def test_serverless_denial_carries_generated_execution_id(serverless_app):
@@ -636,7 +940,10 @@ def test_serverless_denial_carries_generated_execution_id(serverless_app):
 
     assert response.status_code == 401
     assert re.fullmatch(r"\d+_[0-9a-f]{4}", response.headers["execution_id"])
-    assert re.fullmatch(r"[0-9a-f]{32}", response.headers["X-Request-ID"])
+    echoed = response.headers.get_list("x-request-id")
+    assert len(echoed) == 2
+    assert echoed[0] == echoed[1]
+    assert re.fullmatch(r"[0-9a-f]{32}", echoed[0])
 
 
 def test_serverless_credit_denial_carries_workspace_header(monkeypatch):
@@ -664,7 +971,10 @@ def test_serverless_credit_denial_carries_workspace_header(monkeypatch):
     assert response.status_code == 402
     assert response.headers["X-Workspace-Id"] == "ws-1"
     assert float(response.headers["X-Processing-Time"]) >= 0.0
-    assert re.fullmatch(r"[0-9a-f]{32}", response.headers["X-Request-ID"])
+    echoed = response.headers.get_list("x-request-id")
+    assert len(echoed) == 2
+    assert echoed[0] == echoed[1]
+    assert re.fullmatch(r"[0-9a-f]{32}", echoed[0])
 
 
 def test_observability_middlewares_wrap_every_other_middleware():

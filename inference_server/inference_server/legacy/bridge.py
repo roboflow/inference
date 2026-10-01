@@ -193,12 +193,6 @@ class LegacyModelBridge:
             )
             state = result[0] if result else "error"
             if state == "model_ready":
-                if result[1]["loaded"]:
-                    record_model_load(
-                        route.registry_id,
-                        cold_start=True,
-                        load_time_s=result[1]["load_time_s"],
-                    )
                 return
             if state == "error":
                 code = result[1] if len(result) > 1 else None

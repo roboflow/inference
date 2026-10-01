@@ -69,7 +69,7 @@ class _Manager:
 
 
 @pytest.mark.asyncio
-async def test_ensure_loaded_reports_fresh_load_then_already_loaded():
+async def test_ensure_loaded_reports_model_ready_for_fresh_and_present_models():
     from inference_server.gateway import ModelManagerGateway
 
     gateway = ModelManagerGateway(_Manager())
@@ -77,9 +77,5 @@ async def test_ensure_loaded_reports_fresh_load_then_already_loaded():
     fresh = await gateway.ensure_loaded("m")
     again = await gateway.ensure_loaded("m")
 
-    assert fresh[0] == "model_ready"
-    assert set(fresh[1]) == {"loaded", "load_time_s"}
-    assert fresh[1]["loaded"] is True
-    assert isinstance(fresh[1]["load_time_s"], float)
-    assert fresh[1]["load_time_s"] >= 0.0
-    assert again == ("model_ready", {"loaded": False, "load_time_s": 0.0})
+    assert fresh == ("model_ready",)
+    assert again == ("model_ready",)

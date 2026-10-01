@@ -116,7 +116,8 @@ are dropped at startup instead of registered.
 | `ALLOW_URL_INPUT` | `true` | Allow images to be fetched from a URL |
 | `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM` | `false` | Allow images to be loaded from a local path |
 | `ALLOW_ORIGINS` | `*` | Comma-separated CORS origins |
-| `CORRELATION_ID_HEADER` | `X-Request-ID` | Request header read as the correlation id and echoed on every response; generated when absent |
+| `CORRELATION_ID_HEADER` | `X-Request-ID` | Request header read as the correlation id and echoed on every response; generated when absent. Honoured only with `API_LOGGING_ENABLED=true`; otherwise the header is always `X-Request-ID`, like the legacy server's library defaults |
+| `API_LOGGING_ENABLED` | `false` | When `true`, the correlation id comes from `CORRELATION_ID_HEADER` and any non-empty value is accepted; when `false`, it comes from `X-Request-ID` and a value that is not a UUID is replaced |
 | `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS` | `16` | Thread-pool size backing workflow execution |
 | `WORKFLOWS_MAX_CONCURRENT_STEPS` | `8` | Max concurrent steps per workflow run |
 | `LANDING_DIR` | `<checkout>/inference/landing/out` | Directory of the exported legacy landing page served at `/`; the Docker images set it to `/app/landing` |

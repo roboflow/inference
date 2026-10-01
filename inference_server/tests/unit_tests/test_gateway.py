@@ -372,15 +372,58 @@ async def test_dead_backend_is_unloaded_and_reloaded():
 
     mgr = _Manager()
     wrapper = ModelManagerGateway(mgr)
-    assert (await wrapper.ensure_loaded("m"))[1]["loaded"] is True
+    assert await wrapper.ensure_loaded("m") == ("model_ready",)
     assert mgr.unload_calls == 1
     assert mgr.load_calls == 1
-    assert await wrapper.ensure_loaded("m") == (
-        "model_ready",
-        {"loaded": False, "load_time_s": 0.0},
-    )
+    assert await wrapper.ensure_loaded("m") == ("model_ready",)
     assert mgr.unload_calls == 1
     assert mgr.load_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_abandoned_initiator_leaves_no_state_in_the_gateway():
+    import asyncio
+    import threading
+    import time
+
+    from inference_server.middlewares.model_load import MODEL_LOAD_EVENTS
+
+    class _Events(list):
+        pass
+
+    release = threading.Event()
+
+    class _Manager:
+        def __init__(self):
+            self.loaded = set()
+
+        def __contains__(self, model_id):
+            return model_id in self.loaded
+
+        def load(self, model_id, api_key, **kwargs):
+            release.wait(timeout=5)
+            self.loaded.add(model_id)
+
+    mgr = _Manager()
+    wrapper = ModelManagerGateway(mgr, load_wait_s=0.05)
+    events = _Events()
+    events_ref = weakref.ref(events)
+    token = MODEL_LOAD_EVENTS.set(events)
+    try:
+        assert await wrapper.ensure_loaded("m") == ("load_timeout", 0)
+    finally:
+        MODEL_LOAD_EVENTS.reset(token)
+    del events
+    release.set()
+    deadline = time.monotonic() + 5
+    while wrapper._pending_loads and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    gc.collect()
+
+    assert "m" in mgr.loaded
+    assert wrapper._pending_loads == {}
+    assert not hasattr(wrapper, "_load_owners")
+    assert events_ref() is None
 
 
 class _RaisingManager:
@@ -1151,11 +1194,8 @@ class TestInferRetriesLostModel:
         wrapper = ModelManagerGateway(mgr)
 
         loaded = await wrapper.ensure_loaded("m", "", "authorized-key", "cuda:1")
-        assert loaded[0] == "model_ready"
-        assert await wrapper.ensure_loaded("m") == (
-            "model_ready",
-            {"loaded": False, "load_time_s": 0.0},
-        )
+        assert loaded == ("model_ready",)
+        assert await wrapper.ensure_loaded("m") == ("model_ready",)
 
         assert await wrapper.infer(model_id="m", image=b"x") == {"served": "m"}
         assert mgr.load_calls == [

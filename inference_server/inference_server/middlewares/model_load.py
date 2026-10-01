@@ -3,18 +3,21 @@
 ``ModelLoadHeadersMiddleware`` publishes a fresh list on ``MODEL_LOAD_EVENTS``
 for each request. Code that makes a model ready for the request appends one
 ``(model_id, cold_start, load_time_s)`` tuple through ``record_model_load``:
-the legacy bridge before every gateway ``ensure_loaded`` (the attempted model)
-and after a load, the v2 dispatch after every gateway ``ensure_loaded`` and
-the in-process gateway after the reload inside ``infer``. Events carry the
-model id the operation asked for: the legacy bridge publishes the requested
-id of the operation on the ``REQUESTED_MODEL_ID`` contextvar through
-``set_requested_model_id``, and ``record_model_load`` records it in place of
-the canonical id it belongs to. The contextvar lives in the context of the
-operation (the request task, or the workflow step thread and the tasks it
-starts), so concurrent operations keep their own ids. A route that runs a
-workflow sets ``REQUEST_WORKFLOW_ID``. When the response starts, the
-middleware turns all of it into the legacy ``X-Model-*`` and ``X-Workflow-Id``
-headers and adds ``x-inference-engine``.
+the legacy bridge, the v2 dispatch and the explicit load route record the
+attempted model before every gateway load, whatever its outcome, and the
+in-process gateway records the cold start from inside the load it runs. The
+gateway copies the context of the request that starts a load when it creates
+the shared load future, so a request joining a load in flight records nothing
+and a load that completes after its request gave up still lands in that
+request's list. Events carry the model id the operation asked for: the legacy
+bridge publishes the requested id of the operation on the
+``REQUESTED_MODEL_ID`` contextvar through ``set_requested_model_id``, and
+``record_model_load`` records it in place of the canonical id it belongs to.
+The contextvar lives in the context of the operation (the request task, or the
+workflow step thread and the tasks it starts), so concurrent operations keep
+their own ids. A route that runs a workflow sets ``REQUEST_WORKFLOW_ID``. When
+the response starts, the middleware turns all of it into the legacy
+``X-Model-*`` and ``X-Workflow-Id`` headers and adds ``x-inference-engine``.
 
 Extension point for model loads reported by remote servers:
 ``REMOTE_MODEL_LOADS`` holds a fresh empty list for each request. A remote
