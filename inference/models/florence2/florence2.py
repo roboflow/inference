@@ -12,6 +12,17 @@ from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
 
+def _forbid_repeated_bos(processor) -> list:
+    # Florence-2-large-ft predicts another <s> after "</s><s>" with high probability
+    # (~0.7 in the base checkpoint, ~0.95 after a short LoRA fine-tune). Microsoft's
+    # generation config hides it with no_repeat_ngram_size=3, but predict() turns
+    # n-gram blocking off, so decoding loops on <s> until max_new_tokens and the
+    # parsed answer is empty. Forbidding only the <s><s> bigram keeps every other
+    # n-gram legal.
+    bos_token_id = processor.tokenizer.bos_token_id
+    return [[bos_token_id, bos_token_id]]
+
+
 class Florence2Processing:
     def predict(self, image_in: Image, prompt="", history=None, **kwargs):
         (decoded,) = super().predict(image_in, prompt, history, **kwargs)
@@ -55,6 +66,7 @@ class Florence2(Florence2Processing, TransformerModel):
         return {
             "input_ids": preprocessed_inputs["input_ids"],
             "pixel_values": preprocessed_inputs["pixel_values"],
+            "bad_words_ids": _forbid_repeated_bos(self.processor),
         }
 
 
@@ -208,6 +220,7 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
         return {
             "input_ids": preprocessed_inputs["input_ids"],
             "pixel_values": preprocessed_inputs["pixel_values"],
+            "bad_words_ids": _forbid_repeated_bos(self.processor),
         }
 
 
