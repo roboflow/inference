@@ -74,13 +74,23 @@ class TestMaskSize:
         assert masks.mask_size == (270, 480)
         assert masks.image_size == (1080, 1920)
 
-    def test_rle_wire_format_is_unchanged(self) -> None:
+    def test_wire_format_declares_the_encoded_size(self) -> None:
         # given
-        # the COCO `size` field is the deferred wire-format decision; adding
-        # mask_size must not alter what goes on the wire today
+        # COCO `size` must describe the grid the counts were encoded on, or the
+        # counts no longer sum to h*w and pycocotools decodes silently wrong
         masks = InstancesRLEMasks(
             image_size=(1080, 1920), masks=[b"abc"], mask_size=(270, 480)
         )
+
+        # when
+        encoded = masks.to_coco_rle_masks()
+
+        # then
+        assert encoded == [{"size": [270, 480], "counts": b"abc"}]
+
+    def test_wire_format_unchanged_when_sizes_agree(self) -> None:
+        # given
+        masks = InstancesRLEMasks(image_size=(1080, 1920), masks=[b"abc"])
 
         # when
         encoded = masks.to_coco_rle_masks()

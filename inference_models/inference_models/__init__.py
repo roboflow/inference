@@ -21,7 +21,6 @@ import os
 # before any heavy library gets imported.
 from inference_models._offline import OFFLINE_MODE  # noqa: F401  isort: skip
 
-
 try:
     # This will read version from pyproject.toml
     __version__ = importlib_metadata.version(__package__ or __name__)
@@ -79,9 +78,9 @@ from inference_models.models.base.semantic_segmentation import SemanticSegmentat
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.weights_providers.entities import Quantization
 from inference_models.weights_providers.offline_registry import (
-    OfflinePackagePresence,
     OfflineArtefactStatus,
-    OfflinePackageStatus,
+    OfflineArtefactVerification,
     OfflineModelStatus,
-    OfflineArtefactVerification
+    OfflinePackagePresence,
+    OfflinePackageStatus,
 )

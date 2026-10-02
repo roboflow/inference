@@ -83,6 +83,7 @@ class RFDetrForInstanceSegmentationOnnx(
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -270,6 +271,7 @@ class RFDetrForInstanceSegmentationOnnx(
                     num_classes=len(self.class_names),
                     classes_re_mapping=self._classes_re_mapping,
                     max_detections=max_detections,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
             else:
                 results = post_process_instance_segmentation_results_to_rle_masks(
@@ -281,6 +283,7 @@ class RFDetrForInstanceSegmentationOnnx(
                     num_classes=len(self.class_names),
                     classes_re_mapping=self._classes_re_mapping,
                     max_detections=max_detections,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
         if post_process_stream is not None:
             post_process_stream.synchronize()

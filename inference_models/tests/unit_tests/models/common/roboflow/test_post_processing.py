@@ -9,6 +9,7 @@ Tests for post_processing helpers:
 import numpy as np
 import pytest
 import torch
+from pycocotools import mask as mask_utils
 
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
 from inference_models.entities import ImageDimensions
@@ -19,6 +20,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     ConfidenceFilter,
     align_instance_segmentation_results,
+    align_instance_segmentation_results_to_rle_masks,
     crop_masks_to_boxes,
     post_process_nms_fused_model_output,
     rescale_image_detections,
@@ -845,3 +847,98 @@ class TestMasksResolutionFactor:
         expected_h = round((self.ORIG_H + 7) * target_h / self.ORIG_H)
         expected_w = round((self.ORIG_W + 13) * target_w / self.ORIG_W)
         assert masks.shape[1:] == (expected_h, expected_w)
+
+
+class TestRLEMasksResolutionFactor:
+    """The RLE generator must honour the same factor as the dense path.
+
+    Otherwise the resolution a caller gets depends on `mask_format`, and the
+    two paths silently disagree.
+    """
+
+    PROTO = 160
+    ORIG_H, ORIG_W = 200, 300
+
+    @classmethod
+    def _run(cls, n: int = 3, **kwargs):
+        torch.manual_seed(42)
+        bboxes = torch.rand((n, 6), dtype=torch.float32) * 100
+        masks = torch.randn((n, cls.PROTO, cls.PROTO), dtype=torch.float32)
+        return list(
+            align_instance_segmentation_results_to_rle_masks(
+                image_bboxes=bboxes.clone(),
+                masks=masks.clone(),
+                padding=(0, 0, 0, 0),
+                scale_width=1.0,
+                scale_height=1.0,
+                original_size=ImageDimensions(height=cls.ORIG_H, width=cls.ORIG_W),
+                size_after_pre_processing=ImageDimensions(
+                    height=cls.ORIG_H, width=cls.ORIG_W
+                ),
+                inference_size=ImageDimensions(height=640, width=640),
+                static_crop_offset=StaticCropOffset(
+                    offset_x=0,
+                    offset_y=0,
+                    crop_width=cls.ORIG_W,
+                    crop_height=cls.ORIG_H,
+                ),
+                binarization_threshold=0.0,
+                **kwargs,
+            )
+        )
+
+    def test_factor_one_declares_the_image_size(self) -> None:
+        # given / when
+        results = self._run(masks_resolution_factor=1.0)
+
+        # then
+        assert all(rle["size"] == [self.ORIG_H, self.ORIG_W] for _, rle in results)
+
+    def test_reduced_factor_declares_the_reduced_size(self) -> None:
+        # given / when
+        results = self._run(masks_resolution_factor=0.5)
+
+        # then
+        expected_h = round(self.PROTO * 0.5 + self.ORIG_H * 0.5)
+        expected_w = round(self.PROTO * 0.5 + self.ORIG_W * 0.5)
+        assert all(rle["size"] == [expected_h, expected_w] for _, rle in results)
+
+    def test_counts_sum_to_the_declared_size(self) -> None:
+        # given / when
+        # the invariant pycocotools relies on; a declared size that disagrees
+        # with the counts decodes silently wrong rather than raising
+        results = self._run(masks_resolution_factor=0.25)
+
+        # then
+        for _, rle in results:
+            decoded = mask_utils.decode(rle)
+            assert decoded.shape == tuple(rle["size"])
+
+    def test_matches_the_dense_path_resolution(self) -> None:
+        # given / when
+        # mask_format must not change the resolution a caller receives
+        rle_results = self._run(masks_resolution_factor=0.25)
+        torch.manual_seed(42)
+        bboxes = torch.rand((3, 6), dtype=torch.float32) * 100
+        masks = torch.randn((3, self.PROTO, self.PROTO), dtype=torch.float32)
+        _, dense = align_instance_segmentation_results(
+            image_bboxes=bboxes.clone(),
+            masks=masks.clone(),
+            padding=(0, 0, 0, 0),
+            scale_width=1.0,
+            scale_height=1.0,
+            original_size=ImageDimensions(height=self.ORIG_H, width=self.ORIG_W),
+            size_after_pre_processing=ImageDimensions(
+                height=self.ORIG_H, width=self.ORIG_W
+            ),
+            inference_size=ImageDimensions(height=640, width=640),
+            static_crop_offset=StaticCropOffset(
+                offset_x=0, offset_y=0, crop_width=self.ORIG_W, crop_height=self.ORIG_H
+            ),
+            binarization_threshold=0.0,
+            mask_chunk_size=1000,
+            masks_resolution_factor=0.25,
+        )
+
+        # then
+        assert rle_results[0][1]["size"] == list(dense.shape[1:])

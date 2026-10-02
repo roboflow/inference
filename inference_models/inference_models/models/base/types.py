@@ -29,4 +29,9 @@ class InstancesRLEMasks:
         return cls(image_size=image_size, masks=masks, mask_size=mask_size)
 
     def to_coco_rle_masks(self) -> List[dict]:
-        return [{"size": list(self.image_size), "counts": m} for m in self.masks]
+        # COCO `size` describes the grid the counts were encoded on. When that
+        # is not the image grid, declaring the image size would make the counts
+        # disagree with it, which pycocotools decodes silently wrong.
+        encoded_size = list(self.mask_size or self.image_size)
+
+        return [{"size": encoded_size, "counts": m} for m in self.masks]

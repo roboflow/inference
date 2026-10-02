@@ -639,6 +639,7 @@ def align_instance_segmentation_results_to_rle_masks(
     inference_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
     binarization_threshold: float = 0.0,
+    masks_resolution_factor: float = 1.0,
 ) -> Generator[Tuple[torch.Tensor, dict], None, None]:
     """
     Generator variant of align_instance_segmentation_results.
@@ -730,10 +731,20 @@ def align_instance_segmentation_results_to_rle_masks(
             :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
         ]
 
-    target_h = size_after_pre_processing.height
-    target_w = size_after_pre_processing.width
-    offset_y = static_crop_offset.offset_y
-    offset_x = static_crop_offset.offset_x
+    target_h, target_w = resolve_mask_target_size(
+        mask_height=masks.shape[1],
+        mask_width=masks.shape[2],
+        size_after_pre_processing=size_after_pre_processing,
+        masks_resolution_factor=masks_resolution_factor,
+    )
+    # the canvas keeps the mask grid's ratio to the image, matching the dense
+    # path, so crop offsets move into the same space
+    canvas_h_scale = target_h / size_after_pre_processing.height
+    canvas_w_scale = target_w / size_after_pre_processing.width
+    canvas_height = max(1, round(original_size.height * canvas_h_scale))
+    canvas_width = max(1, round(original_size.width * canvas_w_scale))
+    offset_y = round(static_crop_offset.offset_y * canvas_h_scale)
+    offset_x = round(static_crop_offset.offset_x * canvas_w_scale)
     num_instances = image_bboxes.shape[0]
     for i in range(num_instances):
         # keep a batch dim so functional.resize is unambiguous
@@ -749,7 +760,7 @@ def align_instance_segmentation_results_to_rle_masks(
         )
         if needs_canvas:
             mask_canvas = torch.zeros(
-                (original_size.height, original_size.width),
+                (canvas_height, canvas_width),
                 dtype=torch.bool,
                 device=resized.device,
             )
