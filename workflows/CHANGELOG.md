@@ -18,6 +18,14 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
+- Embedding Model (`roboflow_core/embedding_model@v1`): extract feature vectors
+  before the final linear layer or logits before Softmax/Sigmoid from existing
+  single-label and multi-label ResNet, ViT and DINOv3 classifiers, including
+  pretrained ResNet aliases. List and tensor variants return embeddings compatible
+  with Cosine Similarity and metadata identifying their embedding space.
+- Local tensor-mode Embedding Model execution retains materialized tensor images
+  and embedding tensors through the model-provider boundary. Remote responses and
+  final JSON outputs remain serialized vectors.
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
 ### Changed
 
@@ -33,6 +41,13 @@ for contributor and maintainer responsibilities.
 - Detections Stitch (`roboflow_core/detections_stitch@v1`): segmentation masks are stitched as crop-scoped compact masks (`supervision.CompactMask`) and only the detections that survive overlap filtering are materialised at reference resolution. Previously every crop mask was first re-allocated as a full-size dense array, merged, then filtered, which needed about `N x H x W` bytes before any filtering: a 1080p frame sliced 12 ways with ~25 masks per slice took ~3 GiB inside this block and OOM-killed an 8 GiB video worker. Outputs are unchanged (same boxes, order and masks, still dense arrays); a mix of crops with and without masks now raises a clear `ValueError` instead of failing inside `Detections.merge`.
 
 - Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
+
+### Execution engine
+
+- Dependency preloading distinguishes classification, feature-vector and logits
+  registrations for the same model ID, including runtime-selected IDs, and verifies
+  the corresponding capability-specific cache entries. Existing workflows need
+  no migration.
 
 ## `0.2.3`
 
