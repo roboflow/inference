@@ -90,12 +90,32 @@ def _extract_detections_property(
             f"expected sv.Detections object as value, got {value_as_str} of type {type(detections)}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
+
+    if len(detections) == 0:
+        return []
+
     if (
-        property_name.value not in PROPERTIES_EXTRACTORS
-        and property_name.value in detections.data
+        property_name == DetectionsProperty.TRACKER_ID
+        and detections.tracker_id is not None
     ):
-        return detections.data[property_name.value].tolist()
-    return PROPERTIES_EXTRACTORS[property_name](detections)
+        result = detections.tracker_id.tolist()
+        return result
+
+    if property_name.value in detections.data:
+        result = detections.data[property_name.value].tolist()
+        return result
+
+    if property_name not in PROPERTIES_EXTRACTORS:
+        raise OperationError(
+            public_message=f"Executing extract_detections_property(...) in context "
+            f"{execution_context}, property `{property_name.value}` is not available "
+            f"on these detections. Connect an upstream block that supplies this "
+            f"property before extracting it.",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+        )
+
+    result = PROPERTIES_EXTRACTORS[property_name](detections)
+    return result
 
 
 def _filter_detections(
@@ -884,6 +904,9 @@ def _extract_detections_property_tensor_native(
             operation_name="extract_detections_property",
             execution_context=execution_context,
         )
+    if len(detections) == 0:
+        return []
+
     if property_name not in PROPERTIES_EXTRACTORS_TENSOR_NATIVE:
         bboxes_metadata = _bboxes_metadata_list(detections)
         if any(property_name.value in data for data in bboxes_metadata):

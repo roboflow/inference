@@ -30,6 +30,7 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- `DetectionsPropertyExtract` reads Supervision tracker IDs from their native field and returns an empty list for empty detections in both NumPy and tensor modes. Missing measurement metadata on nonempty detections now raises a contextual operation error instead of a `KeyError` in NumPy mode.
 - Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
 
 ## `0.2.3`
