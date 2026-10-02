@@ -31,6 +31,9 @@ from inference_sdk.http.utils.request_building import RequestData
 from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
 
 RETRYABLE_STATUS_CODES = {429, 503, 504}
+# Model request packages do not execute workflow sinks. Keep workflow POST
+# retries separate: a 500/502 can follow an already-executed side effect.
+MODEL_RETRYABLE_STATUS_CODES = RETRYABLE_STATUS_CODES | {500, 502}
 UNKNOWN_MODEL_ID = "unknown"
 MODEL_COLD_START_HEADER = "X-Model-Cold-Start"
 MODEL_COLD_START_COUNT_HEADER = "X-Model-Cold-Start-Count"
@@ -329,7 +332,7 @@ def _reset_thread_local_requests_session() -> None:
 
 @backoff.on_predicate(
     backoff.constant,
-    predicate=lambda r: r.status_code in RETRYABLE_STATUS_CODES,
+    predicate=lambda r: r.status_code in MODEL_RETRYABLE_STATUS_CODES,
     max_tries=3,
     interval=1,
     backoff_log_level=logging.DEBUG,
@@ -418,7 +421,7 @@ async def make_parallel_requests_async(
             request_method=request_method,
             session=session,
         )
-        coroutines = [make_request_closure(data) for data in requests_data]
+        coroutines = [make_request_closure(request_data=data) for data in requests_data]
         responses = list(await asyncio.gather(*coroutines))
         return [r[1] for r in responses]
 
@@ -444,7 +447,7 @@ def raise_client_error(details: dict) -> None:
 
 @backoff.on_predicate(
     backoff.constant,
-    predicate=lambda r: r[0] in RETRYABLE_STATUS_CODES,
+    predicate=lambda r: r[0] in MODEL_RETRYABLE_STATUS_CODES,
     max_tries=3,
     interval=1,
     on_giveup=raise_client_error,
@@ -515,7 +518,9 @@ def response_is_not_retryable_error(response: ClientResponse) -> bool:
     Returns:
         True if the response is not a retryable error, False otherwise.
     """
-    return response.status != 200 and response.status not in RETRYABLE_STATUS_CODES
+    return (
+        response.status != 200 and response.status not in MODEL_RETRYABLE_STATUS_CODES
+    )
 
 
 @backoff.on_exception(

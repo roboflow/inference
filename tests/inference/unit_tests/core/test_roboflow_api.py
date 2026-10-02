@@ -5728,7 +5728,7 @@ def test_proxy_does_not_retry_before_long_server_cooldown(
 
 @pytest.mark.parametrize(
     "endpoint,status",
-    [("apiproxy/openai", 500), ("some/endpoint", 429), ("apiproxy-other", 429)],
+    [("apiproxy/openai", 501), ("some/endpoint", 429), ("apiproxy-other", 429)],
 )
 @pytest.mark.usefixtures("proxy_retry_clock")
 def test_proxy_retry_does_not_replay_other_failures(
@@ -5796,3 +5796,65 @@ def test_proxy_rate_limit_oversleep_does_not_start_another_request(
 
     assert requests_mock.call_count == 1
     sleep.assert_called_once()
+
+
+@pytest.mark.usefixtures("proxy_retry_clock")
+@pytest.mark.parametrize(
+    "endpoint", ["apiproxy/openai", "apiproxy/openai/v2", "api-proxy/gemini"]
+)
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+def test_model_proxy_recovers_from_server_error(
+    requests_mock: Mocker, endpoint: str, status: int
+) -> None:
+    requests_mock.post(
+        wrap_url(f"{API_BASE_URL}/{endpoint}?api_key=my_api_key"),
+        [
+            {"status_code": status, "headers": {"Retry-After": "5"}},
+            {"json": {"answer": "ok"}},
+        ],
+    )
+    with mock.patch.object(roboflow_api.time, "sleep") as sleep:
+        result = post_to_roboflow_api(
+            endpoint=endpoint, api_key="my_api_key", payload={"prompt": "hello"}
+        )
+
+    assert result == {"answer": "ok"}
+    assert requests_mock.call_count == 2
+    assert all(r.json() == {"prompt": "hello"} for r in requests_mock.request_history)
+    sleep.assert_called_once_with(5.0)
+
+
+@pytest.mark.usefixtures("proxy_retry_clock")
+@pytest.mark.parametrize(
+    "endpoint",
+    ["apiproxy/email", "apiproxy/twilio", "apiproxy/openai/other", "other/endpoint"],
+)
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+def test_server_error_does_not_replay_non_model_proxy(
+    requests_mock: Mocker, endpoint: str, status: int
+) -> None:
+    requests_mock.post(
+        wrap_url(f"{API_BASE_URL}/{endpoint}?api_key=my_api_key"), status_code=status
+    )
+    with mock.patch.object(roboflow_api.time, "sleep") as sleep:
+        with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+            post_to_roboflow_api(endpoint=endpoint, api_key="my_api_key")
+
+    assert requests_mock.call_count == 1
+    sleep.assert_not_called()
+
+
+@pytest.mark.usefixtures("proxy_retry_clock")
+def test_model_proxy_mixed_transient_errors_share_one_retry_budget(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.post(
+        wrap_url(f"{API_BASE_URL}/apiproxy/openai/v2?api_key=my_api_key"),
+        [{"status_code": status} for status in [502, 429, 503, 500, 504]],
+    )
+    with mock.patch.object(roboflow_api.time, "sleep") as sleep:
+        with pytest.raises(RoboflowAPIUnsuccessfulRequestError, match="504"):
+            post_to_roboflow_api(endpoint="apiproxy/openai/v2", api_key="my_api_key")
+
+    assert requests_mock.call_count == 5
+    assert sleep.call_count == 4
