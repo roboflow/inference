@@ -9,9 +9,9 @@ from roboflow_workflows.core_steps.common.utils import (
     filter_out_unwanted_classes_from_sv_detections_batch,
 )
 from roboflow_workflows.environment import (
-    USE_INFERENCE_MODELS,
     HOSTED_INSTANCE_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
+    USE_INFERENCE_MODELS,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
@@ -359,9 +359,7 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             # backend they are honoured, so this version keeps passing them
             # through and behaves exactly as it does today. @v5 forwards
             # unconditionally.
-            mask_decode_mode=(
-                "accurate" if USE_INFERENCE_MODELS else mask_decode_mode
-            ),
+            mask_decode_mode=("accurate" if USE_INFERENCE_MODELS else mask_decode_mode),
             tradeoff_factor=1.0 if USE_INFERENCE_MODELS else tradeoff_factor,
             response_mask_format="rle",
             disable_active_learning=disable_active_learning,
@@ -414,9 +412,7 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             # backend they are honoured, so this version keeps passing them
             # through and behaves exactly as it does today. @v5 forwards
             # unconditionally.
-            mask_decode_mode=(
-                "accurate" if USE_INFERENCE_MODELS else mask_decode_mode
-            ),
+            mask_decode_mode=("accurate" if USE_INFERENCE_MODELS else mask_decode_mode),
             tradeoff_factor=1.0 if USE_INFERENCE_MODELS else tradeoff_factor,
             response_mask_format="rle",
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,

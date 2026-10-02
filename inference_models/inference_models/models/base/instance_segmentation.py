@@ -272,17 +272,19 @@ class InstanceDetections:
         if mask is not None and self.mask_size is not None:
             image_height, image_width = self._image_size()
             if tuple(self.mask_size) != (image_height, image_width):
-                mask = np.stack(
-                    [
-                        cv2.resize(
-                            single.astype(np.uint8),
-                            (image_width, image_height),
-                            interpolation=cv2.INTER_NEAREST,
-                        ).astype(bool)
-                        for single in mask
-                    ]
-                ) if len(mask) else np.zeros(
-                    (0, image_height, image_width), dtype=bool
+                mask = (
+                    np.stack(
+                        [
+                            cv2.resize(
+                                single.astype(np.uint8),
+                                (image_width, image_height),
+                                interpolation=cv2.INTER_NEAREST,
+                            ).astype(bool)
+                            for single in mask
+                        ]
+                    )
+                    if len(mask)
+                    else np.zeros((0, image_height, image_width), dtype=bool)
                 )
         return sv.Detections(
             xyxy=self.xyxy.cpu().numpy(),

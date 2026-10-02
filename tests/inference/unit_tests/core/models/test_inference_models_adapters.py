@@ -6,9 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
-from pycocotools import mask as mask_utils
 import pytest
 import torch
+from pycocotools import mask as mask_utils
 
 from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
@@ -16,7 +16,6 @@ from inference.core.entities.responses.inference import (
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationInferenceResponseDC,
 )
-from inference_models.models.base.types import InstancesRLEMasks
 from inference.core.exceptions import InvalidMaskDecodeArgument, PostProcessingError
 from inference.core.models.inference_models_adapters import (
     InferenceModelsClassificationAdapter,
@@ -37,6 +36,7 @@ from inference_models import (
 )
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.async_handoff import attach_adapter_mapped_kwargs
+from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.utils.onnx_embeddings import embedding_definition
 
 
@@ -432,7 +432,12 @@ def test_workflow_response_fast_dataclass_path_is_disabled_at_depth_one() -> Non
     adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
     adapter._pipeline_depth = 1
     adapter.class_names = ["car"]
-    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=4, height=4), size_after_pre_processing=SimpleNamespace(width=4, height=4))]
+    metadata = [
+        SimpleNamespace(
+            original_size=SimpleNamespace(width=4, height=4),
+            size_after_pre_processing=SimpleNamespace(width=4, height=4),
+        )
+    ]
     detections = [
         InstanceDetections(
             xyxy=torch.tensor([[1, 1, 3, 3]], dtype=torch.int32),
@@ -455,7 +460,12 @@ def test_workflow_response_fast_dataclass_path_is_enabled_above_depth_one() -> N
     adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
     adapter._pipeline_depth = 2
     adapter.class_names = ["car"]
-    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=4, height=4), size_after_pre_processing=SimpleNamespace(width=4, height=4))]
+    metadata = [
+        SimpleNamespace(
+            original_size=SimpleNamespace(width=4, height=4),
+            size_after_pre_processing=SimpleNamespace(width=4, height=4),
+        )
+    ]
     detections = [
         InstanceDetections(
             xyxy=torch.tensor([[1, 1, 3, 3]], dtype=torch.int32),
@@ -905,7 +915,12 @@ def test_polygon_points_are_scaled_from_mask_space_into_image_space() -> None:
     # a 4x4 mask describing a 16x16 image: contours come out in mask
     # coordinates and must be lifted by 4x before they are reported
     adapter = _seg_adapter()
-    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=16, height=16), size_after_pre_processing=SimpleNamespace(width=16, height=16))]
+    metadata = [
+        SimpleNamespace(
+            original_size=SimpleNamespace(width=16, height=16),
+            size_after_pre_processing=SimpleNamespace(width=16, height=16),
+        )
+    ]
     detections = [
         InstanceDetections(
             xyxy=torch.tensor([[0, 0, 16, 16]], dtype=torch.int32),
@@ -929,7 +944,12 @@ def test_polygon_points_unchanged_when_mask_matches_the_image() -> None:
     # given
     # today's situation: the scaling must be an exact no-op
     adapter = _seg_adapter()
-    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=8, height=8), size_after_pre_processing=SimpleNamespace(width=8, height=8))]
+    metadata = [
+        SimpleNamespace(
+            original_size=SimpleNamespace(width=8, height=8),
+            size_after_pre_processing=SimpleNamespace(width=8, height=8),
+        )
+    ]
     mask = torch.zeros((1, 8, 8), dtype=torch.uint8)
     mask[0, 2:6, 2:6] = 1
     detections = [
@@ -1031,9 +1051,14 @@ class TestRLEBackedPolygons:
         dense[mask_h // 4 : mask_h // 2, mask_w // 4 : mask_w // 2] = 1
         counts = mask_utils.encode(np.asfortranarray(dense))["counts"]
 
-        return InstancesRLEMasks(
-            image_size=(image_h, image_w), masks=[counts], mask_size=(mask_h, mask_w)
-        ), dense
+        return (
+            InstancesRLEMasks(
+                image_size=(image_h, image_w),
+                masks=[counts],
+                mask_size=(mask_h, mask_w),
+            ),
+            dense,
+        )
 
     def test_polygon_follows_the_encoded_grid_not_the_image(self) -> None:
         # given

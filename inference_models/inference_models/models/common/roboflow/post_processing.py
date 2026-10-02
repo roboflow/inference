@@ -512,11 +512,11 @@ def resolve_unpadded_mask_grid(
     pad_left, pad_top, pad_right, pad_bottom = padding
     height_scale = mask_height / inference_size.height
     width_scale = mask_width / inference_size.width
-    unpadded_height = mask_height - round(height_scale * pad_top) - round(
-        height_scale * pad_bottom
+    unpadded_height = (
+        mask_height - round(height_scale * pad_top) - round(height_scale * pad_bottom)
     )
-    unpadded_width = mask_width - round(width_scale * pad_left) - round(
-        width_scale * pad_right
+    unpadded_width = (
+        mask_width - round(width_scale * pad_left) - round(width_scale * pad_right)
     )
 
     return max(1, unpadded_height), max(1, unpadded_width)

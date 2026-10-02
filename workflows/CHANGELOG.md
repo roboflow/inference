@@ -40,6 +40,13 @@ for contributor and maintainer responsibilities.
   behave exactly as they do today; the pin applies only where the fields were
   being discarded. No existing workflow changes behaviour on either backend.
 
+- `ModelsConfiguration.use_inference_models`, defaulting to `True`. Hosts that
+  serve instance segmentation through the legacy backend must set it to `False`
+  so block versions up to `@v4` keep forwarding `mask_decode_mode` and
+  `tradeoff_factor`, which that backend honours. The server sets it from
+  `inference.core.env.USE_INFERENCE_MODELS`; the value cannot be read from the
+  environment here, since this package must not import `inference.*`.
+
   The tensor-native siblings of every version, `@v5` included, are pinned
   unconditionally - the reason there is downstream rather than the backend.
   Nothing under `roboflow_workflows/` reads `InstanceDetections.mask_size`, and
