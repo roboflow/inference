@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 FOURCC_PROPERTY = "fourcc"
+_MAX_FOURCC = 0xFFFFFFFF
 
 
 def _encode_fourcc(code: str) -> int:
@@ -22,8 +23,8 @@ def _integral(value: Any) -> Optional[int]:
         number = float(value)
     except (OverflowError, TypeError, ValueError):
         return None
-    # A FOURCC is a 32-bit unsigned code: finite, non-negative and whole.
-    if math.isfinite(number) and number >= 0 and number.is_integer():
+    # A FOURCC is a 32-bit unsigned code: finite, whole and within 0..0xFFFFFFFF.
+    if math.isfinite(number) and number.is_integer() and 0 <= number <= _MAX_FOURCC:
         return int(number)
     return None
 

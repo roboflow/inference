@@ -297,6 +297,7 @@ def test_video_configuration_rejects_non_numeric_value_for_other_properties(
         True,
         10**400,
         -(10**400),
+        2**32,
     ],
 )
 def test_video_configuration_rejects_invalid_fourcc(fourcc: Any) -> None:
@@ -312,6 +313,7 @@ def test_video_configuration_rejects_invalid_fourcc(fourcc: Any) -> None:
 @pytest.mark.parametrize(
     "fourcc",
     [
+        0xFFFFFFFF,
         "avc1",
         "Y16 ",
         MJPG,
