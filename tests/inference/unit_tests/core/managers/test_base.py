@@ -290,11 +290,15 @@ async def test_infer_from_request_skips_model_monitoring_cache_offline(
     cache_mock.zadd.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "operation", ["run_tensor_native_inference", "run_tensor_native_embeddings"]
+)
 def test_run_tensor_native_inference_records_telemetry(
     monkeypatch: pytest.MonkeyPatch,
+    operation: str,
 ) -> None:
     model = MagicMock()
-    model.run_tensor_native_inference.return_value = "result"
+    getattr(model, operation).return_value = "result"
     model_manager = ModelManager(model_registry=MagicMock(), models={"some/1": model})
     start_span_mock = MagicMock()
     record_inference_mock = MagicMock()
@@ -303,17 +307,15 @@ def test_run_tensor_native_inference_records_telemetry(
     monkeypatch.setattr(base_module, "record_inference", record_inference_mock)
     monkeypatch.setattr(base_module, "record_error", record_error_mock)
 
-    result = model_manager.run_tensor_native_inference(
-        model_id="some/1", images="tensor"
-    )
+    result = getattr(model_manager, operation)(model_id="some/1", images="tensor")
 
     assert result == "result"
-    model.run_tensor_native_inference.assert_called_once_with(images="tensor")
+    getattr(model, operation).assert_called_once_with(images="tensor")
     start_span_mock.assert_called_once_with(
         "model.infer",
         {
             "model.id": "some/1",
-            "model.infer.caller": "run_tensor_native_inference",
+            "model.infer.caller": operation,
         },
     )
     record_inference_mock.assert_called_once()
@@ -322,12 +324,16 @@ def test_run_tensor_native_inference_records_telemetry(
     record_error_mock.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "operation", ["run_tensor_native_inference", "run_tensor_native_embeddings"]
+)
 def test_run_tensor_native_inference_records_errors(
     monkeypatch: pytest.MonkeyPatch,
+    operation: str,
 ) -> None:
     error = RuntimeError("inference failed")
     model = MagicMock()
-    model.run_tensor_native_inference.side_effect = error
+    getattr(model, operation).side_effect = error
     model_manager = ModelManager(model_registry=MagicMock(), models={"some/1": model})
     start_span_mock = MagicMock()
     record_inference_mock = MagicMock()
@@ -337,7 +343,7 @@ def test_run_tensor_native_inference_records_errors(
     monkeypatch.setattr(base_module, "record_error", record_error_mock)
 
     with pytest.raises(RuntimeError) as raised_error:
-        model_manager.run_tensor_native_inference(model_id="some/1", images="tensor")
+        getattr(model_manager, operation)(model_id="some/1", images="tensor")
 
     assert raised_error.value is error
     record_inference_mock.assert_not_called()
