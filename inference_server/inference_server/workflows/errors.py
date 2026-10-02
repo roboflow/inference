@@ -49,6 +49,10 @@ class WorkspaceLoadError(RoboflowAPIRequestError):
     pass
 
 
+class ModelDeploymentNotSupportedError(Exception):
+    pass
+
+
 def with_workflow_errors(fn: Callable) -> Callable:
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):

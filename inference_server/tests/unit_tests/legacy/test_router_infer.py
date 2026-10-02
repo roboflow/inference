@@ -23,10 +23,10 @@ from inference_models.errors import (
 )
 from PIL import Image
 
-from inference_server.gateway import ModelManagerGateway
+from inference_server.gateway import ModelManagerGateway, ReloadAfterEvictionError
 from inference_server.legacy import router as router_module
 from inference_server.legacy.translation import repack_prediction
-from tests.unit_tests.legacy.conftest import FakeGateway
+from tests.unit_tests.legacy.conftest import EvictedModelManager, FakeGateway
 from tests.unit_tests.legacy.test_errors import (
     FORBIDDEN,
     HELP_SUFFIX,
@@ -589,3 +589,96 @@ def test_offline_load_failure_without_a_description_is_404(
 
     assert response.status_code == 404
     assert response.json() == {"message": "Model ds/1 not available offline"}
+
+
+NOT_READY = {"message": "Model is temporarily not ready - retry request."}
+
+
+@pytest.mark.parametrize(
+    "reload_error,status,body",
+    [
+        (UnauthorizedModelAccessError("denied"), 401, {"message": UNAUTHORIZED}),
+        (
+            PaymentRequiredModelAccessError("no credits"),
+            402,
+            {"message": PAYMENT_REQUIRED},
+        ),
+        (ModelNotFoundError("missing"), 404, {"message": NOT_FOUND}),
+        (ModelPackageRestrictedError("too big"), 507, {"message": RESTRICTED}),
+        (ValueError("unsafe id"), 500, INTERNAL_ERROR),
+    ],
+    ids=lambda value: type(value).__name__ if isinstance(value, Exception) else None,
+)
+def test_failed_reload_after_eviction_answers_like_the_load_path(
+    legacy_client, fake_stat, reload_error, status, body
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    manager = EvictedModelManager(reload_error=reload_error)
+
+    response = _infer_request(legacy_client(ModelManagerGateway(manager)))
+
+    assert response.status_code == status
+    assert response.json() == body
+    assert "retry-after" not in response.headers
+    assert manager.load_calls == 2 and manager.process_calls == 1
+
+
+def _gateway_failing_inference(error, **attributes):
+    gateway = FakeGateway(model_info={"ds/1": {"class_names": ["cat"]}})
+
+    async def _raise(**kwargs):
+        raise error
+
+    gateway.infer = _raise
+    for name, value in attributes.items():
+        setattr(gateway, name, value)
+
+    return gateway
+
+
+@pytest.mark.parametrize("attributes", [{}, {"last_load_failure": lambda key: None}])
+def test_failed_reload_after_eviction_without_a_recorded_cause_answers_not_ready(
+    legacy_client, fake_stat, attributes
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _gateway_failing_inference(
+        ReloadAfterEvictionError("reload after eviction failed"), **attributes
+    )
+
+    response = _infer_request(legacy_client(gateway))
+
+    assert response.status_code == 503
+    assert response.json() == NOT_READY
+    assert response.headers["retry-after"] == "1"
+
+
+def test_failed_reload_after_eviction_whose_recorded_cause_is_gone_answers_not_ready(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    manager = EvictedModelManager(reload_error=UnauthorizedModelAccessError("denied"))
+    gateway = ModelManagerGateway(manager)
+    gateway._remember_load_failure = lambda key, failure: None
+
+    response = _infer_request(legacy_client(gateway))
+
+    assert manager.load_calls == 2
+    assert response.status_code == 503
+    assert response.json() == NOT_READY
+    assert response.headers["retry-after"] == "1"
+
+
+def test_runtime_error_with_the_reload_message_is_not_taken_for_a_failed_reload(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _gateway_failing_inference(
+        RuntimeError("reload after eviction failed"),
+        last_load_failure=lambda key: ("error", 5, {"error_type": "x"}),
+    )
+
+    response = _infer_request(legacy_client(gateway))
+
+    assert response.status_code == 500
+    assert response.json() == INTERNAL_ERROR
+    assert "retry-after" not in response.headers

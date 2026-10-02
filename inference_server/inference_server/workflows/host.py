@@ -395,6 +395,7 @@ from roboflow_workflows.prototypes.platform_errors import (  # noqa: E402
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIRequestError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
 )
@@ -407,15 +408,17 @@ from roboflow_workflows.utils.in_memory_cache import (  # noqa: E402
     InMemoryWorkflowsCache,
 )
 
+from inference_model_manager.pipelines import InvalidPipelineIdError  # noqa: E402
 from inference_models.errors import (  # noqa: E402
     ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
     ModelPackageRestrictedError,
     ModelRetrievalError,
-    RetryError,
     UnauthorizedModelAccessError,
 )
 from inference_sdk.http.errors import HTTPCallErrorError  # noqa: E402
 from inference_server import platform_http  # noqa: E402
+from inference_server.errors import ServerBusyError  # noqa: E402
 from inference_server.framework.input_parsers.url_fetch import (  # noqa: E402
     URL_FETCH_TIMEOUT_S,
 )
@@ -426,9 +429,10 @@ from inference_server.legacy.errors import (  # noqa: E402
     MODEL_ACCESS_ERROR_MESSAGES,
     NOT_FOUND_MESSAGE,
     REGISTRY_REQUEST_FAILED_MESSAGE,
-    REGISTRY_UNREACHABLE_MESSAGE,
     UNAUTHORIZED_MESSAGE,
+    ImageFetchError,
     LegacyHTTPError,
+    ModelNotReadyError,
 )
 from inference_server.platform_http import (  # noqa: E402
     API_REQUEST_TIMEOUT_S,
@@ -437,6 +441,7 @@ from inference_server.platform_http import (  # noqa: E402
 )
 from inference_server.workflows.errors import (  # noqa: E402
     MalformedRoboflowAPIResponseError,
+    ModelDeploymentNotSupportedError,
     PaymentRequiredError,
     RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
@@ -595,13 +600,27 @@ def _translate_platform_api_errors(
         if status_code in handlers:
             error_class, message = handlers[status_code]
             raise error_class(message) from error
-        raise RoboflowAPIUnsuccessfulRequestError(
-            f"Unsuccessful request to Roboflow API with response code: {status_code}"
-        ) from error
+        raise _unsuccessful_request_error(status_code) from error
     except (requests.exceptions.InvalidJSONError, ValueError) as error:
         raise MalformedRoboflowAPIResponseError(
             "Could not decode JSON response from Roboflow API."
         ) from error
+
+
+def _platform_api_error(status_code: int) -> Exception:
+    if status_code in _PLATFORM_API_ERRORS:
+        error_class, message = _PLATFORM_API_ERRORS[status_code]
+        return error_class(message)
+
+    return _unsuccessful_request_error(status_code)
+
+
+def _unsuccessful_request_error(
+    status_code: int,
+) -> RoboflowAPIUnsuccessfulRequestError:
+    return RoboflowAPIUnsuccessfulRequestError(
+        f"Unsuccessful request to Roboflow API with response code: {status_code}"
+    )
 
 
 def _refuse_when_offline(operation: str) -> None:
@@ -654,19 +673,30 @@ class ServerRoboflowPlatformClient:
             url=f"{configuration.API_BASE_URL.rstrip('/')}/{endpoint.strip('/')}",
             params=url_params,
         )
-        response = _platform_request(
-            "post",
-            self.wrap_url(url),
-            json=payload,
-            headers=self.build_api_headers(),
-            timeout=API_REQUEST_TIMEOUT_S,
-        )
+        try:
+            response = _platform_request(
+                "post",
+                self.wrap_url(url),
+                json=payload,
+                headers=self.build_api_headers(),
+                timeout=API_REQUEST_TIMEOUT_S,
+            )
+        except LegacyHTTPError as error:
+            if error.status_code == 504:
+                raise RoboflowAPITimeoutError(
+                    "Timeout when attempting to connect to Roboflow API."
+                ) from None
+            raise RoboflowAPIConnectionError(
+                "Could not connect to Roboflow API."
+            ) from None
         if not _is_successful(response):
-            message = _api_error_message(response, api_key)
             handler = (http_errors_handlers or {}).get(response.status_code)
-            if handler is not None:
-                handler(requests.exceptions.HTTPError(message, response=response))
-            raise LegacyHTTPError(response.status_code, message)
+            if handler is None:
+                raise _platform_api_error(response.status_code)
+
+            message = _api_error_message(response, api_key)
+            handler(requests.exceptions.HTTPError(message, response=response))
+            raise _unsuccessful_request_error(response.status_code)
         return response.json()
 
     def build_api_headers(
@@ -929,27 +959,16 @@ class ServerRoboflowPlatformClient:
 
 class ServerWorkspaceResolver:
     def resolve_workspace(self, api_key: Optional[str]) -> Optional[str]:
-        if not api_key:
+        if not api_key or configuration.LEGACY_OFFLINE_MODE:
             return None
-        url = _add_params_to_url(
-            url=f"{configuration.API_BASE_URL.rstrip('/')}/",
-            params=[("api_key", api_key), ("nocache", "true")],
-        )
+
         try:
-            response = _platform_request(
-                "get",
-                PLATFORM_CLIENT.wrap_url(url),
-                headers=PLATFORM_CLIENT.build_api_headers(),
-                timeout=API_REQUEST_TIMEOUT_S,
-            )
-            if not _is_successful(response):
-                return None
-            workspace_id = response.json().get("workspace")
-        except Exception as error:
-            logger.warning("Could not resolve Roboflow workspace: %s", error)
+            workspace_id = PLATFORM_CLIENT.get_roboflow_workspace(api_key)
+        except WorkspaceLoadError:
             return None
-        if not isinstance(workspace_id, str) or not workspace_id:
-            return None
+        except RoboflowAPIRequestError as error:
+            raise error from None
+
         return workspace_id
 
 
@@ -1234,22 +1253,6 @@ def _runtime_limited(step_name: str, message: str, error: Exception) -> None:
 
 
 def step_error_handler(step_name: str, error: Exception) -> None:
-    if isinstance(error, RuntimeError) and isinstance(
-        error.__cause__, (RetryError, ModelRetrievalError, OSError)
-    ):
-        cause = error.__cause__
-        if (
-            isinstance(cause, ModelRetrievalError)
-            and getattr(cause, "status_code", None) in _MODEL_ACCESS_ERROR_MESSAGES
-        ):
-            return step_error_handler(step_name, cause)
-        _client_caused(
-            step_name,
-            503,
-            REGISTRY_UNREACHABLE_MESSAGE,
-            error,
-            _STEP_EXECUTION_CONTEXT,
-        )
     if isinstance(error, FeatureDeprecatedError):
         _client_caused(
             step_name,
@@ -1258,7 +1261,33 @@ def step_error_handler(step_name: str, error: Exception) -> None:
             error,
             "workflow_execution | step_execution | feature_deprecated",
         )
-    if isinstance(error, (UnauthorizedModelAccessError, PermissionError)):
+    if isinstance(error, (ModelNotReadyError, ServerBusyError)):
+        raise error
+    if isinstance(error, LookupError) and isinstance(
+        error.__cause__, InvalidPipelineIdError
+    ):
+        _client_caused(
+            step_name,
+            400,
+            f"Problem with Workflow Block configuration - {error}",
+            error.__cause__,
+            _STEP_EXECUTION_CONTEXT,
+        )
+    if isinstance(error, ModelPackageRestrictedError) or (
+        isinstance(error, ModelPackageAlternativesExhaustedError)
+        and any(
+            isinstance(alternative_error, ModelPackageRestrictedError)
+            for alternative_error in error.alternatives_errors or []
+        )
+    ):
+        _runtime_limited(
+            step_name,
+            "Model loading failed due to restrictions of server configuration - "
+            "usually due to excessive runtime memory requirement of the model (for "
+            "instance caused by large input size).",
+            error,
+        )
+    if isinstance(error, (RoboflowAPINotAuthorizedError, UnauthorizedModelAccessError)):
         _client_caused(
             step_name,
             401,
@@ -1268,25 +1297,34 @@ def step_error_handler(step_name: str, error: Exception) -> None:
             error,
             _STEP_EXECUTION_CONTEXT,
         )
-    if isinstance(error, ModelNotFoundError) or (
-        isinstance(error, LookupError) and not isinstance(error, (KeyError, IndexError))
-    ):
+    if isinstance(error, PaymentRequiredError):
         _client_caused(
             step_name,
-            404,
-            f"Could not find requested Roboflow resource while execution of step "
-            f"{step_name} - details of error: {error}. This error usually mean the "
-            f"problem with not existing model.",
+            402,
+            f"Not enough credits to execute step {step_name}. "
+            f"Verify your workspace billing page. Details: {error}",
             error,
             _STEP_EXECUTION_CONTEXT,
         )
-    if isinstance(error, ModelPackageRestrictedError):
-        _runtime_limited(
+    if isinstance(error, RoboflowAPIForbiddenError):
+        _client_caused(
             step_name,
-            "Model loading failed due to restrictions of server configuration - "
-            "usually due to excessive runtime memory requirement of the model (for "
-            "instance caused by large input size).",
+            403,
+            f"Forbidden error occurred while execution of step {step_name} - "
+            f"details of error: {error}. This error usually mean the problem with "
+            f"Roboflow API key.",
             error,
+            _STEP_EXECUTION_CONTEXT,
+        )
+    if isinstance(error, RoboflowAPIUsagePausedError):
+        _client_caused(
+            step_name,
+            423,
+            f"Roboflow API usage is paused while executing step {step_name}. "
+            f"Contact your workspace administrator to re-enable API keys. "
+            f"Details: {error}",
+            error,
+            _STEP_EXECUTION_CONTEXT,
         )
     if isinstance(error, ModelRetrievalError):
         status_code = getattr(error, "status_code", None)
@@ -1299,16 +1337,32 @@ def step_error_handler(step_name: str, error: Exception) -> None:
                 error,
                 _STEP_EXECUTION_CONTEXT,
             )
-    if isinstance(error, LegacyHTTPError):
-        if error.status_code == 507:
-            _runtime_limited(step_name, error.message, error)
+    if isinstance(error, (RoboflowAPINotNotFoundError, ModelNotFoundError)):
         _client_caused(
             step_name,
-            error.status_code,
-            error.message,
+            404,
+            f"Could not find requested Roboflow resource while execution of step "
+            f"{step_name} - details of error: {error}. This error usually mean the "
+            f"problem with not existing model.",
             error,
             _STEP_EXECUTION_CONTEXT,
         )
+    if isinstance(error, LegacyHTTPError):
+        if error.status_code == 507:
+            _runtime_limited(step_name, error.message, error)
+        if (
+            error.status_code < 500
+            or error.status_code == 501
+            or isinstance(error, ImageFetchError)
+        ):
+            _client_caused(
+                step_name,
+                error.status_code,
+                error.message,
+                error,
+                _STEP_EXECUTION_CONTEXT,
+            )
+        return None
     if isinstance(error, HTTPCallErrorError):
         return _handle_remote_call_error(step_name, error)
     return None
@@ -1345,14 +1399,17 @@ def _handle_remote_call_error(step_name: str, error: HTTPCallErrorError) -> None
             error,
         )
     if error.status_code == 501:
-        _client_caused(
-            step_name,
-            501,
+        public_message = (
             error.api_message
-            or f"Remote execution of step {step_name} is not supported on this deployment.",
-            error,
-            "workflow_execution | step_execution | deployment_not_supported",
+            or f"Remote execution of step {step_name} is not supported on this deployment."
         )
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=501,
+            public_message=public_message,
+            context="workflow_execution | step_execution | deployment_not_supported",
+            inner_error=ModelDeploymentNotSupportedError(public_message),
+        ) from error
     message = _REMOTE_CALL_ERROR_MESSAGES.get(error.status_code)
     if message is None:
         return None

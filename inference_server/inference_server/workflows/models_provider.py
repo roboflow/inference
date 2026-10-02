@@ -11,8 +11,10 @@ from roboflow_workflows.prototypes.models_provider import (
     _Unset,
 )
 
+from inference_models.errors import BaseInferenceModelsError
 from inference_models.utils import model_blob_cache
 from inference_server.framework.input_parsers.image_limits import too_many_images
+from inference_server.gateway import _load_failure
 from inference_server.legacy.bridge import Route, SyncLegacyBridge, resolved_model_for
 from inference_server.legacy.common import (
     ImagePayload,
@@ -44,6 +46,7 @@ from inference_server.legacy.entities import (
     YOLOWorldInferenceRequest,
 )
 from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.legacy.load_failures import load_failure_error
 from inference_server.legacy.prompts import (
     Box,
     Point,
@@ -133,11 +136,32 @@ class GatewayModelsProvider:
         row_key = model_id if model_id_alias is None else model_id_alias
         alias = model_id if row_key != model_id else None
         path = self._request_path or ""
-        route = self._bridge.resolve(
+        route = self._resolve_route(
             model_id, key, row_key=row_key, path=path, alias=alias
         )
         self._routes[model_id] = route
         self._bridge.record_request(route, row_key, path, alias=alias)
+
+    def _resolve_route(
+        self, model_id: str, api_key: Optional[str], **kwargs: Any
+    ) -> Route:
+        try:
+            route = self._bridge.resolve(model_id, api_key, **kwargs)
+        except (PermissionError, LookupError, RuntimeError) as error:
+            cause = error.__cause__
+            if not isinstance(cause, BaseInferenceModelsError):
+                raise
+        else:
+            return route
+
+        rebuilt = load_failure_error(_load_failure(cause))
+        if type(rebuilt) is not type(cause):
+            cause.__cause__ = None
+            cause.__context__ = None
+            cause.__suppress_context__ = True
+            raise cause
+
+        raise rebuilt from None
 
     def _key_for(self, model_id: str, api_key: Optional[str] = None) -> Optional[str]:
         if api_key is not None:
@@ -602,7 +626,7 @@ class GatewayModelsProvider:
         return model_id in self._bridge
 
     def _resolve(self, model_id: str, api_key: Optional[str]) -> Route:
-        route = self._bridge.resolve(model_id, api_key)
+        route = self._resolve_route(model_id, api_key)
         self._routes[model_id] = route
         return route
 

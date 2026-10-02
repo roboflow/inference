@@ -59,6 +59,7 @@ SERVICE_MISCONFIGURATION_MESSAGE = "Service misconfiguration."
 INFERENCE_TIMEOUT_MESSAGE = "Timed out waiting for inference result."
 INTERNAL_ERROR_MESSAGE = "Internal error."
 INVALID_MODEL_ID_MESSAGE = "Invalid Model ID sent in request."
+MODEL_NOT_READY_MESSAGE = "Model is temporarily not ready - retry request."
 
 MODEL_ACCESS_ERROR_MESSAGES = {
     402: "Not enough credits to perform this request. Verify your workspace billing page.",
@@ -87,6 +88,15 @@ class LegacyHTTPError(Exception):
         self.message = message
         self.extra = extra or {}
         self.headers = headers or {}
+
+
+class ModelNotReadyError(LegacyHTTPError):
+    def __init__(self) -> None:
+        super().__init__(503, MODEL_NOT_READY_MESSAGE, headers={"Retry-After": "1"})
+
+
+class ImageFetchError(LegacyHTTPError):
+    pass
 
 
 def legacy_error_response(error: BaseException) -> JSONResponse:

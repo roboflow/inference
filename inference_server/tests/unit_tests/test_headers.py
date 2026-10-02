@@ -727,7 +727,7 @@ def _workflow_run(client):
             ValueError("unsafe id"),
             500,
             "StepExecutionError",
-            "ModelLoadFailedError",
+            "ValueError",
             "unsafe id",
         ),
     ],
@@ -760,7 +760,7 @@ def test_workflow_step_load_failure_without_a_description_is_a_broken_package(
     assert response.status_code == 500
     body = response.json()
     assert body["message"] == "Model package is broken."
-    assert body["error_type"] == "ClientCausedStepExecutionError"
+    assert body["error_type"] == "StepExecutionError"
     assert body["inner_error_type"] == "LegacyHTTPError"
 
 

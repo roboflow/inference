@@ -63,6 +63,10 @@ _SECRET_VALUE = re.compile(
 )
 
 
+class ReloadAfterEvictionError(RuntimeError):
+    pass
+
+
 def _translate_manager_infer_error(exc: Exception) -> Exception:
     """Map manager/backend failures onto the MMPGateway exception surface."""
     if type(exc).__name__ == "ModelInputError":
@@ -555,7 +559,7 @@ class ModelManagerGateway:
                     if status[0] == "load_timeout":
                         raise ServerBusyError(f"reload timed out for '{key}'")
                     if status[0] == "error":
-                        raise RuntimeError("reload after eviction failed")
+                        raise ReloadAfterEvictionError("reload after eviction failed")
                     return await _process()
             except asyncio.CancelledError:
                 raise

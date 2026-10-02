@@ -314,15 +314,19 @@ def test_syntax_error_is_400_with_workflow_error_shape(legacy_client):
 
 
 @pytest.mark.parametrize(
-    "error,status",
+    "error,status,error_type",
     [
-        (PermissionError("bad key"), 401),
-        (UnauthorizedModelAccessError("bad key"), 401),
-        (LookupError("ds/1"), 404),
+        (PermissionError("bad key"), 500, "StepExecutionError"),
+        (
+            UnauthorizedModelAccessError("bad key"),
+            401,
+            "ClientCausedStepExecutionError",
+        ),
+        (LookupError("ds/1"), 500, "StepExecutionError"),
     ],
 )
-def test_step_error_status_from_client_caused_error(
-    legacy_client, fake_stat, error, status
+def test_step_error_status_follows_the_class_raised_in_the_step(
+    legacy_client, fake_stat, error, status, error_type
 ):
     fake_stat["ds/1"] = ("object-detection", "infer")
     gateway = FakeGateway(model_info={"ds/1": {"class_names": ["cat"]}})
@@ -342,6 +346,8 @@ def test_step_error_status_from_client_caused_error(
     )
 
     assert response.status_code == status, response.text
+    assert response.json()["error_type"] == error_type
+    assert response.json()["inner_error_type"] == type(error).__name__
     assert response.json()["blocks_errors"][0]["block_id"] == "det"
 
 
@@ -712,3 +718,90 @@ def test_validate_custom_python_block_rejects_legacy_inference_import(
     body = response.json()
     assert body["error_type"] == "DynamicBlockCodeError"
     assert "ModuleNotFoundError" in body["message"]
+
+
+_SIMPLE_DYNAMIC_BLOCK = {
+    "type": "DynamicBlockDefinition",
+    "manifest": {
+        "type": "ManifestDescription",
+        "block_type": "Echo",
+        "inputs": {
+            "value": {
+                "type": "DynamicInputDefinition",
+                "selector_types": ["input_parameter"],
+            },
+        },
+        "outputs": {"value": {"type": "DynamicOutputDefinition", "kind": []}},
+    },
+    "code": {
+        "type": "PythonCode",
+        "run_function_code": "def run(self, value):\n    return {'value': value}\n",
+        "run_function_name": "run",
+    },
+}
+_DYNAMIC_BLOCK_WF = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowParameter", "name": "x"}],
+    "dynamic_blocks_definitions": [_SIMPLE_DYNAMIC_BLOCK],
+    "steps": [{"type": "Echo", "name": "echo", "value": "$inputs.x"}],
+    "outputs": [{"type": "JsonField", "name": "y", "selector": "$steps.echo.value"}],
+}
+
+
+@pytest.fixture
+def modal_custom_python(monkeypatch):
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
+        block_scaffolding,
+    )
+
+    monkeypatch.setattr(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    )
+    host.clear_workspace_cache()
+    yield
+    host.clear_workspace_cache()
+
+
+def _refused_key_requests(client):
+    describe = client.post(
+        "/workflows/blocks/describe",
+        json={"dynamic_blocks_definitions": [_SIMPLE_DYNAMIC_BLOCK], "api_key": "bad"},
+    )
+    validate = client.post("/workflows/validate?api_key=bad", json=_DYNAMIC_BLOCK_WF)
+    run = client.post(
+        "/workflows/run",
+        json={"specification": _DYNAMIC_BLOCK_WF, "inputs": {"x": 1}, "api_key": "bad"},
+    )
+
+    return [describe, validate, run]
+
+
+@pytest.mark.parametrize(
+    "platform_status,status,message",
+    [
+        (401, 401, UNAUTHORIZED),
+        (402, 402, PAYMENT_REQUIRED),
+        (403, 403, FORBIDDEN),
+        (404, 404, NOT_FOUND),
+        (423, 423, USAGE_PAUSED),
+        (500, 502, REQUEST_FAILED),
+    ],
+)
+def test_dynamic_block_compilation_with_a_refused_key_answers_like_legacy(
+    legacy_client, modal_custom_python, platform_status, status, message
+):
+    import requests_mock
+
+    client = legacy_client(FakeGateway())
+
+    with requests_mock.Mocker() as mocker:
+        mocker.get(
+            "https://api.roboflow.com/?api_key=bad&nocache=true",
+            status_code=platform_status,
+        )
+        responses = _refused_key_requests(client)
+
+    for response in responses:
+        assert response.status_code == status, response.text
+        assert response.json() == {"message": message}
+        assert "retry-after" not in response.headers

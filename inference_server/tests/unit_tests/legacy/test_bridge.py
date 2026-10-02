@@ -1195,14 +1195,47 @@ def test_load_failure_error_rebuilds_exhausted_alternatives(restricted):
 
 @pytest.mark.parametrize(
     "error_type",
-    ["RuntimeError", "PermissionError", "LookupError", "Optional", "List", None, 7],
+    ["RuntimeError", "PermissionError", "LookupError", "Optional", "List", "x" * 64],
 )
-def test_load_failure_error_of_an_unknown_kind_is_a_plain_load_failure(error_type):
+def test_load_failure_error_of_an_unknown_kind_is_a_load_failure_named_after_it(
+    error_type,
+):
+    error = load_failure_error(_failure(error_type))
+
+    assert type(error) is not ModelLoadFailedError
+    assert isinstance(error, ModelLoadFailedError)
+    assert type(error).__name__ == error_type
+    assert type(error) is type(load_failure_error(_failure(error_type)))
+    assert str(error) == "boom"
+    assert not isinstance(error, (RuntimeError, LookupError, PermissionError))
+
+
+@pytest.mark.parametrize(
+    "error_type",
+    [None, 7, "", "not an identifier", "a.b", "class", "None", "x" * 65],
+)
+def test_load_failure_error_with_an_unusable_class_name_is_a_plain_load_failure(
+    error_type,
+):
     error = load_failure_error(_failure(error_type))
 
     assert type(error) is ModelLoadFailedError
     assert str(error) == "boom"
-    assert not isinstance(error, (RuntimeError, LookupError, PermissionError))
+
+
+def test_load_failure_error_class_names_are_bounded(monkeypatch):
+    from inference_server.legacy import load_failures
+
+    monkeypatch.setattr(load_failures, "_LOAD_FAILURE_CLASSES", {})
+    monkeypatch.setattr(load_failures, "_MAX_LOAD_FAILURE_CLASSES", 2)
+
+    names = [
+        type(load_failure_error(_failure(error_type))).__name__
+        for error_type in ["FirstError", "SecondError", "ThirdError", "FirstError"]
+    ]
+
+    assert names == ["FirstError", "SecondError", "ModelLoadFailedError", "FirstError"]
+    assert sorted(load_failures._LOAD_FAILURE_CLASSES) == ["FirstError", "SecondError"]
 
 
 @pytest.mark.parametrize(

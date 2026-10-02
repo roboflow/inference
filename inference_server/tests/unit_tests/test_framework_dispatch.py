@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,6 +22,8 @@ from inference_server.framework.entities import (
 )
 from inference_server.framework.input_parsers import extract_images_and_params
 from inference_server.framework.registry import _HANDLERS
+from inference_server.gateway import ModelManagerGateway
+from tests.unit_tests.legacy.conftest import EvictedModelManager
 
 _JPEG = bytes(
     [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]
@@ -690,3 +694,33 @@ async def test_pipeline_model_id_dispatches_after_stage_authorization(
         ("pp-ocrv6-rec/medium", "k1"),
     ]
     assert proxy.ensure_loaded.await_args.args[0] == "pp_ocr/small-medium"
+
+
+@pytest.mark.asyncio
+async def test_failed_reload_after_eviction_answers_inference_failed(
+    fake_handler_entry, caplog
+):
+    async def _infer(action, input_data, proxy, server_hooks):
+        return await proxy.infer(model_id="acme/1", image=b"x")
+
+    fake_handler_entry["handler"].side_effect = _infer
+    manager = EvictedModelManager(reload_error=ValueError("broken"))
+
+    with _stat_returns(("fake-task", "infer")), caplog.at_level(
+        logging.ERROR, logger="inference_server.framework.dispatch"
+    ):
+        response = await handle_model_inference_request(
+            _request(query=b"model_id=acme/1"), ModelManagerGateway(manager)
+        )
+
+    body = json.loads(response.body)
+    assert response.status_code == 500
+    assert set(body) == {"error_code", "description"}
+    assert body["error_code"] == "INFERENCE_FAILED"
+    assert re.fullmatch(r"inference failed \(ref [0-9a-f]{8}\)", body["description"])
+    assert "retry-after" not in response.headers
+    assert manager.load_calls == 2 and manager.process_calls == 1
+    assert [
+        re.sub(r"ref [0-9a-f]{8}", "ref X", record.getMessage())
+        for record in caplog.records
+    ] == ["[dispatch] inference failed (ref X): reload after eviction failed"]

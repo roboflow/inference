@@ -4,11 +4,12 @@ import logging
 import os
 import subprocess
 import sys
+import traceback
 
 import pytest
 import requests
 import requests_mock as rm
-from inference_models.errors import ModelRetrievalError
+from inference_models.errors import ModelRetrievalError, RetryError
 
 
 def test_configuration_installed_on_import(monkeypatch):
@@ -94,9 +95,100 @@ def test_platform_client_posts_with_headers_and_key():
         assert m.last_request.headers["x-allow-chunked-response"] == "true"
 
 
-def test_platform_client_error_raises_legacy_http_error():
+_PLATFORM_KEY = "-".join(["secret", "key"])
+_TRANSPORT_KEY = "".join(["SEC", "RET"])
+
+
+def _formatted(error):
+    return "".join(traceback.format_exception(type(error), error, error.__traceback__))
+
+
+@pytest.mark.parametrize(
+    "status_code,error_class_name,message",
+    [
+        (
+            401,
+            "RoboflowAPINotAuthorizedError",
+            "Unauthorized access to roboflow API - check API key. Visit "
+            "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+            "to learn how to retrieve one.",
+        ),
+        (
+            402,
+            "PaymentRequiredError",
+            "Not enough credits to perform this request. Verify your workspace "
+            "billing page.",
+        ),
+        (
+            403,
+            "RoboflowAPIForbiddenError",
+            "Unauthorized access to roboflow API - check API key regarding "
+            "correctness and required scopes. Visit "
+            "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+            "to learn how to retrieve one.",
+        ),
+        (
+            404,
+            "RoboflowAPINotNotFoundError",
+            "Could not find requested Roboflow resource. Check that the provided "
+            "dataset and version are correct, and check that the provided Roboflow "
+            "API key has the correct permissions.",
+        ),
+        (
+            423,
+            "RoboflowAPIUsagePausedError",
+            "Roboflow API usage is paused. Please contact your workspace "
+            "administrator to re-enable api keys.",
+        ),
+        (
+            400,
+            "RoboflowAPIUnsuccessfulRequestError",
+            "Unsuccessful request to Roboflow API with response code: 400",
+        ),
+        (
+            429,
+            "RoboflowAPIUnsuccessfulRequestError",
+            "Unsuccessful request to Roboflow API with response code: 429",
+        ),
+        (
+            500,
+            "RoboflowAPIUnsuccessfulRequestError",
+            "Unsuccessful request to Roboflow API with response code: 500",
+        ),
+        (
+            507,
+            "RoboflowAPIUnsuccessfulRequestError",
+            "Unsuccessful request to Roboflow API with response code: 507",
+        ),
+    ],
+)
+def test_platform_client_post_error_without_block_handler_raises_platform_class(
+    status_code, error_class_name, message
+):
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import LegacyHTTPError
+
+    with rm.Mocker() as m:
+        m.post(
+            "https://api.roboflow.com/x/z?api_key=secret-key",
+            status_code=status_code,
+            json={"message": "denied for api_key=secret-key"},
+        )
+        with pytest.raises(Exception) as exc:
+            host.PLATFORM_CLIENT.post("x/z", api_key=_PLATFORM_KEY)
+    assert type(exc.value).__name__ == error_class_name
+    assert str(exc.value) == message
+    assert exc.value.__cause__ is None
+    assert _PLATFORM_KEY not in _formatted(exc.value)
+
+
+def test_platform_client_post_error_with_block_handler_reaches_the_handler():
+    import inference_server.workflows.host as host
+
+    class _BlockError(Exception):
+        pass
+
+    def _handle(error):
+        raise _BlockError(str(error))
 
     with rm.Mocker() as m:
         m.post(
@@ -104,24 +196,68 @@ def test_platform_client_error_raises_legacy_http_error():
             status_code=403,
             json={"message": "denied for api_key=secret-key"},
         )
-        with pytest.raises(LegacyHTTPError) as exc:
-            host.PLATFORM_CLIENT.post("x/z", api_key="secret-key")
-    assert exc.value.status_code == 403
-    assert "secret-key" not in exc.value.message
+        with pytest.raises(_BlockError) as exc:
+            host.PLATFORM_CLIENT.post(
+                "x/z", api_key="secret-key", http_errors_handlers={403: _handle}
+            )
+    assert str(exc.value) == "denied for api_key=se***ey"
 
 
-def test_platform_client_treats_non_2xx_as_error():
+def test_platform_client_block_handler_returning_leads_to_unsuccessful_request():
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import LegacyHTTPError
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIUnsuccessfulRequestError,
+    )
+
+    seen = []
+    with rm.Mocker() as m:
+        m.post(
+            "https://api.roboflow.com/x/c?api_key=k",
+            status_code=418,
+            json={"message": "teapot"},
+        )
+        with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc:
+            host.PLATFORM_CLIENT.post(
+                "x/c", api_key="k", http_errors_handlers={418: seen.append}
+            )
+    assert str(exc.value) == (
+        "Unsuccessful request to Roboflow API with response code: 418"
+    )
+    assert len(seen) == 1 and str(seen[0]) == "teapot"
+
+
+def test_platform_client_304_with_returning_block_handler_is_unsuccessful_request():
+    import inference_server.workflows.host as host
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIUnsuccessfulRequestError,
+    )
 
     seen = []
     with rm.Mocker() as m:
         m.post("https://api.roboflow.com/x/c?api_key=k", status_code=304)
-        with pytest.raises(LegacyHTTPError) as exc:
+        with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc:
             host.PLATFORM_CLIENT.post(
                 "x/c", api_key="k", http_errors_handlers={304: seen.append}
             )
-    assert exc.value.status_code == 304 and len(seen) == 1
+    assert str(exc.value) == (
+        "Unsuccessful request to Roboflow API with response code: 304"
+    )
+    assert len(seen) == 1
+
+
+def test_platform_client_304_without_block_handler_is_unsuccessful_request():
+    import inference_server.workflows.host as host
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIUnsuccessfulRequestError,
+    )
+
+    with rm.Mocker() as m:
+        m.post("https://api.roboflow.com/x/c?api_key=k", status_code=304)
+        with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc:
+            host.PLATFORM_CLIENT.post("x/c", api_key="k")
+    assert str(exc.value) == (
+        "Unsuccessful request to Roboflow API with response code: 304"
+    )
 
 
 def test_build_api_headers_merge_order(monkeypatch):
@@ -287,15 +423,74 @@ def test_bind_image_codec_installs_the_object_from_init_parameters():
     reset_image_codec()
 
 
-def test_workspace_resolver_returns_none_on_failure():
+@pytest.fixture
+def clean_workspace_cache():
+    import inference_server.workflows.host as host
+
+    host.clear_workspace_cache()
+    yield
+    host.clear_workspace_cache()
+
+
+@pytest.mark.parametrize(
+    "status_code,error_class_name",
+    [
+        (401, "RoboflowAPINotAuthorizedError"),
+        (402, "PaymentRequiredError"),
+        (403, "RoboflowAPIForbiddenError"),
+        (404, "RoboflowAPINotNotFoundError"),
+        (423, "RoboflowAPIUsagePausedError"),
+        (500, "RoboflowAPIUnsuccessfulRequestError"),
+    ],
+)
+def test_workspace_resolver_raises_when_the_platform_refuses(
+    clean_workspace_cache, status_code, error_class_name
+):
     import inference_server.workflows.host as host
 
     with rm.Mocker() as m:
-        m.get("https://api.roboflow.com/?api_key=bad&nocache=true", status_code=401)
-        assert host.WORKSPACE_RESOLVER.resolve_workspace("bad") is None
+        m.get(
+            "https://api.roboflow.com/?api_key=bad&nocache=true",
+            status_code=status_code,
+        )
+        with pytest.raises(Exception) as exc:
+            host.WORKSPACE_RESOLVER.resolve_workspace("bad")
+    assert type(exc.value).__name__ == error_class_name
+    assert exc.value.__cause__ is None
 
 
-def test_workspace_resolver_returns_workspace():
+@pytest.mark.parametrize("payload", [{}, {"workspace": None}, {"workspace": "a b"}])
+def test_workspace_resolver_returns_none_for_a_workspace_load_error(
+    clean_workspace_cache, payload
+):
+    import inference_server.workflows.host as host
+
+    with rm.Mocker() as m:
+        m.get("https://api.roboflow.com/?api_key=odd&nocache=true", json=payload)
+        assert host.WORKSPACE_RESOLVER.resolve_workspace("odd") is None
+
+
+@pytest.mark.parametrize("api_key", [None, ""])
+def test_workspace_resolver_returns_none_without_api_key(api_key):
+    import inference_server.workflows.host as host
+
+    with rm.Mocker() as m:
+        assert host.WORKSPACE_RESOLVER.resolve_workspace(api_key) is None
+        assert m.call_count == 0
+
+
+def test_workspace_resolver_returns_none_offline_without_calling_the_platform(
+    clean_workspace_cache, monkeypatch
+):
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
+    with rm.Mocker() as m:
+        assert host.WORKSPACE_RESOLVER.resolve_workspace("good") is None
+        assert m.call_count == 0
+
+
+def test_workspace_resolver_returns_workspace(clean_workspace_cache):
     import inference_server.workflows.host as host
 
     with rm.Mocker() as m:
@@ -328,26 +523,16 @@ def test_step_error_handler_maps_unauthorized():
     assert exc.value.status_code == 401
 
 
-def test_step_error_handler_maps_permission_error_to_401():
-    from roboflow_workflows.errors import ClientCausedStepExecutionError
-
+def test_step_error_handler_leaves_builtin_permission_error_unmapped():
     import inference_server.workflows.host as host
 
-    with pytest.raises(ClientCausedStepExecutionError) as exc:
-        host.step_error_handler("step", PermissionError("nope"))
-    assert exc.value.status_code == 401
-    assert "Roboflow API key" in exc.value.public_message
+    assert host.step_error_handler("step", PermissionError("nope")) is None
 
 
-def test_step_error_handler_maps_lookup_error_to_404():
-    from roboflow_workflows.errors import ClientCausedStepExecutionError
-
+def test_step_error_handler_leaves_builtin_lookup_error_unmapped():
     import inference_server.workflows.host as host
 
-    with pytest.raises(ClientCausedStepExecutionError) as exc:
-        host.step_error_handler("step", LookupError("ds/1"))
-    assert exc.value.status_code == 404
-    assert "not existing model" in exc.value.public_message
+    assert host.step_error_handler("step", LookupError("ds/1")) is None
 
 
 def test_step_error_handler_maps_legacy_http_error_and_sdk_error():
@@ -448,8 +633,11 @@ def _retrieval_error(status_code):
 
 
 def test_platform_client_post_sanitizes_transport_errors(monkeypatch):
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIConnectionError,
+    )
+
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import LegacyHTTPError
 
     monkeypatch.setattr(
         requests,
@@ -458,23 +646,26 @@ def test_platform_client_post_sanitizes_transport_errors(monkeypatch):
             requests.exceptions.ConnectionError("http://x/?api_key=SECRET")
         ),
     )
-    with pytest.raises(LegacyHTTPError) as exc:
-        host.PLATFORM_CLIENT.post("x/y", api_key="SECRET")
-    assert exc.value.status_code == 503 and "SECRET" not in exc.value.message
+    with pytest.raises(RoboflowAPIConnectionError) as exc:
+        host.PLATFORM_CLIENT.post("x/y", api_key=_TRANSPORT_KEY)
+    assert str(exc.value) == "Could not connect to Roboflow API."
+    assert _TRANSPORT_KEY not in _formatted(exc.value)
 
 
-def test_platform_client_post_maps_timeout_to_504(monkeypatch):
+def test_platform_client_post_maps_timeout_to_the_platform_timeout_error(monkeypatch):
+    from roboflow_workflows.prototypes.platform_errors import RoboflowAPITimeoutError
+
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import LegacyHTTPError
 
     monkeypatch.setattr(
         requests,
         "post",
         _raise_request_error(requests.exceptions.Timeout("http://x/?api_key=SECRET")),
     )
-    with pytest.raises(LegacyHTTPError) as exc:
-        host.PLATFORM_CLIENT.post("x/y", api_key="SECRET")
-    assert exc.value.status_code == 504 and "SECRET" not in exc.value.message
+    with pytest.raises(RoboflowAPITimeoutError) as exc:
+        host.PLATFORM_CLIENT.post("x/y", api_key=_TRANSPORT_KEY)
+    assert str(exc.value) == "Timeout when attempting to connect to Roboflow API."
+    assert _TRANSPORT_KEY not in _formatted(exc.value)
 
 
 def test_fetch_workflow_response_sanitizes_transport_errors(monkeypatch):
@@ -498,7 +689,13 @@ def test_fetch_workflow_response_sanitizes_transport_errors(monkeypatch):
     assert exc.value.status_code == 503 and "SECRET" not in exc.value.message
 
 
-def test_workspace_resolver_does_not_log_the_api_key(monkeypatch, caplog):
+def test_workspace_resolver_connection_failure_does_not_carry_the_api_key(
+    clean_workspace_cache, monkeypatch, caplog
+):
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIConnectionError,
+    )
+
     import inference_server.workflows.host as host
 
     monkeypatch.setattr(
@@ -508,39 +705,39 @@ def test_workspace_resolver_does_not_log_the_api_key(monkeypatch, caplog):
             requests.exceptions.ConnectionError("http://x/?api_key=SECRET")
         ),
     )
-    with caplog.at_level(logging.WARNING, logger="inference_server.workflows.host"):
-        assert host.WORKSPACE_RESOLVER.resolve_workspace("SECRET") is None
-    assert caplog.records and "SECRET" not in caplog.text
+    with caplog.at_level(logging.DEBUG, logger="inference_server.workflows.host"):
+        with pytest.raises(RoboflowAPIConnectionError) as exc:
+            host.WORKSPACE_RESOLVER.resolve_workspace(_TRANSPORT_KEY)
+    assert str(exc.value) == "Could not connect to Roboflow API."
+    assert _TRANSPORT_KEY not in _formatted(exc.value)
+    assert "SECRET" not in caplog.text
 
 
-def test_step_error_handler_unwraps_registry_model_access_error():
+def test_step_error_handler_maps_registry_model_access_error():
     from roboflow_workflows.errors import ClientCausedStepExecutionError
 
     import inference_server.workflows.host as host
 
-    try:
-        raise RuntimeError("denied") from _retrieval_error(403)
-    except RuntimeError as error:
-        wrapped = error
+    error = _retrieval_error(403)
     with pytest.raises(ClientCausedStepExecutionError) as exc:
-        host.step_error_handler("step", wrapped)
+        host.step_error_handler("step", error)
     assert exc.value.status_code == 403 and exc.value.block_id == "step"
+    assert exc.value.inner_error is error
 
 
-def test_step_error_handler_unwraps_registry_os_error():
-    from roboflow_workflows.errors import ClientCausedStepExecutionError
-
+@pytest.mark.parametrize(
+    "cause",
+    [_retrieval_error(403), RetryError("down"), OSError("down"), TimeoutError("slow")],
+)
+def test_step_error_handler_leaves_a_wrapped_registry_failure_unmapped(cause):
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import REGISTRY_UNREACHABLE_MESSAGE
 
     try:
-        raise RuntimeError("unreachable") from OSError("down")
+        raise RuntimeError("unreachable") from cause
     except RuntimeError as error:
         wrapped = error
-    with pytest.raises(ClientCausedStepExecutionError) as exc:
-        host.step_error_handler("step", wrapped)
-    assert exc.value.status_code == 503
-    assert exc.value.public_message == REGISTRY_UNREACHABLE_MESSAGE
+
+    assert host.step_error_handler("step", wrapped) is None
 
 
 def test_step_error_handler_leaves_plain_runtime_error_unmapped():

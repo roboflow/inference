@@ -22,12 +22,14 @@ from inference_server.errors import PayloadTooLargeError
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.fanout import gather_bounded
 from inference_server.framework.model_stat import stat_model_while_checking_auth
-from inference_server.gateway import ModelManagerGateway
+from inference_server.gateway import ModelManagerGateway, ReloadAfterEvictionError
 from inference_server.legacy.common import ImagePayload, fetch_url_images
 from inference_server.legacy.entities import ResolvedModel
 from inference_server.legacy.errors import (
     MODEL_PACKAGE_BROKEN_MESSAGE,
+    ImageFetchError,
     LegacyHTTPError,
+    ModelNotReadyError,
 )
 from inference_server.legacy.load_failures import load_failure_error
 from inference_server.middlewares.model_load import (
@@ -39,7 +41,6 @@ from inference_server.prometheus import measure_inference
 logger = logging.getLogger(__name__)
 
 _ERR_NOT_LOADED = 6
-_NOT_READY_MESSAGE = "Model is temporarily not ready - retry request."
 _CURRENT_REQUEST: contextvars.ContextVar[
     Optional[dict[tuple[str, str], tuple[Route, str, str, Optional[str]]]]
 ] = contextvars.ContextVar("legacy_current_request", default=None)
@@ -361,6 +362,11 @@ class LegacyModelBridge:
                 )
             except PayloadTooLargeError:
                 raise
+            except ReloadAfterEvictionError as error:
+                failure = self._last_load_failure(route.registry_id)
+                if failure is None:
+                    raise _not_ready_error() from error
+                raise _load_error(failure) from error
             except ValueError as error:
                 if isinstance(error.__cause__, ModelInputError):
                     raise error.__cause__ from error
@@ -395,7 +401,7 @@ class LegacyModelBridge:
             )
         images, error = await fetch_url_images([url])
         if error is not None:
-            raise LegacyHTTPError(error.status_code, "Could not fetch image from URL.")
+            raise ImageFetchError(error.status_code, "Could not fetch image from URL.")
         return images[0]
 
     async def unload(self, model_id: str) -> None:
@@ -590,8 +596,8 @@ class LegacyModelBridge:
         _apply_metadata(route, entry)
 
 
-def _not_ready_error() -> LegacyHTTPError:
-    return LegacyHTTPError(503, _NOT_READY_MESSAGE, headers={"Retry-After": "1"})
+def _not_ready_error() -> ModelNotReadyError:
+    return ModelNotReadyError()
 
 
 def _load_error(result: tuple) -> Exception:

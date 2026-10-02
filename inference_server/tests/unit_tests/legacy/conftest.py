@@ -69,6 +69,43 @@ class FakeGateway:
         }
 
 
+class EvictedModelManager:
+    def __init__(self, reload_error: Optional[BaseException] = None):
+        self.reload_error = reload_error
+        self.loaded: set[str] = set()
+        self.load_calls = 0
+        self.process_calls = 0
+        self.executor = None
+
+    def __contains__(self, key):
+        return key in self.loaded
+
+    def load(self, key, api_key, **kwargs):
+        self.load_calls += 1
+        if self.load_calls > 1 and self.reload_error is not None:
+            raise self.reload_error
+        self.loaded.add(key)
+
+    def unload(self, key):
+        self.loaded.discard(key)
+
+    def stats(self):
+        return {
+            "models": [
+                {"model_id": key, "class_names": ["cat"], "actions": {"infer": {}}}
+                for key in self.loaded
+            ]
+        }
+
+    def shutdown(self):
+        pass
+
+    async def process_async(self, key, **kwargs):
+        self.process_calls += 1
+        self.loaded.discard(key)
+        raise KeyError(key)
+
+
 def route_paths(app) -> set[str]:
     """Paths of every route on the app, including lazily included routers.
 

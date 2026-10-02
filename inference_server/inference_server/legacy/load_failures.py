@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional
+import keyword
+from typing import Any, Optional
 
 from inference_models import errors as models_errors
 from inference_models.errors import (
@@ -15,6 +16,32 @@ class ModelLoadFailedError(Exception):
     """Model load failure of a kind the legacy server answers as an internal error."""
 
 
+_MAX_LOAD_FAILURE_CLASS_NAME_LENGTH = 64
+_MAX_LOAD_FAILURE_CLASSES = 128
+_LOAD_FAILURE_CLASSES: dict[str, type] = {}
+
+
+def _load_failure_class(error_type: Any) -> type:
+    if (
+        not isinstance(error_type, str)
+        or len(error_type) > _MAX_LOAD_FAILURE_CLASS_NAME_LENGTH
+        or not error_type.isidentifier()
+        or keyword.iskeyword(error_type)
+    ):
+        return ModelLoadFailedError
+
+    error_class = _LOAD_FAILURE_CLASSES.get(error_type)
+    if error_class is not None:
+        return error_class
+    if len(_LOAD_FAILURE_CLASSES) >= _MAX_LOAD_FAILURE_CLASSES:
+        return ModelLoadFailedError
+
+    error_class = type(error_type, (ModelLoadFailedError,), {})
+    _LOAD_FAILURE_CLASSES[error_type] = error_class
+
+    return error_class
+
+
 def load_failure_error(result: tuple) -> Optional[Exception]:
     """Rebuild the exception a gateway described in a load failure tuple.
 
@@ -24,8 +51,8 @@ def load_failure_error(result: tuple) -> Optional[Exception]:
 
     Returns:
         The described error as an instance of its ``inference_models`` class,
-        ``ModelLoadFailedError`` for any other class, or None when the tuple
-        carries no description.
+        a ``ModelLoadFailedError`` named after any other class, or None when
+        the tuple carries no description.
     """
     detail = result[2] if len(result) > 2 else None
     if not isinstance(detail, dict):
@@ -38,7 +65,7 @@ def load_failure_error(result: tuple) -> Optional[Exception]:
         isinstance(error_class, type)
         and issubclass(error_class, BaseInferenceModelsError)
     ):
-        return ModelLoadFailedError(message)
+        return _load_failure_class(detail.get("error_type"))(message)
 
     if issubclass(error_class, ModelPackageAlternativesExhaustedError):
         alternatives = (
