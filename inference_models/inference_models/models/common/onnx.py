@@ -1,7 +1,7 @@
 import hashlib
 import os
 import shutil
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -346,6 +346,27 @@ def _remove_stale_cache_variants(base_directory: str, keep: str) -> None:
         path = os.path.join(cache_root, entry)
         if entry.startswith(f"{variant}-") and path != keep and os.path.isdir(path):
             shutil.rmtree(path, ignore_errors=True)
+
+
+def get_onnx_static_input_spatial_size(
+    session: onnxruntime.InferenceSession,
+) -> Optional[Tuple[int, int]]:
+    """Return the ``(height, width)`` of the session's first NCHW input when both are static, else None.
+
+    Args:
+        session (onnxruntime.InferenceSession): The created session.
+
+    Returns:
+        Optional[Tuple[int, int]]: Static input height and width, or None for dynamic or non-4D inputs.
+    """
+    shape = session.get_inputs()[0].shape
+    if len(shape) != 4:
+        return None
+    height, width = shape[2], shape[3]
+    if not isinstance(height, int) or not isinstance(width, int):
+        return None
+
+    return height, width
 
 
 def set_onnx_execution_provider_defaults(
