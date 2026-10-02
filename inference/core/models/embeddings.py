@@ -1,17 +1,30 @@
 import hashlib
 import json
 
+from roboflow_workflows.prototypes.model_registration import model_registration_key
+
 from inference.core.entities.responses.embeddings import EmbeddingInfo
 
 IMAGE_EMBEDDINGS = "image_embeddings"
 
 
 def model_cache_key(model_id, required_capabilities=None, output_type="feature_vector"):
-    if not required_capabilities:
-        return model_id
-    key = f"{model_id}:capabilities={','.join(sorted(set(required_capabilities)))}"
-    if IMAGE_EMBEDDINGS in required_capabilities and output_type != "feature_vector":
-        key += f":output_type={output_type}"
+    """Return the shared model-registration identity using the legacy signature.
+
+    Args:
+        model_id: Model version or alias being registered.
+        required_capabilities: Required model operations, if any.
+        output_type: Selected image-embedding representation.
+
+    Returns:
+        Model-manager cache key, unchanged for registrations without capabilities.
+    """
+    key = model_registration_key(
+        model_id,
+        required_capabilities=required_capabilities,
+        output_type=output_type,
+    )
+
     return key
 
 

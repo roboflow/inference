@@ -551,17 +551,57 @@ class ModelManager:
         return model.infer_from_request(request)
 
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        """Run native model inference with cache lookup and telemetry.
+
+        Args:
+            model_id: Registered model key.
+            **kwargs: Native images and model-specific inference options.
+
+        Returns:
+            The model's native predictions without HTTP serialization.
+
+        Raises:
+            InferenceModelNotFound: If the model is not registered.
+            NotImplementedError: If the model does not support native inference.
+        """
+        result = self._run_tensor_native_operation(
+            model_id=model_id, operation="run_tensor_native_inference", kwargs=kwargs
+        )
+
+        return result
+
+    def run_tensor_native_embeddings(self, model_id: str, **kwargs) -> dict:
+        """Generate tensor embeddings using the registered model instance.
+
+        Args:
+            model_id: Capability-specific model registration key.
+            **kwargs: Images, color format, output type and preprocessing options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+
+        Raises:
+            InferenceModelNotFound: If the model is not registered.
+            NotImplementedError: If the model does not support tensor embeddings.
+        """
+        result = self._run_tensor_native_operation(
+            model_id=model_id, operation="run_tensor_native_embeddings", kwargs=kwargs
+        )
+
+        return result
+
+    def _run_tensor_native_operation(self, *, model_id, operation, kwargs):
         with start_span(
             "model.infer",
             {
                 "model.id": model_id,
-                "model.infer.caller": "run_tensor_native_inference",
+                "model.infer.caller": operation,
             },
         ):
             try:
                 t_infer_start = time.perf_counter()
                 model = self._get_model_reference(model_id=model_id)
-                result = model.run_tensor_native_inference(**kwargs)
+                result = getattr(model, operation)(**kwargs)
                 record_inference(model_id, time.perf_counter() - t_infer_start)
                 return result
             except Exception as error:

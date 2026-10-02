@@ -175,6 +175,20 @@ class ModelManagerDecorator(ModelManager):
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
         return self.model_manager.run_tensor_native_inference(model_id, **kwargs)
 
+    def run_tensor_native_embeddings(self, model_id: str, **kwargs) -> dict:
+        """Forward a tensor-embedding call to the wrapped model manager.
+
+        Args:
+            model_id: Capability-specific model registration key.
+            **kwargs: Native images and embedding options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+        """
+        result = self.model_manager.run_tensor_native_embeddings(model_id, **kwargs)
+
+        return result
+
     def preprocess(self, model_id: str, request: InferenceRequest):
         """Processes the preprocessing part of a request.
 

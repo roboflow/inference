@@ -242,6 +242,21 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().run_tensor_native_inference(model_id, **kwargs)
 
+    def run_tensor_native_embeddings(self, model_id: str, **kwargs) -> dict:
+        """Generate embeddings and keep the active model in the cache.
+
+        Args:
+            model_id: Capability-specific model registration key.
+            **kwargs: Native images and embedding options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+        """
+        self._refresh_model_position_in_a_queue(model_id=model_id)
+        result = super().run_tensor_native_embeddings(model_id, **kwargs)
+
+        return result
+
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request and updates the cache.
 

@@ -64,6 +64,13 @@ Cosine Similarity block, for both feature vectors and logits. Compare vectors
 from the same model and output mode; Cosine Similarity checks dimensions but does
 not inspect `embedding_info` or enforce matching `space_id` values.
 
+In tensor mode, local execution passes materialized image tensors and embedding
+tensors directly through the `inference-models` adapter. The block moves or casts
+vectors only when needed to match the Workflow tensor device and float32 dtype.
+The legacy ONNX loader retains its CPU NumPy preprocessing and returns tensors
+without converting vectors to Python lists. Remote execution and final JSON
+outputs use the same serialized format as list mode.
+
 The loader requests the `image_embeddings` capability and negotiates an ONNX,
 PyTorch, or Hugging Face package for the **same model version**. Classification-only
 serialized TensorRT engines are excluded. An explicitly pinned incompatible
@@ -85,6 +92,9 @@ For offline deployment, preload the model with `required_capabilities=["image_em
 and the intended `output_type` before disconnecting. A cached classification-only
 engine does not satisfy this requirement. Feature and logits graphs and their
 TensorRT execution-provider caches are distinct.
+Dynamic-batch legacy ONNX models obey `MAX_BATCH_SIZE` before preprocessing.
+Fixed-batch models use their required batch size, padding the final batch and
+discarding padded output rows.
 
 Use the HTTP endpoint `POST /infer/embeddings` with `model_id`, `api_key`, and
 `image` (one image or a list in the usual Inference image format). It returns
@@ -106,12 +116,18 @@ info = result["embedding_info"]
 ```
 
 The SDK returns one result per image, unwrapping a single result, and retains
-metadata across batches. Remote Workflow execution requires a server exposing
+metadata across batches. Both SDK methods forward the four
+`InferenceConfiguration.disable_preproc_*` overrides, including
+`disable_preproc_auto_orientation`, which maps to the server's
+`disable_preproc_auto_orient` field. These overrides affect the embedding space;
+configure reference and query requests consistently.
+Remote Workflow execution requires a server exposing
 `/infer/embeddings`. Hosted routing and the workspace model-picker UI must ship
 support for this block alongside the server; this repository exposes the block
 schema and capability requirement but does not deploy those hosted services.
-Release the updated `inference-models` package together with the Inference server
-and SDK; an older installed package does not provide this capability.
+Release the updated `inference-models` and `roboflow-workflows` packages together
+with the Inference server and SDK; older installed packages do not provide this
+capability and its tensor execution port.
 
 For direct model use:
 

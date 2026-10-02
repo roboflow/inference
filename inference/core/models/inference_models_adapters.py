@@ -1391,36 +1391,89 @@ class InferenceModelsClassificationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def infer_embeddings_from_request(self, request):
+        """Generate embeddings and serialize them at the HTTP response boundary.
+
+        Args:
+            request: Input images, output type and preprocessing overrides.
+
+        Returns:
+            ImageEmbeddingResponse: Ordered vectors and compatibility metadata.
+        """
         started = perf_counter()
         kwargs = request.model_dump()
         inputs, _ = self.preprocess(**kwargs)
         features = self._model.forward_embedding(
             inputs, output_type=request.output_type
         )
-        config = self._model._inference_config
-        preprocessing = {
-            "image_pre_processing": config.image_pre_processing.model_dump(mode="json"),
-            "network_input": config.network_input.model_dump(mode="json"),
-            "overrides": {
-                key: value
-                for key, value in kwargs.items()
-                if key.startswith("disable_preproc_")
-            },
-        }
-        info = make_embedding_info(
-            model_id=self._embedding_model_id,
-            feature_info=self._model.get_embedding_info(request.output_type),
-            preprocessing=preprocessing,
-            backend=type(self._model).__name__,
-            precision=str(features.dtype),
-            dimension=features.shape[1],
+        info = self._embedding_metadata(
+            features=features, output_type=request.output_type, kwargs=kwargs
         )
-        return ImageEmbeddingResponse(
+        response = ImageEmbeddingResponse(
             embeddings=features.detach().cpu().float().tolist(),
             embedding_info=info,
             time=perf_counter() - started,
             inference_id=request.id,
         )
+
+        return response
+
+    def run_tensor_native_embeddings(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        *,
+        input_color_format: str = "bgr",
+        output_type: str = "feature_vector",
+        **kwargs,
+    ) -> dict:
+        """Extract embeddings while retaining tensor inputs and outputs on device.
+
+        Args:
+            images: Materialized tensor or NumPy images.
+            input_color_format: Color ordering of the supplied images.
+            output_type: Feature vector or pre-activation logits.
+            **kwargs: Preprocessing overrides accepted by the model.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+        """
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        mapped_kwargs["input_color_format"] = input_color_format
+        inputs = self._model.pre_process(images, **mapped_kwargs)
+        features = self._model.forward_embedding(inputs, output_type=output_type)
+        info = self._embedding_metadata(
+            features=features, output_type=output_type, kwargs=kwargs
+        )
+        result = {
+            "embeddings": features.detach(),
+            "embedding_info": info.model_dump(exclude_none=True),
+        }
+
+        return result
+
+    def _embedding_metadata(self, *, features, output_type, kwargs):
+        config = self._model._inference_config
+        preprocessing = {
+            "image_pre_processing": config.image_pre_processing.model_dump(mode="json"),
+            "network_input": config.network_input.model_dump(mode="json"),
+            "overrides": {
+                key: kwargs.get(key, False)
+                for key in (
+                    "disable_preproc_auto_orient",
+                    "disable_preproc_contrast",
+                    "disable_preproc_grayscale",
+                    "disable_preproc_static_crop",
+                )
+            },
+        }
+        info = make_embedding_info(
+            model_id=self._embedding_model_id,
+            feature_info=self._model.get_embedding_info(output_type),
+            preprocessing=preprocessing,
+            backend=type(self._model).__name__,
+            precision=str(features.dtype),
+            dimension=features.shape[1],
+        )
+        return info
 
     def run_tensor_native_inference(
         self,

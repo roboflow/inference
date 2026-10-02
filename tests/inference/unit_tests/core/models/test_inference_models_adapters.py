@@ -141,6 +141,42 @@ def test_classifier_embedding_adapter_preserves_raw_vectors_and_preprocessing(
     assert load_model.call_args.kwargs["required_capabilities"] == ["image_embeddings"]
     assert load_model.call_args.kwargs["output_type"] == output_type
 
+    # Native execution must retain the caller's tensors and the model's storage,
+    # without entering the HTTP/JSON conversion path tested above.
+    native_images = [torch.from_numpy(image).permute(2, 0, 1) for image in images]
+    backend.pre_process.reset_mock()
+    monkeypatch.setattr(
+        adapter,
+        "infer_embeddings_from_request",
+        MagicMock(side_effect=AssertionError("HTTP path")),
+    )
+
+    def reject_conversion(*args, **kwargs):
+        raise AssertionError("CPU/Python conversion")
+
+    with monkeypatch.context() as guard:
+        guard.setattr(torch.Tensor, "cpu", reject_conversion)
+        guard.setattr(torch.Tensor, "tolist", reject_conversion)
+        native = adapter.run_tensor_native_embeddings(
+            images=native_images,
+            input_color_format="rgb",
+            output_type=output_type,
+            **response.embedding_info.preprocessing["overrides"],
+        )
+
+    assert (
+        native["embeddings"].data_ptr()
+        == backend.forward_embedding.return_value.data_ptr()
+    )
+    assert native["embeddings"].dtype == torch.float16
+    assert not native["embeddings"].requires_grad
+    assert native["embedding_info"] == response.embedding_info.model_dump(
+        exclude_none=True
+    )
+    assert backend.pre_process.call_args.args[0] is native_images
+    assert backend.pre_process.call_args.kwargs["input_color_format"] == "rgb"
+    adapter.infer_embeddings_from_request.assert_not_called()
+
 
 class _ImmediateExecutor:
     def submit(self, fn, *args, **kwargs) -> Future:

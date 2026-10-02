@@ -193,6 +193,36 @@ class ModelManagerModelsProvider:
         )[0]
         return response.model_dump(exclude_none=True)
 
+    def run_tensor_image_embeddings(
+        self,
+        model_id: str,
+        images: List[Any],
+        *,
+        input_color_format: str,
+        api_key: Optional[str] = None,
+        output_type: str = "feature_vector",
+    ) -> dict:
+        """Execute a registered embedding model without HTTP response conversion.
+
+        Args:
+            model_id: Classification model version or alias.
+            images: Tensor or NumPy images retained in their existing format.
+            input_color_format: RGB for tensor images or BGR for NumPy images.
+            api_key: Registration credential; registration precedes this call.
+            output_type: Feature vector or pre-activation logits.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+        """
+        result = self._model_manager.run_tensor_native_embeddings(
+            model_id=model_cache_key(model_id, [IMAGE_EMBEDDINGS], output_type),
+            images=images,
+            input_color_format=input_color_format,
+            output_type=output_type,
+        )
+
+        return result
+
     def run_keypoints_detection(
         self,
         model_id: str,

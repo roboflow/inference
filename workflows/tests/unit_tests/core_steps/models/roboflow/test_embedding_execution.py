@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+import torch
 from roboflow_workflows.execution_engine.core import ExecutionEngine
 
 
@@ -18,6 +19,21 @@ def test_sliced_images_embed_and_connect_to_existing_cosine_similarity(output_ty
 
     expected_output_type = output_type
     manager.run_image_embeddings.side_effect = infer
+
+    def infer_native(
+        model_id,
+        images,
+        *,
+        input_color_format,
+        api_key=None,
+        output_type="feature_vector"
+    ):
+        result = infer(model_id, images, api_key=api_key, output_type=output_type)
+        result["embeddings"] = torch.tensor(result["embeddings"])
+
+        return result
+
+    manager.run_tensor_image_embeddings.side_effect = infer_native
     workflow = {
         "version": "1.0",
         "inputs": [{"type": "InferenceImage", "name": "image"}],

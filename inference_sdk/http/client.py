@@ -1404,10 +1404,7 @@ class InferenceHTTPClient:
             inference_input=inference_input,
             endpoint="/infer/embeddings",
             model_id=model_id,
-            extra_payload={
-                "source": self.__inference_configuration.source,
-                "output_type": output_type,
-            },
+            extra_payload=self._image_embedding_payload(output_type=output_type),
         )
         return unwrap_single_element_list(split_image_embeddings(result))
 
@@ -1446,12 +1443,23 @@ class InferenceHTTPClient:
             inference_input=inference_input,
             endpoint="/infer/embeddings",
             model_id=model_id,
-            extra_payload={
-                "source": self.__inference_configuration.source,
-                "output_type": output_type,
-            },
+            extra_payload=self._image_embedding_payload(output_type=output_type),
         )
         return unwrap_single_element_list(split_image_embeddings(result))
+
+    def _image_embedding_payload(self, *, output_type: str) -> dict:
+        preprocessing = {
+            name: value
+            for name, value in self.__inference_configuration.to_classification_parameters().items()
+            if name.startswith("disable_preproc_")
+        }
+        payload = {
+            **preprocessing,
+            "source": self.__inference_configuration.source,
+            "output_type": output_type,
+        }
+
+        return payload
 
     @wrap_errors_async
     async def get_clip_image_embeddings_async(

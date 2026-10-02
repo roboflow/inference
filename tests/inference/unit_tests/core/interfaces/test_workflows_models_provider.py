@@ -3,6 +3,7 @@ import inspect
 from unittest.mock import MagicMock
 
 import pytest
+import torch
 
 import inference.core.interfaces.workflows_models_provider as adapter_module
 from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
@@ -73,6 +74,40 @@ def test_image_embeddings_use_capability_cache_key_and_workflow_source(output_ty
     assert request.output_type == output_type
     assert request.source == "workflow-execution"
     assert len(request.image) == 2
+    manager.add_model.assert_not_called()
+
+
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+def test_native_embeddings_forward_tensor_images_without_response_conversion(
+    output_type,
+):
+    images = [torch.zeros((3, 16, 16), dtype=torch.uint8)]
+    result = {
+        "embeddings": torch.tensor([[2.0, -3.0]]),
+        "embedding_info": {"space_id": "space"},
+    }
+    manager = MagicMock()
+    manager.run_tensor_native_embeddings.return_value = result
+    provider = ModelManagerModelsProvider(manager)
+
+    actual = provider.run_tensor_image_embeddings(
+        "project/1",
+        images,
+        input_color_format="rgb",
+        api_key="key",
+        output_type=output_type,
+    )
+
+    assert actual is result
+    manager.run_tensor_native_embeddings.assert_called_once_with(
+        model_id="project/1:capabilities=image_embeddings"
+        + (":output_type=logits" if output_type == "logits" else ""),
+        images=images,
+        input_color_format="rgb",
+        output_type=output_type,
+    )
+    assert manager.run_tensor_native_embeddings.call_args.kwargs["images"] is images
+    manager.infer_from_request_sync.assert_not_called()
     manager.add_model.assert_not_called()
 
 

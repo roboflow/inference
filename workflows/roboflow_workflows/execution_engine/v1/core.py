@@ -49,6 +49,7 @@ from roboflow_workflows.prototypes.block import (
     is_workflow_selector,
 )
 from roboflow_workflows.prototypes.image_codec import ImageCodec
+from roboflow_workflows.prototypes.model_registration import model_registration_key
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.prototypes.observer import (
     NULL_EXECUTION_OBSERVER,
@@ -273,13 +274,20 @@ def _pre_load_roboflow_platform_models(
             if is_input_selector(selector_or_value=metadata.model_id):
                 pending.append(dependency)
             continue
-        if metadata.model_id in loaded_model_ids:
+        registration_kwargs = metadata.model_registration_kwargs or {}
+        registration_key = model_registration_key(
+            metadata.model_id,
+            required_capabilities=registration_kwargs.get("required_capabilities"),
+            output_type=registration_kwargs.get("output_type", "feature_vector"),
+        )
+        if registration_key in loaded_model_ids:
             continue
-        loaded_model_ids.add(metadata.model_id)
+
+        loaded_model_ids.add(registration_key)
         model_manager.add_model(
             model_id=metadata.model_id,
             api_key=api_key,
-            **(metadata.model_registration_kwargs or {}),
+            **registration_kwargs,
         )
     if loaded_model_ids:
         _verify_pre_loaded_models_presence(
@@ -332,13 +340,20 @@ def _resolve_and_pre_load_runtime_dependencies(
                 # final id depends on more than this one input) — skip
                 # pre-loading and let execution resolve it.
                 continue
-        if resolved_value in loaded_model_ids:
+        registration_kwargs = dependency.metadata.model_registration_kwargs or {}
+        registration_key = model_registration_key(
+            resolved_value,
+            required_capabilities=registration_kwargs.get("required_capabilities"),
+            output_type=registration_kwargs.get("output_type", "feature_vector"),
+        )
+        if registration_key in loaded_model_ids:
             continue
-        loaded_model_ids.add(resolved_value)
+
+        loaded_model_ids.add(registration_key)
         model_manager.add_model(
             model_id=resolved_value,
             api_key=api_key,
-            **(dependency.metadata.model_registration_kwargs or {}),
+            **registration_kwargs,
         )
     if loaded_model_ids:
         _verify_pre_loaded_models_presence(

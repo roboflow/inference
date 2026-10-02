@@ -4,13 +4,18 @@ from typing import Any, List, Tuple, Union
 
 import numpy as np
 
-from inference.core.env import USE_INFERENCE_MODELS, USE_PYTORCH_FOR_PREPROCESSING
+from inference.core.env import (
+    MAX_BATCH_SIZE,
+    USE_INFERENCE_MODELS,
+    USE_PYTORCH_FOR_PREPROCESSING,
+)
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
 
 from PIL import Image, ImageDraw, ImageFont
 
+from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.requests.inference import ClassificationInferenceRequest
 from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
@@ -23,6 +28,7 @@ from inference.core.exceptions import ModelDeploymentNotSupportedError
 from inference.core.models.embeddings import make_embedding_info
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.batching import create_batches
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.onnx import run_session_via_iobinding
 
@@ -86,23 +92,52 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             return session, info
 
     def infer_embeddings_from_request(self, request):
+        """Generate bounded-batch embeddings and serialize the HTTP response.
+
+        Args:
+            request: Images, output representation and preprocessing overrides.
+
+        Returns:
+            ImageEmbeddingResponse: Ordered vectors and compatibility metadata.
+
+        Raises:
+            ModelDeploymentNotSupportedError: If the embedding boundary cannot
+                be recovered from the model's ONNX artifact.
+        """
         started = perf_counter()
+        features, info = self._infer_embedding_arrays(request)
+        response = ImageEmbeddingResponse(
+            embeddings=features.tolist(),
+            embedding_info=info,
+            time=perf_counter() - started,
+            inference_id=request.id,
+        )
+
+        return response
+
+    def _infer_embedding_arrays(self, request):
         session, feature_info = self.prepare_image_embeddings(request.output_type)
-        inputs, _ = self.preprocess(**request.model_dump())
-        if hasattr(inputs, "detach"):
-            inputs = inputs.detach().cpu().numpy()
-        batch_size = session.get_inputs()[0].shape[0]
-        batch_size = batch_size if isinstance(batch_size, int) else len(inputs)
+        request_kwargs = request.model_dump()
+        image_input = request_kwargs.pop("image")
+        images = image_input if isinstance(image_input, list) else [image_input]
+        required_batch_size = session.get_inputs()[0].shape[0]
+        fixed_batch = isinstance(required_batch_size, int)
+        batch_size = required_batch_size if fixed_batch else MAX_BATCH_SIZE
         features = []
-        with self._session_lock:
-            for offset in range(0, len(inputs), batch_size):
-                chunk = inputs[offset : offset + batch_size]
-                size = len(chunk)
-                if size < batch_size:
-                    chunk = np.concatenate(
-                        [chunk, np.repeat(chunk[-1:], batch_size - size, axis=0)]
-                    )
-                features.append(session.run(None, {self.input_name: chunk})[0][:size])
+        for image_batch in create_batches(sequence=images, batch_size=batch_size):
+            inputs, _ = self.preprocess(image=image_batch, **request_kwargs)
+            if hasattr(inputs, "detach"):
+                inputs = inputs.detach().cpu().numpy()
+
+            size = len(image_batch)
+            if fixed_batch and size < batch_size:
+                inputs = np.concatenate(
+                    [inputs, np.repeat(inputs[-1:], batch_size - size, axis=0)]
+                )
+
+            with self._session_lock:
+                features.append(session.run(None, {self.input_name: inputs})[0][:size])
+
         features = np.concatenate(features)
         info = make_embedding_info(
             model_id=self.endpoint,
@@ -121,12 +156,57 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             precision=str(features.dtype),
             dimension=features.shape[1],
         )
-        return ImageEmbeddingResponse(
-            embeddings=features.tolist(),
-            embedding_info=info,
-            time=perf_counter() - started,
-            inference_id=request.id,
+        return features, info
+
+    def run_tensor_native_embeddings(
+        self,
+        images: List[Any],
+        *,
+        input_color_format: str = "bgr",
+        output_type: str = "feature_vector",
+        **kwargs,
+    ) -> dict:
+        """Return legacy ONNX embedding arrays as tensors without Python vectors.
+
+        The legacy preprocessor and session produce CPU NumPy arrays. Device
+        preprocessing and outputs are supported by the inference-models adapter.
+
+        Args:
+            images: Materialized CHW tensors or HWC NumPy images.
+            input_color_format: RGB for tensor images or BGR for NumPy images.
+            output_type: Feature vector or pre-activation logits.
+            **kwargs: Preprocessing overrides for the legacy classifier.
+
+        Returns:
+            CPU embedding tensor and compatibility metadata.
+
+        Raises:
+            ModelDeploymentNotSupportedError: If no extraction boundary exists.
+        """
+        import torch
+
+        request_images = []
+        for image in images:
+            if isinstance(image, torch.Tensor):
+                image = image.detach().cpu().permute(1, 2, 0).numpy()
+            if input_color_format == "rgb":
+                image = image[:, :, ::-1].copy()
+
+            request_images.append({"type": "numpy_object", "value": image})
+
+        request = ImageEmbeddingRequest(
+            model_id=self.endpoint,
+            image=request_images,
+            output_type=output_type,
+            **kwargs,
         )
+        features, info = self._infer_embedding_arrays(request)
+        result = {
+            "embeddings": torch.from_numpy(features),
+            "embedding_info": info.model_dump(exclude_none=True),
+        }
+
+        return result
 
     def draw_predictions(self, inference_request, inference_response):
         """Draw prediction visuals on an image.

@@ -185,6 +185,10 @@ def test_tensor_variant_matches_tensor_embedding_ports(
         for embedding in response()["embeddings"]
     ]
     monkeypatch.setattr(v1, "InferenceHTTPClient", MagicMock(return_value=client))
+    manager.run_tensor_image_embeddings.return_value = {
+        **response(),
+        "embeddings": torch.tensor(response()["embeddings"], dtype=torch.float16),
+    }
     block = TensorEmbeddingBlock(manager, "key", execution_mode)
     result = block.run(
         Batch(indices=None, content=[image(), image()]), "my-project/1", output_type
@@ -196,3 +200,68 @@ def test_tensor_variant_matches_tensor_embedding_ports(
     assert all(item["embedding"].dtype == torch.float32 for item in result)
     assert all(item["embedding"].shape == (2,) for item in result)
     assert all(item["embedding_info"]["space_id"] == "same-space" for item in result)
+    manager.run_image_embeddings.assert_not_called()
+    if execution_mode is StepExecutionMode.LOCAL:
+        assert (
+            manager.run_tensor_image_embeddings.call_args.kwargs["input_color_format"]
+            == "bgr"
+        )
+        assert (
+            manager.run_tensor_image_embeddings.call_args.kwargs["output_type"]
+            == output_type
+        )
+        client.get_image_embeddings.assert_not_called()
+    else:
+        manager.run_tensor_image_embeddings.assert_not_called()
+
+
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+def test_local_tensor_embeddings_keep_materialized_images_and_vector_storage(
+    monkeypatch, output_type
+):
+    import torch
+    from roboflow_workflows.core_steps.models.roboflow.embedding import v1_tensor
+
+    frames = [torch.full((3, 16, 16), value, dtype=torch.uint8) for value in (20, 50)]
+    data = [
+        WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="parent"), tensor_image=frame
+        )
+        for frame in frames
+    ]
+    vectors = torch.tensor(
+        [[2.0, -3.0], [4.0, -5.0]], device=data[0].tensor_image.device
+    )
+    manager = MagicMock()
+    manager.run_image_embeddings.side_effect = AssertionError("list conversion path")
+    manager.run_tensor_image_embeddings.return_value = {
+        "embeddings": vectors,
+        "embedding_info": {**response()["embedding_info"], "output_type": output_type},
+    }
+    block = v1_tensor.EmbeddingModelBlockV1(manager, "key", StepExecutionMode.LOCAL)
+
+    def reject_conversion(*args, **kwargs):
+        raise AssertionError("CPU/Python conversion")
+
+    with monkeypatch.context() as guard:
+        guard.setattr(torch.Tensor, "cpu", reject_conversion)
+        guard.setattr(torch.Tensor, "tolist", reject_conversion)
+        guard.setattr(WorkflowImageData, "numpy_image", property(reject_conversion))
+        result = block.run(
+            Batch(indices=None, content=data), "my-project/1", output_type
+        )
+
+    sent = manager.run_tensor_image_embeddings.call_args.kwargs
+    assert sent["input_color_format"] == "rgb"
+    assert all(
+        actual is image.tensor_image for actual, image in zip(sent["images"], data)
+    )
+    assert result[0]["embedding"].data_ptr() == vectors[0].data_ptr()
+    assert result[1]["embedding"].data_ptr() == vectors[1].data_ptr()
+    assert all(item["embedding_info"]["output_type"] == output_type for item in result)
+    assert all(
+        set(item["embedding_info"])
+        == v1_tensor.workflow_embedding_info(response()["embedding_info"]).keys()
+        for item in result
+    )
+    manager.run_image_embeddings.assert_not_called()
