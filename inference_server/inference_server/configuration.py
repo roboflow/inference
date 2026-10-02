@@ -225,6 +225,9 @@ ROBOFLOW_API_KEY_ENV = "ROBOFLOW_API_KEY"
 
 # ── Legacy routes (legacy/, workflows/) ────────────────────────────────────
 LEGACY_ROUTES_ENABLED = get_boolean_from_env("LEGACY_ROUTES_ENABLED", default=True)
+ALLOW_API_KEY_FROM_HEADERS = get_boolean_from_env(
+    "ALLOW_API_KEY_FROM_HEADERS", default=True
+)
 LEGACY_CATCH_ALL_ROUTE_ENABLED = get_boolean_from_env(
     "LEGACY_ROUTE_ENABLED", default=True
 )

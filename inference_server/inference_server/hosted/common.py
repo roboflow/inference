@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import parse_qsl
 
 from fastapi.responses import JSONResponse
+from starlette.routing import Match
 
 from inference_server import configuration
 from inference_server.auth import extract_bearer
@@ -119,6 +120,18 @@ class HostedRequest:
         return message
 
 
+def _is_v2_request(request: HostedRequest) -> bool:
+    from inference_server.routers import v2_models, v2_server
+
+    for router in (v2_models.router, v2_server.router):
+        for route in router.routes:
+            match, _ = route.matches(request.scope)
+            if match == Match.FULL:
+                return True
+
+    return False
+
+
 async def resolve_api_key(request: HostedRequest) -> Optional[str]:
     """Resolve the request API key with query > Bearer header > JSON body precedence.
 
@@ -129,7 +142,8 @@ async def resolve_api_key(request: HostedRequest) -> Optional[str]:
         The API key, or None when the request carries none.
     """
     api_key: Any = request.query_params.get("api_key")
-    if api_key is None:
+    header_allowed = configuration.ALLOW_API_KEY_FROM_HEADERS or _is_v2_request(request)
+    if api_key is None and header_allowed:
         api_key = extract_bearer(request.headers.get("authorization", "")) or None
     if api_key is None and request.has_json_body:
         json_params = await request.json()

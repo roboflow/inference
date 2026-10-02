@@ -171,3 +171,53 @@ def test_backend_unavailable_propagates(client, workspace_lookup, allow_list):
 
     with pytest.raises(AuthBackendUnavailable):
         client.get("/infer/x?api_key=k")
+
+
+@pytest.mark.parametrize(
+    "switch,root_path,method,path,authenticated",
+    [
+        (False, "", "POST", "/v2/1", False),
+        (False, "", "POST", "/infer/x", False),
+        (False, "", "GET", "/v2/server/health", True),
+        (False, "/service", "GET", "/service/v2/server/health", True),
+        (False, "/service", "POST", "/service/v2/1", False),
+        (True, "", "POST", "/v2/1", True),
+        (True, "", "POST", "/infer/x", True),
+        (True, "", "GET", "/v2/server/health", True),
+        (True, "/service", "GET", "/service/v2/server/health", True),
+    ],
+)
+def test_bearer_header_follows_switch_outside_v2_routes(
+    workspace_lookup,
+    allow_list,
+    monkeypatch,
+    switch,
+    root_path,
+    method,
+    path,
+    authenticated,
+):
+    from inference_server.routers import v2_server
+
+    monkeypatch.setattr(configuration, "ALLOW_API_KEY_FROM_HEADERS", switch)
+    workspace_lookup.answers = {"from-header": (True, "ws-a")}
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    app.include_router(v2_server.router)
+
+    @app.api_route("/{full_path:path}", methods=["GET", "POST"])
+    async def _probe(request: Request):
+        return JSONResponse({})
+
+    app.add_middleware(DedicatedAuthMiddleware)
+
+    response = TestClient(app, root_path=root_path).request(
+        method, path, headers={"Authorization": "Bearer from-header"}
+    )
+
+    if authenticated:
+        assert response.status_code == 200
+        assert workspace_lookup.calls == ["from-header"]
+    else:
+        assert response.status_code == 401
+        assert response.json() == UNAUTHORIZED
+        assert workspace_lookup.calls == []

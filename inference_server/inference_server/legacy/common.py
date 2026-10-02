@@ -99,9 +99,10 @@ def resolve_api_key(
 ) -> Optional[str]:
     if query_value:
         return query_value
-    header_value = extract_bearer(request.headers.get("authorization", ""))
-    if header_value:
-        return header_value
+    if configuration.ALLOW_API_KEY_FROM_HEADERS:
+        header_value = extract_bearer(request.headers.get("authorization", ""))
+        if header_value:
+            return header_value
     if body_value:
         return body_value
     return DEFAULT_API_KEY

@@ -141,3 +141,34 @@ def test_url_rule_switches_are_read_from_the_environment():
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def _read_allow_api_key_from_headers(value):
+    env = {
+        name: v
+        for name, v in os.environ.items()
+        if name != "ALLOW_API_KEY_FROM_HEADERS"
+    }
+    if value is not None:
+        env["ALLOW_API_KEY_FROM_HEADERS"] = value
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from inference_server import configuration as c; "
+            "print(c.ALLOW_API_KEY_FROM_HEADERS)",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def test_allow_api_key_from_headers_defaults_to_true():
+    assert _read_allow_api_key_from_headers(None) == "True"
+
+
+def test_allow_api_key_from_headers_is_read_from_environment():
+    assert _read_allow_api_key_from_headers("False") == "False"

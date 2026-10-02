@@ -192,6 +192,7 @@ definition; the last column is the new reader.
 | `ALLOW_URL_INPUT` | `env.py:49` | `configuration.py:157` (also `inference_models/configuration.py:207`) | `True` |
 | `WHITELISTED_DESTINATIONS_FOR_URL_INPUT` | `env.py:54` | `configuration.py:59` (also `inference_models/configuration.py:215`) | unset |
 | `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT` | `env.py:61` | `configuration.py:63` (also `inference_models/configuration.py:223`) | unset |
+| `ALLOW_API_KEY_FROM_HEADERS` | `env.py:229` | `configuration.py:228-230`; when off, the legacy-compatible, Workflow and builder routes ignore the Bearer header key (`legacy/common.py`); hosted authorization (`hosted/common.py`) applies the same rule outside `/v2/`; `/v2/...` routes always read the header | `True` |
 | `ALLOW_NON_HTTPS_URL_INPUT` | `env.py:50` | `configuration.py:73` (also `inference_models/configuration.py:208`); applied on legacy-compatible routes and workflow image inputs (`legacy/common.py`), not on `/v2` | `False` |
 | `ALLOW_URL_INPUT_WITHOUT_FQDN` | `env.py:51` | `configuration.py:76` (also `inference_models/configuration.py:211`); applied on legacy-compatible routes and workflow image inputs (`legacy/common.py`), not on `/v2` | `False` |
 | `VALIDATE_IMAGE_URL_REDIRECTS` | `env.py:74` | `configuration.py:79`; on legacy-compatible routes and workflow image inputs redirect targets are checked against the URL rules only when it is on (`legacy/common.py`); `/v2` checks every redirect target regardless | `False` |
@@ -451,7 +452,6 @@ No new package reads these. They never get an alias or a default row.
 |---|---|---|
 | `ACTIVE_LEARNING_ENABLED` | `env.py:946` | legacy active-learning model manager; the new stack has no active learning |
 | `ACTIVE_LEARNING_TAGS` | `env.py:949` | legacy active-learning model manager |
-| `ALLOW_API_KEY_FROM_HEADERS` | `env.py:229` | legacy toggle for the Bearer-header fallback; the new server has no such toggle |
 | `ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES` | `env.py:413` | legacy adapter flag forwarded as a `from_pretrained` argument; no new package reads the env |
 | `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES` | `env.py:410` | legacy adapter flag forwarded as a `from_pretrained` argument; no new package reads the env |
 | `ALLOW_NUMPY_INPUT` | `env.py:48` | legacy pickled-numpy input type; the new server has no numpy input |

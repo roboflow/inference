@@ -160,6 +160,45 @@ def test_resolve_api_key_precedence(monkeypatch):
     assert resolve_api_key(_request(), None, None) == "ENV"
 
 
+def test_resolve_api_key_ignores_header_when_switch_off(monkeypatch):
+    monkeypatch.setattr("inference_server.legacy.common.DEFAULT_API_KEY", None)
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_API_KEY_FROM_HEADERS", False
+    )
+    req = _request(headers=[(b"authorization", b"Bearer H")])
+    assert resolve_api_key(req, "Q", "B") == "Q"
+    assert resolve_api_key(req, None, "B") == "B"
+    assert resolve_api_key(req, None, None) is None
+
+
+def test_resolve_api_key_uses_header_when_switch_on(monkeypatch):
+    monkeypatch.setattr("inference_server.legacy.common.DEFAULT_API_KEY", None)
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_API_KEY_FROM_HEADERS", True
+    )
+    req = _request(headers=[(b"authorization", b"Bearer H")])
+    assert resolve_api_key(req, None, "B") == "H"
+
+
+@pytest.mark.parametrize("switch", [True, False])
+def test_v2_bearer_key_ignores_header_switch(monkeypatch, switch):
+    from inference_server.routers.v2_models import _bearer_token
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_API_KEY_FROM_HEADERS", switch
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "query_string": b"",
+            "headers": [(b"authorization", b"Bearer H")],
+        }
+    )
+    assert _bearer_token(request) == "H"
+
+
 def test_as_image_list():
     assert as_image_list({"type": "base64", "value": "x"}) == (
         [{"type": "base64", "value": "x"}],

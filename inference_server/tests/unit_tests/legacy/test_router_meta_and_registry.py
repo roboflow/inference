@@ -1541,3 +1541,26 @@ def test_explicit_load_timeout_answers_not_ready_with_retry_after(
         "message": "Model is temporarily not ready - retry request."
     }
     assert response.headers["retry-after"] == "1"
+
+
+@pytest.mark.parametrize("switch, expected_key", [(True, "H"), (False, "")])
+def test_bearer_key_follows_header_switch_on_legacy_infer_route(
+    legacy_client, fake_stat, monkeypatch, switch, expected_key
+):
+    from tests.unit_tests.legacy.test_router_infer import _det, _jpeg_b64
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_API_KEY_FROM_HEADERS", switch
+    )
+    monkeypatch.setattr("inference_server.legacy.common.DEFAULT_API_KEY", None)
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _det()},
+        model_info={"ds/1": {"class_names": ["cat"]}},
+    )
+    legacy_client(gw).post(
+        "/infer/object_detection",
+        headers={"Authorization": "Bearer H"},
+        json={"model_id": "ds/1", "image": {"type": "base64", "value": _jpeg_b64()}},
+    )
+    assert ("ensure_loaded", "ds/1", expected_key) in gw.calls

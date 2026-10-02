@@ -699,3 +699,47 @@ def test_usage_check_omits_assume_identity_headers(client, monkeypatch):
     assert response.status_code == 200
     assert "x-assume-identity-access-token" not in seen["headers"]
     assert "x-assume-identity-authorised-workspace" not in seen["headers"]
+
+
+@pytest.mark.parametrize(
+    "switch,root_path,method,path,authenticated",
+    [
+        (False, "", "POST", "/v2/1", False),
+        (False, "", "POST", "/infer/x", False),
+        (False, "", "GET", "/v2/server/health", True),
+        (False, "/service", "GET", "/service/v2/server/health", True),
+        (False, "/service", "POST", "/service/v2/1", False),
+        (True, "", "POST", "/v2/1", True),
+        (True, "", "POST", "/infer/x", True),
+        (True, "", "GET", "/v2/server/health", True),
+        (True, "/service", "GET", "/service/v2/server/health", True),
+    ],
+)
+def test_bearer_header_follows_switch_outside_v2_routes(
+    platform, monkeypatch, switch, root_path, method, path, authenticated
+):
+    from inference_server.routers import v2_server
+
+    monkeypatch.setattr(configuration, "ALLOW_API_KEY_FROM_HEADERS", switch)
+    platform.answer = (200, _ok_payload())
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    app.include_router(v2_server.router)
+
+    @app.api_route("/{full_path:path}", methods=["GET", "POST"])
+    async def _probe(request: Request):
+        return JSONResponse({})
+
+    app.add_middleware(ServerlessAuthMiddleware)
+
+    response = TestClient(app, root_path=root_path).request(
+        method, path, headers={"Authorization": "Bearer from-header"}
+    )
+
+    keys = [url.split("api_key=")[1].split("&")[0] for _, url, _ in platform.calls]
+    if authenticated:
+        assert response.status_code == 200
+        assert keys == ["from-header"]
+    else:
+        assert response.status_code == 401
+        assert response.json() == UNAUTHORIZED
+        assert keys == []
