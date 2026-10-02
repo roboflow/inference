@@ -8,7 +8,11 @@ import torch
 from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
 from inference_models.configuration import INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE
 from inference_models.entities import ColorFormat, Confidence
-from inference_models.models.common.coreml import CoreMLModel, load_coreml_package
+from inference_models.models.common.coreml import (
+    CoreMLModel,
+    CoreMLModelSignature,
+    load_coreml_package,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -109,14 +113,21 @@ class RFDetrForObjectDetectionCoreML(
                 )
             },
         )
-        coreml_model = load_coreml_package(model_package_dir=model_name_or_path)
-        inference_config = align_network_input_with_model(
-            inference_config=inference_config, signature=coreml_model.signature
-        )
-        # Checked after alignment: the model's input size, not the package config's, is what runs.
-        ensure_input_size_within_limit(
-            inference_config=inference_config,
-            max_allowed_input_size=rf_detr_max_input_resolution,
+
+        def _validate_signature(signature: CoreMLModelSignature) -> None:
+            nonlocal inference_config
+            inference_config = align_network_input_with_model(
+                inference_config=inference_config, signature=signature
+            )
+            # Use the model's actual dimensions, before Core ML compiles or loads it.
+            ensure_input_size_within_limit(
+                inference_config=inference_config,
+                max_allowed_input_size=rf_detr_max_input_resolution,
+            )
+
+        coreml_model = load_coreml_package(
+            model_package_dir=model_name_or_path,
+            validate_signature=_validate_signature,
         )
         num_logit_classes = len(class_names) + 1
         classes_re_mapping = None
