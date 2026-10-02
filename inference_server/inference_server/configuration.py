@@ -428,3 +428,17 @@ RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API = get_boolean_from_env(
 ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN = os.environ.get(
     "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN"
 ) or os.environ.get("ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN")
+
+# ── Operational routes (ops/) ─────────────────────────────────────────────
+DOCKER_SOCKET_PATH = os.environ.get("DOCKER_SOCKET_PATH")
+SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED = get_boolean_from_env(
+    "SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED", default=False
+)
+SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT = get_float_from_env(
+    "SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT", default=5.0
+)
+ROBOFLOW_API_VERIFY_SSL = get_boolean_from_env("ROBOFLOW_API_VERIFY_SSL", default=True)
+NOTEBOOK_ENABLED = get_boolean_from_env("NOTEBOOK_ENABLED", default=False)
+NOTEBOOK_PORT = get_integer_from_env("NOTEBOOK_PORT", default=9002)
+NOTEBOOK_PASSWORD = os.environ.get("NOTEBOOK_PASSWORD") or None
+ENABLE_IN_MEMORY_LOGS = get_boolean_from_env("ENABLE_IN_MEMORY_LOGS", default=False)

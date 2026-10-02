@@ -12,9 +12,3 @@ POST /initialise_webrtc_worker
 POST /inference_pipelines/initialise_webrtc
 POST /webrtc/session/heartbeat
 POST /webrtc/session/heartbeat/end
-
-# other
-GET /device/stats
-GET /logs
-GET /notebook/start
-GET /secure-gateway/health

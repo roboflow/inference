@@ -16,6 +16,8 @@ HIDDEN_ON_ANY_HOSTED_FLAG = (
     "/infer/keypoints_detection",
     "/clear_cache",
     "/start/{dataset_id}/{version_id}",
+    "/device/stats",
+    "/notebook/start",
 )
 HIDDEN_ON_LAMBDA_ONLY = (
     "/model/registry",
@@ -26,6 +28,7 @@ NEVER_HIDDEN = (
     "/info",
     "/healthz",
     "/readiness",
+    "/logs",
     "/clip/embed_image",
     "/sam2/segment_image",
     "/infer/depth-estimation",

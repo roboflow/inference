@@ -270,6 +270,14 @@ definition; the last column is the new reader.
 | `OTEL_METRICS_ENABLED` | `env.py:774` | `configuration.py:240,241-243` (forced off under `OFFLINE_MODE`); `telemetry.py` | `True` |
 | `OTEL_METRIC_EXPORTER_ENDPOINT` | `env.py:778` | `configuration.py:244`; `telemetry.py` (falls back to `OTEL_EXPORTER_ENDPOINT`) | unset |
 | `OTEL_METRIC_EXPORT_INTERVAL_MS` | `env.py:779` | `configuration.py:245-247`; `telemetry.py` | `10000` |
+| `DOCKER_SOCKET_PATH` | `env.py:1289` | `configuration.py:433`; `ops/router.py`: `GET /device/stats` reads this container's statistics from the Docker socket at this path and answers the legacy 404 hint when it is unset | unset |
+| `SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED` | `env.py:693-695` | `configuration.py:434-436`; `ops/router.py`: registers `GET /secure-gateway/health` outside `LAMBDA` / `GCP_SERVERLESS` | `False` |
+| `SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT` | `env.py:700-702` | `configuration.py:437-439`; `ops/secure_gateway.py`: timeout in seconds of the gateway probe | `5` |
+| `ROBOFLOW_API_VERIFY_SSL` | `env.py:1397` | `configuration.py:440`; `ops/secure_gateway.py`: applies to the secure gateway probe only for now, every other outbound call of the new server always verifies certificates | `True` |
+| `NOTEBOOK_ENABLED` | `env.py:829` | `configuration.py:441`; `ops/router.py`: `GET /notebook/start` starts JupyterLab; the server images do not include JupyterLab, so the route answers an error until it is installed in the environment | `False` |
+| `NOTEBOOK_PORT` | `env.py:835` | `configuration.py:442`; `ops/notebook.py` | `9002` |
+| `NOTEBOOK_PASSWORD` | `env.py:832` | `configuration.py:443`; `ops/notebook.py`: JupyterLab token and password, passed as single arguments | legacy `roboflow`; new: unset, and then a random token is generated once per process and returned by `GET /notebook/start` (redirect URL and `browserless` answer). Limitation: with `NUM_WORKERS` above 1 and no password set every worker process has its own token, so a worker that did not start JupyterLab reports a token JupyterLab does not accept; set `NOTEBOOK_PASSWORD` explicitly in that case |
+| `ENABLE_IN_MEMORY_LOGS` | `env.py:838` | `configuration.py:444`; `ops/memory_logs.py`: keeps the last 1000 log records for `GET /logs`, with the values of key-bearing parameters (`api_key`, `token`, `password`, ...) removed before a record is stored | `False` |
 
 ### Read by `build_workflows_configuration` (`inference_server/workflows/host.py`)
 
@@ -483,12 +491,10 @@ No new package reads these. They never get an alias or a default row.
 | `DISABLE_VERSION_CHECK` | `env.py:546` | legacy GitHub version check; none in the new stack |
 | `DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS` | `env.py:1037` | legacy `describe_workload` routes; not in the new server |
 | `DISK_CACHE_CLEANUP` | `env.py:1424` | legacy artifact cache internals |
-| `DOCKER_SOCKET_PATH` | `env.py:1289` | legacy docker introspection |
 | `ELASTICACHE_ENDPOINT` | `env.py:551` | legacy AWS-era setting |
 | `ENABLE_BYTE_TRACK` | `env.py:561` | legacy stream-mode setting |
 | `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING` | `env.py:974` | `StreamsConfiguration` field; no new package reads the env name today |
 | `ENABLE_HTTPS` | `env.py:587` | legacy uvicorn TLS; the new entrypoints (Task 5.7) own TLS |
-| `ENABLE_IN_MEMORY_LOGS` | `env.py:838` | legacy in-memory log buffer |
 | `ENABLE_PROMETHEUS` | `env.py:563` | legacy metrics; unread (hosting summary) |
 | `ENABLE_STREAM_API` | `env.py:1241` | legacy stream-manager process; unread (hosting summary) |
 | `ENFORCE_CREDITS_VERIFICATION` | `env.py:642` | unread (hosting summary) |
@@ -537,9 +543,6 @@ No new package reads these. They never get an alias or a default row.
 | `MODEL_VALIDATION_DISABLED` | `env.py:1220` | legacy model validation |
 | `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` | `env.py:167` | `roboflow_workflows/configuration.py:77` has the field but `build_workflows_configuration` does not read the env; the field default (`True`) equals the legacy default, so only an operator override is lost |
 | `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` | `env.py:179` | `roboflow_workflows/configuration.py:78` has the field but `build_workflows_configuration` does not read the env; default (`None`) equals legacy |
-| `NOTEBOOK_ENABLED` | `env.py:829` | legacy jupyter route |
-| `NOTEBOOK_PASSWORD` | `env.py:832` | legacy jupyter route |
-| `NOTEBOOK_PORT` | `env.py:835` | legacy jupyter route |
 | `NUM_CELERY_WORKERS` | `env.py:988` | legacy celery |
 | `NUM_PARALLEL_TASKS` | `env.py:952` | legacy async model manager |
 | `ORT_TENSORRT_CACHE_PATH` | `env.py:918` (written, not read) | legacy ORT TensorRT cache; no new package reads it |
@@ -555,13 +558,10 @@ No new package reads these. They never get an alias or a default row.
 | `REDIS_TIMEOUT` | `env.py:863` | unread (hosting summary) |
 | `REQUIRED_ONNX_PROVIDERS` | `env.py:866` | legacy ORT provider assertion |
 | `RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API` | `env.py:1406` | legacy API client; `inference_models` uses `API_CALLS_MAX_TRIES` / `IDEMPOTENT_API_REQUEST_CODES_TO_RETRY` with different semantics |
-| `ROBOFLOW_API_VERIFY_SSL` | `env.py:1422` | legacy API client |
 | `ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1333` | legacy assume-identity headers; unread (hosting summary) |
 | `ROBOFLOW_SERVER_UUID` | `env.py:869` | the new server generates `SERVER_ID` per process (`configuration.py:275`) |
 | `ROBOFLOW_SERVICE_SECRET` | `env.py:872` | unread (hosting summary) |
 | `SAM3_MAX_DETECTIONS` | `env.py:891` | legacy `concept_segment` cap; no new package reads it |
-| `SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT` | `env.py:700` | legacy gateway health route; not in the new server |
-| `SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED` | `env.py:693` | legacy gateway health route |
 | `SINGLE_TENANT_WORKFLOW_CACHE` | `env.py:1299` | legacy definition cache mode; the new server has only the in-memory TTL cache |
 | `SSL_CA_CERTS` | `env.py:606` | legacy uvicorn TLS |
 | `SSL_CERTFILE` | `env.py:596` | legacy uvicorn TLS |

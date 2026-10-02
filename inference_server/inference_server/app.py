@@ -50,11 +50,14 @@ from inference_server.middlewares.headers import CORS_EXPOSE_HEADERS  # noqa: E4
 from inference_server.middlewares.model_load import (  # noqa: E402
     ModelLoadHeadersMiddleware,
 )
+from inference_server.ops.memory_logs import setup_memory_logging  # noqa: E402
 from inference_server.routers import v2_models, v2_server  # noqa: E402
 from inference_server.telemetry import (  # noqa: E402
     setup_telemetry,
     shutdown_telemetry,
 )
+
+setup_memory_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -473,8 +476,10 @@ if _cfg.LEGACY_ROUTES_ENABLED:
         include_legacy_catch_all,
         include_legacy_routers,
     )
+    from inference_server.ops.router import include_ops_routers
 
     include_legacy_routers(app)
+    include_ops_routers(app)
 
 if _WORKFLOWS_ROUTES_ENABLED:
     from inference_server.workflows import router as workflows_router

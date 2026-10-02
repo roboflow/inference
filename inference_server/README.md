@@ -140,8 +140,9 @@ are dropped at startup instead of registered.
 | `BUILDER_ORIGIN` | `https://app.roboflow.com`, or `https://app.roboflow.one` when `PROJECT=roboflow-staging` | Origin allowed to call `/build/api/*` and `/workflows/*` from the browser |
 
 `/` serves the legacy landing page from `LANDING_DIR`; its dashboard tab calls
-`/metrics`, `/logs`, and `/inference_pipelines`, which are not ported here and
-answer 404.
+`/metrics`, `/logs`, and `/inference_pipelines`. `/logs` answers with the recent
+log records when `ENABLE_IN_MEMORY_LOGS=true` and 404 otherwise; `/metrics` and
+`/inference_pipelines` are not ported here and answer 404.
 
 `/build` serves the Workflow Builder; local workflows are stored under
 `MODEL_CACHE_DIR/workflow/local` and run through `/workflows/run` with
