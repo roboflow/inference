@@ -152,45 +152,6 @@ def billable_lists_exceed_bound(resource_details: Any) -> bool:
     return exceeds
 
 
-def split_billable_lists(resource_details: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Split resource details whose billable lists are longer than a row may carry.
-
-    Args:
-        resource_details: Resource details of one recorded call.
-
-    Returns:
-        The details themselves in a list of one when no billable list is longer
-        than ``MAX_BILLABLE_ENTRIES_PER_ROW``; otherwise consecutive copies in
-        which every oversized list is cut into slices of at most that length.
-        A list that is not oversized stays whole in the first copy, and every
-        entry appears in exactly one copy.
-    """
-    bound = MAX_BILLABLE_ENTRIES_PER_ROW
-    slices_by_key: Dict[str, List[List[Any]]] = {}
-    for key, _, _ in _BILLABLE_LISTS:
-        entries = resource_details.get(key)
-        if isinstance(entries, list) and len(entries) > bound:
-            slices_by_key[key] = [
-                entries[start : start + bound]
-                for start in range(0, len(entries), bound)
-            ]
-    if not slices_by_key:
-        return [resource_details]
-
-    details_parts: List[Dict[str, Any]] = []
-    for index in range(max(len(slices) for slices in slices_by_key.values())):
-        part = dict(resource_details)
-        for key, _, _ in _BILLABLE_LISTS:
-            slices = slices_by_key.get(key)
-            if slices is not None and index < len(slices):
-                part[key] = slices[index]
-            elif index > 0:
-                part.pop(key, None)
-        details_parts.append(part)
-
-    return details_parts
-
-
 def _merge_exceeds_bound(d1: UsagePayload, d2: UsagePayload) -> bool:
     if RESOURCE_DETAILS_KEY not in d1 or RESOURCE_DETAILS_KEY not in d2:
         return False

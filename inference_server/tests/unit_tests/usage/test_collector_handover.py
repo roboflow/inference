@@ -444,7 +444,9 @@ def test_drops_are_reported_by_one_fixed_line_per_flush_interval(
     assert "planted" not in caplog.text
 
 
-def test_an_oversized_split_call_respects_the_bound(collector, monkeypatch):
+def test_an_oversized_call_after_a_row_respects_the_pending_bound(
+    collector, monkeypatch
+):
     monkeypatch.setattr(delivery_module, "MAX_PENDING_ROWS", 3)
     monkeypatch.setattr(payload_helpers, "MAX_BILLABLE_ENTRIES_PER_ROW", 2)
     queue = FlakyQueue(0)
@@ -453,6 +455,7 @@ def test_an_oversized_split_call_respects_the_bound(collector, monkeypatch):
     swap_pending_lock(collector, lock)
     entries = [custom_python_entry(f"step-{index}") for index in range(10)]
 
+    record(collector, frames=1, resource_details={"custom_python": entries[:2]})
     record(collector, frames=7, resource_details={"custom_python": entries})
 
     assert lock.peak <= 3
@@ -464,10 +467,11 @@ def test_an_oversized_split_call_respects_the_bound(collector, monkeypatch):
         for resource_rows in payload.values()
         for row in resource_rows.values()
     ]
-    assert sum(row["processed_frames"] for row in rows) == 7
+    assert sorted(row["processed_frames"] for row in rows) == [1, 7]
     assert sorted(
         entry["step_name"]
         for row in rows
+        if row["processed_frames"] == 7
         for entry in json.loads(row["resource_details"])["custom_python"]
     ) == sorted(entry["step_name"] for entry in entries)
 

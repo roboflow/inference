@@ -13,7 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 from queue import Queue
 from threading import Event, Lock
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 from uuid import uuid4
 
 from inference_sdk.config import execution_id
@@ -21,7 +21,6 @@ from inference_server import configuration
 from inference_server.usage.delivery import (
     STOP_TIMEOUT_S,
     Delivery,
-    PendingItem,
     lock_guard,
     pending_item,
 )
@@ -37,7 +36,6 @@ from inference_server.usage.payload_helpers import (
     merge_megapixel_buckets,
     merge_resource_details,
     sha256_hash,
-    split_billable_lists,
 )
 from inference_server.usage.queues import RedisQueue, SQLiteQueue
 
@@ -580,9 +578,6 @@ class UsageCollector:
             stream_session_id=stream_session_id,
         )
         system_info = self._known_system_info()
-        details_parts = split_billable_lists(details)
-        details = details_parts[0]
-        extra_details_json = [json.dumps(extra) for extra in details_parts[1:]]
 
         while True:
             with self._usage_lock:
@@ -611,17 +606,8 @@ class UsageCollector:
                         stream_session_id=stream_session_id,
                         exec_session_id=exec_session_id,
                     )
-                    extra_items = self._make_overflow_pending_items(
-                        source_usage,
-                        extra_details_json,
-                        api_key_hash=api_key_hash,
-                        usage_key=usage_key,
-                    )
                     break
             self._delivery.make_room(blocked_rows, write=True)
-
-        for item in extra_items:
-            self._delivery.add(item)
 
     def _count_ignored(self) -> None:
         with self._ignored_lock:
@@ -704,29 +690,6 @@ class UsageCollector:
             source_usage["stream_session_id"] = stream_session_id
         if exec_session_id:
             source_usage["exec_session_id"] = exec_session_id
-
-    @staticmethod
-    def _make_overflow_pending_items(
-        source_usage: Dict[str, Any],
-        extra_details_json: List[str],
-        *,
-        api_key_hash: APIKeyHash,
-        usage_key: str,
-    ) -> List[PendingItem]:
-        extra_items = []
-        for extra_json in extra_details_json:
-            extra_row = {
-                **source_usage,
-                "timestamp_start": source_usage["timestamp_stop"],
-                "processed_frames": 0,
-                "source_duration": 0,
-                "execution_duration": 0,
-                "megapixel_buckets": {},
-                "resource_details": extra_json,
-            }
-            extra_items.append(pending_item({api_key_hash: {usage_key: extra_row}}))
-
-        return extra_items
 
     def _try_detach_window_usage_locked(self) -> Optional[int]:
         window_item = pending_item(self._usage)

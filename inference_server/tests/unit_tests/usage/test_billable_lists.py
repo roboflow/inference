@@ -269,3 +269,34 @@ def test_zip_usage_payloads_starts_a_new_row_when_a_list_would_exceed_the_bound(
         ["model/4"],
     ]
     assert sum(r["processed_frames"] for r in rows) == 5
+
+
+def test_zip_usage_payloads_keeps_an_oversized_row_whole_and_emits_no_empty_rows(
+    monkeypatch,
+):
+    monkeypatch.setattr(payload_helpers, "MAX_BILLABLE_ENTRIES_PER_ROW", 2)
+    sizes = [1, 5, 1, 1, 4]
+    payloads = [
+        {
+            "hash": {
+                "workflows:workflow-1": row(
+                    {
+                        "models": [
+                            model_entry(f"model/{call}/{index}")
+                            for index in range(size)
+                        ]
+                    }
+                )
+            }
+        }
+        for call, size in enumerate(sizes)
+    ]
+
+    zipped = zip_usage_payloads(usage_payloads=payloads)
+
+    rows = [payload["hash"]["workflows:workflow-1"] for payload in zipped]
+    assert all(r["processed_frames"] >= 1 for r in rows)
+    assert sum(r["processed_frames"] for r in rows) == len(sizes)
+    assert sorted(
+        len(json.loads(r["resource_details"])["models"]) for r in rows
+    ) == sorted([1, 5, 2, 4])

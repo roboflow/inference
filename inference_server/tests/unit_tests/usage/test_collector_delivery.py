@@ -378,26 +378,33 @@ def listed_entries(rows, key):
     return entries
 
 
-@pytest.mark.parametrize("entry_count", [257, 1000])
-@pytest.mark.parametrize("after_overflow", [False, True])
-@pytest.mark.parametrize("list_key", ["models", "custom_python"])
-def test_a_call_with_more_entries_than_a_row_may_hold_is_split_without_double_counting(
-    collector, entry_count, after_overflow, list_key
-):
-    bound = payload_helpers.MAX_BILLABLE_ENTRIES_PER_ROW
+def oversized_entries(list_key, count):
     if list_key == "models":
-        entries = [model_entry(f"model/{index}") for index in range(entry_count)]
-    else:
-        entries = [custom_python_entry(f"step-{index}") for index in range(entry_count)]
-    expected_frames = 7
-    if after_overflow:
+        return [model_entry(f"model/{index}") for index in range(count)]
+
+    return [custom_python_entry(f"step-{index}") for index in range(count)]
+
+
+def entry_identity(entry):
+    return entry.get("model_id") or entry["step_name"]
+
+
+@pytest.mark.parametrize("entry_count", [257, 1000])
+@pytest.mark.parametrize("after_existing_row", [False, True])
+@pytest.mark.parametrize("list_key", ["models", "custom_python"])
+def test_a_call_with_more_entries_than_the_bound_is_recorded_as_one_row(
+    collector, entry_count, after_existing_row, list_key
+):
+    entries = oversized_entries(list_key, entry_count)
+    expected_frames = [7]
+    if after_existing_row:
         record(
             collector,
             frames=1,
             execution_duration=0.5,
             resource_details={"models": [model_entry("earlier/1")]},
         )
-        expected_frames += 1
+        expected_frames.insert(0, 1)
     record(
         collector,
         frames=7,
@@ -409,33 +416,27 @@ def test_a_call_with_more_entries_than_a_row_may_hold_is_split_without_double_co
 
     rows = produced_rows(collector)
 
-    for row in rows:
-        details = json.loads(row["resource_details"])
-        assert len(details.get("models", [])) <= bound
-        assert len(details.get("custom_python", [])) <= bound
-    assert len(rows) >= -(-entry_count // bound)
-    identities = [
-        entry.get("model_id") or entry["step_name"]
-        for entry in listed_entries(rows, list_key)
+    assert sorted(row["processed_frames"] for row in rows) == sorted(expected_frames)
+    (big,) = [row for row in rows if row["processed_frames"] == 7]
+    big_details = json.loads(big["resource_details"])
+    assert [entry_identity(entry) for entry in big_details[list_key]] == [
+        entry_identity(entry) for entry in entries
     ]
-    expected_identities = [
-        entry.get("model_id") or entry["step_name"] for entry in entries
-    ]
-    if after_overflow and list_key == "models":
-        expected_identities.append("earlier/1")
-    assert sorted(identities) == sorted(expected_identities)
-    assert sum(row["processed_frames"] for row in rows) == expected_frames
-    assert sum(row["source_duration"] for row in rows) == 3.0
-    assert sum(row["execution_duration"] for row in rows) == pytest.approx(
-        2.0 + (0.5 if after_overflow else 0)
-    )
-    buckets = [row["megapixel_buckets"].get("1-2") for row in rows]
-    assert sum(bucket["processed_frames"] for bucket in buckets if bucket) == 7
-    assert sum(bucket["execution_duration"] for bucket in buckets if bucket) == 2.0
-    assert len([bucket for bucket in buckets if bucket]) == 1
+    assert big["source_duration"] == 3.0
+    assert big["execution_duration"] == 2.0
+    assert big["megapixel_buckets"]["1-2"] == {
+        "processed_frames": 7,
+        "execution_duration": 2.0,
+    }
+    if after_existing_row:
+        (earlier,) = [row for row in rows if row["processed_frames"] == 1]
+        assert [
+            entry["model_id"]
+            for entry in json.loads(earlier["resource_details"])["models"]
+        ] == ["earlier/1"]
 
 
-def test_a_call_with_two_oversized_lists_is_split_into_rows_with_both_lists_once(
+def test_a_call_with_two_oversized_lists_is_recorded_as_one_row_holding_both(
     collector,
 ):
     models = [model_entry(f"model/{index}") for index in range(300)]
@@ -446,16 +447,57 @@ def test_a_call_with_two_oversized_lists_is_split_into_rows_with_both_lists_once
         resource_details={"models": models, "custom_python": custom_python},
     )
 
+    (row,) = produced_rows(collector)
+
+    details = json.loads(row["resource_details"])
+    assert row["processed_frames"] == 5
+    assert [entry["model_id"] for entry in details["models"]] == [
+        entry["model_id"] for entry in models
+    ]
+    assert [entry["step_name"] for entry in details["custom_python"]] == [
+        entry["step_name"] for entry in custom_python
+    ]
+
+
+def test_a_call_after_an_oversized_row_closes_it_and_starts_another(collector):
+    bound = payload_helpers.MAX_BILLABLE_ENTRIES_PER_ROW
+    big = oversized_entries("models", bound + 1)
+    record(collector, frames=3, resource_details={"models": big})
+    record(collector, frames=2, resource_details={"models": [model_entry("next/1")]})
+
     rows = produced_rows(collector)
 
-    assert len(rows) == 3
-    assert sum(row["processed_frames"] for row in rows) == 5
-    assert sorted(entry["model_id"] for entry in listed_entries(rows, "models")) == (
-        sorted(entry["model_id"] for entry in models)
-    )
-    assert sorted(
-        entry["step_name"] for entry in listed_entries(rows, "custom_python")
-    ) == sorted(entry["step_name"] for entry in custom_python)
+    assert sorted(row["processed_frames"] for row in rows) == [2, 3]
+    by_frames = {row["processed_frames"]: row for row in rows}
+    assert len(json.loads(by_frames[3]["resource_details"])["models"]) == len(big)
+    assert [
+        entry["model_id"]
+        for entry in json.loads(by_frames[2]["resource_details"])["models"]
+    ] == ["next/1"]
+
+
+def test_every_row_produced_by_the_bound_has_at_least_one_frame(collector, monkeypatch):
+    monkeypatch.setattr(payload_helpers, "MAX_BILLABLE_ENTRIES_PER_ROW", 3)
+    sizes = [1, 2, 5, 1, 1, 4, 3, 1, 8, 2, 1]
+    for call_index, size in enumerate(sizes):
+        record(
+            collector,
+            frames=call_index + 1,
+            resource_details={
+                "models": [
+                    model_entry(f"model/{call_index}/{index}") for index in range(size)
+                ]
+            },
+        )
+
+    rows = produced_rows(collector)
+
+    assert len(rows) > 1
+    assert all(row["processed_frames"] >= 1 for row in rows)
+    assert sum(row["processed_frames"] for row in rows) == sum(range(1, len(sizes) + 1))
+    assert sum(
+        len(json.loads(row["resource_details"])["models"]) for row in rows
+    ) == sum(sizes)
 
 
 def test_usage_is_conserved_across_a_failed_send_a_row_bound_flush_and_a_later_send(
