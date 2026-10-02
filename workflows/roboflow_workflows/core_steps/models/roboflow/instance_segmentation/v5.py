@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional, Type, Union
 
-from pydantic import ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field, PositiveInt, model_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -26,9 +26,11 @@ from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
+    INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
@@ -57,12 +59,16 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 LONG_DESCRIPTION = """
 Run inference on an instance segmentation model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
+You can query any model that is private to your account, or any public model available
 on [Roboflow Universe](https://universe.roboflow.com).
 
-You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
+You will need to set your Roboflow API key in your Inference environment to use this
+block. To learn more about setting your Roboflow API key, [refer to the Inference
 documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+This version of block introduces breaking change in behaviour of mask construction - it uses 
+`rle` format instead `polygon` making it possible to retrieve 
+shapes of any kind from remote server.
 """
 
 
@@ -70,7 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Instance Segmentation Model",
-            "version": "v1",
+            "version": "v5",
             "short_description": "Predict the shape, size, and location of objects.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -86,20 +92,45 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal[
-        "roboflow_core/roboflow_instance_segmentation_model@v1",
-        "RoboflowInstanceSegmentationModel",
-        "InstanceSegmentationModel",
-    ]
+    type: Literal["roboflow_core/roboflow_instance_segmentation_model@v5"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
-    confidence: Union[
-        FloatZeroToOne,
+    confidence_mode: Union[
+        Literal["best", "default", "custom"],
+        Selector(kind=[STRING_KIND]),
+    ] = Field(
+        default="best",
+        description="How confidence thresholds are determined.",
+        json_schema_extra={
+            "always_visible": True,
+            "values_metadata": {
+                "best": {
+                    "name": "Best (Recommended)",
+                    "description": "Use F1-optimal per-class thresholds from model evaluation.",
+                },
+                "default": {
+                    "name": "Default",
+                    "description": "Use the model's built-in default threshold.",
+                },
+                "custom": {
+                    "name": "Custom",
+                    "description": "Specify a custom confidence threshold.",
+                },
+            },
+        },
+    )
+    custom_confidence: Union[
+        Optional[FloatZeroToOne],
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions.",
+        description="Custom confidence threshold for predictions.",
         examples=[0.3, "$inputs.confidence_threshold"],
+        json_schema_extra={
+            "relevant_for": {
+                "confidence_mode": {"values": ["custom"], "required": True},
+            },
+        },
     )
     class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
         Field(
@@ -159,15 +190,14 @@ class BlockManifest(WorkflowBlockManifest):
         description="Target dataset for active learning, if enabled.",
         examples=["my_project", "$inputs.al_target_project"],
     )
-    enforce_dense_masks_in_inference_models: Union[
-        bool, Selector(kind=[BOOLEAN_KIND])
-    ] = Field(
-        default=True,
-        description="Boolean flag to enforce dense masks when inference models backend is in use "
-        "(irrelevant in other cases). Dense masks are faster to process, but require more memory. "
-        "Users can't tweak this flag when running on Roboflow serverless platform.",
-        examples=[True, "$inputs.enforce_dense_masks_in_inference_models"],
-    )
+
+    @model_validator(mode="after")
+    def validate(self) -> "BlockManifest":
+        if self.confidence_mode == "custom" and self.custom_confidence is None:
+            raise ValueError(
+                "`custom_confidence` is required when `confidence_mode` is 'custom'"
+            )
+        return self
 
     @classmethod
     def get_compatible_task_types(cls) -> Optional[List[str]]:
@@ -194,11 +224,15 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name=INFERENCE_ID_KEY, kind=[STRING_KIND]),
+            OutputDefinition(name=INFERENCE_ID_KEY, kind=[INFERENCE_ID_KIND]),
             OutputDefinition(
                 name="predictions",
-                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                kind=[
+                    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
             ),
+            OutputDefinition(name="model_id", kind=[ROBOFLOW_MODEL_ID_KIND]),
         ]
 
     @classmethod
@@ -216,7 +250,7 @@ class BlockManifest(WorkflowBlockManifest):
         )
 
 
-class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
+class RoboflowInstanceSegmentationModelBlockV5(WorkflowBlock):
 
     def __init__(
         self,
@@ -240,9 +274,10 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
+        confidence_mode: str,
+        custom_confidence: Optional[float],
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
-        confidence: Optional[float],
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
@@ -250,8 +285,10 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
         tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-        enforce_dense_masks_in_inference_models: bool,
     ) -> BlockResult:
+        confidence = (
+            custom_confidence if confidence_mode == "custom" else confidence_mode
+        )
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,
@@ -266,7 +303,6 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
                 tradeoff_factor=tradeoff_factor,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
-                enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(
@@ -294,7 +330,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
-        confidence: Optional[float],
+        confidence: Union[None, float, Literal["best", "default"]],
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
@@ -302,7 +338,6 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
         tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-        enforce_dense_masks_in_inference_models: bool,
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
         self._model_manager.add_model(
@@ -319,11 +354,9 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned: these fields never took effect in this version, so
-            # honouring them now would change existing workflows. @v5 forwards.
-            mask_decode_mode="accurate",
-            tradeoff_factor=1.0,
-            enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
+            mask_decode_mode=mask_decode_mode,
+            tradeoff_factor=tradeoff_factor,
+            response_mask_format="rle",
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
         )
@@ -331,6 +364,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
             images=images,
             predictions=predictions,
             class_filter=class_filter,
+            model_id=model_id,
         )
 
     def run_remotely(
@@ -339,7 +373,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
-        confidence: Optional[float],
+        confidence: Union[None, float, Literal["best", "default"]],
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
@@ -369,10 +403,9 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned: these fields never took effect in this version, so
-            # honouring them now would change existing workflows. @v5 forwards.
-            mask_decode_mode="accurate",
-            tradeoff_factor=1.0,
+            mask_decode_mode=mask_decode_mode,
+            tradeoff_factor=tradeoff_factor,
+            response_mask_format="rle",
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
@@ -389,6 +422,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
             images=images,
             predictions=predictions,
             class_filter=class_filter,
+            model_id=model_id,
         )
 
     def _post_process_result(
@@ -396,6 +430,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         predictions: List[dict],
         class_filter: Optional[List[str]],
+        model_id: str,
     ) -> BlockResult:
         inference_ids = [p.get(INFERENCE_ID_KEY, None) for p in predictions]
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
@@ -412,6 +447,10 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
             predictions=predictions,
         )
         return [
-            {"inference_id": inference_id, "predictions": prediction}
+            {
+                "inference_id": inference_id,
+                "predictions": prediction,
+                "model_id": model_id,
+            }
             for inference_id, prediction in zip(inference_ids, predictions)
         ]

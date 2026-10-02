@@ -465,8 +465,10 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            mask_decode_mode=mask_decode_mode,
-            tradeoff_factor=tradeoff_factor,
+            # Pinned: these fields never took effect in this version, so
+            # honouring them now would change existing workflows. @v5 forwards.
+            mask_decode_mode="accurate",
+            tradeoff_factor=1.0,
             response_mask_format="rle",
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,

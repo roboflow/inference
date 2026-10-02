@@ -1,4 +1,4 @@
-"""Tensor-native sibling of `roboflow_core/roboflow_instance_segmentation_model@v2`.
+"""Tensor-native sibling of `roboflow_core/roboflow_instance_segmentation_model@v5`.
 
 Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits a native
 ``inference_models.InstanceDetections`` (torch tensors on
@@ -9,9 +9,7 @@ Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits a native
 
 - LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns
   ``List[InstanceDetections]`` straight from the adapter. The mask carrier (dense
-  ``torch.Tensor`` vs ``InstancesRLEMasks``) is adapter-decided: the v2 manifest
-  exposes ``enforce_dense_masks_in_inference_models`` and the adapter consumes it
-  to choose dense vs RLE, so both carriers are possible and both are handled
+  ``torch.Tensor`` vs ``InstancesRLEMasks``) is adapter-decided; both are handled
   downstream by the helpers and the tensor serialiser. The block applies
   ``class_filter`` natively (the adapter/model does NOT read it on this path) and
   attaches the producer contract (``image_metadata[class_names]`` + per-box
@@ -29,7 +27,7 @@ This block creates ONLY this file; it reuses the already-registered tensor
 serialiser for ``instance_segmentation_prediction`` /
 ``rle_instance_segmentation_prediction`` (``serialise_sv_detections`` already
 handles ``InstanceDetections``, dense or RLE). The numpy sibling lives in
-``.../instance_segmentation/v2.py``; this manifest is identical except the output
+``.../instance_segmentation/v4.py``; this manifest is identical except the output
 kinds.
 """
 
@@ -39,7 +37,7 @@ from typing import Dict, List, Literal, Optional, Type, Union
 import numpy as np
 import supervision as sv
 import torch
-from pydantic import ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field, PositiveInt, model_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
@@ -127,6 +125,10 @@ on [Roboflow Universe](https://universe.roboflow.com).
 You will need to set your Roboflow API key in your Inference environment to use this
 block. To learn more about setting your Roboflow API key, [refer to the Inference
 documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+This version of block introduces breaking change in behaviour of mask construction - it uses
+`rle` format instead `polygon` making it possible to retrieve
+shapes of any kind from remote server.
 """
 
 
@@ -134,7 +136,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Instance Segmentation Model",
-            "version": "v2",
+            "version": "v5",
             "short_description": "Predict the shape, size, and location of objects.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -150,16 +152,45 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/roboflow_instance_segmentation_model@v2"]
+    type: Literal["roboflow_core/roboflow_instance_segmentation_model@v5"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
-    confidence: Union[
-        FloatZeroToOne,
+    confidence_mode: Union[
+        Literal["best", "default", "custom"],
+        Selector(kind=[STRING_KIND]),
+    ] = Field(
+        default="best",
+        description="How confidence thresholds are determined.",
+        json_schema_extra={
+            "always_visible": True,
+            "values_metadata": {
+                "best": {
+                    "name": "Best (Recommended)",
+                    "description": "Use F1-optimal per-class thresholds from model evaluation.",
+                },
+                "default": {
+                    "name": "Default",
+                    "description": "Use the model's built-in default threshold.",
+                },
+                "custom": {
+                    "name": "Custom",
+                    "description": "Specify a custom confidence threshold.",
+                },
+            },
+        },
+    )
+    custom_confidence: Union[
+        Optional[FloatZeroToOne],
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions.",
+        description="Custom confidence threshold for predictions.",
         examples=[0.3, "$inputs.confidence_threshold"],
+        json_schema_extra={
+            "relevant_for": {
+                "confidence_mode": {"values": ["custom"], "required": True},
+            },
+        },
     )
     class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
         Field(
@@ -219,15 +250,14 @@ class BlockManifest(WorkflowBlockManifest):
         description="Target dataset for active learning, if enabled.",
         examples=["my_project", "$inputs.al_target_project"],
     )
-    enforce_dense_masks_in_inference_models: Union[
-        bool, Selector(kind=[BOOLEAN_KIND])
-    ] = Field(
-        default=True,
-        description="Boolean flag to enforce dense masks when inference models backend is in use "
-        "(irrelevant in other cases). Dense masks are faster to process, but require more memory. "
-        "Users can't tweak this flag when running on Roboflow serverless platform.",
-        examples=[True, "$inputs.enforce_dense_masks_in_inference_models"],
-    )
+
+    @model_validator(mode="after")
+    def validate(self) -> "BlockManifest":
+        if self.confidence_mode == "custom" and self.custom_confidence is None:
+            raise ValueError(
+                "`custom_confidence` is required when `confidence_mode` is 'custom'"
+            )
+        return self
 
     @classmethod
     def get_compatible_task_types(cls) -> Optional[List[str]]:
@@ -280,7 +310,7 @@ class BlockManifest(WorkflowBlockManifest):
         )
 
 
-class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
+class RoboflowInstanceSegmentationModelBlockV5(WorkflowBlock):
 
     def __init__(
         self,
@@ -304,9 +334,10 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
+        confidence_mode: str,
+        custom_confidence: Optional[float],
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
-        confidence: Optional[float],
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
@@ -314,8 +345,10 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-        enforce_dense_masks_in_inference_models: bool,
     ) -> BlockResult:
+        confidence = (
+            custom_confidence if confidence_mode == "custom" else confidence_mode
+        )
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,
@@ -330,7 +363,6 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
                 tradeoff_factor=tradeoff_factor,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
-                enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(
@@ -358,7 +390,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
-        confidence: Optional[float],
+        confidence: Union[None, float, Literal["best", "default"]],
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
@@ -366,7 +398,6 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-        enforce_dense_masks_in_inference_models: bool,
     ) -> BlockResult:
         # Feed the representation already materialised on the images to avoid forcing a
         # numpy->device conversion: GPU tensors (RGB) only when every image in the batch
@@ -383,6 +414,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
                 model_id=model_id,
                 images=model_inputs,
                 input_color_format=image_color_format,
+                enforce_dense_masks_in_inference_models=WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS,
                 confidence=confidence,
                 iou_threshold=iou_threshold,
                 class_agnostic_nms=class_agnostic_nms,
@@ -393,10 +425,6 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
                 tradeoff_factor=tradeoff_factor,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
-                enforce_dense_masks_in_inference_models=(
-                    enforce_dense_masks_in_inference_models
-                    or WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS
-                ),
             )
         )
         class_names = _class_names_map(self._model_manager.get_class_names(model_id))
@@ -406,7 +434,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             # filter here (the only place it is applied for LOCAL execution).
             detections = _filter_classes_native(detections, class_filter, class_names)
             # Reuse the adapter-provided inference id when present (numpy parity:
-            # numpy v2 surfaces ``p.get(INFERENCE_ID_KEY)`` off the model dump);
+            # numpy v4 surfaces ``p.get(INFERENCE_ID_KEY)`` off the model dump);
             # the tensor-native adapter normally attaches none, so fall back to a
             # freshly minted uuid that is then shared with ``image_metadata``.
             inference_id = getattr(detections, "inference_id", None) or str(
@@ -434,7 +462,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
-        confidence: Optional[float],
+        confidence: Union[None, float, Literal["best", "default"]],
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
@@ -464,10 +492,8 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned: these fields never took effect in this version, so
-            # honouring them now would change existing workflows. @v5 forwards.
-            mask_decode_mode="accurate",
-            tradeoff_factor=1.0,
+            mask_decode_mode=mask_decode_mode,
+            tradeoff_factor=tradeoff_factor,
             response_mask_format="rle",
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,

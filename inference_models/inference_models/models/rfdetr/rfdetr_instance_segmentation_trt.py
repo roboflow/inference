@@ -117,7 +117,6 @@ class RFDetrForInstanceSegmentationTRT(
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
-        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationTRT":
         if device.type != "cuda":
@@ -427,6 +426,7 @@ class RFDetrForInstanceSegmentationTRT(
         confidence: Confidence = "default",
         mask_format: InstanceSegmentationMaskFormat = "dense",
         max_detections: Optional[int] = INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS,
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:

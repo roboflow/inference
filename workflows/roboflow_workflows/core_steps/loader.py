@@ -735,6 +735,15 @@ else:
         RoboflowInstanceSegmentationModelBlockV4,
     )
 
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v5_tensor import (
+        RoboflowInstanceSegmentationModelBlockV5,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v5 import (
+        RoboflowInstanceSegmentationModelBlockV5,
+    )
+
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
         SegmentAnything3InteractiveBlockV1,
@@ -1844,6 +1853,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowInstanceSegmentationModelBlockV2,
         RoboflowInstanceSegmentationModelBlockV3,
         RoboflowInstanceSegmentationModelBlockV4,
+        RoboflowInstanceSegmentationModelBlockV5,
         RoboflowSemanticSegmentationModelBlockV1,
         RoboflowSemanticSegmentationModelBlockV2,
         RoboflowKeypointDetectionModelBlockV2,

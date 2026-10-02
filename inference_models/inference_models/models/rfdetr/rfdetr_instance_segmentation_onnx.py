@@ -83,7 +83,6 @@ class RFDetrForInstanceSegmentationOnnx(
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
-        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -238,6 +237,7 @@ class RFDetrForInstanceSegmentationOnnx(
         confidence: Confidence = "default",
         mask_format: InstanceSegmentationMaskFormat = "dense",
         max_detections: Optional[int] = INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS,
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:
