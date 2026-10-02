@@ -1,26 +1,3 @@
-# Roboflow Inference
-
-> Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.
-
-Roboflow Inference is an open-source (Apache 2.0) computer vision inference server for deploying object detection, classification, segmentation, keypoint detection, and foundation models (CLIP, SAM 2, Florence-2, PaliGemma, Grounding DINO, YOLO-World, and more). It includes Workflows — a low-code engine with 200+ composable blocks for chaining models, video stream processing, and business logic — and runs on CPU, GPU, NVIDIA Jetson, Raspberry Pi, Docker, or Roboflow's managed cloud. Maintained by Roboflow.
-
-# Home
-
-## Home
-
----
-title: Roboflow Inference
-description: Open-source computer vision deployment hub from Roboflow for serving models locally, in the cloud, or on edge devices.
-hide:
-  - toc
-  - navigation
----
-
-
-# Classifier Embeddings
-
-## Classifier Embeddings
-
 # Classifier image embeddings
 
 The **Embedding Model** block returns a feature vector or raw logits from a

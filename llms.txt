@@ -7,3 +7,7 @@ Roboflow Inference is an open-source (Apache 2.0) computer vision inference serv
 ## Home
 
 - [Home](https://inference.roboflow.com/index.md)
+
+## Classifier Embeddings
+
+- [Classifier Embeddings](https://inference.roboflow.com/workflows/classifier_embeddings/index.md)
