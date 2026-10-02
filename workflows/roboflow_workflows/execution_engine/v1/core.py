@@ -59,7 +59,7 @@ from roboflow_workflows.prototypes.workspace_resolver import NULL_WORKSPACE_RESO
 
 logger = get_logger(__name__)
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.16.0")
+EXECUTION_ENGINE_V1_VERSION = Version("1.16.1")
 
 DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
     "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "legacy"
