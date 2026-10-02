@@ -1413,7 +1413,7 @@ trt10 = [
 
 [package.metadata]
 requires-dist = [
-    { name = "accelerate", specifier = ">=1.0.0,<2.0.0" },
+    { name = "accelerate", specifier = ">=1.15.0,<2.0.0" },
     { name = "anyio", specifier = ">=4.14.2,<5.0.0" },
     { name = "backoff", specifier = "~=2.2.0" },
     { name = "bitsandbytes", marker = "sys_platform != 'darwin'", specifier = ">=0.46.1,<0.51.0" },
