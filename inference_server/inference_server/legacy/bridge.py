@@ -10,6 +10,7 @@ from typing import Any, Optional
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 
 from inference_models.errors import ModelInputError
+from inference_server import telemetry
 from inference_server.configuration import (
     ALLOW_URL_INPUT,
     INFER_TIMEOUT_S,
@@ -32,7 +33,13 @@ from inference_server.legacy.errors import (
     ModelNotReadyError,
 )
 from inference_server.legacy.load_failures import load_failure_error
+from inference_server.legacy.telemetry_recording import (
+    RECORDED_LOAD_EVENTS,
+    record_telemetry,
+)
 from inference_server.middlewares.model_load import (
+    MODEL_LOAD_EVENTS,
+    REQUESTED_MODEL_ID,
     record_model_load,
     set_requested_model_id,
 )
@@ -145,6 +152,14 @@ def request_alias_for(model_id: str) -> Optional[str]:
     return legacy_model_id
 
 
+def requested_model_id_for(registry_id: str) -> str:
+    requested = REQUESTED_MODEL_ID.get()
+    if requested is not None and requested[0] == registry_id:
+        return requested[1]
+
+    return registry_id
+
+
 def resolved_model_for(route: Route) -> ResolvedModel:
     if route.resolved_model:
         return ResolvedModel(**route.resolved_model)
@@ -243,7 +258,21 @@ class LegacyModelBridge:
         try:
             await self._ensure_loaded(route, api_key)
         finally:
+            self._record_cold_starts(route.registry_id)
             self._refresh_current_request(route.registry_id)
+
+    def _record_cold_starts(self, registry_id: str) -> None:
+        events = MODEL_LOAD_EVENTS.get()
+        recorded = RECORDED_LOAD_EVENTS.get()
+        if events is None or recorded is None:
+            return
+
+        model_id = requested_model_id_for(registry_id)
+        for position, (event_model_id, cold_start, load_time_s) in enumerate(events):
+            if not cold_start or event_model_id != model_id or position in recorded:
+                continue
+            recorded.add(position)
+            record_telemetry(telemetry.record_model_loaded, model_id, load_time_s)
 
     async def _ensure_loaded(self, route: Route, api_key: Optional[str]) -> None:
         record_model_load(route.registry_id, cold_start=False, load_time_s=0.0)
@@ -304,6 +333,8 @@ class LegacyModelBridge:
         except (Exception, asyncio.CancelledError):
             self._hold_pending_request(row_key, path, alias)
             raise
+        finally:
+            self._record_cold_starts(route.registry_id)
         return route
 
     async def infer(
@@ -328,6 +359,7 @@ class LegacyModelBridge:
                 record=record,
             )
         finally:
+            self._record_cold_starts(route.registry_id)
             self._refresh_current_request(route.registry_id)
         return results
 
@@ -343,6 +375,7 @@ class LegacyModelBridge:
         record: bool,
     ) -> list[Any]:
         await self.ensure_loaded(route, api_key)
+        started = time.perf_counter()
         with measure_inference(
             route.registry_id,
             responses=len(images),
@@ -371,6 +404,12 @@ class LegacyModelBridge:
                 if isinstance(error.__cause__, ModelInputError):
                     raise error.__cause__ from error
                 raise ModelInputError(str(error)) from error
+        if record:
+            record_telemetry(
+                telemetry.record_inference,
+                requested_model_id_for(route.registry_id),
+                time.perf_counter() - started,
+            )
         return results
 
     async def infer_params_only(
@@ -409,7 +448,8 @@ class LegacyModelBridge:
         registry_id = (
             route.registry_id if route is not None else registry_id_for(model_id)
         )
-        await self.gateway.unload(registry_id)
+        result = await self.gateway.unload(registry_id)
+        self._record_unload(registry_id, result)
         for key in [
             key
             for key, cached in self._routes.items()
@@ -418,6 +458,10 @@ class LegacyModelBridge:
             del self._routes[key]
         self._loaded_ids.discard(registry_id)
         self._preloaded_ids.pop(registry_id, None)
+
+    def _record_unload(self, registry_id: str, result: Any) -> None:
+        if result and result[0] == "ok":
+            record_telemetry(telemetry.record_model_unloaded, registry_id)
 
     async def remove(self, model_id: str) -> None:
         registry_id = registry_id_for(model_id)
@@ -441,7 +485,8 @@ class LegacyModelBridge:
     async def unload_all(self) -> None:
         models = await self._stats_models()
         for model_id in list(models):
-            await self.gateway.unload(model_id)
+            result = await self.gateway.unload(model_id)
+            self._record_unload(model_id, result)
         self._routes.clear()
         self._loaded_ids.clear()
         self._preloaded_ids.clear()

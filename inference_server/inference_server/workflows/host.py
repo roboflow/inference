@@ -3,6 +3,7 @@ happen before anything imports `roboflow_workflows.environment`."""
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -11,6 +12,7 @@ import re
 import socket
 import stat
 import threading
+import time
 import urllib.parse
 import uuid
 import warnings
@@ -417,7 +419,7 @@ from inference_models.errors import (  # noqa: E402
     UnauthorizedModelAccessError,
 )
 from inference_sdk.http.errors import HTTPCallErrorError  # noqa: E402
-from inference_server import platform_http  # noqa: E402
+from inference_server import platform_http, telemetry  # noqa: E402
 from inference_server.errors import ServerBusyError  # noqa: E402
 from inference_server.framework.input_parsers.url_fetch import (  # noqa: E402
     URL_FETCH_TIMEOUT_S,
@@ -434,6 +436,7 @@ from inference_server.legacy.errors import (  # noqa: E402
     LegacyHTTPError,
     ModelNotReadyError,
 )
+from inference_server.legacy.telemetry_recording import record_telemetry  # noqa: E402
 from inference_server.platform_http import (  # noqa: E402
     API_REQUEST_TIMEOUT_S,
     _add_params_to_url,
@@ -630,6 +633,27 @@ def _refuse_when_offline(operation: str) -> None:
         )
 
 
+def _records_api_call(function_name: str) -> Callable:
+    def decorator(function: Callable) -> Callable:
+        @functools.wraps(function)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            started = time.perf_counter()
+            try:
+                result = function(*args, **kwargs)
+            finally:
+                record_telemetry(
+                    telemetry.record_api_call,
+                    function_name,
+                    time.perf_counter() - started,
+                )
+
+            return result
+
+        return wrapper
+
+    return decorator
+
+
 def _api_url(path: str) -> str:
     return f"{configuration.API_BASE_URL.rstrip('/')}/{path}"
 
@@ -655,6 +679,7 @@ def collect_system_info() -> dict:
 
 
 class ServerRoboflowPlatformClient:
+    @_records_api_call("_make_request")
     def post(
         self,
         endpoint: str,
@@ -749,6 +774,7 @@ class ServerRoboflowPlatformClient:
             _WORKSPACE_CACHE.set(cache_key, workspace_id)
         return workspace_id
 
+    @_records_api_call("get_roboflow_workspace")
     def _fetch_roboflow_workspace(self, api_key: str) -> str:
         # Guarded behind the cache lookup: the legacy server's `ttl_cache`
         # still answers for an already-resolved key while OFFLINE_MODE is on.
@@ -774,6 +800,7 @@ class ServerRoboflowPlatformClient:
             raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
         return workspace_id
 
+    @_records_api_call("add_custom_metadata")
     def add_custom_metadata(
         self,
         api_key: str,
@@ -799,6 +826,7 @@ class ServerRoboflowPlatformClient:
         }
         _translate_platform_api_errors(lambda: self._post_to_api(url, json=payload))
 
+    @_records_api_call("register_image_at_roboflow")
     def register_image_at_roboflow(
         self,
         api_key: str,
@@ -832,6 +860,7 @@ class ServerRoboflowPlatformClient:
             )
         return parsed_response
 
+    @_records_api_call("annotate_image_at_roboflow")
     def annotate_image_at_roboflow(
         self,
         api_key: str,
@@ -872,6 +901,7 @@ class ServerRoboflowPlatformClient:
             )
         return parsed_response
 
+    @_records_api_call("update_image_metadata_at_roboflow")
     def update_image_metadata_at_roboflow(
         self,
         api_key: str,
@@ -895,6 +925,7 @@ class ServerRoboflowPlatformClient:
             lambda: self._post_to_api(url, json=payload).json()
         )
 
+    @_records_api_call("batch_update_image_metadata_at_roboflow")
     def batch_update_image_metadata_at_roboflow(
         self,
         api_key: str,
@@ -910,6 +941,7 @@ class ServerRoboflowPlatformClient:
             lambda: self._post_to_api(url, json={"updates": updates}).json()
         )
 
+    @_records_api_call("_make_request")
     def search_project_images_at_roboflow(
         self,
         api_key: str,
@@ -933,6 +965,7 @@ class ServerRoboflowPlatformClient:
             lambda: self._post_to_api(url, json=payload).json()
         )
 
+    @_records_api_call("send_inference_results_to_model_monitoring")
     def send_inference_results_to_model_monitoring(
         self,
         api_key: str,
@@ -1162,6 +1195,7 @@ def _fetch_workflow_response(
     return payload
 
 
+@_records_api_call("get_workflow_specification")
 def get_workflow_specification(
     api_key: Optional[str],
     workspace_id: str,

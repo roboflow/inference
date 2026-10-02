@@ -13,10 +13,15 @@ from roboflow_workflows.prototypes.models_provider import (
 
 from inference_models.errors import BaseInferenceModelsError
 from inference_models.utils import model_blob_cache
-from inference_server import pingback
+from inference_server import pingback, telemetry
 from inference_server.framework.input_parsers.image_limits import too_many_images
 from inference_server.gateway import _load_failure
-from inference_server.legacy.bridge import Route, SyncLegacyBridge, resolved_model_for
+from inference_server.legacy.bridge import (
+    Route,
+    SyncLegacyBridge,
+    requested_model_id_for,
+    resolved_model_for,
+)
 from inference_server.legacy.common import (
     ImagePayload,
     _error_from_response,
@@ -55,6 +60,7 @@ from inference_server.legacy.prompts import (
     Sam2PromptSet,
     Sam3Prompt,
 )
+from inference_server.legacy.telemetry_recording import record_telemetry
 from inference_server.legacy.translation import (
     build_embedding_calls,
     build_interactive_segmentation_params,
@@ -822,6 +828,11 @@ class GatewayModelsProvider:
                     )
                 )
         elapsed = time.perf_counter() - started
+        record_telemetry(
+            telemetry.record_inference,
+            requested_model_id_for(route.registry_id),
+            elapsed,
+        )
         response = repack_embedding_response(action, request, results, prompt_keys)
         self._stamp(response, route, elapsed)
         pingback.record_inference(route.registry_id, request, response)

@@ -19,12 +19,13 @@ from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
-from inference_server import configuration, server_identity
+from inference_server import configuration, server_identity, telemetry
 from inference_server.dependencies import get_model_manager
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
     Route,
     request_alias_for,
+    requested_model_id_for,
     resolved_model_for,
 )
 from inference_server.legacy.common import (
@@ -88,6 +89,7 @@ from inference_server.legacy.entities import (
     YOLOWorldInferenceRequest,
 )
 from inference_server.legacy.errors import LegacyHTTPError, with_legacy_errors
+from inference_server.legacy.telemetry_recording import record_telemetry
 from inference_server.legacy.translation import (
     build_embedding_calls,
     build_interactive_segmentation_params,
@@ -943,6 +945,9 @@ async def _run_embedding(
                 )
             )
     elapsed = time.perf_counter() - started
+    record_telemetry(
+        telemetry.record_inference, requested_model_id_for(route.registry_id), elapsed
+    )
     response = repack_embedding_response(
         action, inference_request, results, prompt_keys
     )

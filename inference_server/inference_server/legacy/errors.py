@@ -32,6 +32,10 @@ from inference_models.errors import (
 )
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
+from inference_server.legacy.telemetry_recording import (
+    record_route_error,
+    request_telemetry_scope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -245,12 +249,17 @@ def _model_access_answer(error: BaseException) -> Optional[Tuple[int, dict]]:
 def with_legacy_errors(fn: Callable) -> Callable:
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
-        try:
-            return await fn(*args, **kwargs)
-        except HTTPException:
-            raise
-        except Exception as error:
-            return legacy_error_response(error)
+        with request_telemetry_scope():
+            try:
+                try:
+                    return await fn(*args, **kwargs)
+                except Exception as error:
+                    record_route_error(error)
+                    raise
+            except HTTPException:
+                raise
+            except Exception as error:
+                return legacy_error_response(error)
 
     return wrapper
 

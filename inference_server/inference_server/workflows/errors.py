@@ -29,6 +29,10 @@ from inference_server.legacy.errors import (
     UNAUTHORIZED_MESSAGE,
     legacy_error_response,
 )
+from inference_server.legacy.telemetry_recording import (
+    record_route_error,
+    request_telemetry_scope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,22 +60,29 @@ class ModelDeploymentNotSupportedError(Exception):
 def with_workflow_errors(fn: Callable) -> Callable:
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
-        try:
-            return await fn(*args, **kwargs)
-        except HTTPException:
-            raise
-        except Exception as error:
-            payload = workflow_error_payload(error) or _platform_error_payload(error)
-            if payload is None:
-                return legacy_error_response(error)
+        with request_telemetry_scope():
+            try:
+                try:
+                    return await fn(*args, **kwargs)
+                except Exception as error:
+                    record_route_error(error)
+                    raise
+            except HTTPException:
+                raise
+            except Exception as error:
+                payload = workflow_error_payload(error) or _platform_error_payload(
+                    error
+                )
+                if payload is None:
+                    return legacy_error_response(error)
 
-            status_code, content = payload
-            if isinstance(error, FeatureDeprecatedError):
-                logger.warning("%s: %s", type(error).__name__, error)
-            else:
-                logger.error("%s: %s", type(error).__name__, error, exc_info=error)
+                status_code, content = payload
+                if isinstance(error, FeatureDeprecatedError):
+                    logger.warning("%s: %s", type(error).__name__, error)
+                else:
+                    logger.error("%s: %s", type(error).__name__, error, exc_info=error)
 
-            return JSONResponse(status_code=status_code, content=content)
+                return JSONResponse(status_code=status_code, content=content)
 
     return wrapper
 

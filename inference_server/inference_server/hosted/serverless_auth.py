@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from inference_sdk.config import execution_id
 
-from inference_server import configuration, platform_http
+from inference_server import configuration, platform_http, telemetry
 from inference_server.auth import validate_api_key
 from inference_server.hosted.assume_identity import (
     assume_identity_authorised_workspace_db_id,
@@ -27,6 +27,7 @@ from inference_server.hosted.common import (
     workspace_id_is_valid,
 )
 from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.legacy.telemetry_recording import record_telemetry
 from inference_server.middlewares.correlation_id import (
     correlation_id,
     request_start_time,
@@ -228,10 +229,25 @@ def _usage_check_result_is_complete(result: UsageCheckResult) -> bool:
     return result.under_cap is True
 
 
+async def _timed_usage_check(api_key: str) -> UsageCheckResult:
+    started = time.perf_counter()
+    try:
+        return await asyncio.to_thread(_usage_check, api_key)
+    finally:
+        record_telemetry(
+            telemetry.record_api_call,
+            "get_serverless_usage_check_async",
+            time.perf_counter() - started,
+        )
+
+
 async def _authorize_with_credits(
-    api_key: str, cache_key: Tuple[str, bool]
+    api_key: str, cache_key: Tuple[str, bool], *, timed: bool = False
 ) -> Tuple[Optional[Denial], Optional[AuthorizationCacheEntry]]:
-    result = await asyncio.to_thread(_usage_check, api_key)
+    if timed:
+        result = await _timed_usage_check(api_key)
+    else:
+        result = await asyncio.to_thread(_usage_check, api_key)
     if result.status_code == 200:
         if not _usage_check_result_is_complete(result):
             return Denial(500, INCOMPLETE_USAGE_CHECK_MESSAGE), None
@@ -321,7 +337,9 @@ async def _authorize(
         return None, cache_entry, enforce
 
     if enforce:
-        denial, entry = await _authorize_with_credits(api_key, cache_key)
+        denial, entry = await _authorize_with_credits(
+            api_key, cache_key, timed=not _is_v2_request(request)
+        )
     else:
         denial, entry = await _authorize_without_credits(
             api_key, cache_key, through_secure_gateway=not _is_v2_request(request)
