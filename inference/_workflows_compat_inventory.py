@@ -886,6 +886,7 @@ _STREAM_INVENTORY_LEGACY = frozenset(
         "inference.core.interfaces.webrtc_worker.sources",
         "inference.core.interfaces.webrtc_worker.sources.file",
         "inference.core.interfaces.webrtc_worker.sources.rtsp",
+        "inference.core.interfaces.webrtc_worker.watchdog",
         "inference.core.interfaces.webrtc_worker.webrtc",
         "streamvision.stream.model_handlers.roboflow_models",
         "streamvision.stream.model_handlers.yolo_world",

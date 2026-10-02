@@ -10,6 +10,7 @@ It also serves the WebRTC worker: each worker method below forwards to the
 function the worker called directly before it moved out of `inference`.
 """
 
+import datetime
 from typing import Any, Dict, Optional, Tuple
 
 # Via the module, so a patch made through the historical name applies here too.
@@ -117,3 +118,83 @@ class LegacyPipelineHost:
         )
 
         return player
+
+    def is_over_quota(self, api_key: Optional[str]) -> bool:
+        """Tell whether the API key's plan is over its usage quota.
+
+        Args:
+            api_key: API key of the session.
+
+        Returns:
+            The over-quota flag of the key's plan.
+        """
+        from inference.core.interfaces.webrtc_worker import utils
+
+        over_quota = utils.is_over_quota(api_key)
+
+        return over_quota
+
+    def wrap_url(self, url: str) -> str:
+        """Route an outbound address through the secure gateway when one is set.
+
+        Args:
+            url: Address about to be called.
+
+        Returns:
+            The address to call.
+        """
+        from inference.core.utils import url_utils
+
+        wrapped_url = url_utils.wrap_url(url)
+
+        return wrapped_url
+
+    def record_session_usage(
+        self,
+        *,
+        webrtc_request: Any,
+        workflow_id: str,
+        video_source: str,
+        session_started: datetime.datetime,
+        session_stopped: datetime.datetime,
+        connection_established: bool,
+    ) -> None:
+        """Record one Modal WebRTC session with the usage collector. Does not flush.
+
+        Args:
+            webrtc_request: Request the session served.
+            workflow_id: Workflow identifier or specification hash of the session.
+            video_source: Kind of video the session processed.
+            session_started: When the session started running.
+            session_stopped: When the session stopped.
+            connection_established: Whether the peer connection came up; the
+                recorded duration is zero when it did not.
+        """
+        from inference.usage_tracking.collector import usage_collector
+
+        # requested plan is guaranteed to be set due to validation in spawn_rtc_peer_connection_modal
+        webrtc_plan = webrtc_request.requested_plan
+
+        usage_collector.record_usage(
+            source=workflow_id,
+            category="modal",
+            api_key=webrtc_request.api_key,
+            resource_id=workflow_id,
+            resource_details={
+                "plan": webrtc_plan,
+                "billable": True,
+                "video_source": video_source,
+                "is_preview": webrtc_request.is_preview,
+            },
+            execution_duration=(
+                (session_stopped - session_started).total_seconds()
+                if connection_established
+                else 0
+            ),
+        )
+
+    def push_usage_payloads(self) -> None:
+        """Flush the usage recorded so far."""
+        from inference.usage_tracking.collector import usage_collector
+
+        usage_collector.push_usage_payloads()

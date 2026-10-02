@@ -94,6 +94,12 @@ class StreamsConfiguration:
     webrtc_modal_rtsp_placeholder_url: Optional[str] = None
     webrtc_modal_shutdown_reserve: int = 1
     webrtc_preview_frame_jpeg_quality: int = 80
+    webrtc_modal_min_cpu_cores: Optional[int] = None
+    webrtc_modal_min_ram_mb: Optional[int] = None
+    webrtc_modal_usage_quota_enabled: bool = False
+    webrtc_modal_watchdog_timemout: int = 60
+    webrtc_session_heartbeat_interval_seconds: int = 30
+    webrtc_session_heartbeat_url: Optional[str] = None
     model_config_defaults: ModelConfigDefaults = field(
         default_factory=ModelConfigDefaults
     )
