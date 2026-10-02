@@ -566,6 +566,7 @@ async def infer_semantic_segmentation(
     inference_request: SemanticSegmentationInferenceRequest,
     bridge: LegacyModelBridge = Depends(get_bridge),
 ) -> Response:
+    inference_request.response_mask_format = "base64_png"
     return await _run_cv_inference(
         request,
         inference_request,

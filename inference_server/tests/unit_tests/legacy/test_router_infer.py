@@ -24,6 +24,8 @@ from inference_models.errors import (
 from PIL import Image
 
 from inference_server.gateway import ModelManagerGateway
+from inference_server.legacy import router as router_module
+from inference_server.legacy.translation import repack_prediction
 from tests.unit_tests.legacy.conftest import FakeGateway
 from tests.unit_tests.legacy.test_errors import (
     FORBIDDEN,
@@ -200,6 +202,64 @@ def test_unsupported_legacy_param_is_501(legacy_client, fake_stat):
         },
     )
     assert r.status_code == 501
+
+
+def _semantic_prediction():
+    return SimpleNamespace(
+        segmentation_map=np.array([[0, 1], [1, 0]]),
+        confidence=np.array([[1.0, 0.5], [0.5, 1.0]]),
+    )
+
+
+def _post_semantic(legacy_client, fake_stat, mask_format, monkeypatch):
+    fake_stat["ds/1"] = ("semantic-segmentation", "infer")
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _semantic_prediction()},
+        model_info={"ds/1": {"class_names": ["bg", "fg"], "actions": {"infer": {}}}},
+    )
+    received = []
+
+    def recording_repack(*args, **kwargs):
+        received.append(args[-1].response_mask_format)
+        return repack_prediction(*args, **kwargs)
+
+    monkeypatch.setattr(router_module, "repack_prediction", recording_repack)
+    response = legacy_client(gw).post(
+        "/infer/semantic_segmentation",
+        json={
+            "model_id": "ds/1",
+            "api_key": "k",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+            "response_mask_format": mask_format,
+        },
+    )
+    return response, received
+
+
+def test_semantic_segmentation_numpy_mask_format_is_served_as_base64_png(
+    legacy_client, fake_stat, monkeypatch
+):
+    png_response, png_received = _post_semantic(
+        legacy_client, fake_stat, "base64_png", monkeypatch
+    )
+    numpy_response, numpy_received = _post_semantic(
+        legacy_client, fake_stat, "numpy", monkeypatch
+    )
+
+    assert png_response.status_code == 200
+    assert numpy_response.status_code == 200
+    assert numpy_response.json()["predictions"] == png_response.json()["predictions"]
+    assert png_received == ["base64_png"]
+    assert numpy_received == ["base64_png"]
+
+
+def test_semantic_segmentation_unknown_mask_format_is_422(
+    legacy_client, fake_stat, monkeypatch
+):
+    response, received = _post_semantic(legacy_client, fake_stat, "rle", monkeypatch)
+
+    assert response.status_code == 422
+    assert received == []
 
 
 class FailingLoadManager:

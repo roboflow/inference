@@ -516,12 +516,13 @@ class SemanticSegmentationInferenceRequest(CVInferenceRequest):
             '"default" uses the model built-in, or pass a float.'
         ),
     )
-    response_mask_format: SkipJsonSchema[Literal["base64_png"]] = Field(
+    response_mask_format: SkipJsonSchema[Literal["base64_png", "numpy"]] = Field(
         default="base64_png",
         examples=["base64_png"],
         description=(
             "[INTERNAL USE ONLY] Format of segmentation_mask / confidence_mask in the "
-            "response. 'base64_png' returns base64-encoded PNG strings."
+            "response. 'base64_png' returns base64-encoded PNG strings. 'numpy' is "
+            "accepted and served as 'base64_png'."
         ),
     )
 
