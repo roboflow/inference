@@ -36,8 +36,12 @@ the argument.
 
 **Two things this plan does not claim.** It is not sufficient on its own — at `n=300`/4K even
 `t=0.25` leaves several hundred ms in this stage. And cost is Θ(n·H·W), so **reducing
-`max_detections`** (default 300, `inference_models/configuration.py:229`) is a cheaper, lossless
-first move that should be evaluated alongside it.
+`max_detections`** (default 300, `inference_models/configuration.py:229`) is the obvious
+alternative. It was measured, and it is the weaker lever: halving it saves 55% where the resolution
+factor saves 90% — **~4.6× less effective** — and it cannot reach real-time at 4K at any realistic
+value. It is also **not lossless**: capping at 150 in a scene with 300 objects deletes 150 real
+detections, a recall cliff rather than the uniform boundary-fidelity cost that reducing resolution
+carries. See E1.
 
 ### The published contract
 
@@ -376,17 +380,26 @@ reject mid-stream changes. Non-blocking.
 Neither of these blocks implementation. Both block the plan's *justification*, and the first could
 reduce its scope substantially.
 
-**E1 — `max_detections` has not been evaluated as the cheaper alternative.**
-Mask post-processing is Θ(n·H·W). This plan attacks `H·W` and leaves `n` untouched, yet `n` is a
-parameter that already exists: `INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS` defaults to **300**
-(`inference_models/configuration.py:229`). Halving it halves the cost, is lossless on the top-150
-predictions, and needs no new parameter, no carried metadata, no wire-format change and no
-coordinate rescaling — none of the blast radius this plan spends most of its length on.
-*Action:* measure `AP_mask` and p50/p95 against `max_detections ∈ {300, 150, 100}` on the same fixed
-eval set as the `t` curve, and publish the two curves together.
-*Why it matters:* if reducing `n` delivers a large fraction of the win, the honest recommendation
-may be guidance plus a default change rather than this feature. That is worth knowing before more is
-built, not after.
+**E1 — `max_detections` measured; it does not reframe the plan.**
+4K, 300 instances, 160×160 prototypes, M1 Max CPU fp32, chunk 16, fresh process per configuration,
+warm-up 2, 10 iterations, p50 ms:
+
+| n | t=0.25 | t=0.5 | t=1.0 | RSS at t=1.0 |
+|---|---|---|---|---|
+| 75 | 16.4 | 45.7 | 140.1 | 1632 MB |
+| 150 | 29.1 | 79.0 | 260.5 | 2474 MB |
+| 300 | 56.1 | 155.1 | 576.4 | 3522 MB |
+
+From the same starting point (n=300, t=1.0, 576.4 ms): halving `max_detections` gives 260.5 ms
+(55% saved); dropping `t` to 0.25 gives 56.1 ms (90% saved). The resolution lever is ~4.6× more
+effective, and the ordering holds for memory (1.4× against 4.8×). **No realistic `max_detections`
+reaches real-time**: a 30 fps budget is ~33 ms for the whole frame, and at `t=1.0` even n=75 costs
+140 ms in this stage alone — you would need n≈18.
+
+The accuracy argument also runs the other way. "Lossless on the top 150" is tautological: in a scene
+with 300 real objects, capping at 150 removes 150 real detections. Reducing resolution costs every
+object some boundary fidelity; reducing `n` costs you half the objects. They compose
+(n=150, t=0.25 → 29.1 ms) but they are not substitutes.
 
 **E2 — There is no CUDA or Jetson measurement anywhere in this plan.**
 Every figure is single-platform CPU (Apple M1 Max, 8 threads, fp32). The ~40 GB-per-4K-frame traffic
