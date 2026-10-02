@@ -29,8 +29,9 @@ traceback keeps the failure, not the result's other values.
 """
 
 import inspect
+from collections.abc import Mapping
 from concurrent.futures import CancelledError, Future
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from roboflow_workflows.execution_engine.v2.data import Batch
 

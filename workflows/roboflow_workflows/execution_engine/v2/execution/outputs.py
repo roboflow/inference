@@ -609,21 +609,50 @@ def _project(result: RunResult, port: SelectedPort, *, serialize: bool) -> Any:
         for length in range(1, len(path) + 1):
             children.setdefault(path[: length - 1], set()).add(path[:length])
 
-    def node(index: Index) -> Any:
-        is_leaf = len(index) == depth
-        if any(index[:length] in filtered for length in range(len(index) + 1)):
-            return None if is_leaf else []
-        if is_leaf:
-            return convert(leaves[index]) if index in leaves else None
-
-        known = children.get(index, ())
-        size = max((child[-1] for child in known), default=-1) + 1
-        nested = [node(index + (position,)) for position in range(size)]
-        return nested
-
-    projection = node(())
+    projection = _project_node(
+        (),
+        depth=depth,
+        filtered=filtered,
+        children=children,
+        leaves=leaves,
+        convert=convert,
+    )
 
     return projection
+
+
+def _project_node(
+    index: Index,
+    *,
+    depth: int,
+    filtered: Set[Index],
+    children: Dict[Index, Set[Index]],
+    leaves: Dict[Index, Any],
+    convert: Callable[[Any], Any],
+) -> Any:
+    # Module-level, not nested in ``_project``: a recursive closure would form
+    # a reference cycle holding ``leaves`` (see ``Entry._build_tree``).
+    is_leaf = len(index) == depth
+    if any(index[:length] in filtered for length in range(len(index) + 1)):
+        return None if is_leaf else []
+    if is_leaf:
+        return convert(leaves[index]) if index in leaves else None
+
+    known = children.get(index, ())
+    size = max((child[-1] for child in known), default=-1) + 1
+    nested = [
+        _project_node(
+            index + (position,),
+            depth=depth,
+            filtered=filtered,
+            children=children,
+            leaves=leaves,
+            convert=convert,
+        )
+        for position in range(size)
+    ]
+
+    return nested
 
 
 def _collect(

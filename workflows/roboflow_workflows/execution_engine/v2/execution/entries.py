@@ -146,29 +146,32 @@ class Entry:
             holding only unfiltered nodes under their original indices.
         """
         metadata = restrict_metadata(self.metadata, existing=self._surviving_nodes())
-
-        def build(index: Index) -> Any:
-            if len(index) == self.depth:
-                return self.values[index]
-
-            kept = [
-                child
-                for child in self.children.get(index, ())
-                if child not in self.filtered
-                and (len(child) < self.depth or child in self.values)
-            ]
-            group = Batch(
-                [build(child) for child in kept],
-                indices=kept,
-                layout=self.layout,
-                metadata=metadata,
-                parent_index=index,
-            )
-            return group
-
-        tree = build(())
+        tree = self._build_tree((), metadata=metadata)
 
         return tree
+
+    def _build_tree(self, index: Index, *, metadata: EntryMetadata) -> Any:
+        # A method rather than a nested function: a recursive closure refers to
+        # itself, and that cycle would keep the payloads alive until the cyclic
+        # garbage collector runs.
+        if len(index) == self.depth:
+            return self.values[index]
+
+        kept = [
+            child
+            for child in self.children.get(index, ())
+            if child not in self.filtered
+            and (len(child) < self.depth or child in self.values)
+        ]
+        group = Batch(
+            [self._build_tree(child, metadata=metadata) for child in kept],
+            indices=kept,
+            layout=self.layout,
+            metadata=metadata,
+            parent_index=index,
+        )
+
+        return group
 
     def surviving_metadata(self) -> EntryMetadata:
         """Return metadata restricted to nodes present in ``to_tree()``."""
@@ -230,17 +233,7 @@ def entry_from_tree(
     """
     children: Dict[Index, Tuple[Index, ...]] = {}
     values: Dict[Index, Any] = {}
-
-    def visit(node: Any, index: Index) -> None:
-        if len(index) == layout.depth:
-            values[index] = node
-            return
-
-        children[index] = tuple(node.indices)
-        for child_index, child in node.iter_with_indices():
-            visit(child, child_index)
-
-    visit(data, ())
+    _collect_tree(data, (), depth=layout.depth, children=children, values=values)
     entry = Entry(
         layout=layout,
         metadata=metadata,
@@ -250,6 +243,25 @@ def entry_from_tree(
     )
 
     return entry
+
+
+def _collect_tree(
+    node: Any,
+    index: Index,
+    *,
+    depth: int,
+    children: Dict[Index, Tuple[Index, ...]],
+    values: Dict[Index, Any],
+) -> None:
+    # Module-level, not nested: a recursive closure would form a reference
+    # cycle holding ``values`` (see ``Entry._build_tree``).
+    if len(index) == depth:
+        values[index] = node
+        return
+
+    children[index] = tuple(node.indices)
+    for child_index, child in node.iter_with_indices():
+        _collect_tree(child, child_index, depth=depth, children=children, values=values)
 
 
 def restrict_metadata(

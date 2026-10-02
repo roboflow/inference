@@ -41,9 +41,10 @@ Every kind's hooks follow one policy::
                     coordinates, returning new objects only when converting.
 """
 
+from collections.abc import Mapping
 from functools import partial
 from numbers import Integral, Real
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Optional, Sequence, Tuple
 
 import torch
 from roboflow_workflows.execution_engine.v2.blocks.coordinates import (

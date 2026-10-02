@@ -34,6 +34,7 @@ placeholder values: their positions are filtered in every output.
 
 import copy
 import dataclasses
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -42,7 +43,6 @@ from typing import (
     Dict,
     FrozenSet,
     List,
-    Mapping,
     NoReturn,
     Optional,
     Sequence,

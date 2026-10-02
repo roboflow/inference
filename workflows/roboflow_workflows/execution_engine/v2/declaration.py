@@ -869,10 +869,14 @@ class BlockSpec:
         Raises:
             ResolvedParameterError: With ``field_path`` of the first violation.
         """
+        # find_selectors without building SelectorUse objects: this runs per
+        # logical invocation.
         selected = [
-            (use.field_path, use.marker)
-            for use in self.find_selectors(params)
-            if use.marker.role != "step"
+            (field_path, marker)
+            for field_path, candidate, marker in _selector_candidates(
+                self.fields, params
+            )
+            if marker.role != "step" and marker.matches(candidate)
         ]
         self._validator.check_resolved(params, arguments, selected)
 

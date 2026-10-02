@@ -149,16 +149,15 @@ def _supplied(name: str, value: Any) -> Tuple[Any, EntryMetadata]:
     """Unwrap ``InputValue`` and wait for futures anywhere in the value.
 
     Futures are resolved before any shape, codec or kind check; containers
-    without futures, and ready payloads, keep their identity.
+    without futures, and ready payloads, keep their identity. Readiness does
+    not look into an ``InputValue``, so only its data needs a second pass.
     """
     try:
         value = resolve_futures(value)
-        data, metadata = (
-            (value.data, value.metadata)
-            if isinstance(value, InputValue)
-            else (value, EntryMetadata())
-        )
-        data = resolve_futures(data)
+        if isinstance(value, InputValue):
+            data, metadata = resolve_futures(value.data), value.metadata
+        else:
+            data, metadata = value, EntryMetadata()
     except Exception as error:
         raise WorkflowInputError(
             f"Workflow input {name!r}: a future in the supplied value failed with "

@@ -5,6 +5,8 @@ Runnable examples for the explicitly selected V2 engine in
 
 | Examples | What you can try |
 | --- | --- |
+| [Structural performance](11-structural-performance/README.md) | Compare shared detection preparation and batch delivery to separate box/label painters; check parity, held/live performance, and payload lifetime |
+| [Thor physical batching](10-thor-batching/README.md) | Compare V1 and V2 batches with native Jetson decoding, check per-image parity, and measure the model-to-workflow performance gap |
 | [Live object detection](08-live-detection/README.md) | Mac camera with platform YOLOv8n, separate tensor-native box and label blocks, serial/pipelined execution, and on-screen speed statistics |
 | [Bounded pipeline](07-bounded-pipeline/README.md) | Opt-in overlap of runs and pulses: phase timelines, per-source order, block/latest overload, stop/cancel/failure, and serial versus pipelined ResNet-18 on CPU and MPS |
 | [Model phases](06-model-phases/README.md) | Trained ResNet-18 with CPU, MPS and batched implementations; branch/join phases, run versus phase comparison, nested crops and gates, active frames and windows, mutation warnings and phase-named errors |
