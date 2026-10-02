@@ -80,6 +80,129 @@ class TestWatchdogWiring:
         assert daemon.stopped is True
 
 
+class _WatchdogSpy:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.started = False
+        self.stopped = False
+
+    def start(self):
+        self.started = True
+
+    def stop(self, timeout=None):
+        self.stopped = True
+
+
+class _IdleProxy:
+    async def start(self):
+        pass
+
+    async def shutdown(self):
+        pass
+
+
+class TestOfflineWatchdogWiring:
+    @pytest.fixture
+    def watchdog_env(self, monkeypatch):
+        import inference_server.app as app_mod
+        from inference_model_manager import configuration as manager_cfg
+        from inference_models import configuration as models_cfg
+
+        monkeypatch.delenv("INFERENCE_PRELOAD_MODELS", raising=False)
+        monkeypatch.setattr(
+            "inference_server.gateway_resolver.resolve_gateway",
+            lambda: _IdleProxy(),
+        )
+        monkeypatch.setattr(app_mod._cfg, "PRELOAD_API_KEY", "")
+        monkeypatch.setattr(manager_cfg, "MAX_INFERENCE_MODELS_CACHE_SIZE_MB", 100)
+        monkeypatch.setattr(
+            manager_cfg, "ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG", False
+        )
+        cache_spy = []
+        cuda_spy = []
+
+        class _CacheSpy(_WatchdogSpy):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                cache_spy.append(self)
+
+        class _CudaSpy(_WatchdogSpy):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                cuda_spy.append(self)
+
+        monkeypatch.setattr(
+            "inference_model_manager.watchdogs.InferenceModelsCacheWatchdog",
+            _CacheSpy,
+        )
+        monkeypatch.setattr(
+            "inference_model_manager.watchdogs.CudaMemoryReclamationWatchdog",
+            _CudaSpy,
+        )
+
+        return monkeypatch, manager_cfg, cache_spy, cuda_spy, models_cfg
+
+    @pytest.mark.asyncio
+    async def test_offline_never_starts_the_cache_watchdog(self, watchdog_env):
+        import inference_server.app as app_mod
+
+        monkeypatch, _, cache_spy, _, models_cfg = watchdog_env
+        monkeypatch.setattr(models_cfg, "OFFLINE_MODE", True)
+
+        async with app_mod._lifespan(app_mod.app):
+            pass
+
+        assert cache_spy == []
+
+    @pytest.mark.asyncio
+    async def test_offline_still_runs_the_cuda_watchdog(self, watchdog_env):
+        import inference_server.app as app_mod
+
+        monkeypatch, manager_cfg, cache_spy, cuda_spy, models_cfg = watchdog_env
+        monkeypatch.setattr(models_cfg, "OFFLINE_MODE", True)
+        monkeypatch.setattr(
+            manager_cfg, "ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG", True
+        )
+
+        async with app_mod._lifespan(app_mod.app):
+            assert len(cuda_spy) == 1
+            assert cuda_spy[0].started is True
+            assert cuda_spy[0].stopped is False
+
+        assert cuda_spy[0].stopped is True
+        assert cache_spy == []
+
+    @pytest.mark.asyncio
+    async def test_model_layer_offline_wins_over_server_setting(self, watchdog_env):
+        import inference_server.app as app_mod
+
+        monkeypatch, _, cache_spy, _, models_cfg = watchdog_env
+        monkeypatch.setattr(app_mod._cfg, "OFFLINE_MODE", False)
+        monkeypatch.setattr(models_cfg, "OFFLINE_MODE", True)
+
+        async with app_mod._lifespan(app_mod.app):
+            pass
+
+        assert cache_spy == []
+
+    @pytest.mark.asyncio
+    async def test_online_starts_enabled_watchdogs_once(self, watchdog_env):
+        import inference_server.app as app_mod
+
+        monkeypatch, _, _, _, models_cfg = watchdog_env
+        monkeypatch.setattr(models_cfg, "OFFLINE_MODE", False)
+        calls = []
+        monkeypatch.setattr(
+            "inference_model_manager.watchdogs.start_enabled_watchdogs",
+            lambda: calls.append(1) or [],
+        )
+
+        async with app_mod._lifespan(app_mod.app):
+            pass
+
+        assert calls == [1]
+
+
 class TestPreloadTaskLifecycle:
     @pytest.mark.asyncio
     async def test_lifespan_awaits_preload_task_before_shutdown(self, monkeypatch):

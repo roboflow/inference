@@ -144,9 +144,26 @@ async def _lifespan(app: FastAPI):
     try:
         await proxy.start()
 
-        from inference_model_manager.watchdogs import start_enabled_watchdogs
+        from inference_models import configuration as models_cfg
 
-        watchdog_daemons = start_enabled_watchdogs()
+        if models_cfg.OFFLINE_MODE:
+            from inference_model_manager import configuration as manager_cfg
+            from inference_model_manager.watchdogs import (
+                CudaMemoryReclamationWatchdog,
+            )
+
+            if manager_cfg.ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG:
+                cuda_daemon = CudaMemoryReclamationWatchdog(
+                    interval_seconds=(
+                        manager_cfg.CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS
+                    )
+                )
+                cuda_daemon.start()
+                watchdog_daemons = [cuda_daemon]
+        else:
+            from inference_model_manager.watchdogs import start_enabled_watchdogs
+
+            watchdog_daemons = start_enabled_watchdogs()
 
         app.state.model_manager = proxy
         app.state.loop = asyncio.get_running_loop()
