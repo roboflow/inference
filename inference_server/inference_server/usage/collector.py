@@ -158,10 +158,7 @@ class UsageCollector:
         self._ignored_lock = Lock()
         self._ignored_after_stop = 0
 
-        self._api_keys_lock = Lock()
-        self._hashed_api_keys: Dict[APIKey, APIKeyHash] = {}
-
-        queue, self._api_keys_hashing_enabled = _select_queue(
+        queue, api_keys_hashing_enabled = _select_queue(
             redis_client=redis_client,
             sqlite_db_file_path=sqlite_db_file_path,
         )
@@ -175,45 +172,58 @@ class UsageCollector:
         self._delivery = Delivery(
             queue,
             detach_window=self._detach_window,
-            prepare=self._resolve_system_info_in_background,
+            resolve_host_in_background=self._resolve_system_info_in_background,
             host_values=self._host_values,
-            resolve_api_keys=self._api_keys_by_hash,
-            register_api_key=self._calculate_api_key_hash,
+            api_keys_hashing_enabled=api_keys_hashing_enabled,
         )
 
     @property
     def inline_queue_writes(self) -> int:
-        """Pending items the recording thread wrote to the queue itself.
+        """Acknowledged queue writes made to free room in the pending list.
 
         Returns:
-            How many times the pending list was full and a caller of
-            ``record_usage`` had to write its oldest item to the queue.
+            How many oldest pending items were written to the queue because the
+            pending list was full, by whichever thread needed the room: a
+            recording thread, the collector thread or ``stop``.
         """
         return self._delivery.inline_queue_writes
 
     @property
     def dropped_rows(self) -> int:
-        """Rows given up because the pending list was full and the queue refused."""
+        """Rows discarded without reaching the queue.
+
+        Counts the oldest pending rows dropped to make room, rows pushed out of
+        the pending list when unsent payloads are returned to it, and payloads
+        that could not be restored to the queue after a failed merge.
+        """
         return self._delivery.dropped_rows
 
     @property
     def dropped_frames(self) -> int:
-        """Processed frames of the dropped rows."""
+        """Processed frames of the rows counted by ``dropped_rows``."""
         return self._delivery.dropped_frames
 
     @property
     def unconfirmed_rows(self) -> int:
-        """Rows given up because the queue write may have landed but is unconfirmed."""
+        """Rows given up after a queue write that was not acknowledged.
+
+        The write may still have landed and is never retried, so the rows are
+        counted here instead of being kept.
+        """
         return self._delivery.unconfirmed_rows
 
     @property
     def unconfirmed_frames(self) -> int:
-        """Processed frames of the unconfirmed rows."""
+        """Processed frames of the rows counted by ``unconfirmed_rows``."""
         return self._delivery.unconfirmed_frames
 
     @property
     def ignored_after_stop(self) -> int:
-        """Calls of ``record_usage`` ignored because ``stop`` had returned."""
+        """Calls of ``record_usage`` rejected once admission was closed.
+
+        Admission closes when ``stop`` starts, before it returns, and the final
+        detachment of the window closes it for calls already waiting.
+        """
         return self._ignored_after_stop
 
     @staticmethod
@@ -263,17 +273,6 @@ class UsageCollector:
 
         return defaultdict(lambda: defaultdict(lambda: {**usage_dict}))
 
-    def _calculate_api_key_hash(self, api_key: APIKey) -> APIKeyHash:
-        with self._api_keys_lock:
-            api_key_hash = self._hashed_api_keys.get(api_key)
-            if not api_key_hash:
-                if self._api_keys_hashing_enabled:
-                    api_key_hash = sha256_hash(api_key, length=-1)
-                else:
-                    api_key_hash = api_key
-                self._hashed_api_keys[api_key] = api_key_hash
-        return api_key_hash
-
     @staticmethod
     def _calculate_resource_hash(resource_details: Dict[str, Any]) -> str:
         return sha256_hash(json.dumps(resource_details, sort_keys=True))
@@ -318,14 +317,11 @@ class UsageCollector:
         return status_code
 
     @classmethod
-    def _normalize_error_metadata(
-        cls, resource_details: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        resource_details = dict(resource_details)
+    def _normalize_error_metadata(cls, resource_details: Dict[str, Any]) -> None:
         if ERROR_KEY not in resource_details:
             resource_details.pop(ERROR_TYPE_KEY, None)
             resource_details.pop(ERROR_STATUS_CODE_KEY, None)
-            return resource_details
+            return
 
         resource_details[ERROR_TYPE_KEY] = cls._normalize_error_type(
             resource_details.get(ERROR_TYPE_KEY)
@@ -337,19 +333,6 @@ class UsageCollector:
             resource_details.pop(ERROR_STATUS_CODE_KEY, None)
         else:
             resource_details[ERROR_STATUS_CODE_KEY] = error_status_code
-        return resource_details
-
-    @classmethod
-    def _usage_outcome(
-        cls, resource_details: Optional[Dict[str, Any]]
-    ) -> Tuple[str, Optional[str], Optional[int]]:
-        if not resource_details or ERROR_KEY not in resource_details:
-            return SUCCESS_OUTCOME, None, None
-        error_type = cls._normalize_error_type(resource_details.get(ERROR_TYPE_KEY))
-        error_status_code = cls._normalize_error_status_code(
-            resource_details.get(ERROR_STATUS_CODE_KEY)
-        )
-        return ERROR_OUTCOME, error_type, error_status_code
 
     @classmethod
     def _usage_key(
@@ -360,12 +343,14 @@ class UsageCollector:
         stream_session_id: Optional[str] = None,
     ) -> str:
         billable = str(cls._is_billable(resource_details)).lower()
-        outcome, error_type, error_status_code = cls._usage_outcome(resource_details)
+        is_error = bool(resource_details) and ERROR_KEY in resource_details
+        outcome = ERROR_OUTCOME if is_error else SUCCESS_OUTCOME
         usage_key = f"{category}:{resource_id}:billable={billable}:outcome={outcome}"
         if cls._is_preview(resource_details):
             usage_key = f"{usage_key}:preview=true"
-        if outcome == ERROR_OUTCOME:
-            usage_key = f"{usage_key}:error_type={error_type}"
+        if is_error:
+            usage_key = f"{usage_key}:error_type={resource_details[ERROR_TYPE_KEY]}"
+            error_status_code = resource_details.get(ERROR_STATUS_CODE_KEY)
             if error_status_code is not None:
                 usage_key = f"{usage_key}:error_status_code={error_status_code}"
         if stream_session_id:
@@ -483,15 +468,6 @@ class UsageCollector:
 
         return system_info
 
-    def _api_keys_by_hash(self) -> Dict[APIKeyHash, APIKey]:
-        with self._api_keys_lock:
-            api_keys = {
-                api_key_hash: api_key
-                for api_key, api_key_hash in self._hashed_api_keys.items()
-            }
-
-        return api_keys
-
     @classmethod
     def _request_details(
         cls,
@@ -511,9 +487,9 @@ class UsageCollector:
             details.setdefault(ERROR_KEY, cls._normalize_error_type(error_type))
         if error_status_code is not None:
             details[ERROR_STATUS_CODE_KEY] = error_status_code
-        normalized_details = cls._normalize_error_metadata(details)
+        cls._normalize_error_metadata(details)
 
-        return normalized_details
+        return details
 
     def record_usage(
         self,
@@ -595,7 +571,7 @@ class UsageCollector:
         if not exec_session_id:
             exec_session_id = execution_id.get()
 
-        api_key_hash = self._calculate_api_key_hash(api_key)
+        api_key_hash = self._delivery.register_api_key(api_key)
         stream_session_id = _current_stream_session_id()
         usage_key = self._usage_key(
             category=category,
@@ -614,16 +590,14 @@ class UsageCollector:
                     self._count_ignored()
                     return
 
-                blocked_rows, source_usage, details = self._row_for_no_lock(
-                    api_key_hash, usage_key, details
+                blocked_rows, source_usage, details = (
+                    self._get_or_open_row_usage_locked(api_key_hash, usage_key, details)
                 )
                 if blocked_rows is None:
-                    extra_items = self._accumulate_no_lock(
+                    self._accumulate_usage_locked(
                         source_usage,
                         details,
-                        extra_details_json,
                         api_key_hash=api_key_hash,
-                        usage_key=usage_key,
                         category=category,
                         resource_id=resource_id,
                         frames=frames,
@@ -637,6 +611,12 @@ class UsageCollector:
                         stream_session_id=stream_session_id,
                         exec_session_id=exec_session_id,
                     )
+                    extra_items = self._make_overflow_pending_items(
+                        source_usage,
+                        extra_details_json,
+                        api_key_hash=api_key_hash,
+                        usage_key=usage_key,
+                    )
                     break
             self._delivery.make_room(blocked_rows, write=True)
 
@@ -647,12 +627,12 @@ class UsageCollector:
         with self._ignored_lock:
             self._ignored_after_stop += 1
 
-    def _row_for_no_lock(
+    def _get_or_open_row_usage_locked(
         self, api_key_hash: APIKeyHash, usage_key: str, details: Dict[str, Any]
     ) -> Tuple[Optional[int], Optional[Dict[str, Any]], Dict[str, Any]]:
         source_usage = self._usage.get(api_key_hash, {}).get(usage_key)
         if source_usage is None and self._rows_count >= MAX_AGGREGATED_ROWS:
-            blocked_rows = self._detach_window_no_lock()
+            blocked_rows = self._try_detach_window_usage_locked()
             if blocked_rows is not None:
                 return blocked_rows, None, details
         if source_usage is not None:
@@ -674,14 +654,12 @@ class UsageCollector:
 
         return None, source_usage, details
 
-    def _accumulate_no_lock(
-        self,
+    @staticmethod
+    def _accumulate_usage_locked(
         source_usage: Dict[str, Any],
         details: Dict[str, Any],
-        extra_details_json: List[str],
         *,
         api_key_hash: APIKeyHash,
-        usage_key: str,
         category: str,
         resource_id: str,
         frames: int,
@@ -694,7 +672,7 @@ class UsageCollector:
         megapixel_buckets: Optional[Dict[str, Dict[str, Any]]],
         stream_session_id: Optional[str],
         exec_session_id: Optional[str],
-    ) -> List[PendingItem]:
+    ) -> None:
         if not source_usage["timestamp_start"]:
             source_usage["timestamp_start"] = time.time_ns()
         source_usage["timestamp_stop"] = time.time_ns()
@@ -727,6 +705,14 @@ class UsageCollector:
         if exec_session_id:
             source_usage["exec_session_id"] = exec_session_id
 
+    @staticmethod
+    def _make_overflow_pending_items(
+        source_usage: Dict[str, Any],
+        extra_details_json: List[str],
+        *,
+        api_key_hash: APIKeyHash,
+        usage_key: str,
+    ) -> List[PendingItem]:
         extra_items = []
         for extra_json in extra_details_json:
             extra_row = {
@@ -742,7 +728,7 @@ class UsageCollector:
 
         return extra_items
 
-    def _detach_window_no_lock(self) -> Optional[int]:
+    def _try_detach_window_usage_locked(self) -> Optional[int]:
         window_item = pending_item(self._usage)
         if window_item is None:
             return None
@@ -768,7 +754,7 @@ class UsageCollector:
                     return False
                 if final:
                     self._accepting = False
-                blocked_rows = self._detach_window_no_lock()
+                blocked_rows = self._try_detach_window_usage_locked()
             if blocked_rows is None:
                 return True
 
@@ -778,20 +764,23 @@ class UsageCollector:
             if not made:
                 return False
 
-    def _enqueue_usage_payload(self) -> None:
+    def _write_current_usage_to_queue(self) -> None:
         self._detach_window()
         self._delivery.drain_pending()
 
     def push_usage_payloads(self) -> None:
-        """Queue the current window and send everything that is queued."""
-        self._enqueue_usage_payload()
+        """Queue the current window and make one sending pass over the queue.
+
+        The pass reads no more than the queue held when it started.
+        """
+        self._write_current_usage_to_queue()
         self._delivery.send_queued()
 
     def flush(self) -> None:
-        """Queue the current window and send everything that is queued.
+        """Queue the current window and make one sending pass over the queue.
 
-        Blocks for one request per API key and execution session, each limited
-        to one second. Rows that are not accepted stay queued or pending.
+        Blocks for one request per API key and merged payload, each limited to
+        one second. Rows that are not accepted stay queued or pending.
         """
         self.push_usage_payloads()
 

@@ -21,7 +21,7 @@ from inference_server.usage.queues import RedisQueue, SQLiteQueue
 from tests.unit_tests.usage.conftest import SYSTEM_INFO
 from tests.unit_tests.usage.test_queues import FakeRedis
 
-POST = "inference_server.usage.payload_helpers.requests.post"
+POST = "inference_server.usage.delivery.requests.post"
 
 
 def usage_key(
@@ -302,10 +302,10 @@ def test_system_info_is_computed_once(collector):
     ) as system_info:
         record(collector)
         collector.record_system_info()
-        collector._enqueue_usage_payload()
+        collector._write_current_usage_to_queue()
         record(collector)
         collector.record_system_info()
-        collector._enqueue_usage_payload()
+        collector._write_current_usage_to_queue()
 
     system_info.assert_called_once()
     key = usage_key("request", "workspace/model")
@@ -777,7 +777,7 @@ def test_record_usage_without_api_key_records_nothing(collector):
     record(collector, api_key=None)
 
     assert not collector._usage
-    assert collector._hashed_api_keys == {}
+    assert collector._delivery._hashed_api_keys == {}
 
 
 def test_record_usage_with_zero_frames_keeps_the_row_as_legacy(collector):
@@ -933,7 +933,7 @@ def test_row_bound_flushes_the_window_early_and_loses_nothing(collector, monkeyp
     assert max(held_rows) <= 3
     assert len(collector._delivery.pending) > 0
     assert collector._delivery.queue.qsize() == 0
-    collector._enqueue_usage_payload()
+    collector._write_current_usage_to_queue()
     assert total_frames(queued_payloads(collector)) == 40
 
 
@@ -947,7 +947,7 @@ def test_row_bound_counts_rows_of_every_api_key(collector, monkeypatch):
     assert sum(len(rows) for rows in collector._usage.values()) == 1
     assert len(collector._delivery.pending) == 2
     assert collector._delivery.queue.qsize() == 0
-    collector._enqueue_usage_payload()
+    collector._write_current_usage_to_queue()
     assert total_frames(queued_payloads(collector)) == 5
 
 
@@ -966,7 +966,7 @@ def test_list_bound_enqueues_the_row_and_starts_a_fresh_one(collector, monkeypat
     assert [entry["model_id"] for entry in current["models"]] == ["model/4"]
     assert len(collector._delivery.pending) == 2
     assert collector._delivery.queue.qsize() == 0
-    collector._enqueue_usage_payload()
+    collector._write_current_usage_to_queue()
     payloads = []
     while not collector._delivery.queue.empty():
         payloads.append(collector._delivery.queue.get_nowait())
@@ -989,7 +989,7 @@ def test_queue_is_redis_on_serverless_with_a_redis_host(monkeypatch):
     usage_collector = UsageCollector(redis_client=FakeRedis())
 
     assert isinstance(usage_collector._delivery.queue, RedisQueue)
-    assert usage_collector._api_keys_hashing_enabled is False
+    assert usage_collector._delivery._api_keys_hashing_enabled is False
 
 
 def test_queue_is_in_memory_when_redis_is_selected_but_not_installed(
@@ -1004,7 +1004,7 @@ def test_queue_is_in_memory_when_redis_is_selected_but_not_installed(
 
     assert isinstance(usage_collector._delivery.queue, Queue)
     assert usage_collector._delivery.queue.maxsize == 10
-    assert usage_collector._api_keys_hashing_enabled is False
+    assert usage_collector._delivery._api_keys_hashing_enabled is False
     assert len(caplog.records) == 1
 
 
@@ -1018,7 +1018,7 @@ def test_queue_is_in_memory_on_serverless_without_a_redis_host(monkeypatch, flag
 
     assert isinstance(usage_collector._delivery.queue, Queue)
     assert usage_collector._delivery.queue.maxsize == 25
-    assert usage_collector._api_keys_hashing_enabled is False
+    assert usage_collector._delivery._api_keys_hashing_enabled is False
 
 
 def test_queue_is_in_memory_when_the_persistent_queue_is_switched_off(monkeypatch):
@@ -1027,7 +1027,7 @@ def test_queue_is_in_memory_when_the_persistent_queue_is_switched_off(monkeypatc
     usage_collector = UsageCollector()
 
     assert isinstance(usage_collector._delivery.queue, Queue)
-    assert usage_collector._api_keys_hashing_enabled is False
+    assert usage_collector._delivery._api_keys_hashing_enabled is False
 
 
 def test_queue_is_sqlite_by_default_and_api_keys_are_hashed(monkeypatch, tmp_path):
@@ -1037,7 +1037,7 @@ def test_queue_is_sqlite_by_default_and_api_keys_are_hashed(monkeypatch, tmp_pat
     usage_collector = UsageCollector()
 
     assert isinstance(usage_collector._delivery.queue, SQLiteQueue)
-    assert usage_collector._api_keys_hashing_enabled is True
+    assert usage_collector._delivery._api_keys_hashing_enabled is True
     assert (tmp_path / "usage.db").exists()
 
 
@@ -1051,7 +1051,7 @@ def test_queue_is_in_memory_when_the_sqlite_file_cannot_be_created(
     usage_collector = UsageCollector(sqlite_db_file_path=blocker / "usage.db")
 
     assert isinstance(usage_collector._delivery.queue, Queue)
-    assert usage_collector._api_keys_hashing_enabled is False
+    assert usage_collector._delivery._api_keys_hashing_enabled is False
 
 
 def test_redis_receives_the_window_keyed_by_the_api_key(monkeypatch):
@@ -1253,7 +1253,7 @@ def test_sqlite_file_never_holds_the_api_key(monkeypatch, tmp_path):
     api_key_hash = sha256_hash(api_key, length=-1)
 
     record(usage_collector, api_key=api_key, frames=3)
-    usage_collector._enqueue_usage_payload()
+    usage_collector._write_current_usage_to_queue()
     first_write = db_file.read_bytes()
 
     with mock.patch(POST) as post_mock:
@@ -1391,5 +1391,5 @@ def test_concurrent_recording_loses_no_usage(collector, monkeypatch):
     for thread in threads:
         thread.join()
 
-    collector._enqueue_usage_payload()
+    collector._write_current_usage_to_queue()
     assert total_frames(queued_payloads(collector)) == 1600

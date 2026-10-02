@@ -5,11 +5,10 @@ from unittest import mock
 import pytest
 
 from inference_server import configuration
+from inference_server.usage.delivery import send_usage_payload, ssl_verify_for_endpoint
 from inference_server.usage.payload_helpers import (
     get_api_key_usage_containing_resource,
     merge_usage_dicts,
-    send_usage_payload,
-    ssl_verify_for_endpoint,
     zip_usage_payloads,
 )
 
@@ -919,7 +918,7 @@ def test_zip_usage_payloads_keeps_stream_sessions_separate():
     assert merged["workflows:workflow-1:stream-b"]["stream_session_id"] == "stream-b"
 
 
-@mock.patch("inference_server.usage.payload_helpers.requests.post")
+@mock.patch("inference_server.usage.delivery.requests.post")
 def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
     post_mock,
 ):
@@ -964,7 +963,7 @@ def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
     assert all("stream_session_id" not in row for row in outbound_rows)
 
 
-@mock.patch("inference_server.usage.payload_helpers.requests.post")
+@mock.patch("inference_server.usage.delivery.requests.post")
 @mock.patch.object(configuration, "LEGACY_OFFLINE_MODE", True)
 def test_send_usage_payload_does_not_post_when_offline(post_mock) -> None:
     payload = {
@@ -987,7 +986,7 @@ def test_send_usage_payload_does_not_post_when_offline(post_mock) -> None:
     post_mock.assert_not_called()
 
 
-@mock.patch("inference_server.usage.payload_helpers.requests.post")
+@mock.patch("inference_server.usage.delivery.requests.post")
 def test_send_usage_payload_leaves_legacy_exec_session_ids(
     post_mock,
 ):
@@ -1027,7 +1026,7 @@ def test_send_usage_payload_leaves_legacy_exec_session_ids(
     assert all("stream_session_id" not in row for row in outbound_rows)
 
 
-@mock.patch("inference_server.usage.payload_helpers.requests.post")
+@mock.patch("inference_server.usage.delivery.requests.post")
 def test_send_usage_payload_retry_sends_identical_rows(post_mock):
     payload = {
         "fake_hash": {

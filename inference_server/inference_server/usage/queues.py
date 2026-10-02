@@ -54,7 +54,6 @@ class SQLiteQueue:
             db_file_path = Path(configuration.MODEL_CACHE_DIR) / SQLITE_FILE_NAME
         self._db_file_path = Path(db_file_path)
         self._tbl_name = table_name
-        self._col_name = "payload"
 
         if sqlite_connection is None:
             self._db_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,14 +102,14 @@ class SQLiteQueue:
     def _create_table(self, connection: sqlite3.Connection) -> None:
         sql_create_table = (
             f"CREATE TABLE IF NOT EXISTS {self._tbl_name} "
-            f"({self._col_name} TEXT NOT NULL, id INTEGER PRIMARY KEY);"
+            "(payload TEXT NOT NULL, id INTEGER PRIMARY KEY);"
         )
         self._in_exclusive_transaction(
             connection, lambda cursor: cursor.execute(sql_create_table)
         )
 
     def _insert(self, connection: sqlite3.Connection, *, payload_str: str) -> None:
-        sql_insert = f"INSERT INTO {self._tbl_name} ({self._col_name}) VALUES (?);"
+        sql_insert = f"INSERT INTO {self._tbl_name} (payload) VALUES (?);"
         self._in_exclusive_transaction(
             connection, lambda cursor: cursor.execute(sql_insert, [payload_str])
         )
@@ -125,9 +124,9 @@ class SQLiteQueue:
 
         return count
 
-    def _flush(self, connection: sqlite3.Connection) -> List[str]:
+    def _take_oldest_batch(self, connection: sqlite3.Connection) -> List[str]:
         sql_select = (
-            f"SELECT id, {self._col_name} FROM {self._tbl_name} "
+            f"SELECT id, payload FROM {self._tbl_name} "
             f"ORDER BY id ASC LIMIT {SQLITE_FLUSH_LIMIT}"
         )
 
@@ -206,12 +205,9 @@ class SQLiteQueue:
         Returns:
             True when the table is empty or cannot be read.
         """
-        try:
-            count = self._run(self._count, sqlite_connection)
-        except Exception:
-            return True
+        empty = self.qsize(sqlite_connection=sqlite_connection) == 0
 
-        return count == 0
+        return empty
 
     def get_nowait(
         self, sqlite_connection: Optional[sqlite3.Connection] = None
@@ -226,7 +222,7 @@ class SQLiteQueue:
             read.
         """
         try:
-            payload_strs = self._run(self._flush, sqlite_connection)
+            payload_strs = self._run(self._take_oldest_batch, sqlite_connection)
         except Exception:
             return []
 

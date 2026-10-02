@@ -195,7 +195,7 @@ def test_a_queue_that_refuses_a_write_keeps_the_item_pending_in_order(
         record(collector, resource_id=f"resource-{index}", frames=2**index)
 
     for _ in range(failures + 4):
-        collector._enqueue_usage_payload()
+        collector._write_current_usage_to_queue()
 
     assert stored_frames(queue.stored) == [1, 2, 4, 8]
     assert queue.attempts == failures + 4
@@ -219,13 +219,13 @@ def test_a_locked_sqlite_file_keeps_the_rows_pending_until_it_can_be_written(
     holder = sqlite3.connect(str(db_file), timeout=0.05, isolation_level=None)
     holder.execute("BEGIN EXCLUSIVE")
     try:
-        usage_collector._enqueue_usage_payload()
+        usage_collector._write_current_usage_to_queue()
         owned_while_locked = pending_frames(usage_collector)
     finally:
         holder.execute("ROLLBACK")
         holder.close()
 
-    usage_collector._enqueue_usage_payload()
+    usage_collector._write_current_usage_to_queue()
 
     assert owned_while_locked == 3
     assert pending_frames(usage_collector) == 0
@@ -250,9 +250,9 @@ def test_a_redis_pipeline_that_raises_gives_the_rows_up_as_unconfirmed(monkeypat
     usage_collector = redis_collector(monkeypatch, client)
     record(usage_collector, frames=3)
 
-    usage_collector._enqueue_usage_payload()
+    usage_collector._write_current_usage_to_queue()
     client.error = None
-    usage_collector._enqueue_usage_payload()
+    usage_collector._write_current_usage_to_queue()
 
     assert pending_frames(usage_collector) == 0
     assert pending_rows(usage_collector) == 0
@@ -274,7 +274,7 @@ def test_a_redis_write_that_may_have_landed_is_not_retried_and_is_counted(
 
     with caplog.at_level(logging.DEBUG):
         for _ in range(4):
-            usage_collector._enqueue_usage_payload()
+            usage_collector._write_current_usage_to_queue()
 
     assert client.attempts == 1
     assert len(client.store) == 1
@@ -303,7 +303,7 @@ def test_unconfirmed_writes_are_reported_once_per_flush_interval(monkeypatch, ca
     with caplog.at_level(logging.DEBUG):
         for index in range(3):
             record(usage_collector, resource_id=f"resource-{index}")
-            usage_collector._enqueue_usage_payload()
+            usage_collector._write_current_usage_to_queue()
         first_interval = [
             r
             for r in caplog.records
@@ -311,7 +311,7 @@ def test_unconfirmed_writes_are_reported_once_per_flush_interval(monkeypatch, ca
         ]
         now[0] += 11
         record(usage_collector, resource_id="resource-3")
-        usage_collector._enqueue_usage_payload()
+        usage_collector._write_current_usage_to_queue()
 
     lines = [
         r
@@ -330,8 +330,8 @@ def test_a_redis_write_that_was_not_acknowledged_is_given_up_and_never_retried(
     usage_collector = redis_collector(monkeypatch, client)
     record(usage_collector, frames=3)
 
-    usage_collector._enqueue_usage_payload()
-    usage_collector._enqueue_usage_payload()
+    usage_collector._write_current_usage_to_queue()
+    usage_collector._write_current_usage_to_queue()
     usage_collector.flush()
 
     assert client.attempts == 1
@@ -360,7 +360,7 @@ def test_pending_rows_never_pass_the_bound_while_the_queue_accepts_writes(
 
     assert lock.peak <= 3
     assert collector.dropped_rows == 0
-    collector._enqueue_usage_payload()
+    collector._write_current_usage_to_queue()
     assert sum(stored_frames(queue.stored)) == 36
 
 
@@ -385,7 +385,7 @@ def test_concurrent_overflow_never_passes_the_bound(collector, monkeypatch):
     assert not [thread for thread in threads if thread.is_alive()]
     assert lock.peak <= 4
     assert collector.dropped_rows == 0
-    collector._enqueue_usage_payload()
+    collector._write_current_usage_to_queue()
     assert sum(stored_frames(queue.stored)) == 640
 
 
@@ -457,7 +457,7 @@ def test_an_oversized_split_call_respects_the_bound(collector, monkeypatch):
 
     assert lock.peak <= 3
     assert collector.dropped_rows == 0
-    collector._enqueue_usage_payload()
+    collector._write_current_usage_to_queue()
     rows = [
         row
         for payload in queue.stored
@@ -545,7 +545,7 @@ def test_a_row_is_completed_once_even_when_its_write_is_retried(collector):
     ) as system_info:
         collector.record_system_info()
         for _ in range(3):
-            collector._enqueue_usage_payload()
+            collector._write_current_usage_to_queue()
 
     system_info.assert_called_once()
     (payload,) = queue.stored
@@ -824,11 +824,11 @@ def test_rows_read_back_after_a_restart_use_the_hash_as_the_bearer_as_legacy_doe
     first_process = UsageCollector(sqlite_db_file_path=db_file)
     first_process._system_info = dict(SYSTEM_INFO)
     record(first_process, api_key="restarted-key", frames=4)
-    first_process._enqueue_usage_payload()
+    first_process._write_current_usage_to_queue()
     api_key_hash = sha256_hash("restarted-key", length=-1)
     second_process = UsageCollector(sqlite_db_file_path=db_file)
     second_process._system_info = dict(SYSTEM_INFO)
-    assert second_process._hashed_api_keys == {}
+    assert second_process._delivery._hashed_api_keys == {}
 
     with mock.patch(POST) as post_mock:
         post_mock.return_value.status_code = 401
@@ -1051,5 +1051,5 @@ def test_a_call_after_stop_does_no_hashing_validation_or_map_growth(collector):
     record(collector, api_key="late-key", frames=2)
 
     assert collector.ignored_after_stop == 2
-    assert collector._hashed_api_keys == {}
+    assert collector._delivery._hashed_api_keys == {}
     assert not collector._usage

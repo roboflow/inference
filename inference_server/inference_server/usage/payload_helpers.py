@@ -1,16 +1,8 @@
-"""Usage rows: merging, grouping into request payloads and sending them."""
+"""Usage rows: merging and grouping into request payloads."""
 
 import hashlib
 import json
-import logging
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Set, Tuple, Union
-from urllib.parse import urlparse
-
-import requests
-
-from inference_server import configuration
-
-logger = logging.getLogger(__name__)
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -24,9 +16,6 @@ SystemDetails = Dict[str, Any]
 UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
 
 MAX_BILLABLE_ENTRIES_PER_ROW = 256
-REQUEST_TIMEOUT_S = 1
-INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
-ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
 RESOURCE_DETAILS_KEY = "resource_details"
 MODELS_KEY = "models"
 CUSTOM_PYTHON_KEY = "custom_python"
@@ -320,20 +309,12 @@ def get_api_key_usage_containing_resource(
     return
 
 
-def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
-    """Merge queued payloads into one payload per execution session.
-
-    Rows of the same API key hash, usage key and execution session are merged.
-    A row whose billable lists would grow past ``MAX_BILLABLE_ENTRIES_PER_ROW``
-    is closed and emitted in a payload of its own.
-
-    Args:
-        usage_payloads: Payloads taken from the queue.
-
-    Returns:
-        Stream payloads, then image payloads, then rows closed by the list
-        bound, then a payload holding only system information, when there is one.
-    """
+def _group_rows_by_key_and_session(
+    usage_payloads: List[APIKeyUsage],
+) -> Tuple[
+    Dict[APIKeyHash, Dict[ResourceID, Dict[str, List[ResourceUsage]]]],
+    Optional[APIKeyUsage],
+]:
     system_info_payload = None
     usage_by_exec_session_id: Dict[
         APIKeyHash, Dict[ResourceID, Dict[str, List[ResourceUsage]]]
@@ -375,8 +356,16 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                     resource_usage_payload
                 )
 
-    merged_exec_session_id_streams_usage_payloads: Dict[str, APIKeyUsage] = {}
-    merged_exec_session_id_photos_usage_payloads: Dict[str, APIKeyUsage] = {}
+    return usage_by_exec_session_id, system_info_payload
+
+
+def _merge_grouped_rows(
+    usage_by_exec_session_id: Dict[
+        APIKeyHash, Dict[ResourceID, Dict[str, List[ResourceUsage]]]
+    ],
+) -> Tuple[Dict[str, APIKeyUsage], Dict[str, APIKeyUsage], List[APIKeyUsage]]:
+    streams_by_exec_session_id: Dict[str, APIKeyUsage] = {}
+    images_by_exec_session_id: Dict[str, APIKeyUsage] = {}
     closed_usage_payloads: List[APIKeyUsage] = []
     for (
         api_key_hash,
@@ -388,21 +377,16 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
         ) in api_key_usage_by_exec_session_id.items():
             for (
                 exec_session_id,
-                usage_payloads,
+                grouped_rows,
             ) in resource_usage_exec_session_id.items():
-                for resource_usage_payload in usage_payloads:
+                for resource_usage_payload in grouped_rows:
                     if resource_usage_payload.get("fps"):
-                        merged_api_key_usage_payloads = (
-                            merged_exec_session_id_streams_usage_payloads.setdefault(
-                                exec_session_id, {}
-                            )
-                        )
+                        destination = streams_by_exec_session_id
                     else:
-                        merged_api_key_usage_payloads = (
-                            merged_exec_session_id_photos_usage_payloads.setdefault(
-                                exec_session_id, {}
-                            )
-                        )
+                        destination = images_by_exec_session_id
+                    merged_api_key_usage_payloads = destination.setdefault(
+                        exec_session_id, {}
+                    )
                     merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
                         api_key_hash, {}
                     )
@@ -425,10 +409,33 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                         resource_usage_payload,
                     )
 
+    return streams_by_exec_session_id, images_by_exec_session_id, closed_usage_payloads
+
+
+def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
+    """Merge queued payloads into payloads of one execution session each.
+
+    Rows of the same API key hash, usage key and execution session are merged,
+    streams (rows with fps) apart from images. A row whose billable lists would
+    grow past ``MAX_BILLABLE_ENTRIES_PER_ROW`` is closed and emitted in a
+    payload of its own, so one session can yield more than one payload.
+
+    Args:
+        usage_payloads: Payloads taken from the queue.
+
+    Returns:
+        Stream payloads, then image payloads, then rows closed by the list
+        bound, then a payload holding only system information, when there is one.
+    """
+    usage_by_exec_session_id, system_info_payload = _group_rows_by_key_and_session(
+        usage_payloads
+    )
+    streams, images, closed_usage_payloads = _merge_grouped_rows(
+        usage_by_exec_session_id
+    )
+
     zipped_payloads = (
-        list(merged_exec_session_id_streams_usage_payloads.values())
-        + list(merged_exec_session_id_photos_usage_payloads.values())
-        + closed_usage_payloads
+        list(streams.values()) + list(images.values()) + closed_usage_payloads
     )
     if system_info_payload:
         system_info_api_key_hash = next(iter(system_info_payload.values()))[
@@ -436,122 +443,6 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
         ]
         zipped_payloads.append({system_info_api_key_hash: system_info_payload})
     return zipped_payloads
-
-
-def ssl_verify_for_endpoint(url: str) -> bool:
-    """Tell whether TLS certificates are verified for a usage endpoint.
-
-    Args:
-        url: URL that will be requested, after any secure gateway wrapping.
-
-    Returns:
-        False only when the host is ``localhost`` or ``127.0.0.1``.
-    """
-    try:
-        hostname = urlparse(url).hostname or ""
-    except ValueError:
-        return True
-    return hostname.lower() not in {"localhost", "127.0.0.1"}
-
-
-def usage_request_headers() -> Dict[str, Any]:
-    """Build the headers sent with every usage request besides authorization.
-
-    Returns:
-        ``ROBOFLOW_API_EXTRA_HEADERS`` overridden by the server version and
-        chunked-response markers.
-    """
-    headers = {
-        INFERENCE_VERSION_HEADER: configuration.SERVER_VERSION,
-        ALLOW_CHUNKED_RESPONSE_HEADER: "true",
-    }
-    if not configuration.ROBOFLOW_API_EXTRA_HEADERS:
-        return headers
-
-    try:
-        extra_headers: dict = json.loads(configuration.ROBOFLOW_API_EXTRA_HEADERS)
-    except ValueError:
-        logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
-        return headers
-    extra_headers.update(headers)
-
-    return extra_headers
-
-
-def _outbound_row(row: Usage, *, api_key: APIKey) -> Dict[str, Any]:
-    outbound_row = {key: value for key, value in row.items() if key != "api_key_hash"}
-    stream_session_id = outbound_row.pop("stream_session_id", None)
-    if stream_session_id:
-        outbound_row["exec_session_id"] = stream_session_id
-    outbound_row["api_key"] = api_key
-
-    return outbound_row
-
-
-def send_usage_payload(
-    payload: UsagePayload,
-    api_usage_endpoint_url: str,
-    hashes_to_api_keys: Optional[Dict[APIKeyHash, APIKey]] = None,
-    ssl_verify: bool = False,
-    extra_headers: Optional[Dict[str, str]] = None,
-    may_post: Optional[Callable[[], bool]] = None,
-) -> Set[APIKeyHash]:
-    """Post the rows of one payload, one request per API key.
-
-    The payload is left untouched; the posted rows are copies carrying the API
-    key instead of its hash.
-
-    Args:
-        payload: Rows keyed by API key hash, then by usage key.
-        api_usage_endpoint_url: URL the rows are posted to.
-        hashes_to_api_keys: API keys by their hash; a hash missing from a
-            non-empty mapping is not sent.
-        ssl_verify: Whether TLS certificates are verified.
-        extra_headers: Headers added to the authorization header.
-        may_post: Asked before every request; a request is not started once it
-            answers False and the key counts as not accepted.
-
-    Returns:
-        API key hashes whose rows were not accepted (anything but HTTP 200, or
-        no request started).
-    """
-    if configuration.LEGACY_OFFLINE_MODE:
-        return set(payload.keys())
-    hashes_to_api_keys = hashes_to_api_keys or {}
-    api_keys_hashes_failed = set()
-    for api_key_hash, workflow_payloads in payload.items():
-        if hashes_to_api_keys and api_key_hash not in hashes_to_api_keys:
-            api_keys_hashes_failed.add(api_key_hash)
-            continue
-        api_key = hashes_to_api_keys.get(api_key_hash) or api_key_hash
-        if not api_key:
-            api_keys_hashes_failed.add(api_key_hash)
-            continue
-        if may_post is not None and not may_post():
-            api_keys_hashes_failed.add(api_key_hash)
-            continue
-        try:
-            complete_workflow_payloads = [
-                _outbound_row(w, api_key=api_key)
-                for w in workflow_payloads.values()
-                if "processed_frames" in w
-            ]
-            if not extra_headers:
-                extra_headers = {}
-            response = requests.post(
-                api_usage_endpoint_url,
-                json=complete_workflow_payloads,
-                verify=ssl_verify,
-                headers={"Authorization": f"Bearer {api_key}", **extra_headers},
-                timeout=REQUEST_TIMEOUT_S,
-            )
-        except Exception:
-            api_keys_hashes_failed.add(api_key_hash)
-            continue
-        if response.status_code != 200:
-            api_keys_hashes_failed.add(api_key_hash)
-            continue
-    return api_keys_hashes_failed
 
 
 def sha256_hash(payload: str, length: int = 5) -> str:

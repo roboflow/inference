@@ -1,5 +1,6 @@
 """Hand-over of recorded usage: pending list, queue, sender and shutdown."""
 
+import json
 import logging
 import time
 from collections import deque
@@ -11,14 +12,17 @@ from threading import Event, Lock, Thread
 from typing import (
     Any,
     Callable,
-    ContextManager,
     Deque,
     Dict,
     Iterator,
     List,
     Optional,
+    Set,
     Union,
 )
+from urllib.parse import urlparse
+
+import requests
 
 from inference_server import configuration
 from inference_server.platform_http import wrap_url
@@ -26,10 +30,9 @@ from inference_server.usage.payload_helpers import (
     APIKey,
     APIKeyHash,
     APIKeyUsage,
+    Usage,
     UsagePayload,
-    send_usage_payload,
-    ssl_verify_for_endpoint,
-    usage_request_headers,
+    sha256_hash,
     zip_usage_payloads,
 )
 from inference_server.usage.queues import UNCONFIRMED, PutUnconfirmed
@@ -43,6 +46,9 @@ SENDER_THREAD_NAME = "usage-sender"
 DROP_LOG_LINE = "Usage rows were dropped because the pending list is full"
 UNCONFIRMED_LOG_LINE = "Usage rows were given up because the queue write is unconfirmed"
 STEP_FAILED_LOG_LINE = "Usage reporting step failed: %s"
+REQUEST_TIMEOUT_S = 1
+INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
+ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
 
 DetachWindow = Callable[..., bool]
 Stored = Union[bool, PutUnconfirmed]
@@ -158,12 +164,129 @@ def lock_guard(lock: Any, deadline: Optional[float]) -> Iterator[bool]:
             lock.release()
 
 
+def ssl_verify_for_endpoint(url: str) -> bool:
+    """Tell whether TLS certificates are verified for a usage endpoint.
+
+    Args:
+        url: URL that will be requested, after any secure gateway wrapping.
+
+    Returns:
+        False only when the host is ``localhost`` or ``127.0.0.1``.
+    """
+    try:
+        hostname = urlparse(url).hostname or ""
+    except ValueError:
+        return True
+    return hostname.lower() not in {"localhost", "127.0.0.1"}
+
+
+def usage_request_headers() -> Dict[str, Any]:
+    """Build the headers sent with every usage request besides authorization.
+
+    Returns:
+        ``ROBOFLOW_API_EXTRA_HEADERS`` overridden by the server version and
+        chunked-response markers.
+    """
+    headers = {
+        INFERENCE_VERSION_HEADER: configuration.SERVER_VERSION,
+        ALLOW_CHUNKED_RESPONSE_HEADER: "true",
+    }
+    if not configuration.ROBOFLOW_API_EXTRA_HEADERS:
+        return headers
+
+    try:
+        extra_headers: dict = json.loads(configuration.ROBOFLOW_API_EXTRA_HEADERS)
+    except ValueError:
+        logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
+        return headers
+    extra_headers.update(headers)
+
+    return extra_headers
+
+
+def _outbound_row(row: Usage, *, api_key: APIKey) -> Dict[str, Any]:
+    outbound_row = {key: value for key, value in row.items() if key != "api_key_hash"}
+    stream_session_id = outbound_row.pop("stream_session_id", None)
+    if stream_session_id:
+        outbound_row["exec_session_id"] = stream_session_id
+    outbound_row["api_key"] = api_key
+
+    return outbound_row
+
+
+def send_usage_payload(
+    payload: UsagePayload,
+    api_usage_endpoint_url: str,
+    hashes_to_api_keys: Optional[Dict[APIKeyHash, APIKey]] = None,
+    ssl_verify: bool = False,
+    extra_headers: Optional[Dict[str, str]] = None,
+    may_post: Optional[Callable[[], bool]] = None,
+) -> Set[APIKeyHash]:
+    """Post the rows of one payload, one request per API key.
+
+    The payload is left untouched; the posted rows are copies carrying the API
+    key instead of its hash.
+
+    Args:
+        payload: Rows keyed by API key hash, then by usage key.
+        api_usage_endpoint_url: URL the rows are posted to.
+        hashes_to_api_keys: API keys by their hash; a hash missing from a
+            non-empty mapping is not sent.
+        ssl_verify: Whether TLS certificates are verified.
+        extra_headers: Headers added to the authorization header.
+        may_post: Asked before every request; a request is not started once it
+            answers False and the key counts as not accepted.
+
+    Returns:
+        API key hashes whose rows were not accepted (anything but HTTP 200, or
+        no request started).
+    """
+    if configuration.LEGACY_OFFLINE_MODE:
+        return set(payload.keys())
+    hashes_to_api_keys = hashes_to_api_keys or {}
+    api_keys_hashes_failed = set()
+    for api_key_hash, workflow_payloads in payload.items():
+        if hashes_to_api_keys and api_key_hash not in hashes_to_api_keys:
+            api_keys_hashes_failed.add(api_key_hash)
+            continue
+        api_key = hashes_to_api_keys.get(api_key_hash) or api_key_hash
+        if not api_key:
+            api_keys_hashes_failed.add(api_key_hash)
+            continue
+        if may_post is not None and not may_post():
+            api_keys_hashes_failed.add(api_key_hash)
+            continue
+        try:
+            complete_workflow_payloads = [
+                _outbound_row(w, api_key=api_key)
+                for w in workflow_payloads.values()
+                if "processed_frames" in w
+            ]
+            if not extra_headers:
+                extra_headers = {}
+            response = requests.post(
+                api_usage_endpoint_url,
+                json=complete_workflow_payloads,
+                verify=ssl_verify,
+                headers={"Authorization": f"Bearer {api_key}", **extra_headers},
+                timeout=REQUEST_TIMEOUT_S,
+            )
+        except Exception:
+            api_keys_hashes_failed.add(api_key_hash)
+            continue
+        if response.status_code != 200:
+            api_keys_hashes_failed.add(api_key_hash)
+            continue
+    return api_keys_hashes_failed
+
+
 class Delivery:
     """Moves recorded rows from the pending list to the queue and to the platform.
 
     A row is owned by exactly one stage at a time: the live window of the
     collector, the pending list, the queue, or the sender that took it from the
-    queue. A stage gives a row up only after the next one confirmed it.
+    queue. A stage gives a row up only after the next one confirmed it, except
+    rows counted as dropped and rows counted as unconfirmed, which are not kept.
     """
 
     def __init__(
@@ -171,10 +294,9 @@ class Delivery:
         queue: Any,
         *,
         detach_window: DetachWindow,
-        prepare: Callable[[], None],
+        resolve_host_in_background: Callable[[], None],
         host_values: Callable[[Optional[float]], Dict[str, Any]],
-        resolve_api_keys: Callable[[], Dict[APIKeyHash, APIKey]],
-        register_api_key: Callable[[APIKey], APIKeyHash],
+        api_keys_hashing_enabled: bool,
     ) -> None:
         """Bind the delivery to its queue and to the collector it serves.
 
@@ -182,17 +304,20 @@ class Delivery:
             queue: Queue payloads are written to and read from.
             detach_window: Moves the live window of the collector to the
                 pending list.
-            prepare: Run once by the collector thread before its loop.
+            resolve_host_in_background: Run once by the collector thread before
+                its loop.
             host_values: Host description for rows written to the queue.
-            resolve_api_keys: API keys by their hash.
-            register_api_key: Remembers an API key and returns its hash.
+            api_keys_hashing_enabled: Whether API keys are replaced by their
+                hash in rows.
         """
         self.queue = queue
         self._detach_window = detach_window
-        self._prepare = prepare
+        self._resolve_host_in_background = resolve_host_in_background
         self._host_values = host_values
-        self._resolve_api_keys = resolve_api_keys
-        self._register_api_key = register_api_key
+        self._api_keys_hashing_enabled = api_keys_hashing_enabled
+
+        self._api_keys_lock = Lock()
+        self._hashed_api_keys: Dict[APIKey, APIKeyHash] = {}
 
         self._pending_lock = Lock()
         self._pending: Deque[PendingItem] = deque()
@@ -244,6 +369,35 @@ class Delivery:
 
         return threads
 
+    def register_api_key(self, api_key: APIKey) -> APIKeyHash:
+        """Remember an API key and return the hash rows carry instead of it.
+
+        Args:
+            api_key: API key to register.
+
+        Returns:
+            The key itself unless hashing is enabled, otherwise its SHA-256
+            hexadecimal digest without the last character.
+        """
+        with self._api_keys_lock:
+            api_key_hash = self._hashed_api_keys.get(api_key)
+            if not api_key_hash:
+                if self._api_keys_hashing_enabled:
+                    api_key_hash = sha256_hash(api_key, length=-1)
+                else:
+                    api_key_hash = api_key
+                self._hashed_api_keys[api_key] = api_key_hash
+        return api_key_hash
+
+    def _api_keys_by_hash(self) -> Dict[APIKeyHash, APIKey]:
+        with self._api_keys_lock:
+            api_keys = {
+                api_key_hash: api_key
+                for api_key, api_key_hash in self._hashed_api_keys.items()
+            }
+
+        return api_keys
+
     def _running(self) -> bool:
         return not self._stopping.is_set()
 
@@ -253,12 +407,12 @@ class Delivery:
 
         return has_pending
 
-    def _room_no_lock(self, rows: int) -> bool:
+    def _has_room_pending_locked(self, rows: int) -> bool:
         room = self._pending_rows + rows <= MAX_PENDING_ROWS or not self._pending
 
         return room
 
-    def _log_due_no_lock(self, line: str) -> bool:
+    def _log_due_pending_locked(self, line: str) -> bool:
         now = time.monotonic()
         last = self._last_log.get(line)
         due = last is None or now - last >= configuration.TELEMETRY_FLUSH_INTERVAL
@@ -267,9 +421,9 @@ class Delivery:
 
         return due
 
-    def _drop_oldest_no_lock(self, rows: int) -> bool:
+    def _drop_oldest_pending_locked(self, rows: int) -> bool:
         dropped = False
-        while not self._room_no_lock(rows):
+        while not self._has_room_pending_locked(rows):
             if self._pending[0] is not self._writing:
                 victim = self._pending.popleft()
             elif len(self._pending) > 1:
@@ -287,9 +441,9 @@ class Delivery:
 
     def _drop_oldest(self, rows: int) -> bool:
         with self._pending_lock:
-            dropped = self._drop_oldest_no_lock(rows)
-            should_log = dropped and self._log_due_no_lock(DROP_LOG_LINE)
-            room = self._room_no_lock(rows)
+            dropped = self._drop_oldest_pending_locked(rows)
+            should_log = dropped and self._log_due_pending_locked(DROP_LOG_LINE)
+            room = self._has_room_pending_locked(rows)
         if should_log:
             logger.error(DROP_LOG_LINE)
 
@@ -307,7 +461,7 @@ class Delivery:
             True when the item was added.
         """
         with self._pending_lock:
-            added = self._room_no_lock(item.rows)
+            added = self._has_room_pending_locked(item.rows)
             if added:
                 self._pending.append(item)
                 self._pending_rows += item.rows
@@ -336,8 +490,8 @@ class Delivery:
             for item in reversed(items):
                 self._pending.appendleft(item)
                 self._pending_rows += item.rows
-            dropped = self._drop_oldest_no_lock(0)
-            should_log = dropped and self._log_due_no_lock(DROP_LOG_LINE)
+            dropped = self._drop_oldest_pending_locked(0)
+            should_log = dropped and self._log_due_pending_locked(DROP_LOG_LINE)
         if should_log:
             logger.error(DROP_LOG_LINE)
         if items:
@@ -386,17 +540,17 @@ class Delivery:
         allowed = may_write or _always
         try:
             host = self._host_values(deadline)
-            with self._queue_guard(deadline) as held:
+            with lock_guard(self._queue_lock, deadline) as held:
                 if not held:
                     return _Room.BLOCKED
                 while True:
                     with self._pending_lock:
-                        room = self._room_no_lock(rows)
+                        room = self._has_room_pending_locked(rows)
                     if room:
                         return _Room.MADE
                     if not allowed():
                         return _Room.BLOCKED
-                    result = self._write_next_no_lock(host)
+                    result = self._write_front_queue_locked(host)
                     if result is _Write.WRITTEN:
                         self.inline_queue_writes += 1
                     elif result is not _Write.UNCONFIRMED:
@@ -405,9 +559,6 @@ class Delivery:
             logger.error(STEP_FAILED_LOG_LINE, type(error).__name__)
 
             return _Room.FAILED
-
-    def _queue_guard(self, deadline: Optional[float]) -> ContextManager[bool]:
-        return lock_guard(self._queue_lock, deadline)
 
     @staticmethod
     def _complete_rows(payload: UsagePayload, host: Dict[str, Any]) -> None:
@@ -438,11 +589,11 @@ class Delivery:
         with self._pending_lock:
             self.unconfirmed_rows += item.rows
             self.unconfirmed_frames += item.frames
-            should_log = self._log_due_no_lock(UNCONFIRMED_LOG_LINE)
+            should_log = self._log_due_pending_locked(UNCONFIRMED_LOG_LINE)
         if should_log:
             logger.error(UNCONFIRMED_LOG_LINE)
 
-    def _write_next_no_lock(self, host: Dict[str, Any]) -> _Write:
+    def _write_front_queue_locked(self, host: Dict[str, Any]) -> _Write:
         item = self._claim_front()
         if item is None:
             return _Write.EMPTY
@@ -450,7 +601,7 @@ class Delivery:
         stored: Stored = False
         try:
             self._complete_rows(item.payload, host)
-            stored = self._enqueue_no_lock(item.payload)
+            stored = self._write_payload_queue_locked(item.payload)
         except Exception as error:
             logger.error(STEP_FAILED_LOG_LINE, type(error).__name__)
         finally:
@@ -476,7 +627,7 @@ class Delivery:
 
         return budget
 
-    def _dump_no_lock(
+    def _take_raw_queue_locked(
         self, may_read: Optional[Callable[[], bool]] = None
     ) -> List[APIKeyUsage]:
         usage_payloads: List[APIKeyUsage] = []
@@ -501,7 +652,7 @@ class Delivery:
 
         return usage_payloads
 
-    def _restore_no_lock(self, payloads: List[APIKeyUsage]) -> None:
+    def _restore_taken_queue_locked(self, payloads: List[APIKeyUsage]) -> None:
         if not payloads:
             return
 
@@ -516,11 +667,11 @@ class Delivery:
                     if item is not None:
                         self.dropped_rows += item.rows
                         self.dropped_frames += item.frames
-                should_log = self._log_due_no_lock(DROP_LOG_LINE)
+                should_log = self._log_due_pending_locked(DROP_LOG_LINE)
             if should_log:
                 logger.error(DROP_LOG_LINE)
 
-    def _enqueue_no_lock(self, payload: UsagePayload) -> Stored:
+    def _write_payload_queue_locked(self, payload: UsagePayload) -> Stored:
         if not payload:
             return True
         if not self.queue.full():
@@ -528,15 +679,15 @@ class Delivery:
 
             return stored
 
-        dumped = self._dump_no_lock()
+        dumped = self._take_raw_queue_locked()
         try:
             merged = zip_usage_payloads(usage_payloads=[*dumped, payload])
             stored = self._put(merged) if merged else True
         except BaseException:
-            self._restore_no_lock(dumped)
+            self._restore_taken_queue_locked(dumped)
             raise
         if not stored:
-            self._restore_no_lock(dumped)
+            self._restore_taken_queue_locked(dumped)
 
         return stored
 
@@ -550,7 +701,7 @@ class Delivery:
             True when the queue confirmed it stored the payload.
         """
         with self._queue_lock:
-            stored = self._enqueue_no_lock(payload)
+            stored = self._write_payload_queue_locked(payload)
 
         return stored is True
 
@@ -572,7 +723,7 @@ class Delivery:
                         name: value for name, value in row.items() if name != "api_key"
                     }
                     if api_key and isinstance(api_key, str):
-                        key_hash = self._register_api_key(api_key)
+                        key_hash = self.register_api_key(api_key)
                         row["api_key_hash"] = key_hash
                 normalised.setdefault(key_hash, {})[row_key] = row
 
@@ -588,24 +739,25 @@ class Delivery:
 
         return normalised
 
-    def _take_no_lock(
+    def _take_normalised_queue_locked(
         self, may_read: Optional[Callable[[], bool]] = None
     ) -> List[APIKeyUsage]:
         payloads = [
-            self._normalised(payload) for payload in self._dump_no_lock(may_read)
+            self._normalised(payload)
+            for payload in self._take_raw_queue_locked(may_read)
         ]
 
         return payloads
 
     def dump_queue(self) -> List[APIKeyUsage]:
-        """Take every payload out of the queue.
+        """Take the payloads out of the queue, reading no more than it held.
 
         Returns:
             The payloads, rows written by a legacy server carrying the hash of
             their API key instead of the key.
         """
         with self._queue_lock:
-            payloads = self._take_no_lock()
+            payloads = self._take_normalised_queue_locked()
 
         return payloads
 
@@ -617,15 +769,18 @@ class Delivery:
     ) -> bool:
         """Write the items pending now to the queue, oldest first.
 
-        Items that arrive while it runs are left for the next call, and it
-        stops at the first write that is refused.
+        The pass is bounded by the number of items pending when it starts; items
+        that arrive while it runs are left for the next call. It stops earlier
+        when the pending list runs empty, a queue write is refused, or the
+        lock or ``may_continue`` does not allow the next write.
 
         Args:
             may_continue: Asked before every queue write.
             deadline: Monotonic time after which no lock is waited for.
 
         Returns:
-            True when every item of the snapshot was written or given up.
+            False when a write was refused or not allowed before the pass ended,
+            True otherwise.
         """
         with self._pending_lock:
             count = len(self._pending)
@@ -635,10 +790,10 @@ class Delivery:
         allowed = may_continue or _always
         host = self._host_values(deadline)
         for _ in range(count):
-            with self._queue_guard(deadline) as held:
+            with lock_guard(self._queue_lock, deadline) as held:
                 if not held or not allowed():
                     return False
-                result = self._write_next_no_lock(host)
+                result = self._write_front_queue_locked(host)
             if result is _Write.EMPTY:
                 break
             if result is _Write.REFUSED:
@@ -652,11 +807,15 @@ class Delivery:
         *,
         deadline: Optional[float] = None,
     ) -> bool:
-        """Take everything from the queue and post it, one request per API key.
+        """Take payloads from the queue and post them, one request per API key.
 
-        It reads no more than the queue holds when the pass starts; rows not
-        read stay queued. Rows the platform did not accept go back to the queue
-        while ``may_start`` allows queue writes, otherwise to the pending list.
+        The pass is bounded: it reads as many batches as the queue held when it
+        started, and stops earlier when the queue runs empty, an empty batch is
+        read or ``may_start`` refuses. Rows not read stay queued. The payloads
+        read are merged into one payload per execution session, streams apart
+        from images, with additional payloads for rows closed by the list
+        bound. Rows the platform did not accept go back to the queue while
+        ``may_start`` allows queue writes, otherwise to the pending list.
 
         Args:
             may_start: Asked before every queue read and request.
@@ -669,10 +828,10 @@ class Delivery:
             return True
 
         gate = _SendGate(may_start or _always)
-        with self._queue_guard(deadline) as held:
+        with lock_guard(self._queue_lock, deadline) as held:
             if not held:
                 return False
-            payloads = self._take_no_lock(gate)
+            payloads = self._take_normalised_queue_locked(gate)
         if not payloads:
             return not gate.refused
 
@@ -698,7 +857,7 @@ class Delivery:
             configuration.TELEMETRY_API_USAGE_ENDPOINT_URL
         )
         ssl_verify = ssl_verify_for_endpoint(api_usage_endpoint_url)
-        hashes_to_api_keys = self._resolve_api_keys()
+        hashes_to_api_keys = self._api_keys_by_hash()
         extra_headers = usage_request_headers()
 
         for payload in payloads:
@@ -725,10 +884,10 @@ class Delivery:
         self, payload: APIKeyUsage, gate: _SendGate, deadline: Optional[float]
     ) -> bool:
         stored = False
-        with self._queue_guard(deadline) as held:
+        with lock_guard(self._queue_lock, deadline) as held:
             if held and gate.open():
                 try:
-                    outcome = self._enqueue_no_lock(payload)
+                    outcome = self._write_payload_queue_locked(payload)
                 except Exception as error:
                     logger.error(STEP_FAILED_LOG_LINE, type(error).__name__)
                 else:
@@ -771,7 +930,7 @@ class Delivery:
         self.send_queued(self._running)
 
     def _collector_loop(self) -> None:
-        guarded(self._prepare)
+        guarded(self._resolve_host_in_background)
         next_window_at = time.monotonic() + configuration.TELEMETRY_FLUSH_INTERVAL
         while not self._stopping.is_set():
             woken = self._wake.wait(max(0.0, next_window_at - time.monotonic()))

@@ -131,7 +131,7 @@ def test_pending_windows_are_bounded_by_writing_the_oldest_in_the_caller(
 
     assert collector.inline_queue_writes > 0
     assert collector._delivery.queue.qsize() == collector.inline_queue_writes
-    collector._enqueue_usage_payload()
+    collector._write_current_usage_to_queue()
     assert total_frames(queued_payloads(collector)) == 20
 
 
@@ -357,7 +357,7 @@ def test_stop_with_a_slow_queue_write_is_bounded_and_loses_nothing(
 
 
 def produced_rows(collector):
-    collector._enqueue_usage_payload()
+    collector._write_current_usage_to_queue()
     rows = [
         row
         for payload in queued_payloads(collector)
