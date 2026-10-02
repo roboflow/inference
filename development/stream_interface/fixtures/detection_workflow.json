@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "InferenceImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "model_id", "default_value": "coco/36"},
+    {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.4}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/roboflow_object_detection_model@v2",
+      "name": "detector",
+      "images": "$inputs.image",
+      "model_id": "$inputs.model_id",
+      "confidence": "$inputs.confidence"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "predictions", "selector": "$steps.detector.predictions"}
+  ]
+}

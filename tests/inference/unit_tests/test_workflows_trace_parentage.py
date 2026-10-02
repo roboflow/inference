@@ -257,7 +257,7 @@ def _child_env(scenario: str) -> dict:
     env.update(
         {
             # The repo root explicitly: the child's cwd is an empty directory.
-            "PYTHONPATH": f"{REPO_ROOT}{os.pathsep}{REPO_ROOT / 'inference_models'}",
+            "PYTHONPATH": f"{REPO_ROOT}{os.pathsep}{REPO_ROOT / 'inference_models'}{os.pathsep}{REPO_ROOT / 'stream_vision'}",
             # The process latch beats OFFLINE_MODE in `_decide_offline_mode`
             # (`inference_models/_offline.py:69-72`), so it has to say the same
             # thing rather than be absent.

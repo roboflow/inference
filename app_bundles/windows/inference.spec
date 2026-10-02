@@ -14,6 +14,7 @@ cython_datas, cython_bins, cython_hiddenimports               = collect_all('Cyt
 tldextract_datas, tldextract_binaries, tldextract_hidden      = collect_all("tldextract")
 inference_datas, inference_bins, inference_hidden = collect_all('inference', include_py_files=True)
 roboflow_workflows_datas, roboflow_workflows_bins, roboflow_workflows_hidden = collect_all('roboflow_workflows', include_py_files=True)
+streamvision_datas, streamvision_bins, streamvision_hidden = collect_all('streamvision', include_py_files=True)
 scipy_datas, scipy_binaries, scipy_hiddenimports              = collect_all('scipy')
 
 a = Analysis(
@@ -27,6 +28,7 @@ binaries=[
         *tldextract_binaries,
         *inference_bins,
         *roboflow_workflows_bins,
+        *streamvision_bins,
         *scipy_binaries
     ],
     datas=[
@@ -38,6 +40,7 @@ binaries=[
         *tldextract_datas,
         *inference_datas,
         *roboflow_workflows_datas,
+        *streamvision_datas,
         *scipy_datas,
         ('../../inference/core/interfaces/http/builder/editor.html', 'inference/core/interfaces/http/builder')
     ],
@@ -64,6 +67,7 @@ binaries=[
         'pyvips',
         *inference_hidden,
         *roboflow_workflows_hidden,
+        *streamvision_hidden,
     ],
     hookspath=['hooks'],     # place custom hooks here if you like
     hooksconfig={},

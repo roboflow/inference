@@ -4,8 +4,7 @@ from typing import Optional
 from docker.models.containers import Container
 
 import docker
-from inference_cli.lib import container_adapter
-from inference_cli.lib import podman_adapter
+from inference_cli.lib import container_adapter, podman_adapter
 
 docker_image = "us-central1-docker.pkg.dev/roboflow-proxy-425409/inference/tunnel"
 
