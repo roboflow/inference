@@ -2,11 +2,12 @@ import asyncio
 import base64
 import datetime
 import gzip
+import inspect
 import json
 import logging
 import struct
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import orjson
 import supervision as sv
@@ -25,9 +26,18 @@ from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 from av import logging as av_logging
 from pydantic import ValidationError
-
-from inference.core import logger
-from inference.core.env import (
+from roboflow_workflows.errors import WorkflowError, WorkflowSyntaxError
+from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
+from roboflow_workflows.prototypes.platform_errors import (
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
+)
+from streamvision.camera.entities import VideoFrameProducer
+from streamvision.camera.source_reference_sanitizer import (
+    redact_credentials_in_text,
+    sanitize_source_reference,
+)
+from streamvision.stream.environment import (
     OFFLINE_MODE,
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
@@ -39,23 +49,12 @@ from inference.core.env import (
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
 )
-from inference.core.exceptions import (
-    MissingApiKeyError,
-    RoboflowAPINotAuthorizedError,
-    RoboflowAPINotNotFoundError,
-    WebRTCConfigurationError,
-)
-from inference.core.interfaces.camera.entities import VideoFrameProducer
-from inference.core.interfaces.camera.source_reference_sanitizer import (
-    redact_credentials_in_text,
-    sanitize_source_reference,
-)
-from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream_manager.manager_app.entities import (
+from streamvision.stream.exceptions import MissingApiKeyError, WebRTCConfigurationError
+from streamvision.stream_manager.manager_app.entities import (
     WebRTCData,
     WorkflowConfiguration,
 )
-from inference.core.interfaces.webrtc_worker.entities import (
+from streamvision.webrtc_worker.entities import (
     DataOutputMode,
     StreamOutputMode,
     WebRTCOutput,
@@ -63,13 +62,14 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
-from inference.core.interfaces.webrtc_worker.serializers import serialize_for_webrtc
-from inference.core.interfaces.webrtc_worker.sources.file import (
+from streamvision.webrtc_worker.host import get_webrtc_worker_host
+from streamvision.webrtc_worker.serializers import serialize_for_webrtc
+from streamvision.webrtc_worker.sources.file import (
     ThreadedVideoFileTrack,
     VideoFileUploadHandler,
 )
-from inference.core.interfaces.webrtc_worker.sources.rtsp import ThreadedRTSPTrack
-from inference.core.interfaces.webrtc_worker.utils import (
+from streamvision.webrtc_worker.sources.rtsp import ThreadedRTSPTrack
+from streamvision.webrtc_worker.utils import (
     detect_image_output,
     get_cv2_rotation_code,
     get_video_fps,
@@ -78,12 +78,8 @@ from inference.core.interfaces.webrtc_worker.utils import (
     process_frame,
     rotate_video_frame,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import get_workflow_specification
-from inference.core.utils.mjpeg import open_mjpeg_player
-from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
-from inference.usage_tracking.collector import usage_collector
+
+logger = logging.getLogger(__name__)
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -274,7 +270,7 @@ class VideoFrameProcessor:
         asyncio_loop: asyncio.AbstractEventLoop,
         workflow_configuration: WorkflowConfiguration,
         api_key: str,
-        model_manager: Optional[ModelManager] = None,
+        model_manager: Optional[Any] = None,
         data_output: Optional[List[str]] = None,
         stream_output: Optional[str] = None,
         has_video_track: bool = True,
@@ -335,7 +331,7 @@ class VideoFrameProcessor:
 
         self._validate_output_fields(workflow_configuration)
 
-        self._inference_pipeline = InferencePipeline.init_with_workflow(
+        self._inference_pipeline = get_webrtc_worker_host().init_workflow_pipeline(
             video_reference=VideoFrameProducer,
             workflow_specification=workflow_configuration.workflow_specification,
             workspace_name=workflow_configuration.workspace_name,
@@ -650,7 +646,7 @@ class VideoFrameProcessor:
         if not has_specification and has_workspace_and_workflow_id:
             try:
                 workflow_configuration.workflow_specification = (
-                    get_workflow_specification(
+                    get_webrtc_worker_host().get_workflow_specification(
                         api_key=api_key,
                         workspace_id=workflow_configuration.workspace_name,
                         workflow_id=workflow_configuration.workflow_id,
@@ -738,7 +734,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         asyncio_loop: asyncio.AbstractEventLoop,
         workflow_configuration: WorkflowConfiguration,
         api_key: str,
-        model_manager: Optional[ModelManager] = None,
+        model_manager: Optional[Any] = None,
         data_output: Optional[List[str]] = None,
         stream_output: Optional[str] = None,
         has_video_track: bool = True,
@@ -897,11 +893,21 @@ def _open_media_player(file: str, **kwargs) -> MediaPlayer:
         ) from None
 
 
+async def _deliver_answer(
+    callback: Callable[[WebRTCWorkerResult], Optional[Awaitable[None]]],
+    result: WebRTCWorkerResult,
+) -> None:
+    """Await async transports while retaining synchronous worker callbacks."""
+    delivery = callback(result)
+    if inspect.isawaitable(delivery):
+        await delivery
+
+
 async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
-    send_answer: Callable[[WebRTCWorkerResult], None],
+    send_answer: Callable[[WebRTCWorkerResult], Optional[Awaitable[None]]],
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
-    model_manager: Optional[ModelManager] = None,
+    model_manager: Optional[Any] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
     connection_established_callback: Optional[Callable[[], None]] = None,
@@ -1014,41 +1020,45 @@ async def init_rtc_peer_connection_with_loop(
     ) as error:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message="Could not decode InferencePipeline initialisation command payload.",
-            )
+            ),
         )
         return
     except WebRTCConfigurationError as error:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message=str(error),
-            )
+            ),
         )
         return
     except RoboflowAPINotAuthorizedError:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotAuthorizedError.__name__,
                 error_message="Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
-            )
+            ),
         )
         return
     except RoboflowAPINotNotFoundError:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotNotFoundError.__name__,
                 error_message="Requested Roboflow resources (models / workflows etc.) not available or wrong API key used.",
-            )
+            ),
         )
         return
     except WorkflowSyntaxError as error:
@@ -1059,7 +1069,8 @@ async def init_rtc_peer_connection_with_loop(
             blocks_errors_serialized = [
                 block_error.model_dump() for block_error in error.blocks_errors
             ]
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=WorkflowSyntaxError.__name__,
                 error_message=error.public_message,
@@ -1067,27 +1078,30 @@ async def init_rtc_peer_connection_with_loop(
                 inner_error=str(error.inner_error) if error.inner_error else None,
                 inner_error_type=error.inner_error_type,
                 blocks_errors=blocks_errors_serialized,
-            )
+            ),
         )
         return
     except WorkflowError as error:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=WorkflowError.__name__,
                 error_message=str(error),
-            )
+            ),
         )
         return
     except Exception as error:
-        send_answer(
+        logger.exception("WebRTC pipeline initialization failed")
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message=str(error),
-            )
+            ),
         )
-        return
+        raise
 
     peer_connection = RTCPeerConnectionWithLoop(
         configuration=_build_rtc_configuration(
@@ -1136,7 +1150,7 @@ async def init_rtc_peer_connection_with_loop(
             "Processing MJPEG URL: %s",
             sanitize_source_reference(webrtc_request.mjpeg_url),
         )
-        player = open_mjpeg_player(
+        player = get_webrtc_worker_host().open_mjpeg_player(
             webrtc_request.mjpeg_url,
             allow_non_global_addresses=WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES,
         )
@@ -1370,13 +1384,14 @@ async def init_rtc_peer_connection_with_loop(
         peer_connection.connectionState,
     )
 
-    send_answer(
+    await _deliver_answer(
+        send_answer,
         WebRTCWorkerResult(
             answer={
                 "type": peer_connection.localDescription.type,
                 "sdp": peer_connection.localDescription.sdp,
             },
-        )
+        ),
     )
 
     logger.info("Answer sent, waiting for termination event")
@@ -1392,7 +1407,7 @@ async def init_rtc_peer_connection_with_loop(
         logger.info("Stopping video processor track")
         video_processor.track.stop()
     await video_processor.close()
-    await usage_collector.async_push_usage_payloads()
+    await get_webrtc_worker_host().async_push_usage_payloads()
     logger.info("WebRTC peer connection closed")
 
 
