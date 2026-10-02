@@ -6,12 +6,14 @@ import hashlib
 import hmac
 import json
 import os
+import random
 import re
 import stat
 import tempfile
 import time
 import urllib.parse
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from enum import Enum
 from hashlib import sha256
 from json import JSONDecodeError
@@ -183,6 +185,8 @@ NOT_FOUND_ERROR_MESSAGE = (
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
 API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
+_API_PROXY_RATE_LIMIT_MAX_RETRIES = 4
+_API_PROXY_RATE_LIMIT_MAX_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -2092,6 +2096,22 @@ def build_roboflow_api_headers(
         return explicit_headers
 
 
+def _api_proxy_retry_delay(response: Response, *, retry: int) -> float:
+    """Respect server cooldowns, with exponential jitter as the minimum wait."""
+    delay = random.uniform(2**retry, 2 ** (retry + 1))
+    retry_after = response.headers.get("Retry-After", "").strip()
+    if retry_after.isascii() and retry_after.isdigit():
+        # Avoid converting an arbitrarily large integer header to float.
+        server_delay = float(retry_after) if len(retry_after) < 10 else float("inf")
+    else:
+        try:
+            server_delay = parsedate_to_datetime(retry_after).timestamp() - time.time()
+        except (ValueError, TypeError, OverflowError):
+            server_delay = 0.0
+
+    return max(delay, server_delay)
+
+
 def post_to_roboflow_api(
     endpoint: str,
     api_key: Optional[str],
@@ -2109,6 +2129,14 @@ def post_to_roboflow_api(
         payload: JSON payload
         params: Additional URL parameters
         http_errors_handlers: Optional custom HTTP error handlers by status code
+
+    Returns:
+        The decoded JSON response.
+
+    Notes:
+        API proxy 429 responses receive at most four retries within a 60-second
+        retry window. Retry-After is honored; cooldowns beyond the remaining
+        window fail immediately. Other POST failures are not replayed.
     """
 
     if OFFLINE_MODE:
@@ -2132,14 +2160,39 @@ def post_to_roboflow_api(
 
         headers = build_roboflow_api_headers()
 
-        response = requests.post(
-            url=wrapped_url,
-            json=payload,
-            headers=headers,
-            timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
-            verify=ROBOFLOW_API_VERIFY_SSL,
+        endpoint_path = endpoint.strip("/")
+        is_api_proxy = any(
+            endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
+            for prefix in API_PROXY_ENDPOINT_PREFIXES
         )
+        retry_deadline = time.monotonic() + _API_PROXY_RATE_LIMIT_MAX_SECONDS
+        for attempt in range(_API_PROXY_RATE_LIMIT_MAX_RETRIES + 1):
+            response = requests.post(
+                url=wrapped_url,
+                json=payload,
+                headers=headers,
+                timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+                verify=ROBOFLOW_API_VERIFY_SSL,
+            )
+            if (
+                not is_api_proxy
+                or response.status_code != 429
+                or attempt == _API_PROXY_RATE_LIMIT_MAX_RETRIES
+            ):
+                break
+
+            delay = _api_proxy_retry_delay(response, retry=attempt)
+            if delay >= retry_deadline - time.monotonic():
+                break
+
+            response.close()
+            time.sleep(delay)
+            if time.monotonic() >= retry_deadline:
+                break
+
         api_key_safe_raise_for_status(response=response)
-        return response.json()
+        result = response.json()
+
+        return result
 
     return _make_request()
