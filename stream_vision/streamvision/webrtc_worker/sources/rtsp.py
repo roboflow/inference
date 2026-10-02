@@ -8,8 +8,7 @@ from typing import Optional
 import av
 from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
 from av import VideoFrame
-
-from inference.core.interfaces.webrtc_worker.sources.file import VIDEO_FRAME_QUEUE_SIZE
+from streamvision.webrtc_worker.sources.file import VIDEO_FRAME_QUEUE_SIZE
 
 
 class ThreadedRTSPTrack(MediaStreamTrack):

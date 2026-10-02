@@ -55,6 +55,11 @@
 - RF-DETR Core ML loaders validate the model's actual input dimensions before
   compilation and runtime loading, preserving input-size alignment when package
   metadata disagrees with the model.
+- RF-DETR ONNX models (object detection, instance segmentation, keypoints) use the ONNX model's static
+  input size when the package's `inference_config.json` declares a different one, and log a warning.
+  Some registered packages carry a config whose training size does not match the exported weights
+  (for example 640 declared, 384 exported), which made every inference call fail. The
+  `rf_detr_max_input_resolution` limit now applies to the model's input size.
 - RF-DETR Triton preprocessing no longer falls back for dataset-version resize
   metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
   flags disabling already-inactive crop, contrast, and grayscale transforms.

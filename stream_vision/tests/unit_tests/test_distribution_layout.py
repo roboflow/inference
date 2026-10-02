@@ -63,7 +63,7 @@ def test_workflows_and_webrtc_extras_declare_their_runtime_dependencies() -> Non
     extras = _load_pyproject()["project"]["optional-dependencies"]
     for extra, required in {
         "workflows": {"roboflow-workflows", "torch"},
-        "webrtc": {"aiortc", "av"},
+        "webrtc": {"aiortc", "av", "orjson", "requests"},
     }.items():
         unconditional = {
             dependency.name

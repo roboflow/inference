@@ -79,6 +79,27 @@ class StreamsConfiguration:
     debug_webrtc_processing_latency: bool = False
     offline_mode: bool = False
     webrtc_realtime_processing: bool = True
+    webrtc_data_channel_ack_window: int = 1
+    webrtc_data_channel_buffer_draining_delay: float = 0.1
+    webrtc_data_channel_buffer_size_limit: int = 33554432
+    webrtc_gzip_preview_frame_compression: bool = True
+    webrtc_mjpeg_allow_non_global_addresses: bool = False
+    webrtc_modal_function_time_limit: int = 3600
+    webrtc_modal_public_stun_servers: str = (
+        "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,"
+        "stun:stun2.l.google.com:19302,stun:stun3.l.google.com:19302,"
+        "stun:stun4.l.google.com:19302"
+    )
+    webrtc_modal_rtsp_placeholder: Optional[str] = None
+    webrtc_modal_rtsp_placeholder_url: Optional[str] = None
+    webrtc_modal_shutdown_reserve: int = 1
+    webrtc_preview_frame_jpeg_quality: int = 80
+    webrtc_modal_min_cpu_cores: Optional[int] = None
+    webrtc_modal_min_ram_mb: Optional[int] = None
+    webrtc_modal_usage_quota_enabled: bool = False
+    webrtc_modal_watchdog_timemout: int = 60
+    webrtc_session_heartbeat_interval_seconds: int = 30
+    webrtc_session_heartbeat_url: Optional[str] = None
     model_config_defaults: ModelConfigDefaults = field(
         default_factory=ModelConfigDefaults
     )
