@@ -46,7 +46,9 @@ def test_workflows_offline_follows_model_layer_when_server_setting_is_online(
 
 
 def test_secure_gateway_with_hosted_remote_target_forces_local(monkeypatch):
-    monkeypatch.setenv("SECURE_GATEWAY", "https://gw.example")
+    monkeypatch.setattr(
+        "inference_server.configuration.SECURE_GATEWAY", "https://gw.example"
+    )
     monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
     monkeypatch.setenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
     import inference_server.workflows.host as host

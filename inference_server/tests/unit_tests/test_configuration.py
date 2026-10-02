@@ -194,3 +194,58 @@ def test_allow_api_key_from_headers_defaults_to_true():
 
 def test_allow_api_key_from_headers_is_read_from_environment():
     assert _read_allow_api_key_from_headers("False") == "False"
+
+
+def _run_with_gateway(code, **env):
+    return subprocess.run(
+        [sys.executable, "-W", "ignore", "-c", code],
+        env={**os.environ, **env},
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_secure_gateway_is_the_normalised_model_layer_value():
+    code = (
+        "from inference_server import configuration as c; "
+        "from inference_models import configuration as m; "
+        "assert c.SECURE_GATEWAY == m.SECURE_GATEWAY == 'https://gw.example:8443', "
+        "c.SECURE_GATEWAY"
+    )
+    result = _run_with_gateway(code, SECURE_GATEWAY="gw.example:8443")
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_secure_gateway_is_unset_by_default():
+    code = "from inference_server import configuration as c; assert c.SECURE_GATEWAY is None"
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"SECURE_GATEWAY", "LICENSE_SERVER"}
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_workflows_host_forces_local_execution_behind_a_legacy_alias_gateway():
+    code = (
+        "import warnings; warnings.simplefilter('ignore'); "
+        "import inference_server.workflows.host as h; "
+        "c = h.build_workflows_configuration(); "
+        "assert c.engine.step_execution_mode == 'local'"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "SECURE_GATEWAY"}
+    env.update(
+        LICENSE_SERVER="https://gw.example",
+        WORKFLOWS_STEP_EXECUTION_MODE="remote",
+        WORKFLOWS_REMOTE_API_TARGET="hosted",
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 0, result.stderr

@@ -19,6 +19,7 @@ from inference_server.hosted.common import (
     STATIC_PREFIXES,
     UNAUTHORIZED_MESSAGE,
     HostedRequest,
+    _is_v2_request,
     error_response,
     is_non_billable_internal_request,
     resolve_api_key,
@@ -273,9 +274,11 @@ async def _authorize_with_credits(
 
 
 async def _authorize_without_credits(
-    api_key: str, cache_key: Tuple[str, bool]
+    api_key: str, cache_key: Tuple[str, bool], *, through_secure_gateway: bool
 ) -> Tuple[Optional[Denial], Optional[AuthorizationCacheEntry]]:
-    valid, workspace_id = await validate_api_key(api_key)
+    valid, workspace_id = await validate_api_key(
+        api_key, through_secure_gateway=through_secure_gateway
+    )
     if valid:
         entry = AuthorizationCacheEntry(
             expires_at=_now() + AUTH_CACHE_TTL_SECONDS, workspace_id=workspace_id
@@ -320,7 +323,9 @@ async def _authorize(
     if enforce:
         denial, entry = await _authorize_with_credits(api_key, cache_key)
     else:
-        denial, entry = await _authorize_without_credits(api_key, cache_key)
+        denial, entry = await _authorize_without_credits(
+            api_key, cache_key, through_secure_gateway=not _is_v2_request(request)
+        )
     if denial is not None:
         return denial, None, enforce
 

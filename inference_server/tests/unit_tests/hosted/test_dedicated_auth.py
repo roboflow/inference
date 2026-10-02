@@ -31,9 +31,10 @@ def client():
 
 @pytest.fixture
 def workspace_lookup(monkeypatch):
-    state = SimpleNamespace(answers={}, calls=[], error=None)
+    state = SimpleNamespace(answers={}, calls=[], gateway_flags=[], error=None)
 
-    async def _validate(api_key):
+    async def _validate(api_key, *, through_secure_gateway):
+        state.gateway_flags.append(through_secure_gateway)
         state.calls.append(api_key)
         if state.error is not None:
             raise state.error
@@ -217,6 +218,7 @@ def test_bearer_header_follows_switch_outside_v2_routes(
     if authenticated:
         assert response.status_code == 200
         assert workspace_lookup.calls == ["from-header"]
+        assert workspace_lookup.gateway_flags == ["/v2/server/" not in path]
     else:
         assert response.status_code == 401
         assert response.json() == UNAUTHORIZED

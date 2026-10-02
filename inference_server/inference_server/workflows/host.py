@@ -66,7 +66,7 @@ def _optional_address_set(raw: Optional[str]) -> Optional[Tuple[str, ...]]:
 
 def build_workflows_configuration() -> WorkflowsConfiguration:
     offline_mode = configuration.LEGACY_OFFLINE_MODE
-    secure_gateway = os.environ.get("SECURE_GATEWAY") or None
+    secure_gateway = configuration.SECURE_GATEWAY
     step_execution_mode = os.environ.get(
         "WORKFLOWS_STEP_EXECUTION_MODE", "local"
     ).lower()
@@ -730,6 +730,7 @@ class ServerRoboflowPlatformClient:
             url=self.wrap_url(url),
             headers=headers if headers is not None else self.build_api_headers(),
             timeout=API_REQUEST_TIMEOUT_S,
+            **platform_http.tls_verification_options(),
             **kwargs,
         )
         _api_key_safe_raise_for_status(response=response)
@@ -761,6 +762,7 @@ class ServerRoboflowPlatformClient:
                 url=self.wrap_url(url),
                 headers=self.build_api_headers(),
                 timeout=API_REQUEST_TIMEOUT_S,
+                **platform_http.tls_verification_options(),
             )
             _api_key_safe_raise_for_status(response=response)
             return response.json()

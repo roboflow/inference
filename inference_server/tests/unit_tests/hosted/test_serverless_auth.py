@@ -88,9 +88,12 @@ def platform(monkeypatch):
 
 @pytest.fixture
 def workspace_lookup(monkeypatch):
-    state = SimpleNamespace(answer=(True, "ws-lookup"), calls=[], error=None)
+    state = SimpleNamespace(
+        answer=(True, "ws-lookup"), calls=[], gateway_flags=[], error=None
+    )
 
-    async def _validate(api_key):
+    async def _validate(api_key, *, through_secure_gateway):
+        state.gateway_flags.append(through_secure_gateway)
         state.calls.append(api_key)
         if state.error is not None:
             raise state.error

@@ -9,6 +9,7 @@ from inference_server.hosted.common import (
     STATIC_PREFIXES,
     UNAUTHORIZED_MESSAGE,
     HostedRequest,
+    _is_v2_request,
     error_response,
     resolve_api_key,
     send_with_workspace_header,
@@ -79,7 +80,9 @@ class DedicatedAuthMiddleware:
             await response(scope, request.receive, send)
             return
 
-        valid, workspace_id = await validate_api_key(api_key)
+        valid, workspace_id = await validate_api_key(
+            api_key, through_secure_gateway=not _is_v2_request(request)
+        )
         if not valid or workspace_id not in allowed_workspaces():
             response = error_response(401, UNAUTHORIZED_MESSAGE)
             await response(scope, request.receive, send)

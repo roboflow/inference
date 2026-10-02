@@ -17,6 +17,7 @@ import warnings
 from typing import Optional
 
 from inference_models.configuration import OFFLINE_MODE as _MODELS_OFFLINE_MODE
+from inference_models.configuration import SECURE_GATEWAY as _MODELS_SECURE_GATEWAY
 from inference_models.utils.environment import (
     get_boolean_from_env,
     get_float_from_env,
@@ -28,6 +29,19 @@ def _host_set(raw: Optional[str]) -> Optional[frozenset[str]]:
     if raw is None:
         return None
     return frozenset(host.strip().lower() for host in raw.split(",") if host.strip())
+
+
+def _optional_positive_integer_from_env(name: str) -> Optional[int]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer, got {raw!r}")
+    return value
 
 
 # ── State timeouts (gateway.py) ───────────────────────────────────────────
@@ -360,6 +374,12 @@ WORKFLOWS_MAX_CONCURRENT_STEPS = get_integer_from_env(
 WORKFLOWS_THREAD_POOL_WORKERS = get_integer_from_env(
     "HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", default=16
 )
+WORKFLOWS_THREAD_POOL_ENABLED = get_boolean_from_env(
+    "HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", default=True
+)
+HTTP_API_THREADPOOL_WORKERS = _optional_positive_integer_from_env(
+    "HTTP_API_THREADPOOL_WORKERS"
+)
 ENABLE_WORKFLOWS_PROFILING = get_boolean_from_env(
     "ENABLE_WORKFLOWS_PROFILING", default=False
 )
@@ -374,7 +394,7 @@ ALLOW_WORKFLOWS_FONTS_DOWNLOAD = get_boolean_from_env(
 )
 
 # ── Roboflow platform access (workflows/host.py) ──────────────────────────
-SECURE_GATEWAY = os.environ.get("SECURE_GATEWAY") or None
+SECURE_GATEWAY = _MODELS_SECURE_GATEWAY
 MODEL_CACHE_DIR = os.environ.get("MODEL_CACHE_DIR", "/tmp/cache")
 ROBOFLOW_API_EXTRA_HEADERS = os.environ.get("ROBOFLOW_API_EXTRA_HEADERS")
 ROBOFLOW_INTERNAL_SERVICE_NAME = os.environ.get("ROBOFLOW_INTERNAL_SERVICE_NAME")

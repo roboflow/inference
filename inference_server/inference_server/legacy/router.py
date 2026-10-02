@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import time
@@ -18,7 +19,7 @@ from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
-from inference_server import configuration
+from inference_server import configuration, server_identity
 from inference_server.dependencies import get_model_manager
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
@@ -233,10 +234,12 @@ def include_legacy_catch_all(app: FastAPI) -> None:
     description="Get the server name and version number",
 )
 async def info() -> ServerVersionInfo:
+    server_id = await asyncio.to_thread(server_identity.get_inference_server_id)
+
     return ServerVersionInfo(
         name="Roboflow Inference Server",
         version=configuration.SERVER_VERSION,
-        uuid=configuration.INFERENCE_SERVER_ID or configuration.SERVER_ID,
+        uuid=server_id,
     )
 
 

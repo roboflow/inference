@@ -72,6 +72,13 @@ def wrap_url(url: str) -> str:
     return wrapped_url
 
 
+def tls_verification_options() -> Dict[str, bool]:
+    if configuration.ROBOFLOW_API_VERIFY_SSL:
+        return {}
+
+    return {"verify": False}
+
+
 def _platform_request(
     method: str, url: str, *, assume_identity: bool = False, **kwargs: Any
 ) -> requests.Response:
@@ -86,7 +93,8 @@ def _platform_request(
         method: ``requests`` function name, e.g. ``"get"``.
         url: Fully built and gateway-wrapped URL.
         assume_identity: Whether to add the assume-identity headers.
-        **kwargs: Passed through to ``requests``.
+        **kwargs: Passed through to ``requests``; a caller-supplied ``verify``
+            wins over ``ROBOFLOW_API_VERIFY_SSL``.
 
     Returns:
         The platform response.
@@ -95,6 +103,7 @@ def _platform_request(
         LegacyHTTPError: 504 on timeout, 503 on any other transport failure.
     """
     headers = dict(kwargs.pop("headers", None) or {})
+    kwargs = {**tls_verification_options(), **kwargs}
     if assume_identity:
         add_assume_identity_headers(headers)
     try:

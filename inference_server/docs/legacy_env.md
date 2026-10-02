@@ -174,8 +174,7 @@ pool summary lists only `VLLM_PROXY_ENABLED`, `VLLM_BASE_URL` and
 
 `PINNED_MODELS` and `PRELOAD_HF_IDS` are read under the same spelling, see (a).
 Hosted names from the summary that are legacy-only today and therefore need an
-infra decision rather than a mapping: `HTTP_API_THREADPOOL_WORKERS` (vLLM pools
-set 128), `GCP_SERVERLESS`,
+infra decision rather than a mapping: `GCP_SERVERLESS`,
 `ENFORCE_CREDITS_VERIFICATION`, `MODELS_CACHE_AUTH_*`,
 `METRICS_ENABLED`, `ENABLE_PROMETHEUS`, `REDIS_*`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
 `VLLM_PROXY_ENABLED`. Each is in the (d) table.
@@ -230,7 +229,7 @@ definition; the last column is the new reader.
 | `CORE_MODEL_YOLO_WORLD_ENABLED` | `env.py:399` | `configuration.py:220` | `True` |
 | `GET_MODEL_REGISTRY_ENABLED` | `env.py:650` | `configuration.py:192` | `True` |
 | `LEGACY_ROUTE_ENABLED` | `env.py:666` | `configuration.py:147` | `True` |
-| `SECURE_GATEWAY` | `env.py:672-675` | `configuration.py:266`; `host.py:64`; `inference_models/configuration.py:86` | unset |
+| `SECURE_GATEWAY` | `env.py:672-675` | `configuration.py:397` and `host.py` (both the normalised `inference_models/configuration.py:86` value); the hosted workspace lookup of `auth.py` follows it for the dedicated and serverless paths only | unset |
 | `MODEL_CACHE_DIR` | `env.py:795` | `configuration.py:267`; `inference_models/configuration.py:102` | `/tmp/cache` |
 | `ENABLE_BUILDER` | `env.py:817` | `configuration.py:116` | `False` |
 | `BUILDER_ORIGIN` | `env.py:823-826` | `configuration.py:117-124` | `https://app.roboflow.com` for the us/prod case; the module derives the other cases, see note 1 |
@@ -245,7 +244,7 @@ definition; the last column is the new reader.
 | `SAM2_VERSION_ID` | `env.py:883` | `configuration.py:179` | `hiera_large` |
 | `DISABLE_SAM3_LOGITS_CACHE` | `env.py:896` | `configuration.py:243` | `False` |
 | `EASYOCR_VERSION_ID` | `env.py:899` | `configuration.py:183` | `english_g2` |
-| `INFERENCE_SERVER_ID` | `env.py:902` | `configuration.py:191` | unset |
+| `INFERENCE_SERVER_ID` | `env.py:902` | `configuration.py:316`; `server_identity.py`: `/info` `uuid`; when unset it is generated once per process as in legacy (six random characters plus `-JETSON-<serial>` or `-GPU-<index>`, `UNKNOWN` on failure; GPU is detected through torch, not pynvml) | unset |
 | `DISABLE_WORKFLOW_ENDPOINTS` | `env.py:1034` | `configuration.py:153` | `False` |
 | `WORKFLOWS_MAX_CONCURRENT_STEPS` | `env.py:1095` | `configuration.py:246` | `8` |
 | `ENABLE_WORKFLOWS_PROFILING` | `env.py:1291` | `configuration.py:252` | `False` |
@@ -258,7 +257,9 @@ definition; the last column is the new reader.
 | `PINNED_MODELS` | `env.py:1351` | `configuration.py:133,163-174`; loaded pinned in `app.py:66-99,133-142` | unset |
 | `PRELOAD_HF_IDS` | `env.py:281` | `configuration.py:134,177-185`; loaded as `owlv2/<name>` in `hf_preload.py:27-52`, started by `app.py:134,143-151` | unset |
 | `CONFIDENCE_LOWER_BOUND_OOM_PREVENTION` | `env.py:1478` | `configuration.py:170` | `0.01` |
-| `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS` | `env.py:1651` | `configuration.py:249` | `16` |
+| `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS` | `env.py:1651` | `configuration.py:374` | `16` |
+| `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED` | `env.py:1648` | `configuration.py:377`; `app.py` lifespan: `False` creates no shared pool and the workflow routes pass `executor=None`, as legacy does | `True` |
+| `HTTP_API_THREADPOOL_WORKERS` | `env.py:1657` | `configuration.py:380`; `app.py` lifespan: when set, resizes the anyio default thread limiter and logs one line; a non-positive or non-integer value stops startup | unset (anyio default left untouched) |
 | `OFFLINE_MODE` | `env.py:509` (owned by `inference_models._offline`) | `configuration.py:156`; `host.py:63`; `inference_models/configuration.py:109` | `False` |
 | `LOG_LEVEL` | `env.py:705` | `configuration.py:117`; `logging_config.py`: level of the `inference_server` logger, like legacy's `inference` logger; uvicorn's loggers keep uvicorn's defaults; `inference_models` reads it separately, see its table | `WARNING` |
 | `OTEL_TRACING_ENABLED` | `env.py:768` | `configuration.py:232,241-243` (forced off under `OFFLINE_MODE`); `telemetry.py` | `False` |
@@ -273,7 +274,7 @@ definition; the last column is the new reader.
 | `DOCKER_SOCKET_PATH` | `env.py:1289` | `configuration.py:433`; `ops/router.py`: `GET /device/stats` reads this container's statistics from the Docker socket at this path and answers the legacy 404 hint when it is unset | unset |
 | `SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED` | `env.py:693-695` | `configuration.py:434-436`; `ops/router.py`: registers `GET /secure-gateway/health` outside `LAMBDA` / `GCP_SERVERLESS` | `False` |
 | `SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT` | `env.py:700-702` | `configuration.py:437-439`; `ops/secure_gateway.py`: timeout in seconds of the gateway probe | `5` |
-| `ROBOFLOW_API_VERIFY_SSL` | `env.py:1397` | `configuration.py:440`; `ops/secure_gateway.py`: applies to the secure gateway probe only for now, every other outbound call of the new server always verifies certificates | `True` |
+| `ROBOFLOW_API_VERIFY_SSL` | `env.py:1397` | `configuration.py:440`; `ops/secure_gateway.py`: `False` disables certificate verification for the secure gateway probe, `platform_http._platform_request` and the direct platform calls in `workflows/host.py`, and logs one warning at startup; the aiohttp workspace lookups of `auth.py`, as in legacy, and the platform calls made inside the model packages always verify | `True` |
 | `NOTEBOOK_ENABLED` | `env.py:829` | `configuration.py:441`; `ops/router.py`: `GET /notebook/start` starts JupyterLab; the server images do not include JupyterLab, so the route answers an error until it is installed in the environment | `False` |
 | `NOTEBOOK_PORT` | `env.py:835` | `configuration.py:442`; `ops/notebook.py` | `9002` |
 | `NOTEBOOK_PASSWORD` | `env.py:832` | `configuration.py:443`; `ops/notebook.py`: JupyterLab token and password, passed as single arguments | legacy `roboflow`; new: unset, and then a random token is generated once per process and returned by `GET /notebook/start` (redirect URL and `browserless` answer). Limitation: with `NUM_WORKERS` above 1 and no password set every worker process has its own token, so a worker that did not start JupyterLab reports a token JupyterLab does not accept; set `NOTEBOOK_PASSWORD` explicitly in that case |
@@ -505,8 +506,6 @@ No new package reads these. They never get an alias or a default row.
 | `GCP_SERVERLESS` | `env.py:626` | `host.py:283` hardcodes `False`; unread (hosting summary) |
 | `HOST` | `env.py:583` | legacy bind host; `app.py:358` hardcodes `0.0.0.0`, which is the legacy default |
 | `HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT` | `env.py:1455` | legacy model manager lock |
-| `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED` | `env.py:1648` | the new server always uses the shared pool (`app.py:80-82`) |
-| `HTTP_API_THREADPOOL_WORKERS` | `env.py:1657` | anyio thread-pool size; unread (hosting summary); vLLM pools set 128 |
 | `HUGGINGFACE_TOKEN` | `env.py:1222` | legacy HF token plumbing; no new package reads it |
 | `IGNORE_MODEL_DEPENDENCIES_WARNINGS` | `env.py:35` | legacy warning filter |
 | `INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE` | `env.py:955` | `StreamsConfiguration` field; no new package reads the env name today |

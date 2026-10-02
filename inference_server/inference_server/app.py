@@ -29,12 +29,17 @@ from inference_server.logging_config import (  # noqa: E402
 
 configure_logging()
 
+import anyio.to_thread  # noqa: E402
 from fastapi import FastAPI, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from inference_server import configuration as _cfg  # noqa: E402
 from inference_server import hf_preload  # noqa: E402
-from inference_server.auth import extract_bearer, validate_api_key  # noqa: E402
+from inference_server.auth import (  # noqa: E402
+    close_session,
+    extract_bearer,
+    validate_api_key,
+)
 from inference_server.cors import PathAwareCORSMiddleware  # noqa: E402
 from inference_server.errors import AuthBackendUnavailable  # noqa: E402
 from inference_server.hosted.common import BillingIntentMiddleware  # noqa: E402
@@ -136,12 +141,26 @@ async def _lifespan(app: FastAPI):
     MultiPartParser.spool_max_size = _cfg.MULTIPART_SPOOL_MB * 1024 * 1024
     from inference_server.gateway_resolver import resolve_gateway
 
+    if not _cfg.ROBOFLOW_API_VERIFY_SSL:
+        logger.warning(
+            "TLS certificate verification is disabled for Roboflow platform requests"
+        )
     proxy = resolve_gateway()
     preload_task = None
     hf_preload_task = None
     watchdog_daemons = []
-    workflows_executor = ThreadPoolExecutor(
-        max_workers=_cfg.WORKFLOWS_THREAD_POOL_WORKERS
+    if _cfg.HTTP_API_THREADPOOL_WORKERS is not None:
+        anyio.to_thread.current_default_thread_limiter().total_tokens = (
+            _cfg.HTTP_API_THREADPOOL_WORKERS
+        )
+        logger.info(
+            "HTTP API thread pool resized to %s threads",
+            _cfg.HTTP_API_THREADPOOL_WORKERS,
+        )
+    workflows_executor = (
+        ThreadPoolExecutor(max_workers=_cfg.WORKFLOWS_THREAD_POOL_WORKERS)
+        if _cfg.WORKFLOWS_THREAD_POOL_ENABLED
+        else None
     )
     app.state.workflows_executor = workflows_executor
     try:
@@ -208,7 +227,9 @@ async def _lifespan(app: FastAPI):
         finally:
             for daemon in watchdog_daemons:
                 daemon.stop(timeout=5)
-            workflows_executor.shutdown(wait=False, cancel_futures=True)
+            if workflows_executor is not None:
+                workflows_executor.shutdown(wait=False, cancel_futures=True)
+            await close_session()
 
 
 # ---------------------------------------------------------------------------

@@ -20,6 +20,62 @@ def test_info(legacy_client, monkeypatch):
     )
 
 
+def test_info_body_has_exactly_the_legacy_keys(legacy_client):
+    body = legacy_client(FakeGateway()).get("/info").json()
+
+    assert set(body) == {"name", "version", "uuid"}
+
+
+def test_info_uuid_is_the_generated_server_id_when_none_is_configured(
+    legacy_client, monkeypatch
+):
+    from inference_server import server_identity
+
+    monkeypatch.setattr("inference_server.configuration.INFERENCE_SERVER_ID", None)
+    monkeypatch.setattr(
+        server_identity, "get_inference_server_id", lambda: "abc123-GPU-0"
+    )
+
+    assert legacy_client(FakeGateway()).get("/info").json()["uuid"] == "abc123-GPU-0"
+
+
+def test_info_uuid_is_stable_across_requests(legacy_client, monkeypatch):
+    monkeypatch.setattr("inference_server.configuration.INFERENCE_SERVER_ID", None)
+    client = legacy_client(FakeGateway())
+
+    assert client.get("/info").json()["uuid"] == client.get("/info").json()["uuid"]
+
+
+def test_info_runs_the_gpu_probe_once_and_off_the_event_loop(
+    legacy_client, monkeypatch
+):
+    from inference_server import server_identity
+
+    probed_on_loop = []
+
+    def probe():
+        try:
+            asyncio.get_running_loop()
+            probed_on_loop.append(True)
+        except RuntimeError:
+            probed_on_loop.append(False)
+        return 0
+
+    monkeypatch.setattr("inference_server.configuration.INFERENCE_SERVER_ID", None)
+    monkeypatch.setattr(server_identity, "_jetson_serial", lambda: None)
+    monkeypatch.setattr(server_identity, "_gpu_index", probe)
+    server_identity._generated_server_id.cache_clear()
+    try:
+        client = legacy_client(FakeGateway())
+        first = client.get("/info").json()["uuid"]
+        second = client.get("/info").json()["uuid"]
+    finally:
+        server_identity._generated_server_id.cache_clear()
+
+    assert first == second and first.endswith("-GPU-0")
+    assert probed_on_loop == [False]
+
+
 def test_openapi_metadata_matches_legacy(legacy_client):
     spec = legacy_client(FakeGateway()).get("/openapi.json").json()
     assert (
