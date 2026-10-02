@@ -401,7 +401,50 @@ with 300 real objects, capping at 150 removes 150 real detections. Reducing reso
 object some boundary fidelity; reducing `n` costs you half the objects. They compose
 (n=150, t=0.25 → 29.1 ms) but they are not substitutes.
 
-**E2 — There is no CUDA or Jetson measurement anywhere in this plan.**
+**E2 — Fidelity against `t` measured; true `AP_mask` still outstanding, and why.**
+
+**What was measured.** Divergence of the output at `t<1` from the output at `t=1.0`, on 300
+synthetic instances spanning the COCO size strata, 1920×1080, 160×160 prototypes:
+
+| t | mask IoU | boundary IoU | small | medium | large |
+|---|---|---|---|---|---|
+| 0.10 | 0.869 | 0.514 | **0.659** | 0.888 | 0.969 |
+| 0.25 | 0.908 | 0.654 | **0.754** | 0.925 | 0.980 |
+| 0.50 | 0.933 | 0.737 | 0.822 | 0.945 | 0.985 |
+| 0.75 | 0.938 | 0.759 | 0.832 | 0.950 | 0.986 |
+
+Three findings worth carrying into any default:
+
+- **Aggregate mask IoU hides the cost.** At `t=0.25` it reads 0.908, which sounds harmless, while
+  boundary IoU is 0.654 at the same point. The interior dominates the aggregate and the boundary is
+  precisely what resolution reduction damages. Evaluating this change on mask IoU alone will reach
+  the wrong conclusion.
+- **Small objects pay roughly 5× what large ones do.** At `t=0.25`, large objects lose 2% and small
+  objects lose 25%. A single recommended default is therefore workload-dependent, not universal.
+- **The curve flattens above `t=0.5`.** Going 0.5 → 0.75 buys 0.004 mask IoU for about 3× the
+  compute, so 0.5 is the sensible ceiling when fidelity matters.
+
+**What was NOT measured, and cannot be here: true `AP_mask` against ground truth.**
+That requires a labelled dataset — images with annotated instance masks — run through a real model.
+This workspace has neither a labelled set nor model weights, so no AP figure of any kind can be
+produced from it. The table above is a *self-consistency* measurement: it compares the pipeline
+against its own full-resolution output on synthetic blobs. That is the right quantity for choosing a
+default whose baseline is today's behaviour, and it is **not** a substitute for AP, because it
+cannot see:
+
+- whether a reduced mask crosses a detection's IoU threshold and changes a true positive into a
+  false one, which is what AP actually scores;
+- how real object shapes — thin structures, concavities, occlusion boundaries — degrade compared
+  with the smooth synthetic lobes used here, which almost certainly understates the loss;
+- any interaction with NMS, where reduced masks change overlap and therefore which detections
+  survive.
+
+*Action before any default is documented publicly:* run `AP_mask` 50:95, by object size, with
+`AP_box` as an untouched control, on a fixed labelled set with a real segmentation model, sweeping
+`t`. Until then the feature ships as a knob with a measured fidelity curve and no recommended value,
+which is honest; publishing a default on this evidence would not be.
+
+**E3 — There is no CUDA or Jetson measurement anywhere in this plan.**
 Every figure is single-platform CPU (Apple M1 Max, 8 threads, fp32). The ~40 GB-per-4K-frame traffic
 figure and the derived ~392 ms on Orin NX are a **bandwidth model, not data** — and that estimate is
 simultaneously the strongest claim in §1 and the weakest evidence in the document.
