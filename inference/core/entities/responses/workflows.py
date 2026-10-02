@@ -219,6 +219,11 @@ class WorkflowErrorResponse(BaseModel):
     context: str
     inner_error_type: Optional[str] = None
     inner_error_message: Optional[str] = None
+    diagnostics: Optional[Dict[str, Union[str, int]]] = Field(
+        default=None,
+        description="Allowlisted provider and transport evidence from the exception cause. "
+        "Contains no request payload, provider response body, credentials or URLs.",
+    )
     blocks_errors: Optional[List[WorkflowBlockError]] = None
     python_blocks_output_streams: Optional[
         Dict[str, List[Dict[str, Optional[str]]]]
