@@ -12,7 +12,7 @@ from inference.core.entities.responses.inference import (
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationInferenceResponseDC,
 )
-from inference.core.exceptions import PostProcessingError
+from inference.core.exceptions import InvalidMaskDecodeArgument, PostProcessingError
 from inference.core.models.inference_models_adapters import (
     InferenceModelsDepthEstimationAdapter,
     InferenceModelsInstanceSegmentationAdapter,
@@ -741,3 +741,126 @@ def test_fixed_input_hw_from_backend_skips_missing_or_invalid_network_input():
         _fixed_input_hw_from_backend(_backend_with_network_input(height=0, width=640))
         is None
     )
+
+
+def _seg_adapter() -> InferenceModelsInstanceSegmentationAdapter:
+    adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
+    adapter._pipeline_depth = 1
+    adapter.class_names = ["car"]
+    return adapter
+
+
+def test_polygon_points_are_scaled_from_mask_space_into_image_space() -> None:
+    # given
+    # a 4x4 mask describing a 16x16 image: contours come out in mask
+    # coordinates and must be lifted by 4x before they are reported
+    adapter = _seg_adapter()
+    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=16, height=16))]
+    detections = [
+        InstanceDetections(
+            xyxy=torch.tensor([[0, 0, 16, 16]], dtype=torch.int32),
+            confidence=torch.tensor([0.9], dtype=torch.float32),
+            class_id=torch.tensor([0], dtype=torch.int32),
+            mask=torch.ones((1, 4, 4), dtype=torch.uint8),
+        )
+    ]
+
+    # when
+    responses = adapter._build_responses_from_detections(detections, metadata)
+
+    # then
+    xs = [p.x for p in responses[0].predictions[0].points]
+    ys = [p.y for p in responses[0].predictions[0].points]
+    assert max(xs) > 4, f"x still in mask space: {xs}"
+    assert max(ys) > 4, f"y still in mask space: {ys}"
+
+
+def test_polygon_points_unchanged_when_mask_matches_the_image() -> None:
+    # given
+    # today's situation: the scaling must be an exact no-op
+    adapter = _seg_adapter()
+    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=8, height=8))]
+    mask = torch.zeros((1, 8, 8), dtype=torch.uint8)
+    mask[0, 2:6, 2:6] = 1
+    detections = [
+        InstanceDetections(
+            xyxy=torch.tensor([[2, 2, 6, 6]], dtype=torch.int32),
+            confidence=torch.tensor([0.9], dtype=torch.float32),
+            class_id=torch.tensor([0], dtype=torch.int32),
+            mask=mask,
+        )
+    ]
+
+    # when
+    responses = adapter._build_responses_from_detections(detections, metadata)
+
+    # then
+    xs = [p.x for p in responses[0].predictions[0].points]
+    ys = [p.y for p in responses[0].predictions[0].points]
+    assert min(xs) == 2 and max(xs) == 5
+    assert min(ys) == 2 and max(ys) == 5
+
+
+class TestMaskDecodeModeMapping:
+    """The adapter collapses the published enum onto one float.
+
+    `mask_decode_mode` and `tradeoff_factor` are the documented request
+    surface; `masks_resolution_factor` is what post-processing consumes. The
+    translation belongs here, and the source keys must not reach the model.
+    """
+
+    @staticmethod
+    def _map(**kwargs) -> dict:
+        adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
+        adapter._model = SimpleNamespace(supported_mask_formats=[])
+        return adapter.map_inference_kwargs(kwargs)
+
+    def test_accurate_maps_to_full_resolution(self) -> None:
+        # given / when
+        mapped = self._map(mask_decode_mode="accurate")
+
+        # then
+        assert mapped["masks_resolution_factor"] == 1.0
+
+    def test_fast_maps_to_mask_resolution(self) -> None:
+        # given / when
+        mapped = self._map(mask_decode_mode="fast")
+
+        # then
+        assert mapped["masks_resolution_factor"] == 0.0
+
+    def test_tradeoff_reads_the_factor(self) -> None:
+        # given / when
+        mapped = self._map(mask_decode_mode="tradeoff", tradeoff_factor=0.25)
+
+        # then
+        assert mapped["masks_resolution_factor"] == 0.25
+
+    def test_default_is_full_resolution_when_nothing_is_passed(self) -> None:
+        # given / when
+        # an unset mode must reproduce today's behaviour exactly
+        mapped = self._map()
+
+        # then
+        assert mapped["masks_resolution_factor"] == 1.0
+
+    def test_source_keys_do_not_reach_the_model(self) -> None:
+        # given / when
+        # deeper pre/post stages do not accept arbitrary kwargs
+        mapped = self._map(mask_decode_mode="tradeoff", tradeoff_factor=0.5)
+
+        # then
+        assert "mask_decode_mode" not in mapped
+        assert "tradeoff_factor" not in mapped
+
+    @pytest.mark.parametrize("bad_factor", [-0.1, 1.1])
+    def test_out_of_range_factor_is_rejected(self, bad_factor: float) -> None:
+        # given / when / then
+        with pytest.raises(InvalidMaskDecodeArgument):
+            self._map(mask_decode_mode="tradeoff", tradeoff_factor=bad_factor)
+
+    def test_unknown_mode_is_rejected(self) -> None:
+        # given / when / then
+        # the legacy path raises for this; the two must agree
+        with pytest.raises(InvalidMaskDecodeArgument):
+            self._map(mask_decode_mode="nonsense")

@@ -60,7 +60,11 @@ from inference.core.env import (
     VALID_INFERENCE_MODELS_BACKENDS,
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
-from inference.core.exceptions import PayloadTooLargeError, PostProcessingError
+from inference.core.exceptions import (
+    InvalidMaskDecodeArgument,
+    PayloadTooLargeError,
+    PostProcessingError,
+)
 from inference.core.models.action_recognition import merge_window_segments
 from inference.core.models.base import Model
 from inference.core.models.semantic_segmentation_utils import (
@@ -103,6 +107,7 @@ from inference_models.configuration import (
     MAX_RFDETR_PIPELINE_DEPTH,
     get_rfdetr_pipeline_depth,
 )
+from inference_models.entities import ImageDimensions
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     effective_max_frame_side,
@@ -126,6 +131,9 @@ from inference_models.models.base.semantic_segmentation import (
 )
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+from inference_models.models.common.roboflow.post_processing import (
+    scale_polygons_to_image,
+)
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -422,6 +430,44 @@ class InferenceModelsObjectDetectionAdapter(Model):
         )
 
 
+_MASK_DECODE_MODE_TO_RESOLUTION_FACTOR = {
+    "accurate": 1.0,
+    "fast": 0.0,
+}
+
+
+def _resolve_masks_resolution_factor(
+    *,
+    mask_decode_mode: Optional[str],
+    tradeoff_factor: Optional[float],
+) -> float:
+    """Collapse the request enum and factor onto one resolution factor.
+
+    ``accurate`` keeps masks at image resolution and is the default, matching
+    the published contract. ``fast`` leaves them on the model's own grid.
+    ``tradeoff`` interpolates between the two by ``tradeoff_factor``.
+    """
+    if mask_decode_mode is None:
+        return 1.0
+
+    if mask_decode_mode in _MASK_DECODE_MODE_TO_RESOLUTION_FACTOR:
+        return _MASK_DECODE_MODE_TO_RESOLUTION_FACTOR[mask_decode_mode]
+
+    if mask_decode_mode != "tradeoff":
+        raise InvalidMaskDecodeArgument(
+            f"Invalid mask_decode_mode: {mask_decode_mode}. "
+            "Must be one of ['accurate', 'fast', 'tradeoff']"
+        )
+
+    resolution_factor = 0.0 if tradeoff_factor is None else float(tradeoff_factor)
+    if not 0.0 <= resolution_factor <= 1.0:
+        raise InvalidMaskDecodeArgument(
+            f"Invalid tradeoff_factor: {resolution_factor}. Must be in [0.0, 1.0]"
+        )
+
+    return resolution_factor
+
+
 class InferenceModelsInstanceSegmentationAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
@@ -519,6 +565,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
+        # The published request surface is an enum plus a float; post-processing
+        # consumes a single resolution factor. Translate here and consume both
+        # source keys, which the deeper stages do not accept.
+        kwargs["masks_resolution_factor"] = _resolve_masks_resolution_factor(
+            mask_decode_mode=kwargs.pop("mask_decode_mode", None),
+            tradeoff_factor=kwargs.pop("tradeoff_factor", None),
+        )
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
@@ -997,6 +1050,25 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             # thread-local pinned scratch buffers. Only scalar values and
             # polygon/RLE lists may be stored on responses below; do not return
             # those arrays or any view derived from them.
+            # Contours are extracted in mask coordinates. When the mask grid
+            # is not the image grid they have to be lifted before they are
+            # reported; equal sizes short-circuit to a no-op. This also breaks
+            # any view into the pinned scratch buffers noted above, since the
+            # scaled polygons are freshly allocated.
+            mask_size = getattr(det, "mask_size", None)
+            if (
+                not return_in_rle
+                and mask_size is not None
+                and tuple(mask_size) != (H, W)
+            ):
+                polys_or_rles = scale_polygons_to_image(
+                    polys_or_rles,
+                    mask_size=ImageDimensions(
+                        height=int(mask_size[0]), width=int(mask_size[1])
+                    ),
+                    image_size=ImageDimensions(height=H, width=W),
+                )
+
             predictions: List[
                 Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
             ] = []
