@@ -361,7 +361,7 @@ def _runtime_compatibility_content(runtime_x_ray: object) -> dict:
     available_providers = getattr(
         runtime_x_ray, "available_onnx_execution_providers", None
     )
-    return {
+    content = {
         "version": 1,
         "gpu_available": getattr(runtime_x_ray, "gpu_available", False),
         "gpu_devices": list(getattr(runtime_x_ray, "gpu_devices", [])),
@@ -392,6 +392,13 @@ def _runtime_compatibility_content(runtime_x_ray: object) -> dict:
             runtime_x_ray, "trt_python_package_available", False
         ),
     }
+    coremltools_version = getattr(runtime_x_ray, "coremltools_version", None)
+    if coremltools_version is not None:
+        # Added only when Core ML can run, so the key of every entry resolved without it stays the same, and a
+        # model resolved before coremltools was installed is resolved again (now to its Core ML package).
+        content["coremltools_version"] = str(coremltools_version)
+
+    return content
 
 
 def _validate_portable_cache_name(value: object, kind: str) -> str:

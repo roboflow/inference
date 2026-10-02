@@ -270,3 +270,19 @@ def test_anomaly_detection_architectures_resolve_to_torch_classifiers(
         backend=BackendType.TORCH,
     )
     assert cls.__name__ == class_name
+
+
+@pytest.mark.parametrize("task_type", ["object-detection", "instance-segmentation"])
+def test_model_implementation_exists_for_rfdetr_coreml_packages_with_model_features(
+    task_type: str,
+) -> None:
+    # when
+    result = model_implementation_exists(
+        model_architecture="rfdetr",
+        task_type=task_type,
+        backend=BackendType.COREML,
+        model_features={"resolution", "num_queries"},
+    )
+
+    # then
+    assert result is True
