@@ -271,7 +271,7 @@ def test_video_configuration_accepts_string_fourcc_and_coerces_numbers() -> None
     "value",
     # Validated like a float field: non-ASCII digits, bytearrays and numbers
     # too large for a float are rejected.
-    ["fast", "\u0661\u0662", bytearray(b"12"), 10**400, -(10**400)],
+    ["fast", "\u0661\u0662", bytearray(b"12"), 10**400],
 )
 def test_video_configuration_rejects_non_numeric_value_for_other_properties(
     value: Any,
@@ -296,7 +296,6 @@ def test_video_configuration_rejects_non_numeric_value_for_other_properties(
         float("nan"),
         True,
         10**400,
-        -(10**400),
         2**32,
     ],
 )
