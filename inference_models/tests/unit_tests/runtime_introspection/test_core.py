@@ -1,4 +1,5 @@
 from subprocess import CompletedProcess
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import MagicMock, mock_open
 
@@ -1103,3 +1104,73 @@ def test_ensure_jetson_l4t_declared_for_jetson_hardware_when_valid_configuration
         gpu_devices=["some"],
         l4t_version=None,
     )
+
+
+COREML_WHEEL_FILES = [
+    SimpleNamespace(name="__init__.py"),
+    SimpleNamespace(name="libcoremlpython.so"),
+    SimpleNamespace(name="libmilstoragepython.so"),
+]
+
+
+def _coreml_runtime_version(
+    system: str = "Darwin",
+    machine: str = "arm64",
+    mac_version: str = "14.5",
+    files=COREML_WHEEL_FILES,
+    version_side_effect=None,
+):
+    core.get_coreml_runtime_version.cache_clear()
+    try:
+        with mock.patch.object(
+            core.platform, "system", return_value=system
+        ), mock.patch.object(
+            core.platform, "machine", return_value=machine
+        ), mock.patch.object(
+            core.platform, "mac_ver", return_value=(mac_version, ("", "", ""), "")
+        ), mock.patch.object(
+            core.importlib_metadata, "files", return_value=files
+        ), mock.patch.object(
+            core.importlib_metadata,
+            "version",
+            return_value="9.0",
+            side_effect=version_side_effect,
+        ):
+            return core.get_coreml_runtime_version()
+    finally:
+        core.get_coreml_runtime_version.cache_clear()
+
+
+def test_get_coreml_runtime_version_on_apple_silicon_with_coremltools() -> None:
+    assert _coreml_runtime_version() == Version("9.0")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"system": "Linux", "machine": "x86_64"},
+        {"system": "Linux", "machine": "aarch64"},
+        {"machine": "x86_64"},
+        {"mac_version": "12.7"},
+        {"mac_version": "not-a-version"},
+        {"files": [SimpleNamespace(name="__init__.py")]},
+        {"files": None},
+        {
+            "version_side_effect": core.importlib_metadata.PackageNotFoundError(
+                "coremltools"
+            )
+        },
+    ],
+    ids=[
+        "linux",
+        "linux-arm",
+        "intel-mac",
+        "macos-12",
+        "unparseable-macos-version",
+        "no-core-ml-runtime-bindings",
+        "no-package-files",
+        "coremltools-missing",
+    ],
+)
+def test_get_coreml_runtime_version_when_core_ml_cannot_run(overrides: dict) -> None:
+    assert _coreml_runtime_version(**overrides) is None
