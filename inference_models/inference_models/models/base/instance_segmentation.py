@@ -144,6 +144,17 @@ class InstanceDetections:
     bboxes_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of bboxes
     )
+    # (h, w) of the grid `mask` lives on. Resolved from the carrier when not
+    # given, which reproduces the behaviour from before it was adjustable.
+    mask_size: Optional[Tuple[int, int]] = None
+
+    def __post_init__(self) -> None:
+        if self.mask_size is not None:
+            return
+        if isinstance(self.mask, InstancesRLEMasks):
+            self.mask_size = self.mask.mask_size
+        elif self.mask is not None and hasattr(self.mask, "shape"):
+            self.mask_size = (int(self.mask.shape[1]), int(self.mask.shape[2]))
 
     def __len__(self) -> int:
         return int(self.xyxy.shape[0])
