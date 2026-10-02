@@ -453,6 +453,11 @@ def filter_model_packages_by_requested_quantization(
     )
     filtered_packages, discarded_packages = [], []
     for model_package in model_packages:
+        if default_quantization_used and model_package.backend is BackendType.COREML:
+            # The default allow-list keeps FP16 torch / ONNX packages off the CPU, where they run slowly.
+            # Core ML schedules its own compute units, so an FP16 Core ML package runs on the GPU.
+            filtered_packages.append(model_package)
+            continue
         if model_package.quantization not in requested_quantization:
             verbose_info(
                 message=f"Model package with id `{model_package.package_id}` does not match requested quantization "
@@ -1217,7 +1222,30 @@ def verify_versions_up_to_major_and_minor(x: Version, y: Version) -> bool:
     return x_simplified == y_simplified
 
 
+def coreml_package_matches_runtime_environment(
+    model_package: ModelPackageMetadata,
+    runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
+    verbose: bool = False,
+) -> Tuple[bool, Optional[str]]:
+    if runtime_x_ray.coremltools_version is None:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as Core ML is not available "
+            f"in this environment (it requires macOS 13+ on Apple Silicon and the `coreml` extra of "
+            f"`inference-models`).",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            "Core ML runtime is not available (requires macOS 13+ on Apple Silicon and coremltools)",
+        )
+    return True, None
+
+
 MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS = {
+    BackendType.COREML: coreml_package_matches_runtime_environment,
     BackendType.HF: hf_transformers_package_matches_runtime_environment,
     BackendType.TRT: trt_package_matches_runtime_environment,
     BackendType.ONNX: onnx_package_matches_runtime_environment,
