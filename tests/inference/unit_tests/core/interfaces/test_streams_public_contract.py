@@ -130,10 +130,12 @@ def _capture_contracts(env_overrides: Optional[Dict[str, str]] = None) -> dict:
 
 # hashes are sha256[:16] - a change-detector, not a security control.
 _FROZEN_CONTRACTS = [
-    ("InferencePipeline.init", "87ac083f88c84541"),
-    ("InferencePipeline.init_with_yolo_world", "03e562b3c5e60eb9"),
-    ("InferencePipeline.init_with_workflow", "c1a048f36d371750"),
-    ("InferencePipeline.init_with_custom_logic", "072e4f2946ee2a47"),
+    # video_source_options threaded through by this branch; refrozen post-merge
+    # (main dropped doc_hash tracking in #3087, so only sig_hash remains).
+    ("InferencePipeline.init", "0f58a2833d3d32a9"),
+    ("InferencePipeline.init_with_yolo_world", "d7f01d6301bf7b92"),
+    ("InferencePipeline.init_with_workflow", "3dc51ebead0b32bb"),
+    ("InferencePipeline.init_with_custom_logic", "f6a2999c313d244f"),
     ("Stream.__init__", "ad88b06bfd0ef5aa"),
     ("sinks.display_image", "f8e554f57455543c"),
     ("sinks.render_boxes", "bd087e986582eec5"),
