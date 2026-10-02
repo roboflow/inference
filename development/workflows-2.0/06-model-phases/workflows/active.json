@@ -1,0 +1,52 @@
+{
+  "version": "2.0",
+  "sources": [
+    {"type": "model_demo/still_frames", "name": "frames", "images": ["beagle", "dogs", "car"], "interval_ms": 40}
+  ],
+  "operators": [
+    {
+      "type": "v2/window@v1", "name": "recent",
+      "collect": {"labels": "$steps.classify.top_class", "predictions": "$steps.classify.predictions"},
+      "size": 3
+    }
+  ],
+  "steps": [
+    {"type": "model_demo/flip_averaged_classifier@v1", "name": "classify", "image": "$sources.frames.image"},
+    {"type": "v2/static_crop", "name": "band", "image": "$sources.frames.image", "regions": [[0, 200, 640, 400]]},
+    {
+      "type": "roboflow_core/inner_workflow@v1", "name": "refine",
+      "parameter_bindings": {"images": "$steps.band.crops"},
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"type": "WorkflowBatchInput", "name": "images", "kind": ["image"]}],
+        "steps": [
+          {"type": "v2/has_brightness", "name": "lit", "image": "$inputs.images", "minimum": 120.0},
+          {"type": "v2/continue_if", "name": "gate", "condition": "$steps.lit.keep", "next_steps": ["$steps.classify"]},
+          {"type": "model_demo/flip_averaged_classifier@v1", "name": "classify", "image": "$inputs.images"}
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "predictions", "selector": "$steps.classify.predictions"},
+          {"type": "JsonField", "name": "top_class", "selector": "$steps.classify.top_class"}
+        ]
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "frames", "anchor": "$sources.frames.image",
+      "outputs": [
+        {"type": "JsonField", "name": "predictions", "selector": "$steps.classify.predictions"},
+        {"type": "JsonField", "name": "top_class", "selector": "$steps.classify.top_class"},
+        {"type": "JsonField", "name": "band_predictions", "selector": "$steps.refine.predictions"},
+        {"type": "JsonField", "name": "band_top_class", "selector": "$steps.refine.top_class"}
+      ]
+    },
+    {
+      "type": "OutputGroup", "name": "recent", "anchor": "$operators.recent.labels",
+      "outputs": [
+        {"type": "JsonField", "name": "labels", "selector": "$operators.recent.labels"},
+        {"type": "JsonField", "name": "predictions", "selector": "$operators.recent.predictions"}
+      ]
+    }
+  ]
+}

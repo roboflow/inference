@@ -1,0 +1,141 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "payload", "kind": ["settings"]}],
+  "steps": [
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "default_child",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [
+          {
+            "type": "WorkflowParameter",
+            "name": "settings",
+            "kind": ["settings"],
+            "default_value": "gain=2"
+          }
+        ],
+        "steps": [
+          {
+            "type": "capability/read_gain@v1",
+            "name": "read_a",
+            "settings": "$inputs.settings"
+          },
+          {
+            "type": "capability/read_gain@v1",
+            "name": "read_b",
+            "settings": "$inputs.settings"
+          }
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "gain_a", "selector": "$steps.read_a.gain"},
+          {"type": "JsonField", "name": "gain_b", "selector": "$steps.read_b.gain"},
+          {"type": "JsonField", "name": "forwarded", "selector": "$inputs.settings"}
+        ]
+      }
+    },
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "literal_child",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [
+          {
+            "type": "WorkflowParameter",
+            "name": "settings",
+            "kind": ["settings"],
+            "default_value": "gain=2"
+          }
+        ],
+        "steps": [
+          {
+            "type": "capability/read_gain@v1",
+            "name": "read_a",
+            "settings": "$inputs.settings"
+          },
+          {
+            "type": "capability/read_gain@v1",
+            "name": "read_b",
+            "settings": "$inputs.settings"
+          }
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "gain_a", "selector": "$steps.read_a.gain"},
+          {"type": "JsonField", "name": "gain_b", "selector": "$steps.read_b.gain"},
+          {"type": "JsonField", "name": "forwarded", "selector": "$inputs.settings"}
+        ]
+      },
+      "parameter_bindings": {"settings": "gain=5"}
+    },
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "selected_child",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [
+          {
+            "type": "WorkflowParameter",
+            "name": "settings",
+            "kind": ["settings"],
+            "default_value": "gain=2"
+          }
+        ],
+        "steps": [
+          {
+            "type": "capability/read_gain@v1",
+            "name": "read_a",
+            "settings": "$inputs.settings"
+          },
+          {
+            "type": "capability/read_gain@v1",
+            "name": "read_b",
+            "settings": "$inputs.settings"
+          }
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "gain_a", "selector": "$steps.read_a.gain"},
+          {"type": "JsonField", "name": "gain_b", "selector": "$steps.read_b.gain"},
+          {"type": "JsonField", "name": "forwarded", "selector": "$inputs.settings"}
+        ]
+      },
+      "parameter_bindings": {"settings": "$inputs.payload"}
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "default_a",
+      "selector": "$steps.default_child.gain_a"
+    },
+    {
+      "type": "JsonField",
+      "name": "default_b",
+      "selector": "$steps.default_child.gain_b"
+    },
+    {
+      "type": "JsonField",
+      "name": "default_forwarded",
+      "selector": "$steps.default_child.forwarded"
+    },
+    {
+      "type": "JsonField",
+      "name": "literal_a",
+      "selector": "$steps.literal_child.gain_a"
+    },
+    {
+      "type": "JsonField",
+      "name": "literal_forwarded",
+      "selector": "$steps.literal_child.forwarded"
+    },
+    {
+      "type": "JsonField",
+      "name": "selected_a",
+      "selector": "$steps.selected_child.gain_a"
+    },
+    {
+      "type": "JsonField",
+      "name": "selected_forwarded",
+      "selector": "$steps.selected_child.forwarded"
+    }
+  ]
+}

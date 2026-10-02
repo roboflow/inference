@@ -1,0 +1,12 @@
+{
+  "version": "2.0",
+  "inputs": [],
+  "steps": [
+    {"type": "capability/generate@v1", "name": "left", "values": [10, 20]},
+    {"type": "capability/generate@v1", "name": "right", "values": [100, 200, 300]}
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "left", "selector": "$steps.left.value"},
+    {"type": "JsonField", "name": "right", "selector": "$steps.right.value"}
+  ]
+}

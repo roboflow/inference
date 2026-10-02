@@ -1,0 +1,26 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "images",
+      "kind": "image",
+      "axes": [{"id": "samples", "kind": "sample", "stationary": true}]
+    }
+  ],
+  "steps": [
+    {
+      "name": "crop",
+      "type": "v2/crop",
+      "image": "$inputs.images",
+      "regions": [[40, 40, 100, 100], [120, 10, 180, 70]]
+    },
+    {
+      "name": "gate_invert",
+      "type": "v2/continue_if",
+      "condition": "$steps.crop.summary",
+      "next_steps": ["$steps.invert"]
+    },
+    {"name": "invert", "type": "v2/invert", "image": "$steps.crop.crops"}
+  ],
+  "outputs": [{"type": "JsonField", "name": "out", "selector": "$steps.invert.image"}]
+}

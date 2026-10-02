@@ -1,0 +1,32 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowBatchInput", "name": "first"},
+    {"type": "WorkflowBatchInput", "name": "second"}
+  ],
+  "steps": [
+    {"type": "fixture/echo@v1", "name": "first", "value": "$inputs.first"},
+    {"type": "fixture/echo@v1", "name": "second", "value": "$inputs.second"},
+    {
+      "type": "capability/vote@v1",
+      "name": "vote",
+      "predictions": ["$steps.first.value", "$steps.second.value"]
+    },
+    {
+      "type": "capability/csv_row@v1",
+      "name": "csv_literal",
+      "columns": {"camera": "north", "enabled": true}
+    },
+    {
+      "type": "capability/csv_row@v1",
+      "name": "csv_varying",
+      "columns": {"label": "$inputs.first", "camera": "north"}
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "votes", "selector": "$steps.vote.votes"},
+    {"type": "JsonField", "name": "unanimous", "selector": "$steps.vote.unanimous"},
+    {"type": "JsonField", "name": "csv_literal", "selector": "$steps.csv_literal.csv"},
+    {"type": "JsonField", "name": "csv_varying", "selector": "$steps.csv_varying.csv"}
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowBatchInput", "name": "images", "kind": ["image"]},
+    {"type": "WorkflowBatchInput", "name": "regions", "kind": ["list_of_values"]},
+    {
+      "type": "WorkflowParameter",
+      "name": "tile_size",
+      "kind": ["integer"],
+      "default_value": 24
+    }
+  ],
+  "steps": [
+    {
+      "type": "v2/crop",
+      "name": "crop",
+      "image": "$inputs.images",
+      "regions": "$inputs.regions"
+    },
+    {
+      "type": "v2/mosaic",
+      "name": "mosaic",
+      "images": "$steps.crop.crops",
+      "tile_size": "$inputs.tile_size"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "count", "selector": "$steps.mosaic.count"},
+    {"type": "JsonField", "name": "mosaic", "selector": "$steps.mosaic.image"}
+  ]
+}

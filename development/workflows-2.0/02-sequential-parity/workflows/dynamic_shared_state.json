@@ -1,0 +1,54 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "x"}],
+  "dynamic_blocks_definitions": [
+    {
+      "type": "DynamicBlockDefinition",
+      "manifest": {
+        "type": "ManifestDescription",
+        "block_type": "Tally",
+        "inputs": {
+          "value": {
+            "type": "DynamicInputDefinition",
+            "selector_types": ["input_parameter"]
+          }
+        },
+        "outputs": {
+          "total": {"type": "DynamicOutputDefinition", "kind": []},
+          "step_calls": {"type": "DynamicOutputDefinition", "kind": []},
+          "same_mapping": {"type": "DynamicOutputDefinition", "kind": []},
+          "step": {"type": "DynamicOutputDefinition", "kind": []},
+          "run": {"type": "DynamicOutputDefinition", "kind": []}
+        }
+      },
+      "code": {
+        "type": "PythonCode",
+        "run_function_code": "def run(self, value) -> BlockResult:\n    globals[\"total\"] = globals.get(\"total\", 0) + value\n    self._init_results[\"calls\"] += 1\n    context = self.get_workflow_context()\n    return {\n        \"total\": globals[\"total\"],\n        \"step_calls\": self._init_results[\"calls\"],\n        \"same_mapping\": globals is self.shared_state,\n        \"step\": context[\"step_selector\"],\n        \"run\": context[\"workflow_execution_id\"],\n    }\n",
+        "init_function_code": "def init():\n    return {\"calls\": 0}\n",
+        "init_function_name": "init"
+      }
+    }
+  ],
+  "steps": [
+    {"type": "Tally", "name": "first", "value": "$inputs.x"},
+    {"type": "Tally", "name": "second", "value": "$inputs.x"},
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "child",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"type": "WorkflowParameter", "name": "x"}],
+        "steps": [{"type": "Tally", "name": "inner", "value": "$inputs.x"}],
+        "outputs": [
+          {"type": "JsonField", "name": "result", "selector": "$steps.inner.*"}
+        ]
+      },
+      "parameter_bindings": {"x": "$inputs.x"}
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "first", "selector": "$steps.first.*"},
+    {"type": "JsonField", "name": "second", "selector": "$steps.second.*"},
+    {"type": "JsonField", "name": "child", "selector": "$steps.child.result"}
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "version": "2.0",
+  "inputs": [],
+  "steps": [
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "passthrough",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [
+          {"type": "WorkflowParameter", "name": "settings", "kind": ["settings"]}
+        ],
+        "steps": [],
+        "outputs": [
+          {"type": "JsonField", "name": "forwarded", "selector": "$inputs.settings"}
+        ]
+      },
+      "parameter_bindings": {"settings": "gain=9"}
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "forwarded",
+      "selector": "$steps.passthrough.forwarded"
+    }
+  ]
+}

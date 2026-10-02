@@ -1,0 +1,48 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowBatchInput", "name": "scores", "kind": ["float"]},
+    {"type": "WorkflowParameter", "name": "threshold", "kind": ["float"]},
+    {
+      "type": "WorkflowParameter",
+      "name": "margin",
+      "kind": ["float"],
+      "default_value": 0.0
+    },
+    {
+      "type": "WorkflowParameter",
+      "name": "low",
+      "kind": ["float"],
+      "default_value": 0.0
+    },
+    {
+      "type": "WorkflowParameter",
+      "name": "high",
+      "kind": ["float"],
+      "default_value": 1.0
+    },
+    {
+      "type": "WorkflowParameter",
+      "name": "label",
+      "kind": ["string"],
+      "default_value": "score"
+    },
+    {"type": "WorkflowParameter", "name": "options", "kind": ["dictionary"]}
+  ],
+  "steps": [
+    {
+      "type": "capability/threshold@v1",
+      "name": "check",
+      "score": "$inputs.scores",
+      "threshold": "$inputs.threshold",
+      "margin": "$inputs.margin",
+      "low": "$inputs.low",
+      "high": "$inputs.high",
+      "label": "$inputs.label",
+      "options": "$inputs.options"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "passed", "selector": "$steps.check.passed"}
+  ]
+}

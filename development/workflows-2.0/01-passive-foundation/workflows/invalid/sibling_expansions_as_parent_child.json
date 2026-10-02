@@ -1,0 +1,34 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "values",
+      "kind": "number",
+      "axes": [{"id": "samples", "kind": "sample", "stationary": true}]
+    }
+  ],
+  "steps": [
+    {
+      "name": "expand_a",
+      "type": "demo/expand",
+      "value": "$inputs.values",
+      "offsets": [1, 2],
+      "limit": 31
+    },
+    {
+      "name": "expand_b",
+      "type": "demo/expand",
+      "value": "$inputs.values",
+      "offsets": [1, 2],
+      "limit": 31
+    },
+    {
+      "name": "reduce",
+      "type": "demo/sum_with_parent",
+      "parent": "$steps.expand_a.children",
+      "children": "$steps.expand_b.children",
+      "parent_weight": 1
+    }
+  ],
+  "outputs": [{"type": "JsonField", "name": "out", "selector": "$steps.reduce.total"}]
+}

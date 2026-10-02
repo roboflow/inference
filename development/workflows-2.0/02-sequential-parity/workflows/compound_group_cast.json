@@ -1,0 +1,19 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowBatchInput", "name": "parents"},
+    {"type": "WorkflowParameter", "name": "label", "default_value": "tag"}
+  ],
+  "steps": [
+    {"type": "fixture/ragged_expand@v1", "name": "expand", "value": "$inputs.parents"},
+    {
+      "type": "capability/named_groups@v1",
+      "name": "named",
+      "parent": "$inputs.parents",
+      "groups": {"children": "$steps.expand.value", "label": "$inputs.label"}
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "summary", "selector": "$steps.named.summary"}
+  ]
+}

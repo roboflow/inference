@@ -1,0 +1,24 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "x"}],
+  "steps": [
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "left",
+      "workflow_workspace_id": "local",
+      "workflow_id": "left",
+      "parameter_bindings": {"x": "$inputs.x"}
+    },
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "right",
+      "workflow_workspace_id": "local",
+      "workflow_id": "right",
+      "parameter_bindings": {"x": "$inputs.x"}
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "left", "selector": "$steps.left.y"},
+    {"type": "JsonField", "name": "right", "selector": "$steps.right.y"}
+  ]
+}

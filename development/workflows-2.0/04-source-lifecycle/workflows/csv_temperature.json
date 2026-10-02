@@ -1,0 +1,19 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "csv_path", "kind": ["string"]}],
+  "sources": [
+    {"type": "source_demo/csv_temperature", "name": "temperature", "path": "$inputs.csv_path"}
+  ],
+  "steps": [
+    {"type": "source_demo/celsius_to_fahrenheit", "name": "convert", "celsius": "$sources.temperature.celsius"}
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "temperatures", "anchor": "$sources.temperature.celsius",
+      "outputs": [
+        {"type": "JsonField", "name": "fahrenheit", "selector": "$steps.convert.fahrenheit"},
+        {"type": "JsonField", "name": "count", "selector": "$steps.convert.count"}
+      ]
+    }
+  ]
+}

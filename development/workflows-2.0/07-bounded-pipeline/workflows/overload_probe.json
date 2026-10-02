@@ -1,0 +1,18 @@
+{
+  "version": "2.0",
+  "sources": [
+    {"type": "probe/frames@v1", "name": "camera", "count": 10, "prefix": "f"}
+  ],
+  "steps": [
+    {"type": "probe/stage@v1", "name": "slow", "value": "$sources.camera.value", "tag": "$sources.camera.tag"}
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "frames", "anchor": "$sources.camera.value",
+      "outputs": [
+        {"type": "JsonField", "name": "tag", "selector": "$sources.camera.tag"},
+        {"type": "JsonField", "name": "value", "selector": "$steps.slow.value"}
+      ]
+    }
+  ]
+}

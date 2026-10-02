@@ -1,0 +1,15 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"name": "left", "kind": ["image"], "axes": []},
+    {"name": "right", "kind": ["image"], "axes": []}
+  ],
+  "operators": [
+    {
+      "type": "v2/align@v1", "name": "rig",
+      "inputs": {"left": "$inputs.left", "right": "$inputs.right"},
+      "clock": "rig-media", "tolerance_ms": 10, "layout": "batch"
+    }
+  ],
+  "outputs": [{"type": "JsonField", "name": "samples", "selector": "$operators.rig.samples"}]
+}

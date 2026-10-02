@@ -1,0 +1,28 @@
+{
+  "version": "2.0",
+  "sources": [
+    {"type": "probe/frames@v1", "name": "a", "count": 4, "prefix": "a"},
+    {"type": "probe/frames@v1", "name": "b", "count": 2, "prefix": "b"}
+  ],
+  "steps": [
+    {"type": "probe/two_phase_model@v1", "name": "model_a", "value": "$sources.a.value", "tag": "$sources.a.tag"},
+    {"type": "probe/stage@v1", "name": "save_a", "value": "$steps.model_a.score", "tag": "$sources.a.tag"},
+    {"type": "probe/two_phase_model@v1", "name": "model_b", "value": "$sources.b.value", "tag": "$sources.b.tag"}
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "a", "anchor": "$sources.a.value",
+      "outputs": [
+        {"type": "JsonField", "name": "tag", "selector": "$sources.a.tag"},
+        {"type": "JsonField", "name": "score", "selector": "$steps.save_a.value"}
+      ]
+    },
+    {
+      "type": "OutputGroup", "name": "b", "anchor": "$sources.b.value",
+      "outputs": [
+        {"type": "JsonField", "name": "tag", "selector": "$sources.b.tag"},
+        {"type": "JsonField", "name": "score", "selector": "$steps.model_b.score"}
+      ]
+    }
+  ]
+}

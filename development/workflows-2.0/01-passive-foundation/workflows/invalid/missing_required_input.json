@@ -1,0 +1,12 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "images",
+      "kind": "image",
+      "axes": [{"id": "samples", "kind": "sample", "stationary": true}]
+    }
+  ],
+  "steps": [{"name": "crop", "type": "v2/crop", "regions": [[0, 0, 10, 10]]}],
+  "outputs": [{"type": "JsonField", "name": "out", "selector": "$steps.crop.crops"}]
+}

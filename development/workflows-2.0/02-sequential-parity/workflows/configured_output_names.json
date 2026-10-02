@@ -1,0 +1,17 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "text", "kind": ["string"]}],
+  "steps": [
+    {
+      "type": "capability/split_fields@v1",
+      "name": "split",
+      "text": "$inputs.text",
+      "names": ["2026", "class-name"]
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "year", "selector": "$steps.split.2026"},
+    {"type": "JsonField", "name": "label", "selector": "$steps.split.class-name"},
+    {"type": "JsonField", "name": "all", "selector": "$steps.split.*"}
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "values",
+      "kind": "number",
+      "axes": [{"id": "samples", "kind": "sample", "stationary": true}]
+    }
+  ],
+  "steps": [
+    {"name": "a", "type": "demo/scale", "value": "$steps.b.scaled", "factor": 1},
+    {"name": "b", "type": "demo/scale", "value": "$steps.a.scaled", "factor": 1}
+  ],
+  "outputs": [{"type": "JsonField", "name": "out", "selector": "$steps.a.scaled"}]
+}

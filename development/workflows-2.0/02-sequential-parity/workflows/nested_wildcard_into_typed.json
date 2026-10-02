@@ -1,0 +1,43 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "payload"}],
+  "steps": [
+    {"type": "fixture/echo@v1", "name": "echo", "value": "$inputs.payload"},
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "typed_child",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [
+          {
+            "type": "WorkflowParameter",
+            "name": "settings",
+            "kind": ["settings"],
+            "default_value": "gain=2"
+          }
+        ],
+        "steps": [
+          {
+            "type": "capability/read_gain@v1",
+            "name": "read_a",
+            "settings": "$inputs.settings"
+          },
+          {
+            "type": "capability/read_gain@v1",
+            "name": "read_b",
+            "settings": "$inputs.settings"
+          }
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "gain_a", "selector": "$steps.read_a.gain"},
+          {"type": "JsonField", "name": "gain_b", "selector": "$steps.read_b.gain"},
+          {"type": "JsonField", "name": "forwarded", "selector": "$inputs.settings"}
+        ]
+      },
+      "parameter_bindings": {"settings": "$steps.echo.value"}
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "gain", "selector": "$steps.typed_child.gain_a"}
+  ]
+}

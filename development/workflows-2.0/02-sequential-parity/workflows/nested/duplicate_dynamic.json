@@ -1,0 +1,64 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "x"}],
+  "steps": [
+    {"type": "Offset", "name": "shift", "value": "$inputs.x"},
+    {
+      "type": "roboflow_core/inner_workflow@v1",
+      "name": "child",
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"type": "WorkflowParameter", "name": "x"}],
+        "steps": [{"type": "Offset", "name": "shift", "value": "$inputs.x"}],
+        "outputs": [
+          {"type": "JsonField", "name": "shifted", "selector": "$steps.shift.shifted"}
+        ],
+        "dynamic_blocks_definitions": [
+          {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+              "type": "ManifestDescription",
+              "block_type": "Offset",
+              "inputs": {
+                "value": {
+                  "type": "DynamicInputDefinition",
+                  "selector_types": ["input_parameter"]
+                }
+              },
+              "outputs": {"shifted": {"type": "DynamicOutputDefinition", "kind": []}}
+            },
+            "code": {
+              "type": "PythonCode",
+              "run_function_code": "def run(self, value) -> BlockResult:\n    return {\"shifted\": value + 100}\n"
+            }
+          }
+        ]
+      },
+      "parameter_bindings": {"x": "$inputs.x"}
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "parent", "selector": "$steps.shift.shifted"},
+    {"type": "JsonField", "name": "child", "selector": "$steps.child.shifted"}
+  ],
+  "dynamic_blocks_definitions": [
+    {
+      "type": "DynamicBlockDefinition",
+      "manifest": {
+        "type": "ManifestDescription",
+        "block_type": "Offset",
+        "inputs": {
+          "value": {
+            "type": "DynamicInputDefinition",
+            "selector_types": ["input_parameter"]
+          }
+        },
+        "outputs": {"shifted": {"type": "DynamicOutputDefinition", "kind": []}}
+      },
+      "code": {
+        "type": "PythonCode",
+        "run_function_code": "def run(self, value) -> BlockResult:\n    return {\"shifted\": value + 1}\n"
+      }
+    }
+  ]
+}

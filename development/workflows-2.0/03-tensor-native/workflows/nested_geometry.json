@@ -1,0 +1,47 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowBatchInput", "name": "images", "kind": ["image"]}],
+  "steps": [
+    {
+      "type": "v2/crop", "name": "crop", "image": "$inputs.images",
+      "regions": [[30, 70, 230, 230], [500, 500, 550, 550], [150, 70, 350, 230]]
+    },
+    {
+      "type": "v2/resize", "name": "resize", "image": "$steps.crop.crops",
+      "height": 40, "width": 100, "interpolation": "nearest"
+    },
+    {
+      "type": "roboflow_core/inner_workflow@v1", "name": "child",
+      "parameter_bindings": {"images": "$steps.resize.image"},
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"type": "WorkflowBatchInput", "name": "images", "kind": ["image"]}],
+        "steps": [
+          {"type": "v2/crop", "name": "crop", "image": "$inputs.images", "regions": [[5, 3, 25, 23]]},
+          {"type": "tensor_demo/synthetic_detections", "name": "predict", "image": "$steps.crop.crops"},
+          {"type": "tensor_demo/select_confidence", "name": "select", "predictions": "$steps.predict.predictions", "minimum": 0.5},
+          {"type": "v2/continue_if", "name": "condition", "condition": "$steps.select.keep", "next_steps": ["$steps.accept"]},
+          {"type": "tensor_demo/accept", "name": "accept", "predictions": "$steps.select.predictions", "image": "$steps.crop.crops"}
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "predictions", "selector": "$steps.accept.predictions", "coordinates_system": "own"},
+          {"type": "JsonField", "name": "selected", "selector": "$steps.select.predictions", "coordinates_system": "own"},
+          {"type": "JsonField", "name": "image", "selector": "$steps.accept.image"},
+          {"type": "JsonField", "name": "keep", "selector": "$steps.select.keep"}
+        ]
+      }
+    },
+    {"type": "v2/mosaic", "name": "mosaic", "images": "$steps.crop.crops", "tile_size": 64, "background": 9}
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "crops", "selector": "$steps.crop.crops"},
+    {"type": "JsonField", "name": "resized", "selector": "$steps.resize.image"},
+    {"type": "JsonField", "name": "selected", "selector": "$steps.child.selected", "coordinates_system": "own"},
+    {"type": "JsonField", "name": "own", "selector": "$steps.child.predictions", "coordinates_system": "own"},
+    {"type": "JsonField", "name": "root", "selector": "$steps.child.predictions", "coordinates_system": "root"},
+    {"type": "JsonField", "name": "accepted_image", "selector": "$steps.child.image"},
+    {"type": "JsonField", "name": "keep", "selector": "$steps.child.keep"},
+    {"type": "JsonField", "name": "mosaic", "selector": "$steps.mosaic.image"},
+    {"type": "JsonField", "name": "count", "selector": "$steps.mosaic.count"}
+  ]
+}

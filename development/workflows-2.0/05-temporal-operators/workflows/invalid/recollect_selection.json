@@ -1,0 +1,25 @@
+{
+  "version": "2.0",
+  "sources": [
+    {"type": "temporal_demo/tensor_camera", "name": "left", "schedule": "left"},
+    {"type": "temporal_demo/tensor_camera", "name": "right", "schedule": "right"}
+  ],
+  "operators": [
+    {
+      "type": "v2/align@v1", "name": "rig",
+      "inputs": {"left": "$sources.left.image", "right": "$sources.right.image"},
+      "clock": "rig-media", "tolerance_ms": 10, "layout": "batch"
+    },
+    {"type": "v2/window@v1", "name": "clip", "collect": {"frames": "$operators.rig.samples"}, "size": 4},
+    {"type": "v2/window@v1", "name": "recollect", "collect": {"brightest": "$steps.brightest.images"}, "size": 2}
+  ],
+  "steps": [
+    {"type": "v2/top_k_brightest", "name": "brightest", "images": "$operators.clip.frames", "k": 1}
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "results", "anchor": "$operators.recollect.brightest",
+      "outputs": [{"type": "JsonField", "name": "brightest", "selector": "$operators.recollect.brightest"}]
+    }
+  ]
+}

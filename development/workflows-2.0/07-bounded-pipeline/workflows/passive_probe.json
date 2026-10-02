@@ -1,0 +1,15 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {"type": "WorkflowParameter", "name": "value", "kind": ["float"]},
+    {"type": "WorkflowParameter", "name": "tag", "kind": ["string"]}
+  ],
+  "steps": [
+    {"type": "probe/stage@v1", "name": "load", "value": "$inputs.value", "tag": "$inputs.tag"},
+    {"type": "probe/two_phase_model@v1", "name": "model", "value": "$steps.load.value", "tag": "$inputs.tag"},
+    {"type": "probe/stage@v1", "name": "save", "value": "$steps.model.score", "tag": "$inputs.tag"}
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "score", "selector": "$steps.save.value"}
+  ]
+}

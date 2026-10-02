@@ -1,0 +1,17 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowBatchInput", "name": "parents", "kind": ["float"]}],
+  "steps": [
+    {"type": "fixture/ragged_expand@v1", "name": "expand", "value": "$inputs.parents"},
+    {
+      "type": "capability/total_and_shift@v1",
+      "name": "combine",
+      "parent": "$inputs.parents",
+      "children": "$steps.expand.value"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "total", "selector": "$steps.combine.total"},
+    {"type": "JsonField", "name": "shifted", "selector": "$steps.combine.shifted"}
+  ]
+}

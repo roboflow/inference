@@ -1,0 +1,26 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "x"}],
+  "steps": [
+    {"type": "plugin/ledger@v1", "name": "ledger_a", "value": "$inputs.x"},
+    {"type": "plugin/ledger@v1", "name": "ledger_b", "value": "$inputs.x"},
+    {
+      "type": "plugin/locate@v1",
+      "name": "locate",
+      "x": "$inputs.x",
+      "y": 2,
+      "origin": [100, 200]
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "size_a", "selector": "$steps.ledger_a.size"},
+    {"type": "JsonField", "name": "size_b", "selector": "$steps.ledger_b.size"},
+    {"type": "JsonField", "name": "own", "selector": "$steps.locate.point"},
+    {
+      "type": "JsonField",
+      "name": "parent",
+      "selector": "$steps.locate.point",
+      "coordinates_system": "parent"
+    }
+  ]
+}

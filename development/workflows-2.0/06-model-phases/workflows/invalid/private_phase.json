@@ -1,0 +1,10 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "image", "kind": ["image"]}],
+  "steps": [
+    {"type": "model_demo/flip_averaged_classifier@v1", "name": "classify", "image": "$inputs.image"}
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "probabilities", "selector": "$steps.classify.probabilities"}
+  ]
+}
