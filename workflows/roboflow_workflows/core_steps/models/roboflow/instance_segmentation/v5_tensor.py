@@ -1,4 +1,4 @@
-"""Tensor-native sibling of `roboflow_core/roboflow_instance_segmentation_model@v3`.
+"""Tensor-native sibling of `roboflow_core/roboflow_instance_segmentation_model@v5`.
 
 Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits a native
 ``inference_models.InstanceDetections`` (torch tensors on
@@ -9,9 +9,7 @@ Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits a native
 
 - LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns
   ``List[InstanceDetections]`` straight from the adapter. The mask carrier (dense
-  ``torch.Tensor`` vs ``InstancesRLEMasks``) is adapter-decided: the v3 manifest
-  exposes ``enforce_dense_masks_in_inference_models`` and the adapter consumes it
-  to choose dense vs RLE, so both carriers are possible and both are handled
+  ``torch.Tensor`` vs ``InstancesRLEMasks``) is adapter-decided; both are handled
   downstream by the helpers and the tensor serialiser. The block applies
   ``class_filter`` natively (the adapter/model does NOT read it on this path) and
   attaches the producer contract (``image_metadata[class_names]`` + per-box
@@ -29,7 +27,7 @@ This block creates ONLY this file; it reuses the already-registered tensor
 serialiser for ``instance_segmentation_prediction`` /
 ``rle_instance_segmentation_prediction`` (``serialise_sv_detections`` already
 handles ``InstanceDetections``, dense or RLE). The numpy sibling lives in
-``.../instance_segmentation/v3.py``; this manifest is identical except the output
+``.../instance_segmentation/v4.py``; this manifest is identical except the output
 kinds.
 """
 
@@ -127,6 +125,10 @@ on [Roboflow Universe](https://universe.roboflow.com).
 You will need to set your Roboflow API key in your Inference environment to use this
 block. To learn more about setting your Roboflow API key, [refer to the Inference
 documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+This version of block introduces breaking change in behaviour of mask construction - it uses
+`rle` format instead `polygon` making it possible to retrieve
+shapes of any kind from remote server.
 """
 
 
@@ -134,7 +136,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Instance Segmentation Model",
-            "version": "v3",
+            "version": "v5",
             "short_description": "Predict the shape, size, and location of objects.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -150,7 +152,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/roboflow_instance_segmentation_model@v3"]
+    type: Literal["roboflow_core/roboflow_instance_segmentation_model@v5"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     confidence_mode: Union[
@@ -233,7 +235,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.0,
-        description="Post-processing parameter to dictate tradeoff between fast and accurate.",
+        description="Post-processing parameter to dictate tradeoff between fast and accurate. 0.0 keeps masks on the model's own grid, 1.0 resizes them to the image. Note that a lower value does not guarantee smaller masks: when the image is smaller than the model grid the interpolation runs the other way.",
         examples=[0.3, "$inputs.tradeoff_factor"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
@@ -247,15 +249,6 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Target dataset for active learning, if enabled.",
         examples=["my_project", "$inputs.al_target_project"],
-    )
-    enforce_dense_masks_in_inference_models: Union[
-        bool, Selector(kind=[BOOLEAN_KIND])
-    ] = Field(
-        default=True,
-        description="Boolean flag to enforce dense masks when inference models backend is in use "
-        "(irrelevant in other cases). Dense masks are faster to process, but require more memory. "
-        "Users can't tweak this flag when running on Roboflow serverless platform.",
-        examples=[True, "$inputs.enforce_dense_masks_in_inference_models"],
     )
 
     @model_validator(mode="after")
@@ -317,7 +310,7 @@ class BlockManifest(WorkflowBlockManifest):
         )
 
 
-class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
+class RoboflowInstanceSegmentationModelBlockV5(WorkflowBlock):
 
     def __init__(
         self,
@@ -352,7 +345,6 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-        enforce_dense_masks_in_inference_models: bool,
     ) -> BlockResult:
         confidence = (
             custom_confidence if confidence_mode == "custom" else confidence_mode
@@ -371,7 +363,6 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
                 tradeoff_factor=tradeoff_factor,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
-                enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(
@@ -407,7 +398,6 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-        enforce_dense_masks_in_inference_models: bool,
     ) -> BlockResult:
         # Feed the representation already materialised on the images to avoid forcing a
         # numpy->device conversion: GPU tensors (RGB) only when every image in the batch
@@ -424,23 +414,24 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
                 model_id=model_id,
                 images=model_inputs,
                 input_color_format=image_color_format,
+                enforce_dense_masks_in_inference_models=WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS,
                 confidence=confidence,
                 iou_threshold=iou_threshold,
                 class_agnostic_nms=class_agnostic_nms,
                 class_filter=class_filter,
                 max_detections=max_detections,
                 max_candidates=max_candidates,
-                # Pinned: these fields never took effect in this version via the
-                # inference_models backend, so honouring them now would change
-                # existing workflows. @v5 forwards.
+                # Tensor-native mode does not support reduced mask resolution yet.
+                # Nothing under workflows/ reads InstanceDetections.mask_size, and the
+                # ~35 sites that rebuild InstancesRLEMasks drop it, so a reduced grid
+                # would be reinterpreted as image-sized downstream. Upsampling at this
+                # boundary would restore correctness but produce output identical to
+                # factor 1.0 at strictly higher cost, so the request is pinned instead.
+                # Lift this once mask_size is propagated through the tensor pipeline.
                 mask_decode_mode="accurate",
                 tradeoff_factor=1.0,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
-                enforce_dense_masks_in_inference_models=(
-                    enforce_dense_masks_in_inference_models
-                    or WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS
-                ),
             )
         )
         class_names = _class_names_map(self._model_manager.get_class_names(model_id))
@@ -450,7 +441,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             # filter here (the only place it is applied for LOCAL execution).
             detections = _filter_classes_native(detections, class_filter, class_names)
             # Reuse the adapter-provided inference id when present (numpy parity:
-            # numpy v3 surfaces ``p.get(INFERENCE_ID_KEY)`` off the model dump);
+            # numpy v4 surfaces ``p.get(INFERENCE_ID_KEY)`` off the model dump);
             # the tensor-native adapter normally attaches none, so fall back to a
             # freshly minted uuid that is then shared with ``image_metadata``.
             inference_id = getattr(detections, "inference_id", None) or str(
@@ -508,10 +499,13 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned unconditionally: the reason here is downstream, not the
-            # backend. Nothing under roboflow_workflows/ reads mask_size and
-            # the sites rebuilding InstancesRLEMasks drop it, so a reduced grid
-            # is reinterpreted as image-sized whichever backend produced it.
+            # Tensor-native mode does not support reduced mask resolution yet.
+            # Nothing under workflows/ reads InstanceDetections.mask_size, and the
+            # ~35 sites that rebuild InstancesRLEMasks drop it, so a reduced grid
+            # would be reinterpreted as image-sized downstream. Upsampling at this
+            # boundary would restore correctness but produce output identical to
+            # factor 1.0 at strictly higher cost, so the request is pinned instead.
+            # Lift this once mask_size is propagated through the tensor pipeline.
             mask_decode_mode="accurate",
             tradeoff_factor=1.0,
             response_mask_format="rle",

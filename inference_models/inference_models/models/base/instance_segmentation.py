@@ -14,6 +14,7 @@ from typing import (
     runtime_checkable,
 )
 
+import cv2
 import numpy as np
 import supervision as sv
 import torch
@@ -144,6 +145,34 @@ class InstanceDetections:
     bboxes_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of bboxes
     )
+    # (h, w) of the grid `mask` lives on. Resolved from the carrier when not
+    # given, which reproduces the behaviour from before it was adjustable.
+    mask_size: Optional[Tuple[int, int]] = None
+
+    def __post_init__(self) -> None:
+        if self.mask_size is not None:
+            return
+        if isinstance(self.mask, InstancesRLEMasks):
+            self.mask_size = self.mask.mask_size
+        elif self.mask is not None and hasattr(self.mask, "shape"):
+            self.mask_size = (int(self.mask.shape[1]), int(self.mask.shape[2]))
+
+    def _image_size(self) -> Tuple[int, int]:
+        """Resolve the image grid these detections describe.
+
+        An RLE carrier records the image size alongside the encoded grid. A
+        dense carrier does not, so its own shape is the best available answer
+        and is correct whenever no resolution factor was applied.
+
+        Returns:
+            Image ``(height, width)``.
+        """
+        if isinstance(self.mask, InstancesRLEMasks):
+            return tuple(self.mask.image_size)
+        if self.mask is not None and hasattr(self.mask, "shape"):
+            return int(self.mask.shape[1]), int(self.mask.shape[2])
+
+        return tuple(self.mask_size) if self.mask_size else (0, 0)
 
     def __len__(self) -> int:
         return int(self.xyxy.shape[0])
@@ -171,7 +200,9 @@ class InstanceDetections:
                 selected_mask = None
             elif isinstance(self.mask, InstancesRLEMasks):
                 selected_mask = {
-                    "size": list(self.mask.image_size),
+                    # the counts describe the encoded grid, which is not the
+                    # image grid once a resolution factor below 1.0 is used
+                    "size": list(self.mask.mask_size or self.mask.image_size),
                     "counts": self.mask.masks[index],
                 }
             else:
@@ -235,6 +266,26 @@ class InstanceDetections:
             mask = self.mask.cpu().numpy()
         else:
             mask = coco_rle_masks_to_numpy_mask(self.mask)
+        # sv.Detections documents mask as (n, H, W) matching the image, and its
+        # annotators index the scene with it. A reduced grid would raise or
+        # paint the wrong region, so restore the image grid on the way out.
+        if mask is not None and self.mask_size is not None:
+            image_height, image_width = self._image_size()
+            if tuple(self.mask_size) != (image_height, image_width):
+                mask = (
+                    np.stack(
+                        [
+                            cv2.resize(
+                                single.astype(np.uint8),
+                                (image_width, image_height),
+                                interpolation=cv2.INTER_NEAREST,
+                            ).astype(bool)
+                            for single in mask
+                        ]
+                    )
+                    if len(mask)
+                    else np.zeros((0, image_height, image_width), dtype=bool)
+                )
         return sv.Detections(
             xyxy=self.xyxy.cpu().numpy(),
             class_id=self.class_id.cpu().numpy(),

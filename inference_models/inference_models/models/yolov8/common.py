@@ -18,6 +18,7 @@ def prepare_dense_masks(
     pre_processing_meta: List[PreProcessingMetadata],
     masks_smoothing_enabled: bool,
     masks_binarization_threshold: float,
+    masks_resolution_factor: float = 1.0,
 ) -> List[InstanceDetections]:
     final_results = []
     for image_bboxes, image_protos, image_meta in zip(
@@ -47,6 +48,7 @@ def prepare_dense_masks(
             inference_size=image_meta.inference_size,
             static_crop_offset=image_meta.static_crop_offset,
             binarization_threshold=masks_binarization_threshold,
+            masks_resolution_factor=masks_resolution_factor,
         )
         final_results.append(
             InstanceDetections(
@@ -65,6 +67,7 @@ def prepare_rle_masks(
     pre_processing_meta: List[PreProcessingMetadata],
     masks_smoothing_enabled: bool,
     masks_binarization_threshold: float,
+    masks_resolution_factor: float = 1.0,
 ) -> List[InstanceDetections]:
     final_results = []
     for image_bboxes, image_protos, image_meta in zip(
@@ -95,6 +98,7 @@ def prepare_rle_masks(
             inference_size=image_meta.inference_size,
             static_crop_offset=image_meta.static_crop_offset,
             binarization_threshold=masks_binarization_threshold,
+            masks_resolution_factor=masks_resolution_factor,
         ):
             aligned_boxes.append(bbox)
             rle_masks.append(mask)
@@ -104,6 +108,7 @@ def prepare_rle_masks(
                 image_meta.original_size.width,
             ),
             masks=rle_masks,
+            mask_size=tuple(rle_masks[0]["size"]) if rle_masks else None,
         )
         if len(aligned_boxes) > 0:
             aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
