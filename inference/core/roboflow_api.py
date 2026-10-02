@@ -185,8 +185,12 @@ NOT_FOUND_ERROR_MESSAGE = (
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
 API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
-_API_PROXY_RATE_LIMIT_MAX_RETRIES = 4
-_API_PROXY_RATE_LIMIT_MAX_SECONDS = 60.0
+_API_PROXY_MAX_RETRIES = 4
+_API_PROXY_RETRY_WINDOW_SECONDS = 60.0
+# Model generation can be retried without replaying workflow side effects.
+# Other proxies include email and Twilio, where a 5xx may follow delivery.
+_MODEL_PROXY_ENDPOINTS = frozenset({"openai", "openai/v2", "gemini"})
+_MODEL_PROXY_RETRYABLE_STATUS_CODES = frozenset({500, 502, 503, 504})
 
 
 @dataclass(frozen=True)
@@ -2134,9 +2138,11 @@ def post_to_roboflow_api(
         The decoded JSON response.
 
     Notes:
-        API proxy 429 responses receive at most four retries within a 60-second
-        retry window. Retry-After is honored; cooldowns beyond the remaining
-        window fail immediately. Other POST failures are not replayed.
+        API proxy 429 and selected model-proxy 5xx responses receive at most
+        four retries within a 60-second retry window. Retry-After is honored;
+        cooldowns beyond the remaining window fail immediately. Other POST failures are not replayed.
+        A provider may have processed a generation before returning a 5xx;
+        retrying can incur another provider charge.
     """
 
     if OFFLINE_MODE:
@@ -2165,8 +2171,13 @@ def post_to_roboflow_api(
             endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
             for prefix in API_PROXY_ENDPOINT_PREFIXES
         )
-        retry_deadline = time.monotonic() + _API_PROXY_RATE_LIMIT_MAX_SECONDS
-        for attempt in range(_API_PROXY_RATE_LIMIT_MAX_RETRIES + 1):
+        is_model_proxy = any(
+            endpoint_path == f"{prefix}/{model_endpoint}"
+            for prefix in API_PROXY_ENDPOINT_PREFIXES
+            for model_endpoint in _MODEL_PROXY_ENDPOINTS
+        )
+        retry_deadline = time.monotonic() + _API_PROXY_RETRY_WINDOW_SECONDS
+        for attempt in range(_API_PROXY_MAX_RETRIES + 1):
             response = requests.post(
                 url=wrapped_url,
                 json=payload,
@@ -2176,8 +2187,14 @@ def post_to_roboflow_api(
             )
             if (
                 not is_api_proxy
-                or response.status_code != 429
-                or attempt == _API_PROXY_RATE_LIMIT_MAX_RETRIES
+                or not (
+                    response.status_code == 429
+                    or (
+                        is_model_proxy
+                        and response.status_code in _MODEL_PROXY_RETRYABLE_STATUS_CODES
+                    )
+                )
+                or attempt == _API_PROXY_MAX_RETRIES
             ):
                 break
 
