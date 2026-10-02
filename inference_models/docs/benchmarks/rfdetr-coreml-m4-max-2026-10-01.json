@@ -1,0 +1,2787 @@
+{
+  "performance": {
+    "environment": {
+      "inference_pr": "https://github.com/roboflow/inference/pull/3100",
+      "inference_commit": "ee762b8072d35a4cfa62f17c222f11a0bb7ff446",
+      "profiler_base_commit": "4328b4305f473b2b2cfbfdeab53b2b0299c3ec5e",
+      "hardware": {
+        "chip": "Apple M4 Max",
+        "memory_bytes": 68719476736,
+        "macos": "27.0.1",
+        "architecture": "arm64"
+      },
+      "python": "3.12.12",
+      "packages": {
+        "torch": "2.8.0",
+        "torchvision": "0.23.0",
+        "numpy": "1.26.4",
+        "scipy": "1.17.1",
+        "coremltools": "9.0",
+        "Pillow": "12.3.0",
+        "psutil": "7.0.0",
+        "pydantic": "2.11.7"
+      },
+      "protocol": {
+        "batch_size": 1,
+        "warmup_per_worker": 30,
+        "inference_samples_per_worker": 200,
+        "fresh_workers_per_configuration": 20,
+        "inference_samples_per_configuration": 4000,
+        "memory_workers_per_configuration": 3,
+        "input_size": [
+          480,
+          640,
+          3
+        ],
+        "input_color_format": "rgb",
+        "confidence": 0.4,
+        "iou_threshold": 0.5,
+        "max_detections": 300,
+        "cache_policy": "Separate priming run; no cache clearing or reboot; load measured after imports",
+        "sequence": "4 rounds of 5 fresh workers per configuration; rotated/reversed configuration order"
+      },
+      "dataset": {
+        "name": "COCO val2017",
+        "source": "http://images.cocodataset.org/zips/val2017.zip",
+        "selection": "First 200 image filenames in lexicographic order from all 5000 images; repeated identically across configurations",
+        "images": [
+          {
+            "name": "000000000139.jpg",
+            "sha256": "ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d"
+          },
+          {
+            "name": "000000000285.jpg",
+            "sha256": "f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d"
+          },
+          {
+            "name": "000000000632.jpg",
+            "sha256": "a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550"
+          },
+          {
+            "name": "000000000724.jpg",
+            "sha256": "5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd"
+          },
+          {
+            "name": "000000000776.jpg",
+            "sha256": "1dd31e9059c491992be2f562624eb4093e17aee08b4f7baf5ff9ea24543b0a33"
+          },
+          {
+            "name": "000000000785.jpg",
+            "sha256": "83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726"
+          },
+          {
+            "name": "000000000802.jpg",
+            "sha256": "d5b79e7fa716f85ca86f46e5f518da9b6c5e26414925624d76e6476861aec495"
+          },
+          {
+            "name": "000000000872.jpg",
+            "sha256": "c2aa138ee3a59b057a7ba6fc5a6a18e62af531aa7dab78a7bfd33c1cd7e55eb6"
+          },
+          {
+            "name": "000000000885.jpg",
+            "sha256": "1c67b783f78b18ddb5dd20aaba4d4aacaf98e5277051688a96da096afa9cdf1f"
+          },
+          {
+            "name": "000000001000.jpg",
+            "sha256": "24bb77a31928404e45a0454b06f6a0bd54a8db103590c9d7917288a1e0269f05"
+          },
+          {
+            "name": "000000001268.jpg",
+            "sha256": "8e85a2e71ee512fe748a3a3be9bb40b8591e8c501c0f3896efcb5be5999ec236"
+          },
+          {
+            "name": "000000001296.jpg",
+            "sha256": "34a98da7c11bc8811e6eec445145bb16f3d5f4338945ba116edcc1fe554d181b"
+          },
+          {
+            "name": "000000001353.jpg",
+            "sha256": "1cccef217a1e5eec2acc74d7c08a105da3ef6fdb8514e221cdea9b0b373b60ea"
+          },
+          {
+            "name": "000000001425.jpg",
+            "sha256": "71a37c25cdf944cf0a88b66d00a66cf899a88bd55c7ac80fcf1c76329d617e6c"
+          },
+          {
+            "name": "000000001490.jpg",
+            "sha256": "a044804a0b0186a1267acae34975932f14ede96c4a2b78fcee74e6c2fbd8414d"
+          },
+          {
+            "name": "000000001503.jpg",
+            "sha256": "06c721f0a62bcb9fcb2d2d0cc0b9edd63092084a8773a18c4b5a7bd6fb4f095d"
+          },
+          {
+            "name": "000000001532.jpg",
+            "sha256": "974f2af6d81f65627a680ea9f42bdee1067a0ddcdb9f8e7a945bacd21d4dc2ce"
+          },
+          {
+            "name": "000000001584.jpg",
+            "sha256": "77131e2f74aa7e374f951a69157cf7f51e00201f81bacfa8a9ab7309b245553f"
+          },
+          {
+            "name": "000000001675.jpg",
+            "sha256": "6ba641627c08ef424b7dc3e6cee069aa0dd49615a31c54ae0de1ecd1fabd9dea"
+          },
+          {
+            "name": "000000001761.jpg",
+            "sha256": "c06b1845c54bb886a8fb9f8a6e908b29ceb661ffda1ca8df9a27f123806de648"
+          },
+          {
+            "name": "000000001818.jpg",
+            "sha256": "e638b349929d13bb27e148f4303a576e0a964ef81c0907d36748e0adb822a8e6"
+          },
+          {
+            "name": "000000001993.jpg",
+            "sha256": "039f3bfb862023bde7f835a36c32d8f59a3e66488863c2a47b7b746e78c44186"
+          },
+          {
+            "name": "000000002006.jpg",
+            "sha256": "eda4af13818b566f8fa4f479e76286ad90cd5da2e8dfd530be0ab3637e1482ed"
+          },
+          {
+            "name": "000000002149.jpg",
+            "sha256": "3ef0da375244c3fdbb45bcfe5689e8e46fb616c00250f9dce6aa34d301801ac5"
+          },
+          {
+            "name": "000000002153.jpg",
+            "sha256": "8795ff243cf20405bd442631d5d1cb7e60665dd459c8d57f5764333808dd49fd"
+          },
+          {
+            "name": "000000002157.jpg",
+            "sha256": "1a038609e5ceb0719105b1438d257c3d588e45384cb7ffe77b137e4d7e3ed477"
+          },
+          {
+            "name": "000000002261.jpg",
+            "sha256": "1a0ad595a5675bdc7a5e95c04def56109c00d61168fd826158322fd538d70279"
+          },
+          {
+            "name": "000000002299.jpg",
+            "sha256": "d53d17dd8ecded4ae25555a0b8e193445846c7db7a6199c3ea35b09b3021f99e"
+          },
+          {
+            "name": "000000002431.jpg",
+            "sha256": "fa0ce7b066c2fe7bd0892aa2c6361943148db9766de60241e69d8026a18e05ad"
+          },
+          {
+            "name": "000000002473.jpg",
+            "sha256": "2f1bfa7634a64f7999ba5488ec904ad1f85bbc63d0fe4b9fe35f52abbf8c5f4f"
+          },
+          {
+            "name": "000000002532.jpg",
+            "sha256": "fc017f5308d348bdb6011f2312b10853ccd780a4a7369f48774ef67f499f2e77"
+          },
+          {
+            "name": "000000002587.jpg",
+            "sha256": "bc37072a4f32bc99d6b02a684dd9bc69bd63567382315e5f497c9bb4a44c7208"
+          },
+          {
+            "name": "000000002592.jpg",
+            "sha256": "ffa3d472d44184b1f48878f7b097189723e57a24f36c44c29e4bc561110fbf41"
+          },
+          {
+            "name": "000000002685.jpg",
+            "sha256": "2430b9bffb5ff52dfbaf7b922ac8018547e233a5996a6b017bd1a206a46c5bdb"
+          },
+          {
+            "name": "000000002923.jpg",
+            "sha256": "46d2a5feb3f953b59316daee47b45332f07ebde1f88eb361f29b35c1fbbb62e0"
+          },
+          {
+            "name": "000000003156.jpg",
+            "sha256": "3c929365d99581f03b70a810819df4781ac024d88dec7e592229cbea7489a779"
+          },
+          {
+            "name": "000000003255.jpg",
+            "sha256": "c075f51a798e65d23e1c65a3fcc7736aeae4e03fbdd126f6d6b82cb07957d28b"
+          },
+          {
+            "name": "000000003501.jpg",
+            "sha256": "9615e4dc9099e860748ce3f839ed077fa6a1fa39a10b909c00600bf4e2b3f392"
+          },
+          {
+            "name": "000000003553.jpg",
+            "sha256": "4286197d2b6fc18809a37a4ef3035109509fcf52782fb83894835faaa5743bea"
+          },
+          {
+            "name": "000000003661.jpg",
+            "sha256": "8746b068c166782f4b4fb7e6be9d16e5311e9c15bc867e21409b7f5d2eddefb4"
+          },
+          {
+            "name": "000000003845.jpg",
+            "sha256": "d5c4394c712e5c24586f2531e2adf25d14e398993cc12af561ca760f20881df0"
+          },
+          {
+            "name": "000000003934.jpg",
+            "sha256": "c7b1180c75a332e8768a4ca76b1fe8b3e3e073e2b925d94f43fa5439535d5dcf"
+          },
+          {
+            "name": "000000004134.jpg",
+            "sha256": "2c922f6ec30f9c4eca2b373c8808f63979c26f4d89242754b3576bf78db1108b"
+          },
+          {
+            "name": "000000004395.jpg",
+            "sha256": "14ffbd7ab7a01e0dd7fc9676a688bd2c916766e2edb6e1d12ac9ae0ed07b122a"
+          },
+          {
+            "name": "000000004495.jpg",
+            "sha256": "cf670ca35fb16e59ecce82eecf9bf1f60d2ee333be81b61c4ea390be2c7e7b2b"
+          },
+          {
+            "name": "000000004765.jpg",
+            "sha256": "90fab997d1351b1c2ae1a437689245f962dbfa58e577911c9c83991490aadc5e"
+          },
+          {
+            "name": "000000004795.jpg",
+            "sha256": "6f8994bac6aef0602d4aa4397ecd4b7d579f5b18f66058a2df021352dd22bdc6"
+          },
+          {
+            "name": "000000005001.jpg",
+            "sha256": "99600c56dc25c72dc1cc1d1f2b09aa33b97142560b54d034fa83a38fcf3c5b0f"
+          },
+          {
+            "name": "000000005037.jpg",
+            "sha256": "b47318f2a6f652027f6435c462fae0567d925f67ab3279d08d5da2f322322dda"
+          },
+          {
+            "name": "000000005060.jpg",
+            "sha256": "5d3d8315695f7c718b649c06afe32c792bcce9d4a97f544fc1ba19bc592d8cd3"
+          },
+          {
+            "name": "000000005193.jpg",
+            "sha256": "2f0360e89d71b146cbfaee05e934303864fa61d9bf1a1f5cc0c2e508b8191b8d"
+          },
+          {
+            "name": "000000005477.jpg",
+            "sha256": "3b3ed6a27e07126c2175d168405a9bffe60b0f03555d0ac4b33ec0788bd745f2"
+          },
+          {
+            "name": "000000005503.jpg",
+            "sha256": "ff95bf5ddb4bdbd7f4f0f96d963cd941a0a2b38cfcf7832f25113e8441a443c6"
+          },
+          {
+            "name": "000000005529.jpg",
+            "sha256": "e06b55bf935e76ac31cd8b8a56a3978e2f552d7c967ff8a0b8d0ae3b3445db0e"
+          },
+          {
+            "name": "000000005586.jpg",
+            "sha256": "d7c4ce5acc9c578c41ff04aa60e610423e304e66b77fff92df501c207460b349"
+          },
+          {
+            "name": "000000005600.jpg",
+            "sha256": "37e5625d5de54eb524ad2425d855e1d9d54fcb29c3475dacffc86ab48bcaec39"
+          },
+          {
+            "name": "000000005992.jpg",
+            "sha256": "c33842fbbd9626843b93ede50dd4908221cb0c9bf9837f58861354eec2a4ec56"
+          },
+          {
+            "name": "000000006012.jpg",
+            "sha256": "7cd0d627b15c09f373aa613d013fb2d8ae6bd20bcce0d98aa31b963e6bcca495"
+          },
+          {
+            "name": "000000006040.jpg",
+            "sha256": "ac74264bbc3356e0cb87cdc2edac2e2f7e519ae2c16b0a4e2b943a695163ebf6"
+          },
+          {
+            "name": "000000006213.jpg",
+            "sha256": "0f8ce814489c07920e1f3c3a08842ff832f66340a4487d49de2feb31a45b8132"
+          },
+          {
+            "name": "000000006460.jpg",
+            "sha256": "2526fc01ddf5bef5c5e6e1f665d63b6bc95d8ec14eab286dc080e95f9a3642cd"
+          },
+          {
+            "name": "000000006471.jpg",
+            "sha256": "67fe4f0a7b71ecee846273d654bb8387c180229dc6c4a3060152aed0a776762f"
+          },
+          {
+            "name": "000000006614.jpg",
+            "sha256": "5c4214d0503ea4ad699298cdca84ab631496d58d0ccdc4f6bafba9553fe067c6"
+          },
+          {
+            "name": "000000006723.jpg",
+            "sha256": "1d3ba71e9002721a2bc18791f3c86578d6de38fb61640803657276d53e73663f"
+          },
+          {
+            "name": "000000006763.jpg",
+            "sha256": "e3d8430df8ae6fd8021ca48ce988bcb8a1ae648be8bd3b73b1f0cc9c37f82484"
+          },
+          {
+            "name": "000000006771.jpg",
+            "sha256": "b2cc81a8ab0c23da44dda4b6526515c68dbcb1abf939a371f750ffe22db15f95"
+          },
+          {
+            "name": "000000006818.jpg",
+            "sha256": "99479f61ef2931ea70e161db0859e8706c6e48f13e8cb0798959f52433b01b98"
+          },
+          {
+            "name": "000000006894.jpg",
+            "sha256": "8e2059e2f11b0c3051d105255221dd1474ab9a80907de64f0908ae8234e97c8a"
+          },
+          {
+            "name": "000000006954.jpg",
+            "sha256": "59471a9bed5c28ac2f3ad56af1799340d6acb90f7c87d1f60360d1a9466e89ea"
+          },
+          {
+            "name": "000000007088.jpg",
+            "sha256": "323e51d944faa233acfa36f23598bad7f8bae8107d089949ae792267bac03770"
+          },
+          {
+            "name": "000000007108.jpg",
+            "sha256": "fe22617b02d85f3d180db14af3c300e95d259ae81035452a03f57b79e056fb78"
+          },
+          {
+            "name": "000000007278.jpg",
+            "sha256": "b088f1fc8e86da21084e8c98b7dc9406c0da61d74e740925af6a7adeda3c3f34"
+          },
+          {
+            "name": "000000007281.jpg",
+            "sha256": "57f3508e600d3370320487dde8665f208f11612a11caac0801c7f5fc19188ac3"
+          },
+          {
+            "name": "000000007386.jpg",
+            "sha256": "1bb19f0a2a950a944d178c921fddaddda6f133df6367e9f75ffcaafe2cd43f83"
+          },
+          {
+            "name": "000000007511.jpg",
+            "sha256": "105e70c573b87d7e3f034e1dc08cedcced39be4e52197139f52616c920dda3d7"
+          },
+          {
+            "name": "000000007574.jpg",
+            "sha256": "4f26c847c2f49574978e96733efaec720dd1d1ba95a8220d0de012b7317eed47"
+          },
+          {
+            "name": "000000007784.jpg",
+            "sha256": "2b472f58ae604977c3c288320aed7fa8823043758e1b40b9cede91921d7154eb"
+          },
+          {
+            "name": "000000007795.jpg",
+            "sha256": "adba86ef9a0dd1557c6cd23a4833d2cec71881a3979ceff831136c367e5f2507"
+          },
+          {
+            "name": "000000007816.jpg",
+            "sha256": "00132e042709fc7a66797374a42ff72d493a945d01afe2a48e5a526116a2aabe"
+          },
+          {
+            "name": "000000007818.jpg",
+            "sha256": "1bb3ef4577a7c11c55545532c7ec81fe1336105e5f1b9f38e47129eae9365187"
+          },
+          {
+            "name": "000000007888.jpg",
+            "sha256": "7c735e89b3699afc510053412ddea8e0370a1a5a2c9096713a5b255567747442"
+          },
+          {
+            "name": "000000007977.jpg",
+            "sha256": "0acb919d23df8f5126d63556668272ed26d53fa97fbad958958c2bbe8164d690"
+          },
+          {
+            "name": "000000007991.jpg",
+            "sha256": "63c6fae2e3defd4bc1c6f346806aef03eb11ccbd7c6bda3e479d1fbafd486db1"
+          },
+          {
+            "name": "000000008021.jpg",
+            "sha256": "235537407867a7b894e78b3aecb55b33b14b64cbb23ca376a00d34c62a1a63a6"
+          },
+          {
+            "name": "000000008211.jpg",
+            "sha256": "8a52b7177994a207b4f463d591c3c0f1ffd00b42dcdf17cc8f8984bfae17d110"
+          },
+          {
+            "name": "000000008277.jpg",
+            "sha256": "692fc5469af5fffdc0dac05e709a0ac1380dca32d4c57436903b122f3c3558dc"
+          },
+          {
+            "name": "000000008532.jpg",
+            "sha256": "237e72d5ffb557b5052b918c01a4fb15e6bb7dd2151bba9c0538de0024c941f9"
+          },
+          {
+            "name": "000000008629.jpg",
+            "sha256": "cb4972816eb01ebee8f3bde47a4993972951671e990dca797ad0fa9e0f385c11"
+          },
+          {
+            "name": "000000008690.jpg",
+            "sha256": "feca143d5e249b9fcaca7090c2400125ee19c7ad883c11fffe55e8bb451e7429"
+          },
+          {
+            "name": "000000008762.jpg",
+            "sha256": "8b8aa2412ac3502dbb4b8a7d7987359d4049cf70e7177748e907e3ddfa3211ce"
+          },
+          {
+            "name": "000000008844.jpg",
+            "sha256": "bd8133fe5862ea2b0b308db3c1d96b23012f2f667d43cb524d35ac1b710670a4"
+          },
+          {
+            "name": "000000008899.jpg",
+            "sha256": "5643dd54684df9750a16660fcb033e3acda2eff9c809cb69acb428b1184cadd1"
+          },
+          {
+            "name": "000000009378.jpg",
+            "sha256": "39ac6327aa1b887ff2ae06588576f497d642bbbf3682eb1eada4574087fcc1e5"
+          },
+          {
+            "name": "000000009400.jpg",
+            "sha256": "1a613f9b09db3b7bedb626af3e3951ac1709f6036d4e1405f6e8463816108222"
+          },
+          {
+            "name": "000000009448.jpg",
+            "sha256": "bd6ac1c94ef4599bd7f9d0f43ba0dab52b0afc34a872ee3acc83a20c8e8a6f3f"
+          },
+          {
+            "name": "000000009483.jpg",
+            "sha256": "c7e6e15f4db067c3e09ab8605759be9d850e2d5c45ea4dfb9cda8f5d85308ea4"
+          },
+          {
+            "name": "000000009590.jpg",
+            "sha256": "93cdd55e59cf7d32c481ca5b00b1b9c64f8b8f44020f64a97752a767fd7571ee"
+          },
+          {
+            "name": "000000009769.jpg",
+            "sha256": "f5e6d63081ba8fbb2a59770144d7c2350de6a1a8288e15565df7dd1bd87d85bf"
+          },
+          {
+            "name": "000000009772.jpg",
+            "sha256": "ab798f0ee5d1bed52376a5ee8bfbd973cb4c4fface481a9bc7a3ff5d9c57b4c7"
+          },
+          {
+            "name": "000000009891.jpg",
+            "sha256": "dc8292c102663e64a5fcf7477e8ab5f5289660099817e7d52f40e3918784dc0e"
+          },
+          {
+            "name": "000000009914.jpg",
+            "sha256": "8033e21b153383291f443ff8c89459e405441eac88e4ee617825f19182106d5c"
+          },
+          {
+            "name": "000000010092.jpg",
+            "sha256": "70eae5520682d2ad23ff01df57fc4f29cb3f5d4c1d63753d3b7f120f6a0d939b"
+          },
+          {
+            "name": "000000010363.jpg",
+            "sha256": "2fd23c4c491520182a703d0df9c604f6b7ee8a592ad8743897870cf0260f47b2"
+          },
+          {
+            "name": "000000010583.jpg",
+            "sha256": "f163a37f278b6edd09952332066e01a00cf80e3137b427dd49732b91edc3fa9b"
+          },
+          {
+            "name": "000000010707.jpg",
+            "sha256": "a361abb7579193709ef3debbec6298bf0c540bece429c4aadb19be82e04ab6a0"
+          },
+          {
+            "name": "000000010764.jpg",
+            "sha256": "83bf9d868bb6de24ac1ef63df6cd7116e11da51d84daabd91b9b24fcc74d63c1"
+          },
+          {
+            "name": "000000010977.jpg",
+            "sha256": "fba520c270003f70a09bdbb9ab8ca856a4a6cde110c64f05879e96b755ca7af6"
+          },
+          {
+            "name": "000000010995.jpg",
+            "sha256": "19ee23abae8a3da6b5914987e991ea9ee8a9743309ae17db732426c8fa860fe2"
+          },
+          {
+            "name": "000000011051.jpg",
+            "sha256": "fb0f943cc1b027c64e5dbbc486b1d62d431244565e68b730e2ff8264d51116db"
+          },
+          {
+            "name": "000000011122.jpg",
+            "sha256": "74e9d13ddccbc52d2fd9da5984279a6218b250668e1ae1c6450be9d1ca2bc41a"
+          },
+          {
+            "name": "000000011149.jpg",
+            "sha256": "5973b8f1d5a30de98b1dcb715f1c94928a676fff8e45283515d0474e51ac0abc"
+          },
+          {
+            "name": "000000011197.jpg",
+            "sha256": "b6dbcc5c9e52f51480c4974ae6b15003ce25cd98fb936e2f26694fb7058fdbcb"
+          },
+          {
+            "name": "000000011511.jpg",
+            "sha256": "4e24ed1528891621658ff01d23e8a74735cd18720d41f7fd2264044497ad2a0e"
+          },
+          {
+            "name": "000000011615.jpg",
+            "sha256": "dc3d5cce23371a2b7d0be6bf423b5989e29195323b428ef0e639a1d97a3932ac"
+          },
+          {
+            "name": "000000011699.jpg",
+            "sha256": "cb8a70787b3b7abc56a8ec8a6efcea9a4d2ccabd645b17d73054b9514759559f"
+          },
+          {
+            "name": "000000011760.jpg",
+            "sha256": "929474fc4adc38fbd6a392607e27ae8785488ed13676d103c5361e9091333c49"
+          },
+          {
+            "name": "000000011813.jpg",
+            "sha256": "a7387846c67b6900e02eeca0b3fdddfde24d44e336950f38ee2b54a91d5874be"
+          },
+          {
+            "name": "000000012062.jpg",
+            "sha256": "319d58f0fa008d076b766671a5b607f94614f6005f773adced54a57567aa28fb"
+          },
+          {
+            "name": "000000012120.jpg",
+            "sha256": "5078da2ea4554eb91703e5fa0339c4d0c875ded1783a8f4ee32ece2b558178c4"
+          },
+          {
+            "name": "000000012280.jpg",
+            "sha256": "158ef0b15ff392039468263fa18735f81b39de9e8a7753e1e1aba7037262da56"
+          },
+          {
+            "name": "000000012576.jpg",
+            "sha256": "e819f39d02674a83e2c3ef722e93e9b3fd6f9e6bf016dc8d873f576e31169445"
+          },
+          {
+            "name": "000000012639.jpg",
+            "sha256": "fb055f9572e8e059559a950b626a7a731683844f875b66523cbd8d29605d903f"
+          },
+          {
+            "name": "000000012667.jpg",
+            "sha256": "0bf182b59b89f534d6f89a2b57c976c47b7f9a95e5e47a7f236b285b9211af14"
+          },
+          {
+            "name": "000000012670.jpg",
+            "sha256": "00c989b165bdde8eb54cbe7d1fcfb0ae7b2ac7f5f23d83baea723e7d2acf7099"
+          },
+          {
+            "name": "000000012748.jpg",
+            "sha256": "9ccd35fa48729821628123c5d2a57742f49ece28f9813817cfd0ea3867f40831"
+          },
+          {
+            "name": "000000013004.jpg",
+            "sha256": "09d489992329d2a17186a82781c7d23d8c687ee580567babc7494f9bc8b1220a"
+          },
+          {
+            "name": "000000013177.jpg",
+            "sha256": "f93626195530f46ed849091160f8cccce1a255ca886fd5945f5719adc12dc789"
+          },
+          {
+            "name": "000000013201.jpg",
+            "sha256": "b99aa5fe13f26b9350d136cbb103c95896d81bfa504087888f13f76f5bd4adce"
+          },
+          {
+            "name": "000000013291.jpg",
+            "sha256": "1e46187ec49947bfd8dd22f4d774bddfe3e29ca863fe09530516598998b8e640"
+          },
+          {
+            "name": "000000013348.jpg",
+            "sha256": "8371f759628048bd294db70d9fbacb6d4f2558a12c25337fa04fea6418c9922a"
+          },
+          {
+            "name": "000000013546.jpg",
+            "sha256": "63129a14da61b57cbcd9b3403bc76a73d091e1940e1b416ae9f5c70b7a1dbb54"
+          },
+          {
+            "name": "000000013597.jpg",
+            "sha256": "e2b4ec9273cf30313e97ba917e85fec88cd9bbcf599781373deae5101ae8f327"
+          },
+          {
+            "name": "000000013659.jpg",
+            "sha256": "b357d19dee467587a8788ac4e5b45677f4fde1b62726c690795e188ae75d822b"
+          },
+          {
+            "name": "000000013729.jpg",
+            "sha256": "a3b3689660e2db3d49e131e9856d3d06bb376400e8fa2afc1ce64c5c4765a4ef"
+          },
+          {
+            "name": "000000013774.jpg",
+            "sha256": "d4a83955582202cd1c3586807245cec71bb38c856eee74d452c1ca752eed8655"
+          },
+          {
+            "name": "000000013923.jpg",
+            "sha256": "91494500cd053f1c4e547edc53f62edce2b088588bf9b4dbc8ceaea86ad4d49e"
+          },
+          {
+            "name": "000000014007.jpg",
+            "sha256": "4fa388665548f563e50c107089669a589812c4a14cb1dd3b87860fb25bdd4b45"
+          },
+          {
+            "name": "000000014038.jpg",
+            "sha256": "7dc972133bcc2e8e49ca1c2b7c20678eecb0c853e78f085f7270f295e1349350"
+          },
+          {
+            "name": "000000014226.jpg",
+            "sha256": "7342b8ee76ae63bfa942cb6849300cb39618b2453b2a51ef48650970bdeb837a"
+          },
+          {
+            "name": "000000014380.jpg",
+            "sha256": "f9e17866f4db47a88724f051f0cd2a2650168c09ab6908bc4f75e5dba398ba1b"
+          },
+          {
+            "name": "000000014439.jpg",
+            "sha256": "fc23e512cfe33e0b7f5e3445dc4189eb053fed6a16964b2454775a6df3fa5eba"
+          },
+          {
+            "name": "000000014473.jpg",
+            "sha256": "1b0fad3e8260366a27f9cb20fdd0f9d7c669bb40a535f6364b8c2e1c03d7b5c2"
+          },
+          {
+            "name": "000000014831.jpg",
+            "sha256": "ac9629cb598e5d30bbb0a174a01ac4e398de3d54ef8c5bac4f81a738597c39cd"
+          },
+          {
+            "name": "000000014888.jpg",
+            "sha256": "aba25018b65a2a52ce7d77e68c6501e532084cd327e6cb230225e302fca95f4c"
+          },
+          {
+            "name": "000000015079.jpg",
+            "sha256": "a44d7b20692b108c648ba73018390297bad07d23b8be13dd24bc637bd31534ba"
+          },
+          {
+            "name": "000000015254.jpg",
+            "sha256": "a03e74678aedee90fe6777e9ba4eef8b3025ba0b6f426723b2cf2b35c5ffef4f"
+          },
+          {
+            "name": "000000015272.jpg",
+            "sha256": "d4a09d9517fea54811b7fabb1274117a107c4cb8fdccfbcae4ced6dd82034ce5"
+          },
+          {
+            "name": "000000015278.jpg",
+            "sha256": "7f16701e7994ba6bfffe83abaa9d87b128c0d612e11f014001c51a6fc10ade58"
+          },
+          {
+            "name": "000000015335.jpg",
+            "sha256": "9fbfdb443c249bdac83b8d0c9d4120a817cdf3987a7826a90e9fcbc95b535986"
+          },
+          {
+            "name": "000000015338.jpg",
+            "sha256": "b9e7f3f58e1568b0af83d0494d21614a38bb212da2d4b14bc36bd002c0b6f0ad"
+          },
+          {
+            "name": "000000015440.jpg",
+            "sha256": "477f0dd9751336fc5e5ef0f7c406506998049de4edae936311a4400c934c8419"
+          },
+          {
+            "name": "000000015497.jpg",
+            "sha256": "fc0fff04645dfadedbc34e23860dc62c45a213ac22d18b8194d269b66774d745"
+          },
+          {
+            "name": "000000015517.jpg",
+            "sha256": "db13a24631806ad53b865d8edb4926d455cf54ae60e72b45778e5e58fb164369"
+          },
+          {
+            "name": "000000015597.jpg",
+            "sha256": "e34e098c9a41160f1f6cd0181d946ddca4e31bb94af38c060e36d6ec4f406e79"
+          },
+          {
+            "name": "000000015660.jpg",
+            "sha256": "d908b9557857567ac19501f12f6c090ba3568d11421a2fe6296133a27e48a991"
+          },
+          {
+            "name": "000000015746.jpg",
+            "sha256": "ba79e69d4272bc31ea4fb9f3731e020a9c8acf1fbf3b6ffb78528d70e2e183f7"
+          },
+          {
+            "name": "000000015751.jpg",
+            "sha256": "e0929307bb91557c288fe98307c198a838abe835820322596232842784f6ce72"
+          },
+          {
+            "name": "000000015956.jpg",
+            "sha256": "c561d4e58f9141d15a5c4231075a51dbbf257e2901acc482765e15dcee1375b0"
+          },
+          {
+            "name": "000000016010.jpg",
+            "sha256": "40ba5b198298d09e33f6428e28779a9cd9bc55756b2f9ae15c258672d6363ba3"
+          },
+          {
+            "name": "000000016228.jpg",
+            "sha256": "b34d80f1f13989eb0c7031f95373a9e26c698397cb9511b422dcf5daba60110e"
+          },
+          {
+            "name": "000000016249.jpg",
+            "sha256": "6b8ddae2940c3f03b1cec347e49fb9cf1c944a6142d71dbe7c7a3c2187852b34"
+          },
+          {
+            "name": "000000016439.jpg",
+            "sha256": "8f09a3ac88ba6c74d0d8d0097e8a5aa0c58b7fdc3f51f36beafe8fa958f5e724"
+          },
+          {
+            "name": "000000016451.jpg",
+            "sha256": "83fade2162445d292c33005ad31d9ad05de5a4691489b0762bc81ec401cb2cbc"
+          },
+          {
+            "name": "000000016502.jpg",
+            "sha256": "171ce16f5646725403aed126091a0e3c88333a6fe4ea5c36f7c9b21ccfe2b30c"
+          },
+          {
+            "name": "000000016598.jpg",
+            "sha256": "a794c8d8258774f04fcf04921d0daf10d60a35d038117279ff0880a2accd49b3"
+          },
+          {
+            "name": "000000016958.jpg",
+            "sha256": "8595370fdfc1ca1382a3eb464e53b2ae6c483d76d426d85b4fe0511ff25c0333"
+          },
+          {
+            "name": "000000017029.jpg",
+            "sha256": "d619327903c6b05520f0d6768807c067cce2d6d908d2d83da018a1da3b1792cf"
+          },
+          {
+            "name": "000000017031.jpg",
+            "sha256": "cbe18fd21bd5691cb27085cda1f10c3c5556d5918fcd04363a5e5b145ee3177b"
+          },
+          {
+            "name": "000000017115.jpg",
+            "sha256": "ad0fc963b409ee072d6cc837cb58e9f0bf64de41fb4e5f13f20cc70dfe3c617b"
+          },
+          {
+            "name": "000000017178.jpg",
+            "sha256": "89dd925868177ba4f2e4f82eb5f530bb8b839079bb58f872d78d8ab322c5a305"
+          },
+          {
+            "name": "000000017182.jpg",
+            "sha256": "0ec7cbf35b5ff0352f9da0653eda2aaf5b578e7f2b5c8480c5b6c19fd2435141"
+          },
+          {
+            "name": "000000017207.jpg",
+            "sha256": "fd477a26cf3682083ae6633c3778fcce9e53fdfbb0670232d608865ddb606884"
+          },
+          {
+            "name": "000000017379.jpg",
+            "sha256": "52b592adcb73170d7d07994a8781e92feddf3c7f1c45173a050c7ecfe12e7743"
+          },
+          {
+            "name": "000000017436.jpg",
+            "sha256": "8ea0f1195969c20030b2a7d90d008643582abeb0b7bff59a2fdd555d79c14ebf"
+          },
+          {
+            "name": "000000017627.jpg",
+            "sha256": "bad16bff668a52e7df757c6382244c86b416315b86a52749dd7bc6ec68e7092f"
+          },
+          {
+            "name": "000000017714.jpg",
+            "sha256": "ff331d262fea90025ec3b628757b047259f244b5a65550b1d0d079578179387a"
+          },
+          {
+            "name": "000000017899.jpg",
+            "sha256": "2e1e630f37d1f6f1b0c06941ea56431c9be8701c928df634b8dbe9121e735fbb"
+          },
+          {
+            "name": "000000017905.jpg",
+            "sha256": "5fcff2c9895b398fa086180c2fbe39b17a4e07d47282bd0b184599764afba33d"
+          },
+          {
+            "name": "000000017959.jpg",
+            "sha256": "8d525d9c133ee9ce8110fd8e2cca767d051bd22e8822c8f9ede6e72b7ff398d8"
+          },
+          {
+            "name": "000000018150.jpg",
+            "sha256": "c49c2bb7e3ea8951c997f9984d13cb9f2bf8c1a0b4f7c398c0317f36435059f0"
+          },
+          {
+            "name": "000000018193.jpg",
+            "sha256": "ee9037876bab7f2b504cd4be49144bbde27f32ddc05361cd6f3c843c947dd911"
+          },
+          {
+            "name": "000000018380.jpg",
+            "sha256": "5f019938d891305fab6ae0d0e9edc79e0d74407cdbd0ecce324aada0ab93a86e"
+          },
+          {
+            "name": "000000018491.jpg",
+            "sha256": "195369c44ad1810c524d5523a556356b2ee384310d7493310ccb8165c42767ed"
+          },
+          {
+            "name": "000000018519.jpg",
+            "sha256": "87b0a064b596b4e821ebb371077c053e836c0ea667ca491075804bb3c9ce95ea"
+          },
+          {
+            "name": "000000018575.jpg",
+            "sha256": "fe6cdcb9053cb1621bda79d13e20cad49b898678fb2279f772964d65698c3c6a"
+          },
+          {
+            "name": "000000018737.jpg",
+            "sha256": "61b0ee16f913053290e0ee24971a6833b21290ee6a74039a0e0f3faa72dcf61c"
+          },
+          {
+            "name": "000000018770.jpg",
+            "sha256": "92edb27a1c69e8e77d6ee17ddd2f12489d1852ff4c32c8357b329ba1fd26b046"
+          },
+          {
+            "name": "000000018833.jpg",
+            "sha256": "3aaed3d8164deb6f7e5e18f3b1b3fc1b481d32078b342a07b629a7bdefc14e4d"
+          },
+          {
+            "name": "000000018837.jpg",
+            "sha256": "70f986167a5f1ea723ee2a25273f39ee1d1d7a3bf8b2fa3a37eca946111f1d93"
+          },
+          {
+            "name": "000000019042.jpg",
+            "sha256": "c97e2e9a24160678ad908797a306d146354f66b196627a0bbb564c733b041007"
+          },
+          {
+            "name": "000000019109.jpg",
+            "sha256": "5469f123ab838c9fdcc567c13148399dcb4cfa4eeee80e6e56a13627808a6d54"
+          },
+          {
+            "name": "000000019221.jpg",
+            "sha256": "0085f80b9136c625b63fed2c233c432c3189841d5bf630a10e09ee1554c9bc79"
+          },
+          {
+            "name": "000000019402.jpg",
+            "sha256": "b08173e02dc865e7f13fecbcbed574b70271c07fef6023236d0dea8d6bf77619"
+          },
+          {
+            "name": "000000019432.jpg",
+            "sha256": "fa54de5a592c892ed3aceb11ebacff27abad01dc3bcef308943b097c1d65c0f0"
+          },
+          {
+            "name": "000000019742.jpg",
+            "sha256": "6ccc37eeba5118114222f8de61228e95cf6c28fb631c9e759fcdcd450061337a"
+          },
+          {
+            "name": "000000019786.jpg",
+            "sha256": "109307de9a894df50386a58dec9347e6c280ee024f426933e2e34bfd57478960"
+          },
+          {
+            "name": "000000019924.jpg",
+            "sha256": "b0bb42c6674456ecd9155b790a6a595646aacfe45ce80bd7667ac75fb7fe8bc8"
+          },
+          {
+            "name": "000000020059.jpg",
+            "sha256": "7bf0e3dc0cc83a62dfc9c9bfd57163cb541574a0b866fd1a555fdd24cd2859f2"
+          },
+          {
+            "name": "000000020107.jpg",
+            "sha256": "7c7e83890969c3bb7647cda61e17fa8ad3dc33210dbc9db616afb71f20958d3d"
+          },
+          {
+            "name": "000000020247.jpg",
+            "sha256": "92a0ab00f3a0b9f6de5162449a8b79167363897fb489c172eebc244bccef23cb"
+          }
+        ]
+      },
+      "artifact_sha256": {
+        "rfdetr-nano": {
+          "weights.mlpackage.zip": "0220f8ed608af300781e55b2e13201aeb3a390aed2e12507dd06bc462da2827e",
+          "class_names.txt": "796ddeaabda3c12299a70e07b5a42e14a08019f628c4b4cb38fdb964987eed70",
+          "inference_config.json": "5e6fdbfa313aaee90d55e5903469b2bd4f33e0b30f42891c7ec7fe8b14829d7b"
+        },
+        "rfdetr-small": {
+          "weights.mlpackage.zip": "a74baa71cd8d9f09b1bcaf4dbdcaef7d45b64b10fca979d09912c11849afb8ce",
+          "class_names.txt": "796ddeaabda3c12299a70e07b5a42e14a08019f628c4b4cb38fdb964987eed70",
+          "inference_config.json": "7f3e48efabe22916e1d8b42cde45c83671620c72794c78bda2119794967c98a3"
+        },
+        "rfdetr-large": {
+          "weights.mlpackage.zip": "a38aab69a5174b2cd93f1fa470cab66ad6eeaa370fc58cbf2b1d93d8c0621370",
+          "class_names.txt": "724365a2ff2e4db78306ad9b8fcd5d26833c916cd2155a72633bbf758154677c",
+          "inference_config.json": "6a54d92380b2847f72a75481d8217a388a116108912e0bd430e72334ea2f2c30"
+        }
+      },
+      "source_file_sha256": {
+        "inference_models/inference_models/models/rfdetr/rfdetr_object_detection_coreml.py": "91de65686d9cc6ace3942cd40f8588bf7d69ec72ef77bb8aad2bfa08f1687602",
+        "inference_models/inference_models/models/rfdetr/rfdetr_instance_segmentation_coreml.py": "d591eeee8f54ead7a2e55d5c7d5a04b6e92018732747c117bc054d41d2097323",
+        "inference_models/inference_models/models/common/coreml.py": "9b640293cc61b459790aa86880fb5bdcaa72cd9e12dab48e8e1dc7f4ab3621f7"
+      },
+      "model_inputs": {
+        "rfdetr-nano": [
+          {
+            "name": "image_input",
+            "type": "imageType",
+            "height": 384,
+            "width": 384,
+            "shape": []
+          }
+        ],
+        "rfdetr-large": [
+          {
+            "name": "image_input",
+            "type": "imageType",
+            "height": 704,
+            "width": 704,
+            "shape": []
+          }
+        ],
+        "rfdetr-small": [
+          {
+            "name": "image_input",
+            "type": "imageType",
+            "height": 512,
+            "width": 512,
+            "shape": []
+          }
+        ]
+      }
+    },
+    "rows": [
+      {
+        "model": "rfdetr-nano",
+        "compute_units": "CPUAndGPU",
+        "load": {
+          "count": 20,
+          "median_ms": 318.16164550218673,
+          "p95_ms": 367.06005209998693,
+          "p99_ms": 395.0573440204607,
+          "mean_ms": 324.7334999507075,
+          "min_ms": 307.7305000006163,
+          "max_ms": 402.0566670005792
+        },
+        "inference": {
+          "count": 4000,
+          "median_ms": 10.11529149946,
+          "p95_ms": 11.198493449956004,
+          "p99_ms": 11.774713250269995,
+          "mean_ms": 9.898727667992716,
+          "min_ms": 7.968833000632003,
+          "max_ms": 25.72850000069593
+        },
+        "worker_medians_ms": [
+          10.4265209974983,
+          10.438479499498499,
+          10.603374497804907,
+          10.63593800063245,
+          10.56256250012666,
+          8.717374999832828,
+          8.82212500073365,
+          8.698146000824636,
+          8.794458501142799,
+          8.917561999624013,
+          10.352479501307243,
+          10.376479000115069,
+          10.401375498986454,
+          10.468437500094296,
+          10.008479499447276,
+          8.822083500490407,
+          9.642208999139257,
+          10.405500001070322,
+          10.568124998826534,
+          10.28716600012558
+        ],
+        "memory": {
+          "resident_memory_after_load_bytes": 509788160,
+          "peak_resident_memory_bytes": 807927808,
+          "incremental_peak_resident_memory_bytes": 298909696,
+          "average_cpu_utilization_percent": 80.08234669835744,
+          "memory_measurement_source": "psutil_process_rss",
+          "cpu_measurement_source": "process_time"
+        },
+        "source_files": [
+          "rfdetr-nano-CPUAndGPU-latency-round1.json",
+          "rfdetr-nano-CPUAndGPU-latency-round2.json",
+          "rfdetr-nano-CPUAndGPU-latency-round3.json",
+          "rfdetr-nano-CPUAndGPU-latency-round4.json",
+          "rfdetr-nano-CPUAndGPU-memory-regression.json"
+        ]
+      },
+      {
+        "model": "rfdetr-nano",
+        "compute_units": "CPUAndNeuralEngine",
+        "load": {
+          "count": 20,
+          "median_ms": 3369.056208499387,
+          "p95_ms": 3506.927416648796,
+          "p99_ms": 3572.6338497311735,
+          "mean_ms": 3380.6019810997896,
+          "min_ms": 3270.9281249990454,
+          "max_ms": 3589.060458001768
+        },
+        "inference": {
+          "count": 4000,
+          "median_ms": 11.060708999139024,
+          "p95_ms": 11.775262499941164,
+          "p99_ms": 12.437693497813594,
+          "mean_ms": 11.146228550229353,
+          "min_ms": 10.529374998441199,
+          "max_ms": 19.361208000191255
+        },
+        "worker_medians_ms": [
+          11.069750000388012,
+          11.04006199966534,
+          11.096270498455851,
+          11.044708498957334,
+          11.027249998733168,
+          10.973875498166308,
+          11.086874499596888,
+          11.119187500298722,
+          11.043145999792614,
+          11.279354001089814,
+          11.085312498835265,
+          11.012812499757274,
+          11.684291499477695,
+          11.171416499564657,
+          10.972978998324834,
+          11.311374999422696,
+          10.980853998262319,
+          11.026521500753006,
+          10.85872899966489,
+          11.046062498280662
+        ],
+        "memory": {
+          "resident_memory_after_load_bytes": 456736768,
+          "peak_resident_memory_bytes": 693780480,
+          "incremental_peak_resident_memory_bytes": 237404160,
+          "average_cpu_utilization_percent": 44.369562440249226,
+          "memory_measurement_source": "psutil_process_rss",
+          "cpu_measurement_source": "process_time"
+        },
+        "source_files": [
+          "rfdetr-nano-CPUAndNeuralEngine-latency-round1.json",
+          "rfdetr-nano-CPUAndNeuralEngine-latency-round2.json",
+          "rfdetr-nano-CPUAndNeuralEngine-latency-round3.json",
+          "rfdetr-nano-CPUAndNeuralEngine-latency-round4.json",
+          "rfdetr-nano-CPUAndNeuralEngine-memory-regression.json"
+        ]
+      },
+      {
+        "model": "rfdetr-nano",
+        "compute_units": "ALL",
+        "load": {
+          "count": 20,
+          "median_ms": 2649.273125000036,
+          "p95_ms": 2691.09369969774,
+          "p99_ms": 2720.566373538968,
+          "mean_ms": 2642.917189549553,
+          "min_ms": 2594.6514590032166,
+          "max_ms": 2727.934541999275
+        },
+        "inference": {
+          "count": 4000,
+          "median_ms": 11.707728999681422,
+          "p95_ms": 14.038580652959352,
+          "p99_ms": 16.292819919181053,
+          "mean_ms": 11.992603669270466,
+          "min_ms": 9.913624999171589,
+          "max_ms": 18.509249999624444
+        },
+        "worker_medians_ms": [
+          12.220645998240798,
+          11.461979000159772,
+          11.556499999642256,
+          11.4800204992207,
+          11.624916498476523,
+          11.610312500124564,
+          11.562521000087145,
+          11.86900050197437,
+          12.313436998738325,
+          11.876521000885987,
+          11.86983300067368,
+          11.684729501212132,
+          11.829103999843937,
+          11.684895998769207,
+          12.399020999509958,
+          12.292062498090672,
+          11.476645500806626,
+          11.684479499308509,
+          11.452937500507687,
+          11.469208000562503
+        ],
+        "memory": {
+          "resident_memory_after_load_bytes": 468074496,
+          "peak_resident_memory_bytes": 733757440,
+          "incremental_peak_resident_memory_bytes": 268238848,
+          "average_cpu_utilization_percent": 50.025010014104865,
+          "memory_measurement_source": "psutil_process_rss",
+          "cpu_measurement_source": "process_time"
+        },
+        "source_files": [
+          "rfdetr-nano-ALL-latency-round1.json",
+          "rfdetr-nano-ALL-latency-round2.json",
+          "rfdetr-nano-ALL-latency-round3.json",
+          "rfdetr-nano-ALL-latency-round4.json",
+          "rfdetr-nano-ALL-memory-regression.json"
+        ]
+      },
+      {
+        "model": "rfdetr-small",
+        "compute_units": "CPUAndGPU",
+        "load": {
+          "count": 20,
+          "median_ms": 367.9337920002581,
+          "p95_ms": 381.48967115157575,
+          "p99_ms": 381.9096342303237,
+          "mean_ms": 369.1359957500026,
+          "min_ms": 358.91991600146866,
+          "max_ms": 382.0146250000107
+        },
+        "inference": {
+          "count": 4000,
+          "median_ms": 12.136562500018044,
+          "p95_ms": 12.656604800031346,
+          "p99_ms": 13.339014997400227,
+          "mean_ms": 12.200486361770345,
+          "min_ms": 11.36883300205227,
+          "max_ms": 68.21608300015214
+        },
+        "worker_medians_ms": [
+          12.120708501242916,
+          12.080249998689396,
+          12.16389550063468,
+          12.16289600051823,
+          12.146083001425723,
+          12.069229000189807,
+          12.116249999962747,
+          12.09039600144024,
+          12.133833000916638,
+          12.076770501153078,
+          12.136270499468083,
+          12.124770999434986,
+          12.15683350164909,
+          12.233583498527878,
+          12.09485450090142,
+          12.014228999760235,
+          12.152728999353712,
+          12.655916998483008,
+          12.19618750110385,
+          12.286667000807938
+        ],
+        "memory": {
+          "resident_memory_after_load_bytes": 517259264,
+          "peak_resident_memory_bytes": 815562752,
+          "incremental_peak_resident_memory_bytes": 300335104,
+          "average_cpu_utilization_percent": 82.2971344601515,
+          "memory_measurement_source": "psutil_process_rss",
+          "cpu_measurement_source": "process_time"
+        },
+        "source_files": [
+          "rfdetr-small-CPUAndGPU-latency-round1.json",
+          "rfdetr-small-CPUAndGPU-latency-round2.json",
+          "rfdetr-small-CPUAndGPU-latency-round3.json",
+          "rfdetr-small-CPUAndGPU-latency-round4.json",
+          "rfdetr-small-CPUAndGPU-memory-regression.json"
+        ]
+      },
+      {
+        "model": "rfdetr-small",
+        "compute_units": "CPUAndNeuralEngine",
+        "load": {
+          "count": 20,
+          "median_ms": 3925.4205004999676,
+          "p95_ms": 4034.9088518003555,
+          "p99_ms": 4061.8948375578475,
+          "mean_ms": 3933.1700042497687,
+          "min_ms": 3857.8273329985677,
+          "max_ms": 4068.6413339972205
+        },
+        "inference": {
+          "count": 4000,
+          "median_ms": 21.224625001195818,
+          "p95_ms": 22.065921149805945,
+          "p99_ms": 22.68405841910862,
+          "mean_ms": 21.309170115238885,
+          "min_ms": 20.346041997981956,
+          "max_ms": 42.62833300163038
+        },
+        "worker_medians_ms": [
+          21.257750000586384,
+          21.28695799910929,
+          21.83268750013667,
+          21.32527099820436,
+          21.168646000660374,
+          21.379000001616077,
+          21.35891649959376,
+          21.199416498348,
+          21.181313000852242,
+          21.231729500868823,
+          21.278042000631103,
+          21.258812997984933,
+          21.322500499081798,
+          21.251937499982887,
+          21.30693750041246,
+          20.964978999472805,
+          21.023417000833433,
+          21.147562001715414,
+          21.050875500804977,
+          21.01675000085379
+        ],
+        "memory": {
+          "resident_memory_after_load_bytes": 460767232,
+          "peak_resident_memory_bytes": 706363392,
+          "incremental_peak_resident_memory_bytes": 247398400,
+          "average_cpu_utilization_percent": 33.634170162378055,
+          "memory_measurement_source": "psutil_process_rss",
+          "cpu_measurement_source": "process_time"
+        },
+        "source_files": [
+          "rfdetr-small-CPUAndNeuralEngine-latency-round1.json",
+          "rfdetr-small-CPUAndNeuralEngine-latency-round2.json",
+          "rfdetr-small-CPUAndNeuralEngine-latency-round3.json",
+          "rfdetr-small-CPUAndNeuralEngine-latency-round4.json",
+          "rfdetr-small-CPUAndNeuralEngine-memory-regression.json"
+        ]
+      },
+      {
+        "model": "rfdetr-small",
+        "compute_units": "ALL",
+        "load": {
+          "count": 20,
+          "median_ms": 2696.2957914984145,
+          "p95_ms": 2733.5550725998473,
+          "p99_ms": 2841.585114519985,
+          "mean_ms": 2701.430614549645,
+          "min_ms": 2658.2214170011866,
+          "max_ms": 2868.5926250000193
+        },
+        "inference": {
+          "count": 4000,
+          "median_ms": 22.553749999133288,
+          "p95_ms": 26.664960697416973,
+          "p99_ms": 28.046584080075263,
+          "mean_ms": 23.0146478752049,
+          "min_ms": 19.471625000733184,
+          "max_ms": 32.04674999869894
+        },
+        "worker_medians_ms": [
+          24.335812500794418,
+          22.00720799919509,
+          22.184958499565255,
+          22.333396000249195,
+          22.155646000101115,
+          23.01285400062625,
+          23.00877100060461,
+          22.4369374991511,
+          22.219271000722074,
+          22.193416998561588,
+          22.2377289992437,
+          23.004728500382043,
+          22.702979500536458,
+          25.097478997849976,
+          22.309646001303918,
+          22.71183300035773,
+          22.770229497837136,
+          22.131020999950124,
+          22.04147950033075,
+          22.986937497989857
+        ],
+        "memory": {
+          "resident_memory_after_load_bytes": 476659712,
+          "peak_resident_memory_bytes": 751763456,
+          "incremental_peak_resident_memory_bytes": 275464192,
+          "average_cpu_utilization_percent": 39.786969065315716,
+          "memory_measurement_source": "psutil_process_rss",
+          "cpu_measurement_source": "process_time"
+        },
+        "source_files": [
+          "rfdetr-small-ALL-latency-round1.json",
+          "rfdetr-small-ALL-latency-round2.json",
+          "rfdetr-small-ALL-latency-round3.json",
+          "rfdetr-small-ALL-latency-round4.json",
+          "rfdetr-small-ALL-memory-regression.json"
+        ]
+      },
+      {
+        "model": "rfdetr-large",
+        "compute_units": "CPUAndGPU",
+        "load": {
+          "count": 20,
+          "median_ms": 394.8363960007555,
+          "p95_ms": 420.1497544994709,
+          "p99_ms": 421.90098449926154,
+          "mean_ms": 396.4231937996374,
+          "min_ms": 383.27949999802513,
+          "max_ms": 422.3387919992092
+        },
+        "inference": {
+          "count": 4000,
+          "median_ms": 19.26364550126891,
+          "p95_ms": 19.807927049987484,
+          "p99_ms": 20.28141732018412,
+          "mean_ms": 19.30657080547553,
+          "min_ms": 18.460250001226086,
+          "max_ms": 30.265417000919115
+        },
+        "worker_medians_ms": [
+          19.25033350016747,
+          19.238625500292983,
+          19.349479500306188,
+          19.287229000838124,
+          19.36883350026619,
+          19.236833499235217,
+          19.34987500135321,
+          19.27741700092156,
+          19.30008350063872,
+          19.331479001266416,
+          19.185833500159788,
+          19.244646000515786,
+          19.30835399980424,
+          19.34895800150116,
+          19.286875000034343,
+          19.28956250048941,
+          19.372708498849533,
+          19.134375001158332,
+          19.09052100199915,
+          19.245333500293782
+        ],
+        "memory": {
+          "resident_memory_after_load_bytes": 522387456,
+          "peak_resident_memory_bytes": 849739776,
+          "incremental_peak_resident_memory_bytes": 328384512,
+          "average_cpu_utilization_percent": 69.81138565854307,
+          "memory_measurement_source": "psutil_process_rss",
+          "cpu_measurement_source": "process_time"
+        },
+        "source_files": [
+          "rfdetr-large-CPUAndGPU-latency-round1.json",
+          "rfdetr-large-CPUAndGPU-latency-round2.json",
+          "rfdetr-large-CPUAndGPU-latency-round3.json",
+          "rfdetr-large-CPUAndGPU-latency-round4.json",
+          "rfdetr-large-CPUAndGPU-memory-regression.json"
+        ]
+      },
+      {
+        "model": "rfdetr-large",
+        "compute_units": "CPUAndNeuralEngine",
+        "load": {
+          "count": 20,
+          "median_ms": 4531.801375000214,
+          "p95_ms": 4584.118529799707,
+          "p99_ms": 4646.644805958604,
+          "mean_ms": 4536.22891039995,
+          "min_ms": 4454.615082999226,
+          "max_ms": 4662.276374998328
+        },
+        "inference": {
+          "count": 4000,
+          "median_ms": 54.259479000393185,
+          "p95_ms": 55.38662560102239,
+          "p99_ms": 56.63641542039841,
+          "mean_ms": 54.34658400326953,
+          "min_ms": 51.49262499980978,
+          "max_ms": 61.07533400063403
+        },
+        "worker_medians_ms": [
+          54.45429149949632,
+          54.17860449961154,
+          54.23989600058121,
+          54.421478998847306,
+          54.23516600058065,
+          54.26031300157774,
+          54.267270999844186,
+          54.24181199850864,
+          54.24527099967236,
+          54.36283349990845,
+          54.325541999787674,
+          54.31529199995566,
+          54.39108300015505,
+          54.27577100090275,
+          54.29912450017582,
+          54.07062499944004,
+          54.11133350025921,
+          54.14443749941711,
+          54.321541500030435,
+          54.11495800035482
+        ],
+        "memory": {
+          "resident_memory_after_load_bytes": 468516864,
+          "peak_resident_memory_bytes": 734281728,
+          "incremental_peak_resident_memory_bytes": 268353536,
+          "average_cpu_utilization_percent": 18.720827015605057,
+          "memory_measurement_source": "psutil_process_rss",
+          "cpu_measurement_source": "process_time"
+        },
+        "source_files": [
+          "rfdetr-large-CPUAndNeuralEngine-latency-round1.json",
+          "rfdetr-large-CPUAndNeuralEngine-latency-round2.json",
+          "rfdetr-large-CPUAndNeuralEngine-latency-round3.json",
+          "rfdetr-large-CPUAndNeuralEngine-latency-round4.json",
+          "rfdetr-large-CPUAndNeuralEngine-memory-regression.json"
+        ]
+      },
+      {
+        "model": "rfdetr-large",
+        "compute_units": "ALL",
+        "load": {
+          "count": 20,
+          "median_ms": 3010.8254794995446,
+          "p95_ms": 3119.4170517514067,
+          "p99_ms": 3127.4934767504237,
+          "mean_ms": 3029.2055853005877,
+          "min_ms": 2962.042749997636,
+          "max_ms": 3129.512583000178
+        },
+        "inference": {
+          "count": 4000,
+          "median_ms": 55.92766650079284,
+          "p95_ms": 58.75614309861703,
+          "p99_ms": 60.109515919612015,
+          "mean_ms": 55.10948318228202,
+          "min_ms": 49.527666000358295,
+          "max_ms": 65.26383299933514
+        },
+        "worker_medians_ms": [
+          55.79814550037554,
+          55.975104001845466,
+          55.72749999919324,
+          56.56295799781219,
+          55.98360450130713,
+          55.766562501958106,
+          52.848250001261476,
+          55.85049950059329,
+          56.281604498508386,
+          56.60027050180361,
+          56.51802099782799,
+          55.51402049968601,
+          56.04202050017193,
+          56.74033350078389,
+          55.83256200043252,
+          54.697771001883666,
+          56.325208501220914,
+          56.27566650036897,
+          53.642104499886045,
+          51.53774949940271
+        ],
+        "memory": {
+          "resident_memory_after_load_bytes": 486408192,
+          "peak_resident_memory_bytes": 785612800,
+          "incremental_peak_resident_memory_bytes": 300318720,
+          "average_cpu_utilization_percent": 22.616200792682775,
+          "memory_measurement_source": "psutil_process_rss",
+          "cpu_measurement_source": "process_time"
+        },
+        "source_files": [
+          "rfdetr-large-ALL-latency-round1.json",
+          "rfdetr-large-ALL-latency-round2.json",
+          "rfdetr-large-ALL-latency-round3.json",
+          "rfdetr-large-ALL-latency-round4.json",
+          "rfdetr-large-ALL-memory-regression.json"
+        ]
+      }
+    ],
+    "limitations": [
+      "Load percentiles use only 20 fresh-process samples per configuration.",
+      "Loads use preprimed package/OS caches and exclude interpreter/library imports; these are not cold-start measurements.",
+      "Inference includes model preprocessing and postprocessing, but excludes image reading, decoding and scenario resizing.",
+      "RSS includes the worker and 200 predecoded images; excludes CoreML service processes and is not accelerator allocator memory.",
+      "Compute-unit configuration does not establish actual graph execution placement."
+    ]
+  },
+  "executed_allocation": {
+    "method": "Actual Instruments Core AI + Core ML recording; hardware events and sampled runtime stacks during 100 predictions after 30 warmups. Five COCO images; batch one; same exact PR source and packages as latency measurements. CPU and GPU filtered by launched PID. ANE table has no PID: attribution uses weights_<UUID> prediction labels and isolated model run. Edges trimmed 2 ms due to TOC wall clock precision.",
+    "limitations": [
+      "CPU samples are statistical observations, not operator counts or percentages.",
+      "ANE/GPU interval counts are instrumentation events, not numbers of graph nodes.",
+      "Legacy Core ML per-operation signpost table is empty; this does not recover a full per-node executed allocation map.",
+      "Absence of a sampled CPU symbol does not prove absence of CPU execution.",
+      "Instrumented timing must not be compared to uninstrumented latency."
+    ],
+    "results": [
+      {
+        "name": "rfdetr-nano-CPUAndGPU",
+        "pid": 60200,
+        "workload": {
+          "model": "rfdetr-nano",
+          "configured_compute_units": "CPU_AND_GPU",
+          "warmup_predictions": 30,
+          "measured_predictions": 100,
+          "note": "Instrumented execution only; do not compare its timing with the uninstrumented latency profiles."
+        },
+        "analyzed_window_ns": [
+          4041588928.2226562,
+          5110998962.402344
+        ],
+        "ane_labels_in_window": {},
+        "ane_model_prediction_intervals": 0,
+        "gpu_process_intervals_by_channel": {
+          "Compute": 598
+        },
+        "gpu_process_intervals": 598,
+        "gpu_label_examples": [
+          "weights_B5E65E7A-1DD8-4300-AD3E-2A8C6A2FA12C_main__Op0_MpsGraphInference:Compute Command 0  (python (60200)) 0x47b2cad1",
+          "weights_B5E65E7A-1DD8-4300-AD3E-2A8C6A2FA12C_main__Op0_MpsGraphInference+:Compute Command 0  (python (60200)) 0x47b2cad3",
+          "weights_B5E65E7A-1DD8-4300-AD3E-2A8C6A2FA12C_main__Op0_MpsGraphInference++:Compute Command 0  (python (60200)) 0x47b2cad5",
+          "weights_B5E65E7A-1DD8-4300-AD3E-2A8C6A2FA12C_main__Op0_MpsGraphInference+++:Compute Command 0  (python (60200)) 0x47b2cad7",
+          "weights_B5E65E7A-1DD8-4300-AD3E-2A8C6A2FA12C_main__Op0_MpsGraphInference++++:Compute Command 0  (python (60200)) 0x47b2cadc",
+          "weights_B5E65E7A-1DD8-4300-AD3E-2A8C6A2FA12C_main__Op0_MpsGraphInference+++++:Compute Command 0  (python (60200)) 0x47b2cae8",
+          "weights_B5E65E7A-1DD8-4300-AD3E-2A8C6A2FA12C_main__Op0_MpsGraphInference:Compute Command 0  (python (60200)) 0x47b2caf2",
+          "weights_B5E65E7A-1DD8-4300-AD3E-2A8C6A2FA12C_main__Op0_MpsGraphInference+:Compute Command 0  (python (60200)) 0x47b2caf6"
+        ],
+        "cpu_samples_in_window": 792,
+        "cpu_graph_execution_samples": 0,
+        "cpu_graph_symbols_sample_counts": {},
+        "cpu_graph_stack_examples": {},
+        "coreml_os_signpost_rows": 0
+      },
+      {
+        "name": "rfdetr-nano-CPUAndNeuralEngine",
+        "pid": 59165,
+        "workload": {
+          "model": "rfdetr-nano",
+          "configured_compute_units": "CPU_AND_NE",
+          "warmup_predictions": 30,
+          "measured_predictions": 100,
+          "note": "Instrumented execution only; do not compare its timing with the uninstrumented latency profiles."
+        },
+        "analyzed_window_ns": [
+          8633507873.535156,
+          9786271188.735962
+        ],
+        "ane_labels_in_window": {
+          "weights_4A53A1C3-8072-48A7-8466-0E9BA54F8919_main__Op0_AneInference Prediction": 595
+        },
+        "ane_model_prediction_intervals": 595,
+        "gpu_process_intervals_by_channel": {},
+        "gpu_process_intervals": 0,
+        "gpu_label_examples": [],
+        "cpu_samples_in_window": 593,
+        "cpu_graph_execution_samples": 17,
+        "cpu_graph_symbols_sample_counts": {
+          "BNNSGraphContextExecute_v2": 10,
+          "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()": 10,
+          "E5RT::Ops::CastOperation::ExecuteSync()": 3,
+          "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)": 3,
+          "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)": 2,
+          "Espresso::copy_kernel_cpu::__compute(std::__1::vector<std::__1::shared_ptr<Espresso::abstract_blob_container>, std::__1::allocator<std::__1::shared_ptr<Espresso::abstract_blob_container>>> const&, std::__1::vector<std::__1::shared_ptr<Espresso::abstract_blob_container>, std::__1::allocator<std::__1::shared_ptr<Espresso::abstract_blob_container>>> const&)": 1
+        },
+        "cpu_graph_stack_examples": {
+          "BNNSGraphContextExecute_v2": {
+            "sample_time_ns": 8735017833,
+            "stack": [
+              "0x1a361984c",
+              "0x1a3619588",
+              "0x1a361cc10",
+              "_dispatch_client_callout2",
+              "_dispatch_apply_serial",
+              "_dispatch_client_callout",
+              "_dispatch_sync_function_invoke",
+              "_dispatch_apply_with_attr_f",
+              "dispatch_apply",
+              "0x1a36134c0",
+              "0x1a3611a90",
+              "0x1a39578a0",
+              "0x1a340f7ac",
+              "0x1a399c0c8",
+              "BNNSGraphContextExecute_v2",
+              "E5RT::Ops::BnnsCpuInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14d82c344",
+              "0x14d84ddf8",
+              "0x14d84ddd4",
+              "0x14d83948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()": {
+            "sample_time_ns": 8735017833,
+            "stack": [
+              "0x1a361984c",
+              "0x1a3619588",
+              "0x1a361cc10",
+              "_dispatch_client_callout2",
+              "_dispatch_apply_serial",
+              "_dispatch_client_callout",
+              "_dispatch_sync_function_invoke",
+              "_dispatch_apply_with_attr_f",
+              "dispatch_apply",
+              "0x1a36134c0",
+              "0x1a3611a90",
+              "0x1a39578a0",
+              "0x1a340f7ac",
+              "0x1a399c0c8",
+              "BNNSGraphContextExecute_v2",
+              "E5RT::Ops::BnnsCpuInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14d82c344",
+              "0x14d84ddf8",
+              "0x14d84ddd4",
+              "0x14d83948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "E5RT::Ops::CastOperation::ExecuteSync()": {
+            "sample_time_ns": 8767017500,
+            "stack": [
+              "__kdebug_trace64",
+              "E5RT::Ops::CastOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14d82c344",
+              "0x14d84ddf8",
+              "0x14d84ddd4",
+              "0x14d83948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)": {
+            "sample_time_ns": 8813017875,
+            "stack": [
+              "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, unsigned long)",
+              "Espresso::net::__forward(std::__1::shared_ptr<Espresso::abstract_batch> const&, int, int)",
+              "EspressoLight::espresso_plan::dispatch_task_on_compute_batch(std::__1::shared_ptr<Espresso::abstract_batch> const&, std::__1::shared_ptr<EspressoLight::plan_task_t> const&)",
+              "EspressoLight::espresso_plan::execute_sync()",
+              "espresso_plan_execute_sync",
+              "E5RT::Ops::BaseEirInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BaseEirInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14d82c344",
+              "0x14d84ddf8",
+              "0x14d84ddd4",
+              "0x14d83948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)": {
+            "sample_time_ns": 8827020500,
+            "stack": [
+              "void E5RT::ElementwiseOpCast<float, _Float16>(float*, _Float16 const*, unsigned long)",
+              "0x1b4b2728c",
+              "void E5RT::ElementwiseOperationImplementation<float, _Float16>(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&, std::__1::function<void (float*, _Float16 const*, unsigned long)> const&)",
+              "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)",
+              "E5RT::Ops::CastOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::CastOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14d82c344",
+              "0x14d84ddf8",
+              "0x14d84ddd4",
+              "0x14d83948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "Espresso::copy_kernel_cpu::__compute(std::__1::vector<std::__1::shared_ptr<Espresso::abstract_blob_container>, std::__1::allocator<std::__1::shared_ptr<Espresso::abstract_blob_container>>> const&, std::__1::vector<std::__1::shared_ptr<Espresso::abstract_blob_container>, std::__1::allocator<std::__1::shared_ptr<Espresso::abstract_blob_container>>> const&)": {
+            "sample_time_ns": 9512017875,
+            "stack": [
+              "Espresso::copy_kernel_cpu::__compute(std::__1::vector<std::__1::shared_ptr<Espresso::abstract_blob_container>, std::__1::allocator<std::__1::shared_ptr<Espresso::abstract_blob_container>>> const&, std::__1::vector<std::__1::shared_ptr<Espresso::abstract_blob_container>, std::__1::allocator<std::__1::shared_ptr<Espresso::abstract_blob_container>>> const&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, unsigned long)",
+              "Espresso::net::__forward(std::__1::shared_ptr<Espresso::abstract_batch> const&, int, int)",
+              "EspressoLight::espresso_plan::dispatch_task_on_compute_batch(std::__1::shared_ptr<Espresso::abstract_batch> const&, std::__1::shared_ptr<EspressoLight::plan_task_t> const&)",
+              "EspressoLight::espresso_plan::execute_sync()",
+              "espresso_plan_execute_sync",
+              "E5RT::Ops::BaseEirInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BaseEirInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14d82c344",
+              "0x14d84ddf8",
+              "0x14d84ddd4",
+              "0x14d83948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          }
+        },
+        "coreml_os_signpost_rows": 0
+      },
+      {
+        "name": "rfdetr-nano-ALL",
+        "pid": 60328,
+        "workload": {
+          "model": "rfdetr-nano",
+          "configured_compute_units": "ALL",
+          "warmup_predictions": 30,
+          "measured_predictions": 100,
+          "note": "Instrumented execution only; do not compare its timing with the uninstrumented latency profiles."
+        },
+        "analyzed_window_ns": [
+          5789842988.9678955,
+          7100130174.636841
+        ],
+        "ane_labels_in_window": {
+          "weights_1546202C-E830-4C59-A3FD-85AFD925CE15_main__Op0_AneInference Prediction": 100
+        },
+        "ane_model_prediction_intervals": 100,
+        "gpu_process_intervals_by_channel": {
+          "Compute": 202
+        },
+        "gpu_process_intervals": 202,
+        "gpu_label_examples": [
+          "weights_1546202C-E830-4C59-A3FD-85AFD925CE15_main__Op1_MpsGraphInference:Compute Command 0  (python (60328)) 0x48b35129",
+          "weights_1546202C-E830-4C59-A3FD-85AFD925CE15_main__Op1_MpsGraphInference+:Compute Command 0  (python (60328)) 0x48b3512b",
+          "weights_1546202C-E830-4C59-A3FD-85AFD925CE15_main__Op1_MpsGraphInference:Compute Command 0  (python (60328)) 0x48b35144",
+          "weights_1546202C-E830-4C59-A3FD-85AFD925CE15_main__Op1_MpsGraphInference+:Compute Command 0  (python (60328)) 0x48b35146",
+          "weights_1546202C-E830-4C59-A3FD-85AFD925CE15_main__Op1_MpsGraphInference:Compute Command 0  (python (60328)) 0x48b3514c",
+          "weights_1546202C-E830-4C59-A3FD-85AFD925CE15_main__Op1_MpsGraphInference+:Compute Command 0  (python (60328)) 0x48b3514e",
+          "weights_1546202C-E830-4C59-A3FD-85AFD925CE15_main__Op1_MpsGraphInference:Compute Command 0  (python (60328)) 0x48b35167",
+          "weights_1546202C-E830-4C59-A3FD-85AFD925CE15_main__Op1_MpsGraphInference+:Compute Command 0  (python (60328)) 0x48b35169"
+        ],
+        "cpu_samples_in_window": 575,
+        "cpu_graph_execution_samples": 0,
+        "cpu_graph_symbols_sample_counts": {},
+        "cpu_graph_stack_examples": {},
+        "coreml_os_signpost_rows": 0
+      },
+      {
+        "name": "rfdetr-small-CPUAndGPU",
+        "pid": 60595,
+        "workload": {
+          "model": "rfdetr-small",
+          "configured_compute_units": "CPU_AND_GPU",
+          "warmup_predictions": 30,
+          "measured_predictions": 100,
+          "note": "Instrumented execution only; do not compare its timing with the uninstrumented latency profiles."
+        },
+        "analyzed_window_ns": [
+          3654675867.0806885,
+          4896659944.534302
+        ],
+        "ane_labels_in_window": {},
+        "ane_model_prediction_intervals": 0,
+        "gpu_process_intervals_by_channel": {
+          "Compute": 804,
+          "Fragment": 1
+        },
+        "gpu_process_intervals": 805,
+        "gpu_label_examples": [
+          "weights_4BF14568-2FAD-45D4-8611-043BFADFB787_main__Op0_MpsGraphInference:Compute Command 0  (python (60595)) 0x49b3c897",
+          "weights_4BF14568-2FAD-45D4-8611-043BFADFB787_main__Op0_MpsGraphInference+:Compute Command 0  (python (60595)) 0x49b3c899",
+          "weights_4BF14568-2FAD-45D4-8611-043BFADFB787_main__Op0_MpsGraphInference++:Compute Command 0  (python (60595)) 0x49b3c89b",
+          "weights_4BF14568-2FAD-45D4-8611-043BFADFB787_main__Op0_MpsGraphInference+++:Compute Command 0  (python (60595)) 0x49b3c89d",
+          "weights_4BF14568-2FAD-45D4-8611-043BFADFB787_main__Op0_MpsGraphInference++++:Compute Command 0  (python (60595)) 0x49b3c89f",
+          "weights_4BF14568-2FAD-45D4-8611-043BFADFB787_main__Op0_MpsGraphInference+++++:Compute Command 0  (python (60595)) 0x49b3c8a1",
+          "weights_4BF14568-2FAD-45D4-8611-043BFADFB787_main__Op0_MpsGraphInference++++++:Compute Command 0  (python (60595)) 0x49b3c8a4",
+          "weights_4BF14568-2FAD-45D4-8611-043BFADFB787_main__Op0_MpsGraphInference+++++++:Compute Command 0  (python (60595)) 0x49b3c8a6"
+        ],
+        "cpu_samples_in_window": 1040,
+        "cpu_graph_execution_samples": 0,
+        "cpu_graph_symbols_sample_counts": {},
+        "cpu_graph_stack_examples": {},
+        "coreml_os_signpost_rows": 0
+      },
+      {
+        "name": "rfdetr-small-CPUAndNeuralEngine",
+        "pid": 60925,
+        "workload": {
+          "model": "rfdetr-small",
+          "configured_compute_units": "CPU_AND_NE",
+          "warmup_predictions": 30,
+          "measured_predictions": 100,
+          "note": "Instrumented execution only; do not compare its timing with the uninstrumented latency profiles."
+        },
+        "analyzed_window_ns": [
+          7489462997.436523,
+          9604395006.17981
+        ],
+        "ane_labels_in_window": {
+          "weights_111AA319-2DD6-4DB9-BA52-C73FAC5D8906_main__Op0_AneInference Prediction": 795
+        },
+        "ane_model_prediction_intervals": 795,
+        "gpu_process_intervals_by_channel": {},
+        "gpu_process_intervals": 0,
+        "gpu_label_examples": [],
+        "cpu_samples_in_window": 640,
+        "cpu_graph_execution_samples": 22,
+        "cpu_graph_symbols_sample_counts": {
+          "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)": 4,
+          "BNNSGraphContextExecute_v2": 14,
+          "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()": 14,
+          "void std::__1::__sift_down[abi:nqe220106]<std::__1::_ClassicAlgPolicy, false, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::__wrap_iter<std::__1::pair<float, int>*>>(std::__1::__wrap_iter<std::__1::pair<float, int>*>, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type)": 2,
+          "E5RT::Ops::CastOperation::ExecuteSync()": 3,
+          "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)": 3,
+          "Espresso::gather_nd_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)": 1,
+          "Espresso::(anonymous namespace)::execute_gather_nd(float const*, Espresso::layer_nd_shape const&, int, float const*, Espresso::layer_nd_shape const&, float*, int, int, int, std::__1::vector<int, std::__1::allocator<int>> const&, bool, bool)": 1
+        },
+        "cpu_graph_stack_examples": {
+          "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)": {
+            "sample_time_ns": 7843038458,
+            "stack": [
+              "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, unsigned long)",
+              "Espresso::net::__forward(std::__1::shared_ptr<Espresso::abstract_batch> const&, int, int)",
+              "EspressoLight::espresso_plan::dispatch_task_on_compute_batch(std::__1::shared_ptr<Espresso::abstract_batch> const&, std::__1::shared_ptr<EspressoLight::plan_task_t> const&)",
+              "EspressoLight::espresso_plan::execute_sync()",
+              "espresso_plan_execute_sync",
+              "E5RT::Ops::BaseEirInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BaseEirInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14983c344",
+              "0x14985ddf8",
+              "0x14985ddd4",
+              "0x14984948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "BNNSGraphContextExecute_v2": {
+            "sample_time_ns": 7844038458,
+            "stack": [
+              "0x1a3343700",
+              "0x1a3343230",
+              "0x1a3342300",
+              "0x1a340f7ac",
+              "0x1a399c0c8",
+              "BNNSGraphContextExecute_v2",
+              "E5RT::Ops::BnnsCpuInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14983c344",
+              "0x14985ddf8",
+              "0x14985ddd4",
+              "0x14984948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()": {
+            "sample_time_ns": 7844038458,
+            "stack": [
+              "0x1a3343700",
+              "0x1a3343230",
+              "0x1a3342300",
+              "0x1a340f7ac",
+              "0x1a399c0c8",
+              "BNNSGraphContextExecute_v2",
+              "E5RT::Ops::BnnsCpuInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14983c344",
+              "0x14985ddf8",
+              "0x14985ddd4",
+              "0x14984948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "void std::__1::__sift_down[abi:nqe220106]<std::__1::_ClassicAlgPolicy, false, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::__wrap_iter<std::__1::pair<float, int>*>>(std::__1::__wrap_iter<std::__1::pair<float, int>*>, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type)": {
+            "sample_time_ns": 8183038583,
+            "stack": [
+              "void std::__1::__sift_down[abi:nqe220106]<std::__1::_ClassicAlgPolicy, false, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::__wrap_iter<std::__1::pair<float, int>*>>(std::__1::__wrap_iter<std::__1::pair<float, int>*>, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type)",
+              "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, unsigned long)",
+              "Espresso::net::__forward(std::__1::shared_ptr<Espresso::abstract_batch> const&, int, int)",
+              "EspressoLight::espresso_plan::dispatch_task_on_compute_batch(std::__1::shared_ptr<Espresso::abstract_batch> const&, std::__1::shared_ptr<EspressoLight::plan_task_t> const&)",
+              "EspressoLight::espresso_plan::execute_sync()",
+              "espresso_plan_execute_sync",
+              "E5RT::Ops::BaseEirInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BaseEirInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14983c344",
+              "0x14985ddf8",
+              "0x14985ddd4",
+              "0x14984948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "E5RT::Ops::CastOperation::ExecuteSync()": {
+            "sample_time_ns": 8249038416,
+            "stack": [
+              "void E5RT::ElementwiseOpCast<float, _Float16>(float*, _Float16 const*, unsigned long)",
+              "0x1b4b2728c",
+              "void E5RT::ElementwiseOperationImplementation<float, _Float16>(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&, std::__1::function<void (float*, _Float16 const*, unsigned long)> const&)",
+              "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)",
+              "E5RT::Ops::CastOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::CastOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14983c344",
+              "0x14985ddf8",
+              "0x14985ddd4",
+              "0x14984948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)": {
+            "sample_time_ns": 8249038416,
+            "stack": [
+              "void E5RT::ElementwiseOpCast<float, _Float16>(float*, _Float16 const*, unsigned long)",
+              "0x1b4b2728c",
+              "void E5RT::ElementwiseOperationImplementation<float, _Float16>(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&, std::__1::function<void (float*, _Float16 const*, unsigned long)> const&)",
+              "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)",
+              "E5RT::Ops::CastOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::CastOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14983c344",
+              "0x14985ddf8",
+              "0x14985ddd4",
+              "0x14984948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "Espresso::gather_nd_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)": {
+            "sample_time_ns": 8755038416,
+            "stack": [
+              "_platform_memmove",
+              "<deduplicated_symbol>",
+              "Espresso::(anonymous namespace)::execute_gather_nd(float const*, Espresso::layer_nd_shape const&, int, float const*, Espresso::layer_nd_shape const&, float*, int, int, int, std::__1::vector<int, std::__1::allocator<int>> const&, bool, bool)",
+              "Espresso::gather_nd_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, unsigned long)",
+              "Espresso::net::__forward(std::__1::shared_ptr<Espresso::abstract_batch> const&, int, int)",
+              "EspressoLight::espresso_plan::dispatch_task_on_compute_batch(std::__1::shared_ptr<Espresso::abstract_batch> const&, std::__1::shared_ptr<EspressoLight::plan_task_t> const&)",
+              "EspressoLight::espresso_plan::execute_sync()",
+              "espresso_plan_execute_sync",
+              "E5RT::Ops::BaseEirInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BaseEirInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14983c344",
+              "0x14985ddf8",
+              "0x14985ddd4",
+              "0x14984948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "Espresso::(anonymous namespace)::execute_gather_nd(float const*, Espresso::layer_nd_shape const&, int, float const*, Espresso::layer_nd_shape const&, float*, int, int, int, std::__1::vector<int, std::__1::allocator<int>> const&, bool, bool)": {
+            "sample_time_ns": 8755038416,
+            "stack": [
+              "_platform_memmove",
+              "<deduplicated_symbol>",
+              "Espresso::(anonymous namespace)::execute_gather_nd(float const*, Espresso::layer_nd_shape const&, int, float const*, Espresso::layer_nd_shape const&, float*, int, int, int, std::__1::vector<int, std::__1::allocator<int>> const&, bool, bool)",
+              "Espresso::gather_nd_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, unsigned long)",
+              "Espresso::net::__forward(std::__1::shared_ptr<Espresso::abstract_batch> const&, int, int)",
+              "EspressoLight::espresso_plan::dispatch_task_on_compute_batch(std::__1::shared_ptr<Espresso::abstract_batch> const&, std::__1::shared_ptr<EspressoLight::plan_task_t> const&)",
+              "EspressoLight::espresso_plan::execute_sync()",
+              "espresso_plan_execute_sync",
+              "E5RT::Ops::BaseEirInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BaseEirInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14983c344",
+              "0x14985ddf8",
+              "0x14985ddd4",
+              "0x14984948c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          }
+        },
+        "coreml_os_signpost_rows": 0
+      },
+      {
+        "name": "rfdetr-small-ALL",
+        "pid": 61045,
+        "workload": {
+          "model": "rfdetr-small",
+          "configured_compute_units": "ALL",
+          "warmup_predictions": 30,
+          "measured_predictions": 100,
+          "note": "Instrumented execution only; do not compare its timing with the uninstrumented latency profiles."
+        },
+        "analyzed_window_ns": [
+          6220067884.44519,
+          8750563953.399658
+        ],
+        "ane_labels_in_window": {
+          "weights_9BDF38AD-4453-476C-AEBD-CC7EAEE8C500_main__Op0_AneInference Prediction": 100
+        },
+        "ane_model_prediction_intervals": 100,
+        "gpu_process_intervals_by_channel": {
+          "Compute": 407,
+          "Fragment": 3
+        },
+        "gpu_process_intervals": 410,
+        "gpu_label_examples": [
+          "weights_9BDF38AD-4453-476C-AEBD-CC7EAEE8C500_main__Op1_MpsGraphInference:Compute Command 0  (python (61045)) 0x4ab5c08f",
+          "weights_9BDF38AD-4453-476C-AEBD-CC7EAEE8C500_main__Op1_MpsGraphInference+:Compute Command 0  (python (61045)) 0x4ab5c091",
+          "weights_9BDF38AD-4453-476C-AEBD-CC7EAEE8C500_main__Op1_MpsGraphInference++:Compute Command 0  (python (61045)) 0x4ab5c093",
+          "weights_9BDF38AD-4453-476C-AEBD-CC7EAEE8C500_main__Op1_MpsGraphInference+++:Compute Command 0  (python (61045)) 0x4ab5c095",
+          "weights_9BDF38AD-4453-476C-AEBD-CC7EAEE8C500_main__Op1_MpsGraphInference:Compute Command 0  (python (61045)) 0x4ab5c136",
+          "weights_9BDF38AD-4453-476C-AEBD-CC7EAEE8C500_main__Op1_MpsGraphInference+:Compute Command 0  (python (61045)) 0x4ab5c138",
+          "weights_9BDF38AD-4453-476C-AEBD-CC7EAEE8C500_main__Op1_MpsGraphInference++:Compute Command 0  (python (61045)) 0x4ab5c13a",
+          "weights_9BDF38AD-4453-476C-AEBD-CC7EAEE8C500_main__Op1_MpsGraphInference+++:Compute Command 0  (python (61045)) 0x4ab5c13c"
+        ],
+        "cpu_samples_in_window": 971,
+        "cpu_graph_execution_samples": 0,
+        "cpu_graph_symbols_sample_counts": {},
+        "cpu_graph_stack_examples": {},
+        "coreml_os_signpost_rows": 0
+      },
+      {
+        "name": "rfdetr-large-CPUAndGPU",
+        "pid": 61152,
+        "workload": {
+          "model": "rfdetr-large",
+          "configured_compute_units": "CPU_AND_GPU",
+          "warmup_predictions": 30,
+          "measured_predictions": 100,
+          "note": "Instrumented execution only; do not compare its timing with the uninstrumented latency profiles."
+        },
+        "analyzed_window_ns": [
+          3894830133.4381104,
+          5842253063.201904
+        ],
+        "ane_labels_in_window": {},
+        "ane_model_prediction_intervals": 0,
+        "gpu_process_intervals_by_channel": {
+          "Compute": 1103
+        },
+        "gpu_process_intervals": 1103,
+        "gpu_label_examples": [
+          "weights_3A1A15D1-E049-4357-9A29-1A05496D229A_main__Op0_MpsGraphInference:Compute Command 0  (python (61152)) 0x4bb66b06",
+          "weights_3A1A15D1-E049-4357-9A29-1A05496D229A_main__Op0_MpsGraphInference+:Compute Command 0  (python (61152)) 0x4bb66b08",
+          "weights_3A1A15D1-E049-4357-9A29-1A05496D229A_main__Op0_MpsGraphInference++:Compute Command 0  (python (61152)) 0x4bb66b0a",
+          "weights_3A1A15D1-E049-4357-9A29-1A05496D229A_main__Op0_MpsGraphInference+++:Compute Command 0  (python (61152)) 0x4bb66b0c",
+          "weights_3A1A15D1-E049-4357-9A29-1A05496D229A_main__Op0_MpsGraphInference++++:Compute Command 0  (python (61152)) 0x4bb66b0e",
+          "weights_3A1A15D1-E049-4357-9A29-1A05496D229A_main__Op0_MpsGraphInference+++++:Compute Command 0  (python (61152)) 0x4bb66b10",
+          "weights_3A1A15D1-E049-4357-9A29-1A05496D229A_main__Op0_MpsGraphInference++++++:Compute Command 0  (python (61152)) 0x4bb66b12",
+          "weights_3A1A15D1-E049-4357-9A29-1A05496D229A_main__Op0_MpsGraphInference+++++++:Compute Command 0  (python (61152)) 0x4bb66b15"
+        ],
+        "cpu_samples_in_window": 1473,
+        "cpu_graph_execution_samples": 0,
+        "cpu_graph_symbols_sample_counts": {},
+        "cpu_graph_stack_examples": {},
+        "coreml_os_signpost_rows": 0
+      },
+      {
+        "name": "rfdetr-large-CPUAndNeuralEngine",
+        "pid": 61239,
+        "workload": {
+          "model": "rfdetr-large",
+          "configured_compute_units": "CPU_AND_NE",
+          "warmup_predictions": 30,
+          "measured_predictions": 100,
+          "note": "Instrumented execution only; do not compare its timing with the uninstrumented latency profiles."
+        },
+        "analyzed_window_ns": [
+          9061412002.563477,
+          14549975965.499878
+        ],
+        "ane_labels_in_window": {
+          "weights_5133D32C-5644-4968-9F8C-75462B795142_main__Op0_AneInference Prediction": 997
+        },
+        "ane_model_prediction_intervals": 997,
+        "gpu_process_intervals_by_channel": {},
+        "gpu_process_intervals": 0,
+        "gpu_label_examples": [],
+        "cpu_samples_in_window": 1067,
+        "cpu_graph_execution_samples": 17,
+        "cpu_graph_symbols_sample_counts": {
+          "BNNSGraphContextExecute_v2": 10,
+          "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()": 10,
+          "E5RT::Ops::CastOperation::ExecuteSync()": 6,
+          "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)": 4,
+          "void std::__1::__sift_down[abi:nqe220106]<std::__1::_ClassicAlgPolicy, false, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::__wrap_iter<std::__1::pair<float, int>*>>(std::__1::__wrap_iter<std::__1::pair<float, int>*>, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type)": 1,
+          "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)": 1
+        },
+        "cpu_graph_stack_examples": {
+          "BNNSGraphContextExecute_v2": {
+            "sample_time_ns": 9167210125,
+            "stack": [
+              "0x1a361984c",
+              "0x1a3619588",
+              "0x1a361cc10",
+              "_dispatch_client_callout2",
+              "_dispatch_apply_serial",
+              "_dispatch_client_callout",
+              "_dispatch_sync_function_invoke",
+              "_dispatch_apply_with_attr_f",
+              "dispatch_apply",
+              "0x1a36134c0",
+              "0x1a3611a90",
+              "0x1a39578a0",
+              "0x1a340f7ac",
+              "0x1a399c0c8",
+              "BNNSGraphContextExecute_v2",
+              "E5RT::Ops::BnnsCpuInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14be98344",
+              "0x14beb9df8",
+              "0x14beb9dd4",
+              "0x14bea548c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()": {
+            "sample_time_ns": 9167210125,
+            "stack": [
+              "0x1a361984c",
+              "0x1a3619588",
+              "0x1a361cc10",
+              "_dispatch_client_callout2",
+              "_dispatch_apply_serial",
+              "_dispatch_client_callout",
+              "_dispatch_sync_function_invoke",
+              "_dispatch_apply_with_attr_f",
+              "dispatch_apply",
+              "0x1a36134c0",
+              "0x1a3611a90",
+              "0x1a39578a0",
+              "0x1a340f7ac",
+              "0x1a399c0c8",
+              "BNNSGraphContextExecute_v2",
+              "E5RT::Ops::BnnsCpuInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BnnsCpuInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14be98344",
+              "0x14beb9df8",
+              "0x14beb9dd4",
+              "0x14bea548c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "E5RT::Ops::CastOperation::ExecuteSync()": {
+            "sample_time_ns": 9935210916,
+            "stack": [
+              "void E5RT::ElementwiseOpCast<float, _Float16>(float*, _Float16 const*, unsigned long)",
+              "0x1b4b2728c",
+              "void E5RT::ElementwiseOperationImplementation<float, _Float16>(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&, std::__1::function<void (float*, _Float16 const*, unsigned long)> const&)",
+              "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)",
+              "E5RT::Ops::CastOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::CastOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14be98344",
+              "0x14beb9df8",
+              "0x14beb9dd4",
+              "0x14bea548c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)": {
+            "sample_time_ns": 9935210916,
+            "stack": [
+              "void E5RT::ElementwiseOpCast<float, _Float16>(float*, _Float16 const*, unsigned long)",
+              "0x1b4b2728c",
+              "void E5RT::ElementwiseOperationImplementation<float, _Float16>(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&, std::__1::function<void (float*, _Float16 const*, unsigned long)> const&)",
+              "E5RT::Ops::PerformDataFormatChange(E5RT::TensorDescriptor const&, E5RT::BufferObject const&, E5RT::TensorDescriptor const&, E5RT::BufferObject&)",
+              "E5RT::Ops::CastOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::CastOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14be98344",
+              "0x14beb9df8",
+              "0x14beb9dd4",
+              "0x14bea548c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "void std::__1::__sift_down[abi:nqe220106]<std::__1::_ClassicAlgPolicy, false, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::__wrap_iter<std::__1::pair<float, int>*>>(std::__1::__wrap_iter<std::__1::pair<float, int>*>, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type)": {
+            "sample_time_ns": 14324210666,
+            "stack": [
+              "void std::__1::__sift_down[abi:nqe220106]<std::__1::_ClassicAlgPolicy, false, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::__wrap_iter<std::__1::pair<float, int>*>>(std::__1::__wrap_iter<std::__1::pair<float, int>*>, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type)",
+              "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, unsigned long)",
+              "Espresso::net::__forward(std::__1::shared_ptr<Espresso::abstract_batch> const&, int, int)",
+              "EspressoLight::espresso_plan::dispatch_task_on_compute_batch(std::__1::shared_ptr<Espresso::abstract_batch> const&, std::__1::shared_ptr<EspressoLight::plan_task_t> const&)",
+              "EspressoLight::espresso_plan::execute_sync()",
+              "espresso_plan_execute_sync",
+              "E5RT::Ops::BaseEirInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BaseEirInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14be98344",
+              "0x14beb9df8",
+              "0x14beb9dd4",
+              "0x14bea548c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          },
+          "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)": {
+            "sample_time_ns": 14324210666,
+            "stack": [
+              "void std::__1::__sift_down[abi:nqe220106]<std::__1::_ClassicAlgPolicy, false, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::__wrap_iter<std::__1::pair<float, int>*>>(std::__1::__wrap_iter<std::__1::pair<float, int>*>, Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)::$_6&, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type, std::__1::iterator_traits<std::__1::__wrap_iter<std::__1::pair<float, int>*>>::difference_type)",
+              "Espresso::topk_kernel_cpu::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, Espresso::layer_data&, Espresso::layer_data&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&)",
+              "Espresso::layer::__launch(std::__1::shared_ptr<Espresso::abstract_batch> const&, unsigned long)",
+              "Espresso::net::__forward(std::__1::shared_ptr<Espresso::abstract_batch> const&, int, int)",
+              "EspressoLight::espresso_plan::dispatch_task_on_compute_batch(std::__1::shared_ptr<Espresso::abstract_batch> const&, std::__1::shared_ptr<EspressoLight::plan_task_t> const&)",
+              "EspressoLight::espresso_plan::execute_sync()",
+              "espresso_plan_execute_sync",
+              "E5RT::Ops::BaseEirInferenceOperation::Impl::ExecuteSync()",
+              "E5RT::Ops::BaseEirInferenceOperation::ExecuteSync()",
+              "void E5RT::ExecutionStreamImpl::ExecuteStreamSyncImpl<(E5RT::TraceDetail::EventId)723730532>(E5RT::ExecuteOptions const&, std::__1::function<void ()>)",
+              "E5RT::ExecutionStreamImpl::ExecuteStreamSync()",
+              "0x1b4aceb14",
+              "E5RT::ExceptionSafeExecute(std::__1::function<e5rt_error_code_t ()>)",
+              "e5rt_execution_stream_execute_sync",
+              "-[MLE5ExecutionStream _executeStream:error:]",
+              "-[MLE5ExecutionStream executeForInputFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:stream:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:options:error:]",
+              "-[MLE5Engine _predictionFromFeatures:usingState:options:error:]",
+              "-[MLE5Engine predictionFromFeatures:options:error:]",
+              "-[MLDelegateModel _predictionFromFeatures:usingState:options:error:]",
+              "-[MLDelegateModel predictionFromFeatures:options:error:]",
+              "-[MLModel predictionFromFeatures:error:]",
+              "0x14be98344",
+              "0x14beb9df8",
+              "0x14beb9dd4",
+              "0x14bea548c",
+              "cfunction_call",
+              "_PyEval_EvalFrameDefault",
+              "method_vectorcall.llvm.3317310209989689631",
+              "_PyEval_EvalFrameDefault",
+              "PyEval_EvalCode",
+              "run_mod.llvm.8217961648363706888",
+              "pyrun_file",
+              "_PyRun_SimpleFileObject",
+              "_PyRun_AnyFileObject",
+              "pymain_run_file_obj",
+              "pymain_run_file",
+              "Py_RunMain",
+              "pymain_main",
+              "Py_BytesMain",
+              "start"
+            ]
+          }
+        },
+        "coreml_os_signpost_rows": 0
+      },
+      {
+        "name": "rfdetr-large-ALL",
+        "pid": 61577,
+        "workload": {
+          "model": "rfdetr-large",
+          "configured_compute_units": "ALL",
+          "warmup_predictions": 30,
+          "measured_predictions": 100,
+          "note": "Instrumented execution only; do not compare its timing with the uninstrumented latency profiles."
+        },
+        "analyzed_window_ns": [
+          7535160209.655762,
+          13017804000.854492
+        ],
+        "ane_labels_in_window": {
+          "weights_77F408D5-6FEC-49C8-B5BE-41EACD092B52_main__Op0_AneInference Prediction": 100,
+          "Neural Engine Load: cached": 2
+        },
+        "ane_model_prediction_intervals": 100,
+        "gpu_process_intervals_by_channel": {
+          "Compute": 401,
+          "Vertex": 1
+        },
+        "gpu_process_intervals": 402,
+        "gpu_label_examples": [
+          "weights_77F408D5-6FEC-49C8-B5BE-41EACD092B52_main__Op1_MpsGraphInference:Compute Command 0  (python (61577)) 0x4cb9f423",
+          "weights_77F408D5-6FEC-49C8-B5BE-41EACD092B52_main__Op1_MpsGraphInference+:Compute Command 0  (python (61577)) 0x4cb9f425",
+          "weights_77F408D5-6FEC-49C8-B5BE-41EACD092B52_main__Op1_MpsGraphInference++:Compute Command 0  (python (61577)) 0x4cb9f427",
+          "weights_77F408D5-6FEC-49C8-B5BE-41EACD092B52_main__Op1_MpsGraphInference+++:Compute Command 0  (python (61577)) 0x4cb9f429",
+          "weights_77F408D5-6FEC-49C8-B5BE-41EACD092B52_main__Op1_MpsGraphInference:Compute Command 0  (python (61577)) 0x4cb9f433",
+          "weights_77F408D5-6FEC-49C8-B5BE-41EACD092B52_main__Op1_MpsGraphInference+:Compute Command 0  (python (61577)) 0x4cb9f435",
+          "weights_77F408D5-6FEC-49C8-B5BE-41EACD092B52_main__Op1_MpsGraphInference++:Compute Command 0  (python (61577)) 0x4cb9f437",
+          "weights_77F408D5-6FEC-49C8-B5BE-41EACD092B52_main__Op1_MpsGraphInference+++:Compute Command 0  (python (61577)) 0x4cb9f439"
+        ],
+        "cpu_samples_in_window": 1246,
+        "cpu_graph_execution_samples": 0,
+        "cpu_graph_symbols_sample_counts": {},
+        "cpu_graph_stack_examples": {},
+        "coreml_os_signpost_rows": 0
+      }
+    ]
+  },
+  "evidence_scope": "Derived summaries, model/dataset hashes, and sampled CPU stacks. Raw latency records and native system-wide Instruments traces are retained locally; not included in this repository.",
+  "package_manifests": {
+    "rfdetr-nano": {
+      "model_id": "rfdetr-nano",
+      "architecture": "rfdetr",
+      "task_type": "object-detection",
+      "model_variant": "rfdetr-nano",
+      "package": {
+        "package_id": "915c9fa705ddc50cac48f64df6deaf89",
+        "package_backend": "coreml",
+        "harness_backend": "coreml",
+        "quantization": "fp16",
+        "static_batch_size": 1
+      }
+    },
+    "rfdetr-small": {
+      "model_id": "rfdetr-small",
+      "architecture": "rfdetr",
+      "task_type": "object-detection",
+      "model_variant": "rfdetr-small",
+      "package": {
+        "package_id": "915c9fa705ddc50cac48f64df6deaf89",
+        "package_backend": "coreml",
+        "harness_backend": "coreml",
+        "quantization": "fp16",
+        "static_batch_size": 1
+      }
+    },
+    "rfdetr-large": {
+      "model_id": "rfdetr-large",
+      "architecture": "rfdetr",
+      "task_type": "object-detection",
+      "model_variant": "rfdetr-large",
+      "package": {
+        "package_id": "915c9fa705ddc50cac48f64df6deaf89",
+        "package_backend": "coreml",
+        "harness_backend": "coreml",
+        "quantization": "fp16",
+        "static_batch_size": 1
+      }
+    }
+  }
+}
