@@ -2998,7 +2998,7 @@ class InferenceHTTPClient:
         source_buffer_consumption_strategy: Optional[
             BufferConsumptionStrategy
         ] = "EAGER",
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
         batch_collection_timeout: Optional[float] = None,
         results_buffer_size: int = 64,
     ) -> dict:
