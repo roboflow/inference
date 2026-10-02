@@ -14,6 +14,7 @@ from roboflow_workflows.prototypes.platform_errors import (
     RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
     RoboflowAPIRequestError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
@@ -578,3 +579,163 @@ async def test_workspace_lookup_without_key_is_mapped_by_the_workflow_error_deco
     assert json.loads(response.body) == {
         "message": "Internal error. Request to Roboflow API failed."
     }
+
+
+PROJECT_READS = [
+    (
+        "get_roboflow_dataset_type",
+        f"{API_URL}/ws/proj?api_key=my-key&nocache=true",
+        {"project": {"type": "classification"}},
+        "classification",
+    ),
+    (
+        "get_roboflow_active_learning_configuration",
+        f"{API_URL}/ws/proj/active_learning?api_key=my-key",
+        {"enabled": True},
+        {"enabled": True},
+    ),
+    (
+        "get_roboflow_labeling_batches",
+        f"{API_URL}/ws/proj/batches?api_key=my-key",
+        {"batches": [{"name": "b"}]},
+        {"batches": [{"name": "b"}]},
+    ),
+    (
+        "get_roboflow_labeling_jobs",
+        f"{API_URL}/ws/proj/jobs?api_key=my-key",
+        {"jobs": [{"numImages": 2}]},
+        {"jobs": [{"numImages": 2}]},
+    ),
+]
+PROJECT_READ_NAMES = [name for name, _, _, _ in PROJECT_READS]
+
+
+def _read_project(client: host.ServerRoboflowPlatformClient, operation: str):
+    return getattr(client, operation)(
+        api_key="my-key", workspace_id="ws", dataset_id="proj"
+    )
+
+
+@pytest.mark.parametrize("operation, url, payload, expected_result", PROJECT_READS)
+def test_project_read_goes_through_headers_and_url_wrapping(
+    operation, url, payload, expected_result
+) -> None:
+    client = _RecordingPlatformClient()
+
+    with mock.patch.object(
+        host.requests, "get", return_value=_response(payload=payload)
+    ) as get:
+        result = _read_project(client, operation)
+
+    assert result == expected_result
+    assert client.wrapped == [url]
+    assert get.call_count == 1
+    assert get.call_args.kwargs["url"] == f"https://gateway.example/proxy?url={url}"
+    assert get.call_args.kwargs["headers"] == {"x-host": "yes"}
+    assert get.call_args.kwargs["timeout"] == host.API_REQUEST_TIMEOUT_S
+    assert "verify" not in get.call_args.kwargs
+
+
+@pytest.mark.parametrize("operation", PROJECT_READ_NAMES)
+def test_project_read_disables_verification_when_the_switch_is_off(
+    monkeypatch, operation
+) -> None:
+    monkeypatch.setattr(host.configuration, "ROBOFLOW_API_VERIFY_SSL", False)
+
+    with mock.patch.object(
+        host.requests, "get", return_value=_response(payload={})
+    ) as get:
+        _read_project(_RecordingPlatformClient(), operation)
+
+    assert get.call_args.kwargs["verify"] is False
+
+
+@pytest.mark.parametrize("payload", [{}, {"project": {}}])
+def test_dataset_type_defaults_to_object_detection(payload) -> None:
+    with mock.patch.object(
+        host.requests, "get", return_value=_response(payload=payload)
+    ):
+        dataset_type = _RecordingPlatformClient().get_roboflow_dataset_type(
+            api_key="my-key", workspace_id="ws", dataset_id="proj"
+        )
+
+    assert dataset_type == "object-detection"
+
+
+@pytest.mark.parametrize("operation", PROJECT_READ_NAMES)
+@pytest.mark.parametrize(
+    "status_code, error_class",
+    [
+        (401, RoboflowAPINotAuthorizedError),
+        (403, RoboflowAPIForbiddenError),
+        (404, RoboflowAPINotNotFoundError),
+        (500, RoboflowAPIUnsuccessfulRequestError),
+    ],
+)
+def test_project_read_http_errors_map_onto_the_shared_error_classes(
+    operation, status_code, error_class
+) -> None:
+    response = _response(
+        status_code=status_code, url=f"{API_URL}/ws/proj?api_key=my-secret-key"
+    )
+
+    with mock.patch.object(host.requests, "get", return_value=response):
+        with pytest.raises(error_class) as error:
+            _read_project(_RecordingPlatformClient(), operation)
+
+    assert "my-secret-key" not in str(error.value)
+
+
+@pytest.mark.parametrize("operation", PROJECT_READ_NAMES)
+@pytest.mark.parametrize(
+    "transport_error, error_class",
+    [
+        (requests.exceptions.Timeout(), RoboflowAPITimeoutError),
+        (requests.exceptions.ConnectionError(), RoboflowAPIConnectionError),
+    ],
+)
+def test_project_read_transport_errors_map_onto_the_shared_error_classes(
+    operation, transport_error, error_class
+) -> None:
+    with mock.patch.object(host.requests, "get", side_effect=transport_error):
+        with pytest.raises(error_class):
+            _read_project(_RecordingPlatformClient(), operation)
+
+
+@pytest.mark.parametrize("operation", PROJECT_READ_NAMES)
+def test_project_read_rejects_a_response_that_is_not_json(operation) -> None:
+    response = _response()
+    response._content = b"<html>"
+
+    with mock.patch.object(host.requests, "get", return_value=response):
+        with pytest.raises(RoboflowAPIRequestError, match="Could not decode JSON"):
+            _read_project(_RecordingPlatformClient(), operation)
+
+
+@pytest.mark.parametrize("operation", PROJECT_READ_NAMES)
+def test_project_read_is_refused_in_offline_mode(monkeypatch, operation) -> None:
+    monkeypatch.setattr(host.configuration, "LEGACY_OFFLINE_MODE", True)
+
+    with mock.patch.object(host.requests, "get") as get:
+        with pytest.raises(RoboflowAPIConnectionError, match="OFFLINE_MODE"):
+            _read_project(_RecordingPlatformClient(), operation)
+
+    get.assert_not_called()
+
+
+@pytest.mark.parametrize("operation", PROJECT_READ_NAMES)
+@pytest.mark.parametrize("status_code", [200, 500])
+def test_project_read_records_its_duration_under_the_legacy_function_name(
+    operation, status_code
+) -> None:
+    with mock.patch.object(
+        host.requests, "get", return_value=_response(status_code=status_code)
+    ), mock.patch.object(host.telemetry, "record_api_call") as record_api_call:
+        try:
+            _read_project(_RecordingPlatformClient(), operation)
+        except RoboflowAPIUnsuccessfulRequestError:
+            pass
+
+    assert record_api_call.call_count == 1
+    assert record_api_call.call_args.args[0] == operation
+    assert record_api_call.call_args.args[1] >= 0.0

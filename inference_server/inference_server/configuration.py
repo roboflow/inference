@@ -260,6 +260,13 @@ DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS = get_boolean_from_env(
 OFFLINE_MODE = get_boolean_from_env("OFFLINE_MODE", default=False)
 LEGACY_OFFLINE_MODE = _MODELS_OFFLINE_MODE
 DISABLE_INFERENCE_CACHE = get_boolean_from_env("DISABLE_INFERENCE_CACHE", default=False)
+ACTIVE_LEARNING_ENABLED = get_boolean_from_env("ACTIVE_LEARNING_ENABLED", default=True)
+if LEGACY_OFFLINE_MODE:
+    ACTIVE_LEARNING_ENABLED = False
+_ACTIVE_LEARNING_TAGS_RAW = os.environ.get("ACTIVE_LEARNING_TAGS")
+ACTIVE_LEARNING_TAGS = (
+    None if _ACTIVE_LEARNING_TAGS_RAW is None else _ACTIVE_LEARNING_TAGS_RAW.split(",")
+)
 
 # ── OpenTelemetry tracing and metrics (telemetry.py) ───────────────────────
 OTEL_TRACING_ENABLED = get_boolean_from_env("OTEL_TRACING_ENABLED", default=False)

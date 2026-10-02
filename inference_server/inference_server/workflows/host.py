@@ -800,6 +800,141 @@ class ServerRoboflowPlatformClient:
             raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
         return workspace_id
 
+    def _get_from_api(self, url: str) -> dict:
+        def _call() -> dict:
+            response = requests.get(
+                url=self.wrap_url(url),
+                headers=self.build_api_headers(),
+                timeout=API_REQUEST_TIMEOUT_S,
+                **platform_http.tls_verification_options(),
+            )
+            _api_key_safe_raise_for_status(response=response)
+            return response.json()
+
+        parsed_response = _translate_platform_api_errors(_call)
+
+        return parsed_response
+
+    @_records_api_call("get_roboflow_dataset_type")
+    def get_roboflow_dataset_type(
+        self, api_key: str, workspace_id: str, dataset_id: str
+    ) -> str:
+        """Fetch the task type of a Roboflow project.
+
+        Args:
+            api_key: Roboflow API key.
+            workspace_id: Workspace owning the project.
+            dataset_id: Project identifier.
+
+        Returns:
+            The project type, ``object-detection`` when the platform reports none.
+
+        Raises:
+            RoboflowAPIRequestError: If the platform cannot be reached or rejects
+                the request.
+        """
+        _refuse_when_offline(operation="fetch dataset type")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/{dataset_id}"),
+            params=[("api_key", api_key), ("nocache", "true")],
+        )
+
+        project = self._get_from_api(url).get("project", {})
+        if "type" not in project:
+            logger.warning(
+                "Project task type not defined for workspace=%s and dataset=%s, "
+                "defaulting to object-detection.",
+                workspace_id,
+                dataset_id,
+            )
+        dataset_type = project.get("type", "object-detection")
+
+        return dataset_type
+
+    @_records_api_call("get_roboflow_active_learning_configuration")
+    def get_roboflow_active_learning_configuration(
+        self, api_key: str, workspace_id: str, dataset_id: str
+    ) -> dict:
+        """Fetch the active learning configuration of a Roboflow project.
+
+        Args:
+            api_key: Roboflow API key.
+            workspace_id: Workspace owning the project.
+            dataset_id: Project identifier.
+
+        Returns:
+            The configuration document as the platform returns it.
+
+        Raises:
+            RoboflowAPIRequestError: If the platform cannot be reached or rejects
+                the request.
+        """
+        _refuse_when_offline(operation="fetch active learning configuration")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/{dataset_id}/active_learning"),
+            params=[("api_key", api_key)],
+        )
+
+        active_learning_configuration = self._get_from_api(url)
+
+        return active_learning_configuration
+
+    @_records_api_call("get_roboflow_labeling_batches")
+    def get_roboflow_labeling_batches(
+        self, api_key: str, workspace_id: str, dataset_id: str
+    ) -> dict:
+        """Fetch the labeling batches of a Roboflow project.
+
+        Args:
+            api_key: Roboflow API key.
+            workspace_id: Workspace owning the project.
+            dataset_id: Project identifier.
+
+        Returns:
+            The platform response, with the batches under ``batches``.
+
+        Raises:
+            RoboflowAPIRequestError: If the platform cannot be reached or rejects
+                the request.
+        """
+        _refuse_when_offline(operation="fetch labeling batches")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/{dataset_id}/batches"),
+            params=[("api_key", api_key)],
+        )
+
+        labeling_batches = self._get_from_api(url)
+
+        return labeling_batches
+
+    @_records_api_call("get_roboflow_labeling_jobs")
+    def get_roboflow_labeling_jobs(
+        self, api_key: str, workspace_id: str, dataset_id: str
+    ) -> dict:
+        """Fetch the labeling jobs of a Roboflow project.
+
+        Args:
+            api_key: Roboflow API key.
+            workspace_id: Workspace owning the project.
+            dataset_id: Project identifier.
+
+        Returns:
+            The platform response, with the jobs under ``jobs``.
+
+        Raises:
+            RoboflowAPIRequestError: If the platform cannot be reached or rejects
+                the request.
+        """
+        _refuse_when_offline(operation="fetch labeling jobs")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/{dataset_id}/jobs"),
+            params=[("api_key", api_key)],
+        )
+
+        labeling_jobs = self._get_from_api(url)
+
+        return labeling_jobs
+
     @_records_api_call("add_custom_metadata")
     def add_custom_metadata(
         self,

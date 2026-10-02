@@ -615,6 +615,30 @@ PLATFORM_CALLS = [
     ),
     ("get_roboflow_workspace", lambda client: client.get_roboflow_workspace("k")),
     (
+        "get_roboflow_dataset_type",
+        lambda client: client.get_roboflow_dataset_type(
+            api_key="k", workspace_id="ws", dataset_id="p"
+        ),
+    ),
+    (
+        "get_roboflow_active_learning_configuration",
+        lambda client: client.get_roboflow_active_learning_configuration(
+            api_key="k", workspace_id="ws", dataset_id="p"
+        ),
+    ),
+    (
+        "get_roboflow_labeling_batches",
+        lambda client: client.get_roboflow_labeling_batches(
+            api_key="k", workspace_id="ws", dataset_id="p"
+        ),
+    ),
+    (
+        "get_roboflow_labeling_jobs",
+        lambda client: client.get_roboflow_labeling_jobs(
+            api_key="k", workspace_id="ws", dataset_id="p"
+        ),
+    ),
+    (
         "_make_request",
         lambda client: client.post(endpoint="ws/vision-events", api_key="k"),
     ),

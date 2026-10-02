@@ -286,6 +286,8 @@ definition; the last column is the new reader.
 | `METRICS_URL` | `env.py:792` | `configuration.py`; `pingback.py`: destination of the post, routed through `SECURE_GATEWAY` when set | `{API_BASE_URL}/inference-stats` |
 | `TINY_CACHE` | `env.py:289` | `configuration.py`; `pingback.py`: `True` records the condensed item (request fields `api_key`, `confidence`, `model_id`, `model_type`, `source`, `source_info`; per prediction `class` and `confidence`); `False` records the full request and response as JSON without their `image` fields (removed when recorded, not when the report is built), unless the item exceeds 8192 values, 128 Ki characters of strings or 256 KiB of JSON, or a response is not a response entity or holds a non-finite number, in which case the condensed item is recorded; strings of the full item are not truncated | `True` |
 | `TAGS` | `env.py:912` | `configuration.py`; `pingback.py`: comma-separated list posted as `tags` | empty |
+| `ACTIVE_LEARNING_ENABLED` | `env.py:946-948` | `configuration.py:263-265`; forced off in offline mode; no route reads it yet: `inference_server/active_learning` is not called by any route | `True` |
+| `ACTIVE_LEARNING_TAGS` | `env.py:949` | `configuration.py:266-269`; `active_learning/core.py` (`collect_tags`): comma-separated tags put on every registered image, split without trimming | unset |
 
 ### Read by `build_workflows_configuration` (`inference_server/workflows/host.py`)
 
@@ -466,8 +468,6 @@ No new package reads these. They never get an alias or a default row.
 
 | name | legacy | reason |
 |---|---|---|
-| `ACTIVE_LEARNING_ENABLED` | `env.py:946` | legacy active-learning model manager; the new stack has no active learning |
-| `ACTIVE_LEARNING_TAGS` | `env.py:949` | legacy active-learning model manager |
 | `ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES` | `env.py:413` | legacy adapter flag forwarded as a `from_pretrained` argument; no new package reads the env |
 | `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES` | `env.py:410` | legacy adapter flag forwarded as a `from_pretrained` argument; no new package reads the env |
 | `ALLOW_NUMPY_INPUT` | `env.py:48` | legacy pickled-numpy input type; the new server has no numpy input |
