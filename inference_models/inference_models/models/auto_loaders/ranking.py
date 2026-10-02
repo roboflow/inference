@@ -22,6 +22,7 @@ from inference_models.weights_providers.entities import (
 )
 
 BACKEND_PRIORITY = {
+    BackendType.COREML: 8,
     BackendType.TRT: 7,
     BackendType.ONNX: 6,
     BackendType.TORCH: 5,
