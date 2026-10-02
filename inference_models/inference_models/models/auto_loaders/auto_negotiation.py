@@ -16,6 +16,7 @@ from inference_models.errors import (
     UnknownQuantizationError,
 )
 from inference_models.logger import verbose_info
+from inference_models.models.auto_loaders.capabilities import supports_capabilities
 from inference_models.models.auto_loaders.constants import (
     NMS_CLASS_AGNOSTIC_KEY,
     NMS_CONFIDENCE_THRESHOLD_KEY,
@@ -74,6 +75,7 @@ def negotiate_model_packages(
     trt_engine_host_code_allowed: bool = True,
     nms_fusion_preferences: Optional[Union[bool, dict]] = None,
     verbose: bool = False,
+    required_capabilities: Optional[List[str]] = None,
 ) -> List[ModelPackageMetadata]:
     verbose_info(
         "The following model packages were exposed by weights provider:",
@@ -100,12 +102,40 @@ def negotiate_model_packages(
                 f"source and cannot be loaded while `allow_untrusted_packages=False`.",
                 help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
             )
+        if not supports_capabilities(
+            model_architecture,
+            task_type,
+            selected_package.backend,
+            required_capabilities,
+        ):
+            raise NoModelPackagesAvailableError(
+                f"Package {selected_package.package_id} does not support {required_capabilities}. "
+                "Use an embedding-capable package for the same model version."
+            )
         return [selected_package]
+    capability_rejections = [
+        DiscardedPackage(
+            package_id=package.package_id,
+            reason="Missing required image embedding capability",
+        )
+        for package in model_packages
+        if not supports_capabilities(
+            model_architecture, task_type, package.backend, required_capabilities
+        )
+    ]
+    model_packages = [
+        package
+        for package in model_packages
+        if supports_capabilities(
+            model_architecture, task_type, package.backend, required_capabilities
+        )
+    ]
     model_packages, discarded_packages = remove_packages_not_matching_implementation(
         model_architecture=model_architecture,
         task_type=task_type,
         model_packages=model_packages,
     )
+    discarded_packages.extend(capability_rejections)
     if not allow_untrusted_packages:
         model_packages, discarded_untrusted_packages = remove_untrusted_packages(
             model_packages=model_packages,

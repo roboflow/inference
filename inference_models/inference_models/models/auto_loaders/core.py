@@ -68,6 +68,10 @@ from inference_models.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCacheEntry,
     BaseAutoLoadMetadataCache,
 )
+from inference_models.models.auto_loaders.capabilities import (
+    prepare_required_capabilities,
+    validate_capabilities,
+)
 from inference_models.models.auto_loaders.constants import (
     MODEL_DEPENDENCIES_KEY,
     MODEL_DEPENDENCIES_SUB_DIR,
@@ -105,6 +109,7 @@ from inference_models.models.auto_loaders.presentation_utils import (
     render_table_with_model_packages,
 )
 from inference_models.models.auto_loaders.ranking import rank_model_packages
+from inference_models.models.base.image_embeddings import ImageEmbeddingModel
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
 from inference_models.utils.content_addressed_artifact_cache import (
     ContentAddressedArtifactCache,
@@ -116,6 +121,10 @@ from inference_models.utils.download import (
 )
 from inference_models.utils.file_system import dump_json, read_json
 from inference_models.utils.hashing import hash_dict_content
+from inference_models.utils.onnx_embeddings import (
+    TRANSFORM_VERSION,
+    embedding_definition,
+)
 from inference_models.weights_providers import offline_registry
 from inference_models.weights_providers.core import get_model_from_provider
 from inference_models.weights_providers.entities import (
@@ -1537,6 +1546,7 @@ class AutoModel:
         content_addressed_artifact_cache: Optional[
             ContentAddressedArtifactCache
         ] = None,
+        required_capabilities: Optional[List[str]] = None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -1675,8 +1685,13 @@ class AutoModel:
             weights_provider_extra_headers: Extra headers to pass to the weights' provider. Advanced
                 usage only.
 
+            required_capabilities: Required operations, such as ["image_embeddings"].
+                Selects a compatible package for this model version.
+
             **kwargs: Additional model-specific parameters passed to the model's
-                `from_pretrained()` method. Varies by model type.
+                `from_pretrained()` method. Varies by model type. For image embeddings,
+                output_type selects "feature_vector" (default) or "logits" and determines
+                which representation to preload.
 
         Returns:
             Loaded model instance. The specific type depends on the model's task:
@@ -1831,6 +1846,11 @@ class AutoModel:
             "engine_host_code_allowed": trt_engine_host_code_allowed,
         }
         model_init_kwargs.update(kwargs)
+        validate_capabilities(required_capabilities)
+        if required_capabilities:
+            model_init_kwargs["required_capabilities"] = sorted(
+                set(required_capabilities)
+            )
         if not model_path_exists:
             # QUESTION: is it enough to assume presence of local dir as the intent to load
             # model from disc drive? What if we have clash of model id / model alias with
@@ -1860,6 +1880,17 @@ class AutoModel:
                     "provider": weights_provider,
                     "model_id": model_id_or_path,
                     "requested_model_package_id": model_package_id,
+                    **(
+                        {
+                            "required_capabilities": sorted(set(required_capabilities)),
+                            "embedding_feature_definition": embedding_definition(
+                                model_init_kwargs.get("output_type", "feature_vector")
+                            ),
+                            "embedding_transform_version": TRANSFORM_VERSION,
+                        }
+                        if required_capabilities
+                        else {}
+                    ),
                     "requested_backends": _canonicalize_unordered_request_values(
                         backend,
                         case_insensitive=True,
@@ -1901,7 +1932,11 @@ class AutoModel:
                 # The access manager is the authority for instances it serves;
                 # no package directory is tracked for them, so a requested
                 # point_model_directory is deliberately not invoked.
-                return model_from_access_manager
+                return prepare_required_capabilities(
+                    model_from_access_manager,
+                    required_capabilities,
+                    output_type=model_init_kwargs.get("output_type", "feature_vector"),
+                )
 
             def attempt_cached_load(cache_hash: str) -> Optional[AnyModel]:
                 return attempt_loading_model_with_auto_load_cache(
@@ -1961,7 +1996,11 @@ class AutoModel:
                             requested_model_id=model_id_or_path,
                             proven_package_id=cached_entry.model_package_id,
                         )
-                return model_from_cache
+                return prepare_required_capabilities(
+                    model_from_cache,
+                    required_capabilities,
+                    output_type=model_init_kwargs.get("output_type", "feature_vector"),
+                )
             try:
                 if warm_up_metadata is not None:
                     model_metadata = warm_up_metadata
@@ -2044,7 +2083,11 @@ class AutoModel:
                 # The access manager is the authority for instances it serves;
                 # no package directory is tracked for them, so a requested
                 # point_model_directory is deliberately not invoked.
-                return model_from_access_manager
+                return prepare_required_capabilities(
+                    model_from_access_manager,
+                    required_capabilities,
+                    output_type=model_init_kwargs.get("output_type", "feature_vector"),
+                )
             matching_model_packages = negotiate_model_packages(
                 model_architecture=model_metadata.model_architecture,
                 task_type=model_metadata.task_type,
@@ -2059,6 +2102,7 @@ class AutoModel:
                 trt_engine_host_code_allowed=trt_engine_host_code_allowed,
                 nms_fusion_preferences=nms_fusion_preferences,
                 verbose=verbose,
+                required_capabilities=required_capabilities,
             )
             model_dependencies_instances = {}
             model_dependencies_directories = {}
@@ -2438,7 +2482,8 @@ def attempt_loading_model_with_auto_load_cache(
             model_init_kwargs["recommended_parameters"] = (
                 cache_entry.recommended_parameters
             )
-        model = model_class.from_pretrained(
+        model = load_model_with_capabilities(
+            model_class,
             model_package_cache_dir,
             **_prepare_library_model_init_kwargs(
                 model_class=model_class,
@@ -3241,7 +3286,8 @@ def initialize_model(
     model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
     if resolved_recommended_parameters is not None:
         model_init_kwargs["recommended_parameters"] = resolved_recommended_parameters
-    model = model_class.from_pretrained(
+    model = load_model_with_capabilities(
+        model_class,
         model_package_cache_dir,
         **_prepare_library_model_init_kwargs(
             model_class=model_class,
@@ -3282,6 +3328,10 @@ def initialize_model(
         package_artifacts=package_artifact_identities,
         dependency_package_paths=dependency_package_paths,
     )
+    for artifact_path in getattr(model, "embedding_artifacts", []):
+        resolved_files.add(artifact_path)
+        if on_file_created is not None:
+            on_file_created(artifact_path)
     resolved_files.add(config_path)
     dump_auto_resolution_cache(
         use_auto_resolution_cache=use_auto_resolution_cache,
@@ -3797,7 +3847,8 @@ def attempt_loading_model_from_checkpoint(
         task_type=task_type,
         backend=backend_type,
     )
-    return model_class.from_pretrained(
+    return load_model_with_capabilities(
+        model_class,
         checkpoint_path,
         **_prepare_library_model_init_kwargs(
             model_class=model_class,
@@ -4028,7 +4079,8 @@ def load_library_model_from_local_dir(
             set(model_config.model_features) if model_config.model_features else None
         ),
     )
-    return model_class.from_pretrained(
+    return load_model_with_capabilities(
+        model_class,
         model_dir,
         **_prepare_library_model_init_kwargs(
             model_class=model_class,
@@ -4064,7 +4116,7 @@ def load_model_from_local_package_with_arbitrary_code(
     model_class = load_class_from_path(
         module_path=model_module_path, class_name=model_config.model_class
     )
-    return model_class.from_pretrained(model_dir, **model_init_kwargs)
+    return load_model_with_capabilities(model_class, model_dir, **model_init_kwargs)
 
 
 def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
@@ -4129,3 +4181,19 @@ def resolve_recommended_parameters(
 ) -> Optional[RecommendedParameters]:
     """Package-level recommended_parameters take priority over model-level."""
     return package_level if package_level is not None else model_level
+
+
+def load_model_with_capabilities(model_class, model_path, **kwargs):
+    if "image_embeddings" in kwargs.get("required_capabilities", []) and not issubclass(
+        model_class, ImageEmbeddingModel
+    ):
+        raise NoModelPackagesAvailableError(
+            "The selected package cannot produce image embeddings. Use an ONNX, "
+            "PyTorch or Hugging Face classifier package for the same model version."
+        )
+    model = model_class.from_pretrained(model_path, **kwargs)
+    return prepare_required_capabilities(
+        model,
+        kwargs.get("required_capabilities"),
+        output_type=kwargs.get("output_type", "feature_vector"),
+    )
