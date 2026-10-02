@@ -3,6 +3,7 @@ import math
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from functools import wraps
 from typing import (
     Any,
     Callable,
@@ -23,6 +24,7 @@ from roboflow_workflows.core_steps.common.keypoints import (
     KEYPOINT_PADDING_CLASS_NAME,
     validate_keypoints_padding,
 )
+from roboflow_workflows.errors import RuntimeInputError
 from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
@@ -68,7 +70,34 @@ from roboflow_workflows.prototypes.models_provider import (
 )
 from supervision.config import CLASS_NAME_DATA_FIELD, ORIENTED_BOX_COORDINATES
 
+from inference_models.errors import ModelInputError
+
 T = TypeVar("T")
+
+# Brittle but necessary: CLIP models signal a text prompt exceeding the context
+# length only via ModelInputError with this message (inference_models
+# clip/preprocessing.py and inference/models/clip/clip_model.py). Other
+# ModelInputErrors are usually server-side bugs and must stay 5xx.
+CLIP_TEXT_TOO_LONG_ERROR_MARKER = "too long for the model context length"
+
+
+def raise_runtime_input_error_on_clip_text_too_long(
+    run_locally: Callable[..., BlockResult],
+) -> Callable[..., BlockResult]:
+    @wraps(run_locally)
+    def wrapper(*args, **kwargs) -> BlockResult:
+        try:
+            return run_locally(*args, **kwargs)
+        except ModelInputError as error:
+            if CLIP_TEXT_TOO_LONG_ERROR_MARKER not in str(error):
+                raise
+            raise RuntimeInputError(
+                public_message=f"Text input of CLIP step is invalid. Details: {error}",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+
+    return wrapper
 
 
 def load_core_model(

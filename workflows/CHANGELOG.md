@@ -40,6 +40,11 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- CLIP v1 and CLIP Comparison v1/v2 blocks, including tensor variants, now report
+  a model's text-context-length validation error as `RuntimeInputError`, allowing
+  workflow HTTP requests to return 400 instead of 500. Other model input errors
+  retain their existing handling.
+
 - Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
 
 ### Execution engine
