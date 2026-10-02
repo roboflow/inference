@@ -1,13 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import (
-    BaseModel,
-    Field,
-    TypeAdapter,
-    ValidationError,
-    field_validator,
-)
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator
 from streamvision.camera.buffer_strategies import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
