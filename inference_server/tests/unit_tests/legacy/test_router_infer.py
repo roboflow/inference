@@ -682,3 +682,34 @@ def test_runtime_error_with_the_reload_message_is_not_taken_for_a_failed_reload(
     assert response.status_code == 500
     assert response.json() == INTERNAL_ERROR
     assert "retry-after" not in response.headers
+
+
+def _post_infer_with_key(client, api_key):
+    return client.post(
+        "/infer/object_detection",
+        json={
+            "model_id": "ds/1",
+            "api_key": api_key,
+            "image": {"type": "base64", "value": _jpeg_b64()},
+        },
+    )
+
+
+def test_loaded_model_is_refused_to_a_key_without_access_and_served_to_the_owner(
+    legacy_client, key_gated_stat
+):
+    key_gated_stat.denied_keys = {"key-b"}
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _det()},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
+    )
+    client = legacy_client(gw)
+
+    assert _post_infer_with_key(client, "key-a").status_code == 200
+    refused = _post_infer_with_key(client, "key-b")
+    assert refused.status_code == 401
+    assert refused.json() == {"message": UNAUTHORIZED}
+    assert len([c for c in gw.calls if c[0] == "infer"]) == 1
+    assert _post_infer_with_key(client, "key-a").status_code == 200
+    assert len([c for c in gw.calls if c[0] == "infer"]) == 2
+    assert ("ds/1", "key-b") in key_gated_stat.calls

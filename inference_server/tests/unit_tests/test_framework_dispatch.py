@@ -724,3 +724,47 @@ async def test_failed_reload_after_eviction_answers_inference_failed(
         re.sub(r"ref [0-9a-f]{8}", "ref X", record.getMessage())
         for record in caplog.records
     ] == ["[dispatch] inference failed (ref X): reload after eviction failed"]
+
+
+@pytest.mark.asyncio
+async def test_loaded_model_is_refused_to_a_key_without_access(fake_handler_entry):
+    from inference_models.errors import UnauthorizedModelAccessError
+    from inference_server.framework import model_stat
+
+    calls: list = []
+
+    def _metadata(model_id, api_key=None, **_):
+        calls.append((model_id, api_key))
+        if api_key == "key-b":
+            raise UnauthorizedModelAccessError(message=model_id, help_url="")
+        return MagicMock(task_type="fake-task")
+
+    def _request_with_key(key):
+        return _request(
+            query=b"model_id=m", headers=[(b"authorization", f"Bearer {key}".encode())]
+        )
+
+    proxy = _mock_proxy()
+    model_stat._reset_cache_for_tests()
+    try:
+        with patch(
+            "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+            side_effect=_metadata,
+        ):
+            granted = await handle_model_inference_request(
+                _request_with_key("key-a"), proxy
+            )
+            refused = await handle_model_inference_request(
+                _request_with_key("key-b"), proxy
+            )
+            refused_again = await handle_model_inference_request(
+                _request_with_key("key-b"), proxy
+            )
+    finally:
+        model_stat._reset_cache_for_tests()
+
+    assert granted.status_code == 200
+    assert refused.status_code == 401 and refused_again.status_code == 401
+    assert fake_handler_entry["handler"].await_count == 1
+    assert proxy.ensure_loaded.await_count == 1
+    assert calls == [("m", "key-a"), ("m", "key-b"), ("m", "key-b")]

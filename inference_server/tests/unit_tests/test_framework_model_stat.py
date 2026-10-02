@@ -398,3 +398,32 @@ async def test_registry_lookup_hits_the_api_directly_without_secure_gateway(
         f"{roboflow_provider.ROBOFLOW_API_HOST}/models/v1/external/weights"
         "?modelId=acme%2F1"
     )
+
+
+@pytest.mark.asyncio
+async def test_access_granted_to_one_key_is_not_shared_with_another_key():
+    calls: list = []
+
+    def _metadata(model_id, api_key=None, **_):
+        calls.append((model_id, api_key))
+        if api_key == "key-b":
+            raise UnauthorizedModelAccessError(message=model_id, help_url="")
+        return _meta()
+
+    with patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        side_effect=_metadata,
+    ):
+        await stat_model_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="key-a")
+        )
+        for _ in range(2):
+            with pytest.raises(PermissionError):
+                await stat_model_while_checking_auth(
+                    CommonRequestParams(model_id="acme/1", api_key="key-b")
+                )
+        await stat_model_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="key-a")
+        )
+
+    assert calls == [("acme/1", "key-a"), ("acme/1", "key-b"), ("acme/1", "key-b")]

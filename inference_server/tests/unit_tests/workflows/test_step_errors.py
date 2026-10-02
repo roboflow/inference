@@ -1,7 +1,9 @@
 import base64
 import io
 import logging
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import requests_mock
 from inference_sdk.http.errors import HTTPCallErrorError
@@ -808,3 +810,40 @@ def test_malformed_pipeline_model_id_in_a_step_answers_400(legacy_client, fake_s
     assert body["error_type"] == "ClientCausedStepExecutionError"
     assert body["context"] == STEP_CONTEXT
     assert body["inner_error_type"] == "InvalidPipelineIdError"
+
+
+def _run_with_key(client, api_key):
+    return client.post(
+        "/workflows/run",
+        json={
+            "specification": OD_WF,
+            "inputs": {"image": {"type": "base64", "value": _jpeg_b64()}},
+            "api_key": api_key,
+        },
+    )
+
+
+def test_loaded_model_in_a_step_is_refused_to_a_key_without_access(
+    legacy_client, key_gated_stat
+):
+    key_gated_stat.denied_keys = {"key-b"}
+    detections = SimpleNamespace(
+        xyxy=np.array([[1, 1, 3, 5]], dtype=float),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+    )
+    gateway = FakeGateway(
+        predictions={("ds/1", "infer"): detections},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
+    )
+    client = legacy_client(gateway)
+
+    assert _run_with_key(client, "key-a").status_code == 200
+    refused = _run_with_key(client, "key-b")
+
+    body = refused.json()
+    assert refused.status_code == 401
+    assert body["error_type"] == "ClientCausedStepExecutionError"
+    assert body["inner_error_type"] == "UnauthorizedModelAccessError"
+    assert len([c for c in gateway.calls if c[0] == "infer"]) == 1
+    assert _run_with_key(client, "key-a").status_code == 200

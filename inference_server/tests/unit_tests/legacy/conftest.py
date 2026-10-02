@@ -152,6 +152,30 @@ def fake_stat(monkeypatch):
     return table
 
 
+class KeyGatedStat:
+    def __init__(self, task_type: str = "object-detection"):
+        self.task_type = task_type
+        self.denied_keys: set = set()
+        self.calls: list[tuple] = []
+
+
+@pytest.fixture
+def key_gated_stat(monkeypatch):
+    from inference_models.errors import UnauthorizedModelAccessError
+    from inference_server.framework import model_stat
+
+    gate = KeyGatedStat()
+
+    def _metadata(model_id: str, api_key: Optional[str] = None, **_):
+        gate.calls.append((model_id, api_key))
+        if api_key in gate.denied_keys:
+            raise UnauthorizedModelAccessError("denied")
+        return SimpleNamespace(task_type=gate.task_type)
+
+    monkeypatch.setattr(model_stat, "get_one_page_of_model_metadata", _metadata)
+    return gate
+
+
 @pytest.fixture
 def legacy_client(fake_stat, monkeypatch, request):
     from fastapi.testclient import TestClient

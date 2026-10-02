@@ -253,6 +253,57 @@ async def test_unauthorized_returns_401(client, app_with_fake_proxy):
 
 
 @pytest.mark.asyncio
+async def test_loaded_model_is_refused_to_a_key_without_access(
+    client, app_with_fake_proxy
+):
+    from unittest.mock import MagicMock
+
+    from inference_models.errors import UnauthorizedModelAccessError
+
+    _, proxy = app_with_fake_proxy
+    proxy.infer.return_value = object()
+    lookups: list = []
+
+    def _metadata(model_id, api_key=None, **_):
+        lookups.append((model_id, api_key))
+        if api_key == "key-b":
+            raise UnauthorizedModelAccessError(message=model_id, help_url="")
+        return MagicMock(task_type="object-detection")
+
+    def _post(key):
+        return client.post(
+            "/v2/models/infer?model_id=acme/1",
+            content=_JPEG,
+            headers={
+                "authorization": f"Bearer {key}",
+                "content-type": "application/octet-stream",
+            },
+        )
+
+    with (
+        patch(
+            "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+            side_effect=_metadata,
+        ),
+        patch(
+            "inference_server.handlers.object_detection.output_serializer."
+            "serialize_detections_compact",
+            return_value={"detections": []},
+        ),
+    ):
+        granted = await _post("key-a")
+        refused = await _post("key-b")
+        refused_again = await _post("key-b")
+
+    assert granted.status_code == 200
+    for response in (refused, refused_again):
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "UNAUTHORIZED"
+    proxy.infer.assert_awaited_once()
+    assert lookups == [("acme/1", "key-a"), ("acme/1", "key-b"), ("acme/1", "key-b")]
+
+
+@pytest.mark.asyncio
 async def test_model_not_found_returns_404(client, app_with_fake_proxy):
     with patch(
         "inference_server.framework.dispatch.stat_model_while_checking_auth",

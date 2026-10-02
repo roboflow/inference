@@ -175,7 +175,7 @@ pool summary lists only `VLLM_PROXY_ENABLED`, `VLLM_BASE_URL` and
 `PINNED_MODELS` and `PRELOAD_HF_IDS` are read under the same spelling, see (a).
 Hosted names from the summary that are legacy-only today and therefore need an
 infra decision rather than a mapping: `GCP_SERVERLESS`,
-`ENFORCE_CREDITS_VERIFICATION`, `MODELS_CACHE_AUTH_*`,
+`ENFORCE_CREDITS_VERIFICATION`, `MODELS_CACHE_AUTH_ENABLED`,
 `ENABLE_PROMETHEUS`, `REDIS_*`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
 `VLLM_PROXY_ENABLED`. Each is in the (d) table.
 
@@ -253,6 +253,8 @@ definition; the last column is the new reader.
 | `ALLOW_WORKFLOWS_FONTS_DOWNLOAD` | `env.py:1324` | `configuration.py:261` | `True` |
 | `ROBOFLOW_INTERNAL_SERVICE_SECRET` | `env.py:1331` | `configuration.py:270` | unset |
 | `ROBOFLOW_INTERNAL_SERVICE_NAME` | `env.py:1332` | `configuration.py:269` | unset |
+| `MODELS_CACHE_AUTH_CACHE_TTL` | `env.py:760` | `configuration.py:404-406` (`WORKSPACE_CACHE_TTL_S`); sizes the api_key to workspace lookup cache, not the model-access cache, which is sized by `INFERENCE_MODEL_STAT_CACHE_TTL_S` | `900` |
+| `MODELS_CACHE_AUTH_CACHE_MAX_SIZE` | `env.py:763` | `configuration.py:407-409` (`WORKSPACE_CACHE_MAX_SIZE`); sizes the api_key to workspace lookup cache, not the model-access cache, which is sized by `INFERENCE_MODEL_STAT_CACHE_SIZE` | `100000000` |
 | `PRELOAD_API_KEY` | `env.py:1346` | `configuration.py:86-88,144`; `app.py:146` | unset; see note 2 |
 | `PINNED_MODELS` | `env.py:1351` | `configuration.py:133,163-174`; loaded pinned in `app.py:66-99,133-142` | unset |
 | `PRELOAD_HF_IDS` | `env.py:281` | `configuration.py:134,177-185`; loaded as `owlv2/<name>` in `hf_preload.py:27-52`, started by `app.py:134,143-151` | unset |
@@ -535,9 +537,7 @@ No new package reads these. They never get an alias or a default row.
 | `METLO_KEY` | `env.py:924` | legacy AWS-era setting |
 | `METRICS_COLLECTOR_BASE_URL` | `env.py:210` | feeds the `TELEMETRY_*` defaults; usage tracking is a later task |
 | `METRICS_INCLUDE_SOURCE_LABELS` | `env.py:569` | legacy Prometheus labels |
-| `MODELS_CACHE_AUTH_CACHE_MAX_SIZE` | `env.py:763` | legacy models-cache auth; unread (hosting summary) |
-| `MODELS_CACHE_AUTH_CACHE_TTL` | `env.py:760` | legacy models-cache auth; unread (hosting summary) |
-| `MODELS_CACHE_AUTH_ENABLED` | `env.py:731` | legacy models-cache auth; unread (hosting summary) |
+| `MODELS_CACHE_AUTH_ENABLED` | `env.py:731` | legacy models-cache auth switch; not read; online, the new server checks model access per API key on every request (cached per model, API key and identity headers); in offline mode no registry lookup is made, offline deployments being single-tenant |
 | `MODEL_ID` | `env.py:807` | legacy device-mode setting |
 | `MODEL_LOCK_ACQUIRE_TIMEOUT` | `env.py:1454` | legacy model manager lock |
 | `MODEL_MONITORING_CACHE_BACKEND` | `env.py:486` | legacy pingback cache selection |
