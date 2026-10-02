@@ -106,3 +106,38 @@ def test_hosted_flags_read_legacy_spellings():
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+_URL_RULE_SWITCHES = (
+    "ALLOW_NON_HTTPS_URL_INPUT",
+    "ALLOW_URL_INPUT_WITHOUT_FQDN",
+    "VALIDATE_IMAGE_URL_REDIRECTS",
+)
+
+
+def test_url_rule_switches_default_to_legacy_values():
+    code = "from inference_server import configuration as c; " + "; ".join(
+        f"assert c.{name} is False" for name in _URL_RULE_SWITCHES
+    )
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in _URL_RULE_SWITCHES
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_url_rule_switches_are_read_from_the_environment():
+    code = "from inference_server import configuration as c; " + "; ".join(
+        f"assert c.{name} is True" for name in _URL_RULE_SWITCHES
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env={**os.environ, **{name: "True" for name in _URL_RULE_SWITCHES}},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr

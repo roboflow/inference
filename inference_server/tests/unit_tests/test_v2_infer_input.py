@@ -426,6 +426,45 @@ async def test_fetch_image_from_url_allows_public_destination():
     assert data == b"x" * 8
 
 
+@pytest.mark.parametrize(
+    "url",
+    ["http://example.com/img.jpg", "https://93.184.216.34/img.jpg"],
+)
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_fetches_non_https_and_bare_ip_urls(url):
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_http([b"x" * 8]) as session:
+        data, err = await fetch_image_from_url(url)
+
+    assert err is None
+    assert data == b"x" * 8
+    assert session.requested == [url]
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_validates_hops_whatever_the_redirect_setting(
+    monkeypatch,
+):
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    monkeypatch.setattr(
+        "inference_server.configuration.VALIDATE_IMAGE_URL_REDIRECTS", False
+    )
+    monkeypatch.setattr(
+        "inference_server.configuration.BLACKLISTED_DESTINATIONS_FOR_URL_INPUT",
+        frozenset({"blocked.example.com"}),
+    )
+    redirects = {"https://example.com/img.jpg": "https://blocked.example.com/img.jpg"}
+
+    with _patch_http([b"x" * 8], redirects=redirects) as session:
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+
+    assert data is None
+    assert err.status_code == 403
+    assert session.requested == ["https://example.com/img.jpg"]
+
+
 @pytest.mark.asyncio
 async def test_fetch_image_from_url_revalidates_redirect_hops():
     from unittest.mock import patch

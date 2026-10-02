@@ -70,6 +70,15 @@ ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = get_boolean_from_env(
     "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", default=False
 )
 MAX_IMAGE_URL_REDIRECTS = get_integer_from_env("MAX_IMAGE_URL_REDIRECTS", default=3)
+ALLOW_NON_HTTPS_URL_INPUT = get_boolean_from_env(
+    "ALLOW_NON_HTTPS_URL_INPUT", default=False
+)
+ALLOW_URL_INPUT_WITHOUT_FQDN = get_boolean_from_env(
+    "ALLOW_URL_INPUT_WITHOUT_FQDN", default=False
+)
+VALIDATE_IMAGE_URL_REDIRECTS = get_boolean_from_env(
+    "VALIDATE_IMAGE_URL_REDIRECTS", default=False
+)
 
 # ── Workflows: Roboflow-platform blocks ───────────────────────────────────
 # Reported as `device_id` by the model-monitoring block, as in `inference`.

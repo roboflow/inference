@@ -6,11 +6,12 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Optional, Union
-from urllib.parse import ParseResult, SplitResult, urlparse, urlsplit
+from urllib.parse import urlparse
 
 import numpy as np
 import orjson
 import requests
+import tldextract
 from fastapi import Request, Response
 from inference_model_manager.backends.decode import decoded_dims
 from PIL import Image
@@ -24,8 +25,12 @@ from inference_server.configuration import (
     DEFAULT_API_KEY,
     OFFLINE_MODE,
 )
+from inference_server.errors import error_response
 from inference_server.framework.input_parsers.image_limits import too_many_images
-from inference_server.framework.input_parsers.url_fetch import fetch_images_from_urls
+from inference_server.framework.input_parsers.url_fetch import (
+    DestinationPolicy,
+    fetch_images_from_urls,
+)
 from inference_server.legacy.errors import LegacyHTTPError
 
 _NPY_MAGIC = b"\x93NUMPY"
@@ -56,6 +61,10 @@ _URL_NON_HTTPS_ERROR = (
     "Providing images via non https:// URL is not supported in this configuration "
     "of `inference`."
 )
+_URL_WITHOUT_FQDN_ERROR = (
+    "Providing images via URL without FQDN is not supported in this configuration "
+    "of `inference`."
+)
 _URL_WHITELIST_ERROR = (
     "It is not allowed to reach image URL - prohibited by whitelisted destinations."
 )
@@ -65,6 +74,8 @@ _URL_BLACKLIST_ERROR = (
 _URL_DESTINATION_ERROR = "URL points to a network destination that is not allowed."
 _URL_FETCH_ERROR = "Data pointed by URL could not be decoded into image."
 _URL_NOT_IMAGE_ERROR = "Data is not image."
+_URL_REFUSED_CODE = "URL_REFUSED"
+_extract_domain = tldextract.TLDExtract(suffix_list_urls=())
 
 
 @dataclass(slots=True)
@@ -148,22 +159,53 @@ async def load_request_images(images: list, *, ndarray_ok: bool) -> list[ImagePa
         else:
             payloads[position] = decode_inline_image(image, ndarray_ok=ndarray_ok)
     if urls:
-        unparsable = next(
-            (index for index, url in enumerate(urls) if _split_url(url) is None),
-            len(urls),
-        )
-        fetched, fetch_error = [], None
-        if unparsable > 0:
-            fetched, fetch_error = await fetch_images_from_urls(urls[:unparsable])
+        fetched, fetch_error = await fetch_url_images(urls)
         if fetch_error is not None:
             raise _url_fetch_error(fetch_error)
-        if unparsable < len(urls):
-            raise image_load_error(_URL_INVALID_ERROR)
 
         for position, data in zip(url_positions, fetched):
             width, height = image_dims(data)
             payloads[position] = ImagePayload(data, width, height)
     return payloads
+
+
+async def fetch_url_images(
+    urls: list[str],
+) -> tuple[Optional[list[bytes]], Optional[Response]]:
+    """Fetch image URLs under the URL rules of the legacy server.
+
+    URLs ahead of the first refused one are fetched before the refusal is
+    answered.
+
+    Args:
+        urls: Image URLs as given by the client.
+
+    Returns:
+        ``(images, None)`` or ``(None, error)``.
+    """
+    accepted_urls: list[str] = []
+    refusal = None
+    for url in urls:
+        accepted_url, refusal = _check_url(url)
+        if refusal is not None:
+            break
+        accepted_urls.append(accepted_url)
+
+    images: Optional[list[bytes]] = []
+    if accepted_urls:
+        validate_redirect = (
+            _check_url if configuration.VALIDATE_IMAGE_URL_REDIRECTS else None
+        )
+        images, fetch_error = await fetch_images_from_urls(
+            accepted_urls,
+            destination_policy=DestinationPolicy(validate_redirect=validate_redirect),
+        )
+        if fetch_error is not None:
+            return None, fetch_error
+    if refusal is not None:
+        return None, refusal
+
+    return images, None
 
 
 def as_image_list(value: Any) -> tuple[list, bool]:
@@ -249,60 +291,54 @@ def _url_input_refused_message() -> str:
     return _URL_INPUT_DISABLED_ERROR
 
 
-def _split_url(url: str) -> Optional[SplitResult]:
-    try:
-        return urlsplit(url)
-    except ValueError:
-        return None
-
-
-def _prepared_url(url: str) -> Optional[ParseResult]:
+def _check_url(url: str) -> tuple[Optional[str], Optional[Response]]:
     try:
         if "\\" in urlparse(url).netloc:
-            return None
+            raise ValueError("URL authority contains a backslash")
         prepared_url = requests.Request(method="GET", url=url).prepare().url
-        return urlparse(prepared_url)
+        parts = urlparse(prepared_url)
     except (requests.exceptions.RequestException, ValueError):
-        return None
+        return None, _url_refusal(400, _URL_INVALID_ERROR)
+    if parts.scheme != "https" and not configuration.ALLOW_NON_HTTPS_URL_INPUT:
+        return None, _url_refusal(400, _URL_NON_HTTPS_ERROR)
 
+    network_location = parts.hostname or ""
+    if ":" in network_location:
+        network_location = f"[{network_location}]"
+    extraction = _extract_domain(network_location)
+    if not extraction.fqdn and not configuration.ALLOW_URL_INPUT_WITHOUT_FQDN:
+        return None, _url_refusal(400, _URL_WITHOUT_FQDN_ERROR)
 
-def _invalid_url_message(url: str) -> str:
-    if _prepared_url(url) is None:
-        return _URL_INVALID_ERROR
-    return _URL_NON_HTTPS_ERROR
-
-
-def _forbidden_destination_message(url: str) -> str:
-    parts = _prepared_url(url)
-    if parts is None:
-        return _URL_INVALID_ERROR
-    host = (parts.hostname or "").lower()
+    chunks = (extraction.subdomain, extraction.domain, extraction.suffix)
+    destination = ".".join(chunk for chunk in chunks if chunk)
+    if destination.startswith("[") and destination.endswith("]"):
+        destination = destination[1:-1]
     allowed = configuration.WHITELISTED_DESTINATIONS_FOR_URL_INPUT
-    if allowed is not None and host not in allowed:
-        return _URL_WHITELIST_ERROR
+    if allowed is not None and destination not in allowed:
+        return None, _url_refusal(403, _URL_WHITELIST_ERROR)
     blocked = configuration.BLACKLISTED_DESTINATIONS_FOR_URL_INPUT
-    if blocked and host in blocked:
-        return _URL_BLACKLIST_ERROR
-    return _URL_DESTINATION_ERROR
+    if blocked is not None and destination in blocked:
+        return None, _url_refusal(403, _URL_BLACKLIST_ERROR)
+
+    return prepared_url, None
+
+
+def _url_refusal(status_code: int, public_message: str) -> Response:
+    return error_response(status_code, _URL_REFUSED_CODE, public_message)
 
 
 def _url_fetch_error(response: Response) -> LegacyHTTPError:
     try:
-        error_code = json.loads(response.body).get("error_code")
+        body = json.loads(response.body)
     except Exception:
-        error_code = None
-    failed_url = getattr(response, "failed_url", None)
-    if failed_url is None and error_code in (
-        "INVALID_URL",
-        "URL_DESTINATION_FORBIDDEN",
-    ):
-        return image_load_error(_URL_FETCH_ERROR)
+        body = {}
+    error_code = body.get("error_code")
+    if error_code == _URL_REFUSED_CODE:
+        return image_load_error(body["description"])
     if error_code == "URL_INPUT_DISABLED":
         return image_load_error(_url_input_refused_message())
-    if error_code == "INVALID_URL":
-        return image_load_error(_invalid_url_message(failed_url))
     if error_code == "URL_DESTINATION_FORBIDDEN":
-        return image_load_error(_forbidden_destination_message(failed_url))
+        return image_load_error(_URL_DESTINATION_ERROR)
     if error_code in ("URL_FETCH_FAILED", "URL_FETCH_TIMEOUT"):
         return image_load_error(_URL_FETCH_ERROR)
     return _error_from_response(response)

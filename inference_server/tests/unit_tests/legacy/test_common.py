@@ -106,11 +106,14 @@ def test_decode_inline_image_pickled_numpy_refused():
 async def test_load_request_images_fetches_urls_in_one_batch(monkeypatch):
     seen = []
 
-    async def _fetch(urls):
+    async def _fetch(urls, destination_policy=None):
         seen.append(urls)
         return [_jpeg(3, 2) for _ in urls], None
 
     monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
     out = await load_request_images(
         [
             {"type": "url", "value": "https://a/1.jpg"},

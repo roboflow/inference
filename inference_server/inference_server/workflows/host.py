@@ -1004,7 +1004,7 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
         if self._loop_bridge is None:
             raise RuntimeError("codec loop not bound")
         images, error = self._loop_bridge.run(
-            legacy_bridge.fetch_images_from_urls([value]),
+            legacy_bridge.fetch_url_images([value]),
             timeout=_URL_FETCH_BRIDGE_TIMEOUT_S,
         )
         if error is not None or not images:

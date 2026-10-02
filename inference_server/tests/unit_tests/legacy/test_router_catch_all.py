@@ -184,7 +184,7 @@ def test_catch_all_image_source_follows_legacy_order(
 ):
     seen = []
 
-    async def _fetch(urls):
+    async def _fetch(urls, destination_policy=None):
         seen.append(urls)
         return [_jpeg() for _ in urls], None
 

@@ -192,6 +192,9 @@ definition; the last column is the new reader.
 | `ALLOW_URL_INPUT` | `env.py:49` | `configuration.py:157` (also `inference_models/configuration.py:207`) | `True` |
 | `WHITELISTED_DESTINATIONS_FOR_URL_INPUT` | `env.py:54` | `configuration.py:59` (also `inference_models/configuration.py:215`) | unset |
 | `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT` | `env.py:61` | `configuration.py:63` (also `inference_models/configuration.py:223`) | unset |
+| `ALLOW_NON_HTTPS_URL_INPUT` | `env.py:50` | `configuration.py:73` (also `inference_models/configuration.py:208`); applied on legacy-compatible routes and workflow image inputs (`legacy/common.py`), not on `/v2` | `False` |
+| `ALLOW_URL_INPUT_WITHOUT_FQDN` | `env.py:51` | `configuration.py:76` (also `inference_models/configuration.py:211`); applied on legacy-compatible routes and workflow image inputs (`legacy/common.py`), not on `/v2` | `False` |
+| `VALIDATE_IMAGE_URL_REDIRECTS` | `env.py:74` | `configuration.py:79`; on legacy-compatible routes and workflow image inputs redirect targets are checked against the URL rules only when it is on (`legacy/common.py`); `/v2` checks every redirect target regardless | `False` |
 | `ALLOW_ORIGINS` | `env.py:191` | `configuration.py:187` | `*` |
 | `API_BASE_URL` | `env.py:195-198` | `configuration.py:75` | `https://api.roboflow.com` for the us/prod case; the module derives the other cases, see note 1 |
 | `ROBOFLOW_API_EXTRA_HEADERS` | `env.py:216` | `configuration.py:268` | unset |
@@ -354,8 +357,6 @@ definition; the last column is the new reader.
 
 | name | legacy | new | default |
 |---|---|---|---|
-| `ALLOW_NON_HTTPS_URL_INPUT` | `env.py:50` | `configuration.py:208` | `False` |
-| `ALLOW_URL_INPUT_WITHOUT_FQDN` | `env.py:51` | `configuration.py:211` | `False` |
 | `ROBOFLOW_REGION` | `inference/core/utils/regions.py:65` via `env.py:45` | `configuration.py:68` | `us` |
 | `LICENSE_SERVER` | `env.py:672,676-682` | `configuration.py:84,89-95` | unset (deprecated alias of `SECURE_GATEWAY` on both sides) |
 | `LOG_LEVEL` | `env.py:705` | `configuration.py:129` | `WARNING` |
@@ -581,7 +582,6 @@ No new package reads these. They never get an alias or a default row.
 | `USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS` | `env.py:1296` | legacy definition file cache; not in the new server |
 | `USE_INFERENCE_MODELS` | `env.py:407` | legacy adapter switch; the new stack is `inference_models`-only |
 | `USE_PYTORCH_FOR_PREPROCESSING` | `env.py:475` | legacy ORT preprocessing |
-| `VALIDATE_IMAGE_URL_REDIRECTS` | `env.py:74` | legacy opt-in; the new server's URL fetch loops per hop unconditionally (`url_fetch.py:194`) |
 | `VERSION_CHECK_MODE` | `env.py:921` | legacy version check |
 | `VIDEO_DOWNLOAD_TIMEOUT_SECONDS` | `env.py:421` | legacy action-recognition video download |
 | `VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE` | `env.py:1748` | `StreamsConfiguration` field; no new package reads the env name today |

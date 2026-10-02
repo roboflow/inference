@@ -186,13 +186,75 @@ async def test_image_codec_fetches_url_from_plain_worker_thread(monkeypatch):
     async def _fetch(urls):
         return [buf.getvalue() for _ in urls], None
 
-    monkeypatch.setattr("inference_server.legacy.bridge.fetch_images_from_urls", _fetch)
+    monkeypatch.setattr("inference_server.legacy.bridge.fetch_url_images", _fetch)
     host.GUARDED_IMAGE_CODEC.bind_loop(LoopBridge(asyncio.get_running_loop()))
     with ThreadPoolExecutor(max_workers=1) as pool:
         image = await asyncio.get_running_loop().run_in_executor(
             pool, lambda: host.GUARDED_IMAGE_CODEC.fetch_url("https://a/1.jpg")
         )
     assert image.shape == (3, 4, 3)
+
+
+@pytest.mark.parametrize(
+    "url,switch,fetched",
+    [
+        ("http://example.com/1.jpg", None, []),
+        ("https://192.168.1.5/1.jpg", None, []),
+        ("https://myhost/1.jpg", None, []),
+        (
+            "http://example.com/1.jpg",
+            "ALLOW_NON_HTTPS_URL_INPUT",
+            [["http://example.com/1.jpg"]],
+        ),
+        (
+            "https://192.168.1.5/1.jpg",
+            "ALLOW_URL_INPUT_WITHOUT_FQDN",
+            [["https://192.168.1.5/1.jpg"]],
+        ),
+        ("https://example.com/1.jpg", None, [["https://example.com/1.jpg"]]),
+    ],
+)
+@pytest.mark.asyncio
+async def test_image_codec_applies_the_url_rules_of_the_legacy_routes(
+    monkeypatch, url, switch, fetched
+):
+    import asyncio
+    import io
+    from concurrent.futures import ThreadPoolExecutor
+
+    from PIL import Image
+    from roboflow_workflows.errors import WorkflowImageLoadError
+
+    import inference_server.workflows.host as host
+    from inference_server.legacy.bridge import LoopBridge
+
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 3)).save(buf, format="JPEG")
+    seen = []
+
+    async def _fetch(urls, destination_policy=None):
+        seen.append(urls)
+        return [buf.getvalue() for _ in urls], None
+
+    monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
+    for name in ("ALLOW_NON_HTTPS_URL_INPUT", "ALLOW_URL_INPUT_WITHOUT_FQDN"):
+        monkeypatch.setattr(f"inference_server.configuration.{name}", name == switch)
+    host.GUARDED_IMAGE_CODEC.bind_loop(LoopBridge(asyncio.get_running_loop()))
+
+    def _load():
+        try:
+            return host.GUARDED_IMAGE_CODEC.fetch_url(url).shape
+        except WorkflowImageLoadError as error:
+            return error.public_message
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        outcome = await asyncio.get_running_loop().run_in_executor(pool, _load)
+
+    assert seen == fetched
+    if fetched:
+        assert outcome == (3, 4, 3)
+    else:
+        assert outcome == "Could not fetch image from the given URL."
 
 
 def test_bind_image_codec_installs_the_object_from_init_parameters():

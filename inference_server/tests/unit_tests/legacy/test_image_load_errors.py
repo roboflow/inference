@@ -267,6 +267,9 @@ def test_url_image_failure_answers_like_legacy(
 ):
     client = _client(legacy_client, fake_stat)
     _configure_url_fetch(monkeypatch, **settings)
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     response = _post_image(client, {"type": "url", "value": url})
 
@@ -334,7 +337,7 @@ async def test_url_image_failure_keeps_the_v2_answer(
 async def test_url_fetch_response_is_translated_for_legacy_routes(
     monkeypatch, fetch_error, status, message
 ):
-    async def _fetch(urls):
+    async def _fetch(urls, destination_policy=None):
         return None, fetch_error
 
     monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
@@ -350,7 +353,7 @@ async def test_url_fetch_response_is_translated_for_legacy_routes(
 
 @pytest.mark.asyncio
 async def test_url_content_that_is_not_an_image_answers_like_legacy(monkeypatch):
-    async def _fetch(urls):
+    async def _fetch(urls, destination_policy=None):
         return [b"hello"], None
 
     monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)

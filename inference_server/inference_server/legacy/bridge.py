@@ -21,10 +21,9 @@ from inference_server.configuration import (
 from inference_server.errors import PayloadTooLargeError
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.fanout import gather_bounded
-from inference_server.framework.input_parsers.url_fetch import fetch_images_from_urls
 from inference_server.framework.model_stat import stat_model_while_checking_auth
 from inference_server.gateway import ModelManagerGateway
-from inference_server.legacy.common import ImagePayload
+from inference_server.legacy.common import ImagePayload, fetch_url_images
 from inference_server.legacy.entities import ResolvedModel
 from inference_server.legacy.errors import (
     MODEL_PACKAGE_BROKEN_MESSAGE,
@@ -394,7 +393,7 @@ class LegacyModelBridge:
             raise LegacyHTTPError(
                 400, "Loading images from URLs is not allowed on this server."
             )
-        images, error = await fetch_images_from_urls([url])
+        images, error = await fetch_url_images([url])
         if error is not None:
             raise LegacyHTTPError(error.status_code, "Could not fetch image from URL.")
         return images[0]

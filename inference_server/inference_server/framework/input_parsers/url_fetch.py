@@ -6,7 +6,8 @@ import asyncio
 import ipaddress
 import logging
 import socket
-from typing import Optional
+from dataclasses import dataclass
+from typing import Callable, Optional
 from urllib.parse import urljoin, urlsplit
 
 import aiohttp
@@ -25,8 +26,28 @@ _CHUNK_BYTES = 64 * 1024
 _REDIRECT_STATUSES = frozenset((301, 302, 303, 307, 308))
 
 
+@dataclass(frozen=True)
+class DestinationPolicy:
+    """Destination rules of a caller that checks the URL it passes itself.
+
+    With a policy the scheme, host and list rules of this module are not
+    applied, and the address check is not skipped for an allow-listed host.
+
+    Attributes:
+        validate_redirect: Called with every redirect target; returns
+            ``(url_to_fetch, None)`` or ``(None, error)``. ``None`` follows
+            redirects without checking their URL.
+    """
+
+    validate_redirect: Optional[
+        Callable[[str], tuple[Optional[str], Optional[Response]]]
+    ] = None
+
+
 async def fetch_images_from_urls(
     urls: list[str],
+    *,
+    destination_policy: Optional[DestinationPolicy] = None,
 ) -> tuple[Optional[list[bytes]], Optional[Response]]:
     """Fetch all URLs concurrently under a shared aggregate byte budget.
 
@@ -37,7 +58,12 @@ async def fetch_images_from_urls(
         return None, limit_error
     budget = {"left": configuration.MAX_BODY_BYTES}
     results = await asyncio.gather(
-        *(fetch_image_from_url(u, _budget=budget) for u in urls)
+        *(
+            fetch_image_from_url(
+                u, _budget=budget, destination_policy=destination_policy
+            )
+            for u in urls
+        )
     )
     images: list[bytes] = []
     for data, err in results:
@@ -118,12 +144,26 @@ def _forbidden() -> Response:
 
 async def _ensure_destination_allowed(
     url: str,
+    *,
+    destination_policy: Optional[DestinationPolicy] = None,
 ) -> tuple[Optional[tuple[str, list[str]]], Optional[Response]]:
     """Validate a URL's scheme and destination.
 
     Returns ``((host, addresses), None)`` — the addresses the connection must
     be pinned to — or ``(None, error)``.
     """
+    if destination_policy is not None:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        if parts.scheme not in ("http", "https") or not host:
+            return None, error_response(
+                502, "URL_FETCH_FAILED", "fetching image URL failed"
+            )
+
+        return await _resolve_destination(
+            host, skip_address_check=configuration.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES
+        )
+
     if not url.startswith(("http://", "https://")):
         return None, error_response(
             400, "INVALID_URL", "image URL must start with http:// or https://"
@@ -145,6 +185,12 @@ async def _ensure_destination_allowed(
         allowed is not None or configuration.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES
     )
 
+    return await _resolve_destination(host, skip_address_check=skip_address_check)
+
+
+async def _resolve_destination(
+    host: str, *, skip_address_check: bool
+) -> tuple[Optional[tuple[str, list[str]]], Optional[Response]]:
     try:
         addresses = await resolve_host(host)
     except (socket.gaierror, OSError) as exc:
@@ -163,6 +209,8 @@ async def _ensure_destination_allowed(
 async def fetch_image_from_url(
     url: str,
     _budget: Optional[dict] = None,
+    *,
+    destination_policy: Optional[DestinationPolicy] = None,
 ) -> tuple[Optional[bytes], Optional[Response]]:
     """Fetch image bytes from a URL. Returns (bytes, None) or (None, error).
 
@@ -193,7 +241,7 @@ async def fetch_image_from_url(
         ) as session:
             for _ in range(configuration.MAX_IMAGE_URL_REDIRECTS + 1):
                 validated, destination_error = await _ensure_destination_allowed(
-                    current
+                    current, destination_policy=destination_policy
                 )
                 if destination_error is not None:
                     destination_error.failed_url = current
@@ -210,6 +258,15 @@ async def fetch_image_from_url(
                                 "fetching image URL failed",
                             )
                         current = urljoin(current, location)
+                        if (
+                            destination_policy is not None
+                            and destination_policy.validate_redirect is not None
+                        ):
+                            current, redirect_error = (
+                                destination_policy.validate_redirect(current)
+                            )
+                            if redirect_error is not None:
+                                return None, redirect_error
                         continue
                     if resp.status != 200:
                         return None, error_response(
