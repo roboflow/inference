@@ -176,7 +176,7 @@ pool summary lists only `VLLM_PROXY_ENABLED`, `VLLM_BASE_URL` and
 Hosted names from the summary that are legacy-only today and therefore need an
 infra decision rather than a mapping: `GCP_SERVERLESS`,
 `ENFORCE_CREDITS_VERIFICATION`, `MODELS_CACHE_AUTH_ENABLED`,
-`ENABLE_PROMETHEUS`, `REDIS_*`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
+`ENABLE_PROMETHEUS`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
 `VLLM_PROXY_ENABLED`. Each is in the (d) table.
 
 ## (a) Shared names
@@ -286,6 +286,15 @@ definition; the last column is the new reader.
 | `METRICS_URL` | `env.py:792` | `configuration.py`; `pingback.py`: destination of the post, routed through `SECURE_GATEWAY` when set | `{API_BASE_URL}/inference-stats` |
 | `TINY_CACHE` | `env.py:289` | `configuration.py`; `pingback.py`: `True` records the condensed item (request fields `api_key`, `confidence`, `model_id`, `model_type`, `source`, `source_info`; per prediction `class` and `confidence`); `False` records the full request and response as JSON without their `image` fields (removed when recorded, not when the report is built), unless the item exceeds 8192 values, 128 Ki characters of strings or 256 KiB of JSON, or a response is not a response entity or holds a non-finite number, in which case the condensed item is recorded; strings of the full item are not truncated | `True` |
 | `TAGS` | `env.py:912` | `configuration.py`; `pingback.py`: comma-separated list posted as `tags` | empty |
+| `METRICS_COLLECTOR_BASE_URL` | `env.py:210-213` | `configuration.py`: base of the usage endpoint default | `API_BASE_URL` |
+| `TELEMETRY_API_USAGE_ENDPOINT_URL` | `usage_tracking/config.py:16` | `configuration.py`; `usage/collector.py`: destination of usage rows, routed through `SECURE_GATEWAY` when set; certificates are verified unless the requested host is `localhost` or `127.0.0.1` | `{METRICS_COLLECTOR_BASE_URL}/usage/inference` |
+| `TELEMETRY_FLUSH_INTERVAL` | `usage_tracking/config.py:20,26` | `configuration.py`; `usage/collector.py`: seconds between two moves of aggregated usage rows to the queue, and between two send attempts; legacy rejects a value outside 10..300, the new server clamps it into that range | `10` |
+| `TELEMETRY_USE_PERSISTENT_QUEUE` | `usage_tracking/config.py:21` | `configuration.py`; `usage/collector.py`: `True` queues usage rows in `{MODEL_CACHE_DIR}/usage.db` with API keys stored as hashes; `False`, `LAMBDA` or `GCP_SERVERLESS` queue them in memory | `True` |
+| `TELEMETRY_QUEUE_SIZE` | `usage_tracking/config.py:22,27` | `configuration.py`; `usage/collector.py`: slots of the in-memory usage queue; a full queue is merged into one slot, nothing is dropped; legacy rejects a value outside 10..10000, the new server clamps it into that range | `10` |
+| `REDIS_HOST` | `env.py:858` | `configuration.py`; `usage/collector.py`: under `LAMBDA` or `GCP_SERVERLESS`, usage rows are written to this Redis for an external reader instead of being sent; needs the `redis` package, without it rows are queued in memory and sent by the server | unset |
+| `REDIS_PORT` | `env.py:861` | `configuration.py`; `usage/queues.py` | `6379` |
+| `REDIS_SSL` | `env.py:862` | `configuration.py`; `usage/queues.py` | `False` |
+| `REDIS_TIMEOUT` | `env.py:863` | `configuration.py`; `usage/queues.py`: socket and connect timeout in seconds | `2.0` |
 | `ACTIVE_LEARNING_ENABLED` | `env.py:946-948` | `configuration.py:263-265`; forced off in offline mode; `legacy/active_learning_registration.py` (`start`): when on and `roboflow-workflows` is installed, inferences on `/infer/object_detection`, `/infer/instance_segmentation`, `/infer/classification` and `/{dataset_id}/{version_id}` are registered on a bounded worker pool, in the background, or before the response when `LAMBDA` or `GCP_SERVERLESS` is set | `True` |
 | `ACTIVE_LEARNING_TAGS` | `env.py:949` | `configuration.py:266-269`; `active_learning/core.py` (`collect_tags`): comma-separated tags put on every registered image, split without trimming | unset |
 
@@ -408,9 +417,10 @@ definition; the last column is the new reader.
 ### Shared by ruling, no new-package reader today
 
 The plan names `VLLM_*` and `TELEMETRY_*` as shared names that stay where they
-are. No new package reads them yet (the hosting summary confirms
+are. No new package reads the names below yet (the hosting summary confirms
 `VLLM_PROXY_ENABLED` is unread); the spelling is reserved for the tasks that add
-the vLLM proxy and usage tracking.
+the vLLM proxy and usage tracking. The `TELEMETRY_*` names that
+`inference_server/configuration.py` reads are listed in its table above.
 
 | name | legacy | default |
 |---|---|---|
@@ -424,13 +434,9 @@ the vLLM proxy and usage tracking.
 | `VLLM_SERVED_BASE_VARIANT` | `vllm_proxy/config.py:85` | `qwen3_5-0.8b` |
 | `VLLM_SERVED_BASE_NAME` | `vllm_proxy/config.py:93` | the served base variant |
 | `VLLM_ADAPTER_KEY_TEMPLATE` | `vllm_proxy/config.py:97` | `base_model.model.model.language_model.layers.{suffix}` |
-| `TELEMETRY_API_USAGE_ENDPOINT_URL` | `usage_tracking/config.py:16` | `{METRICS_COLLECTOR_BASE_URL}/usage/inference` |
 | `TELEMETRY_API_PLAN_ENDPOINT_URL` | `usage_tracking/config.py:17` | `{METRICS_COLLECTOR_BASE_URL}/usage/plan` |
 | `TELEMETRY_API_PLAN_CACHE_TTL_SECONDS` | `usage_tracking/config.py:18` | `86400` |
 | `TELEMETRY_WEBRTC_PLANS_ENDPOINT_URL` | `usage_tracking/config.py:19` | `{METRICS_COLLECTOR_BASE_URL}/webrtc_plans` |
-| `TELEMETRY_FLUSH_INTERVAL` | `usage_tracking/config.py:20` | `10` |
-| `TELEMETRY_USE_PERSISTENT_QUEUE` | `usage_tracking/config.py:21` | `True` |
-| `TELEMETRY_QUEUE_SIZE` | `usage_tracking/config.py:22` | `10` |
 
 ### Notes on (a) rows whose defaults are equal only in the common case
 
@@ -535,7 +541,6 @@ No new package reads these. They never get an alias or a default row.
 | `MD5_VERIFICATION_ENABLED` | `env.py:205` | legacy artifact cache internals |
 | `MEMORY_CACHE_EXPIRE_INTERVAL` | `env.py:728` | legacy memory cache |
 | `METLO_KEY` | `env.py:924` | legacy AWS-era setting |
-| `METRICS_COLLECTOR_BASE_URL` | `env.py:210` | feeds the `TELEMETRY_*` defaults; usage tracking is a later task |
 | `METRICS_INCLUDE_SOURCE_LABELS` | `env.py:569` | legacy Prometheus labels |
 | `MODELS_CACHE_AUTH_ENABLED` | `env.py:731` | legacy models-cache auth switch; not read; online, the new server checks model access per API key on every request (cached per model, API key and identity headers); in offline mode no registry lookup is made, offline deployments being single-tenant |
 | `MODEL_ID` | `env.py:807` | legacy device-mode setting |
@@ -553,10 +558,6 @@ No new package reads these. They never get an alias or a default row.
 | `PALIGEMMA_VERSION_ID` | `env.py:237` | legacy model-route setting |
 | `PROFILE` | `env.py:855` | legacy profiler flag |
 | `QWEN_3_8_ENABLED` | `env.py:381` | legacy model-route gate; no `ModelsConfiguration` field |
-| `REDIS_HOST` | `env.py:858` | unread (hosting summary) |
-| `REDIS_PORT` | `env.py:861` | unread (hosting summary) |
-| `REDIS_SSL` | `env.py:862` | unread (hosting summary) |
-| `REDIS_TIMEOUT` | `env.py:863` | unread (hosting summary) |
 | `REQUIRED_ONNX_PROVIDERS` | `env.py:866` | legacy ORT provider assertion |
 | `RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API` | `env.py:1406` | legacy API client; `inference_models` uses `API_CALLS_MAX_TRIES` / `IDEMPOTENT_API_REQUEST_CODES_TO_RETRY` with different semantics |
 | `ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1333` | legacy assume-identity headers; unread (hosting summary) |

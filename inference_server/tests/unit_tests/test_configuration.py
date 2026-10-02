@@ -249,3 +249,191 @@ def test_workflows_host_forces_local_execution_behind_a_legacy_alias_gateway():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+_USAGE_SETTINGS = (
+    "API_BASE_URL",
+    "METRICS_COLLECTOR_BASE_URL",
+    "TELEMETRY_API_USAGE_ENDPOINT_URL",
+    "TELEMETRY_FLUSH_INTERVAL",
+    "TELEMETRY_QUEUE_SIZE",
+    "TELEMETRY_USE_PERSISTENT_QUEUE",
+    "REDIS_HOST",
+    "REDIS_PORT",
+    "REDIS_SSL",
+    "REDIS_TIMEOUT",
+)
+
+
+def _run_with_usage_settings(code, **env):
+    base = {
+        name: value for name, value in os.environ.items() if name not in _USAGE_SETTINGS
+    }
+    return subprocess.run(
+        [sys.executable, "-c", code],
+        env={**base, **env},
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_usage_settings_default_to_legacy_values():
+    code = (
+        "from inference_server import configuration as c; "
+        "assert c.METRICS_COLLECTOR_BASE_URL == 'https://api.roboflow.com'; "
+        "assert c.TELEMETRY_API_USAGE_ENDPOINT_URL == "
+        "'https://api.roboflow.com/usage/inference'; "
+        "assert c.TELEMETRY_FLUSH_INTERVAL == 10; "
+        "assert c.TELEMETRY_QUEUE_SIZE == 10; "
+        "assert c.TELEMETRY_USE_PERSISTENT_QUEUE is True; "
+        "assert c.REDIS_HOST is None; "
+        "assert c.REDIS_PORT == 6379; "
+        "assert c.REDIS_SSL is False; "
+        "assert c.REDIS_TIMEOUT == 2.0"
+    )
+
+    result = _run_with_usage_settings(code)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_usage_endpoint_follows_the_api_and_metrics_collector_base_urls():
+    code = (
+        "from inference_server import configuration as c; "
+        "print(c.TELEMETRY_API_USAGE_ENDPOINT_URL)"
+    )
+
+    from_api = _run_with_usage_settings(code, API_BASE_URL="https://api.example.com")
+    from_collector = _run_with_usage_settings(
+        code,
+        API_BASE_URL="https://api.example.com",
+        METRICS_COLLECTOR_BASE_URL="https://metrics.example.com",
+    )
+
+    assert from_api.stdout.strip() == "https://api.example.com/usage/inference"
+    assert (
+        from_collector.stdout.strip() == "https://metrics.example.com/usage/inference"
+    )
+
+
+def test_usage_settings_read_the_legacy_telemetry_names():
+    code = (
+        "from inference_server import configuration as c; "
+        "assert c.TELEMETRY_API_USAGE_ENDPOINT_URL == 'https://custom.example.com/u'; "
+        "assert c.TELEMETRY_FLUSH_INTERVAL == 30; "
+        "assert c.TELEMETRY_QUEUE_SIZE == 500; "
+        "assert c.TELEMETRY_USE_PERSISTENT_QUEUE is False; "
+        "assert c.REDIS_HOST == 'redis.local'; "
+        "assert c.REDIS_PORT == 6380; "
+        "assert c.REDIS_SSL is True; "
+        "assert c.REDIS_TIMEOUT == 0.5"
+    )
+
+    result = _run_with_usage_settings(
+        code,
+        METRICS_COLLECTOR_BASE_URL="https://metrics.example.com",
+        TELEMETRY_API_USAGE_ENDPOINT_URL="https://custom.example.com/u",
+        TELEMETRY_FLUSH_INTERVAL="30",
+        TELEMETRY_QUEUE_SIZE="500",
+        TELEMETRY_USE_PERSISTENT_QUEUE="false",
+        REDIS_HOST="redis.local",
+        REDIS_PORT="6380",
+        REDIS_SSL="True",
+        REDIS_TIMEOUT="0.5",
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_usage_flush_interval_and_queue_size_are_clamped():
+    code = (
+        "from inference_server import configuration as c; "
+        "print(c.TELEMETRY_FLUSH_INTERVAL, c.TELEMETRY_QUEUE_SIZE)"
+    )
+
+    low = _run_with_usage_settings(
+        code, TELEMETRY_FLUSH_INTERVAL="1", TELEMETRY_QUEUE_SIZE="1"
+    )
+    high = _run_with_usage_settings(
+        code, TELEMETRY_FLUSH_INTERVAL="9999", TELEMETRY_QUEUE_SIZE="999999"
+    )
+
+    assert low.stdout.strip() == "10 10"
+    assert high.stdout.strip() == "300 10000"
+
+
+_TELEMETRY_SETTINGS = (
+    "TELEMETRY_API_USAGE_ENDPOINT_URL",
+    "TELEMETRY_FLUSH_INTERVAL",
+    "TELEMETRY_USE_PERSISTENT_QUEUE",
+    "TELEMETRY_QUEUE_SIZE",
+)
+
+
+def _without_telemetry_variables(monkeypatch):
+    for name in list(os.environ):
+        if name.upper() in _TELEMETRY_SETTINGS:
+            monkeypatch.delenv(name)
+
+
+def test_telemetry_settings_are_read_whatever_the_case_of_the_variable():
+    code = (
+        "from inference_server import configuration as c; "
+        "assert c.TELEMETRY_API_USAGE_ENDPOINT_URL == 'https://custom.example.com/u'; "
+        "assert c.TELEMETRY_FLUSH_INTERVAL == 30; "
+        "assert c.TELEMETRY_QUEUE_SIZE == 500; "
+        "assert c.TELEMETRY_USE_PERSISTENT_QUEUE is False"
+    )
+
+    result = _run_with_usage_settings(
+        code,
+        telemetry_api_usage_endpoint_url="https://custom.example.com/u",
+        Telemetry_Flush_Interval="30",
+        telemetry_queue_size="500",
+        TeLeMeTrY_UsE_PeRsIsTeNt_QuEuE="false",
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_telemetry_name_lookup_prefers_the_exact_upper_case_name(monkeypatch):
+    _without_telemetry_variables(monkeypatch)
+    monkeypatch.setenv("telemetry_queue_size", "700")
+    monkeypatch.setenv("TELEMETRY_QUEUE_SIZE", "500")
+
+    assert configuration._telemetry_env_name("TELEMETRY_QUEUE_SIZE") == (
+        "TELEMETRY_QUEUE_SIZE"
+    )
+
+
+def test_telemetry_name_lookup_takes_the_first_sorted_variable_otherwise(
+    monkeypatch,
+):
+    _without_telemetry_variables(monkeypatch)
+    monkeypatch.setenv("telemetry_queue_size", "700")
+    monkeypatch.setenv("Telemetry_Queue_Size", "600")
+
+    assert configuration._telemetry_env_name("TELEMETRY_QUEUE_SIZE") == (
+        "Telemetry_Queue_Size"
+    )
+
+
+def test_telemetry_name_lookup_falls_back_to_the_given_name(monkeypatch):
+    _without_telemetry_variables(monkeypatch)
+
+    assert configuration._telemetry_env_name("TELEMETRY_QUEUE_SIZE") == (
+        "TELEMETRY_QUEUE_SIZE"
+    )
+
+
+def test_telemetry_precedence_of_the_upper_case_name_applies_to_the_settings():
+    code = (
+        "from inference_server import configuration as c; "
+        "print(c.TELEMETRY_QUEUE_SIZE)"
+    )
+
+    result = _run_with_usage_settings(
+        code, TELEMETRY_QUEUE_SIZE="500", telemetry_queue_size="700"
+    )
+
+    assert result.stdout.strip() == "500"

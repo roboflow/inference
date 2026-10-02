@@ -44,6 +44,16 @@ def _optional_positive_integer_from_env(name: str) -> Optional[int]:
     return value
 
 
+def _telemetry_env_name(name: str) -> str:
+    if name in os.environ:
+        return name
+    folded = name.lower()
+    for candidate in sorted(os.environ):
+        if candidate.lower() == folded:
+            return candidate
+    return name
+
+
 # ── State timeouts (gateway.py) ───────────────────────────────────────────
 LOAD_WAIT_S = get_float_from_env("INFERENCE_LOAD_WAIT_S", default=10.0)
 INFER_TIMEOUT_S = get_float_from_env("INFERENCE_INFER_TIMEOUT_S", default=30.0)
@@ -479,3 +489,33 @@ METRICS_URL = os.environ.get("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 TINY_CACHE = get_boolean_from_env("TINY_CACHE", default=True)
 TAGS = os.environ.get("TAGS", "").split(",")
 METRICS_API_KEY = os.environ.get("ROBOFLOW_API_KEY") or os.environ.get("API_KEY")
+
+# ── Usage reporting (usage/) ──────────────────────────────────────────────
+METRICS_COLLECTOR_BASE_URL = os.environ.get("METRICS_COLLECTOR_BASE_URL", API_BASE_URL)
+TELEMETRY_API_USAGE_ENDPOINT_URL = os.environ.get(
+    _telemetry_env_name("TELEMETRY_API_USAGE_ENDPOINT_URL"),
+    f"{METRICS_COLLECTOR_BASE_URL}/usage/inference",
+)
+TELEMETRY_FLUSH_INTERVAL = min(
+    max(
+        get_integer_from_env(
+            _telemetry_env_name("TELEMETRY_FLUSH_INTERVAL"), default=10
+        ),
+        10,
+    ),
+    300,
+)
+TELEMETRY_QUEUE_SIZE = min(
+    max(
+        get_integer_from_env(_telemetry_env_name("TELEMETRY_QUEUE_SIZE"), default=10),
+        10,
+    ),
+    10000,
+)
+TELEMETRY_USE_PERSISTENT_QUEUE = get_boolean_from_env(
+    _telemetry_env_name("TELEMETRY_USE_PERSISTENT_QUEUE"), default=True
+)
+REDIS_HOST = os.environ.get("REDIS_HOST")
+REDIS_PORT = get_integer_from_env("REDIS_PORT", default=6379)
+REDIS_SSL = get_boolean_from_env("REDIS_SSL", default=False)
+REDIS_TIMEOUT = get_float_from_env("REDIS_TIMEOUT", default=2.0)
