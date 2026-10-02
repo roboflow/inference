@@ -27,6 +27,8 @@ for contributor and maintainer responsibilities.
   and embedding tensors through the model-provider boundary. Remote responses and
   final JSON outputs remain serialized vectors.
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
+- OpenAI block (`open_ai@v7`): `gpt-6.1-sol` model option (`low`-`max` reasoning effort; object detection and instance segmentation reuse the GPT-6 prompts).
+
 ### Changed
 
 - Carries forward the `0.2.2` model catalog: Anthropic Claude v5 lists `claude-opus-5-5` (Claude Opus 5.5, 128000 max output tokens) and the temperature warning names Opus 5.x; OpenAI v7 lists `gpt-6-sol` and `gpt-6-luna` (reasoning effort `none` through `max`, structured absolute detection prompts).
