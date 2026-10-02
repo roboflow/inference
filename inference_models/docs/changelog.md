@@ -71,6 +71,11 @@
 
 ### Fixed
 
+- CLIP ONNX and PyTorch models now raise `ModelInputError` when text exceeds the
+  tokenizer's context length, allowing HTTP endpoints to return 400 instead of
+  500 with guidance to shorten the text. The public error message does not echo
+  the input text; unrelated runtime errors continue to propagate unchanged.
+
 - RF-DETR Core ML loaders validate the model's actual input dimensions before
   compilation and runtime loading, preserving input-size alignment when package
   metadata disagrees with the model.
