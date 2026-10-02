@@ -865,7 +865,9 @@ def test_record_usage_keeps_models_of_both_requests(collector):
     assert isinstance(row["resource_details"], str)
 
 
-def test_record_usage_sums_numeric_fields_of_the_same_model(collector):
+def test_record_usage_sums_amounts_and_keeps_latest_latency_of_the_same_model(
+    collector,
+):
     record(
         collector,
         resource_details={
@@ -886,8 +888,25 @@ def test_record_usage_sums_numeric_fields_of_the_same_model(collector):
     row = collector._usage["fake-key"][usage_key("request", "workspace/model")]
     details = json.loads(row["resource_details"])
     assert details["models"] == [
-        model_entry("coco/3", frames=5, execution_duration=0.75, latency=15.0)
+        model_entry("coco/3", frames=5, execution_duration=0.75, latency=5.0)
     ]
+
+
+def test_record_usage_does_not_sum_model_latency(collector):
+    record(
+        collector,
+        resource_details={"models": [model_entry("coco/3", latency=10.0)]},
+    )
+    record(
+        collector,
+        resource_details={"models": [model_entry("coco/3", latency=5.0)]},
+    )
+
+    row = collector._usage["fake-key"][usage_key("request", "workspace/model")]
+    (entry,) = json.loads(row["resource_details"])["models"]
+    assert entry["frames"] == 2
+    assert entry["execution_duration"] == 1.0
+    assert entry["model_latency_ms"] == 5.0
 
 
 def test_record_usage_merges_custom_python_entries(collector):

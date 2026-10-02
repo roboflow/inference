@@ -32,7 +32,7 @@ def _custom_python_identity(entry: Dict[str, Any]) -> Tuple[Any, Any]:
 _BILLABLE_LISTS: Tuple[
     Tuple[str, Callable[[Dict[str, Any]], Any], Tuple[str, ...]], ...
 ] = (
-    (MODELS_KEY, _model_identity, ("frames", "execution_duration", "model_latency_ms")),
+    (MODELS_KEY, _model_identity, ("frames", "execution_duration")),
     (CUSTOM_PYTHON_KEY, _custom_python_identity, ("execution_duration",)),
 )
 
@@ -84,7 +84,9 @@ def merge_resource_details(left: Any, right: Any) -> Any:
     The later value wins for every key except ``models`` and ``custom_python``.
     Entries of those lists are kept from both sides; entries with the same
     identity (``model_id``, or ``block_type`` with ``step_name``) are combined
-    by summing their counters and keeping the other fields of the later entry.
+    by summing their amounts (``frames`` and ``execution_duration``, or
+    ``execution_duration`` alone for ``custom_python``) and keeping the other
+    fields, including ``model_latency_ms``, of the later entry.
 
     Args:
         left: Earlier resource details, a dict or its JSON text.

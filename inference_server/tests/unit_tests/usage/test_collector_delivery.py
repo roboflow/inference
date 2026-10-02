@@ -464,7 +464,7 @@ def test_usage_is_conserved_across_a_failed_send_a_row_bound_flush_and_a_later_s
     monkeypatch.setattr(collector_module, "MAX_AGGREGATED_ROWS", 2)
     ticks = itertools.count(1000)
     monkeypatch.setattr(collector_module.time, "time_ns", lambda: next(ticks))
-    expected_models = defaultdict(lambda: {"frames": 0, "exec": 0.0, "latency": 0.0})
+    expected_models = defaultdict(lambda: {"frames": 0, "exec": 0.0})
     expected_steps = defaultdict(float)
     expected_frames = []
 
@@ -481,7 +481,6 @@ def test_usage_is_conserved_across_a_failed_send_a_row_bound_flush_and_a_later_s
             totals = expected_models[entry["model_id"]]
             totals["frames"] += entry["frames"]
             totals["exec"] += entry["execution_duration"]
-            totals["latency"] += entry["model_latency_ms"]
         for step in steps:
             expected_steps[step["step_name"]] += step["execution_duration"]
 
@@ -540,12 +539,11 @@ def test_usage_is_conserved_across_a_failed_send_a_row_bound_flush_and_a_later_s
     assert (failed_status, accepted_status) == (500, 200)
     assert sum(row["processed_frames"] for row in failed_rows) == 5
     assert sum(row["processed_frames"] for row in accepted_rows) == sum(expected_frames)
-    accepted_models = defaultdict(lambda: {"frames": 0, "exec": 0.0, "latency": 0.0})
+    accepted_models = defaultdict(lambda: {"frames": 0, "exec": 0.0})
     for entry in listed_entries(accepted_rows, "models"):
         totals = accepted_models[entry["model_id"]]
         totals["frames"] += entry["frames"]
         totals["exec"] += entry["execution_duration"]
-        totals["latency"] += entry["model_latency_ms"]
     accepted_steps = defaultdict(float)
     for step in listed_entries(accepted_rows, "custom_python"):
         accepted_steps[step["step_name"]] += step["execution_duration"]

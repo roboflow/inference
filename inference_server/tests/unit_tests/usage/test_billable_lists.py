@@ -63,7 +63,7 @@ def test_merge_usage_dicts_keeps_models_of_both_rows():
     assert isinstance(merged["resource_details"], str)
 
 
-def test_merge_usage_dicts_sums_numeric_fields_of_the_same_model():
+def test_merge_usage_dicts_sums_amounts_and_keeps_latest_latency_of_the_same_model():
     first = row(
         {
             "models": [
@@ -99,10 +99,22 @@ def test_merge_usage_dicts_sums_numeric_fields_of_the_same_model():
             "coco/3",
             frames=5,
             execution_duration=0.75,
-            latency=15.0,
+            latency=5.0,
             model_variant="second",
         )
     ]
+
+
+def test_merge_usage_dicts_does_not_sum_model_latency():
+    first = row({"models": [model_entry("coco/3", latency=10.0)]})
+    second = row({"models": [model_entry("coco/3", latency=5.0)]})
+
+    merged = merge_usage_dicts(first, second)
+
+    (entry,) = json.loads(merged["resource_details"])["models"]
+    assert entry["frames"] == 2
+    assert entry["execution_duration"] == 1.0
+    assert entry["model_latency_ms"] == 5.0
 
 
 def test_merge_usage_dicts_merges_custom_python_by_block_type_and_step_name():
@@ -200,6 +212,35 @@ def test_zip_usage_payloads_merges_lists_across_payloads():
         ("coco/3", 2),
         ("other/1", 1),
     ]
+
+
+def test_zip_usage_payloads_does_not_sum_model_latency():
+    payloads = [
+        {
+            "hash": {
+                "workflows:workflow-1": row(
+                    {"models": [model_entry("coco/3", latency=10.0)]}
+                )
+            }
+        },
+        {
+            "hash": {
+                "workflows:workflow-1": row(
+                    {"models": [model_entry("coco/3", latency=5.0)]}
+                )
+            }
+        },
+    ]
+
+    zipped = zip_usage_payloads(usage_payloads=payloads)
+
+    (merged,) = zipped
+    (entry,) = json.loads(merged["hash"]["workflows:workflow-1"]["resource_details"])[
+        "models"
+    ]
+    assert entry["frames"] == 2
+    assert entry["execution_duration"] == 1.0
+    assert entry["model_latency_ms"] == 5.0
 
 
 def test_zip_usage_payloads_starts_a_new_row_when_a_list_would_exceed_the_bound(
