@@ -26,7 +26,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 | Model                                   | Backends | License    | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-----------------------------------------|--------|------------|-------------------------------|---------------------|----------------|
-| [RF-DETR](rfdetr-object-detection.md)   | `torch`, `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
+| [RF-DETR](rfdetr-object-detection.md)   | `torch`, `onnx`, `trt`, `coreml` | Apache 2.0 | N/A | ✅ | ✅ |
 | [YOLOv5](yolov5-object-detection.md)    | `onnx` | AGPL-3.0   | Enterprise add-on | ❌ | 📤 |
 | [YOLOv8](yolov8-object-detection.md)    | `onnx`, `torch-script`, `trt` | AGPL-3.0   | Enterprise add-on | ✅ | ✅ |
 | [YOLOv9](yolov9-object-detection.md)    | `onnx`, `torch-script`, `trt` | GPL-3.0    | ❌ | ❌ | 📤 |
@@ -42,7 +42,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 | Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|--------|---------|-------------------------------|---------------------|-----------------|
-| [RF-DETR Seg](rfdetr-instance-segmentation.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
+| [RF-DETR Seg](rfdetr-instance-segmentation.md) | `torch`, `coreml` | Apache 2.0 | N/A | ✅ | ✅ |
 | [YOLOv5 Seg](yolov5-instance-segmentation.md) | `onnx` | AGPL-3.0 | Enterprise add-on | ❌ | ✅ |
 | [YOLOv7 Seg](yolov7-instance-segmentation.md) | `onnx` | AGPL-3.0 | ❌ | ❌ | ✅ |
 | [YOLOv8 Seg](yolov8-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |

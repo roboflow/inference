@@ -22,6 +22,11 @@ from inference_models.errors import (
     ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
+from inference_models.models.common.model_packages import (
+    COREML_CACHE_DIR_NAME,
+    COREML_CACHE_LOCK_NAME,
+    get_file_identity,
+)
 
 try:
     import onnxruntime
@@ -114,10 +119,6 @@ MODEL_INPUT_CASTING = {
 # in onnxruntime 1.21.0. Older builds keep the provider unconfigured, as before.
 MIN_ONNXRUNTIME_VERSION_FOR_COREML_OPTIONS = Version("1.21.0")
 COREML_EXECUTION_PROVIDER = "CoreMLExecutionProvider"
-COREML_CACHE_DIR_NAME = "coreml_cache"
-# The inference cache watchdog takes `<package>/.<entry>.lock` before purging a package entry, so compiling
-# and loading under the same lock keeps it from deleting a cache that is being written or read.
-COREML_CACHE_LOCK_NAME = f".{COREML_CACHE_DIR_NAME}.lock"
 COREML_MODEL_FORMATS = {"MLProgram", "NeuralNetwork"}
 COREML_COMPUTE_UNITS = {"CPUAndGPU", "ALL", "CPUAndNeuralEngine", "CPUOnly"}
 
@@ -292,7 +293,7 @@ def _create_session_with_coreml_cache(
     """
     base_directory = coreml_options["ModelCacheDirectory"]
     cache_root = os.path.dirname(base_directory)
-    cache_directory = f"{base_directory}-{_model_file_identity(model_path)}"
+    cache_directory = f"{base_directory}-{get_file_identity(model_path)}"
     providers = _replace_coreml_provider(
         providers=providers,
         replacement=(
@@ -325,19 +326,6 @@ def _create_session_with_coreml_cache(
         return onnxruntime.InferenceSession(
             path_or_bytes=model_path, providers=providers, sess_options=sess_options
         )
-
-
-def _model_file_identity(model_path: str) -> str:
-    """Identify the ONNX file a compiled-model cache was built from, by its size and modification time.
-
-    A heuristic, not content validation: model package files are downloaded once and never rewritten in
-    place, so a new model file arrives with a new mtime. An in-place replacement that keeps both size and
-    mtime, or a change to external-data files beside the model, reuses the stale compiled model.
-    """
-    stat = os.stat(model_path)
-    return hashlib.sha256(f"{stat.st_size}-{stat.st_mtime_ns}".encode()).hexdigest()[
-        :12
-    ]
 
 
 def _remove_stale_cache_variants(base_directory: str, keep: str) -> None:

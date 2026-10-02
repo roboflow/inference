@@ -4,6 +4,18 @@
 
 ### Added
 
+- A `coreml` backend runs native Core ML packages (`coreml-model-package-v1`) for RF-DETR object
+  detection and instance segmentation on Apple Silicon Macs running macOS 13+, installed with the new
+  `coreml` extra (a no-op on other platforms). When a model has a Core ML package, `AutoModel`
+  ranks it above every other backend on such a Mac; FP16 packages are accepted under the default quantization because Core ML runs them on the GPU. It
+  reads both the image-input packages Roboflow Train already builds for the iOS SDKs and the
+  tensor-input packages from `rfdetr`'s `format="coreml"` export, and keeps the ONNX path's pre-
+  and post-processing. The Roboflow API lists Core ML packages only for clients that ask for them
+  (`includeCoreMLPackages=true`, sent when Core ML can run), so other platforms and older releases
+  never see them. Core ML availability is part of the cached package-resolution key, so installing
+  coremltools re-resolves models that were cached on another backend. On an M4 Max, end to end per image: RF-DETR Nano 10 ms, Large 19 ms and Seg-Nano
+  11 ms (ONNX Runtime ML Program: 13 / 27 / 22 ms; CPU: 49 / 200 / 89 ms), with COCO AP within 0.01
+  of the CPU path. Packages load in 0.3-0.4 s with no compile step.
 - RF-DETR Torch and ONNX object detection now use the five-stage execution plan,
   sharing Triton Universal preprocessing, reference fallback, compatibility checks
   and per-request selection metadata with TensorRT.
