@@ -205,6 +205,8 @@ def test_main_merges_find_links_from_the_environment(tmp_path, monkeypatch) -> N
             "skipped",
         ),
         ("streamvision.stream_manager.manager_app.app", "aiortc", False, "skipped"),
+        ("streamvision.webrtc_worker.webrtc", "orjson", False, "skipped"),
+        ("streamvision.webrtc_worker.sources.file", "av", False, "skipped"),
         # webrtc installed: nothing should be reported as skipped anymore.
         ("streamvision.stream_manager.manager_app.webrtc", "aiortc", True, "failed"),
         # not on the allowlist, even though the missing module is a webrtc one.
@@ -217,6 +219,21 @@ def test_classify_import_error(module_name, missing_module, webrtc, expected) ->
     probe = _load_probe()
 
     assert probe.classify_import_error(module_name, missing_module, webrtc) == expected
+
+
+def test_import_candidates_adds_allow_listed_modules_discovery_missed() -> None:
+    probe = _load_probe()
+    discovered = [
+        "streamvision.webrtc_worker.sources",
+        "streamvision.camera.video_source",
+    ]
+
+    candidates = probe.import_candidates(discovered, probe.WEBRTC_IMPORT_ALLOWLIST)
+
+    assert candidates == sorted(candidates)
+    assert set(discovered) <= set(candidates)
+    assert "streamvision.webrtc_worker.sources.file" in candidates
+    assert "streamvision.webrtc_worker.sources.rtsp" in candidates
 
 
 @pytest.mark.parametrize(

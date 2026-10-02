@@ -881,6 +881,13 @@ _STREAM_INVENTORY_LEGACY = frozenset(
         "inference.core.interfaces.stream_manager.manager_app.serialisation",
         "inference.core.interfaces.stream_manager.manager_app.tcp_server",
         "inference.core.interfaces.stream_manager.manager_app.webrtc",
+        "inference.core.interfaces.webrtc_worker.entities",
+        "inference.core.interfaces.webrtc_worker.serializers",
+        "inference.core.interfaces.webrtc_worker.sources",
+        "inference.core.interfaces.webrtc_worker.sources.file",
+        "inference.core.interfaces.webrtc_worker.sources.rtsp",
+        "inference.core.interfaces.webrtc_worker.watchdog",
+        "inference.core.interfaces.webrtc_worker.webrtc",
         "streamvision.stream.model_handlers.roboflow_models",
         "streamvision.stream.model_handlers.yolo_world",
         "streamvision.stream.inference_pipeline",
@@ -897,6 +904,7 @@ _STREAM_INVENTORY_PACKAGES = frozenset(
         "inference.core.interfaces.stream_manager",
         "inference.core.interfaces.stream_manager.api",
         "inference.core.interfaces.stream_manager.manager_app",
+        "inference.core.interfaces.webrtc_worker.sources",
     )
 )
 

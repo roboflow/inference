@@ -1,0 +1,353 @@
+import ctypes
+import datetime
+import logging
+import struct
+import time
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import cv2 as cv
+import numpy as np
+from av import VideoFrame
+from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
+from streamvision.camera.entities import VideoFrame as InferenceVideoFrame
+from streamvision.stream.environment import DEBUG_WEBRTC_PROCESSING_LATENCY
+from streamvision.stream.pipeline import InferencePipeline
+from streamvision.webrtc_worker.entities import VIDEO_FILE_HEADER_SIZE
+
+logger = logging.getLogger(__name__)
+
+logging.getLogger("aiortc").setLevel(logging.WARNING)
+
+
+def detect_image_output(
+    workflow_output: Dict[str, Union[WorkflowImageData, Any]],
+) -> Optional[str]:
+    """Detect the first available image output field in workflow output."""
+    for output_name in workflow_output.keys():
+        if (
+            get_frame_from_workflow_output(
+                workflow_output=workflow_output,
+                frame_output_key=output_name,
+            )
+            is not None
+        ):
+            return output_name
+    return None
+
+
+def process_frame(
+    frame: VideoFrame,
+    frame_id: int,
+    declared_fps: float,
+    measured_fps: float,
+    comes_from_video_file: bool,
+    inference_pipeline: InferencePipeline,
+    stream_output: Optional[str] = None,
+    render_output: bool = True,
+    include_errors_on_frame: bool = True,
+) -> Tuple[
+    Dict[str, Union[WorkflowImageData, Any]],
+    Optional[VideoFrame],
+    List[str],
+]:
+    np_image = frame.to_ndarray(format="bgr24")
+    workflow_output: Dict[str, Union[WorkflowImageData, Any]] = {}
+    errors = []
+
+    try:
+        video_frame = InferenceVideoFrame(
+            image=np_image,
+            frame_id=frame_id,
+            frame_timestamp=datetime.datetime.now(),
+            comes_from_video_file=comes_from_video_file,
+            fps=declared_fps,
+            measured_fps=measured_fps,
+        )
+        workflow_output = inference_pipeline._on_video_frame([video_frame])[0]
+    except Exception as e:
+        logger.exception("Error in workflow processing")
+        errors.append(str(e))
+
+    if not render_output:
+        return workflow_output, None, errors
+
+    if stream_output is None:
+        errors.append("stream_output is required when render_output=True")
+        return (
+            workflow_output,
+            VideoFrame.from_ndarray(np_image, format="bgr24"),
+            errors,
+        )
+
+    result_np_image: Optional[np.ndarray] = None
+    try:
+        result_np_image = get_frame_from_workflow_output(
+            workflow_output=workflow_output,
+            frame_output_key=stream_output,
+        )
+        if result_np_image is None:
+            errors.append("Visualisation blocks were not executed")
+            errors.append("or workflow was not configured to output visuals.")
+            errors.append("Please try to adjust the scene so models detect objects")
+            errors.append("or stop preview, update workflow and try again.")
+            result_np_image = np_image
+    except Exception as e:
+        logger.exception("Error extracting visual output")
+        result_np_image = np_image
+        errors.append(str(e))
+
+    if include_errors_on_frame and errors:
+        result_np_image = overlay_text_on_np_frame(
+            frame=result_np_image,
+            text=errors,
+        )
+    return (
+        workflow_output,
+        VideoFrame.from_ndarray(result_np_image, format="bgr24"),
+        errors,
+    )
+
+
+def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
+    for i, l in enumerate(text):
+        frame = cv.putText(
+            frame,
+            l,
+            (10, 20 + 30 * i),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
+            2,
+        )
+    return frame
+
+
+def get_frame_from_workflow_output(
+    workflow_output: Dict[str, Union[WorkflowImageData, Any]], frame_output_key: str
+) -> Optional[np.ndarray]:
+    latency: Optional[datetime.timedelta] = None
+    np_image: Optional[np.ndarray] = None
+
+    step_output = workflow_output.get(frame_output_key)
+    if isinstance(step_output, WorkflowImageData):
+        if (
+            DEBUG_WEBRTC_PROCESSING_LATENCY
+            and step_output.video_metadata
+            and step_output.video_metadata.frame_timestamp is not None
+        ):
+            latency = (
+                datetime.datetime.now() - step_output.video_metadata.frame_timestamp
+            )
+        np_image = step_output.numpy_image
+    elif isinstance(step_output, dict):
+        for frame_output in step_output.values():
+            if isinstance(frame_output, WorkflowImageData):
+                if (
+                    DEBUG_WEBRTC_PROCESSING_LATENCY
+                    and frame_output.video_metadata
+                    and frame_output.video_metadata.frame_timestamp is not None
+                ):
+                    latency = (
+                        datetime.datetime.now()
+                        - frame_output.video_metadata.frame_timestamp
+                    )
+                np_image = frame_output.numpy_image
+
+    # logger.warning since inference pipeline is noisy on INFO level
+    if DEBUG_WEBRTC_PROCESSING_LATENCY and latency is not None:
+        logger.warning("Processing latency: %ss", latency.total_seconds())
+
+    return np_image
+
+
+# Video File Upload Protocol
+# Header: [chunk_index:u32][total_chunks:u32][payload]
+def parse_video_file_chunk(message: bytes) -> Tuple[int, int, bytes]:
+    """Parse video file chunk message.
+
+    Returns: (chunk_index, total_chunks, payload)
+    """
+    if len(message) < VIDEO_FILE_HEADER_SIZE:
+        raise ValueError(f"Message too short: {len(message)} bytes")
+    chunk_index, total_chunks = struct.unpack("<II", message[:8])
+    return chunk_index, total_chunks, message[8:]
+
+
+def warmup_cuda(
+    max_retries: int = 10,
+    retry_delay: float = 0.5,
+):
+    cu = ctypes.CDLL("libcuda.so.1")
+
+    for attempt in range(max_retries):
+        rc = cu.cuInit(0)
+
+        if rc == 0:
+            break
+        else:
+            if attempt < max_retries - 1:
+                logger.warning(
+                    "cuInit failed on attempt %s/%s with code %s, retrying...",
+                    attempt + 1,
+                    max_retries,
+                    rc,
+                )
+                time.sleep(retry_delay)
+    else:
+        raise RuntimeError(f"CUDA initialization failed after {max_retries} attempts")
+
+    logger.info("CUDA initialization succeeded")
+
+
+def get_video_fps(filepath: str) -> Optional[float]:
+    """Detect video FPS from container metadata.
+
+    Args:
+        filepath: Path to the video file
+
+    Returns:
+        FPS as float, or None if detection fails
+    """
+    import json
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=r_frame_rate,avg_frame_rate",
+                "-of",
+                "json",
+                filepath,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            streams = data.get("streams", [])
+            if streams:
+                stream = streams[0]
+                # Prefer avg_frame_rate (actual average) over r_frame_rate (container rate)
+                for rate_key in ["avg_frame_rate", "r_frame_rate"]:
+                    rate_str = stream.get(rate_key, "0/1")
+                    if "/" in rate_str:
+                        num, den = rate_str.split("/")
+                        if int(den) != 0:
+                            fps = int(num) / int(den)
+                            if fps > 0:
+                                logger.info(
+                                    "Video FPS detected: %.2f from %s", fps, rate_key
+                                )
+                                return fps
+        else:
+            logger.warning("ffprobe FPS detection failed: %s", result.stderr.strip())
+    except FileNotFoundError:
+        logger.warning("ffprobe not available for FPS detection")
+    except subprocess.TimeoutExpired:
+        logger.warning("ffprobe timed out during FPS detection")
+    except Exception as e:
+        logger.warning("ffprobe FPS detection failed: %s", e)
+
+    return None
+
+
+def get_video_rotation(filepath: str) -> int:
+    """Detect video rotation from metadata (displaymatrix or rotate tag).
+
+    Args:
+        filepath: Path to the video file
+
+    Returns:
+        Rotation in degrees (-90, 0, 90, 180, 270) or 0 if not found.
+        Negative values indicate counter-clockwise rotation.
+    """
+    import json
+    import subprocess
+
+    try:
+        # Use -show_streams which is compatible with all ffprobe versions
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_streams",
+                "-of",
+                "json",
+                filepath,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            streams = data.get("streams", [])
+            if streams:
+                stream = streams[0]
+                # Check displaymatrix side_data first
+                for sd in stream.get("side_data_list", []):
+                    if "rotation" in sd:
+                        rotation = int(sd["rotation"])
+                        logger.info("Video rotation detected: %d°", rotation)
+                        return rotation
+                # Fall back to rotate tag in stream tags
+                rotate_str = stream.get("tags", {}).get("rotate", "0")
+                rotation = int(rotate_str)
+                if rotation != 0:
+                    logger.info("Video rotation detected: %d°", rotation)
+                    return rotation
+        else:
+            logger.warning("ffprobe failed: %s", result.stderr.strip())
+    except FileNotFoundError:
+        logger.warning("ffprobe not available")
+    except subprocess.TimeoutExpired:
+        logger.warning("ffprobe timed out")
+    except Exception as e:
+        logger.warning("ffprobe rotation detection failed: %s", e)
+
+    return 0
+
+
+def get_cv2_rotation_code(rotation: int) -> Optional[int]:
+    """Get OpenCV rotation code to correct a given rotation.
+
+    Args:
+        rotation: Rotation angle in degrees from metadata
+
+    Returns:
+        cv2 rotation constant or None if no correction needed
+    """
+    # The displaymatrix rotation indicates how the video is rotated.
+    # To correct it, we apply the OPPOSITE rotation.
+    if rotation in (-90, 270):
+        return cv.ROTATE_90_CLOCKWISE
+    elif rotation in (90, -270):
+        return cv.ROTATE_90_COUNTERCLOCKWISE
+    elif rotation in (180, -180):
+        return cv.ROTATE_180
+    return None
+
+
+def rotate_video_frame(frame: VideoFrame, rotation_code: int) -> VideoFrame:
+    """Apply rotation to a video frame using OpenCV.
+
+    Args:
+        frame: Input VideoFrame
+        rotation_code: cv2 rotation constant (ROTATE_90_CLOCKWISE, etc.)
+
+    Returns:
+        Rotated VideoFrame
+    """
+    img = frame.to_ndarray(format="bgr24")
+    img = cv.rotate(img, rotation_code)
+    return VideoFrame.from_ndarray(img, format="bgr24")
