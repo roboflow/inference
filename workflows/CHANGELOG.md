@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.4`
+
+Bundled execution engine: `1.16.1`.
+
 ### Added
 
 - Embedding Model (`roboflow_core/embedding_model@v1`): extract feature vectors
