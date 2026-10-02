@@ -4,6 +4,40 @@
 
 ### Added
 
+- `masks_resolution_factor` on instance-segmentation post-processing, in
+  `[0.0, 1.0]`. `1.0` (the default) resizes masks to the image as before;
+  `0.0` leaves them on the model's own grid; values between interpolate the
+  resize target. Threaded through all six instance-segmentation families on
+  both the dense and RLE paths, and through the ONNX, TorchScript and TensorRT
+  backends. Default output is unchanged.
+- `mask_size` on `InstanceDetections` and `InstancesRLEMasks`, recording the
+  grid the masks live on. Each defaults to the value it effectively had before,
+  so existing construction is unaffected.
+- `scale_polygons_to_image`, lifting contour coordinates from mask space into
+  image space.
+
+### Changed
+
+- `InstancesRLEMasks.to_coco_rle_masks()` now declares the grid the counts were
+  encoded on rather than the image size. These agree unless a resolution factor
+  below `1.0` is used; when they differ, declaring the image size made
+  `pycocotools` reinterpret the runs without raising.
+- `InstanceDetections.to_supervision()` restores the image grid when masks are
+  reduced, since `sv.Detections.mask` is documented as matching the image and
+  its annotators index the scene with it.
+- `InstanceDetections.__iter__` emits the encoded grid in the COCO `size` field.
+- An unknown `mask_decode_mode` now raises `InvalidMaskDecodeArgument` on the
+  `inference_models` path, matching the legacy path, which previously accepted
+  any value.
+
+### Fixed
+
+- Zero-detection results reported a mask shape the populated path would never
+  produce, because the empty branch resolved its target from the padded grid
+  while the populated path unpadded first.
+- RF-DETR's Triton post-process dispatcher dropped the resolution factor, so
+  the fused path silently ignored it.
+
 - RF-DETR Torch and ONNX object detection now use the five-stage execution plan,
   sharing Triton Universal preprocessing, reference fallback, compatibility checks
   and per-request selection metadata with TensorRT.

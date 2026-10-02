@@ -667,7 +667,8 @@ def _parse_registry_timestamp(
         except ValueError:
             pass
     LOGGER.warning(
-        "Offline-weights registry record contains unparsable timestamp for " "%s: %r",
+        "Offline-weights registry record contains unparsable timestamp for "
+        "%s: %r",
         context,
         value,
     )

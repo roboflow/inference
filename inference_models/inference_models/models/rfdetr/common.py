@@ -437,6 +437,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
                 classes_re_mapping=classes_re_mapping,
                 max_detections=max_detections,
                 defer_postprocess_sync=defer_postprocess_sync,
+                masks_resolution_factor=masks_resolution_factor,
             )
             for image_bboxes, image_logits, image_masks, image_meta in zip(
                 bboxes,

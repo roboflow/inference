@@ -150,3 +150,99 @@ class TestMaskSize:
 
         # then
         assert detections.mask_size == (270, 480)
+
+
+class TestReducedGridLeavesTheBoundaryAtImageSize:
+    """`sv.Detections` and the COCO dict must describe the image, not the grid.
+
+    `sv.Detections.mask` is documented as `(n, H, W)` matching the image and
+    its annotators index the scene with it, so a reduced grid raises. The COCO
+    dict is the opposite: `size` must describe the grid the counts were encoded
+    on, or decoding reinterprets the runs.
+    """
+
+    def test_to_supervision_restores_the_image_grid(self) -> None:
+        # given
+        # masks produced at a quarter of the image resolution
+        detections = InstanceDetections(
+            xyxy=torch.tensor([[0, 0, 80, 80]], dtype=torch.float32),
+            class_id=torch.zeros((1,), dtype=torch.int64),
+            confidence=torch.ones((1,), dtype=torch.float32),
+            mask=InstancesRLEMasks(
+                image_size=(80, 80),
+                masks=[_square_rle(20, 20)],
+                mask_size=(20, 20),
+            ),
+        )
+
+        # when
+        converted = detections.to_supervision()
+
+        # then
+        assert converted.mask.shape == (1, 80, 80)
+
+    def test_supervision_annotator_accepts_the_result(self) -> None:
+        # given
+        # the reported failure was an IndexError from boolean-index mismatch
+        import numpy as np
+        import supervision as sv
+
+        scene = np.zeros((80, 80, 3), dtype=np.uint8)
+        detections = InstanceDetections(
+            xyxy=torch.tensor([[0, 0, 80, 80]], dtype=torch.float32),
+            class_id=torch.zeros((1,), dtype=torch.int64),
+            confidence=torch.ones((1,), dtype=torch.float32),
+            mask=InstancesRLEMasks(
+                image_size=(80, 80),
+                masks=[_square_rle(20, 20)],
+                mask_size=(20, 20),
+            ),
+        )
+
+        # when / then
+        sv.MaskAnnotator().annotate(scene.copy(), detections.to_supervision())
+
+    def test_iteration_declares_the_encoded_grid(self) -> None:
+        # given
+        detections = InstanceDetections(
+            xyxy=torch.tensor([[0, 0, 80, 80]], dtype=torch.float32),
+            class_id=torch.zeros((1,), dtype=torch.int64),
+            confidence=torch.ones((1,), dtype=torch.float32),
+            mask=InstancesRLEMasks(
+                image_size=(80, 80),
+                masks=[_square_rle(20, 20)],
+                mask_size=(20, 20),
+            ),
+        )
+
+        # when
+        _, mask, *_ = next(iter(detections))
+
+        # then
+        assert mask["size"] == [20, 20]
+
+
+def _square_rle(height: int, width: int) -> bytes:
+    """Encode a filled square as COCO RLE counts.
+
+    Args:
+        height: Grid height.
+        width: Grid width.
+
+    Returns:
+        COCO RLE counts for a square covering the middle of the grid.
+
+    Examples:
+        ```pycon
+        >>> isinstance(_square_rle(20, 20), bytes)
+        True
+
+        ```
+    """
+    import numpy as np
+    from pycocotools import mask as mask_utils
+
+    dense = np.zeros((height, width), dtype=np.uint8)
+    dense[height // 4 : height // 2, width // 4 : width // 2] = 1
+
+    return mask_utils.encode(np.asfortranarray(dense))["counts"]

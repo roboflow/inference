@@ -407,6 +407,14 @@ def scale_polygons_to_image(
     scaled independently, since the mask and the image need not share an aspect
     ratio.
 
+    Coordinates are multiplied directly, without a pixel-centre correction, so
+    a contour touching the far edge of the mask lands up to `(scale - 1)` pixels
+    short of the image edge - 11 px at a 12x scale. This matches
+    `inference.core.utils.postprocess.scale_polygons`, which the legacy backend
+    uses, and keeping the two in agreement is worth more than halving the bias
+    on one of them. Changing the convention would make the same input produce
+    different polygons depending on which backend served it.
+
     Args:
         polygons: Contours in mask coordinates, each of shape `(k, 2)` as `(x, y)`.
         mask_size: Dimensions of the mask the contours were extracted from.
@@ -468,6 +476,43 @@ def resolve_mask_target_size(
     return height, width
 
 
+def resolve_unpadded_mask_grid(
+    mask_height: int,
+    mask_width: int,
+    *,
+    padding: Tuple[int, int, int, int],
+    inference_size: ImageDimensions,
+) -> Tuple[int, int]:
+    """Size of the mask grid once letterbox padding is removed.
+
+    The populated path slices the padding away before resizing, so the resize
+    target is interpolated from the unpadded grid. The empty path has no masks
+    to slice, and must compute the same number or it reports a shape the
+    populated path would never produce.
+
+    Args:
+        mask_height: Height of the mask grid as the model produced it.
+        mask_width: Width of that grid.
+        padding: Letterbox padding as `(left, top, right, bottom)` in
+            network-input pixels.
+        inference_size: Network input dimensions the padding refers to.
+
+    Returns:
+        The unpadded `(height, width)` of the mask grid.
+    """
+    pad_left, pad_top, pad_right, pad_bottom = padding
+    height_scale = mask_height / inference_size.height
+    width_scale = mask_width / inference_size.width
+    unpadded_height = mask_height - round(height_scale * pad_top) - round(
+        height_scale * pad_bottom
+    )
+    unpadded_width = mask_width - round(width_scale * pad_left) - round(
+        width_scale * pad_right
+    )
+
+    return max(1, unpadded_height), max(1, unpadded_width)
+
+
 def align_instance_segmentation_results(
     image_bboxes: torch.Tensor,
     masks: torch.Tensor,
@@ -483,9 +528,15 @@ def align_instance_segmentation_results(
     masks_resolution_factor: float = 1.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
+        unpadded_height, unpadded_width = resolve_unpadded_mask_grid(
+            masks.shape[1],
+            masks.shape[2],
+            padding=padding,
+            inference_size=inference_size,
+        )
         empty_target_height, empty_target_width = resolve_mask_target_size(
-            mask_height=masks.shape[1],
-            mask_width=masks.shape[2],
+            mask_height=unpadded_height,
+            mask_width=unpadded_width,
             size_after_pre_processing=size_after_pre_processing,
             masks_resolution_factor=masks_resolution_factor,
         )
@@ -588,11 +639,22 @@ def align_instance_segmentation_results(
         canvas_w_scale = target_width / size_after_pre_processing.width
         canvas_offset_y = round(static_crop_offset.offset_y * canvas_h_scale)
         canvas_offset_x = round(static_crop_offset.offset_x * canvas_w_scale)
+        # The canvas must contain the pasted extent. Rounding the canvas and
+        # the offset independently can leave the canvas one pixel short, so
+        # take whichever is larger rather than trusting the rounded product.
         mask_canvas = torch.zeros(
             (
                 masks.shape[0],
-                max(1, round(original_size.height * canvas_h_scale)),
-                max(1, round(original_size.width * canvas_w_scale)),
+                max(
+                    1,
+                    round(original_size.height * canvas_h_scale),
+                    canvas_offset_y + masks.shape[1],
+                ),
+                max(
+                    1,
+                    round(original_size.width * canvas_w_scale),
+                    canvas_offset_x + masks.shape[2],
+                ),
             ),
             dtype=torch.bool,
             device=masks.device,
@@ -741,10 +803,16 @@ def align_instance_segmentation_results_to_rle_masks(
     # path, so crop offsets move into the same space
     canvas_h_scale = target_h / size_after_pre_processing.height
     canvas_w_scale = target_w / size_after_pre_processing.width
-    canvas_height = max(1, round(original_size.height * canvas_h_scale))
-    canvas_width = max(1, round(original_size.width * canvas_w_scale))
     offset_y = round(static_crop_offset.offset_y * canvas_h_scale)
     offset_x = round(static_crop_offset.offset_x * canvas_w_scale)
+    # as above: the canvas must contain offset + mask, not merely the rounded
+    # product of the original size and the scale
+    canvas_height = max(
+        1, round(original_size.height * canvas_h_scale), offset_y + target_h
+    )
+    canvas_width = max(
+        1, round(original_size.width * canvas_w_scale), offset_x + target_w
+    )
     num_instances = image_bboxes.shape[0]
     for i in range(num_instances):
         # keep a batch dim so functional.resize is unambiguous

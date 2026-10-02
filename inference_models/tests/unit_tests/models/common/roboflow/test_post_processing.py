@@ -6,6 +6,8 @@ Tests for post_processing helpers:
   - Mask geometry: characterization of the output contract
 """
 
+import hashlib
+
 import numpy as np
 import pytest
 import torch
@@ -784,14 +786,6 @@ class TestMasksResolutionFactor:
             **kwargs,
         )
 
-    def test_factor_one_is_bit_identical_to_default(self) -> None:
-        # given / when
-        _, baseline = self._run()
-        _, out = self._run(masks_resolution_factor=1.0)
-
-        # then
-        assert torch.equal(out, baseline)
-
     def test_factor_zero_keeps_the_post_unpad_mask_grid(self) -> None:
         # given / when
         _, masks = self._run(masks_resolution_factor=0.0)
@@ -903,16 +897,41 @@ class TestRLEMasksResolutionFactor:
         expected_w = round(self.PROTO * 0.5 + self.ORIG_W * 0.5)
         assert all(rle["size"] == [expected_h, expected_w] for _, rle in results)
 
-    def test_counts_sum_to_the_declared_size(self) -> None:
+    @pytest.mark.parametrize("factor", [0.25, 0.5, 1.0])
+    def test_rle_content_matches_the_dense_path(self, factor: float) -> None:
         # given / when
-        # the invariant pycocotools relies on; a declared size that disagrees
-        # with the counts decodes silently wrong rather than raising
-        results = self._run(masks_resolution_factor=0.25)
+        # the previous version asserted decoded.shape == rle["size"], which
+        # mask_utils.decode guarantees and so could never fail. Comparing the
+        # decoded content against the dense path is the real invariant: the
+        # two carriers must describe the same pixels at the same factor.
+        rle_results = self._run(masks_resolution_factor=factor)
+        torch.manual_seed(42)
+        bboxes = torch.rand((3, 6), dtype=torch.float32) * 100
+        masks = torch.randn((3, self.PROTO, self.PROTO), dtype=torch.float32)
+        _, dense = align_instance_segmentation_results(
+            image_bboxes=bboxes.clone(),
+            masks=masks.clone(),
+            padding=(0, 0, 0, 0),
+            scale_width=1.0,
+            scale_height=1.0,
+            original_size=ImageDimensions(height=self.ORIG_H, width=self.ORIG_W),
+            size_after_pre_processing=ImageDimensions(
+                height=self.ORIG_H, width=self.ORIG_W
+            ),
+            inference_size=ImageDimensions(height=640, width=640),
+            static_crop_offset=StaticCropOffset(
+                offset_x=0, offset_y=0, crop_width=self.ORIG_W, crop_height=self.ORIG_H
+            ),
+            binarization_threshold=0.0,
+            mask_chunk_size=1000,
+            masks_resolution_factor=factor,
+        )
 
         # then
-        for _, rle in results:
-            decoded = mask_utils.decode(rle)
-            assert decoded.shape == tuple(rle["size"])
+        for index, (_, rle) in enumerate(rle_results):
+            decoded = mask_utils.decode(rle).astype(bool)
+            assert decoded.shape == tuple(dense.shape[1:])
+            assert np.array_equal(decoded, dense[index].numpy())
 
     def test_matches_the_dense_path_resolution(self) -> None:
         # given / when
@@ -942,3 +961,227 @@ class TestRLEMasksResolutionFactor:
 
         # then
         assert rle_results[0][1]["size"] == list(dense.shape[1:])
+
+
+# Captured from origin/main @ 23a01eb3a with
+# `git show origin/main:<this module> > /tmp/pp_main.py`, loading it alongside
+# the branch and fingerprinting its output. If origin/main ever changes this
+# function these cases SHOULD fail - that is the point of a characterization
+# test. Regenerate only after deciding the new behaviour is intended.
+_MAIN_GOLDEN = [
+    {"ih": 333, "iw": 211, "ox": 97, "oy": 61, "pad": (16, 18, 6, 5), "n": 5, "shape": (5, 394, 308), "digest": "a48aa710ef85cd88", "boxes": "b62c110b17ae5441"},
+    {"ih": 333, "iw": 211, "ox": 0, "oy": 0, "pad": (14, 9, 4, 2), "n": 5, "shape": (5, 333, 211), "digest": "5d04de5cff404410", "boxes": "5b0e73b0ea74de77"},
+    {"ih": 200, "iw": 300, "ox": 97, "oy": 61, "pad": (20, 23, 19, 20), "n": 0, "shape": (0, 261, 397), "digest": "e3b0c44298fc1c14", "boxes": "e3b0c44298fc1c14"},
+    {"ih": 200, "iw": 300, "ox": 0, "oy": 0, "pad": (1, 6, 7, 19), "n": 0, "shape": (0, 200, 300), "digest": "e3b0c44298fc1c14", "boxes": "e3b0c44298fc1c14"},
+    {"ih": 333, "iw": 211, "ox": 13, "oy": 61, "pad": (18, 6, 16, 7), "n": 5, "shape": (5, 394, 224), "digest": "a37811a210846e79", "boxes": "8cbae67b51c4aa02"},
+    {"ih": 640, "iw": 640, "ox": 97, "oy": 0, "pad": (21, 2, 14, 20), "n": 1, "shape": (1, 640, 737), "digest": "f88d6c3e4f5c03f7", "boxes": "e1cacd18dd5fddf7"},
+    {"ih": 333, "iw": 211, "ox": 0, "oy": 7, "pad": (10, 24, 7, 16), "n": 1, "shape": (1, 340, 211), "digest": "d15ccb8dd99581e4", "boxes": "e47e86508db619f6"},
+    {"ih": 200, "iw": 300, "ox": 0, "oy": 0, "pad": (12, 3, 9, 12), "n": 0, "shape": (0, 200, 300), "digest": "e3b0c44298fc1c14", "boxes": "e3b0c44298fc1c14"},
+    {"ih": 200, "iw": 300, "ox": 0, "oy": 0, "pad": (6, 1, 15, 12), "n": 5, "shape": (5, 200, 300), "digest": "baaed46f79ba3102", "boxes": "37313f9472c62672"},
+    {"ih": 333, "iw": 211, "ox": 97, "oy": 0, "pad": (18, 20, 6, 24), "n": 5, "shape": (5, 333, 308), "digest": "c760dd33356b0b6d", "boxes": "6b53dff165635fee"},
+    {"ih": 640, "iw": 640, "ox": 13, "oy": 0, "pad": (9, 10, 0, 13), "n": 0, "shape": (0, 640, 653), "digest": "e3b0c44298fc1c14", "boxes": "e3b0c44298fc1c14"},
+    {"ih": 1080, "iw": 1920, "ox": 0, "oy": 0, "pad": (0, 1, 14, 15), "n": 0, "shape": (0, 1080, 1920), "digest": "e3b0c44298fc1c14", "boxes": "e3b0c44298fc1c14"},
+    {"ih": 1080, "iw": 1920, "ox": 97, "oy": 0, "pad": (23, 24, 4, 13), "n": 5, "shape": (5, 1080, 2017), "digest": "6982b829d1bbddc7", "boxes": "4c219acad8807667"},
+    {"ih": 333, "iw": 211, "ox": 0, "oy": 61, "pad": (13, 6, 0, 8), "n": 5, "shape": (5, 394, 211), "digest": "87fcc86e47722220", "boxes": "b21927719126483f"},
+    {"ih": 640, "iw": 640, "ox": 0, "oy": 0, "pad": (5, 12, 19, 20), "n": 5, "shape": (5, 640, 640), "digest": "846517457eb562ae", "boxes": "3cedb68b2e60e5f6"},
+    {"ih": 200, "iw": 300, "ox": 0, "oy": 0, "pad": (6, 14, 8, 0), "n": 5, "shape": (5, 200, 300), "digest": "6287b10e34217d2e", "boxes": "bce5175b45d9adde"},
+    {"ih": 640, "iw": 640, "ox": 13, "oy": 61, "pad": (2, 2, 2, 6), "n": 5, "shape": (5, 701, 653), "digest": "d8db8ae532bdb7ea", "boxes": "6798272b81011bb4"},
+    {"ih": 1080, "iw": 1920, "ox": 0, "oy": 7, "pad": (11, 19, 14, 4), "n": 5, "shape": (5, 1087, 1920), "digest": "c9f9413897eefdd0", "boxes": "749ad903686c1c93"},
+    {"ih": 333, "iw": 211, "ox": 0, "oy": 61, "pad": (5, 20, 4, 9), "n": 0, "shape": (0, 394, 211), "digest": "e3b0c44298fc1c14", "boxes": "e3b0c44298fc1c14"},
+    {"ih": 1080, "iw": 1920, "ox": 0, "oy": 0, "pad": (23, 20, 17, 6), "n": 5, "shape": (5, 1080, 1920), "digest": "fe15d5708b271c8f", "boxes": "b6b89ee145f20853"},
+    {"ih": 333, "iw": 211, "ox": 97, "oy": 0, "pad": (13, 1, 3, 3), "n": 0, "shape": (0, 333, 308), "digest": "e3b0c44298fc1c14", "boxes": "e3b0c44298fc1c14"},
+    {"ih": 640, "iw": 640, "ox": 0, "oy": 61, "pad": (8, 13, 19, 15), "n": 1, "shape": (1, 701, 640), "digest": "fbb5ace53bca0cf5", "boxes": "48123ae5fa70ad76"},
+    {"ih": 1080, "iw": 1920, "ox": 0, "oy": 0, "pad": (7, 15, 17, 20), "n": 5, "shape": (5, 1080, 1920), "digest": "be0ffbd3b025fc6b", "boxes": "bcc7d8853de382db"},
+    {"ih": 200, "iw": 300, "ox": 13, "oy": 0, "pad": (6, 23, 0, 2), "n": 1, "shape": (1, 200, 313), "digest": "4f01e63780b7b135", "boxes": "404d5eb899660b53"},
+]
+
+
+class TestBitIdenticalToMain:
+    """Factor 1.0 must reproduce origin/main exactly.
+
+    The obvious version of this test - comparing the default against an
+    explicit 1.0 - compares the branch with itself and cannot fail. These
+    cases carry digests of the *pre-change* implementation's output, over a
+    matrix that includes non-zero letterbox padding, static crops and empty
+    detections, which the rest of the suite does not exercise.
+    """
+
+    @staticmethod
+    def _run(case: dict):
+        torch.manual_seed(7)
+        bboxes = torch.rand((case["n"], 6), dtype=torch.float32) * 100
+        masks = torch.randn((case["n"], 160, 160), dtype=torch.float32)
+
+        return align_instance_segmentation_results(
+            image_bboxes=bboxes.clone(),
+            masks=masks.clone(),
+            padding=tuple(case["pad"]),
+            scale_width=1.0,
+            scale_height=1.0,
+            original_size=ImageDimensions(
+                height=case["ih"] + case["oy"], width=case["iw"] + case["ox"]
+            ),
+            size_after_pre_processing=ImageDimensions(
+                height=case["ih"], width=case["iw"]
+            ),
+            inference_size=ImageDimensions(height=640, width=640),
+            static_crop_offset=StaticCropOffset(
+                offset_x=case["ox"],
+                offset_y=case["oy"],
+                crop_width=case["iw"],
+                crop_height=case["ih"],
+            ),
+            binarization_threshold=0.0,
+            mask_chunk_size=16,
+            masks_resolution_factor=1.0,
+        )
+
+    @pytest.mark.parametrize("case", _MAIN_GOLDEN)
+    def test_shape_matches_main(self, case: dict) -> None:
+        # given / when
+        _, masks = self._run(case)
+
+        # then
+        # asserted separately from the digest so a geometry change reports
+        # readably instead of as an opaque hash mismatch
+        assert tuple(masks.shape) == case["shape"]
+
+    @pytest.mark.parametrize("case", _MAIN_GOLDEN)
+    def test_content_matches_main(self, case: dict) -> None:
+        # given / when
+        boxes, masks = self._run(case)
+
+        # then
+        assert (
+            hashlib.sha256(masks.numpy().tobytes()).hexdigest()[:16] == case["digest"]
+        )
+        assert (
+            hashlib.sha256(boxes.numpy().tobytes()).hexdigest()[:16] == case["boxes"]
+        )
+
+
+class TestStaticCropAtReducedResolution:
+    """The combination that crashed: a crop reaching the image edge, a
+    letterboxed input, and a factor below 1.0.
+
+    Rounding the canvas size and the crop offset independently can leave the
+    canvas a pixel short of the pasted extent. Only crops that touch the image
+    edge expose it, and only under letterbox scaling, which is why a sweep with
+    zero padding and scale 1.0 finds nothing.
+    """
+
+    @staticmethod
+    def _letterboxed(image_w: int, image_h: int, offset_x: int, offset_y: int):
+        """Build the arguments for a crop that reaches the image edge.
+
+        Args:
+            image_w: Full image width.
+            image_h: Full image height.
+            offset_x: Left edge of the crop.
+            offset_y: Top edge of the crop.
+
+        Returns:
+            Keyword arguments for the alignment helpers.
+        """
+        crop_w, crop_h = image_w - offset_x, image_h - offset_y
+        scale = min(640 / crop_w, 640 / crop_h)
+        new_w, new_h = round(crop_w * scale), round(crop_h * scale)
+        pad_left, pad_top = (640 - new_w) // 2, (640 - new_h) // 2
+
+        return {
+            "image_bboxes": torch.tensor([[1.0, 1, 50, 50, 0.9, 0]]),
+            "masks": torch.randn(1, 160, 160),
+            "padding": (pad_left, pad_top, 640 - new_w - pad_left, 640 - new_h - pad_top),
+            "scale_width": scale,
+            "scale_height": scale,
+            "original_size": ImageDimensions(height=image_h, width=image_w),
+            "size_after_pre_processing": ImageDimensions(height=crop_h, width=crop_w),
+            "inference_size": ImageDimensions(height=640, width=640),
+            "static_crop_offset": StaticCropOffset(
+                offset_x=offset_x, offset_y=offset_y, crop_width=crop_w, crop_height=crop_h
+            ),
+        }
+
+    CASES = [
+        (1920, 1080, 288, 216, 0.5),
+        (1920, 1080, 0, 648, 0.75),
+        (245, 245, 83, 83, 1 / 3),
+        (1280, 720, 417, 311, 0.1),
+    ]
+
+    @pytest.mark.parametrize("image_w,image_h,offset_x,offset_y,factor", CASES)
+    def test_dense_path_places_the_mask_inside_the_canvas(
+        self, image_w: int, image_h: int, offset_x: int, offset_y: int, factor: float
+    ) -> None:
+        # given
+        torch.manual_seed(1)
+        kwargs = self._letterboxed(image_w, image_h, offset_x, offset_y)
+
+        # when
+        _, masks = align_instance_segmentation_results(
+            **kwargs, binarization_threshold=0.0, mask_chunk_size=16,
+            masks_resolution_factor=factor,
+        )
+
+        # then
+        assert masks.shape[0] == 1
+
+    @pytest.mark.parametrize("image_w,image_h,offset_x,offset_y,factor", CASES)
+    def test_rle_path_places_the_mask_inside_the_canvas(
+        self, image_w: int, image_h: int, offset_x: int, offset_y: int, factor: float
+    ) -> None:
+        # given
+        torch.manual_seed(1)
+        kwargs = self._letterboxed(image_w, image_h, offset_x, offset_y)
+
+        # when
+        results = list(
+            align_instance_segmentation_results_to_rle_masks(
+                **kwargs, binarization_threshold=0.0, masks_resolution_factor=factor
+            )
+        )
+
+        # then
+        assert len(results) == 1
+        decoded = mask_utils.decode(results[0][1])
+        assert decoded.shape == tuple(results[0][1]["size"])
+
+
+class TestEmptyAgreesWithPopulated:
+    """Zero detections must report the shape the populated path would produce.
+
+    Consumers derive the mask canvas from `mask.shape`, so a frame that
+    happens to detect nothing must not describe a different canvas from the
+    next frame that does. The empty path has no masks to unpad, so it has to
+    compute the unpadded grid rather than read it.
+    """
+
+    @staticmethod
+    def _run(n: int, padding, factor: float):
+        torch.manual_seed(5)
+        return align_instance_segmentation_results(
+            image_bboxes=torch.rand((n, 6), dtype=torch.float32) * 50,
+            masks=torch.randn((n, 160, 160), dtype=torch.float32),
+            padding=padding,
+            scale_width=1.0,
+            scale_height=1.0,
+            original_size=ImageDimensions(height=200, width=300),
+            size_after_pre_processing=ImageDimensions(height=200, width=300),
+            inference_size=ImageDimensions(height=640, width=640),
+            static_crop_offset=StaticCropOffset(
+                offset_x=0, offset_y=0, crop_width=300, crop_height=200
+            ),
+            binarization_threshold=0.0,
+            mask_chunk_size=16,
+            masks_resolution_factor=factor,
+        )
+
+    @pytest.mark.parametrize("padding", [(0, 0, 0, 0), (12, 34, 12, 34), (7, 0, 41, 3)])
+    @pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
+    def test_shapes_agree(self, padding, factor: float) -> None:
+        # given / when
+        _, empty = self._run(0, padding, factor)
+        _, populated = self._run(2, padding, factor)
+
+        # then
+        assert empty.shape[1:] == populated.shape[1:]

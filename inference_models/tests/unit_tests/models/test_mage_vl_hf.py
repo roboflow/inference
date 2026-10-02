@@ -207,9 +207,7 @@ def test_pre_process_generation_leaves_undeclared_tensors_alone() -> None:
     mage_vl.pre_process_generation(images=image, prompt="what is this?")
 
     passed_image = processor.call_args.kwargs["images"]
-    assert (
-        passed_image[0].max() == 255
-    ), "tensors without a declared format pass through"
+    assert passed_image[0].max() == 255, "tensors without a declared format pass through"
 
 
 def test_video_pre_processing_wraps_missing_dependency_errors(tmp_path) -> None:
@@ -340,6 +338,6 @@ def test_post_process_generation_strips_decoded_text() -> None:
     processor.tokenizer.batch_decode.return_value = ["  a dog  \n"]
     mage_vl = _mage_vl(processor=processor)
 
-    assert mage_vl.post_process_generation(generated_ids=torch.tensor([[1, 2]])) == [
-        "a dog"
-    ]
+    assert mage_vl.post_process_generation(
+        generated_ids=torch.tensor([[1, 2]])
+    ) == ["a dog"]

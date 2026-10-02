@@ -354,8 +354,11 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned: these fields never took effect in this version, so
-            # honouring them now would change existing workflows. @v5 forwards.
+            # Pinned: on the inference_models backend these fields were
+            # discarded, so honouring them now would change existing
+            # workflows. Note the legacy ORT backend DOES honour them
+            # today, so pinning changes behaviour there - a deliberate
+            # trade for consistency across backends. @v5 forwards.
             mask_decode_mode="accurate",
             tradeoff_factor=1.0,
             response_mask_format="rle",
@@ -405,8 +408,11 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned: these fields never took effect in this version, so
-            # honouring them now would change existing workflows. @v5 forwards.
+            # Pinned: on the inference_models backend these fields were
+            # discarded, so honouring them now would change existing
+            # workflows. Note the legacy ORT backend DOES honour them
+            # today, so pinning changes behaviour there - a deliberate
+            # trade for consistency across backends. @v5 forwards.
             mask_decode_mode="accurate",
             tradeoff_factor=1.0,
             response_mask_format="rle",

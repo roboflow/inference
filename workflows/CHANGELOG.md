@@ -18,6 +18,26 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
+- `roboflow_core/roboflow_instance_segmentation_model@v5`. Identical to `@v4`
+  except that it forwards `mask_decode_mode` and `tradeoff_factor` to the
+  server, which now honours them. Versions up to `@v4` pin the outbound request
+  to `accurate` / `1.0`, so existing workflows are unaffected on the
+  `inference_models` backend.
+
+  Two caveats. On the legacy ORT backend - the default on Windows - those
+  fields *were* honoured, so pinning changes behaviour there: a `@v1`-`@v4`
+  workflow set to `fast` now receives full-resolution masks. This is a
+  deliberate trade for consistency across backends.
+
+  The tensor-native siblings of every version, `@v5` included, are also pinned.
+  Nothing under `roboflow_workflows/` reads `InstanceDetections.mask_size`, and
+  the sites that rebuild `InstancesRLEMasks` drop it, so a reduced grid would
+  be reinterpreted as image-sized downstream. Reduced mask resolution is
+  therefore available in non-tensor mode only, pending propagation of
+  `mask_size` through the tensor pipeline.
+
+### Added
+
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
 ### Changed
 

@@ -430,8 +430,11 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
                 class_filter=class_filter,
                 max_detections=max_detections,
                 max_candidates=max_candidates,
-                mask_decode_mode=mask_decode_mode,
-                tradeoff_factor=tradeoff_factor,
+                # Pinned: these fields never took effect in this version via the
+                # inference_models backend, so honouring them now would change
+                # existing workflows. @v5 forwards.
+                mask_decode_mode="accurate",
+                tradeoff_factor=1.0,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
                 enforce_dense_masks_in_inference_models=(
@@ -505,8 +508,11 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned: these fields never took effect in this version, so
-            # honouring them now would change existing workflows. @v5 forwards.
+            # Pinned: on the inference_models backend these fields were
+            # discarded, so honouring them now would change existing
+            # workflows. Note the legacy ORT backend DOES honour them
+            # today, so pinning changes behaviour there - a deliberate
+            # trade for consistency across backends. @v5 forwards.
             mask_decode_mode="accurate",
             tradeoff_factor=1.0,
             response_mask_format="rle",

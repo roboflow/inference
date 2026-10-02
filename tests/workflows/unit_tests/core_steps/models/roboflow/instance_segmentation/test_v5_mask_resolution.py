@@ -116,12 +116,66 @@ def test_legacy_versions_pin_full_resolution(version: str, tensor: bool) -> None
 
 
 @pytest.mark.parametrize("version", FORWARDING_VERSIONS)
-@pytest.mark.parametrize("tensor", [False, True])
-def test_v5_forwards_what_the_caller_set(version: str, tensor: bool) -> None:
+def test_v5_forwards_what_the_caller_set(version: str) -> None:
     # given
-    source = _source(version, tensor)
+    source = _source(version, tensor=False)
 
     # then
-    assert "mask_decode_mode=mask_decode_mode," in source
-    assert "tradeoff_factor=tradeoff_factor," in source
+    assert source.count("mask_decode_mode=mask_decode_mode,") == 4
     assert 'mask_decode_mode="accurate",' not in source
+
+
+@pytest.mark.parametrize("version", FORWARDING_VERSIONS)
+def test_v5_tensor_is_pinned_pending_mask_size_propagation(version: str) -> None:
+    # given
+    # nothing under workflows/ reads mask_size, and the sites that rebuild
+    # InstancesRLEMasks drop it, so a reduced grid would be reinterpreted as
+    # image-sized downstream
+    source = _source(version, tensor=True)
+
+    # then
+    assert source.count('mask_decode_mode="accurate",') == 2
+    assert source.count("mask_decode_mode=mask_decode_mode,") == 2
+
+
+class TestPinningIsObservedAtTheCallSite:
+    """Count pinned outbound call sites rather than grepping for a string.
+
+    A version has exactly two places where the request leaves the block:
+    `run_locally` and `run_remotely`. Asserting both are pinned catches a
+    missed call site, which a substring search does not - the tensor-native
+    local path was unpinned while the file still contained the pinned string.
+
+    This is still source analysis. Exercising the block itself would be
+    stronger and needs the WorkflowBlock init machinery.
+    """
+
+    @pytest.mark.parametrize("version", PINNED_VERSIONS)
+    @pytest.mark.parametrize("tensor", [False, True])
+    def test_legacy_versions_send_accurate_whatever_the_caller_set(
+        self, version: str, tensor: bool
+    ) -> None:
+        # given
+        # the caller asks for `fast`; a pinned version must not forward it
+        source = _source(version, tensor)
+        outbound = [
+            line
+            for line in source.split("\n")
+            if "mask_decode_mode=" in line and "mask_decode_mode=mask_decode_mode" not in line
+        ]
+
+        # then
+        # one pinned value per outbound call site: run_locally and run_remotely
+        assert len(outbound) == 2, (
+            f"{version}{'_tensor' if tensor else ''} has {len(outbound)} pinned "
+            "outbound call sites, expected 2 (local and remote)"
+        )
+        assert all('"accurate"' in line for line in outbound)
+
+    def test_v5_non_tensor_has_no_pinned_call_sites(self) -> None:
+        # given
+        source = _source("v5", tensor=False)
+
+        # then
+        assert 'mask_decode_mode="accurate",' not in source
+        assert source.count("mask_decode_mode=mask_decode_mode,") == 4

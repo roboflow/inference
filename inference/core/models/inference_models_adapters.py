@@ -1055,18 +1055,25 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             # reported; equal sizes short-circuit to a no-op. This also breaks
             # any view into the pinned scratch buffers noted above, since the
             # scaled polygons are freshly allocated.
+            # Scale from the mask grid to the frame the masks were produced
+            # against, which is size_after_pre_processing - NOT original_size.
+            # A static crop anchored at (0, 0) also yields a mask smaller than
+            # the image, but its coordinates are already image-space, so
+            # inferring the scale from `mask_size != (H, W)` would double them.
             mask_size = getattr(det, "mask_size", None)
+            produced_against = preproc_metadata.size_after_pre_processing
             if (
                 not return_in_rle
                 and mask_size is not None
-                and tuple(mask_size) != (H, W)
+                and tuple(mask_size)
+                != (produced_against.height, produced_against.width)
             ):
                 polys_or_rles = scale_polygons_to_image(
                     polys_or_rles,
                     mask_size=ImageDimensions(
                         height=int(mask_size[0]), width=int(mask_size[1])
                     ),
-                    image_size=ImageDimensions(height=H, width=W),
+                    image_size=produced_against,
                 )
 
             predictions: List[
@@ -1196,7 +1203,10 @@ def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
         return rle_masks_to_polygons(masks=masks)
 
     segments = []
-    h, w = masks.image_size
+    # counts are encoded on the mask grid, which is not the image grid once a
+    # resolution factor below 1.0 is in play. Decoding on image_size makes
+    # pycocotools reinterpret the runs without error and yields garbage.
+    h, w = masks.mask_size or masks.image_size
     for counts in masks.masks:
         rle_dict = {"size": [h, w], "counts": counts}
         decoded_rle = np.ascontiguousarray(mask_utils.decode(rle_dict))

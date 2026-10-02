@@ -5,6 +5,7 @@ from concurrent.futures import Future
 from types import SimpleNamespace
 
 import numpy as np
+from pycocotools import mask as mask_utils
 import pytest
 import torch
 
@@ -12,8 +13,10 @@ from inference.core.entities.responses.inference import (
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationInferenceResponseDC,
 )
+from inference_models.models.base.types import InstancesRLEMasks
 from inference.core.exceptions import InvalidMaskDecodeArgument, PostProcessingError
 from inference.core.models.inference_models_adapters import (
+    rle_masks2poly,
     InferenceModelsDepthEstimationAdapter,
     InferenceModelsInstanceSegmentationAdapter,
     InferenceModelsObjectDetectionAdapter,
@@ -282,7 +285,7 @@ def test_workflow_response_fast_dataclass_path_is_disabled_at_depth_one() -> Non
     adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
     adapter._pipeline_depth = 1
     adapter.class_names = ["car"]
-    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=4, height=4))]
+    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=4, height=4), size_after_pre_processing=SimpleNamespace(width=4, height=4))]
     detections = [
         InstanceDetections(
             xyxy=torch.tensor([[1, 1, 3, 3]], dtype=torch.int32),
@@ -305,7 +308,7 @@ def test_workflow_response_fast_dataclass_path_is_enabled_above_depth_one() -> N
     adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
     adapter._pipeline_depth = 2
     adapter.class_names = ["car"]
-    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=4, height=4))]
+    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=4, height=4), size_after_pre_processing=SimpleNamespace(width=4, height=4))]
     detections = [
         InstanceDetections(
             xyxy=torch.tensor([[1, 1, 3, 3]], dtype=torch.int32),
@@ -755,7 +758,7 @@ def test_polygon_points_are_scaled_from_mask_space_into_image_space() -> None:
     # a 4x4 mask describing a 16x16 image: contours come out in mask
     # coordinates and must be lifted by 4x before they are reported
     adapter = _seg_adapter()
-    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=16, height=16))]
+    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=16, height=16), size_after_pre_processing=SimpleNamespace(width=16, height=16))]
     detections = [
         InstanceDetections(
             xyxy=torch.tensor([[0, 0, 16, 16]], dtype=torch.int32),
@@ -779,7 +782,7 @@ def test_polygon_points_unchanged_when_mask_matches_the_image() -> None:
     # given
     # today's situation: the scaling must be an exact no-op
     adapter = _seg_adapter()
-    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=8, height=8))]
+    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=8, height=8), size_after_pre_processing=SimpleNamespace(width=8, height=8))]
     mask = torch.zeros((1, 8, 8), dtype=torch.uint8)
     mask[0, 2:6, 2:6] = 1
     detections = [
@@ -864,3 +867,94 @@ class TestMaskDecodeModeMapping:
         # the legacy path raises for this; the two must agree
         with pytest.raises(InvalidMaskDecodeArgument):
             self._map(mask_decode_mode="nonsense")
+
+
+class TestRLEBackedPolygons:
+    """Polygons derived from RLE carriers at a reduced resolution.
+
+    The adapter asks for RLE whenever the model supports it, so this is the
+    default route for a plain polygon response. The counts are encoded on the
+    mask grid; decoding them on the image grid makes pycocotools reinterpret
+    the runs without raising and produces unusable contours.
+    """
+
+    @staticmethod
+    def _carrier(mask_h: int, mask_w: int, image_h: int, image_w: int):
+        dense = np.zeros((mask_h, mask_w), dtype=np.uint8)
+        dense[mask_h // 4 : mask_h // 2, mask_w // 4 : mask_w // 2] = 1
+        counts = mask_utils.encode(np.asfortranarray(dense))["counts"]
+
+        return InstancesRLEMasks(
+            image_size=(image_h, image_w), masks=[counts], mask_size=(mask_h, mask_w)
+        ), dense
+
+    def test_polygon_follows_the_encoded_grid_not_the_image(self) -> None:
+        # given
+        # a 160x160 mask describing a 640x640 image: the contour must come back
+        # in mask coordinates, which the adapter then scales into image space
+        carrier, dense = self._carrier(160, 160, 640, 640)
+
+        # when
+        polygon = rle_masks2poly(carrier)[0]
+
+        # then
+        ys, xs = np.where(dense)
+        assert polygon[:, 0].max() <= 160
+        assert abs(polygon[:, 0].min() - xs.min()) <= 1
+        assert abs(polygon[:, 1].max() - ys.max()) <= 1
+
+    def test_unchanged_when_the_grid_is_the_image(self) -> None:
+        # given
+        carrier, dense = self._carrier(64, 64, 64, 64)
+
+        # when
+        polygon = rle_masks2poly(carrier)[0]
+
+        # then
+        ys, xs = np.where(dense)
+        assert abs(polygon[:, 0].min() - xs.min()) <= 1
+        assert abs(polygon[:, 1].max() - ys.max()) <= 1
+
+    def test_non_square_grid(self) -> None:
+        # given
+        # a transposed decode is invisible on a square grid
+        carrier, dense = self._carrier(80, 160, 400, 800)
+
+        # when
+        polygon = rle_masks2poly(carrier)[0]
+
+        # then
+        assert polygon[:, 0].max() <= 160
+        assert polygon[:, 1].max() <= 80
+
+
+def test_origin_anchored_crop_is_not_mistaken_for_a_reduced_grid() -> None:
+    # given
+    # a static crop at (0, 0) yields a mask smaller than the image, but its
+    # coordinates are already image-space. Inferring "reduced" from
+    # mask_size != image_size would scale them a second time.
+    adapter = _seg_adapter()
+    metadata = [
+        SimpleNamespace(
+            original_size=SimpleNamespace(width=16, height=16),
+            size_after_pre_processing=SimpleNamespace(width=8, height=8),
+        )
+    ]
+    mask = torch.zeros((1, 8, 8), dtype=torch.uint8)
+    mask[0, 2:6, 2:6] = 1
+    detections = [
+        InstanceDetections(
+            xyxy=torch.tensor([[2, 2, 6, 6]], dtype=torch.int32),
+            confidence=torch.tensor([0.9], dtype=torch.float32),
+            class_id=torch.tensor([0], dtype=torch.int32),
+            mask=mask,
+        )
+    ]
+
+    # when
+    responses = adapter._build_responses_from_detections(detections, metadata)
+
+    # then
+    # the mask already matches size_after_pre_processing, so no scaling
+    xs = [p.x for p in responses[0].predictions[0].points]
+    assert max(xs) <= 8, f"coordinates were scaled a second time: {xs}"
