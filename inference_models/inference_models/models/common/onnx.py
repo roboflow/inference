@@ -1,11 +1,22 @@
+import hashlib
 import os
+import shutil
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
+from filelock import FileLock
+from packaging.version import InvalidVersion, Version
 
+from inference_models.configuration import (
+    INFERENCE_MODELS_COREML_COMPUTE_UNITS,
+    INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED,
+    INFERENCE_MODELS_COREML_MODEL_FORMAT,
+    OFFLINE_MODE,
+)
 from inference_models.errors import (
     EnvironmentConfigurationError,
+    InvalidEnvVariable,
     MissingDependencyError,
     ModelInputError,
     ModelRuntimeError,
@@ -99,6 +110,244 @@ MODEL_INPUT_CASTING = {
 }
 
 
+# String-keyed CoreMLExecutionProvider options (ModelFormat, MLComputeUnits, ModelCacheDirectory) first shipped
+# in onnxruntime 1.21.0. Older builds keep the provider unconfigured, as before.
+MIN_ONNXRUNTIME_VERSION_FOR_COREML_OPTIONS = Version("1.21.0")
+COREML_EXECUTION_PROVIDER = "CoreMLExecutionProvider"
+COREML_CACHE_DIR_NAME = "coreml_cache"
+# The inference cache watchdog takes `<package>/.<entry>.lock` before purging a package entry, so compiling
+# and loading under the same lock keeps it from deleting a cache that is being written or read.
+COREML_CACHE_LOCK_NAME = f".{COREML_CACHE_DIR_NAME}.lock"
+COREML_MODEL_FORMATS = {"MLProgram", "NeuralNetwork"}
+COREML_COMPUTE_UNITS = {"CPUAndGPU", "ALL", "CPUAndNeuralEngine", "CPUOnly"}
+
+
+class _PackageCoreMLProviderOptions(dict):
+    """CoreMLExecutionProvider options generated for a model package by `get_default_coreml_provider_options`.
+
+    Only these get the package-cache handling and fallback in `create_onnx_inference_session`; options a caller
+    configured are passed to onnxruntime unchanged.
+    """
+
+
+def _onnxruntime_supports_coreml_options() -> bool:
+    try:
+        return (
+            Version(onnxruntime.__version__).release
+            >= MIN_ONNXRUNTIME_VERSION_FOR_COREML_OPTIONS.release
+        )
+    except InvalidVersion:
+        return False
+
+
+def get_default_coreml_provider_options(
+    model_package_path: str,
+) -> Optional[Dict[str, str]]:
+    """Build CoreMLExecutionProvider options for models that opt into MLProgram.
+
+    Returns None when the installed onnxruntime predates string CoreML options, in which
+    case the provider should be passed through unconfigured.
+
+    The compiled-model cache lives inside the model package, in a directory named after the
+    onnxruntime version and CoreML options. onnxruntime keys cache entries only by model path
+    and partition index and never validates them, so a cache written by a different version
+    (which may partition the graph differently) must never be reused; `create_onnx_inference_session`
+    further keys it by the model file. It is skipped for offline or read-only packages, which must
+    not be written to.
+    """
+    if not _onnxruntime_supports_coreml_options():
+        return None
+    _validate_coreml_setting(
+        name="INFERENCE_MODELS_COREML_MODEL_FORMAT",
+        value=INFERENCE_MODELS_COREML_MODEL_FORMAT,
+        allowed=COREML_MODEL_FORMATS,
+    )
+    _validate_coreml_setting(
+        name="INFERENCE_MODELS_COREML_COMPUTE_UNITS",
+        value=INFERENCE_MODELS_COREML_COMPUTE_UNITS,
+        allowed=COREML_COMPUTE_UNITS,
+    )
+    options = _PackageCoreMLProviderOptions(
+        ModelFormat=INFERENCE_MODELS_COREML_MODEL_FORMAT,
+        MLComputeUnits=INFERENCE_MODELS_COREML_COMPUTE_UNITS,
+    )
+    if (
+        INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED
+        and not OFFLINE_MODE
+        and os.path.isdir(model_package_path)
+        and os.access(model_package_path, os.W_OK)
+    ):
+        cache_variant = (
+            f"ort-{onnxruntime.__version__}-{INFERENCE_MODELS_COREML_MODEL_FORMAT}-"
+            f"{INFERENCE_MODELS_COREML_COMPUTE_UNITS}"
+        )
+        options["ModelCacheDirectory"] = os.path.join(
+            model_package_path, COREML_CACHE_DIR_NAME, cache_variant
+        )
+    return options
+
+
+def _validate_coreml_setting(name: str, value: str, allowed: set) -> None:
+    if value not in allowed:
+        raise InvalidEnvVariable(
+            message=f"`{name}` must be one of {sorted(allowed)}, got '{value}'.",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+
+
+def _get_coreml_provider_options(
+    providers: List[Union[str, tuple]],
+) -> Optional[Dict[str, str]]:
+    for provider in providers:
+        if (
+            isinstance(provider, tuple)
+            and provider[0] == COREML_EXECUTION_PROVIDER
+            and isinstance(provider[1], dict)
+        ):
+            return provider[1]
+    return None
+
+
+def _replace_coreml_provider(
+    providers: List[Union[str, tuple]], replacement: Union[str, tuple]
+) -> List[Union[str, tuple]]:
+    return [
+        (
+            replacement
+            if isinstance(provider, tuple) and provider[0] == COREML_EXECUTION_PROVIDER
+            else provider
+        )
+        for provider in providers
+    ]
+
+
+def create_onnx_inference_session(
+    model_path: str,
+    providers: List[Union[str, tuple]],
+    sess_options: Optional[onnxruntime.SessionOptions] = None,
+) -> onnxruntime.InferenceSession:
+    """Create an ONNX Runtime session, guarding CoreMLExecutionProvider options generated for the package.
+
+    onnxruntime fails session creation, rather than falling back to the CPU, when CoreML cannot
+    compile the model. So if the generated CoreML options fail, the session is created once more
+    with a bare CoreMLExecutionProvider, which is how these models ran before the options existed.
+
+    onnxruntime also reuses a cached compiled CoreML model whenever its directory exists and never
+    validates it, so the generated cache directory is keyed by the model file (see
+    `_create_session_with_coreml_cache`). CoreML options a caller configured, including their own
+    `ModelCacheDirectory`, are passed to onnxruntime unchanged.
+    """
+    coreml_options = _get_coreml_provider_options(providers=providers)
+    if not isinstance(coreml_options, _PackageCoreMLProviderOptions):
+        return onnxruntime.InferenceSession(
+            path_or_bytes=model_path, providers=providers, sess_options=sess_options
+        )
+    try:
+        if coreml_options.get("ModelCacheDirectory") is None:
+            return onnxruntime.InferenceSession(
+                path_or_bytes=model_path,
+                providers=_replace_coreml_provider(
+                    providers=providers,
+                    replacement=(COREML_EXECUTION_PROVIDER, dict(coreml_options)),
+                ),
+                sess_options=sess_options,
+            )
+        return _create_session_with_coreml_cache(
+            model_path=model_path,
+            providers=providers,
+            coreml_options=coreml_options,
+            sess_options=sess_options,
+        )
+    except Exception as error:
+        LOGGER.warning(
+            "Could not create an ONNX Runtime session for %s with CoreML options %s (%s). "
+            "Falling back to onnxruntime's default CoreML configuration.",
+            model_path,
+            coreml_options,
+            error,
+        )
+        return onnxruntime.InferenceSession(
+            path_or_bytes=model_path,
+            providers=_replace_coreml_provider(
+                providers=providers, replacement=COREML_EXECUTION_PROVIDER
+            ),
+            sess_options=sess_options,
+        )
+
+
+def _create_session_with_coreml_cache(
+    model_path: str,
+    providers: List[Union[str, tuple]],
+    coreml_options: Dict[str, str],
+    sess_options: Optional[onnxruntime.SessionOptions],
+) -> onnxruntime.InferenceSession:
+    """Create the session with a compiled-model cache keyed by the model file.
+
+    The configured cache directory gets a suffix derived from the model file's size and
+    modification time, so replacing the weights in place compiles them again instead of silently
+    serving the previous model; caches left behind by earlier weights are removed. Compiling and
+    loading run under the package's `coreml_cache` lock, which serializes concurrent loads of one
+    model (the later ones reuse the cache) and keeps the inference cache watchdog from purging the
+    cache mid-load. A load that fails with a cache present discards it and compiles once more.
+    """
+    base_directory = coreml_options["ModelCacheDirectory"]
+    cache_root = os.path.dirname(base_directory)
+    cache_directory = f"{base_directory}-{_model_file_identity(model_path)}"
+    providers = _replace_coreml_provider(
+        providers=providers,
+        replacement=(
+            COREML_EXECUTION_PROVIDER,
+            {**coreml_options, "ModelCacheDirectory": cache_directory},
+        ),
+    )
+    lock_path = os.path.join(os.path.dirname(cache_root), COREML_CACHE_LOCK_NAME)
+    with FileLock(lock_path):
+        # Created under the lock: the watchdog may have purged the cache just before it was taken.
+        os.makedirs(cache_root, exist_ok=True)
+        _remove_stale_cache_variants(
+            base_directory=base_directory, keep=cache_directory
+        )
+        try:
+            return onnxruntime.InferenceSession(
+                path_or_bytes=model_path, providers=providers, sess_options=sess_options
+            )
+        except Exception as error:
+            if not os.path.isdir(cache_directory):
+                raise
+            LOGGER.warning(
+                "Could not load %s with the CoreML compiled-model cache at %s (%s). "
+                "Discarding the cache and compiling the model again.",
+                model_path,
+                cache_directory,
+                error,
+            )
+            shutil.rmtree(cache_directory, ignore_errors=True)
+        return onnxruntime.InferenceSession(
+            path_or_bytes=model_path, providers=providers, sess_options=sess_options
+        )
+
+
+def _model_file_identity(model_path: str) -> str:
+    """Identify the ONNX file a compiled-model cache was built from, by its size and modification time.
+
+    A heuristic, not content validation: model package files are downloaded once and never rewritten in
+    place, so a new model file arrives with a new mtime. An in-place replacement that keeps both size and
+    mtime, or a change to external-data files beside the model, reuses the stale compiled model.
+    """
+    stat = os.stat(model_path)
+    return hashlib.sha256(f"{stat.st_size}-{stat.st_mtime_ns}".encode()).hexdigest()[
+        :12
+    ]
+
+
+def _remove_stale_cache_variants(base_directory: str, keep: str) -> None:
+    cache_root, variant = os.path.split(base_directory)
+    for entry in os.listdir(cache_root):
+        path = os.path.join(cache_root, entry)
+        if entry.startswith(f"{variant}-") and path != keep and os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+
+
 def get_onnx_static_input_spatial_size(
     session: onnxruntime.InferenceSession,
 ) -> Optional[Tuple[int, int]]:
@@ -126,6 +375,7 @@ def set_onnx_execution_provider_defaults(
     device: torch.device,
     enable_fp16: bool = True,
     default_onnx_trt_options: bool = True,
+    default_onnx_coreml_options: bool = False,
 ) -> List[Union[str, tuple[str, dict[str, Any]]]]:
     """Configure ONNX Runtime execution providers with default options.
 
@@ -149,6 +399,12 @@ def set_onnx_execution_provider_defaults(
         default_onnx_trt_options: Apply default TensorRT options (engine caching,
             FP16). If False, TensorRT provider is used without modifications.
             Default: True.
+
+        default_onnx_coreml_options: Configure a bare CoreMLExecutionProvider with
+            `get_default_coreml_provider_options()` (MLProgram format, compiled-model
+            cache in the package directory). Opt-in per model, since compiling an
+            MLProgram makes session creation slower on the first load.
+            Default: False.
 
     Returns:
         List of execution providers with configured options. Each element is either
@@ -184,6 +440,8 @@ def set_onnx_execution_provider_defaults(
     Note:
         - TensorRT provider gets: engine caching, cache path, FP16 setting, device ID
         - CUDA provider gets: device ID
+        - CoreML provider gets: model format, compute units, compiled-model cache
+          (only with default_onnx_coreml_options and onnxruntime >= 1.21)
         - Other providers are passed through unchanged
         - Engine caching significantly speeds up subsequent model loads
 
@@ -219,6 +477,12 @@ def set_onnx_execution_provider_defaults(
             )
         if provider == "CUDAExecutionProvider":
             provider = ("CUDAExecutionProvider", device_id_options)
+        if provider == "CoreMLExecutionProvider" and default_onnx_coreml_options:
+            coreml_options = get_default_coreml_provider_options(
+                model_package_path=model_package_path
+            )
+            if coreml_options is not None:
+                provider = ("CoreMLExecutionProvider", coreml_options)
         result.append(provider)
     return result
 
