@@ -1492,6 +1492,7 @@ resolver.resolve_gateway = lambda: gateway
 import inference_server.app as app_mod
 from inference_server.legacy import active_learning_registration as registration
 
+app_mod._start_usage_collector = lambda: None
 buffer = io.BytesIO()
 Image.new("RGB", (8, 6)).save(buffer, format="PNG")
 body = {

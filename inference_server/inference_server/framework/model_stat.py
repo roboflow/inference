@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import OrderedDict
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from inference_model_manager.pipelines import (
     InvalidPipelineIdError,
@@ -34,13 +34,29 @@ _CACHE_MAXSIZE = configuration.MODEL_STAT_CACHE_SIZE
 _CACHE_TTL_S = configuration.MODEL_STAT_CACHE_TTL_S
 
 
+class ModelStat(NamedTuple):
+    """What the registry reports about a model before it is loaded.
+
+    Attributes:
+        task_type: Registry task type, such as ``object-detection``.
+        default_action: Action run when a request names none.
+        model_architecture: Registry ``modelArchitecture``; None when unknown.
+        model_variant: Registry ``modelVariant``; None when unknown.
+    """
+
+    task_type: str
+    default_action: str
+    model_architecture: Optional[str] = None
+    model_variant: Optional[str] = None
+
+
 class _TtlLruCache:
     def __init__(self, maxsize: int, ttl_s: float):
         self._maxsize = maxsize
         self._ttl = ttl_s
-        self._data: "OrderedDict[tuple, tuple[float, tuple[str, str]]]" = OrderedDict()
+        self._data: "OrderedDict[tuple, tuple[float, ModelStat]]" = OrderedDict()
 
-    def get(self, key: tuple) -> Optional[tuple[str, str]]:
+    def get(self, key: tuple) -> Optional[ModelStat]:
         entry = self._data.get(key)
         if entry is None:
             return None
@@ -51,7 +67,7 @@ class _TtlLruCache:
         self._data.move_to_end(key)
         return value
 
-    def set(self, key: tuple, value: tuple[str, str]) -> None:
+    def set(self, key: tuple, value: ModelStat) -> None:
         if key in self._data:
             self._data.move_to_end(key)
         self._data[key] = (time.monotonic(), value)
@@ -76,10 +92,32 @@ _inflight: dict[tuple, asyncio.Task] = {}
 async def stat_model_while_checking_auth(
     common_params: CommonRequestParams,
 ) -> tuple[str, str]:
+    stat = await stat_model_details_while_checking_auth(common_params)
+
+    return (stat.task_type, stat.default_action)
+
+
+async def stat_model_details_while_checking_auth(
+    common_params: CommonRequestParams,
+) -> ModelStat:
+    """Describe a model through the registry while checking the caller's access.
+
+    Args:
+        common_params: Model id and API key of the request.
+
+    Returns:
+        Task type, default action and, when the registry reports them, the
+        model architecture and variant.
+
+    Raises:
+        PermissionError: When the key may not access the model.
+        LookupError: When the model is unknown.
+        RuntimeError: When the registry cannot be reached or answers nothing.
+    """
     if common_params.model_id == "passthrough" or common_params.model_id.startswith(
         "passthrough/"
     ):
-        return ("passthrough", "infer")
+        return ModelStat("passthrough", "infer")
 
     extra_headers = _platform_stat_headers()
     key = (
@@ -107,7 +145,7 @@ async def _fetch_cache_and_map(
     common_params: CommonRequestParams,
     key: tuple[str, str, tuple[tuple[str, str], ...]],
     extra_headers: dict[str, str],
-) -> tuple[str, str]:
+) -> ModelStat:
     result = await _fetch_and_map(common_params, extra_headers)
     if not is_pipeline_model_id(common_params.model_id):
         _cache.set(key, result)
@@ -144,15 +182,26 @@ def _platform_stat_headers() -> dict[str, str]:
     return headers
 
 
+def _reported_label(meta: object, name: str) -> Optional[str]:
+    label = getattr(meta, name, None)
+    if not isinstance(label, str) or not label:
+        return None
+
+    return label
+
+
 async def _fetch_and_map(
     common_params: CommonRequestParams, extra_headers: dict[str, str]
-) -> tuple[str, str]:
+) -> ModelStat:
     pipeline_request = _pipeline_request(common_params.model_id)
     if pipeline_request is not None:
         await _authorize_pipeline_stages(pipeline_request, common_params.api_key)
-        return (
+        family, _, stages = common_params.model_id.partition("/")
+        return ModelStat(
             pipeline_request.family.task_type,
             pipeline_request.family.default_action,
+            model_architecture=family,
+            model_variant=stages or None,
         )
 
     fetch_kwargs: dict = {
@@ -178,7 +227,12 @@ async def _fetch_and_map(
         )
 
     default_action = _DEFAULT_ACTION_BY_TASK_TYPE.get(task_type, "infer")
-    return (task_type, default_action)
+    return ModelStat(
+        task_type,
+        default_action,
+        model_architecture=_reported_label(meta, "model_architecture"),
+        model_variant=_reported_label(meta, "model_variant"),
+    )
 
 
 def _reset_cache_for_tests() -> None:

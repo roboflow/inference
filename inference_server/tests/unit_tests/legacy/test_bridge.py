@@ -18,6 +18,7 @@ from inference_models.errors import (
     UsagePausedModelAccessError,
 )
 
+from inference_server.framework.model_stat import ModelStat
 from inference_server.gateway import ModelManagerGateway
 from inference_server.legacy import bridge as bridge_mod
 from inference_server.legacy.bridge import (
@@ -32,6 +33,7 @@ from inference_server.legacy.load_failures import (
     ModelLoadFailedError,
     load_failure_error,
 )
+from inference_server.usage.request_hook import MODEL_INVOCATIONS
 from tests.unit_tests.legacy.conftest import FakeGateway
 
 
@@ -691,7 +693,7 @@ async def test_resolve_pipeline_id_skips_a_disabled_stage(monkeypatch):
 @pytest.mark.asyncio
 async def test_loaded_pipeline_is_reauthorized_on_every_resolve(monkeypatch):
     calls = []
-    outcome = [("structured-ocr", "infer")]
+    outcome = [ModelStat("structured-ocr", "infer")]
 
     async def _stat(common):
         calls.append((common.model_id, common.api_key))
@@ -700,7 +702,7 @@ async def test_loaded_pipeline_is_reauthorized_on_every_resolve(monkeypatch):
         return outcome[0]
 
     monkeypatch.setattr(
-        "inference_server.legacy.bridge.stat_model_while_checking_auth", _stat
+        "inference_server.legacy.bridge.stat_model_details_while_checking_auth", _stat
     )
     bridge = LegacyModelBridge(FakeGateway())
     await bridge.resolve("pp_ocr/small-small", "good")
@@ -1417,3 +1419,154 @@ def test_workflow_thread_gets_the_error_the_gateway_described(server_loop):
         sync.ensure_loaded(_route(), "k")
 
     assert str(exc.value) == "denied"
+
+
+@pytest.mark.asyncio
+async def test_route_carries_the_architecture_and_variant_of_the_registry(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer", "yolov8", "yolov8-n")
+
+    route = await LegacyModelBridge(FakeGateway()).resolve("ds/1", "k")
+
+    assert (route.model_architecture, route.model_variant) == ("yolov8", "yolov8-n")
+
+
+@pytest.mark.asyncio
+async def test_route_without_registry_labels_carries_none(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    route = await LegacyModelBridge(FakeGateway()).resolve("ds/1", "k")
+
+    assert (route.model_architecture, route.model_variant) == (None, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model_id,architecture,variant",
+    [
+        ("clip/ViT-B-16", "clip", "ViT-B-16"),
+        (
+            "grounding_dino/groundingdino_swint_ogc",
+            "grounding-dino",
+            "groundingdino_swint_ogc",
+        ),
+        ("yolo_world/l", "yolo-world", "l"),
+        (
+            "smolvlm2/smolvlm-2.2b-instruct",
+            "smolvlm-2.2b-instruct",
+            "smolvlm-2.2b-instruct",
+        ),
+        ("perception_encoder/PE-Core-L14-336", "perception_encoder", "PE-Core-L14-336"),
+        ("sam2/hiera_large", "sam2", "hiera_large"),
+    ],
+)
+async def test_core_model_fallback_reports_the_legacy_architecture_and_variant(
+    fake_stat, model_id, architecture, variant
+):
+    route = await LegacyModelBridge(FakeGateway()).resolve(model_id, "k")
+
+    assert (route.model_architecture, route.model_variant) == (architecture, variant)
+
+
+@pytest.mark.asyncio
+async def test_infer_appends_one_model_invocation_to_the_request_holder(
+    fake_stat, monkeypatch
+):
+    fake_stat["coco/3"] = ("object-detection", "infer", "yolov8", "yolov8-n")
+    gw = FakeGateway(
+        predictions={("coco/3", "infer"): lambda img, p: ("pred", img)},
+        model_info={"coco/3": {"input_height": 640, "input_width": 480}},
+    )
+    bridge = LegacyModelBridge(gw)
+    ticks = iter([10.0, 10.25])
+    monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: next(ticks))
+    holder = []
+    token = MODEL_INVOCATIONS.set(holder)
+    try:
+        route = await bridge.resolve("yolov8n-640", "k")
+        await bridge.infer(
+            route,
+            "k",
+            "infer",
+            [ImagePayload(b"a", 1, 1), ImagePayload(b"b", 1, 1)],
+            {},
+        )
+    finally:
+        MODEL_INVOCATIONS.reset(token)
+
+    assert holder == [
+        {
+            "model_id": "yolov8n-640",
+            "model_architecture": "yolov8",
+            "model_variant": "yolov8-n",
+            "task_type": "object-detection",
+            "model_input_height": 640,
+            "model_input_width": 480,
+            "execution_duration": 0.25,
+            "frames": 2,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_text_only_call_counts_one_frame_and_omits_unknown_labels(fake_stat):
+    gw = FakeGateway(predictions={("clip/ViT-B-16", "embed_text"): [[1.0]]})
+    bridge = LegacyModelBridge(gw)
+    holder = []
+    token = MODEL_INVOCATIONS.set(holder)
+    try:
+        route = await bridge.resolve("clip/ViT-B-16", "k")
+        await bridge.infer_params_only(route, "k", "embed_text", {"texts": ["a"]})
+    finally:
+        MODEL_INVOCATIONS.reset(token)
+
+    assert len(holder) == 1
+    assert holder[0]["frames"] == 1
+    assert holder[0]["model_id"] == "clip/ViT-B-16"
+    assert "model_input_height" not in holder[0]
+    assert "model_input_width" not in holder[0]
+
+
+@pytest.mark.asyncio
+async def test_infer_without_a_request_holder_appends_nothing(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(predictions={("ds/1", "infer"): lambda img, p: ("pred", img)})
+    bridge = LegacyModelBridge(gw)
+    route = await bridge.resolve("ds/1", "k")
+
+    assert MODEL_INVOCATIONS.get() is None
+    await bridge.infer(route, "k", "infer", [ImagePayload(b"a", 1, 1)], {})
+    assert MODEL_INVOCATIONS.get() is None
+
+
+@pytest.mark.asyncio
+async def test_failed_infer_appends_the_attempted_invocation_and_reraises(
+    fake_stat, monkeypatch
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(predictions={("ds/1", "infer"): _raising(ValueError("bad shape"))})
+    bridge = LegacyModelBridge(gw)
+    ticks = iter([10.0, 10.5])
+    monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: next(ticks))
+    holder = []
+    token = MODEL_INVOCATIONS.set(holder)
+    try:
+        route = await bridge.resolve("ds/1", "k")
+        with pytest.raises(ModelInputError):
+            await bridge.infer(
+                route,
+                "k",
+                "infer",
+                [ImagePayload(b"a", 1, 1), ImagePayload(b"b", 1, 1)],
+                {},
+            )
+    finally:
+        MODEL_INVOCATIONS.reset(token)
+
+    assert holder == [
+        {
+            "model_id": "ds/1",
+            "task_type": "object-detection",
+            "execution_duration": 0.5,
+            "frames": 2,
+        }
+    ]

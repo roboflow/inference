@@ -89,7 +89,11 @@ from inference_server.legacy.entities import (
     TrOCRInferenceRequest,
     YOLOWorldInferenceRequest,
 )
-from inference_server.legacy.errors import LegacyHTTPError, with_legacy_errors
+from inference_server.legacy.errors import (
+    LegacyHTTPError,
+    MissingServiceSecretError,
+    with_legacy_errors,
+)
 from inference_server.legacy.telemetry_recording import record_telemetry
 from inference_server.legacy.translation import (
     build_embedding_calls,
@@ -115,7 +119,9 @@ from inference_server.legacy.translation import (
 )
 from inference_server.legacy.visualization import render_visualization
 from inference_server import pingback
+from inference_server.hosted.common import service_secret_is_valid
 from inference_server.prometheus import measure_inference
+from inference_server.usage.request_hook import report_request_usage
 
 logger = logging.getLogger(__name__)
 
@@ -538,6 +544,7 @@ async def _infer_and_repack(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_object_detection(
     request: Request,
     inference_request: ObjectDetectionInferenceRequest,
@@ -563,6 +570,7 @@ async def infer_object_detection(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_instance_segmentation(
     request: Request,
     inference_request: InstanceSegmentationInferenceRequest,
@@ -588,6 +596,7 @@ async def infer_instance_segmentation(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_semantic_segmentation(
     request: Request,
     inference_request: SemanticSegmentationInferenceRequest,
@@ -616,6 +625,7 @@ async def infer_semantic_segmentation(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_classification(
     request: Request,
     inference_request: ClassificationInferenceRequest,
@@ -640,6 +650,7 @@ async def infer_classification(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_keypoints(
     request: Request,
     inference_request: KeypointsDetectionInferenceRequest,
@@ -655,6 +666,7 @@ async def infer_keypoints(
 
 @action_recognition_router.post("/infer/action_recognition")
 @with_legacy_errors
+@report_request_usage
 async def infer_action_recognition(request: Request) -> Response:
     raise LegacyHTTPError(
         501,
@@ -664,12 +676,14 @@ async def infer_action_recognition(request: Request) -> Response:
 
 @sam3_3d_router.post("/sam3_3d/infer")
 @with_legacy_errors
+@report_request_usage
 async def infer_sam3_3d(request: Request) -> Response:
     raise LegacyHTTPError(501, _TASK_UNAVAILABLE_MESSAGE.format(route="/sam3_3d/infer"))
 
 
 @owlv2_router.post("/owlv2/infer")
 @with_legacy_errors
+@report_request_usage
 async def infer_owlv2(request: Request) -> Response:
     raise LegacyHTTPError(
         501,
@@ -707,6 +721,7 @@ async def _catch_all_image(
 @catch_all_router.get("/{dataset_id}/{version_id}")
 @catch_all_router.post("/{dataset_id}/{version_id}")
 @with_legacy_errors
+@report_request_usage
 async def legacy_infer_from_request(
     request: Request,
     dataset_id: str = Path(
@@ -833,6 +848,8 @@ async def legacy_infer_from_request(
     if overlap >= 1:
         overlap /= 100
     request_image = await _catch_all_image(request, image, image_type)
+    if not countinference and not service_secret_is_valid(service_secret):
+        raise MissingServiceSecretError()
     route = await bridge.resolve(
         model_id, resolved_key, row_key=model_id, path=request.scope["path"]
     )
@@ -1069,6 +1086,7 @@ async def _run_open_vocabulary_detection(
     description="Run the Open AI CLIP model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def clip_embed_image(
     request: Request,
     inference_request: ClipImageEmbeddingRequest,
@@ -1084,6 +1102,7 @@ async def clip_embed_image(
     description="Run the Open AI CLIP model to embed text data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def clip_embed_text(
     request: Request,
     inference_request: ClipTextEmbeddingRequest,
@@ -1099,6 +1118,7 @@ async def clip_embed_text(
     description="Run the Open AI CLIP model to compute similarity scores.",
 )
 @with_legacy_errors
+@report_request_usage
 async def clip_compare(
     request: Request,
     inference_request: ClipCompareRequest,
@@ -1114,6 +1134,7 @@ async def clip_compare(
     description="Run the Meta Perception Encoder model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def perception_encoder_embed_image(
     request: Request,
     inference_request: PerceptionEncoderImageEmbeddingRequest,
@@ -1131,6 +1152,7 @@ async def perception_encoder_embed_image(
     description="Run the Meta Perception Encoder model to embed text data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def perception_encoder_embed_text(
     request: Request,
     inference_request: PerceptionEncoderTextEmbeddingRequest,
@@ -1148,6 +1170,7 @@ async def perception_encoder_embed_text(
     description="Run the Meta Perception Encoder model to compute similarity scores.",
 )
 @with_legacy_errors
+@report_request_usage
 async def perception_encoder_compare(
     request: Request,
     inference_request: PerceptionEncoderCompareRequest,
@@ -1165,6 +1188,7 @@ async def perception_encoder_compare(
     description="Run the DocTR OCR model to retrieve text in an image.",
 )
 @with_legacy_errors
+@report_request_usage
 async def doctr_retrieve_text(
     request: Request,
     inference_request: DoctrOCRInferenceRequest,
@@ -1180,6 +1204,7 @@ async def doctr_retrieve_text(
     description="Run the EasyOCR model to retrieve text in an image.",
 )
 @with_legacy_errors
+@report_request_usage
 async def easy_ocr_retrieve_text(
     request: Request,
     inference_request: EasyOCRInferenceRequest,
@@ -1197,6 +1222,7 @@ async def easy_ocr_retrieve_text(
     description="Run the TrOCR model to retrieve text in an image.",
 )
 @with_legacy_errors
+@report_request_usage
 async def trocr_retrieve_text(
     request: Request,
     inference_request: TrOCRInferenceRequest,
@@ -1212,6 +1238,7 @@ async def trocr_retrieve_text(
     description="Run PP-OCRv6 two-stage OCR to retrieve text in an image.",
 )
 @with_legacy_errors
+@report_request_usage
 async def pp_ocr_retrieve_text(
     request: Request,
     inference_request: PPOCRInferenceRequest,
@@ -1238,6 +1265,7 @@ async def pp_ocr_retrieve_text(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def yolo_world_infer(
     request: Request,
     inference_request: YOLOWorldInferenceRequest,
@@ -1255,6 +1283,7 @@ async def yolo_world_infer(
     description="Run the Grounding DINO zero-shot object detection model.",
 )
 @with_legacy_errors
+@report_request_usage
 async def grounding_dino_infer(
     request: Request,
     inference_request: GroundingDINOInferenceRequest,
@@ -1360,6 +1389,7 @@ async def _run_lmm(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_lmm(
     request: Request,
     inference_request: LMMInferenceRequest,
@@ -1384,6 +1414,7 @@ async def infer_lmm(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_lmm_with_model_id(
     request: Request,
     inference_request: LMMInferenceRequest,
@@ -1468,6 +1499,7 @@ async def _run_depth_estimation(
     description="Run the depth estimation model to generate a depth map.",
 )
 @with_legacy_errors
+@report_request_usage
 async def depth_estimation(
     request: Request,
     inference_request: DepthEstimationRequest,
@@ -1486,6 +1518,7 @@ async def depth_estimation(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def depth_estimation_with_model_id(
     request: Request,
     inference_request: DepthEstimationRequest,
@@ -1556,6 +1589,7 @@ async def _run_interactive_segmentation(
     description="Run the Meta AI Segment Anything Model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def sam_embed_image(
     request: Request,
     inference_request: SamEmbeddingRequest,
@@ -1585,6 +1619,7 @@ async def sam_embed_image(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def sam_segment_image(
     request: Request,
     inference_request: SamSegmentationRequest,
@@ -1605,6 +1640,7 @@ async def sam_segment_image(
     description="Run the Meta AI Segment Anything 2 Model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def sam2_embed_image(
     request: Request,
     inference_request: Sam2EmbeddingRequest,
@@ -1628,6 +1664,7 @@ async def sam2_embed_image(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def sam2_segment_image(
     request: Request,
     inference_request: Sam2SegmentationRequest,
@@ -1648,6 +1685,7 @@ async def sam2_segment_image(
     description="Run the SAM3 interactive model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def sam3_embed_image(
     request: Request,
     inference_request: Sam2EmbeddingRequest,
@@ -1672,6 +1710,7 @@ async def sam3_embed_image(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def sam3_concept_segment(
     request: Request,
     inference_request: Sam3SegmentationRequest,
@@ -1708,6 +1747,7 @@ async def sam3_concept_segment(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def sam3_visual_segment(
     request: Request,
     inference_request: Sam2SegmentationRequest,

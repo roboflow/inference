@@ -6,6 +6,8 @@ import runpy
 
 import pytest
 
+from inference_server.app import _start_usage_collector as start_usage_collector
+
 
 class TestWatchdogWiring:
     @pytest.mark.asyncio
@@ -565,3 +567,87 @@ async def test_failed_preload_log_leaves_out_the_failure_description(
     assert messages == [f"Preload of 'ds/1' failed: {logged}"]
     assert "DETAIL-TEXT" not in caplog.text
     assert state.preload_finished is True
+
+
+class _UsageCollectorSpy:
+    def __init__(self):
+        self.started = False
+        self.flushed = False
+        self.stopped = False
+        self.order = []
+
+    def start(self):
+        self.started = True
+        self.order.append("start")
+
+    def flush(self):
+        self.flushed = True
+        self.order.append("flush")
+
+    def stop(self, timeout=None):
+        self.stopped = True
+        self.order.append("stop")
+        return True
+
+
+class TestUsageCollectorWiring:
+    @pytest.fixture
+    def usage_env(self, monkeypatch):
+        import inference_server.app as app_mod
+
+        monkeypatch.delenv("INFERENCE_PRELOAD_MODELS", raising=False)
+        monkeypatch.setattr(
+            "inference_model_manager.watchdogs.start_enabled_watchdogs", lambda: []
+        )
+        monkeypatch.setattr(
+            "inference_server.gateway_resolver.resolve_gateway", lambda: _IdleProxy()
+        )
+
+        return app_mod
+
+    def test_collector_is_started_when_online(self, monkeypatch):
+        import inference_server.app as app_mod
+
+        spy = _UsageCollectorSpy()
+        monkeypatch.setattr(app_mod, "UsageCollector", lambda: spy)
+        monkeypatch.setattr(app_mod._cfg, "LEGACY_OFFLINE_MODE", False)
+
+        assert start_usage_collector() is spy
+        assert spy.started is True
+
+    def test_collector_is_not_started_in_offline_mode(self, monkeypatch):
+        import inference_server.app as app_mod
+
+        monkeypatch.setattr(
+            app_mod, "UsageCollector", lambda: pytest.fail("constructed offline")
+        )
+        monkeypatch.setattr(app_mod._cfg, "LEGACY_OFFLINE_MODE", True)
+
+        assert start_usage_collector() is None
+
+    @pytest.mark.asyncio
+    async def test_lifespan_exposes_the_collector_and_flushes_then_stops_it(
+        self, usage_env, monkeypatch
+    ):
+        app_mod = usage_env
+        spy = _UsageCollectorSpy()
+        monkeypatch.setattr(app_mod, "_start_usage_collector", lambda: spy)
+
+        async with app_mod._lifespan(app_mod.app):
+            assert app_mod.app.state.usage_collector is spy
+            assert spy.flushed is False and spy.stopped is False
+
+        assert spy.order == ["flush", "stop"]
+        assert app_mod.app.state.usage_collector is None
+
+    @pytest.mark.asyncio
+    async def test_lifespan_without_a_collector_leaves_state_empty(
+        self, usage_env, monkeypatch
+    ):
+        app_mod = usage_env
+        monkeypatch.setattr(app_mod, "_start_usage_collector", lambda: None)
+
+        async with app_mod._lifespan(app_mod.app):
+            assert app_mod.app.state.usage_collector is None
+
+        assert app_mod.app.state.usage_collector is None

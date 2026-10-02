@@ -169,8 +169,12 @@ A few legacy behaviours are not (yet) available here:
 - Prediction visualization (`format=image`, `visualize_predictions`) uses the
   class colours the model manager reports, else the legacy default palette; the
   per-model colour mapping is not fetched from the Roboflow API.
-- Usage tracking and other telemetry/usage reporting side effects of the
-  legacy server are not yet ported. Active learning is ported for
+- Usage reporting is ported for the legacy model routes (`/infer/*`, the core
+  model routes and `/{dataset_id}/{version_id}`): one `request` row per
+  request, carrying the models it invoked, is posted to
+  `TELEMETRY_API_USAGE_ENDPOINT_URL`; the per-model rows of the legacy server
+  are not sent, and workflow and stream routes report nothing yet. Other
+  telemetry side effects of the legacy server are not ported. Active learning is ported for
   `/infer/object_detection`, `/infer/instance_segmentation`,
   `/infer/classification` and `/{dataset_id}/{version_id}`; it needs the
   `workflows` extra and `ACTIVE_LEARNING_ENABLED=false` turns it off. The periodic pingback to

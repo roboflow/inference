@@ -130,11 +130,20 @@ def test_legacy_route_omits_credits_header_for_valid_non_billable_request(
         "/ds/1?api_key=k&countinference=false&service_secret=s3cret"
         "&image=http://example.com/a.jpg"
     )
-    client.get(
+    refused = client.get(
         "/ds/1?api_key=k&countinference=false&service_secret=wrong"
         "&image=http://example.com/a.jpg"
     )
+    client.post(
+        "/infer/object_detection?countinference=false&service_secret=wrong",
+        json={
+            "model_id": "ds/1",
+            "api_key": "k",
+            "image": {"type": "base64", "value": "x"},
+        },
+    )
 
+    assert refused.status_code == 500
     assert stat_recorder == [None, {CREDITS_HEADER: "true"}]
 
 

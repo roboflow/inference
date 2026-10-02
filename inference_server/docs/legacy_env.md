@@ -253,6 +253,7 @@ definition; the last column is the new reader.
 | `ALLOW_WORKFLOWS_FONTS_DOWNLOAD` | `env.py:1324` | `configuration.py:261` | `True` |
 | `ROBOFLOW_INTERNAL_SERVICE_SECRET` | `env.py:1331` | `configuration.py:270` | unset |
 | `ROBOFLOW_INTERNAL_SERVICE_NAME` | `env.py:1332` | `configuration.py:269` | unset |
+| `ROBOFLOW_SERVICE_SECRET` | `env.py:872` | `configuration.py`; `hosted/common.py`, `legacy/router.py`, `usage/request_hook.py`: a request with `countinference=false` and a `service_secret` equal to it is served and its usage row is `billable: false`; `/{dataset_id}/{version_id}` answers 500 `Service misconfiguration.` to `countinference=false` without a matching secret, every other route ignores the flag and bills the request | unset |
 | `MODELS_CACHE_AUTH_CACHE_TTL` | `env.py:760` | `configuration.py:404-406` (`WORKSPACE_CACHE_TTL_S`); sizes the api_key to workspace lookup cache, not the model-access cache, which is sized by `INFERENCE_MODEL_STAT_CACHE_TTL_S` | `900` |
 | `MODELS_CACHE_AUTH_CACHE_MAX_SIZE` | `env.py:763` | `configuration.py:407-409` (`WORKSPACE_CACHE_MAX_SIZE`); sizes the api_key to workspace lookup cache, not the model-access cache, which is sized by `INFERENCE_MODEL_STAT_CACHE_SIZE` | `100000000` |
 | `PRELOAD_API_KEY` | `env.py:1346` | `configuration.py:86-88,144`; `app.py:146` | unset; see note 2 |
@@ -287,7 +288,7 @@ definition; the last column is the new reader.
 | `TINY_CACHE` | `env.py:289` | `configuration.py`; `pingback.py`: `True` records the condensed item (request fields `api_key`, `confidence`, `model_id`, `model_type`, `source`, `source_info`; per prediction `class` and `confidence`); `False` records the full request and response as JSON without their `image` fields (removed when recorded, not when the report is built), unless the item exceeds 8192 values, 128 Ki characters of strings or 256 KiB of JSON, or a response is not a response entity or holds a non-finite number, in which case the condensed item is recorded; strings of the full item are not truncated | `True` |
 | `TAGS` | `env.py:912` | `configuration.py`; `pingback.py`: comma-separated list posted as `tags` | empty |
 | `METRICS_COLLECTOR_BASE_URL` | `env.py:210-213` | `configuration.py`: base of the usage endpoint default | `API_BASE_URL` |
-| `TELEMETRY_API_USAGE_ENDPOINT_URL` | `usage_tracking/config.py:16` | `configuration.py`; `usage/collector.py`: destination of usage rows, routed through `SECURE_GATEWAY` when set; certificates are verified unless the requested host is `localhost` or `127.0.0.1` | `{METRICS_COLLECTOR_BASE_URL}/usage/inference` |
+| `TELEMETRY_API_USAGE_ENDPOINT_URL` | `usage_tracking/config.py:16` | `configuration.py`; `usage/collector.py`: destination of usage rows, routed through `SECURE_GATEWAY` when set; certificates are verified unless the requested host is `localhost` or `127.0.0.1`. `usage/request_hook.py` records one `request` row per request of the legacy model routes (`/infer/*`, the core model routes and `/{dataset_id}/{version_id}`), carrying the models the request invoked; nothing is recorded in offline mode, for `/v2/*`, and not yet for workflow and stream routes | `{METRICS_COLLECTOR_BASE_URL}/usage/inference` |
 | `TELEMETRY_FLUSH_INTERVAL` | `usage_tracking/config.py:20,26` | `configuration.py`; `usage/collector.py`: seconds between two moves of aggregated usage rows to the queue, and between two send attempts; legacy rejects a value outside 10..300, the new server clamps it into that range | `10` |
 | `TELEMETRY_USE_PERSISTENT_QUEUE` | `usage_tracking/config.py:21` | `configuration.py`; `usage/collector.py`: `True` queues usage rows in `{MODEL_CACHE_DIR}/usage.db` with API keys stored as hashes; `False`, `LAMBDA` or `GCP_SERVERLESS` queue them in memory | `True` |
 | `TELEMETRY_QUEUE_SIZE` | `usage_tracking/config.py:22,27` | `configuration.py`; `usage/collector.py`: slots of the in-memory usage queue; a full queue is merged into one slot, nothing is dropped; legacy rejects a value outside 10..10000, the new server clamps it into that range | `10` |
@@ -490,10 +491,10 @@ No new package reads these. They never get an alias or a default row.
 | `CORE_MODEL_BUCKET` | `env.py:927` | legacy AWS-era setting |
 | `DEBUG_AIORTC_QUEUES` | `env.py:978` | `StreamsConfiguration` field; no new package reads the env name today |
 | `DEBUG_WEBRTC_PROCESSING_LATENCY` | `env.py:979` | `StreamsConfiguration` field; no new package reads the env name today |
-| `DEDICATED_DEPLOYMENT_ID` | `env.py:1329` | legacy dedicated-deployment auth; the new `auth.py` validates keys against `API_BASE_URL` only |
+| `DEDICATED_DEPLOYMENT_ID` | `env.py:1329` | legacy dedicated-deployment auth; the new `auth.py` validates keys against `API_BASE_URL` only; `configuration.py` reads it for the `hostname` and `dedicated_deployment_id` of usage rows |
 | `DEDICATED_DEPLOYMENT_WORKSPACE_URL` | `env.py:1225` | legacy dedicated-deployment auth |
 | `DEVICE` | `env.py:1223` | steers four legacy HF models only (`inference/models/qwen25vl`, `easy_ocr`, `doctr`, `sam3_3d`); `inference_models` `DEFAULT_DEVICE` (`configuration.py:43`) steers every model, so an alias would change models legacy never touched |
-| `DEVICE_ID` | `env.py:472` | legacy device management; unread (hosting summary) |
+| `DEVICE_ID` | `env.py:472` | legacy device management; `configuration.py` reads it for the `device_id` of usage rows |
 | `DISABLE_GSTREAMER_VIDEO_SOURCES` | `env.py:1254` | `StreamsConfiguration` field; no new package reads the env name today |
 | `DISABLE_INFERENCE_CACHE` | `env.py:480` | legacy inference-result cache; none in the new stack |
 | `DISABLE_NATIVE_STDERR_CAPTURE` | `env.py:1265` | `StreamsConfiguration` field; no new package reads the env name today |
@@ -562,7 +563,6 @@ No new package reads these. They never get an alias or a default row.
 | `RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API` | `env.py:1406` | legacy API client; `inference_models` uses `API_CALLS_MAX_TRIES` / `IDEMPOTENT_API_REQUEST_CODES_TO_RETRY` with different semantics |
 | `ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1333` | legacy assume-identity headers; unread (hosting summary) |
 | `ROBOFLOW_SERVER_UUID` | `env.py:869` | the new server generates `SERVER_ID` per process (`configuration.py:275`) |
-| `ROBOFLOW_SERVICE_SECRET` | `env.py:872` | unread (hosting summary) |
 | `SAM3_MAX_DETECTIONS` | `env.py:891` | legacy `concept_segment` cap; no new package reads it |
 | `SINGLE_TENANT_WORKFLOW_CACHE` | `env.py:1299` | legacy definition cache mode; the new server has only the in-memory TTL cache |
 | `SSL_CA_CERTS` | `env.py:606` | legacy uvicorn TLS |

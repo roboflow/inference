@@ -511,6 +511,67 @@ def test_handled_error_is_logged_like_legacy(error, level, has_traceback, caplog
     assert (caplog.records[0].exc_info is not None) == has_traceback
 
 
+_CAUSE_TEXT = "fetch https://h.example/x?api_key=SECRET-ONE failed"
+_ERROR_TEXT = "wrapped api_key=SECRET-TWO"
+_BARE_TEXT = "bare-key-value and short"
+
+
+def _formatted_records(caplog) -> str:
+    formatter = logging.Formatter()
+
+    return "\n".join(formatter.format(record) for record in caplog.records)
+
+
+def test_logged_traceback_carries_no_raw_credentials_of_the_error_or_its_causes(
+    caplog,
+):
+    try:
+        try:
+            raise OSError(_CAUSE_TEXT)
+        except OSError as cause:
+            raise RuntimeError(_ERROR_TEXT) from cause
+    except RuntimeError as error:
+        with caplog.at_level(logging.DEBUG, logger="inference_server.legacy.errors"):
+            response = legacy_error_response(error)
+
+    assert response.status_code == 500
+    text = _formatted_records(caplog)
+    assert "SECRET-ONE" not in text and "SECRET-TWO" not in text
+    assert "Traceback" in text
+    assert "RuntimeError: wrapped" in text
+    assert "OSError: fetch" in text
+
+
+@pytest.mark.asyncio
+async def test_registered_values_are_removed_from_logged_errors(caplog):
+    from inference_server.legacy.errors import add_redaction_values
+
+    @with_legacy_errors
+    async def route():
+        add_redaction_values("bare-key-value", "short")
+        raise RuntimeError(_BARE_TEXT)
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.legacy.errors"):
+        response = await route()
+
+    assert response.status_code == 500
+    text = _formatted_records(caplog)
+    assert "bare-key-value" not in text
+    assert "*** and short" in text
+
+
+def test_unprintable_error_is_still_answered_and_logged(caplog):
+    class Unprintable(Exception):
+        def __str__(self):
+            raise ValueError("no text")
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.legacy.errors"):
+        response = legacy_error_response(Unprintable())
+
+    assert response.status_code == 500
+    assert "<unprintable>" in _formatted_records(caplog)
+
+
 @pytest.mark.asyncio
 async def test_decorator_turns_exception_into_response():
     @with_legacy_errors

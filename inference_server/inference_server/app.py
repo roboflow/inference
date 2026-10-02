@@ -17,6 +17,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from inference_server.legacy_env import apply_legacy_env
 
@@ -63,6 +64,7 @@ from inference_server.telemetry import (  # noqa: E402
     setup_telemetry,
     shutdown_telemetry,
 )
+from inference_server.usage.collector import UsageCollector  # noqa: E402
 
 setup_memory_logging()
 
@@ -134,6 +136,16 @@ async def _preload_models(
         state.preload_finished = True
 
 
+def _start_usage_collector() -> Optional[UsageCollector]:
+    if _cfg.LEGACY_OFFLINE_MODE:
+        return None
+
+    usage_collector = UsageCollector()
+    usage_collector.start()
+
+    return usage_collector
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     # Keep multipart uploads in memory — Starlette default is 1MB, which causes
@@ -196,6 +208,7 @@ async def _lifespan(app: FastAPI):
         app.state.legacy_bridge = LegacyModelBridge(proxy)
         pingback_sender = pingback.start_sender()
         active_learning_registration.start()
+        app.state.usage_collector = _start_usage_collector()
         if _workflows_host is not None:
             _workflows_host.GUARDED_IMAGE_CODEC.bind_loop(app.state.loop_bridge)
         preload_ids = _cfg.preload_model_ids()
@@ -229,6 +242,11 @@ async def _lifespan(app: FastAPI):
         if pingback_sender is not None:
             pingback_sender.stop()
         active_learning_registration.stop()
+        usage_collector = getattr(app.state, "usage_collector", None)
+        app.state.usage_collector = None
+        if usage_collector is not None:
+            await asyncio.to_thread(usage_collector.flush)
+            await asyncio.to_thread(usage_collector.stop)
         shutdown_telemetry()
         try:
             await proxy.shutdown()

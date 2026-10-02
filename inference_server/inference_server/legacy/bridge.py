@@ -22,7 +22,10 @@ from inference_server.configuration import (
 from inference_server.errors import PayloadTooLargeError
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.fanout import gather_bounded
-from inference_server.framework.model_stat import stat_model_while_checking_auth
+from inference_server.framework.model_stat import (
+    ModelStat,
+    stat_model_details_while_checking_auth,
+)
 from inference_server.gateway import ModelManagerGateway, ReloadAfterEvictionError
 from inference_server.legacy.common import ImagePayload, fetch_url_images
 from inference_server.legacy.entities import ResolvedModel
@@ -44,6 +47,7 @@ from inference_server.middlewares.model_load import (
     set_requested_model_id,
 )
 from inference_server.prometheus import measure_inference
+from inference_server.usage.request_hook import record_model_invocation
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +94,8 @@ class Route:
     vram_bytes: Optional[int] = None
     resolved_model: Optional[dict] = None
     metadata_ts: float = 0.0
+    model_architecture: Optional[str] = None
+    model_variant: Optional[str] = None
 
 
 _CORE_MODEL_TASK_TYPES: dict[str, tuple[str, str]] = {
@@ -107,6 +113,12 @@ _CORE_MODEL_TASK_TYPES: dict[str, tuple[str, str]] = {
     "depth-anything-v3": ("depth-estimation", "infer"),
     "moondream2": ("vlm", "prompt"),
     "smolvlm2": ("vlm", "prompt"),
+}
+
+_CORE_MODEL_ARCHITECTURES = {
+    "grounding_dino": "grounding-dino",
+    "yolo_world": "yolo-world",
+    "smolvlm2": "smolvlm-2.2b-instruct",
 }
 
 _REGISTRY_ID_ALIASES = {"perception_encoder": "perception-encoder"}
@@ -203,11 +215,10 @@ class LegacyModelBridge:
     ) -> Route:
         registry_id = registry_id_for(model_id)
         set_requested_model_id(registry_id, requested_model_id=model_id)
-        task_type: Optional[str] = None
-        action: Optional[str] = None
+        stat: Optional[ModelStat] = None
         if not LEGACY_OFFLINE_MODE:
             try:
-                task_type, action = await self._stat(model_id, registry_id, api_key)
+                stat = await self._stat(model_id, registry_id, api_key)
             except (Exception, asyncio.CancelledError):
                 self._hold_pending_request(row_key, path, alias)
                 raise
@@ -216,11 +227,10 @@ class LegacyModelBridge:
             route = Route(
                 model_id=model_id,
                 registry_id=registry_id,
-                task_type=task_type or "unknown",
-                action=action or "infer",
+                task_type="unknown",
+                action="infer",
             )
-        else:
-            _apply_stat(route, task_type, action)
+        _apply_stat(route, stat)
         try:
             if LEGACY_OFFLINE_MODE:
                 try:
@@ -234,24 +244,22 @@ class LegacyModelBridge:
         except (Exception, asyncio.CancelledError):
             self._hold_pending_request(row_key, path, alias)
             raise
-        route = self._adopt_canonical(route, task_type, action)
+        route = self._adopt_canonical(route, stat)
         if self._metadata_expired(route) or route.registry_id not in self._loaded_ids:
             await self._refresh_metadata(route)
-        route = self._adopt_canonical(route, task_type, action)
-        if LEGACY_OFFLINE_MODE and task_type is None:
+        route = self._adopt_canonical(route, stat)
+        if LEGACY_OFFLINE_MODE and stat is None:
             route.task_type = _task_type_from_mro(route.model_mro_names)
             route.action = _DEFAULT_ACTION_BY_TASK_TYPE.get(route.task_type, "infer")
         self._routes[registry_id] = route
         self._routes[model_id] = route
         return route
 
-    def _adopt_canonical(
-        self, route: Route, task_type: Optional[str], action: Optional[str]
-    ) -> Route:
+    def _adopt_canonical(self, route: Route, stat: Optional[ModelStat]) -> Route:
         canonical = self._routes.get(route.registry_id)
         if canonical is None or canonical is route:
             return route
-        _apply_stat(canonical, task_type, action)
+        _apply_stat(canonical, stat)
         return canonical
 
     async def ensure_loaded(self, route: Route, api_key: Optional[str]) -> None:
@@ -376,39 +384,50 @@ class LegacyModelBridge:
     ) -> list[Any]:
         await self.ensure_loaded(route, api_key)
         started = time.perf_counter()
-        with measure_inference(
-            route.registry_id,
-            responses=len(images),
-            monitoring=record and model_monitoring,
-        ):
-            try:
-                results = await gather_bounded(
-                    *(
-                        self.gateway.infer(
-                            model_id=route.registry_id,
-                            image=image.data if image is not None else None,
-                            action=action,
-                            params=params,
+        try:
+            with measure_inference(
+                route.registry_id,
+                responses=len(images),
+                monitoring=record and model_monitoring,
+            ):
+                try:
+                    results = await gather_bounded(
+                        *(
+                            self.gateway.infer(
+                                model_id=route.registry_id,
+                                image=image.data if image is not None else None,
+                                action=action,
+                                params=params,
+                            )
+                            for image in images
                         )
-                        for image in images
                     )
-                )
-            except PayloadTooLargeError:
-                raise
-            except ReloadAfterEvictionError as error:
-                failure = self._last_load_failure(route.registry_id)
-                if failure is None:
-                    raise _not_ready_error() from error
-                raise _load_error(failure) from error
-            except ValueError as error:
-                if isinstance(error.__cause__, ModelInputError):
-                    raise error.__cause__ from error
-                raise ModelInputError(str(error)) from error
+                except PayloadTooLargeError:
+                    raise
+                except ReloadAfterEvictionError as error:
+                    failure = self._last_load_failure(route.registry_id)
+                    if failure is None:
+                        raise _not_ready_error() from error
+                    raise _load_error(failure) from error
+                except ValueError as error:
+                    if isinstance(error.__cause__, ModelInputError):
+                        raise error.__cause__ from error
+                    raise ModelInputError(str(error)) from error
+        except Exception:
+            record_telemetry(
+                _record_model_invocation,
+                route,
+                images,
+                time.perf_counter() - started,
+            )
+            raise
+        duration = time.perf_counter() - started
+        record_telemetry(_record_model_invocation, route, images, duration)
         if record:
             record_telemetry(
                 telemetry.record_inference,
                 requested_model_id_for(route.registry_id),
-                time.perf_counter() - started,
+                duration,
             )
         return results
 
@@ -606,18 +625,23 @@ class LegacyModelBridge:
 
     async def _stat(
         self, model_id: str, registry_id: str, api_key: Optional[str]
-    ) -> tuple[str, str]:
+    ) -> ModelStat:
         try:
-            return await stat_model_while_checking_auth(
+            return await stat_model_details_while_checking_auth(
                 CommonRequestParams(model_id=registry_id, api_key=api_key or "")
             )
         except LookupError:
-            static = _CORE_MODEL_TASK_TYPES.get(
-                model_id.split("/")[0]
-            ) or _CORE_MODEL_TASK_TYPES.get(registry_id.split("/")[0])
-            if static is None:
-                raise
-            return static
+            for family in (model_id.split("/")[0], registry_id.split("/")[0]):
+                static = _CORE_MODEL_TASK_TYPES.get(family)
+                if static is not None:
+                    return ModelStat(
+                        *static,
+                        model_architecture=_CORE_MODEL_ARCHITECTURES.get(
+                            family, family
+                        ),
+                        model_variant=registry_id.partition("/")[2] or None,
+                    )
+            raise
 
     async def _stats_models(self) -> dict:
         stats = await self.gateway.stats()
@@ -653,11 +677,30 @@ def _load_error(result: tuple) -> Exception:
     return error
 
 
-def _apply_stat(route: Route, task_type: Optional[str], action: Optional[str]) -> None:
-    if task_type is None:
+def _apply_stat(route: Route, stat: Optional[ModelStat]) -> None:
+    if stat is None:
         return
-    route.task_type = task_type
-    route.action = action or route.action
+    route.task_type = stat.task_type
+    route.action = stat.default_action or route.action
+    route.model_architecture = stat.model_architecture
+    route.model_variant = stat.model_variant
+
+
+def _record_model_invocation(
+    route: Route, images: list[Optional[ImagePayload]], duration: float
+) -> None:
+    entry: dict[str, Any] = {"model_id": requested_model_id_for(route.registry_id)}
+    if route.model_architecture:
+        entry["model_architecture"] = route.model_architecture
+    if route.model_variant:
+        entry["model_variant"] = route.model_variant
+    entry["task_type"] = route.task_type
+    if route.input_height is not None and route.input_width is not None:
+        entry["model_input_height"] = route.input_height
+        entry["model_input_width"] = route.input_width
+    entry["execution_duration"] = duration
+    entry["frames"] = max(1, sum(1 for image in images if image is not None))
+    record_model_invocation(entry)
 
 
 def _apply_metadata(route: Route, entry: dict) -> None:

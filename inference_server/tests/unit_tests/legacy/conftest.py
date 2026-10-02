@@ -146,7 +146,10 @@ def fake_stat(monkeypatch):
             raise ModelNotFoundError(message=model_id, help_url="")
         if isinstance(outcome, Exception):
             raise outcome
-        return SimpleNamespace(task_type=outcome[0])
+        meta = SimpleNamespace(task_type=outcome[0])
+        if len(outcome) > 2:
+            meta.model_architecture, meta.model_variant = outcome[2], outcome[3]
+        return meta
 
     monkeypatch.setattr(model_stat, "get_one_page_of_model_metadata", _metadata)
     return table
