@@ -425,6 +425,39 @@ def scale_polygons_to_image(
     return [polygon * scale for polygon in polygons]
 
 
+def resolve_mask_target_size(
+    mask_height: int,
+    mask_width: int,
+    size_after_pre_processing: ImageDimensions,
+    masks_resolution_factor: float,
+) -> Tuple[int, int]:
+    """Interpolate the mask resize target between the mask grid and the image.
+
+    A factor of `1.0` selects the image size, reproducing the behaviour from
+    before this parameter existed. A factor of `0.0` leaves masks on the grid
+    the model produced them on. Values in between trade mask fidelity for the
+    cost of upsampling every instance.
+
+    Args:
+        mask_height: Height of the mask grid after letterbox padding is removed.
+        mask_width: Width of that grid.
+        size_after_pre_processing: Dimensions masks are reported against at a
+            factor of `1.0`.
+        masks_resolution_factor: Interpolation factor in `[0.0, 1.0]`.
+
+    Returns:
+        The `(height, width)` to resize masks to.
+    """
+    if masks_resolution_factor >= 1.0:
+        return size_after_pre_processing.height, size_after_pre_processing.width
+    factor = max(0.0, masks_resolution_factor)
+    height = round(
+        mask_height * (1 - factor) + size_after_pre_processing.height * factor
+    )
+    width = round(mask_width * (1 - factor) + size_after_pre_processing.width * factor)
+    return max(1, height), max(1, width)
+
+
 def align_instance_segmentation_results(
     image_bboxes: torch.Tensor,
     masks: torch.Tensor,
@@ -437,10 +470,29 @@ def align_instance_segmentation_results(
     static_crop_offset: StaticCropOffset,
     binarization_threshold: float = 0.0,
     mask_chunk_size: int = INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE,
+    masks_resolution_factor: float = 1.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
+        empty_target_height, empty_target_width = resolve_mask_target_size(
+            mask_height=masks.shape[1],
+            mask_width=masks.shape[2],
+            size_after_pre_processing=size_after_pre_processing,
+            masks_resolution_factor=masks_resolution_factor,
+        )
         empty_masks = torch.empty(
-            size=(0, original_size.height, original_size.width),
+            size=(
+                0,
+                round(
+                    original_size.height
+                    * empty_target_height
+                    / size_after_pre_processing.height
+                ),
+                round(
+                    original_size.width
+                    * empty_target_width
+                    / size_after_pre_processing.width
+                ),
+            ),
             dtype=torch.bool,
             device=image_bboxes.device,
         )
@@ -500,8 +552,12 @@ def align_instance_segmentation_results(
     # chunk x H x W instead of n x H x W (17+ GiB at 300 masks on a 12MP
     # image); only the n x H x W bool output is ever materialized whole.
     mask_chunk_size = max(1, int(mask_chunk_size))
-    target_height = size_after_pre_processing.height
-    target_width = size_after_pre_processing.width
+    target_height, target_width = resolve_mask_target_size(
+        mask_height=masks.shape[1],
+        mask_width=masks.shape[2],
+        size_after_pre_processing=size_after_pre_processing,
+        masks_resolution_factor=masks_resolution_factor,
+    )
     binarized_masks = torch.empty(
         (masks.shape[0], target_height, target_width),
         dtype=torch.bool,
@@ -515,19 +571,26 @@ def align_instance_segmentation_results(
         ).gt_(binarization_threshold)
     masks = binarized_masks
     if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+        # the canvas keeps the mask grid's ratio to the image, so a reduced
+        # factor shrinks the whole output rather than planting a small mask on
+        # a full-size canvas; crop offsets move into the same space
+        canvas_h_scale = target_height / size_after_pre_processing.height
+        canvas_w_scale = target_width / size_after_pre_processing.width
+        canvas_offset_y = round(static_crop_offset.offset_y * canvas_h_scale)
+        canvas_offset_x = round(static_crop_offset.offset_x * canvas_w_scale)
         mask_canvas = torch.zeros(
             (
                 masks.shape[0],
-                original_size.height,
-                original_size.width,
+                max(1, round(original_size.height * canvas_h_scale)),
+                max(1, round(original_size.width * canvas_w_scale)),
             ),
             dtype=torch.bool,
             device=masks.device,
         )
         mask_canvas[
             :,
-            static_crop_offset.offset_y : static_crop_offset.offset_y + masks.shape[1],
-            static_crop_offset.offset_x : static_crop_offset.offset_x + masks.shape[2],
+            canvas_offset_y : canvas_offset_y + masks.shape[1],
+            canvas_offset_x : canvas_offset_x + masks.shape[2],
         ] = masks
         static_crop_offsets = torch.as_tensor(
             [

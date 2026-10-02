@@ -736,3 +736,112 @@ class TestScalePolygonsToImage:
 
         # then
         assert result == []
+
+
+class TestMasksResolutionFactor:
+    """The resolution lever: interpolate the resize target between the
+    post-unpad mask grid and size_after_pre_processing."""
+
+    PROTO = 160
+    ORIG_H, ORIG_W = 200, 300
+
+    @classmethod
+    def _expected(cls, t: float):
+        h = max(1, round(cls.PROTO * (1 - t) + cls.ORIG_H * t))
+        w = max(1, round(cls.PROTO * (1 - t) + cls.ORIG_W * t))
+        return h, w
+
+    @classmethod
+    def _run(cls, n: int = 7, static_crop: bool = False, **kwargs):
+        torch.manual_seed(42)
+        bboxes = torch.rand((n, 6), dtype=torch.float32) * 100
+        masks = torch.randn((n, cls.PROTO, cls.PROTO), dtype=torch.float32)
+        static_crop_offset = StaticCropOffset(
+            offset_x=13 if static_crop else 0,
+            offset_y=7 if static_crop else 0,
+            crop_width=cls.ORIG_W,
+            crop_height=cls.ORIG_H,
+        )
+        return align_instance_segmentation_results(
+            image_bboxes=bboxes.clone(),
+            masks=masks.clone(),
+            padding=(0, 0, 0, 0),
+            scale_width=1.0,
+            scale_height=1.0,
+            original_size=ImageDimensions(
+                height=cls.ORIG_H + (7 if static_crop else 0),
+                width=cls.ORIG_W + (13 if static_crop else 0),
+            ),
+            size_after_pre_processing=ImageDimensions(
+                height=cls.ORIG_H, width=cls.ORIG_W
+            ),
+            inference_size=ImageDimensions(height=640, width=640),
+            static_crop_offset=static_crop_offset,
+            binarization_threshold=0.0,
+            mask_chunk_size=1000,
+            **kwargs,
+        )
+
+    def test_factor_one_is_bit_identical_to_default(self) -> None:
+        # given / when
+        _, baseline = self._run()
+        _, out = self._run(masks_resolution_factor=1.0)
+
+        # then
+        assert torch.equal(out, baseline)
+
+    def test_factor_zero_keeps_the_post_unpad_mask_grid(self) -> None:
+        # given / when
+        _, masks = self._run(masks_resolution_factor=0.0)
+
+        # then
+        assert masks.shape[1:] == (self.PROTO, self.PROTO)
+
+    @pytest.mark.parametrize("t", [0.0, 0.1, 0.25, 0.5, 0.75, 1.0])
+    def test_factor_interpolates_the_resize_target(self, t: float) -> None:
+        # given / when
+        _, masks = self._run(masks_resolution_factor=t)
+
+        # then
+        assert masks.shape[1:] == self._expected(t)
+
+    @pytest.mark.parametrize("t", [0.25, 0.5])
+    def test_axis_order_survives_a_reduced_target(self, t: float) -> None:
+        # given / when
+        # the image is 200x300, so a transposed resize would be visible here
+        _, masks = self._run(masks_resolution_factor=t)
+
+        # then
+        expected_h, expected_w = self._expected(t)
+        assert masks.shape[1] == expected_h
+        assert masks.shape[2] == expected_w
+        assert expected_h < expected_w
+
+    def test_output_stays_bool_at_reduced_resolution(self) -> None:
+        # given / when
+        _, masks = self._run(masks_resolution_factor=0.25)
+
+        # then
+        assert masks.dtype == torch.bool
+
+    def test_no_instances_shape_follows_the_factor(self) -> None:
+        # given / when
+        # consumers derive the canvas from mask.shape, so the empty case must
+        # agree with the populated one
+        _, masks = self._run(n=0, masks_resolution_factor=0.5)
+
+        # then
+        assert masks.shape[0] == 0
+        assert masks.shape[1:] == self._expected(0.5)
+
+    def test_static_crop_canvas_scales_with_the_factor(self) -> None:
+        # given / when
+        _, masks = self._run(static_crop=True, masks_resolution_factor=0.5)
+
+        # then
+        # the canvas keeps its ratio to the mask grid, so the whole output is
+        # reduced rather than a small mask pasted onto a full-size canvas
+        target_h, target_w = self._expected(0.5)
+        expected_h = round((self.ORIG_H + 7) * target_h / self.ORIG_H)
+        expected_w = round((self.ORIG_W + 13) * target_w / self.ORIG_W)
+        assert masks.shape[1:] == (expected_h, expected_w)
