@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- Bumped `urllib3` to version `2.8.0` or above (GHSA-8988-9cw3-xx77, GHSA-vxq7-64xx-v4gw, GHSA-gh4c-6fx4-qh6g)
+- Bumped `tornado` in the `docs` extra to version `6.5.10` or above (GHSA-c2m8-h5v5-343r, GHSA-chx6-46f5-w4vp, GHSA-3hv7-mjh2-fv65)
+- Bumped `accelerate` to version `1.15.0` or above (GHSA-4j2p-28q2-5m79 has no upstream fix; the affected checkpoint-loading helpers are not used by `inference-models`)
+
+---
+
+## `0.39.0`
+
 ### Added
 
 - RF-DETR Torch and ONNX object detection now use the five-stage execution plan,
