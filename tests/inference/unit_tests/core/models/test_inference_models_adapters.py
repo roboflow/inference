@@ -3,12 +3,15 @@
 from collections import deque
 from concurrent.futures import Future
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import numpy as np
 from pycocotools import mask as mask_utils
 import pytest
 import torch
 
+from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
+from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationInferenceResponseDC,
@@ -16,7 +19,7 @@ from inference.core.entities.responses.inference import (
 from inference_models.models.base.types import InstancesRLEMasks
 from inference.core.exceptions import InvalidMaskDecodeArgument, PostProcessingError
 from inference.core.models.inference_models_adapters import (
-    rle_masks2poly,
+    InferenceModelsClassificationAdapter,
     InferenceModelsDepthEstimationAdapter,
     InferenceModelsInstanceSegmentationAdapter,
     InferenceModelsObjectDetectionAdapter,
@@ -24,7 +27,9 @@ from inference.core.models.inference_models_adapters import (
     _supports_independent_stage_execution,
     prepare_classification_response,
     prepare_multi_label_classification_response,
+    rle_masks2poly,
 )
+from inference.models.aliases import CLASSIFICATION_ALIASES
 from inference_models import (
     ClassificationPrediction,
     InstanceDetections,
@@ -32,6 +37,148 @@ from inference_models import (
 )
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.async_handoff import attach_adapter_mapped_kwargs
+from inference_models.utils.onnx_embeddings import embedding_definition
+
+
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+@pytest.mark.parametrize("is_batch", [False, True])
+def test_classifier_embedding_adapter_preserves_raw_vectors_and_preprocessing(
+    monkeypatch, output_type, is_batch
+) -> None:
+    from inference.core.models import inference_models_adapters
+
+    image_pre_processing = {"grayscale": {"enabled": True}}
+    network_input = {"training_input_size": {"height": 16, "width": 16}}
+    backend = MagicMock()
+    backend.class_names = ["known", "other"]
+    backend._inference_config = SimpleNamespace(
+        image_pre_processing=SimpleNamespace(
+            model_dump=MagicMock(return_value=image_pre_processing)
+        ),
+        network_input=SimpleNamespace(
+            dynamic_spatial_size_supported=False,
+            training_input_size=SimpleNamespace(height=16, width=16),
+            model_dump=MagicMock(return_value=network_input),
+        ),
+    )
+    images = [np.full((16, 16, 3), value, dtype=np.uint8) for value in (20, 50)]
+    if not is_batch:
+        images = images[:1]
+    preprocessed = torch.stack([torch.from_numpy(image) for image in images])
+    backend.pre_process.return_value = preprocessed
+    vectors = (
+        [[2.0, -3.0, 4.0], [5.0, -6.0, 7.0]]
+        if output_type == "feature_vector"
+        else [[-2.0, 3.0], [-4.0, 5.0]]
+    )[: len(images)]
+    backend.forward_embedding.return_value = torch.tensor(
+        vectors, dtype=torch.float16, requires_grad=True
+    )
+    backend.get_embedding_info.return_value = {
+        "feature_definition": embedding_definition(output_type),
+        "output_type": output_type,
+        "normalization": "none",
+    }
+    load_model = MagicMock(return_value=backend)
+    monkeypatch.setattr(
+        inference_models_adapters.AutoModel, "from_pretrained", load_model
+    )
+    adapter = InferenceModelsClassificationAdapter(
+        model_id="resnet18",
+        api_key="key",
+        required_capabilities=["image_embeddings"],
+        output_type=output_type,
+    )
+    request_images = [{"type": "numpy_object", "value": image} for image in images]
+    request = ImageEmbeddingRequest(
+        model_id="resnet18",
+        output_type=output_type,
+        image=request_images if is_batch else request_images[0],
+        disable_preproc_auto_orient=True,
+        disable_preproc_contrast=True,
+        disable_preproc_grayscale=True,
+        disable_preproc_static_crop=True,
+    )
+
+    response = adapter.infer_embeddings_from_request(request)
+
+    assert isinstance(response, ImageEmbeddingResponse)
+    assert response.embeddings == vectors
+    assert response.inference_id == request.id
+    assert response.time >= 0
+    assert response.embedding_info.model_id == CLASSIFICATION_ALIASES["resnet18"]
+    assert response.embedding_info.output_type == output_type
+    assert response.embedding_info.feature_definition == embedding_definition(
+        output_type
+    )
+    assert response.embedding_info.dimension == len(vectors[0])
+    assert response.embedding_info.normalization == "none"
+    assert response.embedding_info.precision == "torch.float16"
+    assert response.embedding_info.preprocessing == {
+        "image_pre_processing": image_pre_processing,
+        "network_input": network_input,
+        "overrides": {
+            "disable_preproc_auto_orient": True,
+            "disable_preproc_contrast": True,
+            "disable_preproc_grayscale": True,
+            "disable_preproc_static_crop": True,
+        },
+    }
+    for actual, expected in zip(backend.pre_process.call_args.args[0], images):
+        np.testing.assert_array_equal(actual, expected)
+    preprocessing_kwargs = backend.pre_process.call_args.kwargs
+    assert preprocessing_kwargs["input_color_format"] == "bgr"
+    assert preprocessing_kwargs["pre_processing_overrides"] == PreProcessingOverrides(
+        disable_contrast_enhancement=True,
+        disable_grayscale=True,
+        disable_static_crop=True,
+    )
+    backend.forward_embedding.assert_called_once_with(
+        preprocessed, output_type=output_type
+    )
+    backend.get_embedding_info.assert_called_once_with(output_type)
+    assert (
+        load_model.call_args.kwargs["model_id_or_path"]
+        == CLASSIFICATION_ALIASES["resnet18"]
+    )
+    assert load_model.call_args.kwargs["required_capabilities"] == ["image_embeddings"]
+    assert load_model.call_args.kwargs["output_type"] == output_type
+
+    # Native execution must retain the caller's tensors and the model's storage,
+    # without entering the HTTP/JSON conversion path tested above.
+    native_images = [torch.from_numpy(image).permute(2, 0, 1) for image in images]
+    backend.pre_process.reset_mock()
+    monkeypatch.setattr(
+        adapter,
+        "infer_embeddings_from_request",
+        MagicMock(side_effect=AssertionError("HTTP path")),
+    )
+
+    def reject_conversion(*args, **kwargs):
+        raise AssertionError("CPU/Python conversion")
+
+    with monkeypatch.context() as guard:
+        guard.setattr(torch.Tensor, "cpu", reject_conversion)
+        guard.setattr(torch.Tensor, "tolist", reject_conversion)
+        native = adapter.run_tensor_native_embeddings(
+            images=native_images,
+            input_color_format="rgb",
+            output_type=output_type,
+            **response.embedding_info.preprocessing["overrides"],
+        )
+
+    assert (
+        native["embeddings"].data_ptr()
+        == backend.forward_embedding.return_value.data_ptr()
+    )
+    assert native["embeddings"].dtype == torch.float16
+    assert not native["embeddings"].requires_grad
+    assert native["embedding_info"] == response.embedding_info.model_dump(
+        exclude_none=True
+    )
+    assert backend.pre_process.call_args.args[0] is native_images
+    assert backend.pre_process.call_args.kwargs["input_color_format"] == "rgb"
+    adapter.infer_embeddings_from_request.assert_not_called()
 
 
 class _ImmediateExecutor:

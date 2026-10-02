@@ -852,6 +852,14 @@ else:
         RoboflowKeypointDetectionModelBlockV3,
     )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.embedding.v1_tensor import (
+        EmbeddingModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.embedding.v1 import (
+        EmbeddingModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v1_tensor import (
         RoboflowClassificationModelBlockV1,
     )
@@ -1800,6 +1808,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PolygonZoneVisualizationBlockV1,
         QRCodeDetectorBlockV1,
         RoboflowClassificationModelBlockV1,
+        EmbeddingModelBlockV1,
         RoboflowInstanceSegmentationModelBlockV1,
         RoboflowKeypointDetectionModelBlockV1,
         RoboflowMultiLabelClassificationModelBlockV1,

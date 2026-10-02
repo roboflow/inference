@@ -18,27 +18,36 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
+- Embedding Model (`roboflow_core/embedding_model@v1`): extract feature vectors
+  before the final linear layer or logits before Softmax/Sigmoid from existing
+  single-label and multi-label ResNet, ViT and DINOv3 classifiers, including
+  pretrained ResNet aliases. List and tensor variants return embeddings compatible
+  with Cosine Similarity and metadata identifying their embedding space.
+- Local tensor-mode Embedding Model execution retains materialized tensor images
+  and embedding tensors through the model-provider boundary. Remote responses and
+  final JSON outputs remain serialized vectors.
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
+- OpenAI block (`open_ai@v7`): `gpt-6.1-sol` model option (`low`-`max` reasoning effort; object detection and instance segmentation reuse the GPT-6 prompts).
+
 - `roboflow_core/roboflow_instance_segmentation_model@v5`. Identical to `@v4`
   except that it forwards `mask_decode_mode` and `tradeoff_factor` to the
   server, which now honours them. Versions up to `@v4` pin the outbound request
   to `accurate` / `1.0`, so existing workflows are unaffected on the
   `inference_models` backend.
 
-  Two caveats. On the legacy ORT backend - the default on Windows - those
-  fields *were* honoured, so pinning changes behaviour there: a `@v1`-`@v4`
-  workflow set to `fast` now receives full-resolution masks. This is a
-  deliberate trade for consistency across backends.
+  The pin is conditional on `USE_INFERENCE_MODELS`. The legacy backend
+  honoured these fields, so `@v1`-`@v4` keep passing them through there and
+  behave exactly as they do today; the pin applies only where the fields were
+  being discarded. No existing workflow changes behaviour on either backend.
 
-  The tensor-native siblings of every version, `@v5` included, are also pinned.
+  The tensor-native siblings of every version, `@v5` included, are pinned
+  unconditionally - the reason there is downstream rather than the backend.
   Nothing under `roboflow_workflows/` reads `InstanceDetections.mask_size`, and
   the sites that rebuild `InstancesRLEMasks` drop it, so a reduced grid would
   be reinterpreted as image-sized downstream. Reduced mask resolution is
   therefore available in non-tensor mode only, pending propagation of
   `mask_size` through the tensor pipeline.
 
-### Added
-
-- Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
 ### Changed
 
 - Carries forward the `0.2.2` model catalog: Anthropic Claude v5 lists `claude-opus-5-5` (Claude Opus 5.5, 128000 max output tokens) and the temperature warning names Opus 5.x; OpenAI v7 lists `gpt-6-sol` and `gpt-6-luna` (reasoning effort `none` through `max`, structured absolute detection prompts).
@@ -50,7 +59,20 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- CLIP v1 and CLIP Comparison v1/v2 blocks, including tensor variants, now report
+  a model's text-context-length validation error as `RuntimeInputError`, allowing
+  workflow HTTP requests to return 400 instead of 500. Other model input errors
+  retain their existing handling.
+
 - Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
+
+### Execution engine
+
+- Dependency preloading distinguishes classification, feature-vector and logits
+  registrations for the same model ID, including runtime-selected IDs, and verifies
+  the corresponding capability-specific cache entries. Existing workflows need
+  no migration.
+
 
 ## `0.2.3`
 

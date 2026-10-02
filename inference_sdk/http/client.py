@@ -87,6 +87,7 @@ from inference_sdk.http.utils.post_processing import (
     decode_workflow_outputs,
     filter_model_descriptions,
     response_contains_jpeg_image,
+    split_image_embeddings,
     transform_base64_visualisation,
     transform_visualisation_bytes,
 )
@@ -1367,6 +1368,98 @@ class InferenceHTTPClient:
         )
         result = combine_clip_embeddings(embeddings=result)
         return unwrap_single_element_list(result)
+
+    @wrap_errors
+    def get_image_embeddings(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        output_type: Literal["feature_vector", "logits"] = "feature_vector",
+    ) -> Union[dict, List[dict]]:
+        """Get classifier features or logits with embedding-space metadata.
+
+        Requires a server exposing ``POST /infer/embeddings``. Compare vectors
+        only when their ``embedding_info.space_id`` values match.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Image
+                or images to embed, using supported SDK image references.
+            model_id (str): Workspace model version or pretrained classification
+                alias, such as ``resnet101``.
+            output_type (Literal["feature_vector", "logits"]): Select features
+                before the final linear layer or logits before Softmax/Sigmoid.
+                Defaults to ``feature_vector``.
+
+        Returns:
+            Union[dict, List[dict]]: One result per image, in input order, with
+                ``embeddings`` containing one vector and ``embedding_info``
+                describing its space. A single-image result is returned as a dict.
+
+        Raises:
+            HTTPCallErrorError: If the server rejects the request, including an
+                unsupported model, unavailable embedding package, or invalid key.
+            HTTPClientError: If connecting to the inference server fails.
+        """
+        result = self._post_images(
+            inference_input=inference_input,
+            endpoint="/infer/embeddings",
+            model_id=model_id,
+            extra_payload=self._image_embedding_payload(output_type=output_type),
+        )
+        return unwrap_single_element_list(split_image_embeddings(result))
+
+    @wrap_errors_async
+    async def get_image_embeddings_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        output_type: Literal["feature_vector", "logits"] = "feature_vector",
+    ) -> Union[dict, List[dict]]:
+        """Get classifier features or logits asynchronously.
+
+        Requires a server exposing ``POST /infer/embeddings``. Compare vectors
+        only when their ``embedding_info.space_id`` values match.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Image
+                or images to embed, using supported SDK image references.
+            model_id (str): Workspace model version or pretrained classification
+                alias, such as ``resnet101``.
+            output_type (Literal["feature_vector", "logits"]): Select features
+                before the final linear layer or logits before Softmax/Sigmoid.
+                Defaults to ``feature_vector``.
+
+        Returns:
+            Union[dict, List[dict]]: One result per image, in input order, with
+                ``embeddings`` containing one vector and ``embedding_info``
+                describing its space. A single-image result is returned as a dict.
+
+        Raises:
+            HTTPCallErrorError: If the server rejects the request, including an
+                unsupported model, unavailable embedding package, or invalid key.
+            HTTPClientError: If connecting to the inference server fails.
+        """
+        result = await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/infer/embeddings",
+            model_id=model_id,
+            extra_payload=self._image_embedding_payload(output_type=output_type),
+        )
+        return unwrap_single_element_list(split_image_embeddings(result))
+
+    def _image_embedding_payload(self, *, output_type: str) -> dict:
+        preprocessing = {
+            name: value
+            for name, value in self.__inference_configuration.to_classification_parameters().items()
+            if name.startswith("disable_preproc_")
+        }
+        payload = {
+            **preprocessing,
+            "source": self.__inference_configuration.source,
+            "output_type": output_type,
+        }
+
+        return payload
 
     @wrap_errors_async
     async def get_clip_image_embeddings_async(
@@ -2905,7 +2998,7 @@ class InferenceHTTPClient:
         source_buffer_consumption_strategy: Optional[
             BufferConsumptionStrategy
         ] = "EAGER",
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
         batch_collection_timeout: Optional[float] = None,
         results_buffer_size: int = 64,
     ) -> dict:

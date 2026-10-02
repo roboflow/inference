@@ -255,8 +255,30 @@ Override ONNX execution providers, comma separated, no spaces.
 Default: `CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider`
 
 ```bash
-export ONNX_EXECUTION_PROVIDERS="CPUExecutionProvider"
+export ONNXRUNTIME_EXECUTION_PROVIDERS="CPUExecutionProvider"
 ```
+
+### CoreML (Apple Silicon)
+
+These apply to models that configure the `CoreMLExecutionProvider` themselves (currently RF-DETR),
+and only with onnxruntime 1.21 or newer; older versions run CoreML with onnxruntime's defaults.
+`INFERENCE_MODELS_COREML_COMPUTE_UNITS` also sets where native Core ML packages (the `coreml` backend) run.
+
+**`INFERENCE_MODELS_COREML_MODEL_FORMAT`**
+CoreML model format. `MLProgram` supports the transformer ops RF-DETR needs; `NeuralNetwork`
+(onnxruntime's own default) runs most of the graph on the CPU.
+Default: `MLProgram`
+
+**`INFERENCE_MODELS_COREML_COMPUTE_UNITS`**
+CoreML compute units: `CPUAndGPU`, `ALL`, `CPUAndNeuralEngine` or `CPUOnly`. FP32 models never run
+on the Neural Engine, so `ALL` gives the same speed as `CPUAndGPU` but compiles slower.
+Default: `CPUAndGPU`
+
+**`INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED`**
+Cache the compiled CoreML model in the model package (`coreml_cache/`), so only the first load of a
+model compiles it (about 20 s for RF-DETR) and later loads take well under a second. The cache takes
+roughly 4x the model's size on disk and is never written for offline or read-only packages.
+Default: `true`
 
 ## Prediction Parameter Defaults
 

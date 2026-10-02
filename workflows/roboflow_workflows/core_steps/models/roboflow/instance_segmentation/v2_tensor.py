@@ -467,11 +467,10 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned: on the inference_models backend these fields were
-            # discarded, so honouring them now would change existing
-            # workflows. Note the legacy ORT backend DOES honour them
-            # today, so pinning changes behaviour there - a deliberate
-            # trade for consistency across backends. @v5 forwards.
+            # Pinned unconditionally: the reason here is downstream, not the
+            # backend. Nothing under roboflow_workflows/ reads mask_size and
+            # the sites rebuilding InstancesRLEMasks drop it, so a reduced grid
+            # is reinterpreted as image-sized whichever backend produced it.
             mask_decode_mode="accurate",
             tradeoff_factor=1.0,
             response_mask_format="rle",
