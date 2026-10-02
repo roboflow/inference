@@ -35,6 +35,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from inference_server import configuration as _cfg  # noqa: E402
 from inference_server import hf_preload  # noqa: E402
+from inference_server import pingback  # noqa: E402
 from inference_server.auth import (  # noqa: E402
     close_session,
     extract_bearer,
@@ -149,6 +150,7 @@ async def _lifespan(app: FastAPI):
     preload_task = None
     hf_preload_task = None
     watchdog_daemons = []
+    pingback_sender = None
     if _cfg.HTTP_API_THREADPOOL_WORKERS is not None:
         anyio.to_thread.current_default_thread_limiter().total_tokens = (
             _cfg.HTTP_API_THREADPOOL_WORKERS
@@ -191,6 +193,7 @@ async def _lifespan(app: FastAPI):
         app.state.loop = asyncio.get_running_loop()
         app.state.loop_bridge = LoopBridge(app.state.loop)
         app.state.legacy_bridge = LegacyModelBridge(proxy)
+        pingback_sender = pingback.start_sender()
         if _workflows_host is not None:
             _workflows_host.GUARDED_IMAGE_CODEC.bind_loop(app.state.loop_bridge)
         preload_ids = _cfg.preload_model_ids()
@@ -221,6 +224,8 @@ async def _lifespan(app: FastAPI):
             if not task.done():
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        if pingback_sender is not None:
+            pingback_sender.stop()
         shutdown_telemetry()
         try:
             await proxy.shutdown()

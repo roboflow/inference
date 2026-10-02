@@ -1,6 +1,7 @@
 import functools
 import random
 import string
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +9,7 @@ from inference_server import configuration
 
 JETSON_SERIAL_PATH = Path("/proc/device-tree/serial-number")
 RANDOM_PART_LENGTH = 6
+_GENERATION_LOCK = threading.Lock()
 
 
 def _random_string(length: int) -> str:
@@ -62,6 +64,7 @@ def get_inference_server_id() -> str:
     if configuration.INFERENCE_SERVER_ID:
         return configuration.INFERENCE_SERVER_ID
 
-    server_id = _generated_server_id()
+    with _GENERATION_LOCK:
+        server_id = _generated_server_id()
 
     return server_id

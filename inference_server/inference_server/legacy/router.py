@@ -111,6 +111,7 @@ from inference_server.legacy.translation import (
     resolve_request_action,
 )
 from inference_server.legacy.visualization import render_visualization
+from inference_server import pingback
 from inference_server.prometheus import measure_inference
 
 logger = logging.getLogger(__name__)
@@ -498,6 +499,7 @@ async def _infer_and_repack(
                 route, inference_request, response, payload
             )
         responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
     if image_format == "image":
         return Response(
             content=responses[0].visualization if responses else None,
@@ -907,19 +909,25 @@ async def _run_embedding(
     )
     payload_by_position = dict(zip(image_positions, payloads))
     await bridge.ensure_loaded(route, api_key)
+    model_monitoring = _model_monitoring_enabled(inference_request)
     started = time.perf_counter()
     results = []
     with measure_inference(
         route.registry_id,
         responses=1,
-        monitoring=_model_monitoring_enabled(inference_request),
+        monitoring=model_monitoring,
     ):
         for position, call in enumerate(calls):
             payload = payload_by_position.get(position)
             if payload is None:
                 results.append(
                     await bridge.infer_params_only(
-                        route, api_key, call["action"], call["params"], record=False
+                        route,
+                        api_key,
+                        call["action"],
+                        call["params"],
+                        model_monitoring=model_monitoring,
+                        record=False,
                     )
                 )
                 continue
@@ -930,6 +938,7 @@ async def _run_embedding(
                     call["action"],
                     [payload],
                     call["params"],
+                    model_monitoring=model_monitoring,
                     record=False,
                 )
             )
@@ -939,6 +948,7 @@ async def _run_embedding(
     )
     response.time = elapsed
     response.resolved_model = resolved_model_for(route)
+    pingback.record_inference(route.registry_id, inference_request, response)
     return response
 
 
@@ -984,6 +994,7 @@ async def _run_ocr(
         response.time = elapsed
         response.resolved_model = resolved_model_for(route)
         responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
     return orjson_response(responses if is_batch else responses[0], keep_parent_id=True)
 
 
@@ -1019,6 +1030,7 @@ async def _run_open_vocabulary_detection(
         response.inference_id = inference_request.id
         response.resolved_model = resolved_model_for(route)
         responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
     return responses if is_batch else responses[0]
 
 
@@ -1303,6 +1315,7 @@ async def _run_lmm(
         response.inference_id = inference_request.id
         response.resolved_model = resolved_model_for(route)
         responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
     return responses if is_batch else responses[0]
 
 
@@ -1416,6 +1429,7 @@ async def _run_depth_estimation(
     response.time = elapsed
     response.inference_id = inference_request.id
     response.resolved_model = resolved_model_for(route)
+    pingback.record_inference(route.registry_id, inference_request, response)
     return response
 
 
@@ -1503,6 +1517,7 @@ async def _run_interactive_segmentation(
     response.time = elapsed
     response.inference_id = inference_request.id
     response.resolved_model = resolved_model_for(route)
+    pingback.record_inference(route.registry_id, inference_request, response)
     return response
 
 

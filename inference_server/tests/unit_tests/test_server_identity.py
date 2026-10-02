@@ -1,4 +1,6 @@
 import re
+import threading
+import time
 
 import pytest
 
@@ -109,3 +111,31 @@ def test_gpu_index_follows_torch_cuda_availability(monkeypatch):
 
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     assert REAL_GPU_INDEX() is None
+
+
+def test_concurrent_first_calls_generate_one_id(monkeypatch):
+    probes = []
+
+    def _slow_probe():
+        probes.append(threading.get_ident())
+        time.sleep(0.2)
+
+        return 0
+
+    monkeypatch.setattr(server_identity, "_gpu_index", _slow_probe)
+    ids = []
+    threads = [
+        threading.Thread(
+            target=lambda: ids.append(server_identity.get_inference_server_id())
+        )
+        for _ in range(2)
+    ]
+
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(ids) == 2
+    assert ids[0] == ids[1]
+    assert len(probes) == 1

@@ -462,3 +462,13 @@ NOTEBOOK_ENABLED = get_boolean_from_env("NOTEBOOK_ENABLED", default=False)
 NOTEBOOK_PORT = get_integer_from_env("NOTEBOOK_PORT", default=9002)
 NOTEBOOK_PASSWORD = os.environ.get("NOTEBOOK_PASSWORD") or None
 ENABLE_IN_MEMORY_LOGS = get_boolean_from_env("ENABLE_IN_MEMORY_LOGS", default=False)
+
+# ── Pingback (pingback.py) ────────────────────────────────────────────────
+METRICS_ENABLED = get_boolean_from_env("METRICS_ENABLED", default=True)
+if LAMBDA or GCP_SERVERLESS or LEGACY_OFFLINE_MODE:
+    METRICS_ENABLED = False
+METRICS_INTERVAL = get_integer_from_env("METRICS_INTERVAL", default=60)
+METRICS_URL = os.environ.get("METRICS_URL", f"{API_BASE_URL}/inference-stats")
+TINY_CACHE = get_boolean_from_env("TINY_CACHE", default=True)
+TAGS = os.environ.get("TAGS", "").split(",")
+METRICS_API_KEY = os.environ.get("ROBOFLOW_API_KEY") or os.environ.get("API_KEY")

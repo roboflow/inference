@@ -13,6 +13,7 @@ from roboflow_workflows.prototypes.models_provider import (
 
 from inference_models.errors import BaseInferenceModelsError
 from inference_models.utils import model_blob_cache
+from inference_server import pingback
 from inference_server.framework.input_parsers.image_limits import too_many_images
 from inference_server.gateway import _load_failure
 from inference_server.legacy.bridge import Route, SyncLegacyBridge, resolved_model_for
@@ -342,12 +343,13 @@ class GatewayModelsProvider:
         return self._dump(self._run_vlm(model_id, request, api_key))[0]
 
     def run_depth_estimation(self, model_id: str, image: Any) -> Any:
-        request = DepthEstimationRequest(image=image)
+        request = DepthEstimationRequest(image=image, source=_WORKFLOW_SOURCE)
         key = self._key_for(model_id)
         route = self._resolve(model_id, key)
         payloads = self._request_payloads(request)
         predictions = self._bridge.infer(route, key, route.action, payloads, {})
         depth = repack_depth_estimation(predictions[0])
+        pingback.record_inference(route.registry_id, request, depth)
         return {
             "normalized_depth": depth["normalized_depth"],
             "image": SimpleNamespace(base64_image=depth["image"]["base64_image"]),
@@ -367,6 +369,7 @@ class GatewayModelsProvider:
             image=image,
             text=text,
             prompt=prompt,
+            source=_WORKFLOW_SOURCE,
         )
         return self._dump(self._run_vlm(model_id, request, api_key))[0]
 
@@ -378,7 +381,10 @@ class GatewayModelsProvider:
         api_key: Optional[str] = None,
     ) -> List[List[float]]:
         request = ClipTextEmbeddingRequest(
-            clip_version_id=version_id, text=text, api_key=api_key
+            clip_version_id=version_id,
+            text=text,
+            api_key=api_key,
+            source=_WORKFLOW_SOURCE,
         )
         return self._run_embedding(model_id, request, api_key).embeddings
 
@@ -390,7 +396,10 @@ class GatewayModelsProvider:
         api_key: Optional[str] = None,
     ) -> List[List[float]]:
         request = ClipImageEmbeddingRequest(
-            clip_version_id=version_id, image=images, api_key=api_key
+            clip_version_id=version_id,
+            image=images,
+            api_key=api_key,
+            source=_WORKFLOW_SOURCE,
         )
         return self._run_embedding(model_id, request, api_key).embeddings
 
@@ -409,6 +418,7 @@ class GatewayModelsProvider:
             subject_type=subject_type,
             prompt=prompt,
             prompt_type=prompt_type,
+            source=_WORKFLOW_SOURCE,
             **_passed(clip_version_id=version_id),
         )
         core_model_id = f"clip/{request.clip_version_id}"
@@ -423,7 +433,10 @@ class GatewayModelsProvider:
         api_key: Optional[str] = None,
     ) -> List[List[float]]:
         request = PerceptionEncoderTextEmbeddingRequest(
-            perception_encoder_version_id=version_id, text=text, api_key=api_key
+            perception_encoder_version_id=version_id,
+            text=text,
+            api_key=api_key,
+            source=_WORKFLOW_SOURCE,
         )
         return self._run_embedding(model_id, request, api_key).embeddings
 
@@ -435,7 +448,10 @@ class GatewayModelsProvider:
         api_key: Optional[str] = None,
     ) -> List[List[float]]:
         request = PerceptionEncoderImageEmbeddingRequest(
-            perception_encoder_version_id=version_id, image=images, api_key=api_key
+            perception_encoder_version_id=version_id,
+            image=images,
+            api_key=api_key,
+            source=_WORKFLOW_SOURCE,
         )
         return self._run_embedding(model_id, request, api_key).embeddings
 
@@ -449,6 +465,7 @@ class GatewayModelsProvider:
         request = DoctrOCRInferenceRequest(
             image=image,
             api_key=api_key,
+            source=_WORKFLOW_SOURCE,
             **_passed(generate_bounding_boxes=generate_bounding_boxes),
         )
         return self._dump(self._run_ocr(model_id, request, api_key))[0]
@@ -468,6 +485,7 @@ class GatewayModelsProvider:
             api_key=api_key,
             language_codes=language_codes,
             quantize=quantize,
+            source=_WORKFLOW_SOURCE,
         )
         return self._dump(self._run_ocr(model_id, request, api_key))[0]
 
@@ -481,6 +499,7 @@ class GatewayModelsProvider:
         request = PPOCRInferenceRequest(
             image=image,
             api_key=api_key,
+            source=_WORKFLOW_SOURCE,
             **_passed(text_detection=text_detection, text_recognition=text_recognition),
         )
         core_model_id = request.model_id
@@ -502,6 +521,7 @@ class GatewayModelsProvider:
             confidence=confidence,
             text=text,
             api_key=api_key,
+            source=_WORKFLOW_SOURCE,
         )
         return self._dump(self._run_open_vocabulary(model_id, request, api_key))[0]
 
@@ -561,6 +581,7 @@ class GatewayModelsProvider:
             model_id=model_id,
             image=image,
             prompts=[Sam3Prompt(**prompt) for prompt in prompts],
+            source=_WORKFLOW_SOURCE,
             **_passed(
                 output_prob_thresh=output_prob_thresh,
                 nms_iou_threshold=nms_iou_threshold,
@@ -673,7 +694,7 @@ class GatewayModelsProvider:
         started = time.perf_counter()
         predictions = self._bridge.infer(route, key, route.action, payloads, params)
         elapsed = time.perf_counter() - started
-        return [
+        responses = [
             self._stamp(
                 repack_prediction(
                     route.task_type,
@@ -689,6 +710,8 @@ class GatewayModelsProvider:
             )
             for prediction, payload in zip(predictions, payloads)
         ]
+        pingback.record_inference(route.registry_id, request, responses)
+        return responses
 
     def _run_vlm(
         self, model_id: str, request: Any, api_key: Optional[str]
@@ -713,6 +736,7 @@ class GatewayModelsProvider:
             else:
                 response = repack_vlm_response(prediction, dims)
             responses.append(self._stamp(response, route, elapsed, request))
+        pingback.record_inference(route.registry_id, request, responses)
         return responses
 
     def _run_ocr(
@@ -731,6 +755,7 @@ class GatewayModelsProvider:
                 prediction, (payload.width, payload.height), route.class_names, request
             )
             responses.append(self._stamp(response, route, elapsed))
+        pingback.record_inference(route.registry_id, request, responses)
         return responses
 
     def _run_open_vocabulary(
@@ -745,7 +770,7 @@ class GatewayModelsProvider:
         started = time.perf_counter()
         predictions = self._bridge.infer(route, key, route.action, payloads, params)
         elapsed = time.perf_counter() - started
-        return [
+        responses = [
             self._stamp(
                 repack_object_detection_response(
                     prediction, (payload.width, payload.height), class_names, request
@@ -756,6 +781,8 @@ class GatewayModelsProvider:
             )
             for prediction, payload in zip(predictions, payloads)
         ]
+        pingback.record_inference(route.registry_id, request, responses)
+        return responses
 
     def _run_embedding(
         self, model_id: str, request: Any, api_key: Optional[str]
@@ -796,7 +823,9 @@ class GatewayModelsProvider:
                 )
         elapsed = time.perf_counter() - started
         response = repack_embedding_response(action, request, results, prompt_keys)
-        return self._stamp(response, route, elapsed)
+        self._stamp(response, route, elapsed)
+        pingback.record_inference(route.registry_id, request, response)
+        return response
 
     def _run_interactive_segmentation(
         self, model_id: str, request: Any, api_key: Optional[str]
@@ -817,7 +846,9 @@ class GatewayModelsProvider:
         response = repack_interactive_segmentation_response(
             action, prediction, request, key
         )
-        return self._stamp(response, route, elapsed, request)
+        self._stamp(response, route, elapsed, request)
+        pingback.record_inference(route.registry_id, request, response)
+        return response
 
     @staticmethod
     def _stamp(response: Any, route: Route, elapsed: float, request: Any = None) -> Any:

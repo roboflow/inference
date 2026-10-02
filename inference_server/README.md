@@ -169,9 +169,10 @@ A few legacy behaviours are not (yet) available here:
 - Prediction visualization (`format=image`, `visualize_predictions`) uses the
   class colours the model manager reports, else the legacy default palette; the
   per-model colour mapping is not fetched from the Roboflow API.
-- Usage tracking, model-monitoring pingback, active learning, and other
-  telemetry/usage reporting side effects of the legacy server are not yet
-  ported.
+- Usage tracking, active learning, and other telemetry/usage reporting side
+  effects of the legacy server are not yet ported. The periodic pingback to
+  `METRICS_URL` is ported for inferences served through the legacy routes and
+  Workflows steps; `METRICS_ENABLED=false` turns it off.
 
 ## Running the legacy integration suite against this image
 

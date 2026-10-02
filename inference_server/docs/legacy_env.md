@@ -176,7 +176,7 @@ pool summary lists only `VLLM_PROXY_ENABLED`, `VLLM_BASE_URL` and
 Hosted names from the summary that are legacy-only today and therefore need an
 infra decision rather than a mapping: `GCP_SERVERLESS`,
 `ENFORCE_CREDITS_VERIFICATION`, `MODELS_CACHE_AUTH_*`,
-`METRICS_ENABLED`, `ENABLE_PROMETHEUS`, `REDIS_*`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
+`ENABLE_PROMETHEUS`, `REDIS_*`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
 `VLLM_PROXY_ENABLED`. Each is in the (d) table.
 
 ## (a) Shared names
@@ -279,6 +279,11 @@ definition; the last column is the new reader.
 | `NOTEBOOK_PORT` | `env.py:835` | `configuration.py:442`; `ops/notebook.py` | `9002` |
 | `NOTEBOOK_PASSWORD` | `env.py:832` | `configuration.py:443`; `ops/notebook.py`: JupyterLab token and password, passed as single arguments | legacy `roboflow`; new: unset, and then a random token is generated once per process and returned by `GET /notebook/start` (redirect URL and `browserless` answer). Limitation: with `NUM_WORKERS` above 1 and no password set every worker process has its own token, so a worker that did not start JupyterLab reports a token JupyterLab does not accept; set `NOTEBOOK_PASSWORD` explicitly in that case |
 | `ENABLE_IN_MEMORY_LOGS` | `env.py:838` | `configuration.py:444`; `ops/memory_logs.py`: keeps the last 1000 log records for `GET /logs`, with the values of key-bearing parameters (`api_key`, `token`, `password`, ...) removed before a record is stored | `False` |
+| `METRICS_ENABLED` | `env.py:784-786` | `configuration.py`; `pingback.py`: `False` stops the periodic post to `METRICS_URL` and the recording of inferences for it; forced off under `LAMBDA`, `GCP_SERVERLESS` and offline mode | `True` |
+| `METRICS_INTERVAL` | `env.py:789` | `configuration.py`; `pingback.py`: seconds between posts, and the window of inferences each post carries; recorded inferences are kept for twice this long | `60` |
+| `METRICS_URL` | `env.py:792` | `configuration.py`; `pingback.py`: destination of the post, routed through `SECURE_GATEWAY` when set | `{API_BASE_URL}/inference-stats` |
+| `TINY_CACHE` | `env.py:289` | `configuration.py`; `pingback.py`: `True` records the condensed item (request fields `api_key`, `confidence`, `model_id`, `model_type`, `source`, `source_info`; per prediction `class` and `confidence`); `False` records the full request and response as JSON without their `image` fields (removed when recorded, not when the report is built), unless the item exceeds 8192 values, 128 Ki characters of strings or 256 KiB of JSON, or a response is not a response entity or holds a non-finite number, in which case the condensed item is recorded; strings of the full item are not truncated | `True` |
+| `TAGS` | `env.py:912` | `configuration.py`; `pingback.py`: comma-separated list posted as `tags` | empty |
 
 ### Read by `build_workflows_configuration` (`inference_server/workflows/host.py`)
 
@@ -529,10 +534,7 @@ No new package reads these. They never get an alias or a default row.
 | `MEMORY_CACHE_EXPIRE_INTERVAL` | `env.py:728` | legacy memory cache |
 | `METLO_KEY` | `env.py:924` | legacy AWS-era setting |
 | `METRICS_COLLECTOR_BASE_URL` | `env.py:210` | feeds the `TELEMETRY_*` defaults; usage tracking is a later task |
-| `METRICS_ENABLED` | `env.py:784` | legacy metrics; unread (hosting summary) |
 | `METRICS_INCLUDE_SOURCE_LABELS` | `env.py:569` | legacy Prometheus labels |
-| `METRICS_INTERVAL` | `env.py:789` | legacy metrics |
-| `METRICS_URL` | `env.py:792` | legacy metrics |
 | `MODELS_CACHE_AUTH_CACHE_MAX_SIZE` | `env.py:763` | legacy models-cache auth; unread (hosting summary) |
 | `MODELS_CACHE_AUTH_CACHE_TTL` | `env.py:760` | legacy models-cache auth; unread (hosting summary) |
 | `MODELS_CACHE_AUTH_ENABLED` | `env.py:731` | legacy models-cache auth; unread (hosting summary) |
@@ -572,9 +574,7 @@ No new package reads these. They never get an alias or a default row.
 | `STREAM_MANAGER_MAX_RAM_MB` | `env.py:1431` | `StreamsConfiguration` field; no new package reads the env name today |
 | `STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE` | `env.py:1438` | `StreamsConfiguration` field; no new package reads the env name today |
 | `STUB_CACHE_SIZE` | `env.py:953` | legacy stub model cache |
-| `TAGS` | `env.py:912` | legacy device management |
 | `TENSORRT_CACHE_PATH` | `env.py:915` | legacy ORT TensorRT cache |
-| `TINY_CACHE` | `env.py:289` | legacy inference-result cache |
 | `TRANSIENT_ROBOFLOW_API_ERRORS` | `env.py:1401` | legacy API client |
 | `TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES` | `env.py:1409` | legacy API client |
 | `TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL` | `env.py:1412` | legacy API client |
