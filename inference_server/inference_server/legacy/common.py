@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 import re
+import stat
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 from urllib.parse import urlparse
@@ -13,7 +15,7 @@ import orjson
 import requests
 import tldextract
 from fastapi import Request, Response
-from inference_model_manager.backends.decode import decoded_dims
+from inference_model_manager.backends.decode import decoded_dims, max_decoded_pixels
 from PIL import Image
 from pydantic import BaseModel
 
@@ -28,17 +30,20 @@ from inference_server.configuration import (
 from inference_server.errors import error_response
 from inference_server.framework.input_parsers.image_limits import too_many_images
 from inference_server.framework.input_parsers.url_fetch import (
+    URL_FETCH_MAX_BYTES,
     DestinationPolicy,
     fetch_images_from_urls,
 )
 from inference_server.legacy.errors import LegacyHTTPError
 
 _NPY_MAGIC = b"\x93NUMPY"
+_FILE_CHUNK_BYTES = 64 * 1024
 _BASE64_DATA_TYPE_PATTERN = re.compile(rb"^data:image/[a-zA-Z]+;base64,")
 _IMAGE_ERROR = "Could not load valid image from request."
 _IMAGE_LOAD_ERROR_PREFIX = "Could not load input image. Cause: "
 _UNKNOWN_IMAGE_TYPE_ERROR = "Image declaration contains not recognised image type."
 _LOCAL_FILE_DISABLED_ERROR = "Loading images from local filesystem is disabled."
+_LOCAL_FILE_ERROR = "Could not load image from the local file."
 _RAW_BYTES_ERROR = (
     "Invalid base64 input: the image payload contains raw bytes instead of a "
     "base64-encoded string. Please base64-encode the image before sending."
@@ -52,6 +57,10 @@ _NOT_NDARRAY_ERROR = (
     "Data provided as input could not be decoded into np.ndarray object."
 )
 _NDARRAY_DIMENSIONS_ERROR = "For image given as np.ndarray expected 2 or 3 dimensions."
+_NDARRAY_CHANNELS_ERROR = "For image given as np.ndarray expected 1 or 3 channels."
+_IMAGE_TYPES = frozenset(
+    {"base64", "file", "multipart", "numpy", "numpy_object", "pil", "url"}
+)
 _URL_OFFLINE_ERROR = "Cannot load an image from URL while OFFLINE_MODE is enabled."
 _URL_INPUT_DISABLED_ERROR = (
     "Providing images via URL is not supported in this configuration of `inference`."
@@ -125,22 +134,44 @@ def image_dims(
     return int(width), int(height)
 
 
+def split_image(image: Any) -> tuple[Optional[str], Any]:
+    """Split an image declaration into its kind and value like the legacy server.
+
+    Args:
+        image: Request image entity, ``{"type": ..., "value": ...}`` dict or a
+            bare value.
+
+    Returns:
+        The declared type in lower case and the value. A bare string starting
+        with ``http`` is reported as ``url``; any other bare value has kind
+        ``None`` and is inferred when decoded.
+
+    Raises:
+        LegacyHTTPError: If the declared type is not recognised.
+    """
+    if isinstance(image, dict):
+        image_type, value = image.get("type"), image.get("value")
+    elif isinstance(image, BaseModel):
+        image_type, value = getattr(image, "type", None), getattr(image, "value", None)
+    else:
+        image_type, value = None, image
+    if image_type is None:
+        if isinstance(value, str) and value.startswith("http"):
+            return "url", value
+        return None, value
+    if not isinstance(image_type, str) or image_type.lower() not in _IMAGE_TYPES:
+        raise image_load_error(_UNKNOWN_IMAGE_TYPE_ERROR)
+
+    return image_type.lower(), value
+
+
 def decode_inline_image(image: Any, *, ndarray_ok: bool) -> ImagePayload:
-    image_type = _image_attribute(image, "type")
-    value = _image_attribute(image, "value")
-    if image_type == "url":
-        raise ValueError("url")
-    if image_type == "numpy":
-        raise image_load_error(_NUMPY_UNSUPPORTED_ERROR)
-    if image_type == "numpy_object":
-        return _numpy_object_payload(value, ndarray_ok=ndarray_ok)
-    if image_type == "base64":
-        data = _decode_base64(value)
-        width, height = image_dims(data, not_image_message=_MALFORMED_BASE64_ERROR)
-        return ImagePayload(data, width, height)
-    if image_type == "file" and not ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
-        raise image_load_error(_LOCAL_FILE_DISABLED_ERROR)
-    raise image_load_error(_UNKNOWN_IMAGE_TYPE_ERROR)
+    image_type, value = split_image(image)
+    payload = _inline_payload(
+        image_type, value, ndarray_ok=ndarray_ok, file_budget=_file_budget()
+    )
+
+    return payload
 
 
 async def load_request_images(images: list, *, ndarray_ok: bool) -> list[ImagePayload]:
@@ -150,14 +181,18 @@ async def load_request_images(images: list, *, ndarray_ok: bool) -> list[ImagePa
     payloads: list[Optional[ImagePayload]] = [None] * len(images)
     url_positions: list[int] = []
     urls: list[str] = []
+    file_budget = _file_budget()
     for position, image in enumerate(images):
-        if _image_attribute(image, "type") == "url":
+        image_type, value = split_image(image)
+        if image_type == "url":
             if OFFLINE_MODE or not ALLOW_URL_INPUT:
                 raise image_load_error(_url_input_refused_message())
             url_positions.append(position)
-            urls.append(_image_attribute(image, "value"))
+            urls.append(value)
         else:
-            payloads[position] = decode_inline_image(image, ndarray_ok=ndarray_ok)
+            payloads[position] = _inline_payload(
+                image_type, value, ndarray_ok=ndarray_ok, file_budget=file_budget
+            )
     if urls:
         fetched, fetch_error = await fetch_url_images(urls)
         if fetch_error is not None:
@@ -244,24 +279,137 @@ def _orjson_default(obj: Any) -> Any:
     return obj
 
 
-def _image_attribute(image: Any, name: str) -> Any:
-    if isinstance(image, dict):
-        return image.get(name)
-    return getattr(image, name, None)
+def _file_budget() -> dict:
+    return {"left": configuration.MAX_BODY_BYTES}
+
+
+def _inline_payload(
+    image_type: Optional[str], value: Any, *, ndarray_ok: bool, file_budget: dict
+) -> ImagePayload:
+    if image_type == "url":
+        raise ValueError("url")
+    if image_type == "numpy":
+        raise image_load_error(_NUMPY_UNSUPPORTED_ERROR)
+    if image_type == "numpy_object":
+        return _numpy_object_payload(value, ndarray_ok=ndarray_ok)
+    if image_type == "base64":
+        data = _decode_base64(value)
+        width, height = image_dims(data, not_image_message=_MALFORMED_BASE64_ERROR)
+        return ImagePayload(data, width, height)
+    if image_type == "file":
+        if not ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
+            raise image_load_error(_LOCAL_FILE_DISABLED_ERROR)
+        return _local_file_payload(value, budget=file_budget)
+    if image_type is None:
+        return _inferred_payload(value, ndarray_ok=ndarray_ok, file_budget=file_budget)
+    raise image_load_error(_UNKNOWN_IMAGE_TYPE_ERROR)
 
 
 def _numpy_object_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:
-    array = np.asarray(value)
-    if array.ndim < 2:
-        if not isinstance(value, np.ndarray):
-            raise image_load_error(_NOT_NDARRAY_ERROR)
+    if not isinstance(value, np.ndarray):
+        raise image_load_error(_NOT_NDARRAY_ERROR)
+    if value.ndim not in (2, 3):
         raise image_load_error(_NDARRAY_DIMENSIONS_ERROR)
-    width, height = int(array.shape[1]), int(array.shape[0])
+    if value.ndim == 3 and value.shape[-1] not in (1, 3):
+        raise image_load_error(_NDARRAY_CHANNELS_ERROR)
+
+    width, height = int(value.shape[1]), int(value.shape[0])
     if ndarray_ok:
         return ImagePayload(value, width, height)
     buffer = io.BytesIO()
-    np.save(buffer, np.ascontiguousarray(array), allow_pickle=False)
+    np.save(buffer, np.ascontiguousarray(value), allow_pickle=False)
     return ImagePayload(buffer.getvalue(), width, height)
+
+
+def _local_file_payload(value: Any, *, budget: dict) -> ImagePayload:
+    limit = min(URL_FETCH_MAX_BYTES, budget["left"])
+    try:
+        data = _read_regular_file(value, max_bytes=limit + 1)
+    except Exception as error:
+        raise image_load_error(_LOCAL_FILE_ERROR) from error
+    if len(data) > URL_FETCH_MAX_BYTES:
+        raise LegacyHTTPError(
+            413, f"image file exceeds {URL_FETCH_MAX_BYTES // (1024 * 1024)}MB limit"
+        )
+    if len(data) > limit:
+        raise LegacyHTTPError(
+            413,
+            "combined size of image files exceeds "
+            f"{configuration.MAX_BODY_BYTES} byte limit",
+        )
+
+    budget["left"] -= len(data)
+    try:
+        payload = _decoded_image_payload(data)
+    except Exception as error:
+        raise image_load_error(_LOCAL_FILE_ERROR) from error
+
+    return payload
+
+
+def _read_regular_file(value: Any, *, max_bytes: int) -> bytes:
+    descriptor = os.open(os.fsdecode(value), os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError("not a regular file")
+
+        data = bytearray()
+        while len(data) < max_bytes:
+            chunk = os.read(descriptor, min(_FILE_CHUNK_BYTES, max_bytes - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+    finally:
+        os.close(descriptor)
+
+    return bytes(data)
+
+
+def _decoded_image_payload(data: bytes) -> ImagePayload:
+    ceilings = [
+        ceiling for ceiling in (max_decoded_pixels(), Image.MAX_IMAGE_PIXELS) if ceiling
+    ]
+    with Image.open(io.BytesIO(data)) as image:
+        if ceilings and image.width * image.height > min(ceilings):
+            raise ValueError("image exceeds the decoded pixel ceiling")
+        image.load()
+    width, height = image_dims(data)
+
+    return ImagePayload(data, width, height)
+
+
+def _inferred_payload(
+    value: Any, *, ndarray_ok: bool, file_budget: dict
+) -> ImagePayload:
+    if isinstance(value, (np.ndarray, np.generic)):
+        return _numpy_object_payload(value, ndarray_ok=ndarray_ok)
+    if (
+        isinstance(value, str)
+        and ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM
+        and os.path.isfile(value)
+    ):
+        return _local_file_payload(value, budget=file_budget)
+    for read in (_decode_base64, _encoded_bytes, _buffer_bytes):
+        try:
+            payload = _decoded_image_payload(read(value))
+        except Exception:
+            continue
+        return payload
+    raise image_load_error(_NUMPY_UNSUPPORTED_ERROR)
+
+
+def _encoded_bytes(value: Any) -> bytes:
+    if not isinstance(value, (bytes, bytearray, memoryview)):
+        raise TypeError("not bytes")
+
+    return bytes(value)
+
+
+def _buffer_bytes(value: Any) -> bytes:
+    value.seek(0)
+    data = value.read()
+
+    return data
 
 
 def _decode_base64(value: Any) -> bytes:

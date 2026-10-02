@@ -17,10 +17,10 @@ from inference_server.legacy.bridge import Route, SyncLegacyBridge, resolved_mod
 from inference_server.legacy.common import (
     ImagePayload,
     _error_from_response,
-    _image_attribute,
     as_image_list,
     decode_inline_image,
     image_dims,
+    split_image,
 )
 from inference_server.legacy.entities import (
     ClassificationInferenceRequest,
@@ -618,8 +618,9 @@ class GatewayModelsProvider:
             raise _error_from_response(limit_error)
         payloads: List[ImagePayload] = []
         for image in images:
-            if _image_attribute(image, "type") == "url":
-                data = self._bridge.fetch_image(_image_attribute(image, "value"))
+            image_type, value = split_image(image)
+            if image_type == "url":
+                data = self._bridge.fetch_image(value)
                 width, height = image_dims(data)
                 payloads.append(ImagePayload(data, width, height))
                 continue

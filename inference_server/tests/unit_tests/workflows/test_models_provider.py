@@ -661,3 +661,59 @@ def test_provider_load_failure_without_a_description_is_a_broken_package(
 
     assert exc.value.status_code == 500
     assert exc.value.message == "Model package is broken."
+
+
+def _png_bytes():
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (6, 4)).save(buffer, format="PNG")
+
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("declared_type", ["file", "FILE"])
+def test_run_object_detection_loads_local_file_image(
+    tmp_path, monkeypatch, declared_type
+):
+    monkeypatch.setattr(
+        "inference_server.legacy.common.ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM",
+        True,
+    )
+    bridge = _od_bridge()
+    provider = GatewayModelsProvider(bridge, api_key="req-key")
+    provider.add_model("ds/1", "k")
+    image_path = tmp_path / "image.png"
+    image_path.write_bytes(_png_bytes())
+
+    out = provider.run_object_detection(
+        "ds/1",
+        [{"type": declared_type, "value": str(image_path)}],
+        api_key="k",
+        confidence=0.5,
+    )
+
+    assert out[0]["image"] == {"width": 6, "height": 4}
+    assert bridge.calls[0][3] == [_png_bytes()]
+
+
+def test_run_object_detection_fetches_url_image_declared_in_upper_case():
+    image = {"type": "URL", "value": "https://example.com/a.png"}
+    bridge = _od_bridge()
+    fetched = []
+
+    def _fetch_image(url):
+        fetched.append(url)
+        return _png_bytes()
+
+    bridge.fetch_image = _fetch_image
+    provider = GatewayModelsProvider(bridge, api_key="req-key")
+    provider.add_model("ds/1", "k")
+
+    out = provider.run_object_detection("ds/1", [image], api_key="k", confidence=0.5)
+
+    assert fetched == ["https://example.com/a.png"]
+    assert out[0]["image"] == {"width": 6, "height": 4}
+    assert bridge.calls[0][3] == [_png_bytes()]

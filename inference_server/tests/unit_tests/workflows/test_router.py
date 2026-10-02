@@ -86,6 +86,52 @@ def test_run_workflow_with_object_detection_block(legacy_client, fake_stat):
     assert predictions["image"] == {"width": 8, "height": 6}
 
 
+def test_workflow_image_input_ignores_the_declared_type_like_legacy(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    response = legacy_client(_od_gateway()).post(
+        "/workflows/run",
+        json={
+            "specification": OD_WF,
+            "inputs": {"image": {"type": "BASE64", "value": _jpeg_b64()}},
+            "api_key": "k",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    predictions = response.json()["outputs"][0]["predictions"]
+    assert predictions["image"] == {"width": 8, "height": 6}
+
+
+@pytest.mark.parametrize("declared_type", ["file", "base64"])
+def test_workflow_image_input_never_reads_a_local_path_like_legacy(
+    legacy_client, fake_stat, tmp_path, declared_type
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _od_gateway()
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(base64.b64decode(_jpeg_b64()))
+
+    response = legacy_client(gateway).post(
+        "/workflows/run",
+        json={
+            "specification": OD_WF,
+            "inputs": {"image": {"type": declared_type, "value": str(image_path)}},
+            "api_key": "k",
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["message"].endswith(
+        "Detected runtime parameter `image` defined as `WorkflowImage` that is "
+        "invalid. Failed on input validation. Details: NumPy image type is not "
+        "supported in this configuration of `inference`."
+    )
+    assert [call for call in gateway.calls if call[0] == "infer"] == []
+
+
 def _od_gateway():
     detections = SimpleNamespace(
         xyxy=np.array([[1, 1, 3, 5]], dtype=float),

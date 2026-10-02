@@ -200,3 +200,94 @@ def test_catch_all_image_source_follows_legacy_order(
     if body is not None:
         assert response.json() == body
     assert seen == fetched
+
+
+FORM_CONTENT_TYPE = {"Content-Type": "application/x-www-form-urlencoded"}
+
+
+def test_catch_all_image_type_is_matched_in_any_letter_case(legacy_client, fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _gw()
+
+    response = legacy_client(gateway).post(
+        "/ds/1?api_key=k&image_type=BASE64",
+        content=base64.b64encode(_jpeg()),
+        headers=FORM_CONTENT_TYPE,
+    )
+
+    assert response.status_code == 200, response.text
+    assert [call[4] for call in gateway.calls if call[0] == "infer"] == [_jpeg()]
+
+
+@pytest.mark.parametrize("image_type", ["file", "FILE"])
+def test_catch_all_loads_local_file_named_in_the_body(
+    legacy_client, fake_stat, tmp_path, monkeypatch, image_type
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _gw()
+    client = legacy_client(gateway)
+    monkeypatch.setattr(
+        "inference_server.legacy.common.ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM",
+        True,
+    )
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(_jpeg())
+
+    response = client.post(
+        f"/ds/1?api_key=k&image_type={image_type}",
+        content=str(image_path).encode(),
+        headers=FORM_CONTENT_TYPE,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["image"] == {"width": 8, "height": 6}
+    assert [call[4] for call in gateway.calls if call[0] == "infer"] == [_jpeg()]
+
+
+def test_catch_all_refuses_local_file_when_loading_is_disabled(
+    legacy_client, fake_stat, tmp_path, monkeypatch
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    client = legacy_client(_gw())
+    monkeypatch.setattr(
+        "inference_server.legacy.common.ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM",
+        False,
+    )
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(_jpeg())
+
+    response = client.post(
+        "/ds/1?api_key=k&image_type=file",
+        content=str(image_path).encode(),
+        headers=FORM_CONTENT_TYPE,
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": f"{IMAGE_LOAD_PREFIX}Loading images from local filesystem is "
+        "disabled."
+    }
+
+
+@pytest.mark.parametrize("target", ["missing.jpg", "notes.txt", "."])
+def test_catch_all_refuses_unreadable_local_file_with_one_answer(
+    legacy_client, fake_stat, tmp_path, monkeypatch, target
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    client = legacy_client(_gw())
+    monkeypatch.setattr(
+        "inference_server.legacy.common.ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM",
+        True,
+    )
+    (tmp_path / "notes.txt").write_text("hello")
+
+    response = client.post(
+        "/ds/1?api_key=k&image_type=file",
+        content=str(tmp_path / target).encode(),
+        headers=FORM_CONTENT_TYPE,
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": f"{IMAGE_LOAD_PREFIX}Could not load image from the local file."
+    }

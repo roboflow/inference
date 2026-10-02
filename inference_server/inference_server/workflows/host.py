@@ -444,6 +444,9 @@ from inference_server.workflows.errors import (  # noqa: E402
 
 _URL_FETCH_BRIDGE_TIMEOUT_S = URL_FETCH_TIMEOUT_S + 5
 _IMAGE_LOADING_CONTEXT = "workflow_execution | image_loading"
+_NUMPY_INPUT_REFUSAL = (
+    "NumPy image type is not supported in this configuration of `inference`."
+)
 _STEP_EXECUTION_CONTEXT = "workflow_execution | step_execution"
 _MODEL_ACCESS_ERROR_MESSAGES = {
     402: "Not enough credits to execute step {step_name}. Verify your workspace billing page.",
@@ -1013,6 +1016,21 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
                 context=_IMAGE_LOADING_CONTEXT,
             )
         return decode_encoded_image_bytes(images[0], cv_imread_flags=cv_imread_flags)
+
+    def decode_string(
+        self,
+        value: Union[str, bytes, bytearray],
+        cv_imread_flags: int = cv2.IMREAD_COLOR,
+    ) -> Tuple[np.ndarray, bool]:
+        try:
+            decoded = super().decode_string(value, cv_imread_flags=cv_imread_flags)
+        except WorkflowImageLoadError as error:
+            raise WorkflowImageLoadError(
+                public_message=_NUMPY_INPUT_REFUSAL,
+                context=_IMAGE_LOADING_CONTEXT,
+            ) from error
+
+        return decoded
 
     def ensure_local_file_load_allowed(self, path: str) -> None:
         if not configuration.ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
