@@ -1,7 +1,5 @@
 # Implementation plan: honour `tradeoff_factor` for instance segmentation
 
-**Author:** Michał Taraszewski
-
 **Related issue / PR:** _none yet — to be linked from the `#discuss-inference-release` thread_
 
 **Status:** draft. Supersedes `instance-seg-tradeoff-factor.md`, whose headline figures combined two
@@ -192,12 +190,21 @@ and 2.5× at `t=0.25`, lossless and with no API change.
 
 ### What is already done
 
-The **dense / polygon path works end to end**: request → `map_inference_kwargs` collapses the enum
-onto one factor → `align_instance_segmentation_results` interpolates the resize target →
-`mask_size` travels with the prediction → polygons are scaled back into image space before being
-reported. Coverage on these functions went from 31 tests to 77 in `inference_models` plus 37 in the
-adapter, including characterization tests that pin geometry the previous suite structurally could
-not detect.
+**Both paths work end to end.** A request carrying `mask_decode_mode` / `tradeoff_factor` reaches
+`map_inference_kwargs`, which collapses the enum onto one factor and consumes both source keys. The
+factor reaches `align_instance_segmentation_results` and
+`align_instance_segmentation_results_to_rle_masks` across all six model families — `yolov5`,
+`yolov7`, `yolov8`, `yolo26`, `yolact`, `rfdetr` — on ONNX, TorchScript and TensorRT backends.
+`mask_size` travels with the prediction, polygons are scaled back into image space before being
+reported, and the RLE wire format declares the grid it encoded.
+
+Block versions up to v4 pin the outbound request to `accurate` / `1.0`, so existing workflows are
+unchanged; `@v5` is the version that forwards what the caller set.
+
+Test counts at the time of writing: **1942** in `inference_models`, **1265** in `tests/workflows`,
+**117** in `tests/inference/unit_tests/core/models`. The 12 remaining `inference_models` failures
+are environmental — seven need `triton`, which ships Linux-only wheels, and five compare a
+`realpath`-resolved path against an unresolved one and so cannot pass on macOS.
 
 Everything that remains is gated on the deferred RLE wire-format decision (Q3).
 
@@ -219,25 +226,102 @@ mismatched RLE (`supervision/detection/utils/internal.py:133-138`, 0.30.6), so s
 consumers are unaffected. Direct `pycocotools` integrators are the exposed group, which is what the
 O3 experiment below quantifies.
 
-### Phase 6, in dependency order
+### Phase 6 — status
+
+Steps 1, 2 and 4 are built. Steps 3 and 5 remain and are deliberately deferred.
+
+#### Built
 
 1. Thread `masks_resolution_factor` into `align_instance_segmentation_results_to_rle_masks`,
    mirroring the dense path. The per-instance generator has no chunking, so it is the simpler of
    the two.
 2. `to_coco_rle_masks()` emits `mask_size` as the COCO `size`. One line, and the point of no
    return — everything before it is reversible.
-3. **Teach the Triton kernel the factor rather than gating it.** `triton_postprocess.py` already
+#### Deferred
+
+3. **Teach the Triton kernel the factor rather than gating it.** *Not done — it is gated instead.*
+   `_unsupported_triton_postprocess_reason` now returns `mask_resolution_factor_unsupported` when
+   the factor is not `1.0`, so the fused path defers to the eager one rather than silently ignoring
+   the request. That is correct but leaves the production GPU path unimproved, which is the one
+   place this work knowingly leaves value on the table. `triton_postprocess.py` already
    parameterises its resize tables by `output_size` (`:273-285`), so passing a reduced size through
    is close to free. Gating instead leaves the production GPU path — the entire edge argument —
    unimproved, and emits a `RuntimeWarning` per image. Gate only as a fallback if this overruns.
 4. New block version (`vN` **and** `vN_tensor`), per the team's standing mechanism.
-5. Version skew: an absent `mask_size` in a response means an old server, so default to the input
-   size. Treat the factor as a **performance hint, never an error**, so a new block version still
-   works against an older backend.
+5. Version skew: *not done.* An absent `mask_size` in a response means an old server, so the
+   client should default to the input size and treat the factor as a **performance hint, never an
+   error**, so a new block version still works against an older backend. Needed before the remote
+   execution path can be relied on across mixed backend versions.
 
 Note the Triton gate deliberately belongs here and not earlier: until step 1 lands, the fused and
 eager paths both ignore the factor and behave identically, so a gate added now would guard against
 a divergence that does not yet exist and its test would assert a fallback that changes nothing.
+
+### Deferred work, why, and its impact
+
+Two items from phase 6 were not built. Neither affects correctness; one has a material performance
+consequence that must be stated before anyone enables the knob on GPU.
+
+**D1 — The Triton kernel is gated, not taught.**
+
+*What was done instead.* `_unsupported_triton_postprocess_reason` returns
+`mask_resolution_factor_unsupported` when the factor is not `1.0`, so RF-DETR's fused CUDA
+post-process defers to the eager path rather than silently ignoring the request.
+
+*Why deferred.* The kernel emits sparse RLE run records directly from CUDA. Honouring a reduced
+target means changing its resize weight tables, ROI bounds and record emission, then proving
+numerical equivalence against the eager path — on hardware. No CUDA device was available, so the
+alternative was shipping an unverified GPU kernel change.
+
+*Impact on correctness:* none. The eager path produces the right answer at any factor.
+
+*Impact on performance: potentially negative on CUDA, and unmeasured.* The fused path exists
+precisely because the dense intermediate is the expensive part — its own docstring says so. Gating
+means that on RF-DETR-seg with CUDA, `t = 1.0` runs the **fast** fused path while `t < 1` falls back
+to the **slow** per-instance eager generator at reduced resolution. Whether reduced-resolution-eager
+beats full-resolution-fused is an open empirical question. **It is entirely possible that enabling
+the knob makes RF-DETR-seg slower on GPU.** Nothing measured here can settle it, because the fused
+path requires `triton`, which ships Linux-only wheels.
+
+*Recommended next step.* Before documenting the knob for GPU users, measure the four combinations on
+one CUDA device: fused at `t=1.0`, eager at `t=1.0`, eager at `t=0.25`, and — once taught — fused at
+`t=0.25`. If eager-at-0.25 does not beat fused-at-1.0, the knob should be documented as
+CPU-and-Jetson-only until the kernel is taught. Note the fused path already bails on
+`padding_unsupported`, `static_crop_unsupported` and `>4096 px`, so letterboxed 4K and static crops
+are on the eager path regardless, and are unaffected by this.
+
+**D2 — Remote execution across mixed backend versions.**
+
+*Scope — narrower than it first appears.* `run_locally` calls `self._model_manager` in-process, so
+the block and the model layer are the same installation: a deployment that has `@v5` necessarily has
+the code that honours the factor, because they ship in one image with `roboflow-workflows` pinned by
+`requirements/requirements.workflows.txt`. **Skew is structurally impossible for local execution**,
+which is the majority of traffic. Only `run_remotely`, which goes out over `InferenceHTTPClient` to
+an independently versioned server, can reach an older model layer.
+
+Note the execution-engine guard does not cover this: `get_execution_engine_compatibility` returns
+`">=1.3.0,<2.0.0"`, which gates engine schema semantics, not whether the server's post-processing
+honours a parameter. A server on a compatible engine with an older `inference_models` accepts the
+block and drops the factor.
+
+*What is missing.* On that remote path, a client has no way to tell whether the server honoured the
+factor. The response carries `mask_size`, so presence of that field distinguishes a new server from
+an old one, but no client reads it.
+
+*Why deferred.* It depends on O2, which is recommended but not ratified — response-shape sniffing
+versus an explicit version field — and building on an unratified decision invites rework. Scope was
+the second reason, and the weaker one.
+
+*Impact on correctness:* none. An older backend returns full-resolution masks, which are valid.
+
+*Impact on performance:* the request is silently not honoured. A `@v5` block asking for `t = 0.25`
+against an older backend gets no speedup, no error and no signal — a plausible "why is this slow"
+ticket during any rollout window where client and server versions differ.
+
+*Recommended next step.* Ratify O2, then: absent `mask_size` ⇒ assume the old contract and default
+to the input size; present ⇒ use it. Treat the factor as a **performance hint, never an error**, and
+log once per session when it was not honoured. Roughly half a day, CPU-testable, and it closes a
+silent-failure mode.
 
 ### Unblocked work that should not wait
 
@@ -349,7 +433,10 @@ therefore not just safe, it is the fix.
 on an exact 4× grid, so it understates boundary loss. A real contour will lose fidelity; that is
 what the `AP_mask` curve measures, and it is a separate question from whether decoding breaks.
 
-**O4 — The GPU path: gate the fused kernel, or teach it `t`?**
+**O4 — The GPU path: decided — gated, with teaching the kernel as a follow-up.**
+*Resolved during implementation.* `_unsupported_triton_postprocess_reason` returns
+`mask_resolution_factor_unsupported` when the factor is not `1.0`, so the fused path defers to
+the eager one. Chosen for scope, not merit: the better answer is below and remains open.
 *Investigation:* `models/rfdetr/triton_postprocess.py` already implements a **lossless** version of
 this optimisation — *"asks Triton to interpolate only the active mask region and emit sparse RLE run
 records directly"* — and already parameterises resize tables by `output_size` (`:273-285`). Forcing
@@ -659,10 +746,11 @@ def test_reduced_resolution_forces_eager_fallback(self) -> None:
 
 **Commit 5.**
 
-### Phase 6 — RLE parity
+### Phase 6 — RLE parity *(done)*
 
-Blocked on the deferred wire-format decision. Until then the RLE path keeps `t=1.0` and phase 0's
-characterization tests guard it. The evidence experiment (plan O3) belongs here:
+The wire-format question was settled by measurement rather than by waiting — see O3. The RLE
+generator now takes the factor, `to_coco_rle_masks` declares the encoded grid, and the Triton gate
+defers when the factor is not `1.0`. The evidence experiment that unblocked it:
 
 ```python
 @pytest.mark.parametrize("decoder", ["pycocotools", "supervision"])
