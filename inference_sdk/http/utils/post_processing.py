@@ -357,6 +357,18 @@ def adjust_points_coordinates_to_client_scaling_factor(
     return result
 
 
+def split_image_embeddings(responses: Union[dict, List[dict]]) -> List[dict]:
+    """Keep one result per image and retain embedding-space metadata."""
+    if isinstance(responses, list):
+        return [
+            item for response in responses for item in split_image_embeddings(response)
+        ]
+    return [
+        {**responses, "embeddings": [embedding]}
+        for embedding in responses["embeddings"]
+    ]
+
+
 def combine_clip_embeddings(embeddings: Union[dict, List[dict]]) -> List[dict]:
     """Combine clip embeddings.
 
