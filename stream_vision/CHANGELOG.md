@@ -10,14 +10,20 @@ This is the canonical changelog for the `streamvision` package.
 - `python -m streamvision --host-factory ...` launches the stream manager standalone (needs the `webrtc` extra).
 - `scripts/streamvision_isolation_probe.py` verifies an installed wheel runs without `inference`.
 - `nvdec` extra installs PyNvVideoCodec for NVIDIA hardware decoding of video files; messages shown when it is missing name the extra.
+- WebRTC worker engine (`streamvision.webrtc_worker`: `webrtc`, `entities`, `serializers`, `sources`, `utils`) moved here from `inference.core.interfaces.webrtc_worker`; it reaches its host through `streamvision.webrtc_worker.host`.
+- WebRTC worker watchdog and Modal session runner (`streamvision.webrtc_worker.watchdog`, `.modal_session`) moved here from `inference.core.interfaces.webrtc_worker`.
 
 ### Changed
 
 - `roboflow-workflows` moved from base dependencies to the `workflows` extra; install `streamvision[workflows]` for `InferencePipeline.init_with_workflow` and the stream manager.
 - `StreamsConfiguration` manager address fields default to `None`; the manager then reads `STREAM_MANAGER_HOST`, `STREAM_MANAGER_PORT` and `STREAM_MANAGER_SOCKET_TIMEOUT`.
 - Requires `supervision>=0.30.6,<0.31.0` (was `>=0.29.0,<0.30.0`); the `workflows` extra requires `roboflow-workflows>=0.2.4rc3`.
+- The `webrtc` extra installs `orjson` and `requests`.
+- `StreamsConfiguration` carries the WebRTC worker settings (data channel, preview compression, STUN, RTSP placeholder, time limits, Modal watchdog, session heartbeat and usage quota).
 
 ### Fixed
+
+- Declare Pillow directly for camera imports and Torch in the `workflows` and supported-platform `nvdec` extras; GPU decoding still requires a compatible CUDA-enabled Torch build.
 
 - The stream manager no longer blocks forever on a command sent to a pipeline process that has exited; the caller gets a `not_found` error.
 - `GstreamerCudaVideoFrameProducer` decodes container files such as MP4 and MKV; the previous pipeline never produced a frame for them.
