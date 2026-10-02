@@ -2,64 +2,9 @@
 
 ## Unreleased
 
-### Fixed
-
-- Bumped `urllib3` to version `2.8.0` or above (GHSA-8988-9cw3-xx77, GHSA-vxq7-64xx-v4gw, GHSA-gh4c-6fx4-qh6g)
-- Bumped `tornado` in the `docs` extra to version `6.5.10` or above (GHSA-c2m8-h5v5-343r, GHSA-chx6-46f5-w4vp, GHSA-3hv7-mjh2-fv65)
-- Bumped `accelerate` to version `1.15.0` or above (GHSA-4j2p-28q2-5m79 has no upstream fix; the affected checkpoint-loading helpers are not used by `inference-models`)
-- Zero-detection results reported a mask shape the populated path would never
-  produce, because the empty branch resolved its target from the padded grid
-  while the populated path unpadded first.
-- RF-DETR's Triton post-process dispatcher dropped the resolution factor, so
-  the fused path silently ignored it.
-
-- RF-DETR Torch and ONNX object detection now use the five-stage execution plan,
-  sharing Triton Universal preprocessing, reference fallback, compatibility checks
-  and per-request selection metadata with TensorRT.
-- Explicit `pillow-simd-v1` preprocessing with isolated Pillow-SIMD >=12.3.0.post0,
-  Linux x86/SSE4.1 compatibility checks and numerical-difference metadata.
-- RF-DETR TensorRT models accept a typed or canonical mapping execution plan
-  through the `execution_plan` loader argument, replacing
-  `rfdetr_execution_plan`. The old name remains a deprecated alias until
-  October 24, 2026, and emits a `FutureWarning` directing callers to
-  `execution_plan`. Supplying the alias together with a non-`None`
-  `execution_plan` raises a `TypeError` to avoid silently discarding either
-  argument. Execution plans support canonical
-  parsing and strict profiling validation, while versioned `optimization_runtime_metadata`
-  reports requested, effective, and request-time stage selections together
-  with fallback details.
-
-### Added
-
-- `masks_resolution_factor` on instance-segmentation post-processing, in
-  `[0.0, 1.0]`. `1.0` (the default) resizes masks to the image as before;
-  `0.0` leaves them on the model's own grid; values between interpolate the
-  resize target. Threaded through all six instance-segmentation families on
-  both the dense and RLE paths, and through the ONNX, TorchScript and TensorRT
-  backends. Default output is unchanged.
-- `mask_size` on `InstanceDetections` and `InstancesRLEMasks`, recording the
-  grid the masks live on. Each defaults to the value it effectively had before,
-  so existing construction is unaffected.
-- `scale_polygons_to_image`, lifting contour coordinates from mask space into
-  image space.
-
-### Changed
-
-- `InstancesRLEMasks.to_coco_rle_masks()` now declares the grid the counts were
-  encoded on rather than the image size. These agree unless a resolution factor
-  below `1.0` is used; when they differ, declaring the image size made
-  `pycocotools` reinterpret the runs without raising.
-- `InstanceDetections.to_supervision()` restores the image grid when masks are
-  reduced, since `sv.Detections.mask` is documented as matching the image and
-  its annotators index the scene with it.
-- `InstanceDetections.__iter__` emits the encoded grid in the COCO `size` field.
-- An unknown `mask_decode_mode` now raises `InvalidMaskDecodeArgument` on the
-  `inference_models` path, matching the legacy path, which previously accepted
-  any value.
-
 ---
 
-## `0.39.0`
+## `0.39.1`
 
 ### Added
 
@@ -84,6 +29,46 @@
   coremltools re-resolves models that were cached on another backend. On an M4 Max, end to end per image: RF-DETR Nano 10 ms, Large 19 ms and Seg-Nano
   11 ms (ONNX Runtime ML Program: 13 / 27 / 22 ms; CPU: 49 / 200 / 89 ms), with COCO AP within 0.01
   of the CPU path. Packages load in 0.3-0.4 s with no compile step.
+
+### Changed
+
+- RF-DETR ONNX models on Apple Silicon run CoreML as an ML Program on the GPU
+  (`ModelFormat=MLProgram`, `MLComputeUnits=CPUAndGPU`) with onnxruntime 1.21+,
+  instead of onnxruntime's NeuralNetwork default, which cannot run LayerNorm, GELU
+  or GridSample and split the graph into ~100 CoreML/CPU partitions. On an M4 Max,
+  RF-DETR Nano goes from 72 ms to 16 ms per image end to end (CPU-only: 61 ms), with
+  COCO mAP unchanged. The compiled model is cached in the package's `coreml_cache/`
+  directory, keyed by the model file so replaced weights compile again: the first load
+  compiles for about 20 s, later loads take 0.2 s instead of 5 s. If CoreML cannot
+  compile the model with these options, the session falls back to onnxruntime's default
+  CoreML configuration, as before. Configure with `INFERENCE_MODELS_COREML_MODEL_FORMAT`,
+  `INFERENCE_MODELS_COREML_COMPUTE_UNITS` (both validated) and
+  `INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED`.
+
+### Fixed
+
+- CLIP ONNX and PyTorch models now raise `ModelInputError` when text exceeds the
+  tokenizer's context length, allowing HTTP endpoints to return 400 instead of
+  500 with guidance to shorten the text. The public error message does not echo
+  the input text; unrelated runtime errors continue to propagate unchanged.
+- RF-DETR Core ML loaders validate the model's actual input dimensions before
+  compilation and runtime loading, preserving input-size alignment when package
+  metadata disagrees with the model.
+- RF-DETR ONNX models (object detection, instance segmentation, keypoints) use the ONNX model's static
+  input size when the package's `inference_config.json` declares a different one, and log a warning.
+  Some registered packages carry a config whose training size does not match the exported weights
+  (for example 640 declared, 384 exported), which made every inference call fail. The
+  `rf_detr_max_input_resolution` limit now applies to the model's input size.
+- Bumped `urllib3` to version `2.8.0` or above (GHSA-8988-9cw3-xx77, GHSA-vxq7-64xx-v4gw, GHSA-gh4c-6fx4-qh6g)
+- Bumped `tornado` in the `docs` extra to version `6.5.10` or above (GHSA-c2m8-h5v5-343r, GHSA-chx6-46f5-w4vp, GHSA-3hv7-mjh2-fv65)
+- Bumped `accelerate` to version `1.15.0` or above (GHSA-4j2p-28q2-5m79 has no upstream fix; the affected checkpoint-loading helpers are not used by `inference-models`)
+
+---
+
+## `0.39.0`
+
+### Added
+
 - RF-DETR Torch and ONNX object detection now use the five-stage execution plan,
   sharing Triton Universal preprocessing, reference fallback, compatibility checks
   and per-request selection metadata with TensorRT.
@@ -102,37 +87,12 @@
 
 ### Changed
 
-- RF-DETR ONNX models on Apple Silicon run CoreML as an ML Program on the GPU
-  (`ModelFormat=MLProgram`, `MLComputeUnits=CPUAndGPU`) with onnxruntime 1.21+,
-  instead of onnxruntime's NeuralNetwork default, which cannot run LayerNorm, GELU
-  or GridSample and split the graph into ~100 CoreML/CPU partitions. On an M4 Max,
-  RF-DETR Nano goes from 72 ms to 16 ms per image end to end (CPU-only: 61 ms), with
-  COCO mAP unchanged. The compiled model is cached in the package's `coreml_cache/`
-  directory, keyed by the model file so replaced weights compile again: the first load
-  compiles for about 20 s, later loads take 0.2 s instead of 5 s. If CoreML cannot
-  compile the model with these options, the session falls back to onnxruntime's default
-  CoreML configuration, as before. Configure with `INFERENCE_MODELS_COREML_MODEL_FORMAT`,
-  `INFERENCE_MODELS_COREML_COMPUTE_UNITS` (both validated) and
-  `INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED`.
 - Reference RF-DETR NumPy preprocessing swaps BGR/RGB channels after resizing,
   preserving pixel values while avoiding a full-resolution channel copy.
 - Removed the unused `threaded-exact-v1` RF-DETR preprocessor and its worker-count options.
 
 ### Fixed
 
-- CLIP ONNX and PyTorch models now raise `ModelInputError` when text exceeds the
-  tokenizer's context length, allowing HTTP endpoints to return 400 instead of
-  500 with guidance to shorten the text. The public error message does not echo
-  the input text; unrelated runtime errors continue to propagate unchanged.
-
-- RF-DETR Core ML loaders validate the model's actual input dimensions before
-  compilation and runtime loading, preserving input-size alignment when package
-  metadata disagrees with the model.
-- RF-DETR ONNX models (object detection, instance segmentation, keypoints) use the ONNX model's static
-  input size when the package's `inference_config.json` declares a different one, and log a warning.
-  Some registered packages carry a config whose training size does not match the exported weights
-  (for example 640 declared, 384 exported), which made every inference call fail. The
-  `rf_detr_max_input_resolution` limit now applies to the model's input size.
 - RF-DETR Triton preprocessing no longer falls back for dataset-version resize
   metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
   flags disabling already-inactive crop, contrast, and grayscale transforms.
