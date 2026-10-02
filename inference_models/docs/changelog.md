@@ -52,6 +52,9 @@
 
 ### Fixed
 
+- RF-DETR Core ML loaders validate the model's actual input dimensions before
+  compilation and runtime loading, preserving input-size alignment when package
+  metadata disagrees with the model.
 - RF-DETR ONNX models (object detection, instance segmentation, keypoints) use the ONNX model's static
   input size when the package's `inference_config.json` declares a different one, and log a warning.
   Some registered packages carry a config whose training size does not match the exported weights

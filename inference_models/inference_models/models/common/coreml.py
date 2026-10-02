@@ -7,7 +7,7 @@ import tempfile
 import threading
 import zipfile
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 from filelock import FileLock
 
@@ -87,6 +87,8 @@ class CoreMLModel:
 def load_coreml_model(
     mlpackage_path: str,
     compute_units: str = INFERENCE_MODELS_COREML_COMPUTE_UNITS,
+    *,
+    validate_signature: Optional[Callable[[CoreMLModelSignature], None]] = None,
 ) -> CoreMLModel:
     """Load a ``.mlpackage`` bundle with Core ML on the configured compute units.
 
@@ -94,6 +96,8 @@ def load_coreml_model(
         mlpackage_path (str): Path of the ``.mlpackage`` bundle directory.
         compute_units (str): One of ``CPUAndGPU``, ``ALL``, ``CPUAndNeuralEngine`` or ``CPUOnly``
             (``INFERENCE_MODELS_COREML_COMPUTE_UNITS`` by default).
+        validate_signature (Callable, optional): Inspect the model's signature before compilation and
+            loading. Raising an exception rejects the model without initializing the Core ML runtime.
 
     Returns:
         CoreMLModel: The loaded model and its signature.
@@ -120,6 +124,14 @@ def load_coreml_model(
             "follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/",
             help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
         ) from import_error
+    if validate_signature is not None:
+        inspection = coremltools.models.MLModel(
+            mlpackage_path,
+            skip_model_load=True,
+        )
+        signature = read_signature(inspection.get_spec())
+        validate_signature(signature)
+
     model = coremltools.models.MLModel(
         mlpackage_path,
         compute_units=getattr(coremltools.ComputeUnit, COMPUTE_UNITS[compute_units]),
@@ -166,6 +178,8 @@ def read_signature(spec: Any) -> CoreMLModelSignature:
 def load_coreml_package(
     model_package_dir: str,
     compute_units: str = INFERENCE_MODELS_COREML_COMPUTE_UNITS,
+    *,
+    validate_signature: Optional[Callable[[CoreMLModelSignature], None]] = None,
 ) -> CoreMLModel:
     """Load the package's ``.mlpackage`` bundle, extracting the zipped form once if needed.
 
@@ -181,6 +195,8 @@ def load_coreml_package(
         model_package_dir (str): Model package directory holding ``weights.mlpackage`` or
             ``weights.mlpackage.zip``.
         compute_units (str): Core ML compute units (see ``load_coreml_model``).
+        validate_signature (Callable, optional): Validate the model's signature before compilation and
+            loading. For archives, inspection and validation also run under the package cache lock.
 
     Returns:
         CoreMLModel: The loaded model and its signature.
@@ -191,7 +207,13 @@ def load_coreml_package(
     """
     bundle = os.path.join(model_package_dir, MLPACKAGE_NAME)
     if os.path.isfile(os.path.join(bundle, MLPACKAGE_MANIFEST)):
-        return load_coreml_model(mlpackage_path=bundle, compute_units=compute_units)
+        model = load_coreml_model(
+            mlpackage_path=bundle,
+            compute_units=compute_units,
+            validate_signature=validate_signature,
+        )
+
+        return model
     archive = os.path.join(model_package_dir, MLPACKAGE_ARCHIVE_NAME)
     if not os.path.isfile(archive):
         raise CorruptedModelPackageError(
@@ -210,7 +232,13 @@ def load_coreml_package(
         _remove_stale_extractions(native_root=native_root, keep=extraction_dir)
         if not os.path.isfile(os.path.join(target, MLPACKAGE_MANIFEST)):
             _extract_bundle(archive=archive, target=target)
-        return load_coreml_model(mlpackage_path=target, compute_units=compute_units)
+        model = load_coreml_model(
+            mlpackage_path=target,
+            compute_units=compute_units,
+            validate_signature=validate_signature,
+        )
+
+        return model
 
 
 def _writable_package_root(model_package_dir: str) -> str:
