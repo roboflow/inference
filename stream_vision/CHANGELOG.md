@@ -4,6 +4,11 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Parallel workflow startup
+
+- Add optional overlapping source connection, bounded sequential model preparation and compilation, with cancellation, phase timings and host-owned cleanup. Default startup stays serial.
+- Make source readiness atomic with startup, drain full file buffers during shutdown and clear old end markers before reconnection.
+
 ### Added
 
 - Camera, stream and stream-manager runtime moved here from `inference.core.interfaces`.

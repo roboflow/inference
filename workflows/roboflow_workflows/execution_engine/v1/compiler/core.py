@@ -133,12 +133,14 @@ def compile_workflow(
     init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
     execution_engine_version: Optional[Version] = None,
     profiler: Optional[WorkflowsProfiler] = None,
+    _on_workflow_parsed: Optional[Callable[[ParsedWorkflowDefinition], None]] = None,
 ) -> CompiledWorkflow:
     graph_compilation_results = compile_workflow_graph(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,
         profiler=profiler,
         init_parameters=init_parameters,
+        **({"_on_workflow_parsed": _on_workflow_parsed} if _on_workflow_parsed else {}),
     )
     steps = initialise_steps(
         steps_manifest=graph_compilation_results.parsed_workflow_definition.steps,
@@ -169,6 +171,7 @@ def compile_workflow_graph(
     execution_engine_version: Optional[Version] = None,
     profiler: Optional[WorkflowsProfiler] = None,
     init_parameters: Optional[Dict[str, Union[Any, Callable[[None], Any]]]] = None,
+    _on_workflow_parsed: Optional[Callable[[ParsedWorkflowDefinition], None]] = None,
 ) -> GraphCompilationResult:
     if init_parameters is None:
         init_parameters = {}
@@ -191,6 +194,8 @@ def compile_workflow_graph(
         ensure_dynamic_blocks_allowed(
             dynamic_blocks_definitions=pre_resolution_dynamic_blocks_definitions
         )
+        if _on_workflow_parsed is not None:
+            _on_workflow_parsed(cached_value.parsed_workflow_definition)
         return cached_value
 
     raw_workflow_definition: Dict[str, Any] = (
@@ -235,6 +240,8 @@ def compile_workflow_graph(
         workflow_definition=parsed_workflow_definition,
         profiler=profiler,
     )
+    if _on_workflow_parsed is not None:
+        _on_workflow_parsed(parsed_workflow_definition)
     execution_graph = prepare_execution_graph(
         workflow_definition=parsed_workflow_definition,
         profiler=profiler,

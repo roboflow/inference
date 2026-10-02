@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- Add a private parsed-workflow startup hook on cold and cached compilation paths, and share typed model-ID resolution with optional streaming startup. Normal compilation and lazy loading remain the default.
+
 ### Added
 
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.

@@ -10,6 +10,9 @@ from roboflow_workflows.errors import (
 )
 from roboflow_workflows.execution_engine.entities.engine import BaseExecutionEngine
 from roboflow_workflows.execution_engine.profiling.core import WorkflowsProfiler
+from roboflow_workflows.execution_engine.v1.compiler.entities import (
+    ParsedWorkflowDefinition,
+)
 from roboflow_workflows.execution_engine.v1.core import (
     EXECUTION_ENGINE_V1_VERSION,
     OMITTED_STEP_ERROR_HANDLER,
@@ -42,6 +45,9 @@ class ExecutionEngine(BaseExecutionEngine):
             Union[str, Callable[[str, Exception], None], _OmittedStepErrorHandler]
         ] = OMITTED_STEP_ERROR_HANDLER,
         dependencies_pre_init: Optional[List[str]] = None,
+        _on_workflow_parsed: Optional[
+            Callable[[ParsedWorkflowDefinition], None]
+        ] = None,
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,
@@ -59,6 +65,11 @@ class ExecutionEngine(BaseExecutionEngine):
             executor=executor,
             step_error_handler=step_error_handler,
             dependencies_pre_init=dependencies_pre_init,
+            **(
+                {"_on_workflow_parsed": _on_workflow_parsed}
+                if _on_workflow_parsed
+                else {}
+            ),
         )
         return cls(engine=engine)
 

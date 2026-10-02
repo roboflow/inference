@@ -163,6 +163,10 @@ class InferencePipeline:
         exec_session_id: Optional[str] = None,
         workflows_dependencies_pre_init: Optional[List[str]] = None,
         profiler: Optional[WorkflowsProfiler] = None,
+        parallel_startup: bool = False,
+        startup_model_limit: int = 1,
+        startup_cancel_event: Optional[Event] = None,
+        _startup_resources: Optional[Any] = None,
     ) -> "InferencePipeline":
         """Create a pipeline running an already-resolved workflow against video.
 
@@ -175,6 +179,16 @@ class InferencePipeline:
         `init_with_custom_logic` does.
 
         Args:
+            parallel_startup: Overlap source startup, declared model preparation
+                and compilation. Defaults to False. Sources capture during init;
+                always terminate and join the result, even if never started.
+                The supplied models provider must be exclusive during startup.
+            startup_model_limit: Maximum models to prepare sequentially (default
+                one). Zero overlaps sources and compilation only. Conditional
+                branch models can be prepared; unresolved IDs stay lazy.
+            startup_cancel_event: Cooperative cancellation checked at phase and
+                frame boundaries. Native calls drain before cleanup.
+            _startup_resources: Private host ownership and capacity binding.
             video_reference: Reference of the source or sources to process.
             workflow_specification: The resolved workflow definition.
             workflow_init_parameters: Execution Engine init parameters built by
@@ -228,11 +242,57 @@ class InferencePipeline:
                 cannot be imported; when `roboflow-workflows` itself is not
                 installed, the message says how to install it.
         """
+        if parallel_startup and workflows_dependencies_pre_init:
+            raise ValueError(
+                "parallel_startup replaces workflows_dependencies_pre_init"
+            )
+        if parallel_startup and (
+            isinstance(startup_model_limit, bool)
+            or not isinstance(startup_model_limit, int)
+            or startup_model_limit < 0
+        ):
+            raise ValueError("startup_model_limit must be a non-negative integer")
+        startup = None
+        thread_pool_executor = execution_engine_thread_pool_executor = None
+
+        def shutdown_executors():
+            for executor in (
+                thread_pool_executor,
+                execution_engine_thread_pool_executor,
+            ):
+                if executor is not None:
+                    executor.shutdown(
+                        wait=True, cancel_futures=cancel_thread_pool_tasks_on_exit
+                    )
+
         if profiler is None:
             profiler = build_workflows_profiler(
                 enabled=ENABLE_WORKFLOWS_PROFILING,
                 max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
             )
+
+        def build_pipeline(on_video_frame, on_pipeline_end_closure):
+            return cls.init_with_custom_logic(
+                video_reference=video_reference,
+                on_video_frame=on_video_frame,
+                on_prediction=on_prediction,
+                on_pipeline_start=None,
+                on_pipeline_end=on_pipeline_end_closure,
+                max_fps=max_fps,
+                watchdog=watchdog,
+                status_update_handlers=status_update_handlers,
+                source_buffer_filling_strategy=source_buffer_filling_strategy,
+                source_buffer_consumption_strategy=source_buffer_consumption_strategy,
+                video_source_properties=video_source_properties,
+                batch_collection_timeout=batch_collection_timeout,
+                video_processing_mode=video_processing_mode,
+                max_staleness=max_staleness,
+                predictions_queue_size=predictions_queue_size,
+                decoding_buffer_size=decoding_buffer_size,
+                allow_tensor_frames=cls._tensor_frames_enabled(),
+                exec_session_id=exec_session_id,
+            )
+
         try:
             from roboflow_workflows.execution_engine.core import ExecutionEngine
             from streamvision.stream.model_handlers.workflows import (
@@ -247,18 +307,92 @@ class InferencePipeline:
             execution_engine_thread_pool_executor = ThreadPoolExecutor(
                 max_workers=execution_engine_thread_pool_workers
             )
+            if parallel_startup:
+                workflow_init_parameters = dict(workflow_init_parameters)
             workflow_init_parameters["workflows_core.thread_pool_executor"] = (
                 thread_pool_executor
             )
             workflow_init_parameters["workflows_core.disable_sinks"] = disable_sinks
-            execution_engine = ExecutionEngine.init(
-                workflow_definition=workflow_specification,
-                init_parameters=workflow_init_parameters,
-                workflow_id=workflow_id,
-                profiler=profiler,
-                executor=execution_engine_thread_pool_executor,
-                dependencies_pre_init=workflows_dependencies_pre_init,
-                step_error_handler=step_error_handler,
+            if parallel_startup:
+                from roboflow_workflows.execution_engine.v1.core import (
+                    _retrieve_init_parameter,
+                )
+                from streamvision.stream.parallel_startup import (
+                    _ParallelWorkflowStartup,
+                    _StartupResources,
+                )
+
+                workflow_init_parameters = dict(workflow_init_parameters)
+                workflows_parameters = dict(workflows_parameters or {})
+                resources = _startup_resources
+                if resources is None:
+                    resources = _StartupResources(
+                        provider=_retrieve_init_parameter(
+                            init_parameters=workflow_init_parameters,
+                            parameter_name="model_manager",
+                        )
+                    )
+                if startup_model_limit and resources.provider is None:
+                    raise ValueError(
+                        "parallel_startup requires a models provider when startup_model_limit is nonzero"
+                    )
+                pipeline = build_pipeline(None, None)
+
+                def report_phase(name, timing):
+                    send_inference_pipeline_status_update(
+                        severity=UpdateSeverity.INFO,
+                        event_type="WORKFLOW_STARTUP_PHASE",
+                        status_update_handlers=status_update_handlers or [],
+                        payload={"phase": name, **timing},
+                    )
+
+                startup = _ParallelWorkflowStartup(
+                    pipeline=pipeline,
+                    resources=resources,
+                    cancelled=startup_cancel_event,
+                    model_limit=startup_model_limit,
+                    report=report_phase,
+                )
+                startup._start_sources()
+                if resources.provider is not None:
+                    workflow_init_parameters["workflows_core.model_manager"] = (
+                        startup.gated_manager
+                    )
+
+            def compile_engine():
+                return ExecutionEngine.init(
+                    workflow_definition=workflow_specification,
+                    init_parameters=workflow_init_parameters,
+                    workflow_id=workflow_id,
+                    profiler=profiler,
+                    executor=execution_engine_thread_pool_executor,
+                    dependencies_pre_init=workflows_dependencies_pre_init,
+                    step_error_handler=step_error_handler,
+                    **(
+                        {
+                            "_on_workflow_parsed": partial(
+                                startup._on_workflow_parsed,
+                                init_parameters=workflow_init_parameters,
+                                api_key=_retrieve_init_parameter(
+                                    init_parameters=workflow_init_parameters,
+                                    parameter_name="api_key",
+                                ),
+                                workflows_parameters=workflows_parameters,
+                                frame_input_names=(
+                                    image_input_name,
+                                    video_metadata_input_name,
+                                ),
+                            )
+                        }
+                        if startup is not None
+                        else {}
+                    ),
+                )
+
+            execution_engine = (
+                startup._phase("compilation", compile_engine)
+                if startup is not None
+                else compile_engine()
             )
             workflow_runner = WorkflowRunner(
                 workflows_parameters=workflows_parameters,
@@ -272,47 +406,53 @@ class InferencePipeline:
                 workflow_runner=workflow_runner,
                 execution_engine=execution_engine,
             )
-        except ImportError as error:
-            if (
-                isinstance(error, ModuleNotFoundError)
-                and error.name == "roboflow_workflows"
-            ):
-                raise CannotInitialiseModelError(
-                    f"roboflow-workflows is not installed. {WORKFLOWS_INSTALL_HINT}"
-                ) from error
+            on_pipeline_end_closure = partial(
+                on_pipeline_end,
+                thread_pool_executor=thread_pool_executor,
+                cancel_thread_pool_tasks_on_exit=cancel_thread_pool_tasks_on_exit,
+                profiler=profiler,
+                profiling_directory=profiling_directory,
+                execution_engine_thread_pool_executor=execution_engine_thread_pool_executor,
+            )
+            if startup is None:
+                return build_pipeline(on_video_frame, on_pipeline_end_closure)
+            pipeline._on_video_frame = on_video_frame
 
-            raise CannotInitialiseModelError(
-                f"Could not initialise workflow processing due to lack of dependencies required. "
-                f"Please provide an issue report under https://github.com/roboflow/inference/issues"
-            ) from error
-        on_pipeline_end_closure = partial(
-            on_pipeline_end,
-            thread_pool_executor=thread_pool_executor,
-            cancel_thread_pool_tasks_on_exit=cancel_thread_pool_tasks_on_exit,
-            profiler=profiler,
-            profiling_directory=profiling_directory,
-            execution_engine_thread_pool_executor=execution_engine_thread_pool_executor,
-        )
-        return cls.init_with_custom_logic(
-            video_reference=video_reference,
-            on_video_frame=on_video_frame,
-            on_prediction=on_prediction,
-            on_pipeline_start=None,
-            on_pipeline_end=on_pipeline_end_closure,
-            max_fps=max_fps,
-            watchdog=watchdog,
-            status_update_handlers=status_update_handlers,
-            source_buffer_filling_strategy=source_buffer_filling_strategy,
-            source_buffer_consumption_strategy=source_buffer_consumption_strategy,
-            video_source_properties=video_source_properties,
-            batch_collection_timeout=batch_collection_timeout,
-            video_processing_mode=video_processing_mode,
-            max_staleness=max_staleness,
-            predictions_queue_size=predictions_queue_size,
-            decoding_buffer_size=decoding_buffer_size,
-            allow_tensor_frames=cls._tensor_frames_enabled(),
-            exec_session_id=exec_session_id,
-        )
+            def finish_pipeline():
+                shutdown_executors()
+                try:
+                    on_pipeline_end_closure()
+                finally:
+                    startup._close()
+
+            pipeline._on_pipeline_end = finish_pipeline
+            startup._finish()
+            return pipeline
+        except BaseException as error:
+            if startup is not None:
+                startup._failed.set()
+            shutdown_executors()
+            if startup is not None:
+                try:
+                    startup._close()
+                except Exception:
+                    logger.warning(
+                        "Parallel startup cleanup failed after initialization error"
+                    )
+                if startup._failure is not None:
+                    error = startup._failure
+            if isinstance(error, ImportError):
+                if (
+                    isinstance(error, ModuleNotFoundError)
+                    and error.name == "roboflow_workflows"
+                ):
+                    raise CannotInitialiseModelError(
+                        f"roboflow-workflows is not installed. {WORKFLOWS_INSTALL_HINT}"
+                    ) from error
+                raise CannotInitialiseModelError(
+                    "Could not initialise workflow processing due to missing dependencies."
+                ) from error
+            raise error
 
     @classmethod
     def init_with_custom_logic(
@@ -557,6 +697,9 @@ class InferencePipeline:
         self._sink_mode = sink_mode
         self._stream_session_id = exec_session_id or mint_stream_session_id()
         self._collection_policy = collection_policy
+        self._parallel_startup = None
+        self._sources_started_during_init = False
+        self.startup_phase_timings: Dict[str, dict] = {}
         # terminate() stops only sources the inference thread actually started.
         self._sources_startup_finished = Event()
         self._started_sources: List[VideoSource] = []
@@ -564,9 +707,16 @@ class InferencePipeline:
         self._results_consumer_missing = False
 
     def start(self, use_main_thread: bool = True) -> None:
+        if self._parallel_startup is not None:
+            try:
+                self._parallel_startup._check_cancelled()
+            except BaseException:
+                self.join()
+                raise
         self._stop = False
-        self._sources_startup_finished = Event()
-        self._started_sources = []
+        if not self._sources_started_during_init:
+            self._sources_startup_finished = Event()
+            self._started_sources = []
         self._inference_thread = Thread(target=self._execute_inference)
         try:
             self._inference_thread.start()
@@ -614,6 +764,8 @@ class InferencePipeline:
                 exception-free cleanup.
         """
         self._stop = True
+        if self._parallel_startup is not None:
+            self._parallel_startup.cancelled.set()
         if (
             self._inference_thread is not None
             and self._inference_thread.is_alive()
@@ -621,6 +773,9 @@ class InferencePipeline:
         ):
             # A startup failure stops the sequence; later sources were never started.
             self._sources_startup_finished.wait()
+        if self._parallel_startup is not None:
+            self._parallel_startup._stop_sources()
+            return
         # Sources are stopped once; a retried call only stops those still pending.
         while self._started_sources:
             self._started_sources[0].terminate(
@@ -672,6 +827,8 @@ class InferencePipeline:
         logger.info(f"Inference thread started")
         try:
             for video_frames in self._generate_frames():
+                if self._parallel_startup is not None:
+                    self._parallel_startup._check_cancelled()
                 self._watchdog.on_model_inference_started(
                     frames=video_frames,
                 )
@@ -892,9 +1049,14 @@ class InferencePipeline:
         self,
     ) -> Generator[List[VideoFrame], None, None]:
         try:
-            for video_source in self._video_sources:
-                video_source.start()
-                self._started_sources.append(video_source)
+            if self._parallel_startup is not None:
+                self._parallel_startup._check_cancelled()
+            if self._sources_started_during_init:
+                self._sources_started_during_init = False
+            else:
+                for video_source in self._video_sources:
+                    video_source.start()
+                    self._started_sources.append(video_source)
         finally:
             self._sources_startup_finished.set()
         max_fps = None

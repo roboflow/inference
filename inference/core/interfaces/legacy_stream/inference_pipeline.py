@@ -29,7 +29,7 @@ from datetime import datetime
 from enum import Enum
 from functools import partial
 from queue import Queue
-from threading import Thread
+from threading import Event, Thread
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
@@ -150,6 +150,7 @@ class PreparedWorkflow:
     workflow_specification: dict
     workflow_init_parameters: Dict[str, Any]
     step_error_handler: Any
+    model_manager: Optional[ModelManager] = None
 
 
 def prepare_workflow_for_pipeline(
@@ -273,6 +274,7 @@ def prepare_workflow_for_pipeline(
         workflow_specification=workflow_specification,
         workflow_init_parameters=workflow_init_parameters,
         step_error_handler=step_error_handler,
+        model_manager=model_manager,
     )
 
 
@@ -729,6 +731,9 @@ class InferencePipeline(HostNeutralInferencePipeline):
         workflow_version_id: Optional[str] = None,
         exec_session_id: Optional[str] = None,
         workflows_dependencies_pre_init: Optional[List[str]] = None,
+        parallel_startup: bool = False,
+        startup_model_limit: int = 1,
+        startup_cancel_event: Optional[Event] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -736,6 +741,15 @@ class InferencePipeline(HostNeutralInferencePipeline):
         method.
 
         Args:
+            parallel_startup (bool): Opt in to overlapping source startup, declared
+                model preparation and compilation. Default False. Always terminate
+                and join the result, even if never started. Supplied managers must
+                be exclusive during startup and remain caller-owned.
+            startup_model_limit (int): Maximum models to prepare sequentially;
+                default one. Zero overlaps sources and compilation only.
+            startup_cancel_event (Optional[Event]): Cooperative cancellation.
+                Native calls drain before cleanup. Set before waiting on a job's
+                lifecycle lock and never start a pipeline after cancellation.
             video_reference (Union[str, int, List[Union[str, int]]]): Reference of source to be used to make predictions
                 against. It can be video file path, stream URL and device (like camera) id
                 (we handle whatever cv2 handles). It can also be a list of references (since v0.13.0) - and then
@@ -854,6 +868,18 @@ class InferencePipeline(HostNeutralInferencePipeline):
             * MissingApiKeyError - if API key is not provided in situation when retrieving workflow definition
                 from Roboflow API is needed
         """
+        if parallel_startup:
+            if workflows_dependencies_pre_init:
+                raise ValueError(
+                    "parallel_startup replaces workflows_dependencies_pre_init"
+                )
+            if (
+                isinstance(startup_model_limit, bool)
+                or not isinstance(startup_model_limit, int)
+                or startup_model_limit < 0
+            ):
+                raise ValueError("startup_model_limit must be a non-negative integer")
+            workflow_init_parameters = dict(workflow_init_parameters or {})
         # Built from this module's globals so patches via the historical name apply.
         if ENABLE_WORKFLOWS_PROFILING:
             profiler = BaseWorkflowsProfiler.init(
@@ -872,6 +898,32 @@ class InferencePipeline(HostNeutralInferencePipeline):
             model_manager=model_manager,
             profiler=profiler,
         )
+        startup_options = {}
+        if parallel_startup:
+            from streamvision.stream.parallel_startup import _StartupResources
+
+            manager = prepared_workflow.model_manager
+            capacity = getattr(manager, "max_size", None)
+            available_capacity = (
+                max(0, capacity - len(manager)) if isinstance(capacity, int) else None
+            )
+
+            def cleanup_models():
+                for model_id in list(manager.keys()):
+                    manager.remove(model_id, delete_from_disk=False)
+
+            startup_options = dict(
+                parallel_startup=True,
+                startup_model_limit=startup_model_limit,
+                startup_cancel_event=startup_cancel_event,
+                _startup_resources=_StartupResources(
+                    provider=prepared_workflow.workflow_init_parameters[
+                        "workflows_core.model_manager"
+                    ],
+                    available_capacity=available_capacity,
+                    cleanup=cleanup_models if model_manager is None else None,
+                ),
+            )
         return super().init_with_workflow(
             video_reference=video_reference,
             workflow_specification=prepared_workflow.workflow_specification,
@@ -903,6 +955,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
             exec_session_id=exec_session_id,
             workflows_dependencies_pre_init=workflows_dependencies_pre_init,
             profiler=profiler,
+            **startup_options,
         )
 
     @classmethod

@@ -709,6 +709,9 @@ class VideoSource:
             wait_on_frames_consumption=wait_on_frames_consumption,
             purge_frames_buffer=purge_frames_buffer,
         )
+        if purge_frames_buffer:
+            # The previous capture's end marker must not enter the new session.
+            get_from_queue(queue=self._frames_buffer, timeout=0.0, purge=True)
         self._change_state(target_state=StreamState.RESTARTING)
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
@@ -758,9 +761,12 @@ class VideoSource:
             else:
                 self._set_stream_mode_consumption_strategies()
             self._playback_allowed.set()
+            # Publish readiness under the start/terminate lock. A delayed capture
+            # thread must not overwrite a concurrent TERMINATING transition.
+            self._change_state(target_state=StreamState.RUNNING)
             self._stream_consumption_thread = Thread(target=self._consume_video)
             self._stream_consumption_thread.start()
-        except Exception:
+        except BaseException:
             # Any startup failure (factory raises, cannot connect, property
             # discovery fails) leaves the source in ERROR, not INITIALISING, so
             # recovery (which keys off ERROR) fires. Re-raise for the caller.
@@ -816,7 +822,20 @@ class VideoSource:
             _ = get_from_queue(queue=self._frames_buffer, timeout=0.0, purge=True)
         if self._stream_consumption_thread is not None:
             self._interrupt_video()
-            self._stream_consumption_thread.join()
+            if purge_frames_buffer:
+                # A capture already in progress may enqueue a final frame and
+                # then its end marker. Keep draining while joining so a full
+                # WAIT buffer cannot deadlock shutdown without a consumer.
+                while self._stream_consumption_thread.is_alive():
+                    get_from_queue(queue=self._frames_buffer, timeout=0.0, purge=True)
+                    self._stream_consumption_thread.join(timeout=0.05)
+                get_from_queue(queue=self._frames_buffer, timeout=0.0, purge=True)
+                if not wait_on_frames_consumption:
+                    # Wake a consumer that may already be blocked in read_frame.
+                    # A purge-and-wait caller explicitly discards all queue work.
+                    self._frames_buffer.put(POISON_PILL)
+            else:
+                self._stream_consumption_thread.join()
         if wait_on_frames_consumption:
             self._frames_buffer.join()
         if previous_state is not StreamState.ERROR:
@@ -856,8 +875,6 @@ class VideoSource:
         )
         logger.info(f"Video consumption started")
         try:
-            if self._state is not StreamState.TERMINATING:
-                self._change_state(target_state=StreamState.RUNNING)
             declared_source_fps, is_video_file = None, None
             if self._source_properties is not None:
                 declared_source_fps = self._source_properties.fps

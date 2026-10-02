@@ -21,7 +21,10 @@ from roboflow_workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
 )
 from roboflow_workflows.execution_engine.v1.compiler.core import compile_workflow
-from roboflow_workflows.execution_engine.v1.compiler.entities import CompiledWorkflow
+from roboflow_workflows.execution_engine.v1.compiler.entities import (
+    CompiledWorkflow,
+    ParsedWorkflowDefinition,
+)
 from roboflow_workflows.execution_engine.v1.compiler.utils import (
     deduce_blocks_dependencies,
     get_last_chunk_of_selector,
@@ -288,6 +291,44 @@ def _pre_load_roboflow_platform_models(
     return pending
 
 
+def _resolve_runtime_dependency_model_id(
+    dependency: DependentResource, runtime_parameters: Dict[str, Any]
+) -> Optional[str]:
+    """Resolve a declared input selector using the normal preload contract."""
+    if not is_input_selector(selector_or_value=dependency.metadata.model_id):
+        # Safeguard: only `$inputs.<name>` references are resolvable here.
+        # Without it, a `$steps.<name>.<property>` entry would take its
+        # last chunk and could accidentally match an unrelated input.
+        return None
+    input_name = get_last_chunk_of_selector(selector=dependency.metadata.model_id)
+    resolved_value = runtime_parameters.get(input_name)
+    if not isinstance(resolved_value, str) or not resolved_value:
+        return None
+    if is_workflow_selector(resolved_value):
+        return None
+    model_id_resolver = dependency.metadata.model_id_resolver
+    if model_id_resolver is not None:
+        # Declarations of synthesized ids (e.g. `clip/<version>`) attach a
+        # resolver turning the substituted input value into the final id.
+        try:
+            resolved_value = model_id_resolver(resolved_value)
+        except Exception as error:
+            raise RuntimeInputError(
+                public_message=f"Could not resolve model id of dependent resource "
+                f"declared as `{dependency.metadata.model_id}` while pre-loading "
+                f"workflow dependencies - value `{resolved_value}` submitted for "
+                f"input `{input_name}` is invalid. Details: {error}",
+                context="workflow_execution | runtime_input_validation",
+                inner_error=error,
+            ) from error
+        if resolved_value is None:
+            # Resolver declared the value statically unresolvable (the
+            # final id depends on more than this one input) — skip
+            # pre-loading and let execution resolve it.
+            return None
+    return resolved_value
+
+
 def _resolve_and_pre_load_runtime_dependencies(
     pending_dependencies: List[DependentResource],
     runtime_parameters: Dict[str, Any],
@@ -301,37 +342,11 @@ def _resolve_and_pre_load_runtime_dependencies(
             dependency=dependency, step_execution_mode=step_execution_mode
         ):
             continue
-        if not is_input_selector(selector_or_value=dependency.metadata.model_id):
-            # Safeguard: only `$inputs.<name>` references are resolvable here.
-            # Without it, a `$steps.<name>.<property>` entry would take its
-            # last chunk and could accidentally match an unrelated input.
+        resolved_value = _resolve_runtime_dependency_model_id(
+            dependency=dependency, runtime_parameters=runtime_parameters
+        )
+        if resolved_value is None:
             continue
-        input_name = get_last_chunk_of_selector(selector=dependency.metadata.model_id)
-        resolved_value = runtime_parameters.get(input_name)
-        if not isinstance(resolved_value, str) or not resolved_value:
-            continue
-        if is_workflow_selector(resolved_value):
-            continue
-        model_id_resolver = dependency.metadata.model_id_resolver
-        if model_id_resolver is not None:
-            # Declarations of synthesized ids (e.g. `clip/<version>`) attach a
-            # resolver turning the substituted input value into the final id.
-            try:
-                resolved_value = model_id_resolver(resolved_value)
-            except Exception as error:
-                raise RuntimeInputError(
-                    public_message=f"Could not resolve model id of dependent resource "
-                    f"declared as `{dependency.metadata.model_id}` while pre-loading "
-                    f"workflow dependencies - value `{resolved_value}` submitted for "
-                    f"input `{input_name}` is invalid. Details: {error}",
-                    context="workflow_execution | runtime_input_validation",
-                    inner_error=error,
-                ) from error
-            if resolved_value is None:
-                # Resolver declared the value statically unresolvable (the
-                # final id depends on more than this one input) — skip
-                # pre-loading and let execution resolve it.
-                continue
         if resolved_value in loaded_model_ids:
             continue
         loaded_model_ids.add(resolved_value)
@@ -423,6 +438,9 @@ class ExecutionEngineV1(BaseExecutionEngine):
             Union[str, Callable[[str, Exception], None], _OmittedStepErrorHandler]
         ] = OMITTED_STEP_ERROR_HANDLER,
         dependencies_pre_init: Optional[List[str]] = None,
+        _on_workflow_parsed: Optional[
+            Callable[[ParsedWorkflowDefinition], None]
+        ] = None,
     ) -> "ExecutionEngineV1":
         # The engine mutates this dict (dynamic-block mirrors below) and the
         # compiled workflow retains it. Work on a private copy so a caller that
@@ -493,6 +511,11 @@ class ExecutionEngineV1(BaseExecutionEngine):
             init_parameters=init_parameters,
             execution_engine_version=EXECUTION_ENGINE_V1_VERSION,
             profiler=profiler,
+            **(
+                {"_on_workflow_parsed": _on_workflow_parsed}
+                if _on_workflow_parsed
+                else {}
+            ),
         )
         image_codec = init_parameters.get("workflows_core.image_codec")
         if image_codec is not None:
