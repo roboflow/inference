@@ -2,8 +2,27 @@
 
 ## Unreleased
 
+### Fixed
+
+- Bumped `urllib3` to version `2.8.0` or above (GHSA-8988-9cw3-xx77, GHSA-vxq7-64xx-v4gw, GHSA-gh4c-6fx4-qh6g)
+- Bumped `tornado` in the `docs` extra to version `6.5.10` or above (GHSA-c2m8-h5v5-343r, GHSA-chx6-46f5-w4vp, GHSA-3hv7-mjh2-fv65)
+- Bumped `accelerate` to version `1.15.0` or above (GHSA-4j2p-28q2-5m79 has no upstream fix; the affected checkpoint-loading helpers are not used by `inference-models`)
+
+---
+
+## `0.39.0`
+
 ### Added
 
+- `ImageEmbeddingModel` and the `image_embeddings` capability for existing
+  single-label and multi-label ResNet, ViT and DINOv3 classifiers.
+  `AutoModel.from_pretrained` accepts `required_capabilities=["image_embeddings"]`
+  to select a compatible ONNX, PyTorch or Hugging Face package, with
+  `output_type="feature_vector"` or `output_type="logits"` selecting features or
+  pre-activation logits using the model's original preprocessing. Recoverable
+  ONNX classifier boundaries are
+  extracted into separately cached graphs without retraining. Classification-only
+  TensorRT engines are excluded from embedding package negotiation.
 - A `coreml` backend runs native Core ML packages (`coreml-model-package-v1`) for RF-DETR object
   detection and instance segmentation on Apple Silicon Macs running macOS 13+, installed with the new
   `coreml` extra (a no-op on other platforms). When a model has a Core ML package, `AutoModel`

@@ -18,6 +18,14 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
+- Embedding Model (`roboflow_core/embedding_model@v1`): extract feature vectors
+  before the final linear layer or logits before Softmax/Sigmoid from existing
+  single-label and multi-label ResNet, ViT and DINOv3 classifiers, including
+  pretrained ResNet aliases. List and tensor variants return embeddings compatible
+  with Cosine Similarity and metadata identifying their embedding space.
+- Local tensor-mode Embedding Model execution retains materialized tensor images
+  and embedding tensors through the model-provider boundary. Remote responses and
+  final JSON outputs remain serialized vectors.
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
 - OpenAI block (`open_ai@v7`): `gpt-6.1-sol` model option (`low`-`max` reasoning effort; object detection and instance segmentation reuse the GPT-6 prompts).
 
@@ -33,6 +41,13 @@ for contributor and maintainer responsibilities.
 ### Fixed
 
 - Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
+
+### Execution engine
+
+- Dependency preloading distinguishes classification, feature-vector and logits
+  registrations for the same model ID, including runtime-selected IDs, and verifies
+  the corresponding capability-specific cache entries. Existing workflows need
+  no migration.
 
 ## `0.2.3`
 

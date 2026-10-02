@@ -61,6 +61,7 @@ from inference_models.models.base.documents_parsing import (
     TextOnlyOCRModel,
 )
 from inference_models.models.base.embeddings import TextImageEmbeddingModel
+from inference_models.models.base.image_embeddings import ImageEmbeddingModel
 from inference_models.models.base.instance_segmentation import (
     InstanceDetections,
     InstanceSegmentationMaskFormat,
