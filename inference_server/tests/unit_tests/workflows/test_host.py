@@ -21,7 +21,7 @@ def test_configuration_installed_on_import(monkeypatch):
 
 
 def test_offline_mode_forces_local_step_execution(monkeypatch):
-    monkeypatch.setenv("OFFLINE_MODE", "true")
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
     monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "REMOTE")
     import inference_server.workflows.host as host
 
@@ -31,6 +31,17 @@ def test_offline_mode_forces_local_step_execution(monkeypatch):
         configuration.engine.step_execution_mode == "local"
         and configuration.platform.offline_mode is True
     )
+
+
+def test_workflows_offline_follows_model_layer_when_server_setting_is_online(
+    monkeypatch,
+):
+    monkeypatch.setattr("inference_server.configuration.OFFLINE_MODE", False)
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
+    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
+    import inference_server.workflows.host as host
+
+    assert host.build_workflows_configuration().platform.offline_mode is True
 
 
 def test_secure_gateway_with_hosted_remote_target_forces_local(monkeypatch):
@@ -46,7 +57,7 @@ def test_secure_gateway_with_hosted_remote_target_forces_local(monkeypatch):
 
 
 def test_offline_modal_execution_is_refused(monkeypatch):
-    monkeypatch.setenv("OFFLINE_MODE", "true")
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
     monkeypatch.setenv("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal")
     import inference_server.workflows.host as host
 
@@ -407,6 +418,7 @@ def test_configuration_is_installed_before_environment_is_imported():
         env={
             **os.environ,
             "OFFLINE_MODE": "true",
+            "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START": "true",
             "WORKFLOWS_STEP_EXECUTION_MODE": "remote",
         },
         capture_output=True,

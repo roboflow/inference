@@ -365,7 +365,20 @@ def test_third_party_model_is_unavailable_without_a_registry_call(
 def test_offline_mode_reports_unavailable_without_a_registry_call(
     monkeypatch, client, registry_call
 ) -> None:
-    monkeypatch.setattr("inference_server.configuration.OFFLINE_MODE", True)
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
+
+    response = _post_inline(client, _single_model_definition())
+
+    model = _models_by_id(response.json())["my-project/3"]
+    assert model["metadata_status"] == "unavailable"
+    registry_call.assert_not_called()
+
+
+def test_model_layer_offline_skips_registry_when_server_setting_is_online(
+    monkeypatch, client, registry_call
+) -> None:
+    monkeypatch.setattr("inference_server.configuration.OFFLINE_MODE", False)
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
 
     response = _post_inline(client, _single_model_definition())
 

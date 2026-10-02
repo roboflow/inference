@@ -15,8 +15,8 @@ from inference_server.configuration import (
     INFER_TIMEOUT_S,
     LEGACY_LOAD_POLL_INTERVAL_S,
     LEGACY_LOAD_TIMEOUT_S,
+    LEGACY_OFFLINE_MODE,
     LEGACY_ROUTE_METADATA_TTL_S,
-    OFFLINE_MODE,
 )
 from inference_server.errors import PayloadTooLargeError
 from inference_server.framework.entities import CommonRequestParams
@@ -189,7 +189,7 @@ class LegacyModelBridge:
         set_requested_model_id(registry_id, requested_model_id=model_id)
         task_type: Optional[str] = None
         action: Optional[str] = None
-        if not OFFLINE_MODE:
+        if not LEGACY_OFFLINE_MODE:
             try:
                 task_type, action = await self._stat(model_id, registry_id, api_key)
             except (Exception, asyncio.CancelledError):
@@ -206,7 +206,7 @@ class LegacyModelBridge:
         else:
             _apply_stat(route, task_type, action)
         try:
-            if OFFLINE_MODE:
+            if LEGACY_OFFLINE_MODE:
                 try:
                     await self.ensure_loaded(route, api_key)
                 except LegacyHTTPError as error:
@@ -222,7 +222,7 @@ class LegacyModelBridge:
         if self._metadata_expired(route) or route.registry_id not in self._loaded_ids:
             await self._refresh_metadata(route)
         route = self._adopt_canonical(route, task_type, action)
-        if OFFLINE_MODE and task_type is None:
+        if LEGACY_OFFLINE_MODE and task_type is None:
             route.task_type = _task_type_from_mro(route.model_mro_names)
             route.action = _DEFAULT_ACTION_BY_TASK_TYPE.get(route.task_type, "infer")
         self._routes[registry_id] = route
@@ -389,7 +389,7 @@ class LegacyModelBridge:
         return results[0]
 
     async def fetch_image(self, url: str) -> bytes:
-        if OFFLINE_MODE or not ALLOW_URL_INPUT:
+        if LEGACY_OFFLINE_MODE or not ALLOW_URL_INPUT:
             raise LegacyHTTPError(
                 400, "Loading images from URLs is not allowed on this server."
             )

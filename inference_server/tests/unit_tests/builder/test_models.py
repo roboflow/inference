@@ -291,7 +291,7 @@ async def test_offline_mode_hides_models_absent_from_registry(
     from inference_models.weights_providers import offline_registry
 
     _install_blocks(monkeypatch, [])
-    monkeypatch.setattr(configuration, "OFFLINE_MODE", True)
+    monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", True)
     record = offline_registry.OfflineModelStatus(
         canonical_model_id="ws/od/1",
         requested_aliases=[],
@@ -320,13 +320,30 @@ async def test_offline_mode_hides_models_absent_from_registry(
 
 
 @pytest.mark.asyncio
+async def test_model_layer_offline_filters_listing_when_server_setting_is_online(
+    monkeypatch, models_cache_dir
+):
+    from inference_models.weights_providers import offline_registry
+
+    _install_blocks(monkeypatch, [])
+    monkeypatch.setattr(configuration, "OFFLINE_MODE", False)
+    monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", True)
+    monkeypatch.setattr(offline_registry, "list_records_status", lambda: [])
+    bridge = FakeBridge([make_route("ws/od/1", "object-detection")])
+
+    listed = await models.list_models(bridge)
+
+    assert listed == []
+
+
+@pytest.mark.asyncio
 async def test_offline_mode_keeps_listing_when_registry_unreadable(
     monkeypatch, models_cache_dir
 ):
     from inference_models.weights_providers import offline_registry
 
     _install_blocks(monkeypatch, [])
-    monkeypatch.setattr(configuration, "OFFLINE_MODE", True)
+    monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", True)
 
     def _raise():
         raise RuntimeError("registry unreadable")

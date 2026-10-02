@@ -65,7 +65,7 @@ def _optional_address_set(raw: Optional[str]) -> Optional[Tuple[str, ...]]:
 
 
 def build_workflows_configuration() -> WorkflowsConfiguration:
-    offline_mode = get_boolean_from_env("OFFLINE_MODE", default=False)
+    offline_mode = configuration.LEGACY_OFFLINE_MODE
     secure_gateway = os.environ.get("SECURE_GATEWAY") or None
     step_execution_mode = os.environ.get(
         "WORKFLOWS_STEP_EXECUTION_MODE", "local"
@@ -605,7 +605,7 @@ def _translate_platform_api_errors(
 
 
 def _refuse_when_offline(operation: str) -> None:
-    if configuration.OFFLINE_MODE:
+    if configuration.LEGACY_OFFLINE_MODE:
         raise RoboflowAPIConnectionError(
             f"Cannot {operation} at Roboflow - OFFLINE_MODE is enabled."
         )
@@ -750,7 +750,7 @@ class ServerRoboflowPlatformClient:
         field_name: str,
         field_value: str,
     ) -> None:
-        if configuration.OFFLINE_MODE:
+        if configuration.LEGACY_OFFLINE_MODE:
             return None
         url = _add_params_to_url(
             url=_api_url(f"{workspace_id}/inference-stats/metadata"),
@@ -907,7 +907,7 @@ class ServerRoboflowPlatformClient:
         workspace_id: str,
         inference_data: dict,
     ) -> None:
-        if configuration.OFFLINE_MODE:
+        if configuration.LEGACY_OFFLINE_MODE:
             return None
         url = _add_params_to_url(
             url=_api_url(f"{workspace_id}/inference-stats"),
@@ -993,7 +993,7 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
     def fetch_url(
         self, value: str, cv_imread_flags: int = cv2.IMREAD_COLOR
     ) -> np.ndarray:
-        if configuration.OFFLINE_MODE:
+        if configuration.LEGACY_OFFLINE_MODE:
             raise WorkflowImageLoadError(
                 public_message="Loading images from a URL is not available while "
                 "OFFLINE_MODE is enabled.",

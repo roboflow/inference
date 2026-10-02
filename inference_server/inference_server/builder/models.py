@@ -306,7 +306,7 @@ async def list_models(bridge) -> List[Dict[str, Any]]:
     for m in get_cached_foundation_models(blocks=blocks):
         seen[m["model_id"]] = m
 
-    if configuration.OFFLINE_MODE:
+    if configuration.LEGACY_OFFLINE_MODE:
         offline_loadable = _offline_loadable_model_ids()
         if offline_loadable is not None:
             dropped = [

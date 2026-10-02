@@ -9,6 +9,28 @@ def test_app_port_default_is_9001():
     assert configuration.APP_PORT_DEFAULT == 9001
 
 
+def test_legacy_offline_mode_follows_model_layer_latch_not_server_variable():
+    code = (
+        "from inference_server import configuration as c; "
+        "assert c.OFFLINE_MODE is False, c.OFFLINE_MODE; "
+        "assert c.LEGACY_OFFLINE_MODE is True, c.LEGACY_OFFLINE_MODE; "
+        "import inference_server.legacy.bridge as b, "
+        "inference_server.legacy.common as m; "
+        "assert b.LEGACY_OFFLINE_MODE is True and m.LEGACY_OFFLINE_MODE is True"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env={
+            **os.environ,
+            "OFFLINE_MODE": "false",
+            "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START": "true",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_offline_mode_forces_local_sam3_execution():
     code = (
         "from inference_server import configuration as c; "

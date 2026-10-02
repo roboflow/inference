@@ -151,7 +151,7 @@ async def test_describe_lists_models_loaded_outside_the_bridge(fake_stat):
 
 @pytest.mark.asyncio
 async def test_offline_mode_skips_registry_and_uses_mro(fake_stat, monkeypatch):
-    monkeypatch.setattr("inference_server.legacy.bridge.OFFLINE_MODE", True)
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
     gw = FakeGateway(
         model_info={
             "ds/1": {"model_mro_names": ["ClassificationModel"], "class_names": ["a"]}
@@ -163,12 +163,48 @@ async def test_offline_mode_skips_registry_and_uses_mro(fake_stat, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_offline_mode_load_failure_is_404(fake_stat, monkeypatch):
-    monkeypatch.setattr("inference_server.legacy.bridge.OFFLINE_MODE", True)
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
     gw = FakeGateway()
     gw.ensure_results = [("error", 5)]
     with pytest.raises(LegacyHTTPError) as exc:
         await LegacyModelBridge(gw).resolve("ds/1", None)
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_model_layer_offline_skips_registry_when_server_setting_is_online(
+    fake_stat, monkeypatch
+):
+    monkeypatch.setattr("inference_server.configuration.OFFLINE_MODE", False)
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        model_info={
+            "ds/1": {"model_mro_names": ["ClassificationModel"], "class_names": ["a"]}
+        }
+    )
+
+    route = await LegacyModelBridge(gw).resolve("ds/1", None)
+
+    assert route.task_type == "classification"
+
+
+@pytest.mark.asyncio
+async def test_model_layer_online_consults_registry_when_server_setting_is_offline(
+    fake_stat, monkeypatch
+):
+    monkeypatch.setattr("inference_server.configuration.OFFLINE_MODE", True)
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", False)
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        model_info={
+            "ds/1": {"model_mro_names": ["ClassificationModel"], "class_names": ["a"]}
+        }
+    )
+
+    route = await LegacyModelBridge(gw).resolve("ds/1", None)
+
+    assert route.task_type == "object-detection"
 
 
 @pytest.mark.asyncio
@@ -894,7 +930,7 @@ async def test_load_failing_in_resolve_keeps_the_request_once(fake_stat):
 
 @pytest.mark.asyncio
 async def test_offline_load_failure_keeps_the_request(fake_stat, monkeypatch):
-    monkeypatch.setattr("inference_server.legacy.bridge.OFFLINE_MODE", True)
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
     bridge = LegacyModelBridge(FakeGateway())
     bridge.gateway.ensure_results.append(("error", 5))
 

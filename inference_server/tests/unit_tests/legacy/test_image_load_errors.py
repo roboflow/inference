@@ -574,8 +574,9 @@ def test_undecodable_visualization_payload_answers_like_legacy():
 def test_refused_url_input_answers_like_legacy(
     legacy_client, fake_stat, monkeypatch, setting, public_message
 ):
+    target = "LEGACY_OFFLINE_MODE" if setting == "OFFLINE_MODE" else setting
     monkeypatch.setattr(
-        f"inference_server.legacy.common.{setting}", setting == "OFFLINE_MODE"
+        f"inference_server.legacy.common.{target}", setting == "OFFLINE_MODE"
     )
 
     response = _post_image(

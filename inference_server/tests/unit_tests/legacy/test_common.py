@@ -141,7 +141,7 @@ async def test_load_request_images_enforces_count_limit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_load_request_images_refuses_urls_offline(monkeypatch):
-    monkeypatch.setattr("inference_server.legacy.common.OFFLINE_MODE", True)
+    monkeypatch.setattr("inference_server.legacy.common.LEGACY_OFFLINE_MODE", True)
     with pytest.raises(LegacyHTTPError) as exc:
         await load_request_images(
             [{"type": "url", "value": "https://a/1.jpg"}], ndarray_ok=False

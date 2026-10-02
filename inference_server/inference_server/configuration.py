@@ -16,6 +16,7 @@ import uuid
 import warnings
 from typing import Optional
 
+from inference_models.configuration import OFFLINE_MODE as _MODELS_OFFLINE_MODE
 from inference_models.utils.environment import (
     get_boolean_from_env,
     get_float_from_env,
@@ -243,6 +244,7 @@ DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS = get_boolean_from_env(
     "DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS", default=False
 )
 OFFLINE_MODE = get_boolean_from_env("OFFLINE_MODE", default=False)
+LEGACY_OFFLINE_MODE = _MODELS_OFFLINE_MODE
 DISABLE_INFERENCE_CACHE = get_boolean_from_env("DISABLE_INFERENCE_CACHE", default=False)
 
 # ── OpenTelemetry tracing and metrics (telemetry.py) ───────────────────────

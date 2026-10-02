@@ -25,7 +25,7 @@ from inference_server.configuration import (
     ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM,
     ALLOW_URL_INPUT,
     DEFAULT_API_KEY,
-    OFFLINE_MODE,
+    LEGACY_OFFLINE_MODE,
 )
 from inference_server.errors import error_response
 from inference_server.framework.input_parsers.image_limits import too_many_images
@@ -186,7 +186,7 @@ async def load_request_images(images: list, *, ndarray_ok: bool) -> list[ImagePa
     for position, image in enumerate(images):
         image_type, value = split_image(image)
         if image_type == "url":
-            if OFFLINE_MODE or not ALLOW_URL_INPUT:
+            if LEGACY_OFFLINE_MODE or not ALLOW_URL_INPUT:
                 raise image_load_error(_url_input_refused_message())
             url_positions.append(position)
             urls.append(value)
@@ -435,7 +435,7 @@ def _decode_base64(value: Any) -> bytes:
 
 
 def _url_input_refused_message() -> str:
-    if OFFLINE_MODE:
+    if LEGACY_OFFLINE_MODE:
         return _URL_OFFLINE_ERROR
     return _URL_INPUT_DISABLED_ERROR
 

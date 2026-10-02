@@ -559,7 +559,7 @@ def test_load_failure_answer_hides_urls_and_secret_values(
 def test_offline_load_failure_with_a_description_answers_by_its_cause(
     legacy_client, fake_stat, monkeypatch
 ):
-    monkeypatch.setattr("inference_server.legacy.bridge.OFFLINE_MODE", True)
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
     error = ModelRetrievalError(
         "Cannot fetch Roboflow model metadata - OFFLINE_MODE is enabled. All "
         "models must be pre-cached locally.",
@@ -581,7 +581,7 @@ def test_offline_load_failure_with_a_description_answers_by_its_cause(
 def test_offline_load_failure_without_a_description_is_404(
     legacy_client, fake_stat, monkeypatch
 ):
-    monkeypatch.setattr("inference_server.legacy.bridge.OFFLINE_MODE", True)
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
     gw = FakeGateway()
     gw.ensure_results = [("error", 5)]
 

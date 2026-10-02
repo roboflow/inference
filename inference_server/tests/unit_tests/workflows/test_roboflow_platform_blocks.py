@@ -139,7 +139,7 @@ def _response(
 @pytest.fixture(autouse=True)
 def _configured_api(monkeypatch):
     monkeypatch.setattr(host.configuration, "API_BASE_URL", API_URL + "/")
-    monkeypatch.setattr(host.configuration, "OFFLINE_MODE", False)
+    monkeypatch.setattr(host.configuration, "LEGACY_OFFLINE_MODE", False)
     host.clear_workspace_cache()
     yield
     host.clear_workspace_cache()
@@ -424,7 +424,7 @@ def test_custom_metadata_and_search_payloads() -> None:
 def test_offline_mode_skips_fire_and_forget_calls_and_refuses_the_rest(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(host.configuration, "OFFLINE_MODE", True)
+    monkeypatch.setattr(host.configuration, "LEGACY_OFFLINE_MODE", True)
     client = _RecordingPlatformClient()
 
     with mock.patch.object(host.requests, "post") as post:
@@ -451,7 +451,7 @@ def test_offline_mode_skips_fire_and_forget_calls_and_refuses_the_rest(
 
 
 def test_offline_mode_refuses_an_uncached_workspace_lookup(monkeypatch) -> None:
-    monkeypatch.setattr(host.configuration, "OFFLINE_MODE", True)
+    monkeypatch.setattr(host.configuration, "LEGACY_OFFLINE_MODE", True)
 
     with requests_mock.Mocker() as m:
         with pytest.raises(RoboflowAPIConnectionError) as error:
@@ -470,14 +470,14 @@ def test_offline_mode_still_answers_an_already_cached_workspace(
         m.get(requests_mock.ANY, json={"workspace": "ws"})
         assert host.PLATFORM_CLIENT.get_roboflow_workspace(api_key="my-key") == "ws"
         assert m.call_count == 1
-        monkeypatch.setattr(host.configuration, "OFFLINE_MODE", True)
+        monkeypatch.setattr(host.configuration, "LEGACY_OFFLINE_MODE", True)
 
         assert host.PLATFORM_CLIENT.get_roboflow_workspace(api_key="my-key") == "ws"
         assert m.call_count == 1
 
 
 def test_offline_mode_refuses_generic_platform_posts(monkeypatch) -> None:
-    monkeypatch.setattr(host.configuration, "OFFLINE_MODE", True)
+    monkeypatch.setattr(host.configuration, "LEGACY_OFFLINE_MODE", True)
 
     with requests_mock.Mocker() as m:
         with pytest.raises(RoboflowAPIConnectionError):
