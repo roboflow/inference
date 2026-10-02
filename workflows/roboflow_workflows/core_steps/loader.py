@@ -1160,11 +1160,19 @@ else:
         PerspectiveCorrectionBlockV1,
     )
 
+from roboflow_workflows.core_steps.formatters.detections_class_router.v1 import (
+    DetectionsClassRouterBlockV1,
+)
+from roboflow_workflows.core_steps.sinks.obs.action.v1 import OBSActionBlockV1
+from roboflow_workflows.core_steps.sinks.obs.connection.v1 import OBSConnectionBlockV1
 from roboflow_workflows.core_steps.transformations.qr_code_generator.v1 import (
     QRCodeGeneratorBlockV1,
 )
 from roboflow_workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
+)
+from roboflow_workflows.core_steps.transformations.rtsp_stream_watcher.v1 import (
+    RTSPStreamWatcherBlockV1,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -1456,6 +1464,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     NUMPY_ARRAY_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    OBS_CONNECTION_KIND,
     PARENT_ID_KIND,
     POINT_KIND,
     PREDICTION_TYPE_KIND,
@@ -1694,6 +1703,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
+        DetectionsClassRouterBlockV1,
         StringTemplateBlockV1,
         DimensionCollapseBlockV1,
         DetectionsListRollUpBlockV1,
@@ -1840,6 +1850,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TrackerSORTBlockV1,
         TrackerOCSORTBlockV1,
         WebhookSinkBlockV1,
+        OBSConnectionBlockV1,
+        OBSActionBlockV1,
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
         RoboflowInstanceSegmentationModelBlockV3,
@@ -1902,6 +1914,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EasyOCRBlockV1,
         PPOCRBlockV1,
         QRCodeGeneratorBlockV1,
+        RTSPStreamWatcherBlockV1,
         DetectionsCombineBlockV1,
         MaskAreaMeasurementBlockV1,
         MaskEdgeSnapBlockV1,
@@ -2000,6 +2013,7 @@ def load_kinds() -> List[Kind]:
         BYTES_KIND,
         INFERENCE_ID_KIND,
         SECRET_KIND,
+        OBS_CONNECTION_KIND,
         (
             EMBEDDING_KIND
             if not ENABLE_TENSOR_DATA_REPRESENTATION
