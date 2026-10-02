@@ -395,6 +395,7 @@ def crop_masks_to_boxes(
 
 def scale_polygons_to_image(
     polygons: List[np.ndarray],
+    *,
     mask_size: ImageDimensions,
     image_size: ImageDimensions,
 ) -> List[np.ndarray]:
@@ -417,17 +418,22 @@ def scale_polygons_to_image(
     """
     if not polygons:
         return []
+
     x_scale = image_size.width / mask_size.width
     y_scale = image_size.height / mask_size.height
     if x_scale == 1.0 and y_scale == 1.0:
         return polygons
+
     scale = np.array([x_scale, y_scale], dtype=np.float32)
-    return [polygon * scale for polygon in polygons]
+    scaled_polygons = [polygon * scale for polygon in polygons]
+
+    return scaled_polygons
 
 
 def resolve_mask_target_size(
     mask_height: int,
     mask_width: int,
+    *,
     size_after_pre_processing: ImageDimensions,
     masks_resolution_factor: float,
 ) -> Tuple[int, int]:
@@ -450,12 +456,16 @@ def resolve_mask_target_size(
     """
     if masks_resolution_factor >= 1.0:
         return size_after_pre_processing.height, size_after_pre_processing.width
+
     factor = max(0.0, masks_resolution_factor)
-    height = round(
-        mask_height * (1 - factor) + size_after_pre_processing.height * factor
+    height = max(
+        1, round(mask_height * (1 - factor) + size_after_pre_processing.height * factor)
     )
-    width = round(mask_width * (1 - factor) + size_after_pre_processing.width * factor)
-    return max(1, height), max(1, width)
+    width = max(
+        1, round(mask_width * (1 - factor) + size_after_pre_processing.width * factor)
+    )
+
+    return height, width
 
 
 def align_instance_segmentation_results(
