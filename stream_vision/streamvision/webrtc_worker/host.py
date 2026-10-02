@@ -8,6 +8,7 @@ descriptor installed for this process, built once on first use.
 This module must stay import-light: no aiortc, av or pipeline imports.
 """
 
+import datetime
 import threading
 from typing import Any, Dict, Optional, Protocol
 
@@ -97,6 +98,52 @@ class WebRTCWorkerHost(PipelineHost, Protocol):
         Returns:
             A media player exposing a `video` track.
         """
+
+    def is_over_quota(self, api_key: Optional[str]) -> bool:
+        """Tell whether the API key has exhausted its usage quota.
+
+        Args:
+            api_key: API key of the session.
+
+        Returns:
+            True when the session must stop.
+        """
+
+    def wrap_url(self, url: str) -> str:
+        """Route an outbound platform address through the host's gateway.
+
+        Args:
+            url: Address the worker is about to call.
+
+        Returns:
+            The address to call instead.
+        """
+
+    def record_session_usage(
+        self,
+        *,
+        webrtc_request: Any,
+        workflow_id: str,
+        video_source: str,
+        session_started: datetime.datetime,
+        session_stopped: datetime.datetime,
+        connection_established: bool,
+    ) -> None:
+        """Record what one finished session consumed. Does not flush.
+
+        The worker reports facts only; how they are billed is the host's rule.
+
+        Args:
+            webrtc_request: Request the session served.
+            workflow_id: Resource identifier the host resolved for the session.
+            video_source: Kind of video the session processed.
+            session_started: When the session started running.
+            session_stopped: When the session stopped.
+            connection_established: Whether the peer connection came up.
+        """
+
+    def push_usage_payloads(self) -> None:
+        """Flush the usage recorded so far."""
 
 
 _HOST: Optional[WebRTCWorkerHost] = None

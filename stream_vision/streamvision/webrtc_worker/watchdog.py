@@ -1,18 +1,18 @@
 import datetime
+import logging
 import threading
 import time
 from typing import Callable, Optional
 
 import requests
-
-from inference.core.env import (
+from streamvision.stream.environment import (
     OFFLINE_MODE,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
     WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS,
 )
-from inference.core.interfaces.webrtc_worker.utils import is_over_quota
-from inference.core.logger import logger
-from inference.core.utils.url_utils import wrap_url
+from streamvision.webrtc_worker.host import get_webrtc_worker_host
+
+logger = logging.getLogger(__name__)
 
 
 class Watchdog:
@@ -91,7 +91,7 @@ class Watchdog:
 
         try:
             response = requests.post(
-                wrap_url(self._heartbeat_url),
+                get_webrtc_worker_host().wrap_url(self._heartbeat_url),
                 json={
                     "session_id": self._session_id,
                     "api_key": self._api_key,
@@ -122,7 +122,7 @@ class Watchdog:
         url = self._heartbeat_url + "/end"
         try:
             response = requests.post(
-                wrap_url(url),
+                get_webrtc_worker_host().wrap_url(url),
                 json={
                     "session_id": self._session_id,
                     "api_key": self._api_key,
@@ -157,7 +157,10 @@ class Watchdog:
                     message=f"Timeout reached, heartbeats: {self._total_heartbeats}"
                 )
                 break
-            if WEBRTC_MODAL_USAGE_QUOTA_ENABLED and is_over_quota(self._api_key):
+            if (
+                WEBRTC_MODAL_USAGE_QUOTA_ENABLED
+                and get_webrtc_worker_host().is_over_quota(self._api_key)
+            ):
                 logger.error(
                     "API key over quota, heartbeats: %s", self._total_heartbeats
                 )

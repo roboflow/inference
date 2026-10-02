@@ -259,6 +259,10 @@
       "canonical": "streamvision.webrtc_worker.sources.rtsp"
     },
     {
+      "legacy": "inference.core.interfaces.webrtc_worker.watchdog",
+      "canonical": "streamvision.webrtc_worker.watchdog"
+    },
+    {
       "legacy": "inference.core.interfaces.webrtc_worker.webrtc",
       "canonical": "streamvision.webrtc_worker.webrtc"
     }
