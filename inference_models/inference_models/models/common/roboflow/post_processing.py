@@ -447,10 +447,19 @@ def resolve_mask_target_size(
 ) -> Tuple[int, int]:
     """Interpolate the mask resize target between the mask grid and the image.
 
-    A factor of `1.0` selects the image size, reproducing the behaviour from
-    before this parameter existed. A factor of `0.0` leaves masks on the grid
-    the model produced them on. Values in between trade mask fidelity for the
-    cost of upsampling every instance.
+    The endpoints are explicit: `1.0` selects `size_after_pre_processing`,
+    reproducing the behaviour from before this parameter existed, and `0.0`
+    selects the grid the model produced masks on. Values in between interpolate
+    linearly between those two sizes.
+
+    **A lower factor does not guarantee smaller masks or lower latency.** When
+    the image is smaller than the model's mask grid the interpolation runs the
+    other way: with a 160x160 grid and a 100x100 image, `0.0` yields 25,600
+    mask pixels against 10,000 at `1.0`. The `fast` and `accurate` names on
+    `mask_decode_mode` describe the common case where the image is larger than
+    the grid, and are misleading below it. Callers sensitive to this should
+    compare `size_after_pre_processing` against the mask grid rather than
+    assume a direction.
 
     Args:
         mask_height: Height of the mask grid after letterbox padding is removed.

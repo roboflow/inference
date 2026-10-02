@@ -235,7 +235,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.0,
-        description="Post-processing parameter to dictate tradeoff between fast and accurate.",
+        description="Post-processing parameter to dictate tradeoff between fast and accurate. 0.0 keeps masks on the model's own grid, 1.0 resizes them to the image. Note that a lower value does not guarantee smaller masks: when the image is smaller than the model grid the interpolation runs the other way.",
         examples=[0.3, "$inputs.tradeoff_factor"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
