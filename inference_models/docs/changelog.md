@@ -14,6 +14,15 @@
 
 ### Added
 
+- `ImageEmbeddingModel` and the `image_embeddings` capability for existing
+  single-label and multi-label ResNet, ViT and DINOv3 classifiers.
+  `AutoModel.from_pretrained` accepts `required_capabilities=["image_embeddings"]`
+  to select a compatible ONNX, PyTorch or Hugging Face package, with
+  `output_type="feature_vector"` or `output_type="logits"` selecting features or
+  pre-activation logits using the model's original preprocessing. Recoverable
+  ONNX classifier boundaries are
+  extracted into separately cached graphs without retraining. Classification-only
+  TensorRT engines are excluded from embedding package negotiation.
 - A `coreml` backend runs native Core ML packages (`coreml-model-package-v1`) for RF-DETR object
   detection and instance segmentation on Apple Silicon Macs running macOS 13+, installed with the new
   `coreml` extra (a no-op on other platforms). When a model has a Core ML package, `AutoModel`
