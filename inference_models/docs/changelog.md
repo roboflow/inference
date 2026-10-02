@@ -28,6 +28,11 @@
 
 ### Fixed
 
+- CLIP ONNX and PyTorch models now raise `ModelInputError` when text exceeds the
+  tokenizer's context length, allowing HTTP endpoints to return 400 instead of
+  500 with guidance to shorten the text. The public error message does not echo
+  the input text; unrelated runtime errors continue to propagate unchanged.
+
 - RF-DETR Triton preprocessing no longer falls back for dataset-version resize
   metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
   flags disabling already-inactive crop, contrast, and grayscale transforms.
