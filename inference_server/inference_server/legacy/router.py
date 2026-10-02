@@ -21,6 +21,7 @@ from starlette.datastructures import UploadFile
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 from inference_server import configuration, server_identity, telemetry
 from inference_server.dependencies import get_model_manager
+from inference_server.legacy.active_learning_registration import register_inference
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
     Route,
@@ -428,6 +429,7 @@ async def _run_cv_inference(
     bridge: LegacyModelBridge,
     *,
     expected_task_types: Tuple[str, ...],
+    active_learning_eligible: bool = False,
 ) -> Response:
     api_key = resolve_api_key(
         request, request.query_params.get("api_key"), inference_request.api_key
@@ -452,7 +454,13 @@ async def _run_cv_inference(
             400,
             f"Model {inference_request.model_id!r} is a {route.task_type} model.",
         )
-    return await _infer_and_repack(inference_request, bridge, route, api_key)
+    return await _infer_and_repack(
+        inference_request,
+        bridge,
+        route,
+        api_key,
+        active_learning_eligible=active_learning_eligible,
+    )
 
 
 def _model_monitoring_enabled(inference_request) -> bool:
@@ -465,6 +473,7 @@ async def _infer_and_repack(
     route: Route,
     api_key: Optional[str],
     image_format: Optional[str] = None,
+    active_learning_eligible: bool = False,
 ) -> Response:
     ensure_request_supported(inference_request.model_id, inference_request, route)
     visualize = image_format in _VISUALIZATION_FORMATS or bool(
@@ -503,11 +512,20 @@ async def _infer_and_repack(
         responses.append(response)
     pingback.record_inference(route.registry_id, inference_request, responses)
     if image_format == "image":
-        return Response(
+        http_response = Response(
             content=responses[0].visualization if responses else None,
             media_type="image/jpeg",
         )
-    return orjson_response(responses if is_batch else responses[0])
+    else:
+        http_response = orjson_response(responses if is_batch else responses[0])
+    await register_inference(
+        inference_request,
+        task_type=route.task_type,
+        payloads=payloads,
+        responses=responses,
+        eligible=active_learning_eligible,
+    )
+    return http_response
 
 
 @infer_router.post(
@@ -530,6 +548,7 @@ async def infer_object_detection(
         inference_request,
         bridge,
         expected_task_types=("object-detection",),
+        active_learning_eligible=True,
     )
 
 
@@ -554,6 +573,7 @@ async def infer_instance_segmentation(
         inference_request,
         bridge,
         expected_task_types=("instance-segmentation",),
+        active_learning_eligible=True,
     )
 
 
@@ -579,6 +599,7 @@ async def infer_semantic_segmentation(
         inference_request,
         bridge,
         expected_task_types=("semantic-segmentation",),
+        active_learning_eligible=True,
     )
 
 
@@ -605,6 +626,7 @@ async def infer_classification(
         inference_request,
         bridge,
         expected_task_types=("classification", "multi-label-classification"),
+        active_learning_eligible=True,
     )
 
 
@@ -864,6 +886,7 @@ async def legacy_infer_from_request(
         route,
         resolved_key,
         image_format=format if format in _VISUALIZATION_FORMATS else None,
+        active_learning_eligible=True,
     )
 
 

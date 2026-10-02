@@ -133,6 +133,11 @@ class ActiveLearningMiddleware:
         self._cache = cache
         self._platform_client = platform_client
 
+    @property
+    def active(self) -> bool:
+        """Whether the middleware holds a configuration and can register."""
+        return self._configuration is not None
+
     def register_batch(
         self,
         images: List[np.ndarray],

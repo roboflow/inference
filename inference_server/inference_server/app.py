@@ -44,6 +44,7 @@ from inference_server.auth import (  # noqa: E402
 from inference_server.cors import PathAwareCORSMiddleware  # noqa: E402
 from inference_server.errors import AuthBackendUnavailable  # noqa: E402
 from inference_server.hosted.common import BillingIntentMiddleware  # noqa: E402
+from inference_server.legacy import active_learning_registration  # noqa: E402
 from inference_server.legacy.bridge import (  # noqa: E402
     LegacyModelBridge,
     LoopBridge,
@@ -194,6 +195,7 @@ async def _lifespan(app: FastAPI):
         app.state.loop_bridge = LoopBridge(app.state.loop)
         app.state.legacy_bridge = LegacyModelBridge(proxy)
         pingback_sender = pingback.start_sender()
+        active_learning_registration.start()
         if _workflows_host is not None:
             _workflows_host.GUARDED_IMAGE_CODEC.bind_loop(app.state.loop_bridge)
         preload_ids = _cfg.preload_model_ids()
@@ -226,6 +228,7 @@ async def _lifespan(app: FastAPI):
             await asyncio.gather(task, return_exceptions=True)
         if pingback_sender is not None:
             pingback_sender.stop()
+        active_learning_registration.stop()
         shutdown_telemetry()
         try:
             await proxy.shutdown()

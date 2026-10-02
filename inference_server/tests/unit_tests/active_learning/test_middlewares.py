@@ -31,6 +31,19 @@ def test_active_learning_registration_when_no_configuration_provided(
     assert platform_client.mock_calls == []
 
 
+def test_middleware_is_active_only_with_a_configuration() -> None:
+    def build(configuration):
+        return ActiveLearningMiddleware(
+            api_key="api-key",
+            configuration=configuration,
+            cache=MagicMock(),
+            platform_client=MagicMock(),
+        )
+
+    assert build(None).active is False
+    assert build(MagicMock()).active is True
+
+
 @mock.patch.object(middlewares, "execute_sampling")
 def test_active_learning_registration_when_no_matching_strategy(
     execute_sampling_mock: MagicMock,

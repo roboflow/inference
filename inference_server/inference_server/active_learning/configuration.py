@@ -41,6 +41,7 @@ TYPE2SAMPLING_INITIALIZERS = {
     "detections_number_based": initialize_detections_number_based_sampling,
 }
 ACTIVE_LEARNING_CONFIG_CACHE_EXPIRE = 900
+ACTIVE_LEARNING_CONFIG_CACHE_KEY_PREFIX = "active_learning:configurations:"
 
 
 def prepare_active_learning_configuration(
@@ -275,7 +276,10 @@ def construct_cache_key_for_active_learning_config(
     """
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
 
-    return f"active_learning:configurations:{api_key_hash}:{target_dataset}:{model_id}"
+    return (
+        f"{ACTIVE_LEARNING_CONFIG_CACHE_KEY_PREFIX}"
+        f"{api_key_hash}:{target_dataset}:{model_id}"
+    )
 
 
 def parse_cached_roboflow_project_metadata(
