@@ -41,6 +41,7 @@ from inference.core.env import (
     WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT,
     WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
     WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
+    WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT,
     WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
     WEBRTC_MODAL_GCP_SECRET_NAME,
     WEBRTC_MODAL_IMAGE_NAME,
@@ -150,6 +151,8 @@ if modal is not None:
         "memory": WEBRTC_MODAL_MIN_RAM_MB,
         "cpu": WEBRTC_MODAL_MIN_CPU_CORES,
         "timeout": WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+        # with_options(timeout=...) only changes execution time, not startup.
+        "startup_timeout": WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT,
         "enable_memory_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
         "max_inputs": WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
         "env": {
@@ -177,7 +180,7 @@ if modal is not None:
             "LOG_LEVEL": LOG_LEVEL,
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
             "PROJECT": PROJECT,
-            "PYTHONASYNCIODEBUG": str(os.getenv("PYTHONASYNCIODEBUG", "0")),
+            "PYTHONASYNCIODEBUG": os.getenv("PYTHONASYNCIODEBUG", ""),
             "ROBOFLOW_ENVIRONMENT": (
                 "prod" if PROJECT == "roboflow-platform" else "staging"
             ),

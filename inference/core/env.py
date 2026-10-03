@@ -1482,6 +1482,10 @@ WEBRTC_MODAL_WATCHDOG_TIMEMOUT = int(os.getenv("WEBRTC_MODAL_WATCHDOG_TIMEMOUT",
 WEBRTC_MODAL_FUNCTION_TIME_LIMIT = int(
     os.getenv("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "3600")
 )
+# Separate budget for imports, model downloads and compilation before inputs.
+WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT", "600")
+)
 # seconds
 WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT = int(
     os.getenv("WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT", "604800")  # 7 days

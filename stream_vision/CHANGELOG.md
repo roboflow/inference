@@ -4,6 +4,10 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Fixed
+
+- WebRTC sessions await peer/transport cleanup on cancellation and setup failures, finish in-flight inference, and join workflow thread pools before returning. Normal connection closure is no longer logged as fatal.
+
 ## `0.1.0`
 
 ### Added
