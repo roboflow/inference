@@ -9,8 +9,10 @@ from inference_server.legacy.entities import (
     KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
+from inference_server.legacy.errors import LegacyHTTPError
 from inference_server.legacy.translation import (
     build_task_params,
+    ensure_request_supported,
     masks2poly,
     repack_prediction,
 )
@@ -55,6 +57,78 @@ def test_build_params_passes_best_confidence_through():
     assert build_task_params("object-detection", "infer", req, ROUTE)["confidence"] == (
         "best"
     )
+
+
+def test_build_params_forwards_disable_preproc_flags_only_when_true():
+    req = ObjectDetectionInferenceRequest(
+        model_id="ds/1",
+        image=IMG,
+        disable_preproc_contrast=True,
+        disable_preproc_grayscale=False,
+        disable_preproc_static_crop=True,
+    )
+    params = build_task_params("object-detection", "infer", req, ROUTE)
+    assert params["disable_preproc_contrast"] is True
+    assert params["disable_preproc_static_crop"] is True
+    assert "disable_preproc_grayscale" not in params
+    assert "disable_preproc_auto_orient" not in params
+
+    plain = ObjectDetectionInferenceRequest(model_id="ds/1", image=IMG)
+    assert not any(
+        key.startswith("disable_preproc")
+        for key in build_task_params("object-detection", "infer", plain, ROUTE)
+    )
+
+
+def test_ensure_request_supported_accepts_disable_preproc_flags():
+    req = InstanceSegmentationInferenceRequest(
+        model_id="ds/1",
+        image=IMG,
+        disable_preproc_contrast=True,
+        disable_preproc_grayscale=True,
+        disable_preproc_static_crop=True,
+    )
+    ensure_request_supported("ds/1", req, ROUTE)
+
+
+def test_ensure_request_supported_keeps_auto_orient_unsupported():
+    req = ObjectDetectionInferenceRequest(
+        model_id="ds/1", image=IMG, disable_preproc_auto_orient=True
+    )
+    with pytest.raises(LegacyHTTPError) as error:
+        ensure_request_supported("ds/1", req, ROUTE)
+    assert error.value.status_code == 501
+    assert error.value.message == (
+        "disable_preproc_auto_orient is not supported for model 'ds/1'."
+    )
+
+
+def test_ignored_detection_options_are_accepted_and_logged_once(caplog):
+    req = InstanceSegmentationInferenceRequest(
+        model_id="ds/1",
+        image=IMG,
+        mask_decode_mode="fast",
+        tradeoff_factor=0.5,
+        max_candidates=100,
+        fix_batch_size=True,
+    )
+    with caplog.at_level("DEBUG", logger="inference_server.legacy.translation"):
+        ensure_request_supported("ds/1", req, ROUTE)
+    assert len(caplog.records) == 1
+    for name in (
+        "mask_decode_mode",
+        "tradeoff_factor",
+        "max_candidates",
+        "fix_batch_size",
+    ):
+        assert name in caplog.text
+
+
+def test_default_detection_options_log_nothing(caplog):
+    req = InstanceSegmentationInferenceRequest(model_id="ds/1", image=IMG)
+    with caplog.at_level("DEBUG", logger="inference_server.legacy.translation"):
+        ensure_request_supported("ds/1", req, ROUTE)
+    assert caplog.records == []
 
 
 def test_repack_object_detection_matches_legacy_shape():

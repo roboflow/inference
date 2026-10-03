@@ -3,6 +3,12 @@
 from inference_model_manager import registry_defaults
 from inference_model_manager.registry import ModelRegistry
 
+PREPROC_FLAGS = {
+    "disable_preproc_contrast",
+    "disable_preproc_grayscale",
+    "disable_preproc_static_crop",
+}
+
 
 def test_subclass_override_registers_after_base(monkeypatch):
     """Subclass config must register even when a base class with same action is already registered.
@@ -315,14 +321,14 @@ def test_per_family_detector_contracts():
         "YOLO26ForObjectDetectionTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence"}, key
+        assert set(p) == {"images", "confidence", *PREPROC_FLAGS}, key
 
     for key in (
         "YOLOv10ForObjectDetectionOnnx",
         "YOLOv10ForObjectDetectionTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence", "max_detections"}, key
+        assert set(p) == {"images", "confidence", "max_detections", *PREPROC_FLAGS}, key
 
     p = params_of("RoboflowInstantHF")
     assert set(p) == {"images", "confidence", "iou_threshold", "max_detections"}
@@ -361,6 +367,7 @@ def test_per_family_detector_contracts():
             "max_detections",
             "class_agnostic_nms",
             "mask_format",
+            *PREPROC_FLAGS,
         }, key
 
     for key in (
@@ -369,7 +376,13 @@ def test_per_family_detector_contracts():
         "RFDetrForInstanceSegmentationTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence", "mask_format", "max_detections"}, key
+        assert set(p) == {
+            "images",
+            "confidence",
+            "mask_format",
+            "max_detections",
+            *PREPROC_FLAGS,
+        }, key
 
     for key in (
         "YOLO26ForInstanceSegmentationOnnx",
@@ -377,7 +390,7 @@ def test_per_family_detector_contracts():
         "YOLO26ForInstanceSegmentationTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence", "mask_format"}, key
+        assert set(p) == {"images", "confidence", "mask_format", *PREPROC_FLAGS}, key
 
     for key in (
         "RFDetrForKeyPointsONNX",
@@ -386,11 +399,16 @@ def test_per_family_detector_contracts():
         "YOLO26ForKeyPointsDetectionTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence", "key_points_threshold"}, key
+        assert set(p) == {
+            "images",
+            "confidence",
+            "key_points_threshold",
+            *PREPROC_FLAGS,
+        }, key
 
     for key in ("SemanticSegmentationModel", "MultiLabelClassificationModel"):
         p = params_of(key)
-        assert set(p) == {"images", "confidence"}, key
+        assert set(p) == {"images", "confidence", *PREPROC_FLAGS}, key
         assert p["confidence"] == {"type": "float", "required": False}, key
 
 
@@ -564,5 +582,67 @@ def test_classification_declares_include_anomaly_map():
 
     params = _unpack_config(_ACTION_CONFIGS["ClassificationModel"][0])[3]
 
-    assert set(params) == {"images", "include_anomaly_map"}
+    assert set(params) == {"images", "include_anomaly_map", *PREPROC_FLAGS}
     assert params["include_anomaly_map"] == {"type": "bool", "required": False}
+
+
+def test_roboflow_trained_families_declare_pre_processing_flags():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        PRE_PROCESSING_OVERRIDE_FIELDS,
+        _unpack_config,
+    )
+
+    assert PRE_PROCESSING_OVERRIDE_FIELDS == {
+        "disable_preproc_contrast": "disable_contrast_enhancement",
+        "disable_preproc_grayscale": "disable_grayscale",
+        "disable_preproc_static_crop": "disable_static_crop",
+    }
+    declaring = (
+        "ObjectDetectionModel",
+        "RFDetrForObjectDetectionTorch",
+        "RFDetrForObjectDetectionONNX",
+        "RFDetrForObjectDetectionTRT",
+        "YOLO26ForObjectDetectionOnnx",
+        "YOLO26ForObjectDetectionTorchScript",
+        "YOLO26ForObjectDetectionTRT",
+        "YOLOv10ForObjectDetectionOnnx",
+        "YOLOv10ForObjectDetectionTRT",
+        "ClassificationModel",
+        "MultiLabelClassificationModel",
+        "InstanceSegmentationModel",
+        "YOLOv5ForInstanceSegmentationOnnx",
+        "YOLOv5ForInstanceSegmentationTRT",
+        "YOLOv7ForInstanceSegmentationOnnx",
+        "YOLOv7ForInstanceSegmentationTRT",
+        "YOLOACTForInstanceSegmentationOnnx",
+        "YOLOACTForInstanceSegmentationTRT",
+        "RFDetrForInstanceSegmentationTorch",
+        "RFDetrForInstanceSegmentationOnnx",
+        "RFDetrForInstanceSegmentationTRT",
+        "YOLO26ForInstanceSegmentationOnnx",
+        "YOLO26ForInstanceSegmentationTorchScript",
+        "YOLO26ForInstanceSegmentationTRT",
+        "SemanticSegmentationModel",
+        "KeyPointsDetectionModel",
+        "RFDetrForKeyPointsONNX",
+        "YOLO26ForKeyPointsDetectionOnnx",
+        "YOLO26ForKeyPointsDetectionTorchScript",
+        "YOLO26ForKeyPointsDetectionTRT",
+    )
+    for key in declaring:
+        params = _unpack_config(_ACTION_CONFIGS[key][0])[3]
+        for flag in PRE_PROCESSING_OVERRIDE_FIELDS:
+            assert params[flag] == {"type": "bool", "required": False}, (key, flag)
+
+    not_declaring = (
+        "OpenVocabularyObjectDetectionModel",
+        "OWLv2HF",
+        "PPOCRv6DetectionOnnx",
+        "RoboflowInstantHF",
+        "GroundingDinoForObjectDetectionTorch",
+        "DepthEstimationModel",
+    )
+    for key in not_declaring:
+        params = _unpack_config(_ACTION_CONFIGS[key][0])[3]
+        assert not set(params) & set(PRE_PROCESSING_OVERRIDE_FIELDS), key

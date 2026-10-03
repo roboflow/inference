@@ -413,6 +413,33 @@ def test_catch_all_forwards_include_anomaly_map_to_classification(
     assert params["include_anomaly_map"] is True
 
 
+def test_catch_all_forwards_disable_preproc_flags(legacy_client, fake_stat):
+    mask = np.zeros((1, 6, 8), dtype=bool)
+    mask[0, 1:5, 1:5] = True
+    prediction = SimpleNamespace(
+        xyxy=np.array([[1, 1, 5, 5]], dtype=float),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        mask=mask,
+    )
+
+    response, gateway = _post_catch_all(
+        legacy_client,
+        fake_stat,
+        "instance-segmentation",
+        prediction,
+        {"class_names": ["cat"]},
+        query="&disable_preproc_static_crop=true&mask_decode_mode=fast"
+        "&tradeoff_factor=0.5",
+    )
+
+    assert response.status_code == 200, response.text
+    params = next(call for call in gateway.calls if call[0] == "infer")[3]
+    assert params["disable_preproc_static_crop"] is True
+    assert "disable_preproc_contrast" not in params
+    assert "mask_decode_mode" not in params and "tradeoff_factor" not in params
+
+
 def test_catch_all_dispatches_semantic_segmentation(legacy_client, fake_stat):
     prediction = SimpleNamespace(
         segmentation_map=np.array([[0, 1], [1, 0]]),

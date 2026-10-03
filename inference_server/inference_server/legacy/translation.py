@@ -55,12 +55,16 @@ from inference_server.legacy.errors import LegacyHTTPError
 logger = logging.getLogger(__name__)
 
 _DISABLE_PREPROC_FIELDS = (
-    "disable_preproc_auto_orient",
     "disable_preproc_contrast",
     "disable_preproc_grayscale",
     "disable_preproc_static_crop",
 )
-_OD_MAX_CANDIDATES_DEFAULT = 3000
+_IGNORED_DETECTION_OPTIONS = (
+    ("mask_decode_mode", "accurate"),
+    ("tradeoff_factor", 0.0),
+    ("max_candidates", 3000),
+    ("fix_batch_size", False),
+)
 _CONFIDENCE_ONLY_TASK_TYPES = frozenset(
     [
         "classification",
@@ -71,28 +75,18 @@ _CONFIDENCE_ONLY_TASK_TYPES = frozenset(
 
 
 def ensure_request_supported(model_id: str, request: Any, route: Route) -> None:
-    for field in _DISABLE_PREPROC_FIELDS:
-        if getattr(request, field, False):
-            raise LegacyHTTPError(
-                501, f"{field} is not supported for model '{model_id}'."
-            )
-    max_candidates = getattr(request, "max_candidates", None)
-    if max_candidates is not None and max_candidates != _OD_MAX_CANDIDATES_DEFAULT:
-        raise LegacyHTTPError(
-            501, f"max_candidates is not supported for model '{model_id}'."
-        )
-    mask_decode_mode = getattr(request, "mask_decode_mode", None)
-    if mask_decode_mode is not None and mask_decode_mode != "accurate":
+    if getattr(request, "disable_preproc_auto_orient", False):
         raise LegacyHTTPError(
             501,
-            f"mask_decode_mode={mask_decode_mode!r} is not supported for model "
-            f"'{model_id}'.",
+            f"disable_preproc_auto_orient is not supported for model '{model_id}'.",
         )
-    tradeoff_factor = getattr(request, "tradeoff_factor", None)
-    if tradeoff_factor:
-        raise LegacyHTTPError(
-            501, f"tradeoff_factor is not supported for model '{model_id}'."
-        )
+    ignored = {
+        name: getattr(request, name, default)
+        for name, default in _IGNORED_DETECTION_OPTIONS
+        if getattr(request, name, default) not in (None, default)
+    }
+    if ignored:
+        logger.debug("Ignoring request options %s for model '%s'", ignored, model_id)
 
 
 def _numeric_confidence(value: Any) -> Optional[float]:
@@ -114,6 +108,9 @@ def build_task_params(task_type: str, action: str, request: Any, route: Route) -
     confidence = roboflow_confidence(getattr(request, "confidence", None))
     if confidence is not None:
         params["confidence"] = confidence
+    for field in _DISABLE_PREPROC_FIELDS:
+        if getattr(request, field, False):
+            params[field] = True
     if task_type == "classification":
         include_anomaly_map = getattr(request, "include_anomaly_map", None)
         if include_anomaly_map is not None:

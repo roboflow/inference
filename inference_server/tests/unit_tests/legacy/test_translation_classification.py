@@ -114,6 +114,17 @@ def test_build_task_params_forwards_include_anomaly_map_for_classification():
     }
 
 
+def test_build_task_params_forwards_disable_preproc_flags_for_classification():
+    request = ClassificationInferenceRequest(
+        model_id="ds/1", image=IMG, disable_preproc_grayscale=True
+    )
+    route = _anomaly_route()
+    for task_type in ("classification", "semantic-segmentation"):
+        params = build_task_params(task_type, "infer", request, route)
+        assert params["disable_preproc_grayscale"] is True
+        assert "disable_preproc_contrast" not in params
+
+
 def test_classification_sorted_and_thresholded():
     route = Route(
         model_id="ds/1",

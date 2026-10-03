@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from typing import Any, Dict, Optional
 
 from inference_model_manager.registry import ActionEntry
 from inference_model_manager.registry_defaults import (
     _ACTION_CONFIGS,
+    PRE_PROCESSING_OVERRIDE_FIELDS,
     _unpack_config,
     lazy_register,
     registry,
@@ -101,7 +103,28 @@ def invoke_action(
         )
     if entry.param_aliases:
         kwargs = {entry.param_aliases.get(k, k): v for k, v in kwargs.items()}
+    kwargs = _build_pre_processing_overrides(kwargs, entry)
     return method(**kwargs)
+
+
+def _build_pre_processing_overrides(kwargs: dict, entry: ActionEntry) -> dict:
+    if not any(flag in entry.params for flag in PRE_PROCESSING_OVERRIDE_FIELDS):
+        for flag in PRE_PROCESSING_OVERRIDE_FIELDS:
+            kwargs.pop(flag, None)
+        return kwargs
+    if not any(flag in kwargs for flag in PRE_PROCESSING_OVERRIDE_FIELDS):
+        return kwargs
+
+    from inference_models.models.auto_loaders.entities import PreProcessingOverrides
+
+    overrides = kwargs.get("pre_processing_overrides") or PreProcessingOverrides()
+    enabled = {
+        field: True
+        for flag, field in PRE_PROCESSING_OVERRIDE_FIELDS.items()
+        if kwargs.pop(flag, False)
+    }
+    kwargs["pre_processing_overrides"] = dataclasses.replace(overrides, **enabled)
+    return kwargs
 
 
 def list_actions(model: Any) -> Dict[str, Dict[str, Any]]:

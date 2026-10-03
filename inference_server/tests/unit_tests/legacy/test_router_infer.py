@@ -225,6 +225,32 @@ def test_unsupported_legacy_param_is_501(legacy_client, fake_stat):
     assert r.status_code == 501
 
 
+def test_infer_forwards_disable_preproc_flags_to_the_model(legacy_client, fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _det()},
+        model_info={"ds/1": {"class_names": ["cat"]}},
+    )
+    r = legacy_client(gw).post(
+        "/infer/object_detection",
+        json={
+            "model_id": "ds/1",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+            "disable_preproc_contrast": True,
+            "disable_preproc_grayscale": True,
+            "disable_preproc_static_crop": True,
+            "max_candidates": 100,
+            "fix_batch_size": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    params = next(c for c in gw.calls if c[0] == "infer")[3]
+    assert params["disable_preproc_contrast"] is True
+    assert params["disable_preproc_grayscale"] is True
+    assert params["disable_preproc_static_crop"] is True
+    assert "max_candidates" not in params and "fix_batch_size" not in params
+
+
 def _semantic_prediction():
     return SimpleNamespace(
         segmentation_map=np.array([[0, 1], [1, 0]]),

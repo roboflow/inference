@@ -98,6 +98,15 @@ _P_OWLV2_REFERENCE_EXAMPLES = {
     "max_detections": {"type": "int", "required": False},
 }
 
+PRE_PROCESSING_OVERRIDE_FIELDS = {
+    "disable_preproc_contrast": "disable_contrast_enhancement",
+    "disable_preproc_grayscale": "disable_grayscale",
+    "disable_preproc_static_crop": "disable_static_crop",
+}
+_K_PREPROC = {
+    flag: {"type": "bool", "required": False} for flag in PRE_PROCESSING_OVERRIDE_FIELDS
+}
+
 # Common kwargs for object detection models
 _K_OD = {
     "confidence": {"type": "float", "required": False},
@@ -114,12 +123,14 @@ _K_ISEG = {
     "masks_smoothing_enabled": {"type": "bool", "required": False},
     "masks_binarization_threshold": {"type": "float", "required": False},
     **_P_MASK_FORMAT,
+    **_K_PREPROC,
 }
 
 # Keypoints adds threshold
 _K_KP = {
     **_K_OD,
     "key_points_threshold": {"type": "float", "required": False},
+    **_K_PREPROC,
 }
 
 
@@ -177,7 +188,7 @@ _E_OD_CONF_ONLY = [
         "infer",
         "infer",
         True,
-        _p(_P_IMAGES, {"confidence": {"type": "float", "required": False}}),
+        _p(_P_IMAGES, {"confidence": {"type": "float", "required": False}}, _K_PREPROC),
         "validate_images_required",
         "serialize_detections_compact",
         "roboflow-object-detection-compact-v1",
@@ -194,6 +205,7 @@ _E_OD_CONF_MAXDET = [
                 "confidence": {"type": "float", "required": False},
                 "max_detections": {"type": "int", "required": False},
             },
+            _K_PREPROC,
         ),
         "validate_images_required",
         "serialize_detections_compact",
@@ -220,6 +232,7 @@ _E_ISEG_NO_SMOOTHING = [
             _P_IMAGES,
             {"confidence": {"type": "float", "required": False}},
             _P_MASK_FORMAT,
+            _K_PREPROC,
         ),
         "validate_images_required",
         "serialize_instance_segmentation_compact",
@@ -238,6 +251,7 @@ _E_ISEG_CONF_MAXDET = [
                 "max_detections": {"type": "int", "required": False},
             },
             _P_MASK_FORMAT,
+            _K_PREPROC,
         ),
         "validate_images_required",
         "serialize_instance_segmentation_compact",
@@ -258,6 +272,7 @@ _E_ISEG_NMS_NO_SMOOTHING = [
                 "class_agnostic_nms": {"type": "bool", "required": False},
             },
             _P_MASK_FORMAT,
+            _K_PREPROC,
         ),
         "validate_images_required",
         "serialize_instance_segmentation_compact",
@@ -275,6 +290,7 @@ _E_KP_CONF_THRESH = [
                 "confidence": {"type": "float", "required": False},
                 "key_points_threshold": {"type": "float", "required": False},
             },
+            _K_PREPROC,
         ),
         "validate_images_required",
         "serialize_keypoints_compact",
@@ -296,7 +312,7 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "infer",
             "infer",
             True,
-            _p(_P_IMAGES, _K_OD),
+            _p(_P_IMAGES, _K_OD, _K_PREPROC),
             "validate_images_required",
             "serialize_detections_compact",
             "roboflow-object-detection-compact-v1",
@@ -377,7 +393,11 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "infer",
             "infer",
             True,
-            _p(_P_IMAGES, {"include_anomaly_map": {"type": "bool", "required": False}}),
+            _p(
+                _P_IMAGES,
+                {"include_anomaly_map": {"type": "bool", "required": False}},
+                _K_PREPROC,
+            ),
             "validate_images_required",
             "serialize_classification_compact",
             "roboflow-classification-compact-v1",
@@ -388,7 +408,11 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "infer",
             "infer",
             True,
-            _p(_P_IMAGES, {"confidence": {"type": "float", "required": False}}),
+            _p(
+                _P_IMAGES,
+                {"confidence": {"type": "float", "required": False}},
+                _K_PREPROC,
+            ),
             "validate_images_required",
             "serialize_multilabel_classification_compact",
             "roboflow-classification-compact-v1",
@@ -424,7 +448,11 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "infer",
             "infer",
             True,
-            _p(_P_IMAGES, {"confidence": {"type": "float", "required": False}}),
+            _p(
+                _P_IMAGES,
+                {"confidence": {"type": "float", "required": False}},
+                _K_PREPROC,
+            ),
             "validate_images_required",
             "serialize_semantic_segmentation_compact",
             "roboflow-semantic-segmentation-compact-v1",
