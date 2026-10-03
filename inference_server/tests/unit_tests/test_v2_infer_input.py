@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 
 import pytest
@@ -632,13 +633,13 @@ async def test_fetch_images_from_urls_offline_mode_enabled():
 # ---------------------------------------------------------------------------
 
 
-def _patch_pinning(answers: list[list[str]]):
+def _patch_pinning(answers: list[list[str]], redirects=None):
     """Serve ``answers`` in order to resolve_host and capture the connector."""
     import contextlib
     from unittest.mock import patch
 
     captured: dict = {}
-    session = _FakeSession(_FakeResp([b"ok"]))
+    session = _FakeSession(_FakeResp([b"ok"]), redirects=redirects)
 
     async def _resolve(host: str):
         return list(answers.pop(0)) if answers else ["169.254.169.254"]
@@ -706,6 +707,29 @@ async def test_fetch_image_from_url_pins_allowlisted_host_too():
 
 
 @pytest.mark.asyncio
+async def test_fetch_to_sink_pins_validated_addresses_across_a_redirect():
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    with _patch_pinning(
+        [["93.184.216.34"], ["93.184.216.35"], ["169.254.169.254"]],
+        redirects={"https://example.com/clip.mp4": "https://cdn.example.com/clip.mp4"},
+    ) as captured:
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=None, timeout_s=None
+        )
+        assert error is None
+        assert received == [b"ok"]
+        assert set(captured) == {"resolver", "use_dns_cache"}
+        assert captured["use_dns_cache"] is False
+        first = await captured["resolver"].resolve("example.com", 443)
+        second = await captured["resolver"].resolve("cdn.example.com", 443)
+
+    assert [entry["host"] for entry in first] == ["93.184.216.34"]
+    assert [entry["host"] for entry in second] == ["93.184.216.35"]
+
+
+@pytest.mark.asyncio
 async def test_pinned_resolver_fails_for_unvalidated_host():
     from inference_server.framework.input_parsers.url_fetch import _PinnedResolver
 
@@ -747,6 +771,323 @@ async def test_ip_literal_url_is_validated_and_bypasses_the_resolver():
     finally:
         await connector.close()
     assert [entry["host"] for entry in hosts] == ["93.184.216.34"]
+
+
+# ---------------------------------------------------------------------------
+# Streaming fetch into a sink
+# ---------------------------------------------------------------------------
+
+
+def _sink():
+    received: list[bytes] = []
+
+    return received, received.append
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_streams_every_chunk_in_order():
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    with _patch_http([b"ab", b"cd", b"", b"e"]):
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=None, timeout_s=None
+        )
+
+    assert error is None
+    assert received == [b"ab", b"cd", b"e"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_stops_at_max_bytes_before_writing_the_chunk():
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    with _patch_http([b"x" * 8] * 10):
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=16, timeout_s=None
+        )
+
+    assert error.status_code == 413
+    assert b"".join(received) == b"x" * 16
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_accepts_a_body_of_exactly_max_bytes():
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    with _patch_http([b"x" * 8] * 2):
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=16, timeout_s=None
+        )
+
+    assert error is None
+    assert b"".join(received) == b"x" * 16
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_rejects_a_declared_length_over_max_bytes():
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    with _patch_http([b"x" * 8], content_length=17):
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=16, timeout_s=None
+        )
+
+    assert error.status_code == 413
+    assert received == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_is_uncapped_without_max_bytes():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    with _patch_http([b"x" * 8] * 10, content_length=80), patch(
+        "inference_server.framework.input_parsers.url_fetch.URL_FETCH_MAX_BYTES", 16
+    ):
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=None, timeout_s=None
+        )
+
+    assert error is None
+    assert len(b"".join(received)) == 80
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_refuses_a_non_global_destination_before_connecting():
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    with _patch_public_dns(("169.254.169.254",)):
+        error = await fetch_to_sink(
+            "https://internal.example/clip.mp4",
+            sink=sink,
+            max_bytes=None,
+            timeout_s=None,
+        )
+
+    assert error.status_code == 403
+    assert received == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_refuses_when_url_input_is_disabled():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    async def _resolve_should_not_reach(host: str):
+        raise AssertionError("must not resolve")
+
+    received, sink = _sink()
+    with patch("inference_server.configuration.ALLOW_URL_INPUT", False), patch(
+        "inference_server.framework.input_parsers.url_fetch.resolve_host",
+        _resolve_should_not_reach,
+    ):
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=None, timeout_s=None
+        )
+
+    assert error.status_code == 403
+    assert received == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_follows_an_allowed_redirect():
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    with _patch_http(
+        [b"ok"],
+        redirects={"https://example.com/clip.mp4": "https://cdn.example.com/clip.mp4"},
+    ) as session:
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=None, timeout_s=None
+        )
+
+    assert error is None
+    assert received == [b"ok"]
+    assert session.requested == [
+        "https://example.com/clip.mp4",
+        "https://cdn.example.com/clip.mp4",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_revalidates_every_redirect_hop():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    async def _resolve(host: str):
+        return ["127.0.0.1"] if host == "metadata.internal" else ["93.184.216.34"]
+
+    received, sink = _sink()
+    session = _FakeSession(
+        _FakeResp([b"secret"]),
+        redirects={"https://example.com/clip.mp4": "http://metadata.internal/creds"},
+    )
+    with patch(
+        "inference_server.framework.input_parsers.url_fetch.resolve_host", _resolve
+    ), patch(
+        "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
+        return_value=session,
+    ):
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=None, timeout_s=None
+        )
+
+    assert error.status_code == 403
+    assert received == []
+    assert session.requested == ["https://example.com/clip.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_applies_the_destination_policy_to_redirects():
+    from fastapi import Response
+
+    from inference_server.framework.input_parsers.url_fetch import (
+        DestinationPolicy,
+        fetch_to_sink,
+    )
+
+    refused = Response(status_code=400)
+
+    def _validate_redirect(url: str):
+        return None, refused
+
+    received, sink = _sink()
+    with _patch_http(
+        [b"ok"],
+        redirects={"https://example.com/clip.mp4": "https://cdn.example.com/clip.mp4"},
+    ) as session:
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4",
+            sink=sink,
+            max_bytes=None,
+            timeout_s=None,
+            destination_policy=DestinationPolicy(validate_redirect=_validate_redirect),
+        )
+
+    assert error is refused
+    assert received == []
+    assert session.requested == ["https://example.com/clip.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_bounds_the_redirect_chain():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    hops = {
+        f"https://example.com/{i}": f"https://example.com/{i + 1}" for i in range(50)
+    }
+    received, sink = _sink()
+    with _patch_http([b"ok"], redirects=hops), patch(
+        "inference_server.configuration.MAX_IMAGE_URL_REDIRECTS", 2
+    ):
+        error = await fetch_to_sink(
+            "https://example.com/0", sink=sink, max_bytes=None, timeout_s=None
+        )
+
+    assert error.status_code == 502
+    assert received == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_reports_a_non_200_answer_as_a_failed_fetch():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    session = _FakeSession(_FakeResp([b"nope"], status=404))
+    with _patch_public_dns(), patch(
+        "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
+        return_value=session,
+    ):
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=None, timeout_s=None
+        )
+
+    assert error.status_code == 502
+    assert received == []
+
+
+class _StallingContent:
+    def __init__(self, chunks: list[bytes]):
+        self._chunks = chunks
+
+    def iter_chunked(self, size: int):
+        return self._aiter()
+
+    async def _aiter(self):
+        for chunk in self._chunks:
+            yield chunk
+        raise asyncio.TimeoutError()
+
+
+@pytest.mark.asyncio
+async def test_fetch_to_sink_reports_a_stalled_read_as_a_timeout():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    resp = _FakeResp([])
+    resp.content = _StallingContent([b"first"])
+    session = _FakeSession(resp)
+    with _patch_public_dns(), patch(
+        "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
+        return_value=session,
+    ):
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4", sink=sink, max_bytes=None, timeout_s=1.5
+        )
+
+    assert error.status_code == 504
+    assert received == [b"first"]
+
+
+@pytest.mark.parametrize(
+    "timeout_s,expected",
+    [
+        (1.5, {"total": None, "sock_connect": 1.5, "sock_read": 1.5}),
+        (None, {"total": None}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_fetch_to_sink_bounds_each_wait_not_the_whole_download(
+    timeout_s, expected
+):
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    received, sink = _sink()
+    session = _FakeSession(_FakeResp([b"ok"]))
+    with _patch_public_dns(), patch(
+        "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
+        return_value=session,
+    ) as client_session:
+        error = await fetch_to_sink(
+            "https://example.com/clip.mp4",
+            sink=sink,
+            max_bytes=None,
+            timeout_s=timeout_s,
+        )
+
+    assert error is None
+    timeout = client_session.call_args.kwargs["timeout"]
+    assert timeout.total is None
+    assert timeout.sock_connect == expected.get("sock_connect")
+    assert timeout.sock_read == expected.get("sock_read")
 
 
 # ---------------------------------------------------------------------------

@@ -314,3 +314,116 @@ async def fetch_image_from_url(
         return None, error_response(
             502, "URL_FETCH_FAILED", f"fetching image URL failed"
         )
+
+
+_SINK_CHUNK_BYTES = 1024 * 1024
+
+
+async def fetch_to_sink(
+    url: str,
+    *,
+    sink: Callable[[bytes], object],
+    max_bytes: Optional[int],
+    timeout_s: Optional[float],
+    destination_policy: Optional[DestinationPolicy] = None,
+) -> Optional[Response]:
+    """Stream the body at ``url`` into ``sink`` one chunk at a time.
+
+    Runs the URL-input gate, the per-hop destination check, the manual
+    redirect walk and the pinned connection of :func:`fetch_image_from_url`,
+    but never holds the body: each chunk goes to ``sink`` as it arrives.
+    ``max_bytes`` caps what reaches the sink, checked before every write;
+    ``timeout_s`` bounds the connection and then each read, not the whole
+    download, which the cap bounds.
+
+    Args:
+        url: Address of the body to stream.
+        sink: Called with each non-empty chunk, in order.
+        max_bytes: Most bytes the sink may receive; ``None`` lifts the cap.
+        timeout_s: Seconds allowed for the connection and for each read;
+            ``None`` waits without limit.
+        destination_policy: Rules of a caller that checks the URL itself.
+
+    Returns:
+        ``None`` once the whole body reached the sink, or the error response.
+    """
+    if configuration.OFFLINE_MODE or not configuration.ALLOW_URL_INPUT:
+        return error_response(
+            403,
+            "URL_INPUT_DISABLED",
+            "loading content from URLs is disabled on this server",
+        )
+
+    timeout = aiohttp.ClientTimeout(
+        total=None, sock_connect=timeout_s, sock_read=timeout_s
+    )
+    current = url
+    pinned: dict[str, list[str]] = {}
+    try:
+        connector = aiohttp.TCPConnector(
+            resolver=_PinnedResolver(pinned), use_dns_cache=False
+        )
+        async with aiohttp.ClientSession(
+            timeout=timeout, connector=connector
+        ) as session:
+            for _ in range(configuration.MAX_IMAGE_URL_REDIRECTS + 1):
+                validated, destination_error = await _ensure_destination_allowed(
+                    current, destination_policy=destination_policy
+                )
+                if destination_error is not None:
+                    destination_error.failed_url = current
+                    return destination_error
+                host, addresses = validated
+                pinned[host] = addresses
+                async with session.get(current, allow_redirects=False) as resp:
+                    if resp.status in _REDIRECT_STATUSES:
+                        location = resp.headers.get("location")
+                        if not location:
+                            return error_response(
+                                502, "URL_FETCH_FAILED", "fetching URL failed"
+                            )
+                        current = urljoin(current, location)
+                        if (
+                            destination_policy is not None
+                            and destination_policy.validate_redirect is not None
+                        ):
+                            current, redirect_error = (
+                                destination_policy.validate_redirect(current)
+                            )
+                            if redirect_error is not None:
+                                return redirect_error
+                        continue
+                    if resp.status != 200:
+                        return error_response(
+                            502,
+                            "URL_FETCH_FAILED",
+                            f"fetching URL returned status {resp.status}",
+                        )
+                    content_length = resp.content_length or 0
+                    if max_bytes is not None and content_length > max_bytes:
+                        return _content_too_large(max_bytes)
+                    total = 0
+                    async for chunk in resp.content.iter_chunked(_SINK_CHUNK_BYTES):
+                        if not chunk:
+                            continue
+                        total += len(chunk)
+                        if max_bytes is not None and total > max_bytes:
+                            return _content_too_large(max_bytes)
+                        sink(chunk)
+                    return None
+            return error_response(
+                502, "URL_FETCH_FAILED", "too many redirects fetching URL"
+            )
+    except asyncio.TimeoutError:
+        return error_response(
+            504, "URL_FETCH_TIMEOUT", f"fetching URL timed out after {timeout_s}s"
+        )
+    except aiohttp.ClientError as exc:
+        logger.warning("Fetching URL failed: %s", exc)
+        return error_response(502, "URL_FETCH_FAILED", "fetching URL failed")
+
+
+def _content_too_large(max_bytes: int) -> Response:
+    return error_response(
+        413, "URL_CONTENT_TOO_LARGE", f"content at URL exceeds {max_bytes} byte limit"
+    )

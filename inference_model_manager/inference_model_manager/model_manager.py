@@ -395,9 +395,13 @@ class ModelManager:
     def _wire_marshal_inputs(self, backend: Any, kwargs: dict) -> tuple:
         """Direct-backend half of the subprocess worker's input handling:
         decode encoded image bytes and inject mask_format=rle for models
-        that support it. Returns (kwargs, n_images) for result mapping."""
+        that support it. Returns (kwargs, n_images) for result mapping;
+        n_images is None for a params-only call."""
         images = kwargs.get("images")
-        n_images = len(images) if isinstance(images, list) else 1
+        if images is None:
+            n_images = None
+        else:
+            n_images = len(images) if isinstance(images, list) else 1
         if images is None:
             # The worker invokes params-only requests WITHOUT an images kwarg
             # (zero-byte slot); mirror that exactly.
@@ -415,12 +419,15 @@ class ModelManager:
 
     @staticmethod
     def _wire_marshal_result(
-        raw_out: Any, n_images: int, retry_single: Optional[Callable] = None
+        raw_out: Any, n_images: Optional[int], retry_single: Optional[Callable] = None
     ) -> Any:
         """Direct-backend half of the worker's result handling: the same
         per-image mapping as the worker's sub_results block (including the
         per-image retry when a batched call returns a mismatched shape),
-        then tensors -> CPU numpy."""
+        then tensors -> CPU numpy. A params-only call (n_images None) has no
+        per-image semantics: the result is returned whole."""
+        if n_images is None:
+            return tensors_to_numpy(raw_out)
         results = split_batched_result(raw_out, n_images, retry_single=retry_single)
         results = [tensors_to_numpy(result) for result in results]
         return results[0] if n_images == 1 else results
@@ -690,6 +697,10 @@ class ModelManager:
                 s["key_points_classes"] = getattr(backend, "key_points_classes", None)
             except Exception:
                 s["key_points_classes"] = None
+            try:
+                s["video_sampling"] = getattr(backend, "video_sampling", None)
+            except Exception:
+                s["video_sampling"] = None
             try:
                 s["actions"] = self.get_supported_actions(model_id)
             except Exception:

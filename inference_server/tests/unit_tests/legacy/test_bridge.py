@@ -1605,6 +1605,60 @@ def test_task_type_from_mro_prefers_the_concrete_class():
     assert bridge_mod._task_type_from_mro(["L2CSNetOnnx", "object"]) == "gaze-detection"
 
 
+@pytest.mark.parametrize(
+    "mro_names",
+    [
+        ["Cosmos3EdgeActionRecognition", "ActionRecognitionModel", "ABC", "object"],
+        ["SomeFineTune", "ActionRecognitionModel", "ABC", "object"],
+    ],
+)
+def test_task_type_from_mro_maps_action_recognition(mro_names):
+    assert bridge_mod._task_type_from_mro(mro_names) == "action-recognition"
+
+
+@pytest.mark.asyncio
+async def test_resolve_fills_video_sampling_from_metadata(fake_stat):
+    fake_stat["clips/1"] = ("action-recognition", "infer")
+    sampling = {
+        "window_seconds": 8.0,
+        "sample_fps": 2.0,
+        "min_frames": 4,
+        "max_frame_side": 720,
+        "mode": "sliding_window",
+        "max_frames": 16,
+    }
+    gw = FakeGateway(
+        model_info={
+            "clips/1": {
+                "class_names": None,
+                "actions": {"infer": {}},
+                "model_class_name": "Cosmos3EdgeActionRecognition",
+                "video_sampling": sampling,
+            }
+        }
+    )
+    bridge = LegacyModelBridge(gw)
+
+    route = await bridge.resolve("clips/1", "key")
+
+    assert route.task_type == "action-recognition"
+    assert route.action == "infer"
+    assert route.video_sampling == sampling
+
+
+@pytest.mark.asyncio
+async def test_resolve_leaves_video_sampling_none_for_other_models(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        model_info={"ds/1": {"class_names": ["a"], "actions": {"infer": {}}}}
+    )
+    bridge = LegacyModelBridge(gw)
+
+    route = await bridge.resolve("ds/1", "key")
+
+    assert route.video_sampling is None
+
+
 @pytest.mark.asyncio
 async def test_offline_stream_only_model_is_400(fake_stat, monkeypatch):
     monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)

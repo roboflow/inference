@@ -364,6 +364,164 @@ class TestModelManagerObservability:
             mm.model_stats("nonexistent")
 
 
+class TestActionRecognitionDispatch:
+
+    def _load_action_model(self, mm: ModelManager, model):
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("clips/1", api_key="")
+        backends["clips/1"]._fake_model = model
+        return backends["clips/1"]
+
+    def test_frames_reach_infer_as_one_list(self):
+        from inference_models.models.base.action_recognition import (
+            ActionRecognitionModel,
+            ActionRecognitionPrediction,
+        )
+
+        calls = []
+
+        class FakeActionRecognition(ActionRecognitionModel):
+            _inference_count = 0
+
+            @classmethod
+            def from_pretrained(cls, model_name_or_path, **kwargs):
+                return cls()
+
+            @property
+            def class_names(self):
+                return ["wave", "jump"]
+
+            def infer(self, frames, class_names=None, fps=None, **kwargs):
+                calls.append((frames, class_names, fps))
+                return [ActionRecognitionPrediction(0, 1, "wave")]
+
+        mm = ModelManager()
+        self._load_action_model(mm, FakeActionRecognition())
+        frames = [object(), object(), object(), object()]
+
+        mm.process(
+            "clips/1",
+            action="infer",
+            serialize=False,
+            wire_marshalling=True,
+            frames=frames,
+            class_names=["wave"],
+            fps=2.0,
+        )
+
+        assert calls == [(frames, ["wave"], 2.0)]
+        assert calls[0][0] is frames
+
+    def test_stats_report_video_sampling_as_plain_dict(self):
+        from inference_models.models.base.action_recognition import (
+            ActionRecognitionModel,
+            VideoSampling,
+        )
+
+        class FakeActionRecognition(ActionRecognitionModel):
+            _inference_count = 0
+
+            @classmethod
+            def from_pretrained(cls, model_name_or_path, **kwargs):
+                return cls()
+
+            @property
+            def class_names(self):
+                return None
+
+            @property
+            def video_sampling(self):
+                return VideoSampling(window_seconds=8.0, sample_fps=2.0, max_frames=16)
+
+            def infer(self, frames, class_names=None, fps=None, **kwargs):
+                return []
+
+        from inference_model_manager.backends.direct import DirectBackend
+
+        backend = DirectBackend.__new__(DirectBackend)
+        backend._model = FakeActionRecognition()
+
+        assert backend.video_sampling == {
+            "window_seconds": 8.0,
+            "sample_fps": 2.0,
+            "min_frames": 4,
+            "max_frame_side": None,
+            "mode": "sliding_window",
+            "max_frames": 16,
+        }
+
+        mm = ModelManager()
+        fake_backend = self._load_action_model(mm, FakeActionRecognition())
+        fake_backend.video_sampling = backend.video_sampling
+
+        entry = next(m for m in mm.stats()["models"] if m["model_id"] == "clips/1")
+
+        assert entry["video_sampling"] == backend.video_sampling
+
+    def test_stats_report_no_video_sampling_without_one(self):
+        from inference_model_manager.backends.direct import DirectBackend
+
+        backend = DirectBackend.__new__(DirectBackend)
+        backend._model = FakeModel("plain")
+
+        assert backend.video_sampling is None
+
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("plain/1", api_key="")
+
+        entry = next(m for m in mm.stats()["models"] if m["model_id"] == "plain/1")
+
+        assert entry["video_sampling"] is None
+
+
+class TestParamsOnlyWireMarshalling:
+
+    def _process(self, returned, **kwargs):
+        class ReturningModel(FakeModel):
+            def infer(self, images=None, **infer_kwargs):
+                return returned
+
+        mm = ModelManager()
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("plain/1", api_key="")
+        backends["plain/1"]._fake_model = ReturningModel("plain/1")
+        return mm.process(
+            "plain/1", action="infer", serialize=False, wire_marshalling=True, **kwargs
+        )
+
+    def test_params_only_list_result_is_returned_whole(self):
+        assert self._process(["s1", "s2", "s3"], fps=2.0) == ["s1", "s2", "s3"]
+
+    def test_params_only_empty_list_result_is_returned_whole(self):
+        assert self._process([], fps=2.0) == []
+
+    def test_params_only_array_result_is_returned_whole(self):
+        import numpy as np
+
+        result = self._process(np.arange(6).reshape(3, 2), fps=2.0)
+
+        assert result.shape == (3, 2)
+
+    def test_params_only_result_is_converted_to_numpy(self):
+        import torch
+
+        result = self._process([torch.ones(2)], fps=2.0)
+
+        assert type(result[0]).__name__ == "ndarray"
+
+    def test_single_image_one_element_list_is_still_unwrapped(self):
+        assert self._process(["only"], images=object()) == "only"
+
+    def test_single_image_list_of_one_is_still_unwrapped(self):
+        assert self._process(["only"], images=[object()]) == "only"
+
+    def test_batch_of_images_is_still_split_per_image(self):
+        assert self._process(["a", "b"], images=[object(), object()]) == ["a", "b"]
+
+
 class TestModelManagerThreadSafety:
 
     def test_concurrent_loads(self, monkeypatch):

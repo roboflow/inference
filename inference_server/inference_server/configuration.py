@@ -372,6 +372,15 @@ SAM3_3D_OBJECTS_ENABLED = get_boolean_from_env("SAM3_3D_OBJECTS_ENABLED", defaul
 ACTION_RECOGNITION_ENABLED = get_boolean_from_env(
     "ACTION_RECOGNITION_ENABLED", default=True
 )
+MAX_VIDEO_DOWNLOAD_SIZE_MB = get_integer_from_env(
+    "MAX_VIDEO_DOWNLOAD_SIZE_MB", default=512
+)
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = get_float_from_env(
+    "VIDEO_DOWNLOAD_TIMEOUT_SECONDS", default=60.0
+)
+MAX_VIDEO_DURATION_SECONDS = get_float_from_env(
+    "MAX_VIDEO_DURATION_SECONDS", default=600.0
+)
 SAM3_EXEC_MODE = os.environ.get("SAM3_EXEC_MODE", "local").lower()
 SAM3_FINE_TUNED_MODELS_ENABLED = get_boolean_from_env(
     "SAM3_FINE_TUNED_MODELS_ENABLED", default=SAM3_EXEC_MODE != "remote"

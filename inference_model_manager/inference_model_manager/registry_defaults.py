@@ -91,6 +91,11 @@ _P_SAM3_EMBED = {
     "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
     "return_embeddings": {"type": "bool", "required": False, "default": True},
 }
+_P_ACTION_RECOGNITION = {
+    "frames": {"type": "list", "required": True},
+    "class_names": {"type": "list[str]", "required": False},
+    "fps": {"type": "float", "required": True},
+}
 _P_OWLV2_REFERENCE_EXAMPLES = {
     "reference_examples": {"type": "list", "required": True},
     "confidence": {"type": "float", "required": False},
@@ -954,6 +959,18 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "validate_images_required",
             "serialize_text",
             "roboflow-text-v1",
+        ),
+    ],
+    # --- Action recognition (base — fallback for all action recognition models) ---
+    "ActionRecognitionModel": [
+        (
+            "infer",
+            "infer",
+            True,
+            _p(_P_ACTION_RECOGNITION),
+            "validate_frames_and_fps",
+            "serialize_passthrough",
+            "roboflow-action-recognition-v1",
         ),
     ],
     # --- Passthrough (benchmark) ---

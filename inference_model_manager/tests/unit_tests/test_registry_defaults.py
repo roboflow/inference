@@ -1,5 +1,7 @@
 """Unit tests for registry_defaults — class-vs-MRO skip logic on _register_from_config."""
 
+import pytest
+
 from inference_model_manager import registry_defaults
 from inference_model_manager.registry import ModelRegistry
 
@@ -296,6 +298,61 @@ def test_cosmos3_edge_reasoner_action_config():
     assert prompt_action[5] == "serialize_text"
     assert prompt_action[6] == "roboflow-text-v1"
     assert prompt_action[7] == {}
+
+
+def test_action_recognition_action_config():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
+
+    cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["ActionRecognitionModel"]}
+    infer_action = cfgs["infer"]
+
+    assert infer_action[1] == "infer"
+    assert infer_action[2] is True
+    assert infer_action[3] == {
+        "frames": {"type": "list", "required": True},
+        "class_names": {"type": "list[str]", "required": False},
+        "fps": {"type": "float", "required": True},
+    }
+    assert "images" not in infer_action[3]
+    assert infer_action[4] == "validate_frames_and_fps"
+    assert infer_action[5] == "serialize_passthrough"
+    assert infer_action[6] == "roboflow-action-recognition-v1"
+    assert infer_action[7] == {}
+
+
+@pytest.mark.parametrize(
+    "kwargs,message",
+    [
+        ({"fps": 4.0}, "'frames'"),
+        ({"frames": [], "fps": 4.0}, "'frames'"),
+        ({"frames": "not-a-list", "fps": 4.0}, "'frames'"),
+        ({"frames": [object()]}, "'fps'"),
+        ({"frames": [object()], "fps": None}, "'fps'"),
+        ({"frames": [object()], "fps": 0}, "'fps'"),
+        ({"frames": [object()], "fps": 0.0}, "'fps'"),
+        ({"frames": [object()], "fps": -1}, "'fps'"),
+        ({"frames": [object()], "fps": float("nan")}, "'fps'"),
+        ({"frames": [object()], "fps": float("inf")}, "'fps'"),
+        ({"frames": [object()], "fps": "12"}, "'fps'"),
+        ({"frames": [object()], "fps": True}, "'fps'"),
+    ],
+)
+def test_validate_frames_and_fps_rejects_missing_inputs(kwargs, message):
+    from inference_model_manager.validators import validate_frames_and_fps
+
+    with pytest.raises(ValueError, match=message):
+        validate_frames_and_fps(kwargs)
+
+
+def test_validate_frames_and_fps_returns_kwargs_unchanged():
+    from inference_model_manager.validators import validate_frames_and_fps
+
+    kwargs = {"frames": [object(), object()], "class_names": None, "fps": 4.0}
+
+    assert validate_frames_and_fps(kwargs) is kwargs
 
 
 def test_model_owned_defaults_not_injected():

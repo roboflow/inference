@@ -224,6 +224,9 @@ definition; the last column is the new reader.
 | `LMM_ENABLED` | `env.py:371` | `configuration.py:223`; `host.py:291` | `False` |
 | `DEPTH_ESTIMATION_ENABLED` | `env.py:383` | `configuration.py:225`; `host.py:318` | `True` |
 | `ACTION_RECOGNITION_ENABLED` | `env.py:384` | `configuration.py:229` | `True` |
+| `MAX_VIDEO_DOWNLOAD_SIZE_MB` | `env.py:417` | `configuration.py:375`; largest clip an action-recognition request may pull from a URL or carry as base64 (`legacy/video.py`); `-1` removes the cap | `512` |
+| `VIDEO_DOWNLOAD_TIMEOUT_SECONDS` | `env.py:421` | `configuration.py:378`; wait for the connection and then for each chunk of a clip pulled from a URL (`legacy/video.py`); `-1` removes it | `60` |
+| `MAX_VIDEO_DURATION_SECONDS` | `env.py:427` | `configuration.py:381`; longest clip one action-recognition request classifies (`legacy/video.py`); `-1` removes the limit | `600` |
 | `MOONDREAM2_ENABLED` | `env.py:388` | `configuration.py:224`; `host.py:317` | `True` |
 | `SAM3_3D_OBJECTS_ENABLED` | `env.py:394` | `configuration.py:228`; `host.py:309` | `False` |
 | `CORE_MODEL_YOLO_WORLD_ENABLED` | `env.py:399` | `configuration.py:220` | `True` |
@@ -545,8 +548,6 @@ No new package reads these. They never get an alias or a default row.
 | `LEGACY_MMP_ADAPTER_MODE` | `env.py:462` | adapter transport switch |
 | `MAX_BATCH_SIZE` | `env.py:711-715` | legacy ORT batch chunking / padding (`inference/core/models/roboflow.py:875`, `object_detection_base.py:235-247`); `inference_models` batches per model |
 | `MAX_FPS` | `env.py:575` | legacy stream-mode setting |
-| `MAX_VIDEO_DOWNLOAD_SIZE_MB` | `env.py:417` | legacy action-recognition video download; no new package reads it |
-| `MAX_VIDEO_DURATION_SECONDS` | `env.py:427` | legacy action-recognition video download |
 | `MD5_VERIFICATION_ENABLED` | `env.py:205` | legacy artifact cache internals |
 | `MEMORY_CACHE_EXPIRE_INTERVAL` | `env.py:728` | legacy memory cache |
 | `METLO_KEY` | `env.py:924` | legacy AWS-era setting |
@@ -586,7 +587,6 @@ No new package reads these. They never get an alias or a default row.
 | `USE_INFERENCE_MODELS` | `env.py:407` | legacy adapter switch; the new stack is `inference_models`-only |
 | `USE_PYTORCH_FOR_PREPROCESSING` | `env.py:475` | legacy ORT preprocessing |
 | `VERSION_CHECK_MODE` | `env.py:921` | legacy version check |
-| `VIDEO_DOWNLOAD_TIMEOUT_SECONDS` | `env.py:421` | legacy action-recognition video download |
 | `VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE` | `env.py:1748` | `StreamsConfiguration` field; no new package reads the env name today |
 | `VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE` | `env.py:965` | `StreamsConfiguration` field |
 | `VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE` | `env.py:962` | `StreamsConfiguration` field |

@@ -115,6 +115,7 @@ class Route:
     actions: set[str] = field(default_factory=set)
     class_names: Optional[list[str]] = None
     key_points_classes: Optional[list[list[str]]] = None
+    video_sampling: Optional[dict] = None
     model_class_name: Optional[str] = None
     model_mro_names: list[str] = field(default_factory=list)
     class_colors: Optional[dict] = None
@@ -216,6 +217,8 @@ _TASK_TYPE_BY_MRO = {
     "SAMTorch": "interactive-instance-segmentation",
     "SAM2Torch": "interactive-instance-segmentation",
     "SAM3Torch": "interactive-instance-segmentation",
+    "ActionRecognitionModel": "action-recognition",
+    "Cosmos3EdgeActionRecognition": "action-recognition",
 }
 
 _NO_HTTP_ROUTE = frozenset(["SAM2ForStream"])
@@ -909,6 +912,7 @@ def _apply_metadata(route: Route, entry: dict) -> None:
     route.actions = set(entry.get("actions") or {})
     route.class_names = entry.get("class_names")
     route.key_points_classes = entry.get("key_points_classes")
+    route.video_sampling = entry.get("video_sampling")
     route.model_class_name = entry.get("model_class_name")
     route.model_mro_names = list(entry.get("model_mro_names") or [])
     route.class_colors = entry.get("class_colors")

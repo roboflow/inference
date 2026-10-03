@@ -296,5 +296,12 @@ class DirectBackend(Backend):
         return getattr(self._model, "key_points_classes", None)
 
     @property
+    def video_sampling(self) -> Optional[Dict[str, Any]]:
+        sampling = getattr(self._model, "video_sampling", None)
+        if not dataclasses.is_dataclass(sampling):
+            return None
+        return dataclasses.asdict(sampling)
+
+    @property
     def last_used_ts(self) -> Optional[float]:
         return self._last_inference_ts or self._start_ts

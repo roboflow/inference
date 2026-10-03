@@ -186,6 +186,45 @@ def test_url_rule_switches_are_read_from_the_environment():
     assert result.returncode == 0, result.stderr
 
 
+_VIDEO_SETTINGS = (
+    "MAX_VIDEO_DOWNLOAD_SIZE_MB",
+    "VIDEO_DOWNLOAD_TIMEOUT_SECONDS",
+    "MAX_VIDEO_DURATION_SECONDS",
+)
+
+
+def _read_video_settings(values):
+    code = (
+        "from inference_server import configuration as c; "
+        "print(repr(c.MAX_VIDEO_DOWNLOAD_SIZE_MB), "
+        "repr(c.VIDEO_DOWNLOAD_TIMEOUT_SECONDS), "
+        "repr(c.MAX_VIDEO_DURATION_SECONDS))"
+    )
+    env = {
+        name: value for name, value in os.environ.items() if name not in _VIDEO_SETTINGS
+    }
+    env.update(values)
+    result = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.split()
+
+
+def test_video_settings_default_to_legacy_values():
+    assert _read_video_settings({}) == ["512", "60.0", "600.0"]
+
+
+def test_video_settings_are_read_from_the_environment():
+    values = {
+        "MAX_VIDEO_DOWNLOAD_SIZE_MB": "-1",
+        "VIDEO_DOWNLOAD_TIMEOUT_SECONDS": "2.5",
+        "MAX_VIDEO_DURATION_SECONDS": "-1",
+    }
+
+    assert _read_video_settings(values) == ["-1", "2.5", "-1.0"]
+
+
 def _read_allow_api_key_from_headers(value):
     env = {
         name: v
