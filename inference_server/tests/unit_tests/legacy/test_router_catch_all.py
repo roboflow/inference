@@ -291,3 +291,174 @@ def test_catch_all_refuses_unreadable_local_file_with_one_answer(
     assert response.json() == {
         "message": f"{IMAGE_LOAD_PREFIX}Could not load image from the local file."
     }
+
+
+def _post_catch_all(legacy_client, fake_stat, task_type, prediction, info, query=""):
+    fake_stat["ds/1"] = (task_type, "infer")
+    gateway = FakeGateway(
+        predictions={("ds/1", "infer"): prediction},
+        model_info={"ds/1": dict(info, actions={"infer": {}})},
+    )
+    response = legacy_client(gateway).post(
+        f"/ds/1?api_key=k{query}",
+        content=base64.b64encode(_jpeg()),
+        headers=FORM_CONTENT_TYPE,
+    )
+    return response, gateway
+
+
+def test_catch_all_form_encoded_base64_body_with_query_parameters(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _gw()
+
+    response = legacy_client(gateway).post(
+        "/ds/1?confidence=40&api_key=x",
+        content=base64.b64encode(_jpeg()),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["image"] == {"width": 8, "height": 6}
+    assert [prediction["class"] for prediction in body["predictions"]] == ["cat"]
+    params = next(call for call in gateway.calls if call[0] == "infer")[3]
+    assert params["confidence"] == 0.4
+
+
+def test_catch_all_dispatches_instance_segmentation(legacy_client, fake_stat):
+    mask = np.zeros((1, 6, 8), dtype=bool)
+    mask[0, 1:5, 1:5] = True
+    prediction = SimpleNamespace(
+        xyxy=np.array([[1, 1, 5, 5]], dtype=float),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        mask=mask,
+    )
+
+    response, _ = _post_catch_all(
+        legacy_client,
+        fake_stat,
+        "instance-segmentation",
+        prediction,
+        {"class_names": ["cat"]},
+    )
+
+    assert response.status_code == 200, response.text
+    first = response.json()["predictions"][0]
+    assert first["class"] == "cat"
+    assert len(first["points"]) >= 3
+
+
+def test_catch_all_dispatches_keypoint_detection(legacy_client, fake_stat):
+    keypoints = SimpleNamespace(
+        xy=np.array([[[1.0, 2.0], [3.0, 4.0]]]),
+        class_id=np.array([0]),
+        confidence=np.array([[0.9, 0.8]]),
+    )
+    detections = SimpleNamespace(
+        xyxy=np.array([[0, 0, 7, 5]], dtype=float),
+        confidence=np.array([0.8]),
+        class_id=np.array([0]),
+    )
+
+    response, _ = _post_catch_all(
+        legacy_client,
+        fake_stat,
+        "keypoint-detection",
+        ([keypoints], [detections]),
+        {"class_names": ["person"], "key_points_classes": [["nose", "eye"]]},
+    )
+
+    assert response.status_code == 200, response.text
+    first = response.json()["predictions"][0]
+    assert first["class"] == "person"
+    assert [point["class"] for point in first["keypoints"]] == ["nose", "eye"]
+
+
+def test_catch_all_dispatches_classification(legacy_client, fake_stat):
+    prediction = SimpleNamespace(confidence=np.array([[0.1, 0.9]]))
+
+    response, _ = _post_catch_all(
+        legacy_client,
+        fake_stat,
+        "classification",
+        prediction,
+        {"class_names": ["cat", "dog"]},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["top"] == "dog"
+    assert body["predictions"][0]["class"] == "dog"
+
+
+def test_catch_all_dispatches_semantic_segmentation(legacy_client, fake_stat):
+    prediction = SimpleNamespace(
+        segmentation_map=np.array([[0, 1], [1, 0]]),
+        confidence=np.array([[1.0, 0.5], [0.5, 1.0]]),
+    )
+
+    response, _ = _post_catch_all(
+        legacy_client,
+        fake_stat,
+        "semantic-segmentation",
+        prediction,
+        {"class_names": ["bg", "fg"]},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["predictions"]["class_map"] == {"0": "bg", "1": "fg"}
+    assert body["predictions"]["present_class_ids"] == [0, 1]
+
+
+def test_catch_all_image_query_parameter_is_fetched_by_url(
+    legacy_client, fake_stat, monkeypatch
+):
+    seen = []
+
+    async def _fetch(urls, destination_policy=None):
+        seen.append(list(urls))
+        return [_jpeg() for _ in urls], None
+
+    monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _gw()
+
+    response = legacy_client(gateway).get(
+        f"/ds/1?api_key=k&confidence=50&image={IMAGE_URL}"
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["image"] == {"width": 8, "height": 6}
+    assert [prediction["class"] for prediction in body["predictions"]] == ["cat"]
+    assert seen == [[IMAGE_URL]]
+    assert [call[4] for call in gateway.calls if call[0] == "infer"] == [_jpeg()]
+
+
+def test_catch_all_class_filter_is_not_applied_to_detections(legacy_client, fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    detections = SimpleNamespace(
+        xyxy=np.array([[1, 1, 3, 5], [2, 2, 4, 4]], dtype=float),
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.array([0, 1]),
+    )
+    gateway = FakeGateway(
+        predictions={("ds/1", "infer"): detections},
+        model_info={"ds/1": {"class_names": ["cat", "dog"]}},
+    )
+
+    response = legacy_client(gateway).post(
+        "/ds/1?api_key=k&class_filter=cat",
+        content=base64.b64encode(_jpeg()),
+        headers=FORM_CONTENT_TYPE,
+    )
+
+    assert response.status_code == 200, response.text
+    assert [prediction["class"] for prediction in response.json()["predictions"]] == [
+        "cat",
+        "dog",
+    ]

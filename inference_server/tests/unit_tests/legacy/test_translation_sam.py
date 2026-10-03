@@ -115,6 +115,97 @@ def test_sam3_text_prompt_params_take_min_threshold():
     assert [p["text"] for p in params["prompts"]] == ["cat", "dog"]
 
 
+def _cache_request():
+    return Sam2SegmentationRequest(
+        image=IMG,
+        prompts=Sam2PromptSet(
+            prompts=[{"points": [{"x": 1, "y": 1, "positive": True}]}]
+        ),
+        load_logits_from_cache=True,
+        save_logits_to_cache=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "flag,model_id,disabled",
+    [
+        ("DISABLE_SAM2_LOGITS_CACHE", "sam2/hiera_large", True),
+        ("DISABLE_SAM2_LOGITS_CACHE", "sam2/hiera_large", False),
+        ("DISABLE_SAM3_LOGITS_CACHE", "sam3/sam3_interactive", True),
+        ("DISABLE_SAM3_LOGITS_CACHE", "sam3/sam3_interactive", False),
+    ],
+)
+def test_logits_cache_is_gated_by_the_flag_of_the_model_family(
+    monkeypatch, flag, model_id, disabled
+):
+    monkeypatch.setattr(f"inference_server.configuration.{flag}", disabled)
+    for action in ("segment", "segment_with_visual_prompts"):
+        params = build_interactive_segmentation_params(
+            action, _cache_request(), None, model_id=model_id
+        )
+        assert params["load_from_mask_input_cache"] is (not disabled)
+        assert params["save_to_mask_input_cache"] is (not disabled)
+
+
+def test_sam2_logits_cache_ignores_the_sam3_flag(monkeypatch):
+    monkeypatch.setattr(
+        "inference_server.configuration.DISABLE_SAM2_LOGITS_CACHE", False
+    )
+    monkeypatch.setattr(
+        "inference_server.configuration.DISABLE_SAM3_LOGITS_CACHE", True
+    )
+    params = build_interactive_segmentation_params(
+        "segment", _cache_request(), None, model_id="sam2/hiera_large"
+    )
+    assert params["load_from_mask_input_cache"] is True
+    assert params["save_to_mask_input_cache"] is True
+
+
+def test_sam3_text_prompt_params_carry_the_max_detections_setting(monkeypatch):
+    monkeypatch.setattr("inference_server.configuration.SAM3_MAX_DETECTIONS", 7)
+    req = Sam3SegmentationRequest(image=IMG, prompts=[Sam3Prompt(text="cat")])
+    params = build_interactive_segmentation_params(
+        "segment_with_text_prompts", req, None
+    )
+    assert params["max_detections"] == 7
+
+
+def test_sam3_max_detections_defaults_to_unlimited():
+    req = Sam3SegmentationRequest(image=IMG, prompts=[Sam3Prompt(text="cat")])
+    params = build_interactive_segmentation_params(
+        "segment_with_text_prompts", req, None
+    )
+    assert params["max_detections"] == -1
+
+
+@pytest.mark.parametrize("threshold", [None, 0.0])
+def test_sam3_request_threshold_falls_back_to_default_for_none_and_zero(threshold):
+    req = Sam3SegmentationRequest(
+        image=IMG, prompts=[Sam3Prompt(text="cat")], output_prob_thresh=threshold
+    )
+    params = build_interactive_segmentation_params(
+        "segment_with_text_prompts", req, None
+    )
+    assert params["output_prob_thresh"] == 0.5
+
+
+@pytest.mark.parametrize("threshold", [None, 0.0])
+def test_sam3_nms_default_threshold_falls_back_for_none_and_zero(threshold):
+    masks = np.zeros((1, 4, 4), dtype=np.uint8)
+    masks[0, 0:3, 0:3] = 1
+    pred = [{"prompt_index": 0, "masks": masks, "scores": [0.3]}]
+    req = Sam3SegmentationRequest(
+        image=IMG,
+        prompts=[Sam3Prompt(text="cat")],
+        nms_iou_threshold=0.5,
+        output_prob_thresh=threshold,
+    )
+    resp = repack_interactive_segmentation_response(
+        "segment_with_text_prompts", pred, req, None
+    )
+    assert [len(r.predictions) for r in resp.prompt_results] == [0]
+
+
 def test_embed_repack_strips_namespace():
     req = Sam2EmbeddingRequest(image=IMG)
     pred = SimpleNamespace(image_hash=namespace_client_hash_id("srv-hash", "key"))

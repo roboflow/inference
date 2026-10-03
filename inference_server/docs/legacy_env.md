@@ -243,6 +243,8 @@ definition; the last column is the new reader.
 | `SAM_VERSION_ID` | `env.py:882` | `configuration.py:178` | `vit_h` |
 | `SAM2_VERSION_ID` | `env.py:883` | `configuration.py:179` | `hiera_large` |
 | `DISABLE_SAM3_LOGITS_CACHE` | `env.py:896` | `configuration.py:243` | `False` |
+| `DISABLE_SAM2_LOGITS_CACHE` | `env.py:879` | `configuration.py:389`; `legacy/translation.py`: gates the SAM2 logits cache | `False` |
+| `SAM3_MAX_DETECTIONS` | `env.py:891` | `configuration.py:392`; `legacy/translation.py`: sent as `max_detections` with every SAM3 text-prompt segmentation | `-1` |
 | `EASYOCR_VERSION_ID` | `env.py:899` | `configuration.py:183` | `english_g2` |
 | `INFERENCE_SERVER_ID` | `env.py:902` | `configuration.py:316`; `server_identity.py`: `/info` `uuid`; when unset it is generated once per process as in legacy (six random characters plus `-JETSON-<serial>` or `-GPU-<index>`, `UNKNOWN` on failure; GPU is detected through torch, not pynvml) | unset |
 | `DISABLE_WORKFLOW_ENDPOINTS` | `env.py:1034` | `configuration.py:153` | `False` |
@@ -511,7 +513,6 @@ No new package reads these. They never get an alias or a default row.
 | `DISABLE_PREPROC_CONTRAST` | `env.py:496` | legacy ORT preprocessing |
 | `DISABLE_PREPROC_GRAYSCALE` | `env.py:499` | legacy ORT preprocessing |
 | `DISABLE_PREPROC_STATIC_CROP` | `env.py:502` | legacy ORT preprocessing |
-| `DISABLE_SAM2_LOGITS_CACHE` | `env.py:879` | legacy SAM2 cache toggle; only mentioned in field descriptions in `inference_server/legacy/entities.py:1261,1267`, never read |
 | `DISABLE_VERSION_CHECK` | `env.py:546` | legacy GitHub version check; none in the new stack |
 | `DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS` | `env.py:1037` | legacy `describe_workload` routes; not in the new server |
 | `DISK_CACHE_CLEANUP` | `env.py:1424` | legacy artifact cache internals |
@@ -568,7 +569,6 @@ No new package reads these. They never get an alias or a default row.
 | `RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API` | `env.py:1406` | legacy API client; `inference_models` uses `API_CALLS_MAX_TRIES` / `IDEMPOTENT_API_REQUEST_CODES_TO_RETRY` with different semantics |
 | `ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1333` | legacy assume-identity headers; unread (hosting summary) |
 | `ROBOFLOW_SERVER_UUID` | `env.py:869` | the new server generates `SERVER_ID` per process (`configuration.py:275`) |
-| `SAM3_MAX_DETECTIONS` | `env.py:891` | legacy `concept_segment` cap; no new package reads it |
 | `SSL_CA_CERTS` | `env.py:606` | legacy uvicorn TLS |
 | `SSL_CERTFILE` | `env.py:596` | legacy uvicorn TLS |
 | `SSL_KEYFILE` | `env.py:599` | legacy uvicorn TLS |

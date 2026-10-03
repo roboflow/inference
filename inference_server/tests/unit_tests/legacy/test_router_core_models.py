@@ -3,6 +3,7 @@ import io
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
@@ -122,6 +123,69 @@ def test_easy_ocr_rejects_other_languages(legacy_client, fake_stat):
         "/easy_ocr/ocr", json={"image": _image(), "language_codes": ["pl"]}
     )
     assert r.status_code == 501
+
+
+def test_easy_ocr_returns_image_size_and_boxes_with_text_as_class(
+    legacy_client, fake_stat
+):
+    gw = FakeGateway(
+        predictions={
+            ("easy_ocr/english_g2", "infer"): (
+                ["hello world"],
+                [_ocr_det(["hello", "world"])],
+            )
+        },
+        model_info={"easy_ocr/english_g2": {"actions": {"infer": {}}}},
+    )
+    r = legacy_client(gw).post("/easy_ocr/ocr", json={"image": _image()})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["result"] == "hello world"
+    assert body["image"] == {"width": 8, "height": 6}
+    assert [p["class"] for p in body["predictions"]] == ["hello", "world"]
+    first = body["predictions"][0]
+    assert first["class_id"] == 0
+    assert (first["x"], first["y"], first["width"], first["height"]) == (1, 1, 2, 2)
+    assert first["confidence"] == 0.9
+
+
+def _infer_params(gateway):
+    return next(call for call in gateway.calls if call[0] == "infer")[3]
+
+
+def test_easy_ocr_passes_zero_confidence_to_keep_low_confidence_text(
+    legacy_client, fake_stat
+):
+    gw = FakeGateway(
+        predictions={("easy_ocr/english_g2", "infer"): (["a"], [_ocr_det(["a"])])},
+        model_info={"easy_ocr/english_g2": {"actions": {"infer": {}}}},
+    )
+    r = legacy_client(gw).post("/easy_ocr/ocr", json={"image": _image()})
+    assert r.status_code == 200, r.text
+    assert _infer_params(gw) == {"confidence": 0.0}
+
+
+def test_other_ocr_routes_pass_no_params(legacy_client, fake_stat):
+    fake_stat["pp-ocrv6-det/small"] = ("object-detection", "infer")
+    fake_stat["pp-ocrv6-rec/small"] = ("text-only-ocr", "infer")
+    gw = FakeGateway(
+        predictions={
+            ("doctr/default", "infer"): (["a"], [_ocr_det(["a"])]),
+            ("trocr/trocr-base-printed", "infer"): ["a"],
+            ("pp_ocr/small-small", "infer"): (["a"], [_ocr_det(["a"])]),
+        },
+        model_info={
+            "doctr/default": {"actions": {"infer": {}}},
+            "trocr/trocr-base-printed": {"actions": {"infer": {}}},
+            "pp_ocr/small-small": {"actions": {"infer": {}}},
+        },
+    )
+    client = legacy_client(gw)
+    for path in ("/doctr/ocr", "/ocr/trocr", "/ocr/pp-ocr"):
+        gw.calls.clear()
+        r = client.post(path, json={"image": _image()})
+        assert r.status_code == 200, r.text
+        assert _infer_params(gw) == {}, path
 
 
 def test_trocr_returns_text_only_response(legacy_client, fake_stat):
@@ -318,6 +382,35 @@ def test_depth_json_format_returns_matrix(legacy_client, fake_stat):
     assert np.allclose(normalized_depth, [[0.0, 1.0 / 3.0], [2.0 / 3.0, 1.0]])
 
 
+@pytest.mark.parametrize(
+    "model_class_name,expected",
+    [
+        ("YOLO26ForDepthEstimation", [[1.0, 2.0 / 3.0], [1.0 / 3.0, 0.0]]),
+        ("DepthAnythingV2", [[0.0, 1.0 / 3.0], [2.0 / 3.0, 1.0]]),
+        (None, [[0.0, 1.0 / 3.0], [2.0 / 3.0, 1.0]]),
+    ],
+)
+def test_depth_map_is_inverted_only_for_yolo26_models(
+    legacy_client, fake_stat, model_class_name, expected
+):
+    gw = FakeGateway(
+        predictions={
+            ("depth-anything-v2/small", "infer"): np.array(
+                [[0.0, 1.0], [2.0, 3.0]], dtype=np.float32
+            )
+        },
+        model_info={
+            "depth-anything-v2/small": {
+                "actions": {"infer": {}},
+                "model_class_name": model_class_name,
+            }
+        },
+    )
+    r = legacy_client(gw).post("/infer/depth-estimation", json={"image": _image()})
+    assert r.status_code == 200, r.text
+    assert np.allclose(r.json()["normalized_depth"], expected)
+
+
 def test_depth_path_model_id_is_used(legacy_client, fake_stat):
     gw = FakeGateway(
         predictions={
@@ -367,6 +460,50 @@ def test_optional_stubs_register_only_with_their_flags(monkeypatch):
     assert TestClient(app).post("/sam3_3d/infer", json={}).status_code == 501
 
 
+def test_decided_out_routes_document_reason(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from inference_server.legacy.router import include_legacy_routers
+
+    monkeypatch.setattr("inference_server.configuration.SAM3_3D_OBJECTS_ENABLED", True)
+    app = FastAPI()
+    app.state.legacy_bridge = SimpleNamespace()
+    include_legacy_routers(app)
+    client = TestClient(app)
+
+    yolo_world = client.post(
+        "/yolo_world/infer",
+        json={"image": _image(), "text": ["cat"]},
+    )
+    sam3_3d = client.post("/sam3_3d/infer", json={})
+    gaze = client.post("/gaze/gaze_detection")
+
+    assert yolo_world.status_code == 404
+    assert yolo_world.json() == {
+        "message": "YOLO-World is not supported by this inference server configuration."
+    }
+    assert sam3_3d.status_code == 501
+    assert sam3_3d.json() == {
+        "message": "/sam3_3d/infer is not available on inference_server: no model "
+        "class for this task is registered with the model manager"
+    }
+    assert gaze.status_code == 410
+    assert gaze.json() == {
+        "message": (
+            "Feature '/gaze/gaze_detection' has been removed from inference. "
+            "Reason: MediaPipe dependency removed from inference; endpoint is a "
+            "410 stub.. Removed in end of Q2 2026. No drop-in replacement is "
+            "provided; contact Roboflow if you require this capability."
+        ),
+        "error_type": "FeatureDeprecatedError",
+        "feature": "/gaze/gaze_detection",
+        "removal_release": "end of Q2 2026",
+        "replacement": None,
+        "reason": "MediaPipe dependency removed from inference; endpoint is a 410 stub.",
+    }
+
+
 def test_lmm_router_registers_with_lmm_flag_alone(monkeypatch):
     from fastapi import FastAPI
 
@@ -377,6 +514,36 @@ def test_lmm_router_registers_with_lmm_flag_alone(monkeypatch):
     app = FastAPI()
     include_legacy_routers(app)
     assert "/infer/lmm" in route_paths(app)
+
+
+@pytest.mark.parametrize(
+    "core_models,lmm,moondream,lambda_,expected",
+    [
+        (True, True, False, False, True),
+        (True, False, True, False, True),
+        (False, True, False, False, True),
+        (False, False, True, False, True),
+        (True, False, False, False, False),
+        (False, False, False, False, False),
+        (False, True, True, True, False),
+    ],
+)
+def test_lmm_router_is_independent_of_core_models_flag(
+    monkeypatch, core_models, lmm, moondream, lambda_, expected
+):
+    from fastapi import FastAPI
+
+    from inference_server.legacy.router import include_legacy_routers
+
+    monkeypatch.setattr(
+        "inference_server.configuration.CORE_MODELS_ENABLED", core_models
+    )
+    monkeypatch.setattr("inference_server.configuration.LMM_ENABLED", lmm)
+    monkeypatch.setattr("inference_server.configuration.MOONDREAM2_ENABLED", moondream)
+    monkeypatch.setattr("inference_server.configuration.LAMBDA", lambda_)
+    app = FastAPI()
+    include_legacy_routers(app)
+    assert ("/infer/lmm" in route_paths(app)) is expected
 
 
 def test_disabled_group_flag_removes_its_routes(monkeypatch):

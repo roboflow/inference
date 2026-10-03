@@ -105,6 +105,7 @@ from inference_server.legacy.translation import (
     encode_normalized_depth_to_png16,
     ensure_ocr_request_supported,
     ensure_request_supported,
+    is_metric_depth_model_class,
     repack_depth_estimation,
     repack_embedding_response,
     repack_interactive_segmentation_response,
@@ -159,7 +160,6 @@ _CORE_MODEL_ROUTER_GROUPS = (
     (("CORE_MODEL_GROUNDINGDINO_ENABLED",), grounding_dino_router),
     (("CORE_MODEL_OWLV2_ENABLED",), owlv2_router),
     (("CORE_MODEL_GAZE_ENABLED",), gaze_router),
-    (("LMM_ENABLED", "MOONDREAM2_ENABLED"), lmm_router),
     (("DEPTH_ESTIMATION_ENABLED",), depth_router),
     (("CORE_MODEL_SAM_ENABLED",), sam_router),
     (("CORE_MODEL_SAM2_ENABLED",), sam2_router),
@@ -219,10 +219,12 @@ def include_legacy_routers(app: FastAPI) -> None:
     app.include_router(router)
     if not hosted:
         app.include_router(infer_router)
+    if not configuration.LAMBDA and (
+        configuration.LMM_ENABLED or configuration.MOONDREAM2_ENABLED
+    ):
+        app.include_router(lmm_router)
     if configuration.CORE_MODELS_ENABLED:
         for flag_names, group_router in _CORE_MODEL_ROUTER_GROUPS:
-            if group_router is lmm_router and configuration.LAMBDA:
-                continue
             if any(getattr(configuration, name) for name in flag_names):
                 app.include_router(group_router)
     if configuration.LEGACY_CONTROL_PLANE_ROUTES_ENABLED:
@@ -1006,6 +1008,7 @@ async def _run_ocr(
     structured: bool,
     generate_bounding_boxes: Optional[bool] = None,
     class_from_text: bool = False,
+    params: Optional[dict] = None,
 ) -> Response:
     ensure_ocr_request_supported(inference_request)
     route, _, api_key = await _resolve_core_model(
@@ -1018,7 +1021,7 @@ async def _run_ocr(
         api_key,
         route.action,
         payloads,
-        {},
+        params or {},
         model_monitoring=_model_monitoring_enabled(inference_request),
     )
     elapsed = time.perf_counter() - started
@@ -1211,7 +1214,14 @@ async def easy_ocr_retrieve_text(
     bridge: LegacyModelBridge = Depends(get_bridge),
 ) -> Response:
     return await _run_ocr(
-        request, inference_request, bridge, "easy_ocr", structured=True
+        request,
+        inference_request,
+        bridge,
+        "easy_ocr",
+        structured=True,
+        generate_bounding_boxes=True,
+        class_from_text=True,
+        params={"confidence": 0.0},
     )
 
 
@@ -1472,7 +1482,9 @@ async def _run_depth_estimation(
         model_monitoring=_model_monitoring_enabled(inference_request),
     )
     elapsed = time.perf_counter() - started
-    depth = repack_depth_estimation(predictions[0])
+    depth = repack_depth_estimation(
+        predictions[0], invert=is_metric_depth_model_class(route.model_class_name)
+    )
     normalized_depth = depth["normalized_depth"]
     if inference_request.depth_map_format == "png8":
         serialized_depth = encode_normalized_depth_to_png8(normalized_depth)
@@ -1550,7 +1562,9 @@ async def _run_interactive_segmentation(
     )
     bridge.record_request(route, model_id, request.scope["path"])
     action = resolve_request_action(route, inference_request)
-    params = build_interactive_segmentation_params(action, inference_request, api_key)
+    params = build_interactive_segmentation_params(
+        action, inference_request, api_key, model_id=model_id
+    )
     image = getattr(inference_request, "image", None)
     model_monitoring = _model_monitoring_enabled(inference_request)
     started = time.perf_counter()

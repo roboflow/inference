@@ -386,6 +386,10 @@ if OFFLINE_MODE and SAM3_EXEC_MODE == "remote":
 DISABLE_SAM3_LOGITS_CACHE = get_boolean_from_env(
     "DISABLE_SAM3_LOGITS_CACHE", default=False
 )
+DISABLE_SAM2_LOGITS_CACHE = get_boolean_from_env(
+    "DISABLE_SAM2_LOGITS_CACHE", default=False
+)
+SAM3_MAX_DETECTIONS = get_integer_from_env("SAM3_MAX_DETECTIONS", default=-1)
 WORKFLOWS_MAX_CONCURRENT_STEPS = get_integer_from_env(
     "WORKFLOWS_MAX_CONCURRENT_STEPS", default=8
 )

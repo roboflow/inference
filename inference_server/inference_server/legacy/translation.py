@@ -602,6 +602,7 @@ _EMBEDDING_RESPONSE_CLASSES = {
 
 _MAX_VALUE_BY_DTYPE = {np.dtype(np.uint8): 255, np.dtype(np.uint16): 65535}
 _DEPTH_JPEG_QUALITY = 95
+_METRIC_DEPTH_MODEL_CLASS_PREFIX = "YOLO26"
 
 
 def is_moondream_backed(route: Route) -> bool:
@@ -821,13 +822,20 @@ def repack_moondream_detection(
     )
 
 
-def repack_depth_estimation(prediction: Any) -> dict:
+def is_metric_depth_model_class(model_class_name: Optional[str]) -> bool:
+    return (model_class_name or "").startswith(_METRIC_DEPTH_MODEL_CLASS_PREFIX)
+
+
+def repack_depth_estimation(prediction: Any, *, invert: bool = False) -> dict:
     depth_map = np.asarray(unwrap_single_prediction(prediction), dtype=np.float32)
     depth_min = float(depth_map.min())
     depth_max = float(depth_map.max())
     if depth_max == depth_min:
         raise LegacyHTTPError(500, "Depth map has no variation (min equals max)")
-    normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
+    if invert:
+        normalized_depth = (depth_max - depth_map) / (depth_max - depth_min)
+    else:
+        normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
     colored_depth = cv2.applyColorMap(
         (normalized_depth * 255.0).astype(np.uint8), cv2.COLORMAP_VIRIDIS
     )
@@ -925,7 +933,11 @@ _EMBEDDINGS_INPUT_UNSUPPORTED_MESSAGE = (
 
 
 def build_interactive_segmentation_params(
-    action: str, request: Any, api_key: Optional[str]
+    action: str,
+    request: Any,
+    api_key: Optional[str],
+    *,
+    model_id: Optional[str] = None,
 ) -> dict:
     if action in ("embed", "embed_images"):
         params: dict = {}
@@ -940,9 +952,9 @@ def build_interactive_segmentation_params(
     if action == "segment":
         if type(request).__name__ == "SamSegmentationRequest":
             return _build_sam_segment_params(request, api_key)
-        return _build_sam2_segment_params(request, api_key)
+        return _build_sam2_segment_params(request, api_key, model_id)
     if action == "segment_with_visual_prompts":
-        return _build_visual_prompt_params(request, api_key)
+        return _build_visual_prompt_params(request, api_key, model_id)
     if action == "segment_with_text_prompts":
         return _build_text_prompt_params(request)
     raise LegacyHTTPError(
@@ -988,11 +1000,13 @@ def _build_sam_segment_params(request: Any, api_key: Optional[str]) -> dict:
     return params
 
 
-def _build_sam2_segment_params(request: Any, api_key: Optional[str]) -> dict:
+def _build_sam2_segment_params(
+    request: Any, api_key: Optional[str], model_id: Optional[str]
+) -> dict:
     response_format = getattr(request, "format", None)
     if response_format not in ("json", "rle"):
         raise LegacyHTTPError(400, f"Invalid format {response_format}")
-    params = _build_visual_prompt_params(request, api_key)
+    params = _build_visual_prompt_params(request, api_key, model_id)
     if not any(key in params for key in ("point_coordinates", "point_labels", "boxes")):
         params["point_coordinates"] = [[[0, 0]]]
         params["point_labels"] = [[-1]]
@@ -1000,7 +1014,15 @@ def _build_sam2_segment_params(request: Any, api_key: Optional[str]) -> dict:
     return params
 
 
-def _build_visual_prompt_params(request: Any, api_key: Optional[str]) -> dict:
+def _logits_cache_disabled(model_id: Optional[str]) -> bool:
+    if (model_id or "").startswith("sam3/"):
+        return configuration.DISABLE_SAM3_LOGITS_CACHE
+    return configuration.DISABLE_SAM2_LOGITS_CACHE
+
+
+def _build_visual_prompt_params(
+    request: Any, api_key: Optional[str], model_id: Optional[str]
+) -> dict:
     if getattr(request, "mask_input", None) is not None or getattr(
         request, "has_mask_input", False
     ):
@@ -1027,12 +1049,11 @@ def _build_visual_prompt_params(request: Any, api_key: Optional[str]) -> dict:
     image_id = getattr(request, "image_id", None)
     if image_id:
         params["image_hashes"] = [namespace_client_hash_id(image_id, api_key)]
+    cache_enabled = not _logits_cache_disabled(model_id)
     if getattr(request, "load_logits_from_cache", False):
-        params["load_from_mask_input_cache"] = (
-            not configuration.DISABLE_SAM3_LOGITS_CACHE
-        )
+        params["load_from_mask_input_cache"] = cache_enabled
     if getattr(request, "save_logits_to_cache", False):
-        params["save_to_mask_input_cache"] = not configuration.DISABLE_SAM3_LOGITS_CACHE
+        params["save_to_mask_input_cache"] = cache_enabled
     return params
 
 
@@ -1065,6 +1086,7 @@ def _build_text_prompt_params(request: Any) -> dict:
     return {
         "prompts": [prompt.model_dump() for prompt in prompts],
         "output_prob_thresh": threshold,
+        "max_detections": configuration.SAM3_MAX_DETECTIONS,
     }
 
 
