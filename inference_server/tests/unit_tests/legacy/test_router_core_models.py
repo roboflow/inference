@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import requests
 from PIL import Image
 
 from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
@@ -898,23 +899,315 @@ def test_sam3_embed_image_resolves_interactive_model(legacy_client, fake_stat):
     assert call[3]["return_embeddings"] is False
 
 
-def test_sam3_remote_exec_mode_is_501(legacy_client, fake_stat, monkeypatch):
+def test_sam3_embed_image_remote_exec_mode_is_501(
+    legacy_client, fake_stat, monkeypatch
+):
     monkeypatch.setattr("inference_server.configuration.SAM3_EXEC_MODE", "remote")
-    client = legacy_client(FakeGateway())
-    for path, payload in (
-        ("/sam3/embed_image", {"image": _image()}),
-        (
-            "/sam3/concept_segment",
-            {"image": _image(), "prompts": [{"text": "cat"}]},
-        ),
-        ("/sam3/visual_segment", {"image": _image()}),
-    ):
-        response = client.post(path, json=payload)
-        assert response.status_code == 501, (path, response.text)
-    embed = client.post("/sam3/embed_image", json={"image": _image()})
+    embed = legacy_client(FakeGateway()).post(
+        "/sam3/embed_image", json={"image": _image()}
+    )
+    assert embed.status_code == 501, embed.text
     assert embed.json() == {
         "detail": "SAM3 embedding is not supported in remote execution mode."
     }
+
+
+_REMOTE_API_KEY = "remote-key-0123456789"
+_SAM3_CONCEPT_BODY = {
+    "prompt_results": [
+        {
+            "prompt_index": 0,
+            "echo": {"prompt_index": 0, "type": "text", "text": "cat"},
+            "predictions": [{"masks": [[[1, 1], [3, 1], [3, 5]]], "confidence": 0.8}],
+        }
+    ],
+    "time": 0.2,
+}
+_SAM3_VISUAL_BODY = {
+    "predictions": [
+        {"masks": [[[1, 1], [3, 1], [3, 5]]], "confidence": 0.9, "format": "json"}
+    ],
+    "time": 0.3,
+}
+
+
+class _FakeRemote:
+    def __init__(self, status_code=200, body=None, error=None, json_error=None):
+        self.status_code = status_code
+        self.body = body
+        self.error = error
+        self.json_error = json_error
+        self.calls = []
+
+    def post(self, url, headers=None, **kwargs):
+        self.calls.append({"url": url, "headers": headers, **kwargs})
+        if self.error is not None:
+            raise self.error
+        return SimpleNamespace(status_code=self.status_code, json=self._json)
+
+    def _json(self):
+        if self.json_error is not None:
+            raise self.json_error
+        if self.body is None:
+            raise ValueError("Expecting value")
+        return self.body
+
+
+@pytest.fixture
+def sam3_remote(monkeypatch):
+    from inference_server import platform_http
+
+    monkeypatch.setattr("inference_server.configuration.SAM3_EXEC_MODE", "remote")
+    monkeypatch.setattr(
+        "inference_server.configuration.API_BASE_URL", "https://api.example.test"
+    )
+    monkeypatch.setattr(
+        "inference_server.configuration.ROBOFLOW_INTERNAL_SERVICE_NAME", "gpu-pool"
+    )
+    monkeypatch.setattr(
+        "inference_server.configuration.ROBOFLOW_INTERNAL_SERVICE_SECRET",
+        "pool-secret-0123456789",
+    )
+
+    def _install(**kwargs):
+        remote = _FakeRemote(**kwargs)
+        monkeypatch.setattr(platform_http.requests, "post", remote.post)
+        return remote
+
+    return _install
+
+
+def test_sam3_concept_segment_remote_posts_to_seg_preview_proxy(
+    legacy_client, sam3_remote
+):
+    remote = sam3_remote(body=_SAM3_CONCEPT_BODY)
+    gw = FakeGateway()
+    image = _image()
+    r = legacy_client(gw).post(
+        "/sam3/concept_segment?source=ui&source_info=canvas",
+        json={
+            "image": image,
+            "model_id": "sam3/sam3_final",
+            "prompts": [
+                {"text": "cat"},
+                {
+                    "type": "visual",
+                    "boxes": [{"x": 1, "y": 2, "width": 3, "height": 4}],
+                },
+            ],
+            "output_prob_thresh": 0.3,
+            "api_key": _REMOTE_API_KEY,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["prompt_results"][0]["predictions"][0]["confidence"] == 0.8
+    assert gw.calls == []
+    (call,) = remote.calls
+    assert call["url"] == (
+        f"https://api.example.test/inferenceproxy/seg-preview?api_key={_REMOTE_API_KEY}"
+    )
+    assert call["json"] == {
+        "image": image,
+        "prompts": [
+            {"type": "text", "text": "cat"},
+            {
+                "type": "visual",
+                "boxes": [{"x": 1.0, "y": 2.0, "width": 3.0, "height": 4.0}],
+            },
+        ],
+        "output_prob_thresh": 0.3,
+        "source": "ui",
+        "source_info": "canvas",
+    }
+    assert call["timeout"] == 60
+    assert call["headers"]["Content-Type"] == "application/json"
+    assert call["headers"]["X-Roboflow-Internal-Service-Name"] == "gpu-pool"
+    assert (
+        call["headers"]["X-Roboflow-Internal-Service-Secret"]
+        == "pool-secret-0123456789"
+    )
+    assert "x-roboflow-inference-version" in call["headers"]
+
+
+def test_sam3_visual_segment_remote_posts_to_sam3_pvs_proxy(legacy_client, sam3_remote):
+    remote = sam3_remote(body=_SAM3_VISUAL_BODY)
+    gw = FakeGateway()
+    image = _image()
+    r = legacy_client(gw).post(
+        f"/sam3/visual_segment?api_key={_REMOTE_API_KEY}&source=ui",
+        json={
+            "image": image,
+            "prompts": [{"points": [{"x": 5, "y": 6, "positive": True}]}],
+            "multimask_output": False,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["predictions"][0]["confidence"] == 0.9
+    assert gw.calls == []
+    (call,) = remote.calls
+    assert call["url"] == (
+        f"https://api.example.test/inferenceproxy/sam3-pvs?api_key={_REMOTE_API_KEY}"
+    )
+    assert call["json"] == {
+        "image": image,
+        "prompts": {"prompts": [{"points": [{"x": 5.0, "y": 6.0, "positive": True}]}]},
+        "multimask_output": False,
+        "source": "ui",
+        "source_info": None,
+    }
+    assert call["timeout"] == 60
+    assert call["headers"]["X-Roboflow-Internal-Service-Name"] == "gpu-pool"
+
+
+def test_sam3_remote_omits_internal_service_headers_when_unset(
+    legacy_client, sam3_remote, monkeypatch
+):
+    monkeypatch.setattr(
+        "inference_server.configuration.ROBOFLOW_INTERNAL_SERVICE_NAME", None
+    )
+    monkeypatch.setattr(
+        "inference_server.configuration.ROBOFLOW_INTERNAL_SERVICE_SECRET", None
+    )
+    remote = sam3_remote(body=_SAM3_VISUAL_BODY)
+    r = legacy_client(FakeGateway()).post(
+        "/sam3/visual_segment", json={"image": _image()}
+    )
+    assert r.status_code == 200, r.text
+    (call,) = remote.calls
+    assert "X-Roboflow-Internal-Service-Name" not in call["headers"]
+    assert "X-Roboflow-Internal-Service-Secret" not in call["headers"]
+
+
+@pytest.mark.parametrize(
+    "path, payload, detail",
+    [
+        (
+            "/sam3/concept_segment",
+            {"image": _image(), "prompts": [{"text": "cat"}]},
+            "SAM3 remote request failed.",
+        ),
+        (
+            "/sam3/visual_segment",
+            {"image": _image()},
+            "SAM3 visual_segment remote request failed.",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "remote_kwargs",
+    [
+        {"status_code": 403, "body": {"message": "forbidden"}},
+        {"status_code": 200, "body": None},
+        {"status_code": 200, "body": {"unexpected": True}},
+        {
+            "error": requests.exceptions.ConnectionError(
+                f"https://api.example.test/x?api_key={_REMOTE_API_KEY}"
+            )
+        },
+        {
+            "error": requests.exceptions.ReadTimeout(
+                f"https://api.example.test/x?api_key={_REMOTE_API_KEY}"
+            )
+        },
+    ],
+)
+def test_sam3_remote_failure_is_generic_500_without_the_api_key(
+    legacy_client, sam3_remote, caplog, path, payload, detail, remote_kwargs
+):
+    sam3_remote(**remote_kwargs)
+    with caplog.at_level("ERROR"):
+        r = legacy_client(FakeGateway()).post(
+            f"{path}?api_key={_REMOTE_API_KEY}", json=payload
+        )
+    assert r.status_code == 500, r.text
+    assert r.json() == {"detail": detail}
+    assert _REMOTE_API_KEY not in r.text
+    assert any(detail.rstrip(".") in record.getMessage() for record in caplog.records)
+    assert _REMOTE_API_KEY not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "path, payload, route_text",
+    [
+        (
+            "/sam3/concept_segment",
+            {"image": _image(), "prompts": [{"text": "cat"}]},
+            "SAM3 remote request failed",
+        ),
+        (
+            "/sam3/visual_segment",
+            {"image": _image()},
+            "SAM3 visual_segment remote request failed",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "remote_kwargs",
+    [
+        {
+            "json_error": ValueError(
+                f"bad body from https://api.example.test/x?api_key={_REMOTE_API_KEY}"
+            )
+        },
+        {"body": {"time": _REMOTE_API_KEY, "predictions": _REMOTE_API_KEY}},
+    ],
+)
+def test_sam3_remote_post_request_failure_is_redacted_and_chain_free(
+    legacy_client,
+    sam3_remote,
+    caplog,
+    monkeypatch,
+    path,
+    payload,
+    route_text,
+    remote_kwargs,
+):
+    from fastapi import HTTPException
+
+    from inference_server.legacy import router
+
+    sam3_remote(**remote_kwargs)
+    raised = []
+    original = router._sam3_remote
+
+    async def _capture(*args, **kwargs):
+        try:
+            return await original(*args, **kwargs)
+        except HTTPException as error:
+            raised.append(error)
+            raise
+
+    monkeypatch.setattr(router, "_sam3_remote", _capture)
+    with caplog.at_level("ERROR"):
+        r = legacy_client(FakeGateway()).post(
+            f"{path}?api_key={_REMOTE_API_KEY}", json=payload
+        )
+    assert r.status_code == 500, r.text
+    assert _REMOTE_API_KEY not in r.text
+    assert any(route_text in record.getMessage() for record in caplog.records)
+    assert _REMOTE_API_KEY not in caplog.text
+    (error,) = raised
+    assert error.__cause__ is None
+    assert error.__suppress_context__ is True
+
+
+def test_sam3_concept_segment_remote_rejects_fine_tuned_before_proxying(
+    legacy_client, sam3_remote, monkeypatch
+):
+    monkeypatch.setattr(
+        "inference_server.configuration.SAM3_FINE_TUNED_MODELS_ENABLED", False
+    )
+    remote = sam3_remote(body=_SAM3_CONCEPT_BODY)
+    r = legacy_client(FakeGateway()).post(
+        "/sam3/concept_segment",
+        json={
+            "image": _image(),
+            "model_id": "my-project/3",
+            "prompts": [{"text": "cat"}],
+        },
+    )
+    assert r.status_code == 501, r.text
+    assert remote.calls == []
 
 
 def test_sam3_concept_segment_keeps_echo_and_null_fields(legacy_client, fake_stat):

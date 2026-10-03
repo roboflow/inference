@@ -38,22 +38,21 @@ def build_api_headers(
     """Build the headers every platform request carries.
 
     Args:
-        explicit_headers: Headers that override the defaults and
-            ``ROBOFLOW_API_EXTRA_HEADERS``.
+        explicit_headers: Headers that override ``ROBOFLOW_API_EXTRA_HEADERS``;
+            the server version and chunked-response markers override both.
 
     Returns:
         Header mapping with the server version and chunked-response markers.
     """
-    headers: Dict[str, Union[str, List[str]]] = {
-        "x-roboflow-inference-version": configuration.SERVER_VERSION,
-        "x-allow-chunked-response": "true",
-    }
+    headers: Dict[str, Union[str, List[str]]] = {}
     if configuration.ROBOFLOW_API_EXTRA_HEADERS:
         try:
             headers.update(json.loads(configuration.ROBOFLOW_API_EXTRA_HEADERS))
         except ValueError:
             logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
     headers.update(explicit_headers or {})
+    headers["x-roboflow-inference-version"] = configuration.SERVER_VERSION
+    headers["X-Allow-Chunked"] = "true"
 
     return headers
 

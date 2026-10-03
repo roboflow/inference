@@ -94,7 +94,7 @@ def test_platform_client_posts_with_headers_and_key():
         assert host.PLATFORM_CLIENT.post("x/y", api_key="k", payload={"a": 1}) == {
             "ok": 1
         }
-        assert m.last_request.headers["x-allow-chunked-response"] == "true"
+        assert m.last_request.headers["X-Allow-Chunked"] == "true"
 
 
 _PLATFORM_KEY = "-".join(["secret", "key"])
@@ -269,17 +269,16 @@ def test_build_api_headers_merge_order(monkeypatch):
     monkeypatch.setattr(
         configuration,
         "ROBOFLOW_API_EXTRA_HEADERS",
-        json.dumps({"x-allow-chunked-response": "from-extra", "x-extra": "1"}),
+        json.dumps({"X-Allow-Chunked": "from-extra", "x-extra": "1", "x-both": "e"}),
     )
     headers = host.PLATFORM_CLIENT.build_api_headers()
-    assert headers["x-allow-chunked-response"] == "from-extra"
+    assert headers["X-Allow-Chunked"] == "true"
     assert headers["x-extra"] == "1"
-    assert (
-        host.PLATFORM_CLIENT.build_api_headers(
-            explicit_headers={"x-allow-chunked-response": "from-explicit"}
-        )["x-allow-chunked-response"]
-        == "from-explicit"
+    headers = host.PLATFORM_CLIENT.build_api_headers(
+        explicit_headers={"x-both": "from-explicit", "X-Allow-Chunked": "explicit"}
     )
+    assert headers["x-both"] == "from-explicit"
+    assert headers["X-Allow-Chunked"] == "true"
 
 
 def test_get_workflow_specification_extracts_and_caches():

@@ -2,6 +2,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 from inference_server import configuration
 
 
@@ -31,24 +33,43 @@ def test_legacy_offline_mode_follows_model_layer_latch_not_server_variable():
     assert result.returncode == 0, result.stderr
 
 
-def test_offline_mode_forces_local_sam3_execution():
+def _sam3_settings(exec_mode, offline, fine_tuned):
     code = (
         "from inference_server import configuration as c; "
-        "assert c.SAM3_EXEC_MODE == 'local', c.SAM3_EXEC_MODE; "
-        "assert c.SAM3_FINE_TUNED_MODELS_ENABLED is False, "
-        "c.SAM3_FINE_TUNED_MODELS_ENABLED"
+        "print(c.SAM3_EXEC_MODE, c.SAM3_FINE_TUNED_MODELS_ENABLED)"
     )
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name != "SAM3_FINE_TUNED_MODELS_ENABLED"
+    }
+    env.update({"OFFLINE_MODE": offline, "SAM3_EXEC_MODE": exec_mode})
+    if fine_tuned is not None:
+        env["SAM3_FINE_TUNED_MODELS_ENABLED"] = fine_tuned
     result = subprocess.run(
-        [sys.executable, "-c", code],
-        env={
-            **os.environ,
-            "OFFLINE_MODE": "true",
-            "SAM3_EXEC_MODE": "remote",
-        },
-        capture_output=True,
-        text=True,
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
+    return result.stdout.split()
+
+
+@pytest.mark.parametrize(
+    "exec_mode, offline, fine_tuned, expected",
+    [
+        ("local", "false", None, ["local", "True"]),
+        ("local", "false", "false", ["local", "False"]),
+        ("local", "true", None, ["local", "True"]),
+        ("local", "true", "false", ["local", "False"]),
+        ("remote", "false", None, ["remote", "False"]),
+        ("remote", "false", "true", ["remote", "True"]),
+        ("remote", "true", None, ["local", "True"]),
+        ("remote", "true", "false", ["local", "False"]),
+    ],
+)
+def test_sam3_settings_follow_legacy_for_every_mode_offline_combination(
+    exec_mode, offline, fine_tuned, expected
+):
+    assert _sam3_settings(exec_mode, offline, fine_tuned) == expected
 
 
 def test_hosted_flags_default_to_legacy_values():

@@ -383,6 +383,8 @@ if OFFLINE_MODE and SAM3_EXEC_MODE == "remote":
         stacklevel=1,
     )
     SAM3_EXEC_MODE = "local"
+    if os.environ.get("SAM3_FINE_TUNED_MODELS_ENABLED") is None:
+        SAM3_FINE_TUNED_MODELS_ENABLED = True
 DISABLE_SAM3_LOGITS_CACHE = get_boolean_from_env(
     "DISABLE_SAM3_LOGITS_CACHE", default=False
 )

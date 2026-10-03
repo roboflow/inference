@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
-from inference_server import configuration, server_identity, telemetry
+from inference_server import configuration, platform_http, server_identity, telemetry
 from inference_server.dependencies import get_model_manager
 from inference_server.legacy.active_learning_registration import register_inference
 from inference_server.legacy.bridge import (
@@ -96,6 +96,7 @@ from inference_server.legacy.entities import (
 from inference_server.legacy.errors import (
     LegacyHTTPError,
     MissingServiceSecretError,
+    redact_text,
     with_legacy_errors,
 )
 from inference_server.legacy.telemetry_recording import record_telemetry
@@ -191,9 +192,8 @@ _TASK_UNAVAILABLE_MESSAGE = (
     "{route} is not available on inference_server: no model class for this task is "
     "registered with the model manager"
 )
-SAM3_REMOTE_UNSUPPORTED_MESSAGE = (
-    "SAM3_EXEC_MODE=remote proxying is not available on inference_server"
-)
+SAM3_CONCEPT_REMOTE_FAILURE_MESSAGE = "SAM3 remote request failed."
+SAM3_VISUAL_REMOTE_FAILURE_MESSAGE = "SAM3 visual_segment remote request failed."
 SAM3_EMBEDDING_REMOTE_UNSUPPORTED_MESSAGE = (
     "SAM3 embedding is not supported in remote execution mode."
 )
@@ -1646,9 +1646,94 @@ async def depth_estimation_with_model_id(
     )
 
 
-def _ensure_sam3_local_execution() -> None:
-    if configuration.SAM3_EXEC_MODE == "remote":
-        raise LegacyHTTPError(501, SAM3_REMOTE_UNSUPPORTED_MESSAGE)
+def _sam3_remote_headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    if configuration.ROBOFLOW_INTERNAL_SERVICE_NAME:
+        headers["X-Roboflow-Internal-Service-Name"] = (
+            configuration.ROBOFLOW_INTERNAL_SERVICE_NAME
+        )
+    if configuration.ROBOFLOW_INTERNAL_SERVICE_SECRET:
+        headers["X-Roboflow-Internal-Service-Secret"] = (
+            configuration.ROBOFLOW_INTERNAL_SERVICE_SECRET
+        )
+    all_headers = platform_http.build_api_headers(explicit_headers=headers)
+
+    return all_headers
+
+
+def _post_sam3_remote(
+    proxy_path: str, payload: dict, api_key: Optional[str], response_model: type
+) -> Any:
+    url = platform_http.wrap_url(
+        f"{configuration.API_BASE_URL}/inferenceproxy/{proxy_path}?api_key={api_key}"
+    )
+    response = platform_http._platform_request(
+        "post", url, headers=_sam3_remote_headers(), json=payload, timeout=60
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"platform answered {response.status_code}")
+    parsed = response_model(**response.json())
+
+    return parsed
+
+
+async def _sam3_remote(
+    proxy_path: str,
+    payload: dict,
+    api_key: Optional[str],
+    response_model: type,
+    failure_message: str,
+) -> Any:
+    try:
+        parsed = await asyncio.to_thread(
+            _post_sam3_remote, proxy_path, payload, api_key, response_model
+        )
+    except Exception as error:
+        logger.error("%s %s", failure_message, redact_text(str(error), (api_key,)))
+        raise HTTPException(status_code=500, detail=failure_message) from None
+
+    return parsed
+
+
+def _sam3_concept_remote_payload(inference_request: Sam3SegmentationRequest) -> dict:
+    prompts = []
+    for prompt in inference_request.prompts:
+        prompt_data = prompt.model_dump(exclude_none=True)
+        if "type" not in prompt_data and "text" in prompt_data:
+            prompt_data["type"] = "text"
+        prompts.append(prompt_data)
+    payload = {
+        "image": {
+            "type": inference_request.image.type,
+            "value": inference_request.image.value,
+        },
+        "prompts": prompts,
+        "output_prob_thresh": inference_request.output_prob_thresh,
+        "source": inference_request.source,
+        "source_info": inference_request.source_info,
+    }
+
+    return payload
+
+
+def _sam3_visual_remote_payload(inference_request: Sam2SegmentationRequest) -> dict:
+    prompts = (
+        inference_request.prompts.model_dump(exclude_none=True)
+        if inference_request.prompts
+        else None
+    )
+    payload = {
+        "image": {
+            "type": inference_request.image.type,
+            "value": inference_request.image.value,
+        },
+        "prompts": prompts,
+        "multimask_output": inference_request.multimask_output,
+        "source": inference_request.source,
+        "source_info": inference_request.source_info,
+    }
+
+    return payload
 
 
 async def _run_interactive_segmentation(
@@ -1853,7 +1938,18 @@ async def sam3_concept_segment(
     if not configuration.SAM3_FINE_TUNED_MODELS_ENABLED:
         if not inference_request.model_id.startswith("sam3/"):
             raise LegacyHTTPError(501, FINE_TUNED_SAM3_DEPLOYMENT_ERROR)
-    _ensure_sam3_local_execution()
+    if configuration.SAM3_EXEC_MODE == "remote":
+        api_key = resolve_api_key(
+            request, request.query_params.get("api_key"), inference_request.api_key
+        )
+        inference_request.api_key = api_key
+        return await _sam3_remote(
+            "seg-preview",
+            _sam3_concept_remote_payload(inference_request),
+            api_key,
+            Sam3SegmentationResponse,
+            SAM3_CONCEPT_REMOTE_FAILURE_MESSAGE,
+        )
     return await _run_interactive_segmentation(
         request, inference_request, bridge, inference_request.model_id
     )
@@ -1887,7 +1983,18 @@ async def sam3_visual_segment(
         inference_request.source = request_source
     if request_source_info is not None:
         inference_request.source_info = request_source_info
-    _ensure_sam3_local_execution()
+    if configuration.SAM3_EXEC_MODE == "remote":
+        api_key = resolve_api_key(
+            request, request.query_params.get("api_key"), inference_request.api_key
+        )
+        inference_request.api_key = api_key
+        return await _sam3_remote(
+            "sam3-pvs",
+            _sam3_visual_remote_payload(inference_request),
+            api_key,
+            Sam2SegmentationResponse,
+            SAM3_VISUAL_REMOTE_FAILURE_MESSAGE,
+        )
     return await _run_interactive_segmentation(
         request, inference_request, bridge, SAM3_INTERACTIVE_MODEL_ID
     )
