@@ -16,6 +16,7 @@ import uuid
 import warnings
 from typing import Optional
 
+from inference_models.configuration import INFERENCE_HOME as _MODELS_INFERENCE_HOME
 from inference_models.configuration import OFFLINE_MODE as _MODELS_OFFLINE_MODE
 from inference_models.configuration import SECURE_GATEWAY as _MODELS_SECURE_GATEWAY
 from inference_models.utils.environment import (
@@ -410,9 +411,26 @@ ALLOW_WORKFLOWS_FONTS_DOWNLOAD = get_boolean_from_env(
     "ALLOW_WORKFLOWS_FONTS_DOWNLOAD", default=True
 )
 
+# ── Workflows: enterprise blocks and MQTT broker policy (workflows/host.py) ─
+LOAD_ENTERPRISE_BLOCKS = get_boolean_from_env("LOAD_ENTERPRISE_BLOCKS", default=False)
+MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST = get_boolean_from_env(
+    "MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST", default=True
+)
+_MQTT_WHITELISTED_HOSTS_RAW = os.environ.get("MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS")
+MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS = (
+    None
+    if _MQTT_WHITELISTED_HOSTS_RAW is None
+    else tuple(
+        entry.strip()
+        for entry in _MQTT_WHITELISTED_HOSTS_RAW.split(",")
+        if entry.strip()
+    )
+)
+
 # ── Roboflow platform access (workflows/host.py) ──────────────────────────
 SECURE_GATEWAY = _MODELS_SECURE_GATEWAY
 MODEL_CACHE_DIR = os.environ.get("MODEL_CACHE_DIR", "/tmp/cache")
+INFERENCE_HOME = _MODELS_INFERENCE_HOME
 ROBOFLOW_API_EXTRA_HEADERS = os.environ.get("ROBOFLOW_API_EXTRA_HEADERS")
 ROBOFLOW_INTERNAL_SERVICE_NAME = os.environ.get("ROBOFLOW_INTERNAL_SERVICE_NAME")
 ROBOFLOW_INTERNAL_SERVICE_SECRET = os.environ.get("ROBOFLOW_INTERNAL_SERVICE_SECRET")

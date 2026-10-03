@@ -614,7 +614,7 @@ def test_builder_route_reaches_the_mapping_through_the_decorator(tmp_path, monke
         async def _broken(bridge):
             raise ModelLoadingError("broken")
 
-        monkeypatch.setattr(routes.models, "list_models", _broken)
+        monkeypatch.setattr(routes.models, "list_models_with_status", _broken)
         app = FastAPI()
         app.include_router(routes.router, prefix="/build")
         app.dependency_overrides[get_bridge] = lambda: object()

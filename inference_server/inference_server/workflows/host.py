@@ -4,6 +4,7 @@ happen before anything imports `roboflow_workflows.environment`."""
 from __future__ import annotations
 
 import functools
+import importlib
 import json
 import logging
 import os
@@ -197,6 +198,8 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
             kafka_sinks_whitelisted_bootstrap_servers=_optional_csv(
                 os.environ.get("KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS")
             ),
+            allow_mqtt_blocks_user_provided_host=configuration.MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST,
+            mqtt_blocks_whitelisted_hosts=configuration.MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS,
         ),
         tensor=TensorConfiguration(
             representation_enabled=tensor_representation_enabled,
@@ -287,8 +290,8 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
             api_base_url=configuration.API_BASE_URL,
             offline_mode=offline_mode,
             secure_gateway=secure_gateway,
-            gcp_serverless=False,
-            lambda_runtime=False,
+            gcp_serverless=configuration.GCP_SERVERLESS,
+            lambda_runtime=configuration.LAMBDA,
         ),
         fonts=FontsConfiguration(
             allow_download=configuration.ALLOW_WORKFLOWS_FONTS_DOWNLOAD,
@@ -373,8 +376,53 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
     )
 
 
+ENTERPRISE_BLOCKS_PLUGIN = "roboflow_workflows.enterprise_blocks.loader"
+
+
+def expand_enterprise_blocks_plugin() -> None:
+    """Prepend the enterprise blocks loader to `WORKFLOWS_PLUGINS` when enabled.
+
+    The loader goes first so the block order stays core, enterprise, then custom
+    plugins. A loader that is already listed keeps its position.
+    """
+    if not configuration.LOAD_ENTERPRISE_BLOCKS:
+        return
+
+    plugins = [
+        plugin
+        for plugin in os.environ.get("WORKFLOWS_PLUGINS", "").split(",")
+        if plugin
+    ]
+    if ENTERPRISE_BLOCKS_PLUGIN in plugins:
+        return
+
+    os.environ["WORKFLOWS_PLUGINS"] = ",".join([ENTERPRISE_BLOCKS_PLUGIN] + plugins)
+
+
+def require_enterprise_blocks_plugin() -> None:
+    """Fail at startup when enterprise blocks are enabled but cannot be imported.
+
+    Raises:
+        RuntimeError: When `LOAD_ENTERPRISE_BLOCKS` is set and the enterprise
+            loader or one of its dependencies is missing.
+    """
+    if not configuration.LOAD_ENTERPRISE_BLOCKS:
+        return
+
+    try:
+        importlib.import_module(ENTERPRISE_BLOCKS_PLUGIN)
+    except ImportError as error:
+        raise RuntimeError(
+            "LOAD_ENTERPRISE_BLOCKS is enabled but the enterprise Workflow blocks "
+            f"cannot be imported ({error}). Install the `enterprise` extra: "
+            "roboflow-workflows[enterprise]."
+        ) from error
+
+
+expand_enterprise_blocks_plugin()
 SERVER_WORKFLOWS_CONFIGURATION = build_workflows_configuration()
 configure_process(SERVER_WORKFLOWS_CONFIGURATION)
+require_enterprise_blocks_plugin()
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402

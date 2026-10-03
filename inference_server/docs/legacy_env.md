@@ -174,9 +174,9 @@ pool summary lists only `VLLM_PROXY_ENABLED`, `VLLM_BASE_URL` and
 
 `PINNED_MODELS` and `PRELOAD_HF_IDS` are read under the same spelling, see (a).
 Hosted names from the summary that are legacy-only today and therefore need an
-infra decision rather than a mapping: `GCP_SERVERLESS`,
+infra decision rather than a mapping:
 `ENFORCE_CREDITS_VERIFICATION`, `MODELS_CACHE_AUTH_ENABLED`,
-`ENABLE_PROMETHEUS`, `LOAD_ENTERPRISE_BLOCKS`, `WEBRTC_*`,
+`ENABLE_PROMETHEUS`, `WEBRTC_*`,
 `VLLM_PROXY_ENABLED`. Each is in the (d) table.
 
 ## (a) Shared names
@@ -231,7 +231,7 @@ definition; the last column is the new reader.
 | `LEGACY_ROUTE_ENABLED` | `env.py:666` | `configuration.py:147` | `True` |
 | `SECURE_GATEWAY` | `env.py:672-675` | `configuration.py:397` and `host.py` (both the normalised `inference_models/configuration.py:86` value); the hosted workspace lookup of `auth.py` follows it for the dedicated and serverless paths only | unset |
 | `MODEL_CACHE_DIR` | `env.py:795` | `configuration.py:267`; `inference_models/configuration.py:102` | `/tmp/cache` |
-| `ENABLE_BUILDER` | `env.py:817` | `configuration.py:116` | `False` |
+| `ENABLE_BUILDER` | `env.py:817` | `configuration.py:116`; `workflows/router.py` honours `air_gapped` on `/workflows/blocks/describe` only when it is set | `False` |
 | `BUILDER_ORIGIN` | `env.py:823-826` | `configuration.py:117-124` | `https://app.roboflow.com` for the us/prod case; the module derives the other cases, see note 1 |
 | `ENABLE_DASHBOARD` | `env.py:841` | `configuration.py:111` | `False` |
 | `NUM_WORKERS` | `env.py:844` | `configuration.py:99` | `1` |
@@ -365,6 +365,10 @@ definition; the last column is the new reader.
 | `WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS` | `env.py:1762` | `host.py:200` | `False` |
 | `WORKFLOWS_IMAGE_TENSOR_DEVICE` | `env.py:1766-1789` | `host.py:196-199` | unset (auto) |
 | `WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION` | `env.py:1809-1818` | `host.py:132-142` | `rle` |
+| `GCP_SERVERLESS` | `env.py:626` | `configuration.py:453`; `host.py:293` passes it to the engine platform configuration, which makes the blocks that refuse hosted serverless runs refuse them | `False` |
+| `LOAD_ENTERPRISE_BLOCKS` | `env.py:1355` | `configuration.py:415`; `host.py:382` prepends `roboflow_workflows.enterprise_blocks.loader` to `WORKFLOWS_PLUGINS` as legacy does with its own loader path (idempotent, empty entries dropped); `host.py:402` fails the import of the host module, naming the `enterprise` extra of `roboflow-workflows`, when the loader cannot be imported (legacy fails at the first blocks load) | `False` |
+| `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` | `env.py:167` | `configuration.py:416`; `host.py:201` | `True` |
+| `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` | `env.py:179` | `configuration.py:420` (comma list, entries trimmed, empties dropped, order kept; set but empty is an empty allowlist); `host.py:202` | unset |
 
 ### Read by `inference_model_manager/configuration.py`
 
@@ -392,7 +396,7 @@ definition; the last column is the new reader.
 | `LICENSE_SERVER` | `env.py:672,676-682` | `configuration.py:84,89-95` | unset (deprecated alias of `SECURE_GATEWAY` on both sides) |
 | `LOG_LEVEL` | `env.py:705` | `configuration.py:129` | `WARNING` |
 | `HF_HUB_CACHE` | `env.py:796` (required) | `configuration.py:104` (required) | none |
-| `INFERENCE_HOME` | `env.py:803` (`setdefault` to `MODEL_CACHE_DIR`) | `configuration.py:101-103` (falls back to `MODEL_CACHE_DIR`, then `/tmp/cache`) | `MODEL_CACHE_DIR` |
+| `INFERENCE_HOME` | `env.py:803` (`setdefault` to `MODEL_CACHE_DIR`) | `inference_models/configuration.py:101-103` (falls back to `MODEL_CACHE_DIR`, then `/tmp/cache`); `configuration.py:433`; `builder/model_cache.py` searches it next to `MODEL_CACHE_DIR` | `MODEL_CACHE_DIR` |
 | `ONNXRUNTIME_EXECUTION_PROVIDERS` | `env.py:846-849` (bracketed list) | `configuration.py:18-25` (brackets stripped) | same four providers |
 | `SAM3_IMAGE_SIZE` | `env.py:886` | `configuration.py:137` | `1008` |
 | `RUNNING_ON_JETSON` | `env.py:1248` (fallback spelling) | `configuration.py:96` | unset |
@@ -469,7 +473,8 @@ the vLLM proxy and usage tracking. The `TELEMETRY_*` names that
    `LOAD_ENTERPRISE_BLOCKS`, `inference.enterprise.workflows.enterprise_blocks.loader`)
    to the operator's list (`env.py:1366-1399`). Those modules live in the legacy
    package and cannot be imported by the new stack; the Roboflow-platform blocks
-   they provide are outside this task.
+   they provide are outside this task. With `LOAD_ENTERPRISE_BLOCKS` the new
+   server prepends the same blocks under their `roboflow_workflows` module path.
 
 ## (d) Legacy-only names
 
@@ -519,7 +524,6 @@ No new package reads these. They never get an alias or a default row.
 | `FIX_BATCH_SIZE` | `env.py:580` | legacy ORT batch padding |
 | `GAZE_MAX_BATCH_SIZE` | `env.py:286` | gaze was removed; legacy keeps a 410 stub |
 | `GAZE_VERSION_ID` | `env.py:253` | gaze was removed |
-| `GCP_SERVERLESS` | `env.py:626` | `host.py:283` hardcodes `False`; unread (hosting summary) |
 | `HOST` | `env.py:583` | legacy bind host; `app.py:358` hardcodes `0.0.0.0`, which is the legacy default |
 | `HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT` | `env.py:1455` | legacy model manager lock |
 | `HUGGINGFACE_TOKEN` | `env.py:1222` | legacy HF token plumbing; no new package reads it |
@@ -536,7 +540,6 @@ No new package reads these. They never get an alias or a default row.
 | `LEGACY_MMP_ADAPTER_BUNDLED_BACKEND` | `env.py:467` | adapter transport switch; the new server replaces the adapter |
 | `LEGACY_MMP_ADAPTER_ENABLED` | `env.py:447` | adapter switch; the new server replaces the adapter |
 | `LEGACY_MMP_ADAPTER_MODE` | `env.py:462` | adapter transport switch |
-| `LOAD_ENTERPRISE_BLOCKS` | `env.py:1355` | expands to an `inference.*` plugin module; unread (hosting summary) |
 | `MAX_BATCH_SIZE` | `env.py:711-715` | legacy ORT batch chunking / padding (`inference/core/models/roboflow.py:875`, `object_detection_base.py:235-247`); `inference_models` batches per model |
 | `MAX_FPS` | `env.py:575` | legacy stream-mode setting |
 | `MAX_VIDEO_DOWNLOAD_SIZE_MB` | `env.py:417` | legacy action-recognition video download; no new package reads it |
@@ -550,8 +553,6 @@ No new package reads these. They never get an alias or a default row.
 | `MODEL_LOCK_ACQUIRE_TIMEOUT` | `env.py:1454` | legacy model manager lock |
 | `MODEL_MONITORING_CACHE_BACKEND` | `env.py:486` | legacy pingback cache selection |
 | `MODEL_VALIDATION_DISABLED` | `env.py:1220` | legacy model validation |
-| `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` | `env.py:167` | `roboflow_workflows/configuration.py:77` has the field but `build_workflows_configuration` does not read the env; the field default (`True`) equals the legacy default, so only an operator override is lost |
-| `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` | `env.py:179` | `roboflow_workflows/configuration.py:78` has the field but `build_workflows_configuration` does not read the env; default (`None`) equals legacy |
 | `NUM_CELERY_WORKERS` | `env.py:988` | legacy celery |
 | `NUM_PARALLEL_TASKS` | `env.py:952` | legacy async model manager |
 | `ORT_TENSORRT_CACHE_PATH` | `env.py:918` (written, not read) | legacy ORT TensorRT cache; no new package reads it |

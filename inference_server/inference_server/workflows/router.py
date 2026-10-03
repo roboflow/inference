@@ -1,3 +1,4 @@
+import copy
 import gzip
 from typing import Any, Dict, List, Optional, Union
 
@@ -35,9 +36,11 @@ from roboflow_workflows.http_contract.entities import (
     WorkflowSpecificationInferenceRequest,
     WorkflowValidationStatus,
 )
+from roboflow_workflows.prototypes.block import BlockAirGappedInfo
 from starlette.concurrency import run_in_threadpool
 
 from inference_server import configuration
+from inference_server.builder.model_cache import has_cached_model_variant
 from inference_server.legacy.bridge import SyncLegacyBridge
 from inference_server.legacy.common import orjson_response, resolve_api_key
 from inference_server.legacy.errors import LegacyHTTPError
@@ -311,6 +314,49 @@ async def get_execution_engine_versions() -> ExecutionEngineVersions:
     return ExecutionEngineVersions(versions=get_available_versions())
 
 
+def _enrich_with_air_gapped_info(
+    result: WorkflowsBlocksDescription,
+) -> WorkflowsBlocksDescription:
+    enriched_blocks = []
+    for block in result.blocks:
+        air_gapped_info = _air_gapped_info_for_block(block.manifest_class)
+        enriched_schema = copy.deepcopy(block.block_schema)
+        enriched_schema.setdefault("json_schema_extra", {})
+        enriched_schema["json_schema_extra"][
+            "air_gapped_info"
+        ] = air_gapped_info.to_dict()
+        enriched_blocks.append(
+            block.model_copy(update={"block_schema": enriched_schema})
+        )
+    enriched_result = result.model_copy(update={"blocks": enriched_blocks})
+
+    return enriched_result
+
+
+def _air_gapped_info_for_block(manifest_class: Any) -> BlockAirGappedInfo:
+    task_types = manifest_class.get_compatible_task_types()
+    availability = manifest_class.get_air_gapped_availability()
+    if not availability.available:
+        return BlockAirGappedInfo(
+            available=False,
+            reason=availability.reason,
+            compatible_task_types=task_types,
+        )
+
+    model_variants = manifest_class.get_supported_model_variants()
+    if model_variants is not None:
+        cached = has_cached_model_variant(model_variants)
+        representative_id = model_variants[0] if model_variants else None
+        return BlockAirGappedInfo(
+            available=cached,
+            reason=None if cached else "missing_cache_artifacts",
+            model_id=representative_id,
+            compatible_task_types=task_types,
+        )
+
+    return BlockAirGappedInfo(available=True, compatible_task_types=task_types)
+
+
 @router.get(
     "/workflows/blocks/describe",
     response_model=WorkflowsBlocksDescription,
@@ -323,13 +369,14 @@ async def get_execution_engine_versions() -> ExecutionEngineVersions:
 @with_workflow_errors
 async def describe_blocks(
     request: Request,
-    # NOTE: accepted for wire compatibility and ignored - the air-gapped builder is not ported.
     air_gapped: bool = Query(False),
 ) -> Union[WorkflowsBlocksDescription, Response]:
     result = await run_in_threadpool(
         describe_workflows_blocks,
         workspace_resolver=host.WORKSPACE_RESOLVER,
     )
+    if air_gapped and configuration.ENABLE_BUILDER:
+        result = await run_in_threadpool(_enrich_with_air_gapped_info, result)
     return _gzip_if_requested(request, result)
 
 
@@ -347,7 +394,6 @@ async def describe_blocks(
 async def describe_blocks_with_dynamic_definitions(
     request: Request,
     request_payload: Optional[DescribeBlocksRequest] = None,
-    # NOTE: accepted for wire compatibility and ignored - the air-gapped builder is not ported.
     air_gapped: bool = Query(False),
 ) -> Union[WorkflowsBlocksDescription, Response]:
     dynamic_blocks_definitions = None
@@ -367,6 +413,8 @@ async def describe_blocks_with_dynamic_definitions(
         api_key=api_key,
         workspace_resolver=host.WORKSPACE_RESOLVER,
     )
+    if air_gapped and configuration.ENABLE_BUILDER:
+        result = await run_in_threadpool(_enrich_with_air_gapped_info, result)
     return _gzip_if_requested(request, result)
 
 

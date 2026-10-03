@@ -1,94 +1,13 @@
-import json
+import asyncio
 import logging
-import os
-import stat
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from inference_models.models.auto_loaders.model_cache_paths import (
-    MODEL_CONFIG_FILE_NAME,
-    generate_models_cache_dir,
-    slugify_model_id_to_os_safe_format,
-)
 from inference_sdk.http.utils.aliases import REGISTERED_ALIASES
 
 from inference_server import configuration
+from inference_server.builder import model_cache
 
 logger = logging.getLogger(__name__)
-
-_INVALID_CACHE_METADATA = object()
-
-
-def _read_regular_json(path: str) -> object:
-    """Read JSON from a stable regular file without following a final symlink."""
-
-    try:
-        path_status = os.lstat(path)
-    except OSError:
-        return _INVALID_CACHE_METADATA
-    if not stat.S_ISREG(path_status.st_mode):
-        return _INVALID_CACHE_METADATA
-
-    descriptor = -1
-    try:
-        descriptor = os.open(
-            path,
-            os.O_RDONLY
-            | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0)
-            | getattr(os, "O_NONBLOCK", 0),
-        )
-        descriptor_status = os.fstat(descriptor)
-        if not stat.S_ISREG(descriptor_status.st_mode) or (
-            path_status.st_dev,
-            path_status.st_ino,
-        ) != (descriptor_status.st_dev, descriptor_status.st_ino):
-            return _INVALID_CACHE_METADATA
-        file_handle = os.fdopen(descriptor, encoding="utf-8")
-        descriptor = -1
-        with file_handle:
-            return json.load(file_handle)
-    except (
-        json.JSONDecodeError,
-        OSError,
-        RecursionError,
-        TypeError,
-        UnicodeError,
-        ValueError,
-    ):
-        return _INVALID_CACHE_METADATA
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-
-
-def _collect_unambiguous_user_models(
-    user_models: List[Dict[str, Any]],
-) -> Dict[str, Dict[str, Any]]:
-    """De-duplicate identical entries and omit IDs with conflicting metadata."""
-
-    models_by_id: Dict[str, Dict[str, Any]] = {}
-    conflicting_model_ids = set()
-    for model in user_models:
-        model_id = model.get("model_id")
-        if not isinstance(model_id, str) or not model_id:
-            logger.warning("Skipping cached model metadata without a valid model_id")
-            continue
-        if model_id in conflicting_model_ids:
-            continue
-        existing_model = models_by_id.get(model_id)
-        if existing_model is None:
-            models_by_id[model_id] = model
-            continue
-        if existing_model == model:
-            continue
-        models_by_id.pop(model_id)
-        conflicting_model_ids.add(model_id)
-        logger.warning(
-            "Excluding cached model %s because configured cache roots contain "
-            "conflicting metadata for that model ID",
-            model_id,
-        )
-    return models_by_id
 
 
 def _offline_loadable_model_ids() -> Optional[Set[str]]:
@@ -127,71 +46,6 @@ def _offline_loadable_model_ids() -> Optional[Set[str]]:
         return None
 
 
-def _listdir(path: str) -> List[str]:
-    try:
-        return sorted(os.listdir(path))
-    except OSError:
-        return []
-
-
-def _is_cached(model_id: str) -> bool:
-    """True when at least one non-symlinked package of *model_id* is on disk."""
-
-    model_root = os.path.join(
-        generate_models_cache_dir(),
-        slugify_model_id_to_os_safe_format(model_id=model_id),
-    )
-    if os.path.islink(model_root) or not os.path.isdir(model_root):
-        return False
-    for package_id in _listdir(model_root):
-        package_dir = os.path.join(model_root, package_id)
-        if os.path.islink(package_dir) or not os.path.isdir(package_dir):
-            continue
-        if os.path.isfile(os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)):
-            return True
-    return False
-
-
-def _scan_inference_models_cache() -> List[Dict[str, Any]]:
-    """Read every ``<slug>/<package_id>/model_config.json`` in the models cache."""
-
-    results: List[Dict[str, Any]] = []
-    models_cache_dir = generate_models_cache_dir()
-    if not os.path.isdir(models_cache_dir):
-        return results
-    for model_slug in _listdir(models_cache_dir):
-        model_root = os.path.join(models_cache_dir, model_slug)
-        if os.path.islink(model_root) or not os.path.isdir(model_root):
-            continue
-        for package_id in _listdir(model_root):
-            package_dir = os.path.join(model_root, package_id)
-            if os.path.islink(package_dir) or not os.path.isdir(package_dir):
-                continue
-            config_path = os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)
-            config = _read_regular_json(path=config_path)
-            if not isinstance(config, dict):
-                continue
-            model_id = config.get("model_id") or config.get("canonical_model_id")
-            if not isinstance(model_id, str) or not model_id:
-                continue
-            task_type = config.get("task_type") or ""
-            model_architecture = config.get("model_architecture") or ""
-            if not isinstance(task_type, str) or not isinstance(
-                model_architecture, str
-            ):
-                continue
-            results.append(
-                {
-                    "model_id": model_id,
-                    "name": model_id,
-                    "task_type": task_type,
-                    "model_architecture": model_architecture,
-                    "is_foundation": False,
-                }
-            )
-    return results
-
-
 def _get_block_type_identifier(block) -> str:
     """Extract the canonical ``type`` identifier from a block specification."""
     try:
@@ -220,7 +74,7 @@ def get_cached_foundation_models(blocks: list) -> List[Dict[str, Any]]:
             (
                 model_variant
                 for model_variant in model_variants
-                if _is_cached(model_variant)
+                if model_cache.is_model_cached(model_variant)
             ),
             None,
         )
@@ -272,6 +126,17 @@ def get_task_type_to_block_mapping(blocks: list) -> Dict[str, List[str]]:
 async def list_models(bridge) -> List[Dict[str, Any]]:
     """Models the Workflow Builder picker can offer for this server."""
 
+    listed_models, _ = await list_models_with_status(bridge)
+
+    return listed_models
+
+
+async def list_models_with_status(bridge) -> Tuple[List[Dict[str, Any]], bool]:
+    """Models the picker can offer, and whether the cache scan was truncated.
+
+    File-system work runs in worker threads so the event loop stays free.
+    """
+
     try:
         from roboflow_workflows.execution_engine.introspection.blocks_loader import (
             load_workflow_blocks,
@@ -291,7 +156,8 @@ async def list_models(bridge) -> List[Dict[str, Any]]:
     for alias, canonical in REGISTERED_ALIASES.items():
         reverse_aliases.setdefault(canonical, []).append(alias)
 
-    seen = _collect_unambiguous_user_models(user_models=_scan_inference_models_cache())
+    cache_scan = await asyncio.to_thread(model_cache.list_cached_models_with_status)
+    seen = {model["model_id"]: model for model in cache_scan.models}
     for route in await bridge.describe():
         seen.setdefault(
             route.model_id,
@@ -303,11 +169,11 @@ async def list_models(bridge) -> List[Dict[str, Any]]:
                 "is_foundation": False,
             },
         )
-    for m in get_cached_foundation_models(blocks=blocks):
+    for m in await asyncio.to_thread(get_cached_foundation_models, blocks=blocks):
         seen[m["model_id"]] = m
 
     if configuration.LEGACY_OFFLINE_MODE:
-        offline_loadable = _offline_loadable_model_ids()
+        offline_loadable = await asyncio.to_thread(_offline_loadable_model_ids)
         if offline_loadable is not None:
             dropped = [
                 model_id
@@ -347,4 +213,4 @@ async def list_models(bridge) -> List[Dict[str, Any]]:
         entry.pop("block_type", None)
         models.append(entry)
 
-    return models
+    return models, cache_scan.truncated
