@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- Tracker blocks log the missing-FPS fallback only when creating a tracker for a video, including tensor variants.
+
 ## `0.2.4`
 
 Bundled execution engine: `1.16.1`.

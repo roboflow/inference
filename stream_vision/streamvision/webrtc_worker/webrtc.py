@@ -12,6 +12,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 import orjson
 import supervision as sv
 from aioice import ice
+from aioice.stun import Method, TransactionFailed
 from aiortc import (
     RTCConfiguration,
     RTCDataChannel,
@@ -356,11 +357,16 @@ class VideoFrameProcessor:
             self._track_ready_event.set()
 
     async def close(self):
+        """Release uploaded files and wait for the workflow's thread pools."""
         self._track_active = False
         self._stop_processing = True
-        # Clean up video upload handler if present
-        if self.video_upload_handler is not None:
-            await self.video_upload_handler.cleanup()
+        try:
+            if self.video_upload_handler is not None:
+                await self.video_upload_handler.cleanup()
+        finally:
+            join = getattr(self._inference_pipeline, "join", None)
+            if join is not None:
+                await asyncio.to_thread(join)
 
     def record_ack(self, ack: int) -> None:
         """Record cumulative ACK from the client.
@@ -703,7 +709,7 @@ class VideoFrameProcessor:
             frame = rotate_video_frame(frame, self._rotation_code)
 
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
+        processing = loop.run_in_executor(
             None,
             process_frame,
             frame,
@@ -720,6 +726,15 @@ class VideoFrameProcessor:
             render_output,
             include_errors_on_frame,
         )
+        try:
+            result = await asyncio.shield(processing)
+        except asyncio.CancelledError:
+            # Cancelling an executor future does not stop its thread. Finish the
+            # frame before teardown shuts down the workflow's executors.
+            await processing
+            raise
+
+        return result
 
 
 class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
@@ -903,6 +918,33 @@ async def _deliver_answer(
         await delivery
 
 
+def _quiet_turn_bind_failures(loop: asyncio.AbstractEventLoop) -> None:
+    """Demote refused TURN channel binds (403) that aioice never awaits to debug logs.
+
+    aioice binds a TURN channel per remote candidate without awaiting the task.
+
+    Args:
+        loop: The event loop running the peer connection.
+    """
+
+    def handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        exception = context.get("exception")
+        if "future" in context and isinstance(exception, TransactionFailed):
+            error_code, _ = exception.response.attributes.get(
+                "ERROR-CODE", (None, None)
+            )
+            if (
+                exception.response.message_method == Method.CHANNEL_BIND
+                and error_code == 403
+            ):
+                logger.debug("TURN channel bind refused: %s", exception)
+                return
+
+        loop.default_exception_handler(context)
+
+    loop.set_exception_handler(handler)
+
+
 async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
     send_answer: Callable[[WebRTCWorkerResult], Optional[Awaitable[None]]],
@@ -912,6 +954,8 @@ async def init_rtc_peer_connection_with_loop(
     heartbeat_callback: Optional[Callable[[], None]] = None,
     connection_established_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
+    _quiet_turn_bind_failures(asyncio.get_running_loop())
+
     logger.info(
         "=" * 60 + "\n"
         "[WEBRTC_SESSION] STARTING NEW SESSION\n"
@@ -1103,312 +1147,330 @@ async def init_rtc_peer_connection_with_loop(
         )
         raise
 
-    peer_connection = RTCPeerConnectionWithLoop(
-        configuration=_build_rtc_configuration(
-            webrtc_config=webrtc_request.webrtc_config
-        ),
-        asyncio_loop=asyncio_loop,
-    )
-
-    relay = MediaRelay()
-
-    # Add video track early for SDP negotiation when stream_output is requested
-    # The track source will be set later by the appropriate handler (RTSP, on_track, video_upload)
-    if should_send_video:
-        logger.info("Adding video track early for SDP negotiation")
-        peer_connection.addTrack(video_processor)
-
+    peer_connection = None
     player: Optional[MediaPlayer] = None
-    if webrtc_request.rtsp_url:
-        if webrtc_request.rtsp_url == WEBRTC_MODAL_RTSP_PLACEHOLDER:
-            webrtc_request.rtsp_url = WEBRTC_MODAL_RTSP_PLACEHOLDER_URL
-        logger.info(
-            "Processing RTSP URL: %s",
-            sanitize_source_reference(webrtc_request.rtsp_url),
+    processing_tasks = []
+    try:
+        peer_connection = RTCPeerConnectionWithLoop(
+            configuration=_build_rtc_configuration(
+                webrtc_config=webrtc_request.webrtc_config
+            ),
+            asyncio_loop=asyncio_loop,
         )
-        if webrtc_request.webrtc_realtime_processing:
-            player = _open_media_player(
-                webrtc_request.rtsp_url,
-                format="rtsp",
-                options={
-                    "rtsp_transport": "tcp",
-                    "rtsp_flags": "prefer_tcp",
-                    "stimeout": "2000000",  # 2s socket timeout
-                },
+
+        relay = MediaRelay()
+
+        # Add video track early for SDP negotiation when stream_output is requested
+        # The track source will be set later by the appropriate handler (RTSP, on_track, video_upload)
+        if should_send_video:
+            logger.info("Adding video track early for SDP negotiation")
+            peer_connection.addTrack(video_processor)
+
+        if webrtc_request.rtsp_url:
+            if webrtc_request.rtsp_url == WEBRTC_MODAL_RTSP_PLACEHOLDER:
+                webrtc_request.rtsp_url = WEBRTC_MODAL_RTSP_PLACEHOLDER_URL
+            logger.info(
+                "Processing RTSP URL: %s",
+                sanitize_source_reference(webrtc_request.rtsp_url),
+            )
+            if webrtc_request.webrtc_realtime_processing:
+                player = _open_media_player(
+                    webrtc_request.rtsp_url,
+                    format="rtsp",
+                    options={
+                        "rtsp_transport": "tcp",
+                        "rtsp_flags": "prefer_tcp",
+                        "stimeout": "2000000",  # 2s socket timeout
+                    },
+                )
+                video_processor.set_track(track=player.video)
+            else:
+                video_processor.set_track(
+                    track=ThreadedRTSPTrack(webrtc_request.rtsp_url)
+                )
+
+            # For DATA_ONLY mode, start data-only processing task
+            if not should_send_video:
+                logger.info("Starting data-only processing for RTSP stream")
+                processing_tasks.append(
+                    asyncio.create_task(video_processor.process_frames_data_only())
+                )
+
+        elif webrtc_request.mjpeg_url:
+            logger.info(
+                "Processing MJPEG URL: %s",
+                sanitize_source_reference(webrtc_request.mjpeg_url),
+            )
+            player = get_webrtc_worker_host().open_mjpeg_player(
+                webrtc_request.mjpeg_url,
+                allow_non_global_addresses=WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES,
             )
             video_processor.set_track(track=player.video)
-        else:
-            video_processor.set_track(track=ThreadedRTSPTrack(webrtc_request.rtsp_url))
 
-        # For DATA_ONLY mode, start data-only processing task
-        if not should_send_video:
-            logger.info("Starting data-only processing for RTSP stream")
-            asyncio.create_task(video_processor.process_frames_data_only())
+            if not should_send_video:
+                logger.info("Starting data-only processing for MJPEG stream")
+                processing_tasks.append(
+                    asyncio.create_task(video_processor.process_frames_data_only())
+                )
 
-    elif webrtc_request.mjpeg_url:
-        logger.info(
-            "Processing MJPEG URL: %s",
-            sanitize_source_reference(webrtc_request.mjpeg_url),
-        )
-        player = get_webrtc_worker_host().open_mjpeg_player(
-            webrtc_request.mjpeg_url,
-            allow_non_global_addresses=WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES,
-        )
-        video_processor.set_track(track=player.video)
+        @peer_connection.on("track")
+        def on_track(track: RemoteStreamTrack):
+            logger.info("Track received from client")
+            relayed_track = relay.subscribe(
+                track,
+                buffered=False if webrtc_request.webrtc_realtime_processing else True,
+            )
+            video_processor.set_track(track=relayed_track)
 
-        if not should_send_video:
-            logger.info("Starting data-only processing for MJPEG stream")
-            asyncio.create_task(video_processor.process_frames_data_only())
+            # For DATA_ONLY mode, start data-only processing task
+            if not should_send_video:
+                logger.info("Starting data-only processing (no video track)")
+                processing_tasks.append(
+                    asyncio.create_task(video_processor.process_frames_data_only())
+                )
 
-    @peer_connection.on("track")
-    def on_track(track: RemoteStreamTrack):
-        logger.info("Track received from client")
-        relayed_track = relay.subscribe(
-            track,
-            buffered=False if webrtc_request.webrtc_realtime_processing else True,
-        )
-        video_processor.set_track(track=relayed_track)
-
-        # For DATA_ONLY mode, start data-only processing task
-        if not should_send_video:
-            logger.info("Starting data-only processing (no video track)")
-            asyncio.create_task(video_processor.process_frames_data_only())
-
-    @peer_connection.on("connectionstatechange")
-    async def on_connectionstatechange():
-        state = peer_connection.connectionState
-        ice_state = peer_connection.iceConnectionState
-        logger.warning(
-            "[CONNECTION_STATE] Changed to: %s (ICE state: %s, "
-            "frames_received: %d, data_channel: %s)",
-            state,
-            ice_state,
-            video_processor._received_frames,
-            (
-                video_processor.data_channel.readyState
-                if video_processor.data_channel
-                else "N/A"
-            ),
-        )
-        if state == "connected":
-            if connection_established_callback:
-                connection_established_callback()
-        if state in {"failed", "closed"}:
-            logger.error(
-                "[CONNECTION_STATE] FATAL: Connection %s! ICE=%s, "
-                "frames_processed=%d. Cleaning up...",
+        @peer_connection.on("connectionstatechange")
+        def on_connectionstatechange():
+            state = peer_connection.connectionState
+            ice_state = peer_connection.iceConnectionState
+            logger.info(
+                "[CONNECTION_STATE] Changed to: %s (ICE state: %s, "
+                "frames_received: %d, data_channel: %s)",
                 state,
                 ice_state,
                 video_processor._received_frames,
+                (
+                    video_processor.data_channel.readyState
+                    if video_processor.data_channel
+                    else "N/A"
+                ),
             )
-            if video_processor.track:
-                logger.info("[CONNECTION_STATE] Stopping video processor track")
-                video_processor.track.stop()
-            await video_processor.close()
-            logger.info("[CONNECTION_STATE] Stopping WebRTC peer")
-            await peer_connection.close()
-            terminate_event.set()
+            if state == "connected":
+                if connection_established_callback:
+                    connection_established_callback()
+            if state == "failed":
+                logger.error(
+                    "[CONNECTION_STATE] Connection failed! ICE=%s, frames_received=%d",
+                    ice_state,
+                    video_processor._received_frames,
+                )
+            if state in {"failed", "closed"}:
+                # The session owns cleanup, including when the watchdog cancels it.
+                terminate_event.set()
 
-    # Monitor ICE connection state - consent expires after ~30s without STUN refresh
-    @peer_connection.on("iceconnectionstatechange")
-    async def on_iceconnectionstatechange():
-        state = peer_connection.iceConnectionState
-        conn_state = peer_connection.connectionState
-        logger.warning(
-            "[ICE_STATE] Changed to: %s (connection state: %s, "
-            "frames_received: %d, data_channel: %s)",
-            state,
-            conn_state,
-            video_processor._received_frames,
-            (
-                video_processor.data_channel.readyState
-                if video_processor.data_channel
-                else "N/A"
+        # Monitor ICE connection state - consent expires after ~30s without STUN refresh
+        @peer_connection.on("iceconnectionstatechange")
+        def on_iceconnectionstatechange():
+            state = peer_connection.iceConnectionState
+            conn_state = peer_connection.connectionState
+            logger.info(
+                "[ICE_STATE] Changed to: %s (connection state: %s, "
+                "frames_received: %d, data_channel: %s)",
+                state,
+                conn_state,
+                video_processor._received_frames,
+                (
+                    video_processor.data_channel.readyState
+                    if video_processor.data_channel
+                    else "N/A"
+                ),
+            )
+
+            if state == "failed":
+                logger.error(
+                    "[ICE_STATE] FAILED! This typically means STUN consent expired. "
+                    "Causes: (1) Event loop starvation preventing aioice from sending "
+                    "STUN packets, (2) Network issues, (3) NAT/firewall blocking. "
+                    "Check logs for [BUFFER_DRAIN] timeouts or missing asyncio.sleep(0) yields."
+                )
+                # The connectionstatechange handler will signal session cleanup
+            elif state == "disconnected":
+                logger.warning(
+                    "[ICE_STATE] DISCONNECTED - may recover automatically. "
+                    "If this persists for >30s, will transition to 'failed'."
+                )
+            elif state == "checking":
+                logger.info("[ICE_STATE] Checking connectivity candidates...")
+            elif state == "connected":
+                logger.info("[ICE_STATE] Successfully connected via ICE")
+
+        def process_video_upload_message(
+            message: bytes, video_processor: VideoTransformTrackWithLoop
+        ):
+            chunk_index, total_chunks, data = parse_video_file_chunk(message)
+            video_processor.video_upload_handler.handle_chunk(
+                chunk_index, total_chunks, data
+            )
+
+            video_path = video_processor.video_upload_handler.try_start_processing()
+            return video_path
+
+        @peer_connection.on("datachannel")
+        def on_datachannel(channel: RTCDataChannel):
+            logger.info("Data channel '%s' received", channel.label)
+            # Handle video file upload channel
+            if channel.label == "video_upload":
+                logger.info("Video upload channel established")
+
+                video_processor.video_upload_handler = VideoFileUploadHandler()
+
+                @channel.on("message")
+                async def on_upload_message(message):
+                    # Keep watchdog alive during upload and keepalive pings
+                    if video_processor.heartbeat_callback:
+                        video_processor.heartbeat_callback()
+
+                    # Ignore keepalive pings (1-byte messages)
+                    if len(message) <= 1:
+                        channel.send(message)
+                        return
+                    loop = asyncio.get_running_loop()
+                    video_path = await loop.run_in_executor(
+                        None, process_video_upload_message, message, video_processor
+                    )
+                    if video_path:
+                        video_processor._file_processing = True
+                        logger.info(
+                            "Video upload complete, processing: realtime=%s, path=%s",
+                            webrtc_request.webrtc_realtime_processing,
+                            video_path,
+                        )
+
+                        rotation = get_video_rotation(video_path)
+                        rotation_code = get_cv2_rotation_code(rotation)
+                        if rotation_code is not None:
+                            logger.info(
+                                "Video has %d° rotation, will correct", rotation
+                            )
+
+                        detected_fps = get_video_fps(video_path)
+                        if detected_fps is not None:
+                            logger.info(
+                                "FPS detection: detected=%.2f, previous=%s",
+                                detected_fps,
+                                video_processor._declared_fps,
+                            )
+                            video_processor._declared_fps = detected_fps
+                        else:
+                            logger.warning(
+                                "FPS detection failed, keeping default: %s",
+                                video_processor._declared_fps,
+                            )
+
+                        if webrtc_request.webrtc_realtime_processing:
+                            # We are dealing with a live video stream,
+                            player = MediaPlayer(video_path, loop=False)
+                            player._throttle_playback = True
+                            video_processor.set_track(
+                                track=player.video, rotation_code=rotation_code
+                            )
+                        else:
+                            # we are dealing with a video file,
+                            track = ThreadedVideoFileTrack(video_path)
+                            video_processor.set_track(
+                                track=track, rotation_code=rotation_code
+                            )
+
+                        if not should_send_video:
+                            logger.info("Starting data-only processing for video file")
+                            processing_tasks.append(
+                                asyncio.create_task(
+                                    video_processor.process_frames_data_only()
+                                )
+                            )
+
+                return
+
+            # Handle inference control channel (bidirectional communication)
+            @channel.on("message")
+            def on_message(message):
+                try:
+                    message_data = WebRTCData(**json.loads(message))
+                except json.JSONDecodeError:
+                    logger.error("Failed to decode webrtc data payload: %s", message)
+                    return
+                # Optional ACK-based flow control (enabled only after first ACK is received)
+                if message_data.ack is not None:
+                    video_processor.record_ack(message_data.ack)
+
+                # Handle stream_output changes
+                if message_data.stream_output is not None:
+                    if not video_processor.has_video_track:
+                        logger.warning(
+                            "Cannot change stream_output: video track was not initialized. "
+                            "stream_output must be set at initialization to enable video."
+                        )
+                    else:
+                        if len(message_data.stream_output) == 0:
+                            video_processor.stream_output = None
+                        else:
+                            filtered = [s for s in message_data.stream_output if s]
+                            video_processor.stream_output = (
+                                filtered[0] if filtered else None
+                            )
+
+                # Handle data_output changes (always allowed)
+                if message_data.data_output is not None:
+                    video_processor.data_output = message_data.data_output
+                    if (
+                        message_data.data_output is None
+                        or len(message_data.data_output) == 0
+                    ):
+                        video_processor._data_mode = DataOutputMode.NONE
+                    elif message_data.data_output == ["*"]:
+                        video_processor._data_mode = DataOutputMode.ALL
+                    else:
+                        video_processor._data_mode = DataOutputMode.SPECIFIC
+
+            video_processor.data_channel = channel
+
+        await peer_connection.setRemoteDescription(
+            RTCSessionDescription(
+                sdp=webrtc_request.webrtc_offer.sdp,
+                type=webrtc_request.webrtc_offer.type,
+            )
+        )
+        answer = await peer_connection.createAnswer()
+        await peer_connection.setLocalDescription(answer)
+
+        await _wait_ice_complete(peer_connection, timeout=2.0)
+
+        logger.info(
+            "Initialized RTC peer connection with loop (status: %s), sending answer",
+            peer_connection.connectionState,
+        )
+
+        await _deliver_answer(
+            send_answer,
+            WebRTCWorkerResult(
+                answer={
+                    "type": peer_connection.localDescription.type,
+                    "sdp": peer_connection.localDescription.sdp,
+                },
             ),
         )
 
-        if state == "failed":
-            logger.error(
-                "[ICE_STATE] FAILED! This typically means STUN consent expired. "
-                "Causes: (1) Event loop starvation preventing aioice from sending "
-                "STUN packets, (2) Network issues, (3) NAT/firewall blocking. "
-                "Check logs for [BUFFER_DRAIN] timeouts or missing asyncio.sleep(0) yields."
-            )
-            # The connectionstatechange handler will clean up
-        elif state == "disconnected":
-            logger.warning(
-                "[ICE_STATE] DISCONNECTED - may recover automatically. "
-                "If this persists for >30s, will transition to 'failed'."
-            )
-        elif state == "checking":
-            logger.info("[ICE_STATE] Checking connectivity candidates...")
-        elif state == "connected":
-            logger.info("[ICE_STATE] Successfully connected via ICE")
-
-    def process_video_upload_message(
-        message: bytes, video_processor: VideoTransformTrackWithLoop
-    ):
-        chunk_index, total_chunks, data = parse_video_file_chunk(message)
-        video_processor.video_upload_handler.handle_chunk(
-            chunk_index, total_chunks, data
-        )
-
-        video_path = video_processor.video_upload_handler.try_start_processing()
-        return video_path
-
-    @peer_connection.on("datachannel")
-    def on_datachannel(channel: RTCDataChannel):
-        logger.info("Data channel '%s' received", channel.label)
-        # Handle video file upload channel
-        if channel.label == "video_upload":
-            logger.info("Video upload channel established")
-
-            video_processor.video_upload_handler = VideoFileUploadHandler()
-
-            @channel.on("message")
-            async def on_upload_message(message):
-                # Keep watchdog alive during upload and keepalive pings
-                if video_processor.heartbeat_callback:
-                    video_processor.heartbeat_callback()
-
-                # Ignore keepalive pings (1-byte messages)
-                if len(message) <= 1:
-                    channel.send(message)
-                    return
-                loop = asyncio.get_running_loop()
-                video_path = await loop.run_in_executor(
-                    None, process_video_upload_message, message, video_processor
-                )
-                if video_path:
-                    video_processor._file_processing = True
-                    logger.info(
-                        "Video upload complete, processing: realtime=%s, path=%s",
-                        webrtc_request.webrtc_realtime_processing,
-                        video_path,
-                    )
-
-                    rotation = get_video_rotation(video_path)
-                    rotation_code = get_cv2_rotation_code(rotation)
-                    if rotation_code is not None:
-                        logger.info("Video has %d° rotation, will correct", rotation)
-
-                    detected_fps = get_video_fps(video_path)
-                    if detected_fps is not None:
-                        logger.info(
-                            "FPS detection: detected=%.2f, previous=%s",
-                            detected_fps,
-                            video_processor._declared_fps,
-                        )
-                        video_processor._declared_fps = detected_fps
-                    else:
-                        logger.warning(
-                            "FPS detection failed, keeping default: %s",
-                            video_processor._declared_fps,
-                        )
-
-                    if webrtc_request.webrtc_realtime_processing:
-                        # We are dealing with a live video stream,
-                        player = MediaPlayer(video_path, loop=False)
-                        player._throttle_playback = True
-                        video_processor.set_track(
-                            track=player.video, rotation_code=rotation_code
-                        )
-                    else:
-                        # we are dealing with a video file,
-                        track = ThreadedVideoFileTrack(video_path)
-                        video_processor.set_track(
-                            track=track, rotation_code=rotation_code
-                        )
-
-                    if not should_send_video:
-                        logger.info("Starting data-only processing for video file")
-                        asyncio.create_task(video_processor.process_frames_data_only())
-
-            return
-
-        # Handle inference control channel (bidirectional communication)
-        @channel.on("message")
-        def on_message(message):
-            try:
-                message_data = WebRTCData(**json.loads(message))
-            except json.JSONDecodeError:
-                logger.error("Failed to decode webrtc data payload: %s", message)
-                return
-            # Optional ACK-based flow control (enabled only after first ACK is received)
-            if message_data.ack is not None:
-                video_processor.record_ack(message_data.ack)
-
-            # Handle stream_output changes
-            if message_data.stream_output is not None:
-                if not video_processor.has_video_track:
-                    logger.warning(
-                        "Cannot change stream_output: video track was not initialized. "
-                        "stream_output must be set at initialization to enable video."
-                    )
-                else:
-                    if len(message_data.stream_output) == 0:
-                        video_processor.stream_output = None
-                    else:
-                        filtered = [s for s in message_data.stream_output if s]
-                        video_processor.stream_output = (
-                            filtered[0] if filtered else None
-                        )
-
-            # Handle data_output changes (always allowed)
-            if message_data.data_output is not None:
-                video_processor.data_output = message_data.data_output
-                if (
-                    message_data.data_output is None
-                    or len(message_data.data_output) == 0
-                ):
-                    video_processor._data_mode = DataOutputMode.NONE
-                elif message_data.data_output == ["*"]:
-                    video_processor._data_mode = DataOutputMode.ALL
-                else:
-                    video_processor._data_mode = DataOutputMode.SPECIFIC
-
-        video_processor.data_channel = channel
-
-    await peer_connection.setRemoteDescription(
-        RTCSessionDescription(
-            sdp=webrtc_request.webrtc_offer.sdp, type=webrtc_request.webrtc_offer.type
-        )
-    )
-    answer = await peer_connection.createAnswer()
-    await peer_connection.setLocalDescription(answer)
-
-    await _wait_ice_complete(peer_connection, timeout=2.0)
-
-    logger.info(
-        "Initialized RTC peer connection with loop (status: %s), sending answer",
-        peer_connection.connectionState,
-    )
-
-    await _deliver_answer(
-        send_answer,
-        WebRTCWorkerResult(
-            answer={
-                "type": peer_connection.localDescription.type,
-                "sdp": peer_connection.localDescription.sdp,
-            },
-        ),
-    )
-
-    logger.info("Answer sent, waiting for termination event")
-    await terminate_event.wait()
-    logger.info("Termination event received, closing WebRTC connection")
-    if player:
-        logger.info("Stopping player")
-        player.video.stop()
-    if peer_connection.connectionState != "closed":
-        logger.info("Closing WebRTC connection")
-        await peer_connection.close()
-    if video_processor.track:
-        logger.info("Stopping video processor track")
-        video_processor.track.stop()
-    await video_processor.close()
-    await get_webrtc_worker_host().async_push_usage_payloads()
-    logger.info("WebRTC peer connection closed")
+        logger.info("Answer sent, waiting for termination event")
+        await terminate_event.wait()
+        logger.info("Termination event received, closing WebRTC connection")
+    finally:
+        for task in processing_tasks:
+            task.cancel()
+        if processing_tasks:
+            await asyncio.gather(*processing_tasks, return_exceptions=True)
+        try:
+            # "closed" can be emitted before aiortc finishes closing transports.
+            # Always await close(), even if another task already started it.
+            if peer_connection is not None:
+                await peer_connection.close()
+        finally:
+            if player and player.video:
+                player.video.stop()
+            if video_processor.track:
+                video_processor.track.stop()
+            await video_processor.close()
+        await get_webrtc_worker_host().async_push_usage_payloads()
+        logger.info("WebRTC peer connection closed")
 
 
 def default_encoder(obj: Any) -> Any:

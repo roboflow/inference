@@ -4,6 +4,10 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Fixed
+
+- WebRTC sessions await peer/transport cleanup on cancellation and setup failures, finish in-flight inference, and join workflow thread pools before returning. Normal connection closure is no longer logged as fatal.
+
 ## `0.1.0`
 
 ### Added
@@ -25,6 +29,7 @@ This is the canonical changelog for the `streamvision` package.
 
 ### Fixed
 
+- WebRTC worker logs TURN channel binds the relay refuses (403) at debug level instead of asyncio "Task exception was never retrieved" tracebacks.
 - Declare Pillow directly for camera imports and Torch in the `workflows` and supported-platform `nvdec` extras; GPU decoding still requires a compatible CUDA-enabled Torch build.
 
 - Video source properties are applied in a camera-safe order: `fourcc` first, `fps` last, others in the given order. USB/V4L2 cameras (e.g. Logitech C920) no longer stay at the frame rate clamped for their startup pixel format when `fps` arrived before `fourcc`. `fourcc` also accepts a case-sensitive four-character code such as `"MJPG"`; the stream manager API rejects invalid values with a validation error, other invalid values are logged and skipped, and a `fourcc` the device rejects is logged as a warning.
