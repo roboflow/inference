@@ -594,13 +594,12 @@ def test_gaze_is_410(legacy_client):
     assert body["replacement"] is None
 
 
-def test_action_recognition_stub_is_501(legacy_client):
-    assert (
-        legacy_client(FakeGateway())
-        .post("/infer/action_recognition", json={})
-        .status_code
-        == 501
-    )
+def test_action_recognition_route_validates_its_body(legacy_client):
+    response = legacy_client(FakeGateway()).post("/infer/action_recognition", json={})
+
+    assert response.status_code == 422
+    missing = {tuple(error["loc"]) for error in response.json()["detail"]}
+    assert missing == {("body", "model_id"), ("body", "video")}
 
 
 def test_optional_stubs_register_only_with_their_flags(monkeypatch):

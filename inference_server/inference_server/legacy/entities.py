@@ -324,6 +324,59 @@ class CVInferenceRequest(InferenceRequest):
     )
 
 
+class InferenceRequestVideo(BaseModel):
+    """Video data for an inference request.
+
+    Prefer a URL. Base64 grows the clip by a third, and the whole request is
+    held in memory before the clip reaches disk, so gateways reject a large
+    one. Base64 suits a short clip and a quick test.
+
+    Attributes:
+        type (str): The type of video data provided, one of 'url' or 'base64'.
+        value (Optional[Any]): Video data corresponding to the video type.
+    """
+
+    type: str = Field(
+        examples=["url"],
+        description=(
+            "The type of video data provided, one of 'url' or 'base64'. Prefer "
+            "'url': base64 grows the clip by a third and holds the whole "
+            "request in memory, which gateways reject above a few megabytes."
+        ),
+    )
+    value: Optional[Any] = Field(
+        None,
+        examples=["https://example.com/clip.mp4"],
+        description="Video data corresponding to the video type",
+    )
+
+
+class ActionRecognitionInferenceRequest(BaseRequest):
+    """Request for action recognition over a video clip.
+
+    Attributes:
+        model_id (str): The model to classify with.
+        video (InferenceRequestVideo): The clip to classify.
+        class_filter (Optional[List[str]]): The subset of a fine-tuned
+            model's classes to report. A zero-shot model answers in its own
+            words and ignores this.
+    """
+
+    model_id: str = Field(
+        examples=["workspace/action-recognition-1"],
+        description="The model to classify with",
+    )
+    video: InferenceRequestVideo
+    class_filter: Optional[List[str]] = Field(
+        None,
+        examples=[["entering", "leaving"]],
+        description=(
+            "The subset of a fine-tuned model's classes to report. A "
+            "zero-shot model answers in its own words and ignores this."
+        ),
+    )
+
+
 class DepthEstimationRequest(InferenceRequest):
     """Request for depth estimation.
 
@@ -1610,6 +1663,49 @@ class StubResponse(InferenceResponse, WithVisualizationResponse):
     is_stub: bool = Field(description="Field to mark prediction type as stub")
     model_id: str = Field(description="Identifier of a model stub that was called")
     task_type: str = Field(description="Task type of the project")
+
+
+class ActionRecognitionPrediction(BaseModel):
+    """One classified frame range of a video.
+
+    The HTTP response and the workflow kind carry the same shape, so it is
+    declared once here and imported by both. A field added on one transport
+    would otherwise be silently missing from the other.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    start_frame_idx: int = Field(description="First frame of the range")
+    end_frame_idx: int = Field(description="Last frame of the range")
+    class_name: str = Field(alias="class", description="The class name")
+    class_id: int = Field(
+        description=(
+            "The class position in the model's own class list. A model without "
+            "a class list reports -1."
+        )
+    )
+
+
+class ActionRecognitionInferenceResponse(InferenceResponse):
+    """Classified ranges covering one clip.
+
+    Frame indices count from the first frame of the submitted clip, so a
+    caller converts them to seconds with ``source_fps``.
+
+    Attributes:
+        timeline (List[ActionRecognitionPrediction]): Classified frame ranges,
+            which can overlap.
+        source_fps (float): Frames per second of the clip.
+        frame_count (int): Frames the clip holds.
+        windows_classified (int): Model calls the clip was cut into.
+    """
+
+    timeline: List[ActionRecognitionPrediction] = Field(
+        description="Classified frame ranges, which can overlap"
+    )
+    source_fps: float = Field(description="Frames per second of the clip")
+    frame_count: int = Field(description="Frames the clip holds")
+    windows_classified: int = Field(description="Model calls the clip was cut into")
 
 
 class ClipEmbeddingResponse(InferenceResponse):

@@ -579,14 +579,111 @@ def test_sam2_segmentation_returns_responses():
     assert len(out) == 1 and out[0].predictions[0].confidence == pytest.approx(0.7)
 
 
-def test_sam3_3d_objects_and_action_recognition_are_501():
+def test_sam3_3d_objects_is_501():
     from inference_server.legacy.errors import LegacyHTTPError
 
     provider = GatewayModelsProvider(_od_bridge(), api_key=None)
     with pytest.raises(LegacyHTTPError):
         provider.run_sam3_3d_objects("sam3/sam3_final", None, None)
-    with pytest.raises(LegacyHTTPError):
-        provider.load_action_recognition_model("ds/1")
+
+
+SAMPLING = {
+    "window_seconds": 8.0,
+    "sample_fps": 2.0,
+    "min_frames": 4,
+    "max_frame_side": 720,
+    "mode": "sliding_window",
+    "max_frames": 16,
+}
+
+
+def _action_bridge(video_sampling=SAMPLING, class_names=("wave", "jump")):
+    bridge = FakeSyncBridge()
+    bridge.routes["clips/1"] = Route(
+        model_id="clips/1",
+        registry_id="clips/1",
+        task_type="action-recognition",
+        action="infer",
+        actions={"infer"},
+        class_names=list(class_names) if class_names is not None else None,
+        video_sampling=video_sampling,
+    )
+    bridge.predictions[("clips/1", "infer")] = ["segment"]
+
+    return bridge
+
+
+def test_action_recognition_model_classifies_one_window_as_params_only():
+    bridge = _action_bridge()
+    provider = GatewayModelsProvider(bridge, api_key="provider-key")
+    frames = [np.zeros((4, 6, 3), np.uint8) for _ in range(3)]
+
+    model = provider.load_action_recognition_model("clips/1")
+    segments = model.infer(frames=frames, class_names=["wave"], fps=2.0)
+
+    assert segments == ["segment"]
+    assert bridge.calls == [
+        (
+            "clips/1",
+            "infer",
+            {"frames": frames, "class_names": ["wave"], "fps": 2.0},
+            None,
+        )
+    ]
+    assert bridge.calls[0][2]["frames"] is frames
+    assert bridge.resolved_rows == [("clips/1", None, "", None)]
+
+
+def test_action_recognition_model_exposes_class_names_and_video_sampling():
+    from inference_models.models.base.action_recognition import VideoSampling
+
+    model = GatewayModelsProvider(
+        _action_bridge(), api_key=None
+    ).load_action_recognition_model("clips/1", api_key="k")
+
+    assert model.class_names == ["wave", "jump"]
+    assert model.video_sampling == VideoSampling(**SAMPLING)
+
+
+def test_action_recognition_model_defaults_sampling_and_class_names():
+    from inference_models.models.base.action_recognition import VideoSampling
+
+    bridge = _action_bridge(video_sampling=None, class_names=None)
+    model = GatewayModelsProvider(bridge, api_key=None).load_action_recognition_model(
+        "clips/1"
+    )
+    model.infer(frames=[np.zeros((2, 2, 3), np.uint8)], fps=4.0)
+
+    assert model.class_names is None
+    assert model.video_sampling == VideoSampling()
+    assert bridge.calls[0][2]["class_names"] is None
+
+
+def test_action_recognition_model_raises_bridge_errors():
+    bridge = _action_bridge()
+
+    def _boom(route, api_key, action, params, record=True):
+        raise ModelInputError("fps is required")
+
+    bridge.infer_params_only = _boom
+    model = GatewayModelsProvider(bridge, api_key=None).load_action_recognition_model(
+        "clips/1"
+    )
+
+    with pytest.raises(ModelInputError):
+        model.infer(frames=[np.zeros((2, 2, 3), np.uint8)], fps=1.0)
+
+
+def test_action_recognition_model_of_another_task_is_refused():
+    from inference_server.legacy.errors import LegacyHTTPError
+
+    with pytest.raises(LegacyHTTPError) as error:
+        GatewayModelsProvider(_od_bridge(), api_key=None).load_action_recognition_model(
+            "ds/1"
+        )
+
+    assert error.value.status_code == 400
+    assert error.value.message == "Model 'ds/1' is a object-detection model."
 
 
 def test_provider_covers_protocol():

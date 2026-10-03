@@ -909,7 +909,6 @@ def test_sam3_concept_segment_records_the_execution_mode(
 @pytest.mark.parametrize(
     "path,flag",
     [
-        ("/infer/action_recognition", "ACTION_RECOGNITION_ENABLED"),
         ("/sam3_3d/infer", "SAM3_3D_OBJECTS_ENABLED"),
     ],
 )
@@ -933,7 +932,6 @@ def test_501_stubs_record_an_error_row(usage_collector, monkeypatch, path, flag)
 
 
 STUB_ROUTES = [
-    ("/infer/action_recognition", "ACTION_RECOGNITION_ENABLED"),
     ("/sam3_3d/infer", "SAM3_3D_OBJECTS_ENABLED"),
 ]
 
@@ -1005,6 +1003,69 @@ def test_validation_failure_answers_422_and_records_no_row(
 
     assert response.status_code == 422
     assert usage_collector.rows == []
+
+
+def test_action_recognition_request_records_one_row_with_a_window_per_frame(
+    usage_client, usage_collector, fake_stat, tmp_path, monkeypatch
+):
+    import tempfile
+
+    from inference_models.models.base.action_recognition import (
+        ActionRecognitionPrediction,
+    )
+    from tests.unit_tests.legacy.test_action_recognition import (
+        PLANNED_WINDOWS,
+        SAMPLING,
+        clip_base64,
+        write_clip,
+    )
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    fake_stat["clips/1"] = ("action-recognition", "infer", "cosmos3-edge", "2b")
+    gateway = FakeGateway(
+        predictions={
+            ("clips/1", "infer"): lambda image, params: [
+                ActionRecognitionPrediction(0, 1, "wave")
+            ]
+        },
+        model_info={
+            "clips/1": {
+                "class_names": ["wave"],
+                "actions": {"infer": {}},
+                "video_sampling": SAMPLING,
+            }
+        },
+    )
+    client = usage_client(gateway)
+
+    response = client.post(
+        "/infer/action_recognition",
+        json={
+            "model_id": "clips/1",
+            "api_key": "k",
+            "video": {
+                "type": "base64",
+                "value": clip_base64(write_clip(tmp_path / "clip.mp4")),
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["windows_classified"] == len(PLANNED_WINDOWS)
+    row = _only_row(usage_collector)
+    _assert_success_row(row, resource_id="clips/1")
+    assert row["resource_details"]["models"] == [
+        {
+            "model_id": "clips/1",
+            "model_architecture": "cosmos3-edge",
+            "model_variant": "2b",
+            "task_type": "action-recognition",
+            "execution_duration": pytest.approx(
+                row["resource_details"]["models"][0]["execution_duration"]
+            ),
+            "frames": len(PLANNED_WINDOWS),
+        }
+    ]
 
 
 def test_v2_request_records_nothing(

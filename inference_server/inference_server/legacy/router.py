@@ -22,6 +22,11 @@ from starlette.datastructures import UploadFile
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 from inference_server import configuration, platform_http, server_identity, telemetry
 from inference_server.dependencies import get_model_manager
+from inference_server.legacy.action_recognition import (
+    ACTION_RECOGNITION_TASK,
+    classify_video,
+    ensure_action_recognition_route,
+)
 from inference_server.legacy.active_learning_registration import register_inference
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
@@ -39,6 +44,8 @@ from inference_server.legacy.common import (
 )
 from inference_server.legacy.cuda_health import check_cuda_health
 from inference_server.legacy.entities import (
+    ActionRecognitionInferenceRequest,
+    ActionRecognitionInferenceResponse,
     AddModelRequest,
     AnomalyDetectionResponse,
     ClassificationInferenceRequest,
@@ -56,6 +63,7 @@ from inference_server.legacy.entities import (
     EasyOCRInferenceRequest,
     GroundingDINOInferenceRequest,
     InferenceRequestImage,
+    InferenceRequestVideo,
     InstanceSegmentationInferenceRequest,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceRequest,
@@ -705,14 +713,86 @@ async def infer_keypoints(
     )
 
 
-@action_recognition_router.post("/infer/action_recognition")
+@action_recognition_router.post(
+    "/infer/action_recognition",
+    response_model=Union[ActionRecognitionInferenceResponse, StubResponse],
+    summary="Action Recognition",
+    description=(
+        "Classify the actions in a video clip. The model states how the clip is "
+        "cut and how its frames are sampled, so a caller sends the clip and "
+        "nothing else. Frame indices in the response count from the first frame "
+        "of the clip, and windows_classified reports how many calls the clip was "
+        "cut into. A fine-tuned model reports its own classes. A zero-shot model "
+        "names the events it finds in its own words. Frames are chosen by the "
+        "clip's nominal frame rate, so a variable-frame-rate source is sampled at "
+        "different instants than the model trained on. Send the clip as a URL. "
+        "Base64 grows it by a third and holds the whole request in memory, so it "
+        "suits short clips only."
+    ),
+    response_model_exclude_none=True,
+)
 @with_legacy_errors
 @report_request_usage
-async def infer_action_recognition(request: Request) -> Response:
-    raise LegacyHTTPError(
-        501,
-        _TASK_UNAVAILABLE_MESSAGE.format(route="/infer/action_recognition"),
+async def infer_action_recognition(
+    request: Request,
+    inference_request: ActionRecognitionInferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Response:
+    api_key = resolve_api_key(
+        request, request.query_params.get("api_key"), inference_request.api_key
     )
+    inference_request.api_key = api_key
+    alias = request_alias_for(inference_request.model_id)
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=inference_request.model_id,
+        path=request.scope["path"],
+        alias=alias,
+    )
+    bridge.record_request(
+        route,
+        inference_request.model_id,
+        request.scope["path"],
+        alias=alias,
+    )
+    if route.is_stub:
+        return orjson_response(_stub_response(inference_request, route))
+
+    ensure_action_recognition_route(inference_request.model_id, route)
+    http_response = await _classify_and_repack(inference_request, bridge, route)
+
+    return http_response
+
+
+async def _classify_and_repack(
+    inference_request: ActionRecognitionInferenceRequest,
+    bridge: LegacyModelBridge,
+    route: Route,
+) -> Response:
+    started = time.perf_counter()
+    response = await classify_video(
+        route,
+        inference_request.api_key,
+        bridge,
+        video_type=inference_request.video.type,
+        video_value=inference_request.video.value,
+        class_filter=inference_request.class_filter or None,
+    )
+    response.time = time.perf_counter() - started
+    response.inference_id = inference_request.id
+    response.resolved_model = resolved_model_for(route)
+    pingback.record_inference(route.registry_id, inference_request, response)
+    http_response = orjson_response(response)
+
+    return http_response
+
+
+def _parse_legacy_class_filter(class_filter: Optional[str]) -> Optional[List[str]]:
+    if not class_filter:
+        return None
+    classes = [entry.strip() for entry in class_filter.split(",") if entry.strip()]
+    return classes or None
 
 
 @sam3_3d_router.post("/sam3_3d/infer")
@@ -889,13 +969,6 @@ async def legacy_infer_from_request(
 ) -> Response:
     model_id = f"{dataset_id}/{version_id}"
     resolved_key = resolve_api_key(request, api_key, None)
-    if isinstance(confidence, (int, float)):
-        if confidence >= 1:
-            confidence /= 100
-        if confidence < configuration.CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
-            confidence = configuration.CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
-    if overlap >= 1:
-        overlap /= 100
     request_image = await _catch_all_image(request, image, image_type)
     if not countinference and not service_secret_is_valid(service_secret):
         raise MissingServiceSecretError()
@@ -903,6 +976,26 @@ async def legacy_infer_from_request(
         model_id, resolved_key, row_key=model_id, path=request.scope["path"]
     )
     bridge.record_request(route, model_id, request.scope["path"])
+    if route.task_type == ACTION_RECOGNITION_TASK and not route.is_stub:
+        inference_request = ActionRecognitionInferenceRequest(
+            api_key=resolved_key,
+            model_id=model_id,
+            video=InferenceRequestVideo(
+                type=request_image.type, value=request_image.value
+            ),
+            class_filter=_parse_legacy_class_filter(class_filter),
+        )
+        http_response = await _classify_and_repack(inference_request, bridge, route)
+
+        return http_response
+
+    if isinstance(confidence, (int, float)):
+        if confidence >= 1:
+            confidence /= 100
+        if confidence < configuration.CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+            confidence = configuration.CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
+    if overlap >= 1:
+        overlap /= 100
     request_type = ObjectDetectionInferenceRequest
     extra_args: dict = {}
     if route.task_type == "instance-segmentation":

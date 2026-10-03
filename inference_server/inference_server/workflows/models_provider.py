@@ -12,10 +12,15 @@ from roboflow_workflows.prototypes.models_provider import (
 )
 
 from inference_models.errors import BaseInferenceModelsError
+from inference_models.models.base.action_recognition import VideoSampling
 from inference_models.utils import model_blob_cache
 from inference_server import pingback, telemetry
 from inference_server.framework.input_parsers.image_limits import too_many_images
 from inference_server.gateway import _load_failure
+from inference_server.legacy.action_recognition import (
+    ACTION_RECOGNITION_ACTION,
+    ensure_action_recognition_route,
+)
 from inference_server.legacy.bridge import (
     Route,
     SyncLegacyBridge,
@@ -93,9 +98,6 @@ _WORKFLOW_SOURCE = "workflow-execution"
 _SAM3_3D_UNAVAILABLE = (
     "SAM3 3D object reconstruction is not available on inference_server"
 )
-_ACTION_RECOGNITION_UNAVAILABLE = (
-    "Action recognition models are not available on inference_server"
-)
 
 
 def _passed(**arguments: Any) -> Dict[str, Any]:
@@ -104,6 +106,42 @@ def _passed(**arguments: Any) -> Dict[str, Any]:
         for name, value in arguments.items()
         if not isinstance(value, _Unset)
     }
+
+
+class _ActionRecognitionModelProxy:
+    """The model-like object the action recognition block drives: one bridge call per window."""
+
+    def __init__(
+        self, bridge: SyncLegacyBridge, route: Route, api_key: Optional[str]
+    ) -> None:
+        self._bridge = bridge
+        self._route = route
+        self._api_key = api_key
+
+    @property
+    def class_names(self) -> Optional[List[str]]:
+        return self._route.class_names
+
+    @property
+    def video_sampling(self) -> VideoSampling:
+        if self._route.video_sampling is None:
+            return VideoSampling()
+        return VideoSampling(**self._route.video_sampling)
+
+    def infer(
+        self,
+        frames: List[Any],
+        class_names: Optional[List[str]] = None,
+        fps: Optional[float] = None,
+    ) -> List[Any]:
+        segments = self._bridge.infer_params_only(
+            self._route,
+            self._api_key,
+            ACTION_RECOGNITION_ACTION,
+            {"frames": frames, "class_names": class_names, "fps": fps},
+        )
+
+        return segments
 
 
 class GatewayModelsProvider:
@@ -644,9 +682,12 @@ class GatewayModelsProvider:
     def load_action_recognition_model(
         self, model_id: str, api_key: Optional[str] = None, **kwargs: Any
     ) -> Any:
-        raise LegacyHTTPError(
-            501, f"{_ACTION_RECOGNITION_UNAVAILABLE} for model '{model_id}'."
-        )
+        key = self._key_for(model_id, api_key)
+        route = self._resolve(model_id, key)
+        ensure_action_recognition_route(model_id, route)
+        model = _ActionRecognitionModelProxy(self._bridge, route, key)
+
+        return model
 
     def get_class_names(self, model_id: str) -> List[str]:
         return list(self._route_for(model_id).class_names or [])

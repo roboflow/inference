@@ -7,6 +7,7 @@ in one sequential pass. Every OpenCV call here blocks; callers run the
 decoding functions off the event loop.
 """
 
+import asyncio
 import base64
 import binascii
 import contextlib
@@ -79,19 +80,24 @@ async def video_source_path(video_type: str, value: str) -> AsyncIterator[str]:
         if refusal is not None:
             raise _video_fetch_error(refusal)
     else:
-        payload = _decode_base64_video(value)
+        payload = await asyncio.to_thread(_decode_base64_video, value)
 
     handle, path = tempfile.mkstemp(suffix=".video")
     try:
-        with os.fdopen(handle, "wb") as file:
-            if video_type == VIDEO_TYPE_URL:
+        if video_type == VIDEO_TYPE_URL:
+            with os.fdopen(handle, "wb") as file:
                 await _stream_url_into(prepared_url, sink=file.write)
-            else:
-                file.write(payload)
+        else:
+            await asyncio.to_thread(_write_payload, handle, payload)
         yield path
     finally:
         with contextlib.suppress(OSError):
             Path(path).unlink()
+
+
+def _write_payload(handle: int, payload: bytes) -> None:
+    with os.fdopen(handle, "wb") as file:
+        file.write(payload)
 
 
 async def _stream_url_into(prepared_url: str, *, sink) -> None:
