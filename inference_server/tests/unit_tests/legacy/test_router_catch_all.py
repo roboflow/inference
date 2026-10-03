@@ -394,6 +394,25 @@ def test_catch_all_dispatches_classification(legacy_client, fake_stat):
     assert body["predictions"][0]["class"] == "dog"
 
 
+def test_catch_all_forwards_include_anomaly_map_to_classification(
+    legacy_client, fake_stat
+):
+    prediction = SimpleNamespace(confidence=np.array([[0.1, 0.9]]))
+
+    response, gateway = _post_catch_all(
+        legacy_client,
+        fake_stat,
+        "classification",
+        prediction,
+        {"class_names": ["normal", "anomalous"]},
+        query="&include_anomaly_map=true",
+    )
+
+    assert response.status_code == 200, response.text
+    params = next(call for call in gateway.calls if call[0] == "infer")[3]
+    assert params["include_anomaly_map"] is True
+
+
 def test_catch_all_dispatches_semantic_segmentation(legacy_client, fake_stat):
     prediction = SimpleNamespace(
         segmentation_map=np.array([[0, 1], [1, 0]]),

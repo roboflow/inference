@@ -307,14 +307,14 @@ def test_grounding_dino_thresholds_reach_the_model_as_confidences(
 _OWLV2_MODEL_ID = "owlv2/owlv2-large-patch14-ensemble"
 
 
-def _owlv2_client(monkeypatch, fake_stat, gateway):
+def _owlv2_client(monkeypatch, fake_stat, gateway, task_type="object-detection"):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     from inference_server.legacy.bridge import LegacyModelBridge
     from inference_server.legacy.router import include_legacy_routers
 
-    fake_stat[_OWLV2_MODEL_ID] = ("object-detection", "infer_with_reference_examples")
+    fake_stat[_OWLV2_MODEL_ID] = (task_type, "infer_with_reference_examples")
     monkeypatch.setattr("inference_server.configuration.CORE_MODEL_OWLV2_ENABLED", True)
     app = FastAPI()
     app.state.legacy_bridge = LegacyModelBridge(gateway)
@@ -335,7 +335,12 @@ def _owlv2_body(**extra):
     }
 
 
-def test_owlv2_few_shot_calls_infer_with_reference_examples(monkeypatch, fake_stat):
+@pytest.mark.parametrize(
+    "task_type", ["object-detection", "open-vocabulary-object-detection"]
+)
+def test_owlv2_few_shot_calls_infer_with_reference_examples(
+    monkeypatch, fake_stat, task_type
+):
     detections = _det()
     detections.image_metadata = {"class_names": ["cat"]}
     gw = FakeGateway(
@@ -344,7 +349,7 @@ def test_owlv2_few_shot_calls_infer_with_reference_examples(monkeypatch, fake_st
             _OWLV2_MODEL_ID: {"actions": {"infer_with_reference_examples": {}}}
         },
     )
-    r = _owlv2_client(monkeypatch, fake_stat, gw).post(
+    r = _owlv2_client(monkeypatch, fake_stat, gw, task_type).post(
         "/owlv2/infer", json=_owlv2_body(confidence=0.95)
     )
     assert r.status_code == 200, r.text

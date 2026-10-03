@@ -377,7 +377,7 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "infer",
             "infer",
             True,
-            _p(_P_IMAGES),
+            _p(_P_IMAGES, {"include_anomaly_map": {"type": "bool", "required": False}}),
             "validate_images_required",
             "serialize_classification_compact",
             "roboflow-classification-compact-v1",

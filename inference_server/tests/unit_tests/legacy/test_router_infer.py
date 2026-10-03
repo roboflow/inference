@@ -168,6 +168,27 @@ def test_oversized_content_length_is_413(legacy_client, fake_stat, monkeypatch):
     }
 
 
+def test_infer_classification_forwards_include_anomaly_map(legacy_client, fake_stat):
+    fake_stat["ds/1"] = ("classification", "infer")
+    gw = FakeGateway(
+        predictions={
+            ("ds/1", "infer"): SimpleNamespace(confidence=np.array([0.1, 0.9]))
+        },
+        model_info={"ds/1": {"class_names": ["normal", "anomalous"]}},
+    )
+    r = legacy_client(gw).post(
+        "/infer/classification",
+        json={
+            "model_id": "ds/1",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+            "include_anomaly_map": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    infer_call = next(c for c in gw.calls if c[0] == "infer")
+    assert infer_call[3]["include_anomaly_map"] is True
+
+
 def test_wrong_task_type_is_400(legacy_client, fake_stat):
     fake_stat["ds/1"] = ("classification", "infer")
     r = legacy_client(FakeGateway()).post(

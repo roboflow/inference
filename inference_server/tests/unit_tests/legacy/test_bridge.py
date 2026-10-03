@@ -1579,3 +1579,44 @@ async def test_failed_infer_appends_the_attempted_invocation_and_reraises(
             "frames": 2,
         }
     ]
+
+
+def test_task_type_from_mro_covers_registry():
+    from inference_model_manager.registry_defaults import _ACTION_CONFIGS
+
+    unmapped = [
+        name
+        for name in _ACTION_CONFIGS
+        if name not in bridge_mod._TASK_TYPE_BY_MRO
+        and name not in bridge_mod._NO_HTTP_ROUTE
+    ]
+
+    assert unmapped == []
+
+
+def test_task_type_from_mro_prefers_the_concrete_class():
+    assert (
+        bridge_mod._task_type_from_mro(
+            ["OWLv2HF", "OpenVocabularyObjectDetectionModel"]
+        )
+        == "open-vocabulary-object-detection"
+    )
+    assert bridge_mod._task_type_from_mro(["Qwen35HF", "object"]) == "vlm"
+    assert bridge_mod._task_type_from_mro(["L2CSNetOnnx", "object"]) == "gaze-detection"
+
+
+@pytest.mark.asyncio
+async def test_offline_stream_only_model_is_400(fake_stat, monkeypatch):
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
+    gw = FakeGateway(
+        model_info={
+            "sam2-rt/1": {
+                "model_mro_names": ["SAM2ForStream", "object"],
+                "model_class_name": "SAM2ForStream",
+            }
+        }
+    )
+    with pytest.raises(LegacyHTTPError) as exc:
+        await LegacyModelBridge(gw).resolve("sam2-rt/1", None)
+    assert exc.value.status_code == 400
+    assert "streaming" in exc.value.message

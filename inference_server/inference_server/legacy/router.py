@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Any, List, Literal, Optional, Tuple, Union
 
+import numpy as np
 from fastapi import (
     APIRouter,
     Depends,
@@ -39,6 +40,7 @@ from inference_server.legacy.common import (
 from inference_server.legacy.cuda_health import check_cuda_health
 from inference_server.legacy.entities import (
     AddModelRequest,
+    AnomalyDetectionResponse,
     ClassificationInferenceRequest,
     ClassificationInferenceResponse,
     ClearModelRequest,
@@ -87,6 +89,7 @@ from inference_server.legacy.entities import (
     SemanticSegmentationInferenceRequest,
     SemanticSegmentationInferenceResponse,
     ServerVersionInfo,
+    StubResponse,
     TrOCRInferenceRequest,
     YOLOWorldInferenceRequest,
 )
@@ -121,7 +124,10 @@ from inference_server.legacy.translation import (
     requested_open_vocabulary_classes,
     resolve_request_action,
 )
-from inference_server.legacy.visualization import render_visualization
+from inference_server.legacy.visualization import (
+    encode_image_to_jpeg_bytes,
+    render_visualization,
+)
 from inference_server import pingback
 from inference_server.hosted.common import service_secret_is_valid
 from inference_server.prometheus import measure_inference
@@ -460,6 +466,9 @@ async def _run_cv_inference(
         request.scope["path"],
         alias=alias,
     )
+    if route.is_stub:
+        return orjson_response(_stub_response(inference_request, route))
+
     if route.task_type not in expected_task_types:
         raise LegacyHTTPError(
             400,
@@ -476,6 +485,24 @@ async def _run_cv_inference(
 
 def _model_monitoring_enabled(inference_request) -> bool:
     return not getattr(inference_request, "disable_model_monitoring", False)
+
+
+def _stub_response(inference_request, route: Route) -> StubResponse:
+    started = time.perf_counter()
+    visualization = None
+    if getattr(inference_request, "visualize_predictions", False):
+        visualization = encode_image_to_jpeg_bytes(
+            np.zeros((128, 128, 3), dtype=np.uint8)
+        )
+    response = StubResponse(
+        is_stub=True,
+        model_id=resolve_roboflow_model_alias(route.model_id),
+        task_type=route.task_type,
+        visualization=visualization,
+    )
+    response.time = time.perf_counter() - started
+
+    return response
 
 
 async def _infer_and_repack(
@@ -542,7 +569,9 @@ async def _infer_and_repack(
 @infer_router.post(
     "/infer/object_detection",
     response_model=Union[
-        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
+        ObjectDetectionInferenceResponse,
+        List[ObjectDetectionInferenceResponse],
+        StubResponse,
     ],
     summary="Object detection infer",
     description="Run inference with the specified object detection model",
@@ -569,6 +598,7 @@ async def infer_object_detection(
     response_model=Union[
         InstanceSegmentationInferenceResponse,
         List[InstanceSegmentationInferenceResponse],
+        StubResponse,
     ],
     summary="Instance segmentation infer",
     description="Run inference with the specified instance segmentation model",
@@ -595,6 +625,7 @@ async def infer_instance_segmentation(
     response_model=Union[
         SemanticSegmentationInferenceResponse,
         List[SemanticSegmentationInferenceResponse],
+        StubResponse,
     ],
     summary="Semantic segmentation infer",
     description="Run inference with the specified semantic segmentation model",
@@ -624,6 +655,9 @@ async def infer_semantic_segmentation(
         List[ClassificationInferenceResponse],
         MultiLabelClassificationInferenceResponse,
         List[MultiLabelClassificationInferenceResponse],
+        AnomalyDetectionResponse,
+        List[AnomalyDetectionResponse],
+        StubResponse,
     ],
     summary="Classification infer",
     description="Run inference with the specified classification model",
@@ -648,7 +682,9 @@ async def infer_classification(
 @infer_router.post(
     "/infer/keypoints_detection",
     response_model=Union[
-        KeypointsDetectionInferenceResponse, List[KeypointsDetectionInferenceResponse]
+        KeypointsDetectionInferenceResponse,
+        List[KeypointsDetectionInferenceResponse],
+        StubResponse,
     ],
     summary="Keypoints detection infer",
     description="Run inference with the specified keypoints detection model",
@@ -910,6 +946,14 @@ async def legacy_infer_from_request(
         )
     except ValidationError as error:
         raise LegacyHTTPError(400, str(error)) from error
+    if route.is_stub:
+        stub_response = _stub_response(inference_request, route)
+        if format == "image":
+            return Response(
+                content=stub_response.visualization, media_type="image/jpeg"
+            )
+        return orjson_response(stub_response)
+
     return await _infer_and_repack(
         inference_request,
         bridge,

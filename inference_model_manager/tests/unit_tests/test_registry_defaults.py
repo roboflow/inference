@@ -554,3 +554,15 @@ def test_owlv2_few_shot_registers_alongside_zero_shot_default(monkeypatch):
     assert few_shot is not None
     assert few_shot.default is False
     assert few_shot.method == "infer_with_reference_examples"
+
+
+def test_classification_declares_include_anomaly_map():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
+
+    params = _unpack_config(_ACTION_CONFIGS["ClassificationModel"][0])[3]
+
+    assert set(params) == {"images", "include_anomaly_map"}
+    assert params["include_anomaly_map"] == {"type": "bool", "required": False}

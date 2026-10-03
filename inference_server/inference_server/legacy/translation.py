@@ -18,6 +18,7 @@ from inference_model_manager.hash_namespacing import (
 from inference_server import configuration
 from inference_server.legacy.bridge import Route
 from inference_server.legacy.entities import (
+    AnomalyDetectionResponse,
     ClassificationInferenceResponse,
     ClipCompareResponse,
     ClipEmbeddingResponse,
@@ -113,6 +114,10 @@ def build_task_params(task_type: str, action: str, request: Any, route: Route) -
     confidence = roboflow_confidence(getattr(request, "confidence", None))
     if confidence is not None:
         params["confidence"] = confidence
+    if task_type == "classification":
+        include_anomaly_map = getattr(request, "include_anomaly_map", None)
+        if include_anomaly_map is not None:
+            params["include_anomaly_map"] = bool(include_anomaly_map)
     if task_type in _CONFIDENCE_ONLY_TASK_TYPES:
         return params
     iou_threshold = getattr(request, "iou_threshold", None)
@@ -365,6 +370,11 @@ def repack_classification_response(
     request: Any,
 ) -> ClassificationInferenceResponse:
     predicted = unwrap_single_prediction(prediction)
+    anomaly_metadata = _anomaly_metadata(predicted)
+    if anomaly_metadata is not None:
+        return _repack_anomaly_detection_response(
+            predicted, anomaly_metadata, dims, class_names
+        )
     confidences = _classification_confidence_vector(predicted.confidence, class_names)
     raw_confidence = getattr(request, "confidence", None)
     confidence_threshold = (
@@ -394,6 +404,51 @@ def repack_classification_response(
         predictions=class_predictions,
         top=class_predictions[0]["class"] if class_predictions else "",
         confidence=class_predictions[0]["confidence"] if class_predictions else 0.0,
+    )
+
+
+def _anomaly_metadata(predicted: Any) -> Optional[dict]:
+    images_metadata = getattr(predicted, "images_metadata", None)
+    if not images_metadata:
+        return None
+
+    metadata = images_metadata[0]
+    if not isinstance(metadata, dict) or "anomaly_score" not in metadata:
+        return None
+
+    return metadata
+
+
+def _repack_anomaly_detection_response(
+    predicted: Any,
+    metadata: dict,
+    dims: Tuple[int, int],
+    class_names: Optional[List[str]],
+) -> AnomalyDetectionResponse:
+    confidences = _classification_confidence_vector(predicted.confidence, class_names)
+    top_class_id = int(np.asarray(predicted.class_id).reshape(-1)[0])
+    class_predictions = [
+        {
+            "class_id": class_id,
+            "class": class_names[class_id],
+            "confidence": round(confidences[class_id], 4),
+        }
+        for class_id in (top_class_id, 1 - top_class_id)
+    ]
+    anomaly_map = metadata.get("anomaly_map")
+    width, height = dims
+
+    return AnomalyDetectionResponse(
+        image=InferenceResponseImage(width=width, height=height),
+        predictions=class_predictions,
+        top=class_predictions[0]["class"],
+        confidence=class_predictions[0]["confidence"],
+        anomaly_score=metadata["anomaly_score"],
+        anomaly_threshold=metadata["anomaly_threshold"],
+        is_anomalous=metadata["is_anomalous"],
+        anomaly_map=(
+            np.asarray(anomaly_map).tolist() if anomaly_map is not None else None
+        ),
     )
 
 

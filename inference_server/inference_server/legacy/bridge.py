@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -10,27 +11,37 @@ from typing import Any, Optional
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 
 from inference_models.errors import ModelInputError
-from inference_server import telemetry
+from inference_server import platform_http, telemetry
 from inference_server.configuration import (
     ALLOW_URL_INPUT,
+    API_BASE_URL,
     INFER_TIMEOUT_S,
     LEGACY_LOAD_POLL_INTERVAL_S,
     LEGACY_LOAD_TIMEOUT_S,
     LEGACY_OFFLINE_MODE,
     LEGACY_ROUTE_METADATA_TTL_S,
+    MODEL_STAT_CACHE_SIZE,
+    MODEL_STAT_CACHE_TTL_S,
 )
 from inference_server.errors import PayloadTooLargeError
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.fanout import gather_bounded
 from inference_server.framework.model_stat import (
     ModelStat,
+    _TtlLruCache,
     stat_model_details_while_checking_auth,
 )
 from inference_server.gateway import ModelManagerGateway, ReloadAfterEvictionError
 from inference_server.legacy.common import ImagePayload, fetch_url_images
 from inference_server.legacy.entities import ResolvedModel
 from inference_server.legacy.errors import (
+    MODEL_ACCESS_ERROR_MESSAGES,
     MODEL_PACKAGE_BROKEN_MESSAGE,
+    NOT_FOUND_MESSAGE,
+    REGISTRY_REQUEST_FAILED_MESSAGE,
+    REGISTRY_UNREACHABLE_MESSAGE,
+    SERVICE_MISCONFIGURATION_MESSAGE,
+    UNAUTHORIZED_MESSAGE,
     ImageFetchError,
     LegacyHTTPError,
     ModelNotReadyError,
@@ -61,6 +72,25 @@ _CURRENT_REQUEST: contextvars.ContextVar[
 _SYNC_TIMEOUT_MARGIN_S = 30
 _MAX_PENDING_REQUEST_KEYS = 256
 _MAX_PENDING_VALUES_PER_KEY = 64
+
+STUB_VERSION_ID = "0"
+STUB_MODEL_ARCHITECTURE = "stub"
+MISSING_API_KEY_MESSAGE = (
+    "Required Roboflow API key is missing. Visit "
+    "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+    "to learn how to retrieve one."
+)
+_STUB_TASK_TYPES = frozenset(
+    [
+        "classification",
+        "object-detection",
+        "instance-segmentation",
+        "keypoint-detection",
+    ]
+)
+_DEFAULT_PROJECT_TASK_TYPE = "object-detection"
+_PLATFORM_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+_stub_stats: _TtlLruCache = _TtlLruCache(MODEL_STAT_CACHE_SIZE, MODEL_STAT_CACHE_TTL_S)
 
 
 def _remember_request(
@@ -99,6 +129,7 @@ class Route:
     metadata_ts: float = 0.0
     model_architecture: Optional[str] = None
     model_variant: Optional[str] = None
+    is_stub: bool = False
 
 
 _CORE_MODEL_TASK_TYPES: dict[str, tuple[str, str]] = {
@@ -129,20 +160,65 @@ _REGISTRY_ID_ALIASES = {"perception_encoder": "perception-encoder"}
 
 _TASK_TYPE_BY_MRO = {
     "ObjectDetectionModel": "object-detection",
+    "OWLv2HF": "open-vocabulary-object-detection",
+    "RFDetrForObjectDetectionTorch": "object-detection",
+    "RFDetrForObjectDetectionONNX": "object-detection",
+    "RFDetrForObjectDetectionTRT": "object-detection",
+    "YOLO26ForObjectDetectionOnnx": "object-detection",
+    "YOLO26ForObjectDetectionTorchScript": "object-detection",
+    "YOLO26ForObjectDetectionTRT": "object-detection",
+    "YOLOv10ForObjectDetectionOnnx": "object-detection",
+    "YOLOv10ForObjectDetectionTRT": "object-detection",
+    "PPOCRv6DetectionOnnx": "object-detection",
+    "RoboflowInstantHF": "object-detection",
+    "PassthroughModel": "passthrough",
     "OpenVocabularyObjectDetectionModel": "open-vocabulary-object-detection",
+    "GroundingDinoForObjectDetectionTorch": "open-vocabulary-object-detection",
     "InstanceSegmentationModel": "instance-segmentation",
+    "YOLOv5ForInstanceSegmentationOnnx": "instance-segmentation",
+    "YOLOv5ForInstanceSegmentationTRT": "instance-segmentation",
+    "YOLOv7ForInstanceSegmentationOnnx": "instance-segmentation",
+    "YOLOv7ForInstanceSegmentationTRT": "instance-segmentation",
+    "YOLOACTForInstanceSegmentationOnnx": "instance-segmentation",
+    "YOLOACTForInstanceSegmentationTRT": "instance-segmentation",
+    "RFDetrForInstanceSegmentationTorch": "instance-segmentation",
+    "RFDetrForInstanceSegmentationOnnx": "instance-segmentation",
+    "RFDetrForInstanceSegmentationTRT": "instance-segmentation",
+    "YOLO26ForInstanceSegmentationOnnx": "instance-segmentation",
+    "YOLO26ForInstanceSegmentationTorchScript": "instance-segmentation",
+    "YOLO26ForInstanceSegmentationTRT": "instance-segmentation",
+    "SAM2ForStream": "instance-segmentation",
     "KeyPointsDetectionModel": "keypoint-detection",
+    "RFDetrForKeyPointsONNX": "keypoint-detection",
+    "YOLO26ForKeyPointsDetectionOnnx": "keypoint-detection",
+    "YOLO26ForKeyPointsDetectionTorchScript": "keypoint-detection",
+    "YOLO26ForKeyPointsDetectionTRT": "keypoint-detection",
     "ClassificationModel": "classification",
     "MultiLabelClassificationModel": "multi-label-classification",
     "SemanticSegmentationModel": "semantic-segmentation",
     "DepthEstimationModel": "depth-estimation",
     "TextImageEmbeddingModel": "embedding",
     "StructuredOCRModel": "structured-ocr",
+    "EasyOCRTorch": "structured-ocr",
+    "PPOCRv6StructuredOCR": "structured-ocr",
     "TextOnlyOCRModel": "text-only-ocr",
+    "L2CSNetOnnx": "gaze-detection",
+    "PaliGemmaHF": "vlm",
+    "Gemma4HF": "vlm",
+    "Qwen25VLHF": "vlm",
+    "Qwen3VLHF": "vlm",
+    "Qwen35HF": "vlm",
+    "SmolVLMHF": "vlm",
+    "Cosmos3EdgeReasoner": "vlm",
+    "Florence2HF": "vlm",
+    "MoonDream2HF": "vlm",
+    "GlmOcrHF": "vlm",
     "SAMTorch": "interactive-instance-segmentation",
     "SAM2Torch": "interactive-instance-segmentation",
     "SAM3Torch": "interactive-instance-segmentation",
 }
+
+_NO_HTTP_ROUTE = frozenset(["SAM2ForStream"])
 
 _DEFAULT_ACTION_BY_TASK_TYPE = {
     "vlm": "prompt",
@@ -219,6 +295,11 @@ class LegacyModelBridge:
     ) -> Route:
         registry_id = registry_id_for(model_id)
         set_requested_model_id(registry_id, requested_model_id=model_id)
+        if registry_id.partition("/")[2] == STUB_VERSION_ID:
+            stub_route = await _resolve_stub(model_id, registry_id, api_key)
+
+            return stub_route
+
         stat: Optional[ModelStat] = None
         if not LEGACY_OFFLINE_MODE:
             try:
@@ -257,6 +338,12 @@ class LegacyModelBridge:
             route.action = _DEFAULT_ACTION_BY_TASK_TYPE.get(route.task_type, "infer")
         self._routes[registry_id] = route
         self._routes[model_id] = route
+        if route.model_class_name in _NO_HTTP_ROUTE:
+            raise LegacyHTTPError(
+                400,
+                f"Model {model_id!r} is a streaming model without an HTTP "
+                "inference route.",
+            )
         return route
 
     def _adopt_canonical(self, route: Route, stat: Optional[ModelStat]) -> Route:
@@ -667,6 +754,117 @@ class LegacyModelBridge:
         if entry is None:
             return
         _apply_metadata(route, entry)
+
+
+async def _resolve_stub(
+    model_id: str, registry_id: str, api_key: Optional[str]
+) -> Route:
+    stat = await _stat_stub(registry_id, api_key)
+    if stat.task_type not in _STUB_TASK_TYPES:
+        raise LegacyHTTPError(500, SERVICE_MISCONFIGURATION_MESSAGE)
+
+    route = Route(
+        model_id=model_id,
+        registry_id=registry_id,
+        task_type=stat.task_type,
+        action=stat.default_action,
+        is_stub=True,
+    )
+    _apply_stat(route, stat)
+
+    return route
+
+
+async def _stat_stub(registry_id: str, api_key: Optional[str]) -> ModelStat:
+    if api_key is None:
+        raise LegacyHTTPError(400, MISSING_API_KEY_MESSAGE)
+
+    key = (registry_id, api_key)
+    cached = _stub_stats.get(key)
+    if cached is not None:
+        return cached
+
+    if LEGACY_OFFLINE_MODE:
+        raise LegacyHTTPError(503, REGISTRY_UNREACHABLE_MESSAGE)
+
+    dataset_id = registry_id.partition("/")[0]
+    if not _PLATFORM_ID_PATTERN.fullmatch(dataset_id):
+        raise LegacyHTTPError(404, NOT_FOUND_MESSAGE)
+
+    task_type = await asyncio.to_thread(_fetch_project_task_type, dataset_id, api_key)
+    stat = ModelStat(task_type, "infer", model_architecture=STUB_MODEL_ARCHITECTURE)
+    _stub_stats.set(key, stat)
+
+    return stat
+
+
+def _fetch_project_task_type(dataset_id: str, api_key: str) -> str:
+    workspace_id = _fetch_workspace_id(api_key)
+    dataset_info = _get_platform_json(
+        f"{API_BASE_URL}/{workspace_id}/{dataset_id}", api_key
+    )
+    project = dataset_info.get("project", {})
+    if "type" not in project:
+        logger.warning(
+            "Project task type not defined for workspace=%s and dataset=%s, "
+            "defaulting to %s.",
+            workspace_id,
+            dataset_id,
+            _DEFAULT_PROJECT_TASK_TYPE,
+        )
+    task_type = project.get("type", _DEFAULT_PROJECT_TASK_TYPE)
+
+    return task_type
+
+
+def _fetch_workspace_id(api_key: str) -> str:
+    if not api_key:
+        raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE)
+
+    workspace_id = _get_platform_json(f"{API_BASE_URL}/", api_key).get("workspace")
+    if not isinstance(workspace_id, str) or not _PLATFORM_ID_PATTERN.fullmatch(
+        workspace_id
+    ):
+        raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE)
+
+    return workspace_id
+
+
+def _get_platform_json(url: str, api_key: str) -> dict:
+    full_url = platform_http.wrap_url(
+        platform_http._add_params_to_url(
+            url, [("api_key", api_key), ("nocache", "true")]
+        )
+    )
+    response = platform_http._platform_request(
+        "get",
+        full_url,
+        headers=platform_http.build_api_headers(),
+        timeout=platform_http.API_REQUEST_TIMEOUT_S,
+    )
+    if response.status_code >= 400:
+        raise _platform_error(response.status_code)
+    try:
+        payload = response.json()
+    except ValueError as error:
+        raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE) from error
+
+    return payload
+
+
+def _platform_error(status_code: int) -> LegacyHTTPError:
+    if status_code == 401:
+        return LegacyHTTPError(401, UNAUTHORIZED_MESSAGE)
+    if status_code == 404:
+        return LegacyHTTPError(404, NOT_FOUND_MESSAGE)
+    if status_code in MODEL_ACCESS_ERROR_MESSAGES:
+        return LegacyHTTPError(status_code, MODEL_ACCESS_ERROR_MESSAGES[status_code])
+
+    return LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE)
+
+
+def _reset_stub_cache_for_tests() -> None:
+    _stub_stats.clear()
 
 
 def _not_ready_error() -> ModelNotReadyError:
