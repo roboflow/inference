@@ -46,6 +46,22 @@ from inference_models.models.vllm_proxy.errors import (
 )
 
 from PIL import Image
+from streamvision.stream_manager.api.errors import (
+    ConnectivityError,
+    ProcessesManagerAuthorisationError,
+    ProcessesManagerClientError,
+    ProcessesManagerInternalError,
+    ProcessesManagerInvalidPayload,
+    ProcessesManagerNotFoundError,
+    ProcessesManagerOperationError,
+)
+from streamvision.stream_manager.manager_app.errors import (
+    CommunicationProtocolError,
+    MalformedHeaderError,
+    MalformedPayloadError,
+    MessageToBigError,
+    TransmissionChannelClosed,
+)
 
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.legacy.errors import (
@@ -501,6 +517,115 @@ def test_legacy_answer(error, status, body):
     assert response.status_code == status
     assert json.loads(response.body) == body
     assert "retry-after" not in response.headers
+
+
+def _stream_error(error_type, public_message="public", inner_error=None):
+    return error_type("private", public_message=public_message, inner_error=inner_error)
+
+
+def _stream_body(error_type, public_message="public", inner_error_type=None):
+    return {
+        "message": public_message,
+        "error_type": error_type.__name__,
+        "inner_error_type": inner_error_type,
+    }
+
+
+STREAM_MATRIX = [
+    pytest.param(
+        _stream_error(ProcessesManagerInvalidPayload, inner_error=KeyError("k")),
+        400,
+        _stream_body(ProcessesManagerInvalidPayload, inner_error_type="KeyError"),
+        id="stream-invalid-payload",
+    ),
+    pytest.param(
+        _stream_error(MalformedPayloadError),
+        400,
+        _stream_body(MalformedPayloadError),
+        id="stream-malformed-payload",
+    ),
+    pytest.param(
+        _stream_error(MessageToBigError),
+        400,
+        _stream_body(MessageToBigError),
+        id="stream-message-too-big",
+    ),
+    pytest.param(
+        _stream_error(ProcessesManagerAuthorisationError, public_message="denied"),
+        401,
+        {"message": UNAUTHORIZED},
+        id="stream-authorisation",
+    ),
+    pytest.param(
+        _stream_error(ProcessesManagerNotFoundError, public_message="no pipeline"),
+        404,
+        _stream_body(ProcessesManagerNotFoundError, public_message="no pipeline"),
+        id="stream-not-found",
+    ),
+    pytest.param(
+        _stream_error(ProcessesManagerClientError),
+        500,
+        _stream_body(ProcessesManagerClientError),
+        id="stream-client-error",
+    ),
+    pytest.param(
+        _stream_error(ConnectivityError, inner_error=OSError("refused")),
+        500,
+        _stream_body(ConnectivityError, inner_error_type="OSError"),
+        id="stream-connectivity",
+    ),
+    pytest.param(
+        _stream_error(ProcessesManagerInternalError),
+        500,
+        _stream_body(ProcessesManagerInternalError),
+        id="stream-internal",
+    ),
+    pytest.param(
+        _stream_error(ProcessesManagerOperationError),
+        500,
+        _stream_body(ProcessesManagerOperationError),
+        id="stream-operation",
+    ),
+    pytest.param(
+        _stream_error(CommunicationProtocolError),
+        500,
+        _stream_body(CommunicationProtocolError),
+        id="stream-protocol",
+    ),
+    pytest.param(
+        _stream_error(TransmissionChannelClosed),
+        500,
+        _stream_body(TransmissionChannelClosed),
+        id="stream-channel-closed",
+    ),
+    pytest.param(
+        _stream_error(MalformedHeaderError),
+        500,
+        _stream_body(MalformedHeaderError),
+        id="stream-malformed-header",
+    ),
+]
+
+
+@pytest.mark.parametrize("error,status,body", STREAM_MATRIX)
+def test_stream_manager_answer(error, status, body):
+    response = legacy_error_response(error)
+
+    assert response.status_code == status
+    assert json.loads(response.body) == body
+    assert "retry-after" not in response.headers
+
+
+def test_stream_manager_errors_are_internal_errors_without_streamvision(monkeypatch):
+    monkeypatch.setitem(sys.modules, "streamvision.stream_manager.api.errors", None)
+    monkeypatch.setitem(
+        sys.modules, "streamvision.stream_manager.manager_app.errors", None
+    )
+
+    response = legacy_error_response(_stream_error(ProcessesManagerNotFoundError))
+
+    assert response.status_code == 500
+    assert json.loads(response.body) == INTERNAL_ERROR
 
 
 def test_own_error_answer_carries_its_headers():

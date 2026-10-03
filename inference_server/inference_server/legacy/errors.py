@@ -312,12 +312,53 @@ def _mapped_answer(error: BaseException) -> Optional[Tuple[int, dict]]:
             "message": f"Could not retrieve model {error}",
             "help_url": error.help_url,
         }
+    stream_manager_answer = _stream_manager_answer(error)
+    if stream_manager_answer is not None:
+        return stream_manager_answer
     if isinstance(error, RuntimeError) and isinstance(
         cause, (RetryError, ModelRetrievalError, OSError)
     ):
         registry_answer = _registry_failure_answer(cause)
         return registry_answer
     return None
+
+
+def _stream_manager_answer(error: BaseException) -> Optional[Tuple[int, dict]]:
+    try:
+        from streamvision.stream_manager.api.errors import (
+            ProcessesManagerAuthorisationError,
+            ProcessesManagerClientError,
+            ProcessesManagerInvalidPayload,
+            ProcessesManagerNotFoundError,
+        )
+        from streamvision.stream_manager.manager_app.errors import (
+            CommunicationProtocolError,
+            MalformedPayloadError,
+            MessageToBigError,
+        )
+    except ImportError:
+        return None
+
+    if isinstance(
+        error,
+        (ProcessesManagerInvalidPayload, MalformedPayloadError, MessageToBigError),
+    ):
+        return 400, _stream_manager_body(error)
+    if isinstance(error, ProcessesManagerAuthorisationError):
+        return 401, {"message": UNAUTHORIZED_MESSAGE}
+    if isinstance(error, ProcessesManagerNotFoundError):
+        return 404, _stream_manager_body(error)
+    if isinstance(error, (ProcessesManagerClientError, CommunicationProtocolError)):
+        return 500, _stream_manager_body(error)
+    return None
+
+
+def _stream_manager_body(error: BaseException) -> dict:
+    return {
+        "message": error.public_message,
+        "error_type": error.__class__.__name__,
+        "inner_error_type": error.inner_error_type,
+    }
 
 
 def _registry_failure_answer(cause: BaseException) -> Optional[Tuple[int, dict]]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import runpy
 
@@ -651,6 +652,192 @@ class TestUsageCollectorWiring:
             assert app_mod.app.state.usage_collector is None
 
         assert app_mod.app.state.usage_collector is None
+
+
+class _FakeManagerProcess:
+    def __init__(self, *, alive=True, stuck=False, exitcode=None):
+        self.alive = alive
+        self.stuck = stuck
+        self.exitcode = exitcode
+        self.events = []
+
+    def is_alive(self):
+        return self.alive
+
+    def terminate(self):
+        self.events.append("terminate")
+        if not self.stuck:
+            self.alive = False
+
+    def kill(self):
+        self.events.append("kill")
+        self.alive = False
+
+    def join(self, timeout=None):
+        self.events.append(("join", timeout))
+
+
+class _OrderedProxy(_IdleProxy):
+    def __init__(self, events):
+        self.events = events
+
+    async def shutdown(self):
+        self.events.append("gateway shutdown")
+
+
+class TestStreamManagerWiring:
+    @pytest.fixture
+    def stream_env(self, monkeypatch):
+        from streamvision.stream.configuration import reset_configuration
+
+        import inference_server.app as app_mod
+
+        reset_configuration()
+        monkeypatch.delenv("INFERENCE_PRELOAD_MODELS", raising=False)
+        monkeypatch.setattr(
+            "inference_model_manager.watchdogs.start_enabled_watchdogs", lambda: []
+        )
+        monkeypatch.setattr(
+            "inference_server.gateway_resolver.resolve_gateway", lambda: _IdleProxy()
+        )
+        monkeypatch.setattr(app_mod._cfg, "ENABLE_STREAM_API", True)
+        monkeypatch.setattr(app_mod._cfg, "STREAM_API_PRELOADED_PROCESSES", 2)
+        monkeypatch.setattr(app_mod._cfg, "STREAM_MANAGER_HOST", "10.0.0.5")
+        monkeypatch.setattr(app_mod._cfg, "STREAM_MANAGER_PORT", 7171)
+        monkeypatch.setattr(app_mod._cfg, "STREAM_MANAGER_OPERATIONS_TIMEOUT", 2.5)
+        launches = []
+
+        def _launch(streams_configuration, **kwargs):
+            launches.append((streams_configuration, kwargs))
+            return launches_process[0]
+
+        launches_process = [_FakeManagerProcess()]
+        monkeypatch.setattr(app_mod, "_start_stream_manager", _launch)
+        yield app_mod, launches, launches_process
+        reset_configuration()
+
+    @pytest.mark.asyncio
+    async def test_manager_starts_with_the_server_host_and_stops_on_exit(
+        self, stream_env
+    ):
+        from inference_server.streams.configuration import (
+            build_streams_configuration,
+        )
+        from inference_server.streams.host import SERVER_PIPELINE_HOST_DESCRIPTOR
+
+        app_mod, launches, (process,) = stream_env
+
+        async with app_mod._lifespan(app_mod.app):
+            from streamvision.stream_manager.api.stream_manager_client import (
+                StreamManagerClient,
+            )
+
+            assert launches == [
+                (
+                    build_streams_configuration(),
+                    {
+                        "host_descriptor": SERVER_PIPELINE_HOST_DESCRIPTOR,
+                        "expected_warmed_up_pipelines": 2,
+                    },
+                )
+            ]
+            assert launches[0][0].stream_manager_host == "10.0.0.5"
+            assert app_mod.app.state.stream_manager_process is process
+            client = app_mod.app.state.stream_manager_client
+            assert isinstance(client, StreamManagerClient)
+            assert client._host == "10.0.0.5"
+            assert client._port == 7171
+            assert client._operations_timeout == 2.5
+            assert process.events == []
+
+        assert process.events == [
+            "terminate",
+            ("join", app_mod.STREAM_MANAGER_STOP_TIMEOUT_S),
+        ]
+        assert app_mod.app.state.stream_manager_client is None
+        assert app_mod.app.state.stream_manager_process is None
+
+    @pytest.mark.asyncio
+    async def test_manager_is_stopped_before_the_gateway(self, stream_env, monkeypatch):
+        app_mod, _, (process,) = stream_env
+        events = []
+        process.events = events
+        proxy = _OrderedProxy(events)
+        monkeypatch.setattr(
+            "inference_server.gateway_resolver.resolve_gateway", lambda: proxy
+        )
+
+        async with app_mod._lifespan(app_mod.app):
+            pass
+
+        assert events == [
+            "terminate",
+            ("join", app_mod.STREAM_MANAGER_STOP_TIMEOUT_S),
+            "gateway shutdown",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_manager_surviving_terminate_is_killed(self, stream_env, caplog):
+        app_mod, _, launches_process = stream_env
+        process = _FakeManagerProcess(stuck=True)
+        launches_process[0] = process
+
+        with caplog.at_level(logging.WARNING, logger="inference_server.app"):
+            async with app_mod._lifespan(app_mod.app):
+                pass
+
+        assert process.events == [
+            "terminate",
+            ("join", app_mod.STREAM_MANAGER_STOP_TIMEOUT_S),
+            "kill",
+            ("join", app_mod.STREAM_MANAGER_STOP_TIMEOUT_S),
+        ]
+        assert process.alive is False
+        assert any("did not stop" in record.getMessage() for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_manager_dying_early_is_logged(self, stream_env, caplog, monkeypatch):
+        app_mod, _, launches_process = stream_env
+        process = _FakeManagerProcess(alive=False, exitcode=1)
+        launches_process[0] = process
+        monkeypatch.setattr(app_mod, "STREAM_MANAGER_STARTUP_GRACE_S", 0.0)
+
+        with caplog.at_level(logging.WARNING, logger="inference_server.app"):
+            async with app_mod._lifespan(app_mod.app):
+                await asyncio.sleep(0.05)
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("exited" in message and "1" in message for message in messages)
+        assert process.events == [
+            "terminate",
+            ("join", app_mod.STREAM_MANAGER_STOP_TIMEOUT_S),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_early_exit_check_is_cancelled_by_shutdown(
+        self, stream_env, caplog, monkeypatch
+    ):
+        app_mod, _, _ = stream_env
+        monkeypatch.setattr(app_mod, "STREAM_MANAGER_STARTUP_GRACE_S", 0.02)
+
+        with caplog.at_level(logging.WARNING, logger="inference_server.app"):
+            async with app_mod._lifespan(app_mod.app):
+                pass
+            await asyncio.sleep(0.05)
+
+        assert not any("exited" in record.getMessage() for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_flag_off_starts_nothing(self, stream_env, monkeypatch):
+        app_mod, launches, _ = stream_env
+        monkeypatch.setattr(app_mod._cfg, "ENABLE_STREAM_API", False)
+
+        async with app_mod._lifespan(app_mod.app):
+            assert launches == []
+            assert getattr(app_mod.app.state, "stream_manager_client", None) is None
+            assert getattr(app_mod.app.state, "stream_manager_process", None) is None
+
+        assert launches == []
 
 
 class TestVllmRequestIdProvider:

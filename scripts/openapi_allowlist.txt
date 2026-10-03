@@ -1,14 +1,4 @@
-# stream pipelines
-POST /inference_pipelines/initialise
-GET /inference_pipelines/list
-GET /inference_pipelines/{pipeline_id}/consume
-POST /inference_pipelines/{pipeline_id}/pause
-POST /inference_pipelines/{pipeline_id}/resume
-GET /inference_pipelines/{pipeline_id}/status
-POST /inference_pipelines/{pipeline_id}/terminate
-
 # webrtc worker
 POST /initialise_webrtc_worker
-POST /inference_pipelines/initialise_webrtc
 POST /webrtc/session/heartbeat
 POST /webrtc/session/heartbeat/end

@@ -14,10 +14,12 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import logging
+import multiprocessing
 import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from typing import Optional
+from functools import partial
+from typing import Any, Optional
 
 from inference_server.legacy_env import apply_legacy_env
 
@@ -85,7 +87,10 @@ _WORKFLOWS_ROUTES_ENABLED = (
     _workflows_host is not None and not _cfg.DISABLE_WORKFLOW_ENDPOINTS
 )
 _LEGACY_ERROR_HANDLING_ENABLED = (
-    _cfg.LEGACY_ROUTES_ENABLED or _WORKFLOWS_ROUTES_ENABLED or _cfg.ENABLE_BUILDER
+    _cfg.LEGACY_ROUTES_ENABLED
+    or _WORKFLOWS_ROUTES_ENABLED
+    or _cfg.ENABLE_BUILDER
+    or _cfg.ENABLE_STREAM_API
 )
 
 # ---------------------------------------------------------------------------
@@ -147,6 +152,62 @@ def _start_usage_collector() -> Optional[UsageCollector]:
     return usage_collector
 
 
+STREAM_MANAGER_STOP_TIMEOUT_S = 30.0
+STREAM_MANAGER_STARTUP_GRACE_S = 5.0
+
+
+def _start_stream_manager(
+    streams_configuration: Any,
+    *,
+    host_descriptor: Any,
+    expected_warmed_up_pipelines: int,
+) -> multiprocessing.Process:
+    from streamvision.stream_manager.manager_app.bootstrap import run_stream_manager
+
+    process = multiprocessing.get_context("spawn").Process(
+        target=partial(
+            run_stream_manager,
+            configuration=streams_configuration,
+            host_descriptor=host_descriptor,
+            expected_warmed_up_pipelines=expected_warmed_up_pipelines,
+        ),
+        name="stream-manager",
+    )
+    process.start()
+
+    return process
+
+
+def _stop_stream_manager(process: Any) -> None:
+    process.terminate()
+    process.join(STREAM_MANAGER_STOP_TIMEOUT_S)
+    if not process.is_alive():
+        return None
+
+    logger.warning(
+        "The stream manager process did not stop within %s s; killing it",
+        STREAM_MANAGER_STOP_TIMEOUT_S,
+    )
+    process.kill()
+    process.join(STREAM_MANAGER_STOP_TIMEOUT_S)
+
+    return None
+
+
+def _warn_if_stream_manager_died(process: Any) -> None:
+    if process.is_alive():
+        return None
+
+    logger.warning(
+        "The stream manager process exited with code %s right after start; the "
+        "/inference_pipelines routes will fail until the server restarts. With "
+        "NUM_WORKERS > 1 only one worker's manager can bind STREAM_MANAGER_PORT.",
+        process.exitcode,
+    )
+
+    return None
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     # Keep multipart uploads in memory — Starlette default is 1MB, which causes
@@ -170,6 +231,8 @@ async def _lifespan(app: FastAPI):
     hf_preload_task = None
     watchdog_daemons = []
     pingback_sender = None
+    stream_manager_process = None
+    stream_manager_watch = None
     if _cfg.HTTP_API_THREADPOOL_WORKERS is not None:
         anyio.to_thread.current_default_thread_limiter().total_tokens = (
             _cfg.HTTP_API_THREADPOOL_WORKERS
@@ -217,6 +280,33 @@ async def _lifespan(app: FastAPI):
         app.state.usage_collector = _start_usage_collector()
         if _workflows_host is not None:
             _workflows_host.GUARDED_IMAGE_CODEC.bind_loop(app.state.loop_bridge)
+        if _cfg.ENABLE_STREAM_API:
+            from inference_server.streams.configuration import (
+                install_streams_configuration,
+            )
+            from inference_server.streams.host import SERVER_PIPELINE_HOST_DESCRIPTOR
+
+            streams_configuration = install_streams_configuration()
+            from streamvision.stream_manager.api.stream_manager_client import (
+                StreamManagerClient,
+            )
+
+            stream_manager_process = _start_stream_manager(
+                streams_configuration,
+                host_descriptor=SERVER_PIPELINE_HOST_DESCRIPTOR,
+                expected_warmed_up_pipelines=_cfg.STREAM_API_PRELOADED_PROCESSES,
+            )
+            stream_manager_watch = app.state.loop.call_later(
+                STREAM_MANAGER_STARTUP_GRACE_S,
+                _warn_if_stream_manager_died,
+                stream_manager_process,
+            )
+            app.state.stream_manager_process = stream_manager_process
+            app.state.stream_manager_client = StreamManagerClient.init(
+                host=_cfg.STREAM_MANAGER_HOST,
+                port=_cfg.STREAM_MANAGER_PORT,
+                operations_timeout=_cfg.STREAM_MANAGER_OPERATIONS_TIMEOUT,
+            )
         preload_ids = _cfg.preload_model_ids()
         pinned_ids = _cfg.pinned_model_ids()
         hf_ids = _cfg.preload_hf_ids()
@@ -253,6 +343,12 @@ async def _lifespan(app: FastAPI):
         if usage_collector is not None:
             await asyncio.to_thread(usage_collector.flush)
             await asyncio.to_thread(usage_collector.stop)
+        if stream_manager_watch is not None:
+            stream_manager_watch.cancel()
+        if stream_manager_process is not None:
+            app.state.stream_manager_client = None
+            app.state.stream_manager_process = None
+            await asyncio.to_thread(_stop_stream_manager, stream_manager_process)
         shutdown_telemetry()
         try:
             await proxy.shutdown()
@@ -548,6 +644,14 @@ if _cfg.ENABLE_BUILDER:
     from inference_server.builder.routes import router as builder_router
 
     app.include_router(builder_router, prefix="/build", tags=["builder"])
+
+if _cfg.ENABLE_STREAM_API:
+    from inference_server.streams.configuration import install_streams_configuration
+
+    install_streams_configuration()
+    from inference_server.streams.router import include_streams_router
+
+    include_streams_router(app)
 
 if _cfg.LEGACY_ROUTES_ENABLED:
     include_legacy_catch_all(app)

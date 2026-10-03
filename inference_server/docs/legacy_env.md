@@ -431,12 +431,12 @@ definitions.
 
 | name | legacy | new | default |
 |---|---|---|---|
-| `ENABLE_STREAM_API` | `env.py:1241` | `configuration.py:481` | `False` |
-| `STREAM_API_PRELOADED_PROCESSES` | `env.py:1245` | `configuration.py:482-484` | `0` |
-| `STREAM_MANAGER_HOST` | `http_api.py:1556`, `streamvision/stream_manager/manager_app/app.py:89-103` | `configuration.py:485`; carried as `stream_manager_host` instead of being left `None` | `127.0.0.1` |
-| `STREAM_MANAGER_PORT` | `http_api.py:1557`, `manager_app/app.py:89-103` | `configuration.py:486`; carried as `stream_manager_port` | `7070` |
+| `ENABLE_STREAM_API` | `env.py:1241`, `http_api.py:1551,2857`, `docker/config/cpu_http.py:29-39` | `configuration.py:481`; `app.py` mounts the `/inference_pipelines/*` routes (`streams/router.py`) ahead of the catch-all and, in the lifespan, starts one stream manager process per uvicorn worker with the `spawn` context (legacy: `spawn` on GPU, default on CPU) and terminates it on shutdown | `False` |
+| `STREAM_API_PRELOADED_PROCESSES` | `env.py:1245`, `docker/config/cpu_http.py:36` | `configuration.py:482-484`; passed to the manager as `expected_warmed_up_pipelines` | `0` |
+| `STREAM_MANAGER_HOST` | `http_api.py:1556`, `streamvision/stream_manager/manager_app/app.py:89-103` | `configuration.py:485`; carried as `stream_manager_host` instead of being left `None`; `app.py` builds `StreamManagerClient` with it | `127.0.0.1` |
+| `STREAM_MANAGER_PORT` | `http_api.py:1557`, `manager_app/app.py:89-103` | `configuration.py:486`; carried as `stream_manager_port`; `app.py` builds `StreamManagerClient` with it | `7070` |
 | `STREAM_MANAGER_SOCKET_TIMEOUT` | `manager_app/app.py:89-103` | `configuration.py:487-489`; carried as `stream_manager_socket_timeout` | `5.0` |
-| `STREAM_MANAGER_OPERATIONS_TIMEOUT` | `http_api.py:1552-1554` | `configuration.py:490-492`; `None` when unset (no client timeout) | unset |
+| `STREAM_MANAGER_OPERATIONS_TIMEOUT` | `http_api.py:1552-1554` | `configuration.py:490-492`; `None` when unset (no client timeout); `app.py` builds `StreamManagerClient` with it | unset |
 | `STREAM_MANAGER_MAX_ACTIVE_PIPELINES` | `env.py:1422-1425` | `configuration.py:493-496`; never below `STREAM_API_PRELOADED_PROCESSES`, as in legacy | `8` |
 | `STREAM_MANAGER_MAX_RAM_MB` | `env.py:1405-1410` | `configuration.py:497-499`; absolute value, `None` when unset or unparsable, as in legacy | unset |
 | `STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE` | `env.py:1412-1417` | `configuration.py:500-502`; absolute value, `10` when unset or unparsable, as in legacy | `10` |

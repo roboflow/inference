@@ -141,8 +141,9 @@ are dropped at startup instead of registered.
 
 `/` serves the legacy landing page from `LANDING_DIR`; its dashboard tab calls
 `/metrics`, `/logs`, and `/inference_pipelines`. `/logs` answers with the recent
-log records when `ENABLE_IN_MEMORY_LOGS=true` and 404 otherwise; `/metrics` and
-`/inference_pipelines` are not ported here and answer 404.
+log records when `ENABLE_IN_MEMORY_LOGS=true` and 404 otherwise; `/metrics` is
+not ported here and answers 404; `/inference_pipelines/*` is served when
+`ENABLE_STREAM_API=true` (see below) and answers 404 otherwise.
 
 `/build` serves the Workflow Builder; local workflows are stored under
 `MODEL_CACHE_DIR/workflow/local` and run through `/workflows/run` with
@@ -159,9 +160,14 @@ workspace check.
 
 A few legacy behaviours are not (yet) available here:
 
-- Inference pipelines (`/inference_pipelines/*`), the stream manager, and the
-  WebRTC worker routes (`/initialise_webrtc_worker`, `/webrtc/session/*`) are
-  not ported; requests to these paths 404.
+- Inference pipelines (`/inference_pipelines/*`) are served when
+  `ENABLE_STREAM_API=true`: the lifespan starts one `streamvision` stream
+  manager process per uvicorn worker (`STREAM_API_PRELOADED_PROCESSES` idle
+  pipeline processes, reached through `STREAM_MANAGER_HOST` /
+  `STREAM_MANAGER_PORT` / `STREAM_MANAGER_OPERATIONS_TIMEOUT`) and stops it on
+  shutdown; with `NUM_WORKERS` above 1 only the first manager can bind the port.
+  The WebRTC worker routes (`/initialise_webrtc_worker`, `/webrtc/session/*`)
+  are not ported; requests to these paths 404.
 - Several routes and parameters that legacy accepted now return 501 instead
   of the real behaviour: `/sam3_3d/infer`; `/sam3/embed_image` with
   `SAM3_EXEC_MODE=remote` (concept and visual segmentation are proxied to the
@@ -198,4 +204,4 @@ USE_INFERENCE_MODELS=true PORT=9101 SKIP_LMM_TEST=True \
 make stop_test_docker
 ```
 
-The nine key variables are the ones the CI workflows pass (`tests/inference/integration_tests/README.md` explains the `<project_slug>_API_KEY` convention). `USE_INFERENCE_MODELS=true` on the client side selects the `*_inference_models.json` expectation files. `test_video_processing_endpoints.py` targets `/inference_pipelines/*`, which this server does not serve yet. Failures elsewhere are parity findings; do not regenerate the expectation files from this server.
+The nine key variables are the ones the CI workflows pass (`tests/inference/integration_tests/README.md` explains the `<project_slug>_API_KEY` convention). `USE_INFERENCE_MODELS=true` on the client side selects the `*_inference_models.json` expectation files. `test_video_processing_endpoints.py` targets `/inference_pipelines/*`, which this server serves only with `ENABLE_STREAM_API=true`. Failures elsewhere are parity findings; do not regenerate the expectation files from this server.
