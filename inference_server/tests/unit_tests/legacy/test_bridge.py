@@ -84,6 +84,14 @@ async def test_resolve_core_model_prefix_falls_back_to_static_table(fake_stat):
 
 
 @pytest.mark.asyncio
+async def test_resolve_owlv2_static_fallback_is_object_detection(fake_stat):
+    route = await LegacyModelBridge(FakeGateway()).resolve(
+        "owlv2/owlv2-base-patch16-ensemble", "k"
+    )
+    assert (route.task_type, route.action) == ("object-detection", "infer")
+
+
+@pytest.mark.asyncio
 async def test_resolve_applies_sdk_alias(fake_stat):
     fake_stat["coco/3"] = ("object-detection", "infer")
     gw = FakeGateway()
@@ -1457,6 +1465,7 @@ async def test_route_without_registry_labels_carries_none(fake_stat):
         ),
         ("perception_encoder/PE-Core-L14-336", "perception_encoder", "PE-Core-L14-336"),
         ("sam2/hiera_large", "sam2", "hiera_large"),
+        ("owlv2/owlv2-base-patch16-ensemble", "owlv2", "owlv2-base-patch16-ensemble"),
     ],
 )
 async def test_core_model_fallback_reports_the_legacy_architecture_and_variant(

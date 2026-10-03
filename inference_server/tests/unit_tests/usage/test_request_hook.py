@@ -911,7 +911,6 @@ def test_sam3_concept_segment_records_the_execution_mode(
     [
         ("/infer/action_recognition", "ACTION_RECOGNITION_ENABLED"),
         ("/sam3_3d/infer", "SAM3_3D_OBJECTS_ENABLED"),
-        ("/owlv2/infer", "CORE_MODEL_OWLV2_ENABLED"),
     ],
 )
 def test_501_stubs_record_an_error_row(usage_collector, monkeypatch, path, flag):
@@ -936,7 +935,6 @@ def test_501_stubs_record_an_error_row(usage_collector, monkeypatch, path, flag)
 STUB_ROUTES = [
     ("/infer/action_recognition", "ACTION_RECOGNITION_ENABLED"),
     ("/sam3_3d/infer", "SAM3_3D_OBJECTS_ENABLED"),
-    ("/owlv2/infer", "CORE_MODEL_OWLV2_ENABLED"),
 ]
 
 

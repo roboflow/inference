@@ -110,6 +110,7 @@ _CORE_MODEL_TASK_TYPES: dict[str, tuple[str, str]] = {
     "doctr": ("structured-ocr", "infer"),
     "easy_ocr": ("structured-ocr", "infer"),
     "trocr": ("text-only-ocr", "infer"),
+    "owlv2": ("object-detection", "infer"),
     "yolo_world": ("open-vocabulary-object-detection", "infer"),
     "grounding_dino": ("open-vocabulary-object-detection", "infer"),
     "depth-anything-v2": ("depth-estimation", "infer"),

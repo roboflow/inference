@@ -118,11 +118,18 @@ def test_doctr_keeps_parent_id_null(legacy_client, fake_stat):
     assert r.json()["parent_id"] is None
 
 
-def test_easy_ocr_rejects_other_languages(legacy_client, fake_stat):
-    r = legacy_client(FakeGateway()).post(
-        "/easy_ocr/ocr", json={"image": _image(), "language_codes": ["pl"]}
+def test_easy_ocr_accepts_language_codes_and_quantize(legacy_client, fake_stat):
+    gw = FakeGateway(
+        predictions={("easy_ocr/english_g2", "infer"): (["a"], [_ocr_det(["a"])])},
+        model_info={"easy_ocr/english_g2": {"actions": {"infer": {}}}},
     )
-    assert r.status_code == 501
+    r = legacy_client(gw).post(
+        "/easy_ocr/ocr",
+        json={"image": _image(), "language_codes": ["pl"], "quantize": True},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == "a"
+    assert _infer_params(gw) == {"confidence": 0.0}
 
 
 def test_easy_ocr_returns_image_size_and_boxes_with_text_as_class(
@@ -275,24 +282,169 @@ def test_yolo_world_is_404_without_loading_a_model(legacy_client, fake_stat):
     assert gw.calls == []
 
 
-def test_grounding_dino_custom_box_threshold_is_501(legacy_client, fake_stat):
-    r = legacy_client(FakeGateway()).post(
-        "/grounding_dino/infer",
-        json={"image": _image(), "text": ["cat"], "box_threshold": 0.1},
+def test_grounding_dino_thresholds_reach_the_model_as_confidences(
+    legacy_client, fake_stat
+):
+    gw = FakeGateway(
+        predictions={("grounding_dino/default", "infer"): _det()},
+        model_info={"grounding_dino/default": {"actions": {"infer": {}}}},
     )
-    assert r.status_code == 501
+    r = legacy_client(gw).post(
+        "/grounding_dino/infer",
+        json={
+            "image": _image(),
+            "text": ["cat"],
+            "box_threshold": 0.1,
+            "text_threshold": 0.2,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["predictions"][0]["class"] == "cat"
+    params = _infer_params(gw)
+    assert params["box_confidence"] == 0.1 and params["text_confidence"] == 0.2
 
 
-def test_owlv2_stub_is_501(monkeypatch):
+_OWLV2_MODEL_ID = "owlv2/owlv2-large-patch14-ensemble"
+
+
+def _owlv2_client(monkeypatch, fake_stat, gateway):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
+    from inference_server.legacy.bridge import LegacyModelBridge
     from inference_server.legacy.router import include_legacy_routers
 
+    fake_stat[_OWLV2_MODEL_ID] = ("object-detection", "infer_with_reference_examples")
     monkeypatch.setattr("inference_server.configuration.CORE_MODEL_OWLV2_ENABLED", True)
     app = FastAPI()
+    app.state.legacy_bridge = LegacyModelBridge(gateway)
     include_legacy_routers(app)
-    assert TestClient(app).post("/owlv2/infer", json={}).status_code == 501
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _owlv2_body(**extra):
+    return {
+        "image": _image(),
+        "training_data": [
+            {
+                "image": {"type": "base64", "value": _jpeg_b64(4, 4)},
+                "boxes": [{"x": 1, "y": 1, "w": 2, "h": 2, "cls": "cat"}],
+            }
+        ],
+        **extra,
+    }
+
+
+def test_owlv2_few_shot_calls_infer_with_reference_examples(monkeypatch, fake_stat):
+    detections = _det()
+    detections.image_metadata = {"class_names": ["cat"]}
+    gw = FakeGateway(
+        predictions={(_OWLV2_MODEL_ID, "infer_with_reference_examples"): detections},
+        model_info={
+            _OWLV2_MODEL_ID: {"actions": {"infer_with_reference_examples": {}}}
+        },
+    )
+    r = _owlv2_client(monkeypatch, fake_stat, gw).post(
+        "/owlv2/infer", json=_owlv2_body(confidence=0.95)
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["predictions"][0]["class"] == "cat"
+    assert body["predictions"][0]["class_id"] == 0
+    assert body["image"] == {"width": 8, "height": 6}
+    call = next(c for c in gw.calls if c[0] == "infer")
+    assert call[1] == _OWLV2_MODEL_ID
+    assert call[2] == "infer_with_reference_examples"
+    assert call[3] == {
+        "reference_examples": [
+            {
+                "image": base64.b64decode(_jpeg_b64(4, 4)),
+                "boxes": [
+                    {"x": 1, "y": 1, "w": 2, "h": 2, "cls": "cat", "negative": False}
+                ],
+            }
+        ],
+        "confidence": 0.95,
+    }
+    assert isinstance(call[4], bytes)
+
+
+def test_owlv2_reference_url_is_fetched_through_the_server_fetcher(
+    monkeypatch, fake_stat
+):
+    seen = []
+    fetched = base64.b64decode(_jpeg_b64(4, 4))
+
+    async def _fetch(urls, destination_policy=None):
+        seen.append(list(urls))
+        return [fetched for _ in urls], None
+
+    monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
+    gw = FakeGateway(
+        predictions={(_OWLV2_MODEL_ID, "infer_with_reference_examples"): _det()},
+        model_info={
+            _OWLV2_MODEL_ID: {"actions": {"infer_with_reference_examples": {}}}
+        },
+    )
+    body = _owlv2_body()
+    body["training_data"][0]["image"] = {
+        "type": "url",
+        "value": "https://example.com/ref.jpg",
+    }
+    r = _owlv2_client(monkeypatch, fake_stat, gw).post("/owlv2/infer", json=body)
+    assert r.status_code == 200, r.text
+    assert seen == [["https://example.com/ref.jpg"]]
+    call = next(c for c in gw.calls if c[0] == "infer")
+    images = [example["image"] for example in call[3]["reference_examples"]]
+    assert images == [fetched]
+    assert not any(isinstance(image, str) for image in images)
+
+
+def test_owlv2_refused_reference_url_answers_like_a_refused_image_url(
+    monkeypatch, fake_stat
+):
+    monkeypatch.setattr("inference_server.legacy.common.ALLOW_URL_INPUT", False)
+    gw = FakeGateway()
+    client = _owlv2_client(monkeypatch, fake_stat, gw)
+    body = _owlv2_body()
+    body["training_data"][0]["image"] = {
+        "type": "url",
+        "value": "https://example.com/ref.jpg",
+    }
+    refused_reference = client.post("/owlv2/infer", json=body)
+    refused_image = client.post(
+        "/owlv2/infer",
+        json={
+            **_owlv2_body(),
+            "image": {"type": "url", "value": "https://example.com/a.jpg"},
+        },
+    )
+    assert refused_reference.status_code == refused_image.status_code == 400
+    assert refused_reference.json() == refused_image.json()
+    assert [c for c in gw.calls if c[0] == "infer"] == []
+
+
+def test_owlv2_batch_returns_one_response_per_image(monkeypatch, fake_stat):
+    gw = FakeGateway(
+        predictions={(_OWLV2_MODEL_ID, "infer_with_reference_examples"): _det()},
+        model_info={
+            _OWLV2_MODEL_ID: {"actions": {"infer_with_reference_examples": {}}}
+        },
+    )
+    body = _owlv2_body()
+    body["image"] = [_image(), _image()]
+    r = _owlv2_client(monkeypatch, fake_stat, gw).post("/owlv2/infer", json=body)
+    assert r.status_code == 200, r.text
+    assert [item["predictions"][0]["class"] for item in r.json()] == ["cat", "cat"]
+
+
+def test_owlv2_requires_training_data(monkeypatch, fake_stat):
+    gw = FakeGateway()
+    r = _owlv2_client(monkeypatch, fake_stat, gw).post(
+        "/owlv2/infer", json={"image": _image()}
+    )
+    assert r.status_code == 422
+    assert gw.calls == []
 
 
 def test_lmm_path_body_mismatch_is_400(legacy_client, fake_stat):
@@ -582,17 +734,128 @@ def test_sam2_embed_image_sends_namespaced_image_hash(legacy_client, fake_stat):
     assert call[3] == {"image_hashes": [namespace_client_hash_id("img-1", "k")]}
 
 
-def test_sam2_segment_image_binary_format_is_501(legacy_client, fake_stat):
+def test_sam2_segment_image_binary_returns_compressed_npz(legacy_client, fake_stat):
+    masks = np.zeros((1, 2, 6, 8), dtype=np.float32)
+    masks[0, 1, 1:4, 1:5] = 1.0
+    logits = np.zeros((1, 2, 256, 256), dtype=np.float32)
+    logits[0, 1, :8, :8] = 2.0
     gw = FakeGateway(
-        model_info={
-            "sam2/hiera_large": {"actions": {"segment_with_visual_prompts": {}}}
+        predictions={
+            ("sam2/hiera_large", "segment"): [
+                SimpleNamespace(
+                    masks=masks, scores=np.array([[0.1, 0.8]]), logits=logits
+                )
+            ]
         },
+        model_info={"sam2/hiera_large": {"actions": {"segment": {}}}},
     )
     r = legacy_client(gw).post(
         "/sam2/segment_image", json={"image": _image(), "format": "binary"}
     )
-    assert r.status_code == 501, r.text
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/octet-stream"
+    decoded = np.load(io.BytesIO(r.content))
+    assert set(decoded.files) == {"masks", "low_res_masks"}
+    np.testing.assert_array_equal(decoded["masks"], masks[:, 1])
+    np.testing.assert_array_equal(decoded["low_res_masks"], logits[:, 1])
+
+
+def test_sam_segment_image_binary_returns_compressed_npz(legacy_client, fake_stat):
+    masks = np.zeros((1, 6, 8), dtype=bool)
+    masks[0, 1:4, 1:5] = True
+    logits = np.full((1, 256, 256), -1.5, dtype=np.float32)
+    gw = FakeGateway(
+        predictions={
+            ("sam/vit_h", "segment"): [SimpleNamespace(masks=masks, logits=logits)]
+        },
+        model_info={"sam/vit_h": {"actions": {"segment": {}}}},
+    )
+    r = legacy_client(gw).post(
+        "/sam/segment_image",
+        json={"image": _image(), "format": "binary", "point_coords": [[1, 1]]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/octet-stream"
+    decoded = np.load(io.BytesIO(r.content))
+    np.testing.assert_array_equal(decoded["masks"], masks)
+    np.testing.assert_array_equal(decoded["low_res_masks"], logits)
+
+
+def test_sam3_visual_segment_binary_returns_compressed_npz(legacy_client, fake_stat):
+    masks = np.zeros((1, 1, 6, 8), dtype=np.float32)
+    logits = np.zeros((1, 1, 256, 256), dtype=np.float32)
+    gw = FakeGateway(
+        predictions={
+            ("sam3/sam3_interactive", "segment_with_visual_prompts"): [
+                SimpleNamespace(masks=masks, scores=np.array([0.9]), logits=logits)
+            ]
+        },
+        model_info={
+            "sam3/sam3_interactive": {"actions": {"segment_with_visual_prompts": {}}}
+        },
+    )
+    r = legacy_client(gw).post(
+        "/sam3/visual_segment", json={"image": _image(), "format": "binary"}
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/octet-stream"
+    decoded = np.load(io.BytesIO(r.content))
+    assert set(decoded.files) == {"masks", "low_res_masks"}
+    params = _infer_params(gw)
+    assert params["mask_format"] == "dense" and params["return_logits"] is True
+
+
+def test_lmm_missing_prompt_is_sent_as_none_for_families_with_a_default(
+    legacy_client, fake_stat
+):
+    fake_stat["qwen25vl/x"] = ("vlm", "prompt")
+    gw = FakeGateway(
+        predictions={("qwen25vl/x", "prompt"): ["a cat"]},
+        model_info={
+            "qwen25vl/x": {"actions": {"prompt": {}}, "model_class_name": "Qwen25VLHF"}
+        },
+    )
+    r = legacy_client(gw).post(
+        "/infer/lmm", json={"model_id": "qwen25vl/x", "image": _image()}
+    )
+    assert r.status_code == 200, r.text
+    assert _infer_params(gw) == {"prompt": None}
+
+
+def test_lmm_missing_prompt_is_400_for_florence2(legacy_client, fake_stat):
+    fake_stat["florence-2/x"] = ("vlm", "prompt")
+    gw = FakeGateway(
+        model_info={
+            "florence-2/x": {
+                "actions": {"prompt": {}},
+                "model_class_name": "Florence2HF",
+            }
+        },
+    )
+    r = legacy_client(gw).post(
+        "/infer/lmm", json={"model_id": "florence-2/x", "image": _image()}
+    )
+    assert r.status_code == 400, r.text
     assert not [c for c in gw.calls if c[0] == "infer"]
+
+
+def test_lmm_florence2_prompt_carries_the_task_token(legacy_client, fake_stat):
+    fake_stat["florence-2/x"] = ("vlm", "prompt")
+    gw = FakeGateway(
+        predictions={("florence-2/x", "prompt"): [{"<OD>": {"bboxes": []}}]},
+        model_info={
+            "florence-2/x": {
+                "actions": {"prompt": {}},
+                "model_class_name": "Florence2HF",
+            }
+        },
+    )
+    r = legacy_client(gw).post(
+        "/infer/lmm",
+        json={"model_id": "florence-2/x", "image": _image(), "prompt": "<OD>"},
+    )
+    assert r.status_code == 200, r.text
+    assert _infer_params(gw) == {"prompt": "<OD>", "task": "<OD>"}
 
 
 def test_sam3_concept_segment_rejects_fine_tuned_model_id(

@@ -11,16 +11,19 @@ from inference_server.legacy.entities import (
     EasyOCRInferenceRequest,
     GroundingDINOInferenceRequest,
     LMMInferenceRequest,
+    OwlV2InferenceRequest,
     YOLOWorldInferenceRequest,
 )
 from inference_server.legacy.errors import LegacyHTTPError
 from inference_server.legacy.translation import (
     build_embedding_calls,
+    build_few_shot_params,
     build_open_vocabulary_params,
     build_vlm_params,
     encode_normalized_depth_to_png8,
     encode_normalized_depth_to_png16,
     ensure_ocr_request_supported,
+    few_shot_class_names,
     repack_depth_estimation,
     repack_embedding_response,
     repack_moondream_detection,
@@ -149,24 +152,81 @@ def test_open_vocabulary_params():
     dino = GroundingDINOInferenceRequest(image=IMG, text=["cat"])
     assert build_open_vocabulary_params(dino) == {
         "classes": ["cat"],
+        "box_confidence": 0.5,
+        "text_confidence": 0.5,
         "class_agnostic_nms": False,
     }
 
 
-def test_open_vocabulary_params_reject_custom_thresholds():
-    req = GroundingDINOInferenceRequest(image=IMG, text=["cat"], box_threshold=0.1)
-    with pytest.raises(LegacyHTTPError) as error:
-        build_open_vocabulary_params(req)
-    assert error.value.status_code == 501
+def test_grounding_dino_thresholds_map_to_model_confidences():
+    req = GroundingDINOInferenceRequest(
+        image=IMG, text=["cat"], box_threshold=0.1, text_threshold=0.2
+    )
+    params = build_open_vocabulary_params(req)
+    assert params["box_confidence"] == 0.1
+    assert params["text_confidence"] == 0.2
+    assert "box_threshold" not in params and "text_threshold" not in params
 
 
-def test_vlm_params_require_prompt():
+def test_vlm_params_carry_prompt_and_generation_options():
     assert build_vlm_params(
         LMMInferenceRequest(model_id="m/1", image=IMG, prompt="hi", max_new_tokens=5)
     ) == {"prompt": "hi", "max_new_tokens": 5}
+
+
+@pytest.mark.parametrize("model_class_name", ["Florence2HF", "PaliGemmaHF"])
+def test_vlm_params_require_prompt_for_families_without_a_default(model_class_name):
     with pytest.raises(LegacyHTTPError) as error:
-        build_vlm_params(LMMInferenceRequest(model_id="m/1", image=IMG))
-    assert error.value.status_code == 501
+        build_vlm_params(
+            LMMInferenceRequest(model_id="m/1", image=IMG),
+            model_class_name=model_class_name,
+        )
+    assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "model_class_name",
+    [
+        "Qwen25VLHF",
+        "Qwen3VLHF",
+        "Qwen35HF",
+        "Cosmos3EdgeReasoner",
+        "Gemma4HF",
+        "SmolVLMHF",
+        None,
+    ],
+)
+def test_vlm_params_let_families_with_a_default_prompt_omit_it(model_class_name):
+    params = build_vlm_params(
+        LMMInferenceRequest(model_id="m/1", image=IMG),
+        model_class_name=model_class_name,
+    )
+    assert params == {"prompt": None}
+
+
+@pytest.mark.parametrize(
+    "prompt,task",
+    [
+        ("<CAPTION>", "<CAPTION>"),
+        ("<CAPTION_TO_PHRASE_GROUNDING>a cat", "<CAPTION_TO_PHRASE_GROUNDING>"),
+        ("<OD>", "<OD>"),
+        ("describe", "describe>"),
+    ],
+)
+def test_florence2_task_is_derived_from_the_prompt(prompt, task):
+    params = build_vlm_params(
+        LMMInferenceRequest(model_id="m/1", image=IMG, prompt=prompt),
+        model_class_name="Florence2HF",
+    )
+    assert params == {"prompt": prompt, "task": task}
+
+
+def test_task_is_not_derived_for_other_vlm_families():
+    params = build_vlm_params(
+        LMMInferenceRequest(model_id="m/1", image=IMG, prompt="<OD>"),
+        model_class_name="Qwen25VLHF",
+    )
+    assert params == {"prompt": "<OD>"}
 
 
 def test_vlm_repack_string_and_dict():
@@ -281,13 +341,82 @@ def test_text_ocr():
     assert repack_text_ocr_response(["abc"], (1, 1)).result == "abc"
 
 
-def test_ensure_ocr_request_supported():
-    ensure_ocr_request_supported(EasyOCRInferenceRequest(image=IMG))
-    with pytest.raises(LegacyHTTPError) as error:
-        ensure_ocr_request_supported(
-            EasyOCRInferenceRequest(image=IMG, language_codes=["pl"])
-        )
-    assert error.value.status_code == 501
-    with pytest.raises(LegacyHTTPError) as quantize_error:
-        ensure_ocr_request_supported(EasyOCRInferenceRequest(image=IMG, quantize=True))
-    assert quantize_error.value.status_code == 501
+def test_pp_ocr_empty_text_box_keeps_empty_class_and_zero_class_id():
+    det = SimpleNamespace(
+        xyxy=np.array([[0, 0, 2, 2], [0, 3, 2, 5]], dtype=float),
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.array([0, 0]),
+        bboxes_metadata=[{"text": "word"}, {"text": ""}],
+    )
+    req = SimpleNamespace(class_filter=None)
+    resp = repack_structured_ocr_response(
+        ([""], [det]),
+        (4, 8),
+        None,
+        req,
+        generate_bounding_boxes=True,
+        class_from_text=True,
+    )
+    assert [(p.class_name, p.class_id) for p in resp.predictions] == [
+        ("word", 0),
+        ("", 0),
+    ]
+    assert resp.image.width == 4 and resp.image.height == 8
+
+
+def test_easy_ocr_options_are_accepted_and_ignored(caplog):
+    request = EasyOCRInferenceRequest(image=IMG, language_codes=["pl"], quantize=True)
+    with caplog.at_level("DEBUG", logger="inference_server.legacy.translation"):
+        ensure_ocr_request_supported(request)
+    assert len(caplog.records) == 1
+    assert "language_codes" in caplog.text and "quantize" in caplog.text
+
+
+def test_easy_ocr_default_options_log_nothing(caplog):
+    with caplog.at_level("DEBUG", logger="inference_server.legacy.translation"):
+        ensure_ocr_request_supported(EasyOCRInferenceRequest(image=IMG))
+    assert caplog.records == []
+
+
+def _owlv2_request(**kwargs):
+    return OwlV2InferenceRequest(
+        image=IMG,
+        training_data=[
+            {
+                "image": {"type": "base64", "value": "ref"},
+                "boxes": [
+                    {"x": 10, "y": 20, "w": 30, "h": 40, "cls": "dog"},
+                    {"x": 1, "y": 2, "w": 3, "h": 4, "cls": "cat", "negative": True},
+                ],
+            }
+        ],
+        **kwargs,
+    )
+
+
+def test_few_shot_params_map_training_data_to_reference_examples():
+    assert build_few_shot_params(_owlv2_request(confidence=0.9), [b"ref"]) == {
+        "reference_examples": [
+            {
+                "image": b"ref",
+                "boxes": [
+                    {
+                        "x": 10,
+                        "y": 20,
+                        "w": 30,
+                        "h": 40,
+                        "cls": "dog",
+                        "negative": False,
+                    },
+                    {"x": 1, "y": 2, "w": 3, "h": 4, "cls": "cat", "negative": True},
+                ],
+            }
+        ],
+        "confidence": 0.9,
+    }
+
+
+def test_few_shot_class_names_prefer_the_model_mapping():
+    detections = SimpleNamespace(image_metadata={"class_names": ["cat", "dog"]})
+    assert few_shot_class_names(detections, _owlv2_request()) == ["cat", "dog"]
+    assert few_shot_class_names(SimpleNamespace(), _owlv2_request()) == ["cat", "dog"]

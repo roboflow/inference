@@ -125,13 +125,6 @@ def _compare(**overrides):
         ),
         pytest.param(
             "/sam/segment_image",
-            {"image": _image(), "has_mask_input": True},
-            SAM_ACTIONS,
-            "Must provide either mask_input or cached image_id",
-            id="sam-mask-input-without-image-id",
-        ),
-        pytest.param(
-            "/sam/segment_image",
             {"image": _image(), "format": "rle"},
             SAM_ACTIONS,
             "Invalid format rle",

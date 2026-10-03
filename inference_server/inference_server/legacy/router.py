@@ -66,6 +66,7 @@ from inference_server.legacy.entities import (
     ObjectDetectionInferenceRequest,
     ObjectDetectionInferenceResponse,
     OCRInferenceResponse,
+    OwlV2InferenceRequest,
     PerceptionEncoderCompareRequest,
     PerceptionEncoderCompareResponse,
     PerceptionEncoderEmbeddingResponse,
@@ -97,6 +98,7 @@ from inference_server.legacy.errors import (
 from inference_server.legacy.telemetry_recording import record_telemetry
 from inference_server.legacy.translation import (
     build_embedding_calls,
+    build_few_shot_params,
     build_interactive_segmentation_params,
     build_open_vocabulary_params,
     build_task_params,
@@ -105,6 +107,7 @@ from inference_server.legacy.translation import (
     encode_normalized_depth_to_png16,
     ensure_ocr_request_supported,
     ensure_request_supported,
+    few_shot_class_names,
     is_metric_depth_model_class,
     repack_depth_estimation,
     repack_embedding_response,
@@ -683,15 +686,23 @@ async def infer_sam3_3d(request: Request) -> Response:
     raise LegacyHTTPError(501, _TASK_UNAVAILABLE_MESSAGE.format(route="/sam3_3d/infer"))
 
 
-@owlv2_router.post("/owlv2/infer")
+@owlv2_router.post(
+    "/owlv2/infer",
+    response_model=Union[
+        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
+    ],
+    summary="Owlv2 image prompting",
+    description="Run the google owlv2 model to few-shot object detect",
+    response_model_exclude_none=True,
+)
 @with_legacy_errors
 @report_request_usage
-async def infer_owlv2(request: Request) -> Response:
-    raise LegacyHTTPError(
-        501,
-        "/owlv2/infer few-shot detection with training_data is not available "
-        "on inference_server",
-    )
+async def infer_owlv2(
+    request: Request,
+    inference_request: OwlV2InferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_few_shot_detection(request, inference_request, bridge, "owlv2")
 
 
 async def _catch_all_image(
@@ -1082,6 +1093,53 @@ async def _run_open_vocabulary_detection(
     return responses if is_batch else responses[0]
 
 
+async def _run_few_shot_detection(
+    request: Request,
+    inference_request,
+    bridge: LegacyModelBridge,
+    core: str,
+) -> Any:
+    route, _, api_key = await _resolve_core_model(
+        request, inference_request, bridge, core
+    )
+    payloads, is_batch = await _load_images(inference_request, bridge)
+    references = await load_request_images(
+        [example.image for example in inference_request.training_data],
+        ndarray_ok=False,
+    )
+    params = build_few_shot_params(
+        inference_request, [reference.data for reference in references]
+    )
+    started = time.perf_counter()
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        "infer_with_reference_examples",
+        payloads,
+        params,
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
+    elapsed = time.perf_counter() - started
+    responses = []
+    for prediction, payload in zip(predictions, payloads):
+        response = repack_object_detection_response(
+            prediction,
+            (payload.width, payload.height),
+            few_shot_class_names(prediction, inference_request),
+            inference_request,
+        )
+        response.time = elapsed
+        response.inference_id = inference_request.id
+        response.resolved_model = resolved_model_for(route)
+        if inference_request.visualize_predictions:
+            response.visualization = render_visualization(
+                route, inference_request, response, payload
+            )
+        responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
+    return responses if is_batch else responses[0]
+
+
 @clip_router.post(
     "/clip/embed_image",
     response_model=ClipEmbeddingResponse,
@@ -1359,7 +1417,9 @@ async def _run_lmm(
     if action == "detect":
         params = {"classes": [getattr(inference_request, "prompt", None)]}
     else:
-        params = build_vlm_params(inference_request)
+        params = build_vlm_params(
+            inference_request, model_class_name=route.model_class_name
+        )
     payloads, is_batch = await _load_images(inference_request, bridge)
     started = time.perf_counter()
     predictions = await bridge.infer(
@@ -1589,6 +1649,10 @@ async def _run_interactive_segmentation(
     response = repack_interactive_segmentation_response(
         action, prediction, inference_request, api_key
     )
+    if isinstance(response, bytes):
+        return Response(
+            content=response, headers={"Content-Type": "application/octet-stream"}
+        )
     response.time = elapsed
     response.inference_id = inference_request.id
     response.resolved_model = resolved_model_for(route)

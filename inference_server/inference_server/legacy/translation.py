@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -49,6 +50,8 @@ from inference_server.legacy.entities import (
     SemanticSegmentationPrediction,
 )
 from inference_server.legacy.errors import LegacyHTTPError
+
+logger = logging.getLogger(__name__)
 
 _DISABLE_PREPROC_FIELDS = (
     "disable_preproc_auto_orient",
@@ -624,11 +627,18 @@ def resolve_request_action(route: Route, request: Any) -> str:
     return route.action
 
 
-def build_vlm_params(request: Any) -> dict:
+FLORENCE2_MODEL_CLASS = "Florence2HF"
+_VLM_CLASSES_REQUIRING_PROMPT = frozenset({FLORENCE2_MODEL_CLASS, "PaliGemmaHF"})
+_IGNORED_OCR_OPTIONS = (("language_codes", ["en"]), ("quantize", False))
+
+
+def build_vlm_params(request: Any, *, model_class_name: Optional[str] = None) -> dict:
     prompt = getattr(request, "prompt", None)
-    if not prompt:
-        raise LegacyHTTPError(501, "VLM inference requires a prompt.")
-    params: dict = {"prompt": prompt}
+    if not prompt and model_class_name in _VLM_CLASSES_REQUIRING_PROMPT:
+        raise LegacyHTTPError(400, f"{model_class_name} inference requires a prompt.")
+    params: dict = {"prompt": prompt or None}
+    if model_class_name == FLORENCE2_MODEL_CLASS:
+        params["task"] = prompt.split(">")[0] + ">"
     max_new_tokens = getattr(request, "max_new_tokens", None)
     if max_new_tokens is not None:
         params["max_new_tokens"] = int(max_new_tokens)
@@ -638,37 +648,61 @@ def build_vlm_params(request: Any) -> dict:
 
 
 def ensure_ocr_request_supported(request: Any) -> None:
-    language_codes = getattr(request, "language_codes", None)
-    if language_codes is not None and list(language_codes) != ["en"]:
-        raise LegacyHTTPError(
-            501, "language_codes other than ['en'] are not supported."
-        )
-    if getattr(request, "quantize", False):
-        raise LegacyHTTPError(501, "quantize is not supported.")
+    ignored = {
+        name: getattr(request, name, default)
+        for name, default in _IGNORED_OCR_OPTIONS
+        if getattr(request, name, default) != default
+    }
+    if ignored:
+        logger.debug("Ignoring OCR request options %s", ignored)
 
 
 def build_open_vocabulary_params(request: Any) -> dict:
     classes = getattr(request, "text", None) or getattr(request, "classes", None)
-    if getattr(request, "training_data", None) is not None:
-        raise LegacyHTTPError(
-            501, "Few-shot detection with training_data is not supported."
-        )
     if not classes:
         raise LegacyHTTPError(
             501, "Open-vocabulary detection requires a list of classes."
         )
-    for field, default in (("box_threshold", 0.5), ("text_threshold", 0.5)):
-        value = getattr(request, field, None)
-        if value is not None and value != default:
-            raise LegacyHTTPError(501, f"{field} is not supported.")
     params: dict = {"classes": [str(name) for name in classes]}
     confidence = _numeric_confidence(getattr(request, "confidence", None))
     if confidence is not None:
         params["confidence"] = confidence
+    box_threshold = getattr(request, "box_threshold", None)
+    if box_threshold is not None:
+        params["box_confidence"] = float(box_threshold)
+    text_threshold = getattr(request, "text_threshold", None)
+    if text_threshold is not None:
+        params["text_confidence"] = float(text_threshold)
     class_agnostic_nms = getattr(request, "class_agnostic_nms", None)
     if class_agnostic_nms is not None:
         params["class_agnostic_nms"] = bool(class_agnostic_nms)
     return params
+
+
+def build_few_shot_params(request: Any, reference_images: List[bytes]) -> dict:
+    reference_examples = [
+        {
+            "image": image,
+            "boxes": [box.model_dump() for box in example.boxes],
+        }
+        for example, image in zip(request.training_data, reference_images)
+    ]
+    params: dict = {"reference_examples": reference_examples}
+    confidence = _numeric_confidence(getattr(request, "confidence", None))
+    if confidence is not None:
+        params["confidence"] = confidence
+    return params
+
+
+def few_shot_class_names(prediction: Any, request: Any) -> List[str]:
+    detections = unwrap_single_prediction(prediction)
+    class_names = (getattr(detections, "image_metadata", None) or {}).get("class_names")
+    if class_names:
+        return list(class_names)
+    requested = sorted(
+        {box.cls for example in request.training_data for box in example.boxes}
+    )
+    return requested
 
 
 def requested_open_vocabulary_classes(request: Any) -> List[str]:
@@ -921,15 +955,10 @@ def repack_text_ocr_response(
 BINARY_FORMAT_UNSUPPORTED_MESSAGE = (
     "format='binary' is not supported on inference_server."
 )
-_SEGMENT_ACTIONS = (
-    "segment",
-    "segment_with_visual_prompts",
-    "segment_with_text_prompts",
-)
-_MASK_INPUT_UNSUPPORTED_MESSAGE = "mask_input is not supported on inference_server."
 _EMBEDDINGS_INPUT_UNSUPPORTED_MESSAGE = (
     "embeddings input is not supported on inference_server."
 )
+_SAM_LOW_RES_MASK_SIZE = 256
 
 
 def build_interactive_segmentation_params(
@@ -946,15 +975,16 @@ def build_interactive_segmentation_params(
         if action == "embed_images":
             params["return_embeddings"] = False
         return params
-    if action in _SEGMENT_ACTIONS:
-        if getattr(request, "format", None) == "binary":
-            raise LegacyHTTPError(501, BINARY_FORMAT_UNSUPPORTED_MESSAGE)
     if action == "segment":
         if type(request).__name__ == "SamSegmentationRequest":
             return _build_sam_segment_params(request, api_key)
         return _build_sam2_segment_params(request, api_key, model_id)
     if action == "segment_with_visual_prompts":
-        return _build_visual_prompt_params(request, api_key, model_id)
+        params = _build_visual_prompt_params(request, api_key, model_id)
+        if getattr(request, "format", None) == "binary":
+            params["mask_format"] = "dense"
+            params["return_logits"] = True
+        return params
     if action == "segment_with_text_prompts":
         return _build_text_prompt_params(request)
     raise LegacyHTTPError(
@@ -971,21 +1001,22 @@ def _build_sam_segment_params(request: Any, api_key: Optional[str]) -> dict:
         raise LegacyHTTPError(
             400, "Must provide either image, cached image_id, or embeddings"
         )
+    response_format = getattr(request, "format", None)
+    if response_format not in ("json", "binary"):
+        raise LegacyHTTPError(400, f"Invalid format {response_format}")
+
     params: dict = {"multi_mask_output": False}
+    mask_input = getattr(request, "mask_input", None)
     if getattr(request, "has_mask_input", False):
-        if getattr(request, "mask_input", None) is not None:
-            raise LegacyHTTPError(501, _MASK_INPUT_UNSUPPORTED_MESSAGE)
-        if not getattr(request, "use_mask_input_cache", True):
-            raise LegacyHTTPError(
-                501,
-                "has_mask_input without use_mask_input_cache is not supported on "
-                "inference_server.",
-            )
-        if not image_id:
-            raise LegacyHTTPError(
-                400, "Must provide either mask_input or cached image_id"
-            )
         params["enforce_mask_input"] = True
+        if mask_input is not None:
+            mask_input = _decode_sam_mask_input(
+                mask_input, getattr(request, "mask_input_format", "json")
+            )
+    if mask_input is not None:
+        params["mask_input"] = [mask_input]
+    if not getattr(request, "use_mask_input_cache", True):
+        params["use_mask_input_cache"] = False
     point_coords = getattr(request, "point_coords", None)
     if point_coords is not None:
         params["point_coordinates"] = [[list(point) for point in point_coords]]
@@ -994,17 +1025,30 @@ def _build_sam_segment_params(request: Any, api_key: Optional[str]) -> dict:
         params["point_labels"] = [list(point_labels)]
     if image_id:
         params["image_hashes"] = [namespace_client_hash_id(image_id, api_key)]
-    response_format = getattr(request, "format", None)
-    if response_format != "json":
-        raise LegacyHTTPError(400, f"Invalid format {response_format}")
     return params
+
+
+def _decode_sam_mask_input(mask_input: Any, mask_input_format: Optional[str]) -> Any:
+    if mask_input_format == "json":
+        size = _SAM_LOW_RES_MASK_SIZE
+        rasters = np.zeros((len(mask_input), size, size), dtype=np.uint8)
+        for index, polygon in enumerate(mask_input):
+            points = np.asarray(polygon, dtype=np.int32).reshape(-1, 1, 2)
+            cv2.fillPoly(rasters[index], [points], 1)
+        return rasters
+    if mask_input_format == "binary":
+        decoded = np.load(io.BytesIO(base64.b64decode(mask_input)))
+        if not isinstance(decoded, np.ndarray):
+            raise LegacyHTTPError(400, "Binary mask_input must be a single .npy array")
+        return decoded
+    return mask_input
 
 
 def _build_sam2_segment_params(
     request: Any, api_key: Optional[str], model_id: Optional[str]
 ) -> dict:
     response_format = getattr(request, "format", None)
-    if response_format not in ("json", "rle"):
+    if response_format not in ("json", "rle", "binary"):
         raise LegacyHTTPError(400, f"Invalid format {response_format}")
     params = _build_visual_prompt_params(request, api_key, model_id)
     if not any(key in params for key in ("point_coordinates", "point_labels", "boxes")):
@@ -1023,10 +1067,6 @@ def _logits_cache_disabled(model_id: Optional[str]) -> bool:
 def _build_visual_prompt_params(
     request: Any, api_key: Optional[str], model_id: Optional[str]
 ) -> dict:
-    if getattr(request, "mask_input", None) is not None or getattr(
-        request, "has_mask_input", False
-    ):
-        raise LegacyHTTPError(501, _MASK_INPUT_UNSUPPORTED_MESSAGE)
     prompts = getattr(request, "prompts", None)
     if prompts is not None:
         args = prompts.to_sam2_inputs()
@@ -1073,6 +1113,8 @@ def _pad_points(
 
 
 def _build_text_prompt_params(request: Any) -> dict:
+    if getattr(request, "format", None) == "binary":
+        raise LegacyHTTPError(501, BINARY_FORMAT_UNSUPPORTED_MESSAGE)
     prompts = getattr(request, "prompts", None)
     if not prompts:
         raise LegacyHTTPError(
@@ -1092,14 +1134,21 @@ def _build_text_prompt_params(request: Any) -> dict:
 
 def repack_interactive_segmentation_response(
     action: str, prediction: Any, request: Any, api_key: Optional[str]
-) -> BaseModel:
+) -> Union[BaseModel, bytes]:
     if action in ("embed", "embed_images"):
         return _repack_sam_embeddings(action, prediction, request, api_key)
+    binary = getattr(request, "format", None) == "binary"
     if action == "segment":
         if type(request).__name__ == "SamSegmentationRequest":
+            if binary:
+                return _repack_sam_binary_masks(prediction)
             return _repack_sam_segmentation(prediction)
+        if binary:
+            return _repack_sam2_binary_masks(prediction)
         return _repack_sam2_segmentation(prediction, request)
     if action == "segment_with_visual_prompts":
+        if binary:
+            return _repack_sam_binary_masks(prediction)
         return _repack_visual_segmentation(prediction, request)
     if action == "segment_with_text_prompts":
         return _repack_text_segmentation(prediction, request)
@@ -1107,6 +1156,26 @@ def repack_interactive_segmentation_response(
         501,
         f"No response translation for SAM action '{action}' on inference_server.",
     )
+
+
+def _pack_sam_masks(masks: np.ndarray, low_res_masks: np.ndarray) -> bytes:
+    buffer = io.BytesIO()
+    np.savez_compressed(buffer, masks=masks, low_res_masks=low_res_masks)
+    return buffer.getvalue()
+
+
+def _repack_sam_binary_masks(prediction: Any) -> bytes:
+    result = unwrap_single_prediction(prediction)
+    packed = _pack_sam_masks(np.asarray(result.masks), np.asarray(result.logits))
+    return packed
+
+
+def _repack_sam2_binary_masks(prediction: Any) -> bytes:
+    result = unwrap_single_prediction(prediction)
+    masks, _ = _choose_most_confident_sam_masks(result.masks, result.scores)
+    logits, _ = _choose_most_confident_sam_masks(result.logits, result.scores)
+    packed = _pack_sam_masks(masks, logits)
+    return packed
 
 
 def _repack_sam_embeddings(

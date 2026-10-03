@@ -380,6 +380,40 @@ def test_key_remembered_by_add_model_is_reused_by_keyless_calls():
     assert ("resolve", "depth-anything-v2/small", "req-key") in b.calls
 
 
+def _florence_bridge():
+    b = FakeSyncBridge()
+    b.routes["florence-2-base"] = Route(
+        model_id="florence-2-base",
+        registry_id="florence-2-base",
+        task_type="vlm",
+        action="prompt",
+        actions={"prompt"},
+        model_class_name="Florence2HF",
+    )
+    b.predictions[("florence-2-base", "prompt")] = ["done"]
+    return b
+
+
+def test_lmm_on_a_florence2_route_derives_the_task_from_the_prompt():
+    b = _florence_bridge()
+    GatewayModelsProvider(b, api_key=None).run_lmm(
+        "florence-2-base",
+        {"type": "numpy_object", "value": np.zeros((2, 2, 3), np.uint8)},
+        "<OD>",
+    )
+    assert b.calls[0][2]["task"] == "<OD>"
+
+
+def test_lmm_on_a_florence2_route_rejects_a_missing_prompt():
+    b = _florence_bridge()
+    with pytest.raises(LegacyHTTPError):
+        GatewayModelsProvider(b, api_key=None).run_lmm(
+            "florence-2-base",
+            {"type": "numpy_object", "value": np.zeros((2, 2, 3), np.uint8)},
+            "",
+        )
+
+
 def test_depth_estimation_returns_normalized_depth_and_image():
     b = FakeSyncBridge()
     b.routes["depth-anything-v2/small"] = Route(

@@ -1,3 +1,5 @@
+import base64
+import io
 from types import SimpleNamespace
 
 import numpy as np
@@ -72,10 +74,153 @@ def test_sam1_segment_params():
         "point_coordinates": [[[1, 2]]],
         "point_labels": [[1]],
     }
-    with pytest.raises(LegacyHTTPError):
+    with pytest.raises(LegacyHTTPError) as error:
         build_interactive_segmentation_params(
-            "segment", SamSegmentationRequest(image=IMG, format="binary"), None
+            "segment", SamSegmentationRequest(image=IMG, format="png"), None
         )
+    assert error.value.status_code == 400
+
+
+def test_sam1_binary_format_is_accepted():
+    req = SamSegmentationRequest(image=IMG, format="binary")
+    params = build_interactive_segmentation_params("segment", req, None)
+    assert params["multi_mask_output"] is False
+
+
+def test_sam1_mask_input_list_is_forwarded_under_mask_input():
+    mask = np.zeros((1, 256, 256), dtype=float).tolist()
+    req = SamSegmentationRequest(
+        image=IMG, has_mask_input=True, mask_input=mask, mask_input_format="list"
+    )
+    params = build_interactive_segmentation_params("segment", req, None)
+    assert params["enforce_mask_input"] is True
+    assert params["mask_input"] == [mask]
+
+
+def test_sam1_mask_input_binary_is_decoded_from_base64_npy():
+    mask = np.random.default_rng(0).random((1, 256, 256), dtype=np.float32)
+    buffer = io.BytesIO()
+    np.save(buffer, mask)
+    req = SamSegmentationRequest(
+        image=IMG,
+        has_mask_input=True,
+        mask_input=base64.b64encode(buffer.getvalue()).decode("ascii"),
+        mask_input_format="binary",
+    )
+    params = build_interactive_segmentation_params("segment", req, None)
+    assert len(params["mask_input"]) == 1
+    np.testing.assert_array_equal(params["mask_input"][0], mask)
+
+
+def test_sam1_mask_input_polygons_are_rasterized_to_low_res_masks():
+    polygon = [[10, 10], [100, 10], [100, 100], [10, 100]]
+    req = SamSegmentationRequest(
+        image=IMG, has_mask_input=True, mask_input=[polygon], mask_input_format="json"
+    )
+    params = build_interactive_segmentation_params("segment", req, None)
+    raster = params["mask_input"][0]
+    assert raster.shape == (1, 256, 256) and raster.dtype == np.uint8
+    assert raster[0, 50, 50] == 1 and raster[0, 5, 5] == 0 and raster[0, 200, 200] == 0
+
+
+def test_sam1_cached_mask_input_only_enforces_the_mask():
+    req = SamSegmentationRequest(
+        image=IMG, image_id="img-1", has_mask_input=True, use_mask_input_cache=False
+    )
+    params = build_interactive_segmentation_params("segment", req, "key")
+    assert params["enforce_mask_input"] is True
+    assert params["use_mask_input_cache"] is False
+    assert "mask_input" not in params
+    assert params["image_hashes"] == [namespace_client_hash_id("img-1", "key")]
+
+
+def test_sam1_cached_mask_input_without_image_id_is_looked_up_by_image_hash():
+    req = SamSegmentationRequest(image=IMG, has_mask_input=True)
+    params = build_interactive_segmentation_params("segment", req, "key")
+    assert params["enforce_mask_input"] is True
+    assert "image_hashes" not in params and "mask_input" not in params
+
+
+def test_sam1_mask_input_without_has_mask_input_is_passed_through():
+    mask = np.zeros((256, 256), dtype=float).tolist()
+    req = SamSegmentationRequest(image=IMG, mask_input=mask)
+    params = build_interactive_segmentation_params("segment", req, None)
+    assert params["mask_input"] == [mask]
+    assert "enforce_mask_input" not in params
+
+
+def test_sam1_binary_response_packs_masks_and_low_res_masks():
+    masks = np.zeros((1, 4, 4), dtype=bool)
+    masks[0, 1:3, 1:3] = True
+    logits = np.random.default_rng(1).random((1, 256, 256), dtype=np.float32)
+    req = SamSegmentationRequest(image=IMG, format="binary")
+    payload = repack_interactive_segmentation_response(
+        "segment", [SimpleNamespace(masks=masks, logits=logits)], req, None
+    )
+    assert isinstance(payload, bytes)
+    decoded = np.load(io.BytesIO(payload))
+    assert set(decoded.files) == {"masks", "low_res_masks"}
+    np.testing.assert_array_equal(decoded["masks"], masks)
+    np.testing.assert_array_equal(decoded["low_res_masks"], logits)
+
+
+def test_sam2_binary_format_is_accepted_and_requests_logits():
+    req = Sam2SegmentationRequest(image=IMG, format="binary")
+    params = build_interactive_segmentation_params("segment", req, None)
+    assert params["return_logits"] is True
+
+
+def test_sam2_binary_response_picks_most_confident_masks_and_logits():
+    masks = np.zeros((1, 2, 4, 4), dtype=np.float32)
+    masks[0, 1, 1:3, 1:3] = 1.0
+    logits = np.zeros((1, 2, 256, 256), dtype=np.float32)
+    logits[0, 1] = 0.5
+    pred = SimpleNamespace(masks=masks, scores=np.array([[0.2, 0.9]]), logits=logits)
+    req = Sam2SegmentationRequest(image=IMG, format="binary")
+    payload = repack_interactive_segmentation_response("segment", [pred], req, None)
+    decoded = np.load(io.BytesIO(payload))
+    assert set(decoded.files) == {"masks", "low_res_masks"}
+    np.testing.assert_array_equal(decoded["masks"], masks[:, 1])
+    np.testing.assert_array_equal(decoded["low_res_masks"], logits[:, 1])
+
+
+def test_sam3_visual_binary_params_request_dense_masks_with_logits():
+    req = Sam2SegmentationRequest(image=IMG, format="binary")
+    params = build_interactive_segmentation_params(
+        "segment_with_visual_prompts", req, None, model_id="sam3/sam3_interactive"
+    )
+    assert params["mask_format"] == "dense"
+    assert params["return_logits"] is True
+    polygon_params = build_interactive_segmentation_params(
+        "segment_with_visual_prompts",
+        Sam2SegmentationRequest(image=IMG),
+        None,
+        model_id="sam3/sam3_interactive",
+    )
+    assert "mask_format" not in polygon_params and "return_logits" not in polygon_params
+
+
+def test_sam3_visual_binary_response_packs_masks_as_returned():
+    masks = np.random.default_rng(2).random((2, 1, 4, 4), dtype=np.float32)
+    logits = np.random.default_rng(3).random((2, 1, 256, 256), dtype=np.float32)
+    pred = SimpleNamespace(masks=masks, scores=np.array([0.7, 0.6]), logits=logits)
+    req = Sam2SegmentationRequest(image=IMG, format="binary")
+    payload = repack_interactive_segmentation_response(
+        "segment_with_visual_prompts", [pred], req, None
+    )
+    decoded = np.load(io.BytesIO(payload))
+    np.testing.assert_array_equal(decoded["masks"], masks)
+    np.testing.assert_array_equal(decoded["low_res_masks"], logits)
+
+
+def test_sam3_concept_binary_is_501():
+    req = Sam3SegmentationRequest(
+        image=IMG, prompts=[Sam3Prompt(text="cat")], format="binary"
+    )
+    with pytest.raises(LegacyHTTPError) as error:
+        build_interactive_segmentation_params("segment_with_text_prompts", req, None)
+    assert error.value.status_code == 501
+    assert str(error.value) == ("format='binary' is not supported on inference_server.")
 
 
 def test_sam2_visual_prompt_params_pad_points():

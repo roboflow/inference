@@ -746,7 +746,7 @@ class GatewayModelsProvider:
         if action == "detect":
             params = {"classes": [getattr(request, "prompt", None)]}
         else:
-            params = build_vlm_params(request)
+            params = build_vlm_params(request, model_class_name=route.model_class_name)
         payloads = self._request_payloads(request)
         started = time.perf_counter()
         predictions = self._bridge.infer(route, key, action, payloads, params)
