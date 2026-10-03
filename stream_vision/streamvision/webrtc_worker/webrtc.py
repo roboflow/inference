@@ -12,6 +12,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 import orjson
 import supervision as sv
 from aioice import ice
+from aioice.stun import Method, TransactionFailed
 from aiortc import (
     RTCConfiguration,
     RTCDataChannel,
@@ -903,6 +904,33 @@ async def _deliver_answer(
         await delivery
 
 
+def _quiet_turn_bind_failures(loop: asyncio.AbstractEventLoop) -> None:
+    """Demote refused TURN channel binds (403) that aioice never awaits to debug logs.
+
+    aioice binds a TURN channel per remote candidate without awaiting the task.
+
+    Args:
+        loop: The event loop running the peer connection.
+    """
+
+    def handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        exception = context.get("exception")
+        if "future" in context and isinstance(exception, TransactionFailed):
+            error_code, _ = exception.response.attributes.get(
+                "ERROR-CODE", (None, None)
+            )
+            if (
+                exception.response.message_method == Method.CHANNEL_BIND
+                and error_code == 403
+            ):
+                logger.debug("TURN channel bind refused: %s", exception)
+                return
+
+        loop.default_exception_handler(context)
+
+    loop.set_exception_handler(handler)
+
+
 async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
     send_answer: Callable[[WebRTCWorkerResult], Optional[Awaitable[None]]],
@@ -912,6 +940,8 @@ async def init_rtc_peer_connection_with_loop(
     heartbeat_callback: Optional[Callable[[], None]] = None,
     connection_established_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
+    _quiet_turn_bind_failures(asyncio.get_running_loop())
+
     logger.info(
         "=" * 60 + "\n"
         "[WEBRTC_SESSION] STARTING NEW SESSION\n"

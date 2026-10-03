@@ -261,6 +261,14 @@ if modal is not None:
         )
         _cold_start: Optional[bool] = modal.parameter(default=True, init=False)
 
+        @modal.enter(snap=True)
+        def _preload_workflow_dependencies(self) -> None:
+            # Cancelling a first-session import can leave pandas submodules cached
+            # without their parent. Finish imports before accepting any inputs.
+            from inference.core.workflows.execution_engine.core import (  # noqa: F401
+                ExecutionEngine,
+            )
+
         @modal.method()
         def rtc_peer_connection_modal(
             self,
