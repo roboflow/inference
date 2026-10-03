@@ -436,6 +436,37 @@ INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE",
     default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
 )
+VLLM_PROXY_ENABLED = get_boolean_from_env(
+    variable_name="VLLM_PROXY_ENABLED", default=False
+)
+if OFFLINE_MODE and VLLM_PROXY_ENABLED:
+    raise InvalidEnvVariable(
+        message=(
+            "VLLM_PROXY_ENABLED is not supported while OFFLINE_MODE is enabled. "
+            "Disable the vLLM HTTP proxy or restart without OFFLINE_MODE."
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
+VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://127.0.0.1:8000")
+VLLM_REQUEST_TIMEOUT_S = get_float_from_env(
+    variable_name="VLLM_REQUEST_TIMEOUT_S", default=120.0
+)
+VLLM_MAX_LORA_RANK = get_integer_from_env(
+    variable_name="VLLM_MAX_LORA_RANK", default=64
+)
+VLLM_MAX_REGISTERED_ADAPTERS = get_integer_from_env(
+    variable_name="VLLM_MAX_REGISTERED_ADAPTERS", default=64
+)
+VLLM_VISION_LORA_NORM_THRESHOLD = get_float_from_env(
+    variable_name="VLLM_VISION_LORA_NORM_THRESHOLD", default=0.0
+)
+VLLM_DORA_POLICY = os.getenv("VLLM_DORA_POLICY", "reject").strip().lower()
+VLLM_SERVED_BASE_VARIANT = os.getenv("VLLM_SERVED_BASE_VARIANT", "qwen3_5-0.8b")
+VLLM_SERVED_BASE_NAME = os.getenv("VLLM_SERVED_BASE_NAME", VLLM_SERVED_BASE_VARIANT)
+VLLM_ADAPTER_KEY_TEMPLATE = os.getenv(
+    "VLLM_ADAPTER_KEY_TEMPLATE",
+    "base_model.model.model.language_model.layers.{suffix}",
+)
 INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS",
     default=512,
