@@ -149,6 +149,118 @@ def test_sam1_mask_input_without_has_mask_input_is_passed_through():
     assert "enforce_mask_input" not in params
 
 
+def _sam_embeddings():
+    return np.random.default_rng(2).random((1, 256, 64, 64), dtype=np.float32)
+
+
+def test_sam1_json_embeddings_are_sent_as_the_wire_dict_without_image_hashes():
+    embeddings = _sam_embeddings()
+    req = SamSegmentationRequest(
+        embeddings=embeddings.tolist(),
+        image_id="img-1",
+        orig_im_size=[480, 640],
+        point_coords=[[1, 2]],
+        point_labels=[1],
+    )
+    params = build_interactive_segmentation_params("segment", req, "key")
+    wire = params["embeddings"]
+    assert set(wire) == {"embeddings", "image_hash", "image_size_hw"}
+    assert isinstance(wire["embeddings"], np.ndarray)
+    assert wire["embeddings"].dtype == np.float32
+    np.testing.assert_array_equal(wire["embeddings"], embeddings)
+    assert wire["image_hash"] == namespace_client_hash_id("img-1", "key")
+    assert wire["image_size_hw"] == [480, 640]
+    assert "image_hashes" not in params
+    assert params["point_coordinates"] == [[[1, 2]]]
+
+
+def test_sam1_binary_embeddings_are_decoded_from_base64_npy():
+    embeddings = _sam_embeddings()
+    buffer = io.BytesIO()
+    np.save(buffer, embeddings)
+    req = SamSegmentationRequest(
+        embeddings=base64.b64encode(buffer.getvalue()).decode("ascii"),
+        embeddings_format="binary",
+        image_id="img-1",
+        orig_im_size=[480, 640],
+    )
+    params = build_interactive_segmentation_params("segment", req, "key")
+    np.testing.assert_array_equal(params["embeddings"]["embeddings"], embeddings)
+
+
+def test_sam1_binary_embeddings_must_be_a_single_npy_array():
+    buffer = io.BytesIO()
+    np.savez(buffer, a=np.zeros(2))
+    req = SamSegmentationRequest(
+        embeddings=base64.b64encode(buffer.getvalue()).decode("ascii"),
+        embeddings_format="binary",
+        image_id="img-1",
+        orig_im_size=[480, 640],
+    )
+    with pytest.raises(LegacyHTTPError) as error:
+        build_interactive_segmentation_params("segment", req, "key")
+    assert error.value.status_code == 400
+
+
+def test_sam1_embeddings_with_image_leave_hash_and_size_to_the_model():
+    req = SamSegmentationRequest(image=IMG, embeddings=_sam_embeddings().tolist())
+    params = build_interactive_segmentation_params("segment", req, "key")
+    assert params["embeddings"]["image_hash"] is None
+    assert params["embeddings"]["image_size_hw"] is None
+
+
+def test_sam1_embeddings_without_image_require_orig_im_size():
+    req = SamSegmentationRequest(embeddings=_sam_embeddings().tolist(), image_id="i")
+    with pytest.raises(LegacyHTTPError) as error:
+        build_interactive_segmentation_params("segment", req, "key")
+    assert error.value.status_code == 400
+    assert error.value.message == (
+        "orig_im_size is required when image not provided and embeddings are "
+        "injected by client."
+    )
+
+
+def test_sam1_embeddings_without_image_require_image_id():
+    req = SamSegmentationRequest(
+        embeddings=_sam_embeddings().tolist(), orig_im_size=[480, 640]
+    )
+    with pytest.raises(LegacyHTTPError) as error:
+        build_interactive_segmentation_params("segment", req, "key")
+    assert error.value.status_code == 400
+    assert error.value.message == "image_id is required when image not provided"
+
+
+@pytest.mark.parametrize("orig_im_size", [[], [6], [0, 8], [6, 8, 9], [-1, 8]])
+def test_sam1_embeddings_reject_malformed_orig_im_size(orig_im_size):
+    req = SamSegmentationRequest(
+        embeddings=_sam_embeddings().tolist(),
+        image_id="i",
+        orig_im_size=orig_im_size,
+    )
+    with pytest.raises(LegacyHTTPError) as error:
+        build_interactive_segmentation_params("segment", req, "key")
+    assert error.value.status_code == 400
+    assert "orig_im_size" in error.value.message
+
+
+def test_sam1_embeddings_accept_two_positive_orig_im_size():
+    req = SamSegmentationRequest(
+        embeddings=_sam_embeddings().tolist(), image_id="i", orig_im_size=[6, 8]
+    )
+    params = build_interactive_segmentation_params("segment", req, "key")
+    assert params["embeddings"]["image_size_hw"] == [6, 8]
+
+
+@pytest.mark.parametrize("embeddings", [[["a", "b"]], [[1, 2], [3]]])
+def test_sam1_embeddings_reject_non_numeric_or_ragged_json(embeddings):
+    req = SamSegmentationRequest(
+        embeddings=embeddings, image_id="i", orig_im_size=[6, 8]
+    )
+    with pytest.raises(LegacyHTTPError) as error:
+        build_interactive_segmentation_params("segment", req, "key")
+    assert error.value.status_code == 400
+
+
 def test_sam1_binary_response_packs_masks_and_low_res_masks():
     masks = np.zeros((1, 4, 4), dtype=bool)
     masks[0, 1:3, 1:3] = True

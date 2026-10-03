@@ -1007,9 +1007,6 @@ def repack_text_ocr_response(
 BINARY_FORMAT_UNSUPPORTED_MESSAGE = (
     "format='binary' is not supported on inference_server."
 )
-_EMBEDDINGS_INPUT_UNSUPPORTED_MESSAGE = (
-    "embeddings input is not supported on inference_server."
-)
 _SAM_LOW_RES_MASK_SIZE = 256
 
 
@@ -1045,11 +1042,10 @@ def build_interactive_segmentation_params(
 
 
 def _build_sam_segment_params(request: Any, api_key: Optional[str]) -> dict:
-    if getattr(request, "embeddings", None):
-        raise LegacyHTTPError(501, _EMBEDDINGS_INPUT_UNSUPPORTED_MESSAGE)
     image = getattr(request, "image", None)
     image_id = getattr(request, "image_id", None)
-    if not image and not image_id:
+    embeddings = getattr(request, "embeddings", None)
+    if not image and not image_id and embeddings is None:
         raise LegacyHTTPError(
             400, "Must provide either image, cached image_id, or embeddings"
         )
@@ -1058,6 +1054,8 @@ def _build_sam_segment_params(request: Any, api_key: Optional[str]) -> dict:
         raise LegacyHTTPError(400, f"Invalid format {response_format}")
 
     params: dict = {"multi_mask_output": False}
+    if embeddings is not None:
+        params["embeddings"] = _build_sam_embeddings_input(request, api_key)
     mask_input = getattr(request, "mask_input", None)
     if getattr(request, "has_mask_input", False):
         params["enforce_mask_input"] = True
@@ -1075,9 +1073,52 @@ def _build_sam_segment_params(request: Any, api_key: Optional[str]) -> dict:
     point_labels = getattr(request, "point_labels", None)
     if point_labels is not None:
         params["point_labels"] = [list(point_labels)]
-    if image_id:
+    if image_id and embeddings is None:
         params["image_hashes"] = [namespace_client_hash_id(image_id, api_key)]
     return params
+
+
+def _build_sam_embeddings_input(request: Any, api_key: Optional[str]) -> dict:
+    image = getattr(request, "image", None)
+    image_id = getattr(request, "image_id", None)
+    orig_im_size = getattr(request, "orig_im_size", None)
+    if not image:
+        if not image_id:
+            raise LegacyHTTPError(400, "image_id is required when image not provided")
+        if orig_im_size is None:
+            raise LegacyHTTPError(
+                400,
+                "orig_im_size is required when image not provided and embeddings "
+                "are injected by client.",
+            )
+
+    if orig_im_size is not None and not (
+        len(orig_im_size) == 2
+        and all(isinstance(side, int) and side > 0 for side in orig_im_size)
+    ):
+        raise LegacyHTTPError(
+            400, "orig_im_size must be two positive integers [height, width]"
+        )
+
+    embeddings = request.embeddings
+    if getattr(request, "embeddings_format", "json") == "binary":
+        embeddings = np.load(io.BytesIO(base64.b64decode(embeddings)))
+        if not isinstance(embeddings, np.ndarray):
+            raise LegacyHTTPError(400, "Binary embeddings must be a single .npy array")
+    else:
+        try:
+            embeddings = np.asarray(embeddings, dtype=np.float32)
+        except (ValueError, TypeError):
+            raise LegacyHTTPError(400, "embeddings must be a rectangular numeric array")
+
+    wire = {
+        "embeddings": embeddings,
+        "image_hash": namespace_client_hash_id(image_id, api_key) if image_id else None,
+        "image_size_hw": (
+            [orig_im_size[0], orig_im_size[1]] if orig_im_size is not None else None
+        ),
+    }
+    return wire
 
 
 def _decode_sam_mask_input(mask_input: Any, mask_input_format: Optional[str]) -> Any:

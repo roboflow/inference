@@ -786,6 +786,55 @@ def test_sam_segment_image_binary_returns_compressed_npz(legacy_client, fake_sta
     np.testing.assert_array_equal(decoded["low_res_masks"], logits)
 
 
+def test_sam_segment_image_with_embeddings_and_no_image_is_params_only(
+    legacy_client, fake_stat
+):
+    from inference_model_manager.hash_namespacing import namespace_client_hash_id
+
+    masks = np.zeros((1, 6, 8), dtype=bool)
+    masks[0, 1:4, 1:5] = True
+    logits = np.full((1, 256, 256), -1.5, dtype=np.float32)
+    embeddings = np.random.default_rng(3).random((1, 2, 2, 2), dtype=np.float32)
+    gw = FakeGateway(
+        predictions={
+            ("sam/vit_h", "segment"): [SimpleNamespace(masks=masks, logits=logits)]
+        },
+        model_info={"sam/vit_h": {"actions": {"segment": {}}}},
+    )
+    r = legacy_client(gw).post(
+        "/sam/segment_image",
+        json={
+            "embeddings": embeddings.tolist(),
+            "image_id": "img-1",
+            "orig_im_size": [6, 8],
+            "point_coords": [[1, 1]],
+            "point_labels": [1],
+            "api_key": "k",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert len(r.json()["masks"]) == 1
+    call = next(c for c in gw.calls if c[0] == "infer")
+    assert call[4] is None
+    params = call[3]
+    np.testing.assert_array_equal(params["embeddings"]["embeddings"], embeddings)
+    assert params["embeddings"]["image_hash"] == namespace_client_hash_id("img-1", "k")
+    assert params["embeddings"]["image_size_hw"] == [6, 8]
+    assert "image_hashes" not in params
+
+
+def test_sam_segment_image_embeddings_without_orig_im_size_is_400(
+    legacy_client, fake_stat
+):
+    gw = FakeGateway(model_info={"sam/vit_h": {"actions": {"segment": {}}}})
+    r = legacy_client(gw).post(
+        "/sam/segment_image",
+        json={"embeddings": [[[[0.5]]]], "image_id": "img-1"},
+    )
+    assert r.status_code == 400, r.text
+    assert "orig_im_size is required when image not provided" in r.json()["message"]
+
+
 def test_sam3_visual_segment_binary_returns_compressed_npz(legacy_client, fake_stat):
     masks = np.zeros((1, 1, 6, 8), dtype=np.float32)
     logits = np.zeros((1, 1, 256, 256), dtype=np.float32)

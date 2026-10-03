@@ -173,9 +173,11 @@ _P_SAM_SEGMENT_COMMON = {
     "mask_threshold": {"type": "float", "required": False},
     "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
 }
+SAM_IMAGE_EMBEDDINGS_TYPE = "sam_image_embeddings"
 _P_SAM_SEGMENT = _p(
     _P_SAM_SEGMENT_COMMON,
     {
+        "embeddings": {"type": SAM_IMAGE_EMBEDDINGS_TYPE, "required": False},
         "enforce_mask_input": {"type": "bool", "required": False, "default": False},
         "use_mask_input_cache": {"type": "bool", "required": False, "default": True},
     },
