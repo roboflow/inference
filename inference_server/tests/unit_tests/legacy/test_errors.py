@@ -37,6 +37,13 @@ from inference_models.errors import (
     UntrustedFileError,
     UsagePausedModelAccessError,
 )
+from inference_models.models.vllm_proxy.errors import (
+    AdapterNotServableError,
+    NotServableOnVLLMError,
+    VLLMConnectionError,
+    VLLMHTTPError,
+    VLLMProxyError,
+)
 
 from PIL import Image
 
@@ -462,6 +469,28 @@ LEGACY_MATRIX = [
     pytest.param(AssumptionError("x"), 500, INTERNAL_ERROR, id="assumption"),
     pytest.param(ModelRuntimeError("x"), 500, INTERNAL_ERROR, id="model-runtime"),
     pytest.param(RetryError("x"), 500, INTERNAL_ERROR, id="retry"),
+    pytest.param(
+        NotServableOnVLLMError("base variant mismatch"),
+        501,
+        {"message": "base variant mismatch"},
+        id="vllm-not-servable",
+    ),
+    pytest.param(
+        AdapterNotServableError("adapter rejected"),
+        501,
+        {"message": "adapter rejected"},
+        id="vllm-adapter-not-servable",
+    ),
+    pytest.param(VLLMProxyError("x"), 500, INTERNAL_ERROR, id="vllm-proxy"),
+    pytest.param(
+        VLLMConnectionError("refused"), 500, INTERNAL_ERROR, id="vllm-connection"
+    ),
+    pytest.param(
+        VLLMHTTPError("bad gateway", 502, "body"),
+        500,
+        INTERNAL_ERROR,
+        id="vllm-http",
+    ),
 ]
 
 

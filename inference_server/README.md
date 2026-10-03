@@ -163,9 +163,9 @@ A few legacy behaviours are not (yet) available here:
   WebRTC worker routes (`/initialise_webrtc_worker`, `/webrtc/session/*`) are
   not ported; requests to these paths 404.
 - Several routes and parameters that legacy accepted now return 501 instead
-  of the real behaviour: `/owlv2/infer`, `/infer/action_recognition`, and
-  `/sam3_3d/infer`; `SAM3_EXEC_MODE=remote` is not proxied to the Roboflow
-  API; `format=binary` on the SAM/SAM2/SAM3 segmentation routes is not implemented (embedding routes still return binary).
+  of the real behaviour: `/sam3_3d/infer`; `/sam3/embed_image` with
+  `SAM3_EXEC_MODE=remote` (concept and visual segmentation are proxied to the
+  Roboflow API); `format=binary` on the SAM/SAM2/SAM3 segmentation routes is not implemented (embedding routes still return binary).
 - Prediction visualization (`format=image`, `visualize_predictions`) uses the
   class colours the model manager reports, else the legacy default palette; the
   per-model colour mapping is not fetched from the Roboflow API.

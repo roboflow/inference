@@ -987,6 +987,10 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
     ],
 }
 
+_ACTION_CONFIGS["Qwen3VLVLLMProxy"] = _ACTION_CONFIGS["Qwen3VLHF"]
+_ACTION_CONFIGS["Qwen35VLLMProxy"] = _ACTION_CONFIGS["Qwen35HF"]
+_ACTION_CONFIGS["Qwen38VLLMProxy"] = _ACTION_CONFIGS["Qwen35HF"]
+
 
 # ---------------------------------------------------------------------------
 # Lazy registration

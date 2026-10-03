@@ -42,6 +42,17 @@ def _load_failure_class(error_type: Any) -> type:
     return error_class
 
 
+def _models_error_class(error_type: str) -> Any:
+    error_class = getattr(models_errors, error_type, None)
+    if error_class is not None:
+        return error_class
+    if error_type not in ("NotServableOnVLLMError", "AdapterNotServableError"):
+        return None
+    from inference_models.models.vllm_proxy import errors as vllm_proxy_errors
+
+    return getattr(vllm_proxy_errors, error_type, None)
+
+
 def load_failure_error(result: tuple) -> Optional[Exception]:
     """Rebuild the exception a gateway described in a load failure tuple.
 
@@ -60,7 +71,7 @@ def load_failure_error(result: tuple) -> Optional[Exception]:
 
     message = str(detail.get("message") or "")
     help_url = detail.get("help_url")
-    error_class = getattr(models_errors, str(detail.get("error_type")), None)
+    error_class = _models_error_class(str(detail.get("error_type")))
     if not (
         isinstance(error_class, type)
         and issubclass(error_class, BaseInferenceModelsError)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import gc
 import logging
 import threading
@@ -558,9 +559,11 @@ class ModelManager:
         """
         self._check_open()
         loop = asyncio.get_running_loop()
+        context = contextvars.copy_context()
         return await loop.run_in_executor(
             self._executor,
-            lambda: self.process(
+            lambda: context.run(
+                self.process,
                 model_id,
                 action=action,
                 serialize=serialize,

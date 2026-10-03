@@ -651,3 +651,53 @@ class TestUsageCollectorWiring:
             assert app_mod.app.state.usage_collector is None
 
         assert app_mod.app.state.usage_collector is None
+
+
+class TestVllmRequestIdProvider:
+    @pytest.fixture
+    def lifespan_env(self, monkeypatch):
+        from inference_models.models.vllm_proxy import vllm_client
+
+        monkeypatch.delenv("INFERENCE_PRELOAD_MODELS", raising=False)
+        monkeypatch.setattr(
+            "inference_model_manager.watchdogs.start_enabled_watchdogs",
+            lambda: [],
+        )
+
+        class _StubProxy:
+            async def start(self):
+                pass
+
+            async def shutdown(self):
+                pass
+
+        monkeypatch.setattr(
+            "inference_server.gateway_resolver.resolve_gateway",
+            lambda: _StubProxy(),
+        )
+        monkeypatch.setattr(vllm_client, "_REQUEST_ID_PROVIDER", None)
+        return vllm_client
+
+    @pytest.mark.asyncio
+    async def test_provider_returns_the_current_correlation_id(self, lifespan_env):
+        import inference_server.app as app_mod
+        from inference_server.middlewares.correlation_id import correlation_id
+
+        async with app_mod._lifespan(app_mod.app):
+            assert lifespan_env.get_request_id() is None
+            token = correlation_id.set("abc123")
+            try:
+                assert lifespan_env.get_request_id() == "abc123"
+            finally:
+                correlation_id.reset(token)
+            assert lifespan_env.get_request_id() is None
+
+    @pytest.mark.asyncio
+    async def test_provider_is_not_installed_before_startup(self, lifespan_env):
+        from inference_server.middlewares.correlation_id import correlation_id
+
+        token = correlation_id.set("abc123")
+        try:
+            assert lifespan_env.get_request_id() is None
+        finally:
+            correlation_id.reset(token)

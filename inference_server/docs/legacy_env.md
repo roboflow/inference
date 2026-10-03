@@ -410,6 +410,16 @@ definition; the last column is the new reader.
 | `RFDETR_ONNX_MAX_RESOLUTION` | `env.py:1466-1469` | `configuration.py:37-42` | `1600`, `<= 0` disables on both sides |
 | `DISABLED_INFERENCE_MODELS_BACKENDS` | `env.py:1703-1726` (validates entries) | `configuration.py:29-33` (no validation) | empty |
 | `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `YOLO_OFFLINE` | written by `env.py:515-517` under `OFFLINE_MODE` | written by `inference_models/_offline.py:140-142` under the same condition | not read by either side |
+| `VLLM_PROXY_ENABLED` | `inference/models/vllm_proxy/config.py:24`; `env.py:519` | `configuration.py:439-441`; with `OFFLINE_MODE` the module raises `InvalidEnvVariable` (`configuration.py:442-449`) | `False` |
+| `VLLM_BASE_URL` | `vllm_proxy/config.py:49` | `configuration.py:450` | `http://127.0.0.1:8000` |
+| `VLLM_REQUEST_TIMEOUT_S` | `vllm_proxy/config.py:54` | `configuration.py:451-453` | `120` |
+| `VLLM_MAX_LORA_RANK` | `vllm_proxy/config.py:59` | `configuration.py:454-456` | `64` |
+| `VLLM_MAX_REGISTERED_ADAPTERS` | `vllm_proxy/config.py:65` | `configuration.py:457-459` | `64` |
+| `VLLM_VISION_LORA_NORM_THRESHOLD` | `vllm_proxy/config.py:74` | `configuration.py:460-462` | `0.0` |
+| `VLLM_DORA_POLICY` | `vllm_proxy/config.py:81` | `configuration.py:463` | `reject` |
+| `VLLM_SERVED_BASE_VARIANT` | `vllm_proxy/config.py:85` | `configuration.py:464` | `qwen3_5-0.8b` |
+| `VLLM_SERVED_BASE_NAME` | `vllm_proxy/config.py:93` | `configuration.py:465` | the served base variant |
+| `VLLM_ADAPTER_KEY_TEMPLATE` | `vllm_proxy/config.py:97` | `configuration.py:466-469` | `base_model.model.model.language_model.layers.{suffix}` |
 
 ### Read by `streamvision/stream/configuration.py` (`ModelConfigDefaults`)
 
@@ -430,24 +440,13 @@ definition; the last column is the new reader.
 
 ### Shared by ruling, no new-package reader today
 
-The plan names `VLLM_*` and `TELEMETRY_*` as shared names that stay where they
-are. No new package reads the names below yet (the hosting summary confirms
-`VLLM_PROXY_ENABLED` is unread); the spelling is reserved for the tasks that add
-the vLLM proxy and usage tracking. The `TELEMETRY_*` names that
-`inference_server/configuration.py` reads are listed in its table above.
+The plan names `TELEMETRY_*` as shared names that stay where they are. The
+`TELEMETRY_*` names that `inference_server/configuration.py` reads are listed in
+its table above; no new package reads the names below yet, and the spelling is
+reserved for the task that adds usage tracking.
 
 | name | legacy | default |
 |---|---|---|
-| `VLLM_PROXY_ENABLED` | `inference/models/vllm_proxy/config.py:24`; `env.py:519` | `False` |
-| `VLLM_BASE_URL` | `vllm_proxy/config.py:49` | `http://127.0.0.1:8000` |
-| `VLLM_REQUEST_TIMEOUT_S` | `vllm_proxy/config.py:54` | `120` |
-| `VLLM_MAX_LORA_RANK` | `vllm_proxy/config.py:59` | `64` |
-| `VLLM_MAX_REGISTERED_ADAPTERS` | `vllm_proxy/config.py:65` | `64` |
-| `VLLM_VISION_LORA_NORM_THRESHOLD` | `vllm_proxy/config.py:74` | `0.0` |
-| `VLLM_DORA_POLICY` | `vllm_proxy/config.py:81` | `reject` |
-| `VLLM_SERVED_BASE_VARIANT` | `vllm_proxy/config.py:85` | `qwen3_5-0.8b` |
-| `VLLM_SERVED_BASE_NAME` | `vllm_proxy/config.py:93` | the served base variant |
-| `VLLM_ADAPTER_KEY_TEMPLATE` | `vllm_proxy/config.py:97` | `base_model.model.model.language_model.layers.{suffix}` |
 | `TELEMETRY_API_PLAN_ENDPOINT_URL` | `usage_tracking/config.py:17` | `{METRICS_COLLECTOR_BASE_URL}/usage/plan` |
 | `TELEMETRY_API_PLAN_CACHE_TTL_SECONDS` | `usage_tracking/config.py:18` | `86400` |
 | `TELEMETRY_WEBRTC_PLANS_ENDPOINT_URL` | `usage_tracking/config.py:19` | `{METRICS_COLLECTOR_BASE_URL}/webrtc_plans` |

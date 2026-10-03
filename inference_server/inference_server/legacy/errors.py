@@ -31,6 +31,7 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UntrustedFileError,
 )
+from inference_models.models.vllm_proxy.errors import NotServableOnVLLMError
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.gateway import _redact_secrets
@@ -291,6 +292,8 @@ def _mapped_answer(error: BaseException) -> Optional[Tuple[int, dict]]:
             "message": f"Model loading failed: {error}",
             "help_url": error.help_url,
         }
+    if isinstance(error, NotServableOnVLLMError):
+        return 501, {"message": str(error)}
     if isinstance(error, ModelLoadingError):
         return 500, {
             "message": f"Model loading failed: {error}",

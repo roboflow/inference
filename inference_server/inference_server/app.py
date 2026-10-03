@@ -53,6 +53,7 @@ from inference_server.legacy.bridge import (  # noqa: E402
 )
 from inference_server.middlewares.correlation_id import (  # noqa: E402
     CorrelationIdMiddleware,
+    correlation_id,
 )
 from inference_server.middlewares.headers import CORS_EXPOSE_HEADERS  # noqa: E402
 from inference_server.middlewares.model_load import (  # noqa: E402
@@ -160,6 +161,11 @@ async def _lifespan(app: FastAPI):
             "TLS certificate verification is disabled for Roboflow platform requests"
         )
     proxy = resolve_gateway()
+    from inference_models.models.vllm_proxy.vllm_client import (
+        set_request_id_provider,
+    )
+
+    set_request_id_provider(correlation_id.get)
     preload_task = None
     hf_preload_task = None
     watchdog_daemons = []

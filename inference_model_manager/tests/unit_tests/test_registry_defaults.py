@@ -534,6 +534,20 @@ def test_vlm_generation_params():
         assert "max_new_tokens" in p and "do_sample" in p and "skip_special_tokens" in p
 
 
+@pytest.mark.parametrize(
+    "proxy_name, hf_name",
+    [
+        ("Qwen3VLVLLMProxy", "Qwen3VLHF"),
+        ("Qwen35VLLMProxy", "Qwen35HF"),
+        ("Qwen38VLLMProxy", "Qwen35HF"),
+    ],
+)
+def test_vllm_proxy_action_configs_equal_the_hf_rows(proxy_name, hf_name):
+    from inference_model_manager.registry_defaults import _ACTION_CONFIGS
+
+    assert _ACTION_CONFIGS[proxy_name] == _ACTION_CONFIGS[hf_name]
+
+
 def test_vlm_generation_contracts_match_model_signatures():
     from inference_model_manager.registry_defaults import (
         _P_GEN_FLAGS,

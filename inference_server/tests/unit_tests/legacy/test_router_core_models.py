@@ -1322,3 +1322,29 @@ def test_pp_ocr_denied_stage_is_401(legacy_client, fake_stat):
     )
     r = legacy_client(_pp_ocr_gateway()).post("/ocr/pp-ocr", json={"image": _image()})
     assert r.status_code == 401
+
+
+def _lmm_load_failure_status(legacy_client, fake_stat, error_type):
+    fake_stat["qwen/1"] = ("vlm", "prompt")
+    gw = FakeGateway(model_info={"qwen/1": {"actions": {"prompt": {}}}})
+    gw.ensure_results = [
+        ("error", 5, {"error_type": error_type, "message": "adapter rejected"})
+    ]
+
+    return legacy_client(gw).post(
+        "/infer/lmm",
+        json={"model_id": "qwen/1", "image": _image(), "prompt": "hi"},
+    )
+
+
+def test_lmm_load_failure_of_a_vllm_adapter_rejection_is_501(legacy_client, fake_stat):
+    r = _lmm_load_failure_status(legacy_client, fake_stat, "AdapterNotServableError")
+
+    assert r.status_code == 501
+    assert r.json() == {"message": "adapter rejected"}
+
+
+def test_lmm_load_failure_of_a_generic_class_is_still_500(legacy_client, fake_stat):
+    r = _lmm_load_failure_status(legacy_client, fake_stat, "SomethingElseError")
+
+    assert r.status_code == 500

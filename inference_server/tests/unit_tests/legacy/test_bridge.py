@@ -1594,6 +1594,15 @@ def test_task_type_from_mro_covers_registry():
     assert unmapped == []
 
 
+@pytest.mark.parametrize(
+    "name", ["Qwen3VLVLLMProxy", "Qwen35VLLMProxy", "Qwen38VLLMProxy"]
+)
+def test_task_type_from_mro_maps_vllm_proxies_to_vlm(name):
+    assert (
+        bridge_mod._task_type_from_mro([name, "QwenVLLMProxyBase", "object"]) == "vlm"
+    )
+
+
 def test_task_type_from_mro_prefers_the_concrete_class():
     assert (
         bridge_mod._task_type_from_mro(

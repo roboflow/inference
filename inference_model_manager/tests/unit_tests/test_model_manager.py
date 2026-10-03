@@ -6,6 +6,7 @@ Uses mock backends — no real models, no GPU, no torch. Fast.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import threading
 from concurrent.futures import Future
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,15 +22,20 @@ from inference_model_manager.validators import validate_passthrough
 # ─── Fake model + backend ──────────────────────────────────────────
 
 
+REQUEST_ID: contextvars.ContextVar = contextvars.ContextVar("request_id", default=None)
+
+
 class FakeModel:
     """Minimal model for unit tests. No base class needed."""
 
     def __init__(self, model_id: str):
         self.model_id = model_id
         self._inference_count = 0
+        self.seen_request_ids: list = []
 
     def infer(self, images=None, **kwargs) -> Any:
         self._inference_count += 1
+        self.seen_request_ids.append(REQUEST_ID.get())
         return {"prediction": "fake", "model_id": self.model_id}
 
 
@@ -259,6 +265,20 @@ class TestModelManagerInference:
             "type": "roboflow-generic-v1",
             "data": {"prediction": "fake", "model_id": "model-a"},
         }
+
+    def test_process_async_carries_the_callers_context_into_the_model(self):
+        mm = ModelManager()
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("model-a", api_key="")
+
+        async def _call():
+            REQUEST_ID.set("req-1")
+            await mm.process_async("model-a", images="some_image")
+
+        asyncio.run(_call())
+
+        assert backends["model-a"].model.seen_request_ids == ["req-1"]
 
     def test_infer_routes_to_correct_model(self):
         mm = ModelManager()
