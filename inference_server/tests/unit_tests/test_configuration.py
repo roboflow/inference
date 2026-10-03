@@ -437,3 +437,38 @@ def test_telemetry_precedence_of_the_upper_case_name_applies_to_the_settings():
     )
 
     assert result.stdout.strip() == "500"
+
+
+def _workflow_cache_flags(offline, file_cache, single_tenant):
+    code = (
+        "from inference_server import configuration as c; "
+        "print(c.USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS, "
+        "c.SINGLE_TENANT_WORKFLOW_CACHE)"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", code],
+        env={
+            **os.environ,
+            "OFFLINE_MODE": offline,
+            "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START": offline,
+            "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS": file_cache,
+            "SINGLE_TENANT_WORKFLOW_CACHE": single_tenant,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_offline_mode_forces_the_workflow_file_cache_and_single_tenant_layout():
+    result = _workflow_cache_flags("true", "false", "false")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["True", "True"]
+    assert "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS=False" in result.stderr
+
+
+def test_online_mode_keeps_the_given_workflow_cache_flags():
+    result = _workflow_cache_flags("false", "false", "false")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["False", "False"]

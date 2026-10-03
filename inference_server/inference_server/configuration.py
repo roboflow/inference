@@ -407,6 +407,22 @@ WORKFLOWS_PROFILER_BUFFER_SIZE = get_integer_from_env(
 WORKFLOWS_DEFINITION_CACHE_TTL_S = get_integer_from_env(
     "WORKFLOWS_DEFINITION_CACHE_EXPIRY", default=15 * 60
 )
+USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = get_boolean_from_env(
+    "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", default=True
+)
+SINGLE_TENANT_WORKFLOW_CACHE = get_boolean_from_env(
+    "SINGLE_TENANT_WORKFLOW_CACHE", default=False
+)
+if LEGACY_OFFLINE_MODE:
+    if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+        warnings.warn(
+            "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS=False is not available "
+            "while OFFLINE_MODE is enabled. Forcing the file cache on so "
+            "pre-warmed Workflow definitions remain usable.",
+            stacklevel=1,
+        )
+    USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = True
+    SINGLE_TENANT_WORKFLOW_CACHE = True
 ALLOW_WORKFLOWS_FONTS_DOWNLOAD = get_boolean_from_env(
     "ALLOW_WORKFLOWS_FONTS_DOWNLOAD", default=True
 )

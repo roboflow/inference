@@ -13,6 +13,13 @@ def _active_learning_off(monkeypatch):
     monkeypatch.setattr("inference_server.configuration.ACTIVE_LEARNING_ENABLED", False)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_model_cache_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "inference_server.configuration.MODEL_CACHE_DIR", str(tmp_path / "model_cache")
+    )
+
+
 class _InertUsageCollector:
     def start(self):
         pass

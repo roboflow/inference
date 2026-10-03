@@ -454,10 +454,6 @@ from roboflow_workflows.utils.image_encoding import (  # noqa: E402
     convert_gray_image_to_bgr,
     decode_encoded_image_bytes,
 )
-from roboflow_workflows.utils.in_memory_cache import (  # noqa: E402
-    InMemoryWorkflowsCache,
-)
-
 from inference_model_manager.pipelines import InvalidPipelineIdError  # noqa: E402
 from inference_models.errors import (  # noqa: E402
     ModelNotFoundError,
@@ -490,6 +486,7 @@ from inference_server.platform_http import (  # noqa: E402
     _add_params_to_url,
     _platform_request,
 )
+from inference_server.workflows import definition_cache  # noqa: E402
 from inference_server.workflows.errors import (  # noqa: E402
     MalformedRoboflowAPIResponseError,
     ModelDeploymentNotSupportedError,
@@ -497,6 +494,7 @@ from inference_server.workflows.errors import (  # noqa: E402
     RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
 )
+from inference_server.workflows.redis_cache import build_workflows_cache  # noqa: E402
 
 _URL_FETCH_BRIDGE_TIMEOUT_S = URL_FETCH_TIMEOUT_S + 5
 _IMAGE_LOADING_CONTEXT = "workflow_execution | image_loading"
@@ -1291,7 +1289,7 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
 PLATFORM_CLIENT = ServerRoboflowPlatformClient()
 WORKSPACE_RESOLVER = ServerWorkspaceResolver()
 GUARDED_IMAGE_CODEC = ServerImageCodec()
-WORKFLOWS_CACHE = InMemoryWorkflowsCache()
+WORKFLOWS_CACHE = build_workflows_cache()
 
 
 def bind_image_codec(init_parameters: Dict[str, Any]) -> None:
@@ -1347,12 +1345,23 @@ def _workflow_fetch_failure(status_code: int) -> LegacyHTTPError:
     return LegacyHTTPError(status_code, message)
 
 
+_PLATFORM_UNREACHABLE_CAUSES = (
+    requests.exceptions.ConnectionError,
+    ConnectionError,
+    requests.exceptions.Timeout,
+)
+
+
 def _fetch_workflow_response(
     api_key: Optional[str],
     workspace_id: str,
     workflow_id: str,
     workflow_version_id: Optional[str],
 ) -> dict:
+    if configuration.LEGACY_OFFLINE_MODE:
+        raise LegacyHTTPError(
+            503, "Internal error. Could not connect to Roboflow API."
+        ) from ConnectionError("OFFLINE_MODE is enabled - cannot make API requests.")
     params: List[Tuple[str, str]] = []
     if api_key:
         params.append(("api_key", api_key))
@@ -1378,6 +1387,69 @@ def _fetch_workflow_response(
     return payload
 
 
+def _fetch_workflow_response_with_file_cache(
+    api_key: Optional[str],
+    workspace_id: str,
+    workflow_id: str,
+    workflow_version_id: Optional[str],
+) -> dict:
+    try:
+        response = _fetch_workflow_response(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
+        )
+    except LegacyHTTPError as error:
+        if (
+            not configuration.USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS
+            or not isinstance(error.__cause__, _PLATFORM_UNREACHABLE_CAUSES)
+        ):
+            raise
+        cached_response = definition_cache.load_definition(
+            workspace_id,
+            workflow_id,
+            api_key=api_key,
+            workflow_version_id=workflow_version_id,
+        )
+        if cached_response is None:
+            raise
+        return cached_response
+
+    if configuration.USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+        definition_cache.store_definition(
+            workspace_id,
+            workflow_id,
+            api_key=api_key,
+            workflow_version_id=workflow_version_id,
+            response=response,
+        )
+
+    return response
+
+
+def _try_read_definition_cache(cache_key: str) -> Optional[dict]:
+    try:
+        return WORKFLOWS_CACHE.get(cache_key)
+    except Exception as error:
+        logger.warning(
+            "Workflow definition cache unavailable, fetching from Roboflow API: %s",
+            type(error).__name__,
+        )
+        return None
+
+
+def _try_write_definition_cache(cache_key: str, specification: dict) -> None:
+    try:
+        WORKFLOWS_CACHE.set(
+            cache_key,
+            specification,
+            expire=configuration.WORKFLOWS_DEFINITION_CACHE_TTL_S,
+        )
+    except Exception as error:
+        logger.warning("Failed to cache workflow definition: %s", type(error).__name__)
+
+
 @_records_api_call("get_workflow_specification")
 def get_workflow_specification(
     api_key: Optional[str],
@@ -1391,13 +1463,13 @@ def get_workflow_specification(
         f"{sha256((api_key or '').encode()).hexdigest()}"
     )
     if use_cache:
-        cached = WORKFLOWS_CACHE.get(cache_key)
+        cached = _try_read_definition_cache(cache_key)
         if cached:
             return cached
     if workspace_id == "local":
         response = _local_workflow_response(workflow_id)
     else:
-        response = _fetch_workflow_response(
+        response = _fetch_workflow_response_with_file_cache(
             api_key=api_key,
             workspace_id=workspace_id,
             workflow_id=workflow_id,
@@ -1415,11 +1487,7 @@ def get_workflow_specification(
         raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE) from error
     specification["id"] = response["workflow"].get("id")
     if use_cache:
-        WORKFLOWS_CACHE.set(
-            cache_key,
-            specification,
-            expire=configuration.WORKFLOWS_DEFINITION_CACHE_TTL_S,
-        )
+        _try_write_definition_cache(cache_key, specification)
     return specification
 
 

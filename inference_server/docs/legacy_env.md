@@ -250,6 +250,8 @@ definition; the last column is the new reader.
 | `ENABLE_WORKFLOWS_PROFILING` | `env.py:1291` | `configuration.py:252` | `False` |
 | `WORKFLOWS_PROFILER_BUFFER_SIZE` | `env.py:1292` | `configuration.py:255` | `64` |
 | `WORKFLOWS_DEFINITION_CACHE_EXPIRY` | `env.py:1293` | `configuration.py:258` | `900` |
+| `USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS` | `env.py:1296` | `configuration.py`; `workflows/host.py`, `workflows/definition_cache.py`: a saved Workflow definition fetched from the platform is written under `{MODEL_CACHE_DIR}/workflow/<workspace>/` in the legacy layout and served from there when the platform cannot be reached (connection error, timeout, offline mode); forced on in offline mode, where the file cache is the only source | `True` |
+| `SINGLE_TENANT_WORKFLOW_CACHE` | `env.py:1299` | `configuration.py`; `workflows/definition_cache.py`: `True` keeps definition files in the `.canonical-v2` namespace without a tenant fingerprint and reads the pre-namespace `<workspace>/<workflow>.json` files; forced on in offline mode, which also reads `.tenanted-v2` entries written online | `False` |
 | `ALLOW_WORKFLOWS_FONTS_DOWNLOAD` | `env.py:1324` | `configuration.py:261` | `True` |
 | `ROBOFLOW_INTERNAL_SERVICE_SECRET` | `env.py:1331` | `configuration.py:270` | unset |
 | `ROBOFLOW_INTERNAL_SERVICE_NAME` | `env.py:1332` | `configuration.py:269` | unset |
@@ -294,10 +296,10 @@ definition; the last column is the new reader.
 | `TELEMETRY_FLUSH_INTERVAL` | `usage_tracking/config.py:20,26` | `configuration.py`; `usage/collector.py`: seconds between two moves of aggregated usage rows to the queue, and between two send attempts; legacy rejects a value outside 10..300, the new server clamps it into that range | `10` |
 | `TELEMETRY_USE_PERSISTENT_QUEUE` | `usage_tracking/config.py:21` | `configuration.py`; `usage/collector.py`: `True` queues usage rows in `{MODEL_CACHE_DIR}/usage.db` with API keys stored as hashes; `False`, `LAMBDA` or `GCP_SERVERLESS` queue them in memory | `True` |
 | `TELEMETRY_QUEUE_SIZE` | `usage_tracking/config.py:22,27` | `configuration.py`; `usage/collector.py`: slots of the in-memory usage queue; a full queue is merged into one slot, nothing is dropped; legacy rejects a value outside 10..10000, the new server clamps it into that range | `10` |
-| `REDIS_HOST` | `env.py:858` | `configuration.py`; `usage/collector.py`: under `LAMBDA` or `GCP_SERVERLESS`, usage rows are written to this Redis for an external reader instead of being sent; needs the `redis` package, without it rows are queued in memory and sent by the server | unset |
-| `REDIS_PORT` | `env.py:861` | `configuration.py`; `usage/queues.py` | `6379` |
-| `REDIS_SSL` | `env.py:862` | `configuration.py`; `usage/queues.py` | `False` |
-| `REDIS_TIMEOUT` | `env.py:863` | `configuration.py`; `usage/queues.py`: socket and connect timeout in seconds | `2.0` |
+| `REDIS_HOST` | `env.py:858` | `configuration.py`; `workflows/redis_cache.py`: when set, the Workflows cache handed to blocks and the active learning middleware is this Redis, with the legacy key, value and lock encoding; unreachable at startup or without the `redis` package, the in-memory cache is used after one error line. `usage/collector.py`: under `LAMBDA` or `GCP_SERVERLESS`, usage rows are written to this Redis for an external reader instead of being sent; needs the `redis` package, without it rows are queued in memory and sent by the server | unset |
+| `REDIS_PORT` | `env.py:861` | `configuration.py`; `usage/queues.py`, `workflows/redis_cache.py` | `6379` |
+| `REDIS_SSL` | `env.py:862` | `configuration.py`; `usage/queues.py`, `workflows/redis_cache.py` | `False` |
+| `REDIS_TIMEOUT` | `env.py:863` | `configuration.py`; `usage/queues.py`, `workflows/redis_cache.py`: socket and connect timeout in seconds | `2.0` |
 | `ACTIVE_LEARNING_ENABLED` | `env.py:946-948` | `configuration.py:263-265`; forced off in offline mode; `legacy/active_learning_registration.py` (`start`): when on and `roboflow-workflows` is installed, inferences on `/infer/object_detection`, `/infer/instance_segmentation`, `/infer/classification` and `/{dataset_id}/{version_id}` are registered on a bounded worker pool, in the background, or before the response when `LAMBDA` or `GCP_SERVERLESS` is set | `True` |
 | `ACTIVE_LEARNING_TAGS` | `env.py:949` | `configuration.py:266-269`; `active_learning/core.py` (`collect_tags`): comma-separated tags put on every registered image, split without trimming | unset |
 
@@ -567,7 +569,6 @@ No new package reads these. They never get an alias or a default row.
 | `ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1333` | legacy assume-identity headers; unread (hosting summary) |
 | `ROBOFLOW_SERVER_UUID` | `env.py:869` | the new server generates `SERVER_ID` per process (`configuration.py:275`) |
 | `SAM3_MAX_DETECTIONS` | `env.py:891` | legacy `concept_segment` cap; no new package reads it |
-| `SINGLE_TENANT_WORKFLOW_CACHE` | `env.py:1299` | legacy definition cache mode; the new server has only the in-memory TTL cache |
 | `SSL_CA_CERTS` | `env.py:606` | legacy uvicorn TLS |
 | `SSL_CERTFILE` | `env.py:596` | legacy uvicorn TLS |
 | `SSL_KEYFILE` | `env.py:599` | legacy uvicorn TLS |
@@ -582,7 +583,6 @@ No new package reads these. They never get an alias or a default row.
 | `TRANSIENT_ROBOFLOW_API_ERRORS` | `env.py:1401` | legacy API client |
 | `TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES` | `env.py:1409` | legacy API client |
 | `TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL` | `env.py:1412` | legacy API client |
-| `USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS` | `env.py:1296` | legacy definition file cache; not in the new server |
 | `USE_INFERENCE_MODELS` | `env.py:407` | legacy adapter switch; the new stack is `inference_models`-only |
 | `USE_PYTORCH_FOR_PREPROCESSING` | `env.py:475` | legacy ORT preprocessing |
 | `VERSION_CHECK_MODE` | `env.py:921` | legacy version check |
