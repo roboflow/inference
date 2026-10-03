@@ -331,9 +331,22 @@ def test_get_class_names_and_contains():
 
 def test_stream_pipeline_members_report_no_pipeline():
     p = GatewayModelsProvider(_od_bridge(), api_key=None)
+    p.add_model("ds/1", "k")
     assert (
         p.model_supports_stream_pipeline("ds/1") is False
-        and p.get_model_pipeline_depth("ds/1") == 0
+        and p.get_model_pipeline_depth("ds/1") == 1
+        and p.flush_model_stream_pipeline("ds/1") is None
+        and p.shutdown_model_stream_pipeline("ds/1") is None
+    )
+
+
+def test_stream_pipeline_members_report_legacy_defaults_for_an_unknown_model():
+    p = GatewayModelsProvider(_od_bridge(), api_key=None)
+    assert (
+        p.model_supports_stream_pipeline("x/1") is False
+        and p.get_model_pipeline_depth("x/1") == 1
+        and p.flush_model_stream_pipeline("x/1") is None
+        and p.shutdown_model_stream_pipeline("x/1") is None
     )
 
 
@@ -848,3 +861,609 @@ def test_run_object_detection_fetches_url_image_declared_in_upper_case():
     assert fetched == ["https://example.com/a.png"]
     assert out[0]["image"] == {"width": 6, "height": 4}
     assert bridge.calls[0][3] == [_png_bytes()]
+
+
+class _StreamSyncBridge(FakeSyncBridge):
+    def __init__(self):
+        super().__init__()
+        self.flushes = {}
+        self.stream_calls = []
+
+    def flush_model_stream_pipeline(self, model_id):
+        self.stream_calls.append(("flush", model_id))
+        return self.flushes.get(model_id)
+
+    def shutdown_model_stream_pipeline(self, model_id):
+        self.stream_calls.append(("shutdown", model_id))
+
+
+def _segmentation_route(depth):
+    return Route(
+        model_id="seg/1",
+        registry_id="seg/1",
+        task_type="instance-segmentation",
+        action="infer",
+        actions={"infer"},
+        class_names=["cat"],
+        stream_pipeline_depth=depth,
+    )
+
+
+def test_stream_pipeline_methods_forward_to_gateway():
+    bridge = _StreamSyncBridge()
+    bridge.routes["seg/1"] = _segmentation_route(depth=2)
+    bridge.flushes["seg/1"] = []
+    provider = GatewayModelsProvider(bridge, api_key=None)
+    provider.add_model("seg/1", "k")
+
+    assert provider.model_supports_stream_pipeline("seg/1") is True
+    assert provider.get_model_pipeline_depth("seg/1") == 2
+    assert provider.flush_model_stream_pipeline("seg/1") == []
+    assert provider.shutdown_model_stream_pipeline("seg/1") is None
+    assert bridge.stream_calls == [("flush", "seg/1"), ("shutdown", "seg/1")]
+
+
+def test_stream_pipeline_flush_is_not_forwarded_for_a_depth_one_model():
+    bridge = _StreamSyncBridge()
+    bridge.routes["seg/1"] = _segmentation_route(depth=1)
+    provider = GatewayModelsProvider(bridge, api_key=None)
+    provider.add_model("seg/1", "k")
+
+    assert provider.flush_model_stream_pipeline("seg/1") is None
+    assert provider.shutdown_model_stream_pipeline("seg/1") is None
+    assert bridge.stream_calls == []
+
+
+class _FrameFuture:
+    def __init__(self, frame, model):
+        self.frame = frame
+        self.model = model
+        self.preprocess_metadata = [{"frame": frame}]
+
+    def submit_gpu_work(self, meta=None):
+        return None
+
+    def done(self):
+        return True
+
+    def result(self):
+        return [self.model.detections(self.frame)]
+
+
+def _segmentation_model_class():
+    import torch
+    from pycocotools import mask as mask_utils
+
+    from inference_models.models.base.instance_segmentation import (
+        InstanceDetections,
+        InstanceSegmentationModel,
+    )
+    from inference_models.models.base.types import InstancesRLEMasks
+
+    class _Model(InstanceSegmentationModel):
+        def __init__(self):
+            self.async_calls = []
+            self.sync_calls = []
+
+        @classmethod
+        def from_pretrained(cls, model_name_or_path, **kwargs):
+            return cls()
+
+        @property
+        def class_names(self):
+            return ["cat", "dog"]
+
+        @property
+        def supported_mask_formats(self):
+            return {"dense", "rle"}
+
+        @property
+        def supports_stream_pipeline(self):
+            return True
+
+        def detections(self, frame):
+            counts = []
+            for row in (frame, frame + 5):
+                mask = np.zeros((20, 10), dtype=np.uint8, order="F")
+                mask[row : row + 3, frame : frame + 3] = 1
+                counts.append(mask_utils.encode(np.asfortranarray(mask))["counts"])
+            return InstanceDetections(
+                xyxy=torch.tensor(
+                    [
+                        [frame, frame, frame + 3, frame + 3],
+                        [frame, frame + 5, frame + 3, frame + 8],
+                    ],
+                    dtype=torch.int32,
+                ),
+                class_id=torch.tensor([0, 1], dtype=torch.int32),
+                confidence=torch.tensor([0.9, 0.8], dtype=torch.float32),
+                mask=InstancesRLEMasks(image_size=(20, 10), masks=counts),
+            )
+
+        def infer(self, images, **kwargs):
+            self.sync_calls.append(kwargs)
+            return [self.detections(0)]
+
+        def infer_async(self, images, **kwargs):
+            self.async_calls.append(kwargs)
+            return _FrameFuture(len(self.async_calls) - 1, self)
+
+        def pre_process(self, images, **kwargs):
+            raise AssertionError("not used")
+
+        def forward(self, pre_processed_images, **kwargs):
+            raise AssertionError("not used")
+
+        def post_process(self, model_results, pre_processing_meta, **kwargs):
+            raise AssertionError("not used")
+
+    return _Model
+
+
+class _PipelineBridge(_StreamSyncBridge):
+    def __init__(self, pipeline):
+        super().__init__()
+        self.pipeline = pipeline
+        self.returned_context_ids = []
+        self.unloaded = False
+
+    def infer(self, route, api_key, action, images, params, record=True):
+        from inference_models.models.base.async_handoff import (
+            get_async_response_context_id,
+        )
+
+        from inference_model_manager.model_manager import ModelManager
+
+        self.calls.append(
+            (route.model_id, action, dict(params), [i.data for i in images])
+        )
+        predictions = [
+            ModelManager._wire_marshal_result(
+                self.pipeline.infer(images=image.data, **params), 1
+            )
+            for image in images
+        ]
+        self.returned_context_ids.extend(
+            get_async_response_context_id(prediction) for prediction in predictions
+        )
+        return predictions
+
+    def flush_model_stream_pipeline(self, model_id):
+        self.stream_calls.append(("flush", model_id))
+        if self.unloaded:
+            return None
+        return self.pipeline.flush()
+
+    def shutdown_model_stream_pipeline(self, model_id):
+        self.stream_calls.append(("shutdown", model_id))
+        self.pipeline.shutdown_pipeline()
+
+
+class _FailingBridge(_StreamSyncBridge):
+    def infer(self, route, api_key, action, images, params, record=True):
+        self.calls.append((route.model_id, action, dict(params), None))
+        raise RuntimeError("submit failed")
+
+
+_FRAME_SHAPES = [(20, 10), (30, 16), (40, 24)]
+_FRAME_CLASS_FILTERS = [None, ["cat"], ["dog"]]
+
+
+def _frame(index):
+    from datetime import datetime
+
+    from roboflow_workflows.execution_engine.entities.base import (
+        Batch,
+        ImageParentMetadata,
+        VideoMetadata,
+        WorkflowImageData,
+    )
+
+    height, width = _FRAME_SHAPES[index]
+
+    return Batch(
+        content=[
+            WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id=f"p{index}"),
+                numpy_image=np.zeros((height, width, 3), dtype=np.uint8),
+                video_metadata=VideoMetadata(
+                    video_identifier="cam",
+                    frame_number=index,
+                    frame_timestamp=datetime.now(),
+                ),
+            )
+        ],
+        indices=[(0,)],
+    )
+
+
+def _run_block(block, images, class_filter):
+    return block.run_locally(
+        images=images,
+        model_id="seg/1",
+        class_agnostic_nms=False,
+        class_filter=class_filter,
+        confidence=0.4,
+        iou_threshold=0.3,
+        max_detections=300,
+        max_candidates=3000,
+        mask_decode_mode="accurate",
+        tradeoff_factor=0.0,
+        disable_active_learning=False,
+        active_learning_target_dataset=None,
+        enforce_dense_masks_in_inference_models=False,
+    )
+
+
+def _pipelined_provider(monkeypatch, bridge=None):
+    from inference_model_manager.stream_pipeline import stream_pipeline_for
+
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "2")
+    model = _segmentation_model_class()()
+    pipeline = stream_pipeline_for(model)
+    if bridge is None:
+        bridge = _PipelineBridge(pipeline)
+    bridge.routes["seg/1"] = _segmentation_route(depth=2)
+    bridge.routes["seg/1"].class_names = ["cat", "dog"]
+    provider = GatewayModelsProvider(bridge, api_key="k")
+    provider.add_model("seg/1", "k")
+
+    return provider, bridge, model, pipeline
+
+
+def _numpy_image(index=0):
+    height, width = _FRAME_SHAPES[index]
+    return {"type": "numpy_object", "value": np.zeros((height, width, 3), np.uint8)}
+
+
+def _recorded_frames(provider, registry_id="seg/1"):
+    recorded = provider._stream_frames.get(registry_id)
+    if recorded is None:
+        return {}
+    return recorded.frames
+
+
+def _segmentation_block(provider):
+    from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
+        RoboflowInstanceSegmentationModelBlockV3,
+    )
+
+    return RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=provider, api_key="k", step_execution_mode=StepExecutionMode.LOCAL
+    )
+
+
+def _execute_workflow(block):
+    try:
+        outputs = [
+            _run_block(block, _frame(index), _FRAME_CLASS_FILTERS[index])
+            for index in range(3)
+        ]
+        flushed = block.flush_stream_pipeline_outputs()
+    finally:
+        block.close_stream_pipeline()
+
+    return outputs, flushed
+
+
+def test_instance_segmentation_block_pairs_frames_through_the_pipeline(monkeypatch):
+    from concurrent.futures import Future
+
+    import supervision as sv
+
+    provider, bridge, model, _ = _pipelined_provider(monkeypatch)
+    block = _segmentation_block(provider)
+
+    outputs, flushed = _execute_workflow(block)
+
+    context_ids = [call[2]["stream_pipeline_context_id"] for call in bridge.calls]
+    assert len(set(context_ids)) == 3 and all(isinstance(c, str) for c in context_ids)
+    assert bridge.returned_context_ids == [
+        context_ids[0],
+        context_ids[0],
+        context_ids[1],
+    ]
+    assert len(model.async_calls) == 3
+    assert model.sync_calls == []
+    first = outputs[0][0]["predictions"]
+    assert isinstance(first, sv.Detections) and len(first) == 0
+    delayed = []
+    for output in outputs[1:]:
+        assert isinstance(output[0]["predictions"], Future)
+        delayed.append(output[0]["predictions"].result(timeout=5))
+    assert [d["parent_id"].tolist() for d in delayed] == [["p0", "p0"], ["p1"]]
+    assert [d["class_name"].tolist() for d in delayed] == [["cat", "dog"], ["cat"]]
+    assert [int(d.xyxy[0][0]) for d in delayed] == [0, 1]
+    assert [d["image_dimensions"].tolist() for d in delayed] == [
+        [[20, 10], [20, 10]],
+        [[30, 16]],
+    ]
+    assert [d.mask.shape for d in delayed] == [(2, 20, 10), (1, 30, 16)]
+    assert len(flushed) == 1
+    indices, flushed_outputs = flushed[0]
+    assert indices == [(0,)]
+    tail = flushed_outputs[0]["predictions"]
+    assert tail["parent_id"].tolist() == ["p2"] and int(tail.xyxy[0][0]) == 2
+    assert tail["class_name"].tolist() == ["dog"]
+    assert tail["image_dimensions"].tolist() == [[40, 24]]
+    assert tail.mask.shape == (1, 40, 24)
+    assert bridge.stream_calls == [("flush", "seg/1"), ("shutdown", "seg/1")]
+    assert len(block._pending_stream_prediction_contexts) == 0
+    assert _recorded_frames(provider) == {}
+
+
+def test_two_workflow_executions_share_one_pipelined_model(monkeypatch):
+    from concurrent.futures import Future
+
+    provider, bridge, model, pipeline = _pipelined_provider(monkeypatch)
+    block = _segmentation_block(provider)
+
+    _execute_workflow(block)
+    outputs, flushed = _execute_workflow(block)
+
+    assert len(model.async_calls) == 6
+    assert model.sync_calls == []
+    assert len(outputs[0][0]["predictions"]) == 0
+    delayed = [output[0]["predictions"].result(timeout=5) for output in outputs[1:]]
+    assert all(isinstance(output[0]["predictions"], Future) for output in outputs[1:])
+    assert [d["parent_id"].tolist() for d in delayed] == [["p0", "p0"], ["p1"]]
+    assert [int(d.xyxy[0][0]) for d in delayed] == [3, 4]
+    tail = flushed[0][1][0]["predictions"]
+    assert tail["parent_id"].tolist() == ["p2"] and int(tail.xyxy[0][0]) == 5
+    assert bridge.stream_calls == [
+        ("flush", "seg/1"),
+        ("shutdown", "seg/1"),
+        ("flush", "seg/1"),
+        ("shutdown", "seg/1"),
+    ]
+    assert len(block._pending_stream_prediction_contexts) == 0
+    assert _recorded_frames(provider) == {}
+    assert pipeline._response_executor is None
+
+
+def _submit_frame(provider, index, image_index=0, raw=False):
+    result = provider.run_instance_segmentation(
+        "seg/1",
+        [_numpy_image(image_index)],
+        api_key="k",
+        confidence=0.4,
+        stream_pipeline_context_id=f"c{index}",
+        return_raw_responses=raw,
+    )
+    if raw:
+        return result.raw_responses
+    return result
+
+
+def _second_provider(bridge):
+    provider = GatewayModelsProvider(bridge, api_key="k")
+    provider.add_model("seg/1", "k")
+
+    return provider
+
+
+def _resolved(predictions):
+    from concurrent.futures import Future
+
+    if isinstance(predictions, Future):
+        return predictions.result(timeout=5)
+    return predictions
+
+
+def test_a_second_producer_gets_its_synchronous_result_as_a_done_future(
+    monkeypatch,
+):
+    from concurrent.futures import Future
+
+    from inference_models.models.base.async_handoff import (
+        get_async_response_context_id,
+        get_async_response_future,
+    )
+
+    provider_a, bridge, model, _ = _pipelined_provider(monkeypatch)
+    provider_b = _second_provider(bridge)
+    _submit_frame(provider_a, 0)
+
+    responses = _submit_frame(provider_b, 1, image_index=1, raw=True)
+
+    assert len(model.sync_calls) == 1 and len(model.async_calls) == 1
+    future = get_async_response_future(responses[0])
+    assert isinstance(future, Future) and future.done()
+    assert future.result(timeout=0) == responses
+    assert get_async_response_context_id(responses[0]) == "c1"
+    assert responses[0].image.width == 16
+    assert [p.class_name for p in responses[0].predictions] == ["cat", "dog"]
+    assert _recorded_frames(provider_b) == {}
+    assert list(_recorded_frames(provider_a)) == ["c0"]
+
+
+def test_two_blocks_with_their_own_providers_share_one_wrapper(monkeypatch):
+    provider_a, bridge, model, _ = _pipelined_provider(monkeypatch)
+    provider_b = _second_provider(bridge)
+    block_a = _segmentation_block(provider_a)
+    block_b = _segmentation_block(provider_b)
+    outputs_a, outputs_b = [], []
+
+    try:
+        for index in range(3):
+            frame, class_filter = _frame(index), _FRAME_CLASS_FILTERS[index]
+            outputs_a.append(_run_block(block_a, frame, class_filter))
+            outputs_b.append(_run_block(block_b, frame, class_filter))
+        flushed_a = block_a.flush_stream_pipeline_outputs()
+        flushed_b = block_b.flush_stream_pipeline_outputs()
+    finally:
+        block_a.close_stream_pipeline()
+        block_b.close_stream_pipeline()
+
+    assert len(model.async_calls) == 3 and len(model.sync_calls) == 3
+    resolved_a = [_resolved(output[0]["predictions"]) for output in outputs_a]
+    resolved_b = [_resolved(output[0]["predictions"]) for output in outputs_b]
+    assert [d["parent_id"].tolist() for d in resolved_a] == [[], ["p0", "p0"], ["p1"]]
+    assert [int(d.xyxy[0][0]) for d in resolved_a[1:]] == [0, 1]
+    assert [d["parent_id"].tolist() for d in resolved_b] == [
+        ["p0", "p0"],
+        ["p1"],
+        ["p2"],
+    ]
+    assert [int(d.xyxy[0][0]) for d in resolved_b] == [0, 0, 0]
+    assert [d["class_name"].tolist() for d in resolved_b] == [
+        ["cat", "dog"],
+        ["cat"],
+        ["dog"],
+    ]
+    tail = flushed_a[0][1][0]["predictions"]
+    assert tail["parent_id"].tolist() == ["p2"] and int(tail.xyxy[0][0]) == 2
+    assert flushed_b == []
+    assert len(block_a._pending_stream_prediction_contexts) == 0
+    assert len(block_b._pending_stream_prediction_contexts) == 0
+    assert _recorded_frames(provider_a) == {} and _recorded_frames(provider_b) == {}
+
+
+def test_pipelined_path_sends_the_provider_as_the_producer(monkeypatch):
+    provider, bridge, _, _ = _pipelined_provider(monkeypatch)
+
+    _submit_frame(provider, 0)
+
+    assert bridge.calls[0][2]["stream_pipeline_producer_id"] == str(id(provider))
+
+
+def test_non_pipelined_path_sends_no_producer_id():
+    bridge = FakeSyncBridge()
+    bridge.routes["seg/1"] = _segmentation_route(depth=1)
+    bridge.predictions[("seg/1", "infer")] = SimpleNamespace(
+        xyxy=np.array([[1, 1, 3, 3]], dtype=float),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        mask=np.zeros((1, 20, 10), dtype=bool),
+    )
+    provider = GatewayModelsProvider(bridge, api_key="k")
+    provider.add_model("seg/1", "k")
+
+    _submit_frame(provider, 0)
+
+    assert "stream_pipeline_producer_id" not in bridge.calls[0][2]
+    assert "stream_pipeline_context_id" not in bridge.calls[0][2]
+
+
+def test_failed_pipelined_submits_leave_no_stream_frames(monkeypatch):
+    provider, bridge, _, _ = _pipelined_provider(monkeypatch, bridge=_FailingBridge())
+
+    for index in range(3):
+        with pytest.raises(RuntimeError, match="submit failed"):
+            _submit_frame(provider, index)
+
+    assert len(bridge.calls) == 3
+    assert _recorded_frames(provider) == {}
+
+
+def test_pipelined_frames_map_is_bounded_by_the_depth(monkeypatch):
+    provider, _, _, _ = _pipelined_provider(monkeypatch)
+
+    for index in range(5):
+        _submit_frame(provider, index)
+
+    assert list(_recorded_frames(provider)) == ["c4"]
+
+
+def test_flush_drops_unmatched_stream_frames(monkeypatch, caplog):
+    provider, _, _, _ = _pipelined_provider(monkeypatch)
+    for index in range(2):
+        _submit_frame(provider, index, image_index=index)
+    _recorded_frames(provider)["stale"] = _recorded_frames(provider)["c1"]
+
+    with caplog.at_level("WARNING"):
+        flushed = provider.flush_model_stream_pipeline("seg/1")
+
+    assert [response.image.width for response in flushed] == [16]
+    assert _recorded_frames(provider) == {}
+    assert any("stale" in record.getMessage() for record in caplog.records)
+    assert provider.flush_model_stream_pipeline("seg/1") == []
+
+
+def test_shutdown_clears_the_frames_of_an_aborted_pipeline(monkeypatch):
+    provider, bridge, _, _ = _pipelined_provider(monkeypatch)
+    for index in range(2):
+        _submit_frame(provider, index)
+    assert _recorded_frames(provider) != {}
+
+    provider.shutdown_model_stream_pipeline("seg/1")
+
+    assert _recorded_frames(provider) == {}
+    assert bridge.stream_calls == [("shutdown", "seg/1")]
+
+
+def _reload_route(bridge, loaded_monotonic):
+    bridge.routes["seg/1"] = _segmentation_route(depth=2)
+    bridge.routes["seg/1"].class_names = ["cat", "dog"]
+    bridge.routes["seg/1"].loaded_monotonic = loaded_monotonic
+
+
+def test_flush_returning_none_clears_the_frames_and_a_reload_starts_afresh(
+    monkeypatch,
+):
+    provider, bridge, _, _ = _pipelined_provider(monkeypatch)
+    for index in range(2):
+        _submit_frame(provider, index)
+    assert _recorded_frames(provider) != {}
+    bridge.unloaded = True
+
+    assert provider.flush_model_stream_pipeline("seg/1") is None
+
+    assert _recorded_frames(provider) == {}
+    bridge.unloaded = False
+    bridge.pipeline.shutdown_pipeline()
+    _reload_route(bridge, loaded_monotonic=2.0)
+    _submit_frame(provider, 2)
+    assert list(_recorded_frames(provider)) == ["c2"]
+
+
+def test_flush_raising_clears_the_frames(monkeypatch):
+    provider, bridge, _, _ = _pipelined_provider(monkeypatch)
+    _submit_frame(provider, 0)
+
+    def failing_flush(model_id):
+        raise RuntimeError("flush failed")
+
+    bridge.flush_model_stream_pipeline = failing_flush
+    with pytest.raises(RuntimeError, match="flush failed"):
+        provider.flush_model_stream_pipeline("seg/1")
+
+    assert _recorded_frames(provider) == {}
+
+
+def test_frames_recorded_under_a_previous_route_generation_are_discarded(
+    monkeypatch,
+):
+    provider, bridge, _, _ = _pipelined_provider(monkeypatch)
+    _submit_frame(provider, 0)
+    bridge.routes["seg/1"].loaded_monotonic = 5.0
+
+    _submit_frame(provider, 1)
+
+    assert list(_recorded_frames(provider)) == ["c1"]
+
+
+def test_a_bare_placeholder_drops_the_frames_of_a_dead_pipeline(monkeypatch, caplog):
+    provider, bridge, _, _ = _pipelined_provider(monkeypatch)
+    _submit_frame(provider, 0)
+    bridge.pipeline.shutdown_pipeline()
+
+    with caplog.at_level("DEBUG", logger="inference_server.workflows.models_provider"):
+        _submit_frame(provider, 1)
+
+    assert list(_recorded_frames(provider)) == ["c1"]
+    assert any("c0" in record.getMessage() for record in caplog.records)
+
+
+def test_submit_unload_reload_cycles_leave_a_bounded_frame_map(monkeypatch):
+    provider, bridge, _, _ = _pipelined_provider(monkeypatch)
+
+    for cycle in range(4):
+        _submit_frame(provider, cycle)
+        bridge.pipeline.shutdown_pipeline()
+        _reload_route(bridge, loaded_monotonic=float(cycle))
+        _submit_frame(provider, 10 + cycle)
+        assert list(_recorded_frames(provider)) == [f"c{10 + cycle}"]
+
+    assert len(provider._stream_frames) == 1

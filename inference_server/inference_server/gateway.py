@@ -592,3 +592,68 @@ class ModelManagerGateway:
         if info is None:
             raise RuntimeError(f"model '{model_id}' is not loaded")
         return {"model_id": model_id, "actions": info.get("actions", {})}
+
+    async def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        """Whether the model runs a depth>1 stream pipeline.
+
+        Args:
+            model_id: Routing key of the model.
+
+        Returns:
+            True when the model is loaded and pipelined.
+        """
+        supported = await self._run_on_model_executor(
+            self.manager.model_supports_stream_pipeline, model_id
+        )
+
+        return supported
+
+    async def get_model_pipeline_depth(self, model_id: str) -> int:
+        """The model's stream pipeline depth.
+
+        Args:
+            model_id: Routing key of the model.
+
+        Returns:
+            The depth, 1 when the model is not loaded or not pipelined.
+        """
+        depth = await self._run_on_model_executor(
+            self.manager.get_model_pipeline_depth, model_id
+        )
+
+        return depth
+
+    async def flush_model_stream_pipeline(self, model_id: str) -> Optional[list]:
+        """Drain the model's in-flight pipeline frames.
+
+        Args:
+            model_id: Routing key of the model.
+
+        Returns:
+            The finished predictions of the in-flight frames, oldest first, or
+            None when the model is not pipelined.
+        """
+        flushed = await self._run_on_model_executor(
+            self.manager.flush_model_stream_pipeline, model_id
+        )
+
+        return flushed
+
+    async def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        """Stop the model's pipeline worker; a no-op when it has none.
+
+        Args:
+            model_id: Routing key of the model.
+        """
+        await self._run_on_model_executor(
+            self.manager.shutdown_model_stream_pipeline, model_id
+        )
+
+        return None
+
+    async def _run_on_model_executor(self, method: Any, model_id: str) -> Any:
+        result = await asyncio.get_running_loop().run_in_executor(
+            self._model_executor, lambda: method(model_id)
+        )
+
+        return result

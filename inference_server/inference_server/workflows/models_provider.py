@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import time
+from concurrent.futures import Future
+from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from roboflow_workflows import environment
 from roboflow_workflows.prototypes.models_provider import (
@@ -11,8 +14,15 @@ from roboflow_workflows.prototypes.models_provider import (
     _Unset,
 )
 
+from inference_model_manager.stream_pipeline import STREAM_PIPELINE_PRODUCER_ID_KWARG
 from inference_models.errors import BaseInferenceModelsError
 from inference_models.models.base.action_recognition import VideoSampling
+from inference_models.models.base.async_handoff import (
+    STREAM_PIPELINE_CONTEXT_ID_KWARG,
+    attach_async_response_future,
+    get_async_response_context_id,
+    get_async_response_future,
+)
 from inference_models.utils import model_blob_cache
 from inference_server import pingback, telemetry
 from inference_server.framework.input_parsers.image_limits import too_many_images
@@ -94,6 +104,8 @@ from inference_server.workflows.tensor_native import (
     native_params,
 )
 
+logger = logging.getLogger(__name__)
+
 _WORKFLOW_SOURCE = "workflow-execution"
 _SAM3_3D_UNAVAILABLE = (
     "SAM3 3D object reconstruction is not available on inference_server"
@@ -106,6 +118,23 @@ def _passed(**arguments: Any) -> Dict[str, Any]:
         for name, value in arguments.items()
         if not isinstance(value, _Unset)
     }
+
+
+@dataclass(frozen=True)
+class _StreamFrame:
+    route: Route
+    request: Any
+    dims: Tuple[int, int]
+
+
+@dataclass
+class _StreamFrames:
+    route: Route
+    loaded_monotonic: Optional[float]
+    frames: Dict[str, _StreamFrame] = field(default_factory=dict)
+
+    def recorded_under(self, route: Route) -> bool:
+        return self.route is route and self.loaded_monotonic == route.loaded_monotonic
 
 
 class _ActionRecognitionModelProxy:
@@ -160,6 +189,8 @@ class GatewayModelsProvider:
         self._routes: Dict[str, Route] = {}
         self._artifact_cache: Any = None
         self._artifact_cache_resolved = False
+        self._producer_id = str(id(self))
+        self._stream_frames: Dict[str, _StreamFrames] = {}
 
     @property
     def content_addressed_artifact_cache(self) -> Any:
@@ -360,10 +391,123 @@ class GatewayModelsProvider:
                 stream_pipeline_context_id=stream_pipeline_context_id,
             ),
         )
-        responses = self._run_cv(model_id, request, api_key)
+        responses = self._run_instance_segmentation(
+            model_id, request, api_key, stream_pipeline_context_id
+        )
         if return_raw_responses:
             return InferenceResultsDC(predictions=[], raw_responses=responses)
         return self._dump(responses)
+
+    def _run_instance_segmentation(
+        self,
+        model_id: str,
+        request: Any,
+        api_key: Optional[str],
+        stream_pipeline_context_id: Union[str, None, _Unset],
+    ) -> List[Any]:
+        if not isinstance(stream_pipeline_context_id, str):
+            return self._run_cv(model_id, request, api_key)
+        key = self._key_for(model_id, api_key)
+        route = self._resolve(model_id, key)
+        images, _ = as_image_list(request.image)
+        if route.stream_pipeline_depth <= 1 or len(images) != 1:
+            return self._run_cv(model_id, request, api_key, route=route)
+
+        responses = self._run_stream_pipelined(
+            request, key, route, stream_pipeline_context_id
+        )
+
+        return responses
+
+    def _run_stream_pipelined(
+        self, request: Any, key: Optional[str], route: Route, context_id: str
+    ) -> List[Any]:
+        ensure_request_supported(route.model_id, request, route)
+        payloads = self._request_payloads(request)
+        params = build_task_params(route.task_type, route.action, request, route)
+        params[STREAM_PIPELINE_CONTEXT_ID_KWARG] = context_id
+        params[STREAM_PIPELINE_PRODUCER_ID_KWARG] = self._producer_id
+        current = _StreamFrame(
+            route=route, request=request, dims=(payloads[0].width, payloads[0].height)
+        )
+        frames = self._stream_frames_for(route)
+
+        started = time.perf_counter()
+        predictions = self._bridge.infer(route, key, route.action, payloads, params)
+        elapsed = time.perf_counter() - started
+        prediction = predictions[0]
+        response = self._repack(prediction, payloads[0], route, request, elapsed)
+
+        response_future = get_async_response_future(prediction)
+        response_context_id = get_async_response_context_id(prediction)
+        if isinstance(response_future, Future):
+            frame = _pop_stream_frame(frames, response_context_id) or current
+            attach_async_response_future(
+                response,
+                self._chain_stream_response(response_future, frame, elapsed),
+                response_context_id,
+            )
+            frames[context_id] = current
+        elif response_context_id == context_id:
+            if frames:
+                logger.debug(
+                    "Dropping %d stream frames of '%s' left by a previous pipeline: %s",
+                    len(frames),
+                    route.registry_id,
+                    sorted(frames),
+                )
+                frames.clear()
+            frames[context_id] = current
+        else:
+            attach_async_response_future(
+                response, _completed_future([response]), context_id
+            )
+        pingback.record_inference(route.registry_id, request, [response])
+
+        return [response]
+
+    def _stream_frames_for(self, route: Route) -> Dict[str, _StreamFrame]:
+        recorded = self._stream_frames.get(route.registry_id)
+        if recorded is None or not recorded.recorded_under(route):
+            recorded = _StreamFrames(
+                route=route, loaded_monotonic=route.loaded_monotonic
+            )
+            self._stream_frames[route.registry_id] = recorded
+
+        return recorded.frames
+
+    def _chain_stream_response(
+        self, response_future: Future, frame: _StreamFrame, elapsed: float
+    ) -> Future:
+        chained: Future = Future()
+
+        def _repack_frame(finished: Future) -> None:
+            try:
+                responses = [
+                    self._repack_stream_frame(prediction, frame, elapsed)
+                    for prediction in finished.result()
+                ]
+            except Exception as error:
+                chained.set_exception(error)
+                return None
+            chained.set_result(responses)
+            return None
+
+        response_future.add_done_callback(_repack_frame)
+
+        return chained
+
+    def _repack_stream_frame(
+        self, prediction: Any, frame: _StreamFrame, elapsed: float
+    ) -> Any:
+        width, height = frame.dims
+        payload = SimpleNamespace(width=width, height=height)
+
+        response = self._repack(
+            prediction, payload, frame.route, frame.request, elapsed
+        )
+
+        return response
 
     def run_lmm(
         self,
@@ -696,15 +840,54 @@ class GatewayModelsProvider:
         return list(self._route_for(model_id).key_points_classes or [])
 
     def model_supports_stream_pipeline(self, model_id: str) -> bool:
-        return False
+        return self.get_model_pipeline_depth(model_id) > 1
 
     def get_model_pipeline_depth(self, model_id: str) -> int:
-        return 0
+        route = self._routes.get(model_id)
+        if route is None:
+            return 1
+        return route.stream_pipeline_depth
 
     def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
-        return None
+        route = self._routes.get(model_id)
+        if route is None or route.stream_pipeline_depth <= 1:
+            return None
+        recorded = self._stream_frames.pop(route.registry_id, None)
+        predictions = self._bridge.flush_model_stream_pipeline(route.registry_id)
+        if predictions is None:
+            return None
+        frames: Dict[str, _StreamFrame] = {}
+        if recorded is not None and recorded.recorded_under(route):
+            frames = recorded.frames
+        responses = []
+        for prediction in predictions:
+            frame = _pop_stream_frame(frames, get_async_response_context_id(prediction))
+            if frame is None:
+                frame = _StreamFrame(
+                    route=route,
+                    request=InstanceSegmentationInferenceRequest(
+                        model_id=route.model_id, image=[], source=_WORKFLOW_SOURCE
+                    ),
+                    dims=_prediction_dims(prediction),
+                )
+            responses.append(self._repack_stream_frame(prediction, frame, 0.0))
+        if frames:
+            logger.warning(
+                "Dropping %d stream frames of '%s' left unmatched by the flush: %s",
+                len(frames),
+                route.registry_id,
+                sorted(frames),
+            )
+
+        return responses
 
     def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        route = self._routes.get(model_id)
+        if route is None or route.stream_pipeline_depth <= 1:
+            return None
+        self._stream_frames.pop(route.registry_id, None)
+        self._bridge.shutdown_model_stream_pipeline(route.registry_id)
+
         return None
 
     def __contains__(self, model_id: str) -> bool:
@@ -748,9 +931,11 @@ class GatewayModelsProvider:
         request: Any,
         api_key: Optional[str],
         extra_params: Optional[Dict[str, Any]] = None,
+        route: Optional[Route] = None,
     ) -> List[Any]:
         key = self._key_for(model_id, api_key)
-        route = self._resolve(model_id, key)
+        if route is None:
+            route = self._resolve(model_id, key)
         ensure_request_supported(model_id, request, route)
         payloads = self._request_payloads(request)
         params = build_task_params(route.task_type, route.action, request, route)
@@ -759,23 +944,30 @@ class GatewayModelsProvider:
         predictions = self._bridge.infer(route, key, route.action, payloads, params)
         elapsed = time.perf_counter() - started
         responses = [
-            self._stamp(
-                repack_prediction(
-                    route.task_type,
-                    route.action,
-                    prediction,
-                    (payload.width, payload.height),
-                    route,
-                    request,
-                ),
-                route,
-                elapsed,
-                request,
-            )
+            self._repack(prediction, payload, route, request, elapsed)
             for prediction, payload in zip(predictions, payloads)
         ]
         pingback.record_inference(route.registry_id, request, responses)
         return responses
+
+    def _repack(
+        self, prediction: Any, payload: Any, route: Route, request: Any, elapsed: float
+    ) -> Any:
+        response = self._stamp(
+            repack_prediction(
+                route.task_type,
+                route.action,
+                prediction,
+                (payload.width, payload.height),
+                route,
+                request,
+            ),
+            route,
+            elapsed,
+            request,
+        )
+
+        return response
 
     def _run_vlm(
         self, model_id: str, request: Any, api_key: Optional[str]
@@ -933,3 +1125,28 @@ class GatewayModelsProvider:
             response.model_dump(by_alias=True, exclude_none=True)
             for response in responses
         ]
+
+
+def _completed_future(responses: List[Any]) -> Future:
+    future: Future = Future()
+    future.set_result(responses)
+
+    return future
+
+
+def _pop_stream_frame(
+    frames: Dict[str, _StreamFrame], context_id: Optional[str]
+) -> Optional[_StreamFrame]:
+    if context_id is not None and context_id in frames:
+        return frames.pop(context_id)
+    if frames:
+        return frames.pop(next(iter(frames)))
+    return None
+
+
+def _prediction_dims(prediction: Any) -> Tuple[int, int]:
+    image_size = getattr(getattr(prediction, "mask", None), "image_size", None)
+    if not image_size:
+        return 0, 0
+    height, width = image_size
+    return int(width), int(height)

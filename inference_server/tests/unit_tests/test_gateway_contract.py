@@ -32,6 +32,10 @@ EXPECTED_GATEWAY_SIGNATURES = {
     ],
     "stats": [],
     "interface": [("model_id", "POSITIONAL_OR_KEYWORD", REQUIRED)],
+    "model_supports_stream_pipeline": [("model_id", "POSITIONAL_OR_KEYWORD", REQUIRED)],
+    "get_model_pipeline_depth": [("model_id", "POSITIONAL_OR_KEYWORD", REQUIRED)],
+    "flush_model_stream_pipeline": [("model_id", "POSITIONAL_OR_KEYWORD", REQUIRED)],
+    "shutdown_model_stream_pipeline": [("model_id", "POSITIONAL_OR_KEYWORD", REQUIRED)],
 }
 
 
@@ -111,3 +115,9 @@ async def test_failed_load_reports_error_and_code_before_the_optional_descriptio
 
 def test_last_load_failure_is_not_part_of_the_required_surface():
     assert "last_load_failure" not in EXPECTED_GATEWAY_SIGNATURES
+
+
+def test_gateway_api_version_covers_the_stream_pipeline_methods():
+    from inference_server.gateway_resolver import GATEWAY_API_VERSION
+
+    assert GATEWAY_API_VERSION == 3

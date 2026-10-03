@@ -25,6 +25,13 @@ a failure of unknown cause. A gateway may also expose
 ``last_load_failure(model_id, instance="")`` returning the failure tuple of
 the latest load of a model while no newer load has been started, or None;
 callers treat a gateway without it as having nothing to report.
+
+Version 3 adds the stream pipeline surface: ``model_supports_stream_pipeline``,
+``get_model_pipeline_depth``, ``flush_model_stream_pipeline`` and
+``shutdown_model_stream_pipeline``, each taking the model's routing key. A
+gateway without a pipelined model answers False, 1, None and None; ``stats``
+entries carry ``stream_pipeline_depth`` (1 when not pipelined) so route
+resolution reads the depth without a round trip.
 """
 
 from __future__ import annotations
@@ -36,7 +43,7 @@ from typing import Any, Callable, Dict
 
 from inference_server import configuration as cfg
 
-GATEWAY_API_VERSION = 2
+GATEWAY_API_VERSION = 3
 
 GATEWAY_FACTORIES: Dict[str, Callable[[], Any]] = {}
 _EPS_LOADED = False

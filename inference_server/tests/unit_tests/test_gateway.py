@@ -1610,3 +1610,41 @@ async def test_failed_pipeline_stage_is_released_without_cyclic_gc():
     finally:
         gc.enable()
         manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_stream_pipeline_methods_run_on_model_executor():
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    threads = {}
+
+    def _record(name, value):
+        def _call(model_id):
+            threads[name] = (threading.current_thread().name, model_id)
+            return value
+
+        return _call
+
+    mgr = _fake_manager()
+    mgr.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="model-exec")
+    mgr.model_supports_stream_pipeline = _record("supports", True)
+    mgr.get_model_pipeline_depth = _record("depth", 2)
+    mgr.flush_model_stream_pipeline = _record("flush", ["tail"])
+    mgr.shutdown_model_stream_pipeline = _record("shutdown", None)
+    gateway = ModelManagerGateway(mgr)
+    try:
+        results = (
+            await gateway.model_supports_stream_pipeline("seg/1"),
+            await gateway.get_model_pipeline_depth("seg/1"),
+            await gateway.flush_model_stream_pipeline("seg/1"),
+            await gateway.shutdown_model_stream_pipeline("seg/1"),
+        )
+    finally:
+        mgr.executor.shutdown(wait=True)
+
+    assert results == (True, 2, ["tail"], None)
+    assert set(threads) == {"supports", "depth", "flush", "shutdown"}
+    for thread_name, model_id in threads.values():
+        assert thread_name.startswith("model-exec")
+        assert model_id == "seg/1"

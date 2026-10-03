@@ -1683,3 +1683,55 @@ async def test_offline_stream_only_model_is_400(fake_stat, monkeypatch):
         await LegacyModelBridge(gw).resolve("sam2-rt/1", None)
     assert exc.value.status_code == 400
     assert "streaming" in exc.value.message
+
+
+@pytest.mark.asyncio
+async def test_route_reads_the_stream_pipeline_depth_from_stats(fake_stat):
+    fake_stat["seg/1"] = ("instance-segmentation", "infer")
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(model_info={"seg/1": {"stream_pipeline_depth": 2}, "ds/1": {}})
+    bridge = LegacyModelBridge(gw)
+
+    pipelined = await bridge.resolve("seg/1", "key")
+    plain = await bridge.resolve("ds/1", "key")
+
+    assert pipelined.stream_pipeline_depth == 2
+    assert plain.stream_pipeline_depth == 1
+
+
+@pytest.mark.asyncio
+async def test_bridge_forwards_flush_and_shutdown_to_the_gateway(fake_stat):
+    gw = FakeGateway(
+        model_info={
+            "seg/1": {"stream_pipeline_depth": 2, "stream_pipeline_flush": ["t"]}
+        }
+    )
+    await gw.ensure_loaded("seg/1")
+    bridge = LegacyModelBridge(gw)
+
+    flushed = await bridge.flush_model_stream_pipeline("seg/1")
+    shut = await bridge.shutdown_model_stream_pipeline("seg/1")
+
+    assert flushed == ["t"] and shut is None
+    assert ("flush_model_stream_pipeline", "seg/1") in gw.calls
+    assert ("shutdown_model_stream_pipeline", "seg/1") in gw.calls
+
+
+def test_sync_bridge_runs_flush_and_shutdown_through_the_loop(fake_stat, server_loop):
+    loop, _ = server_loop
+    gw = FakeGateway(
+        model_info={
+            "seg/1": {"stream_pipeline_depth": 2, "stream_pipeline_flush": ["t"]}
+        }
+    )
+    asyncio.run_coroutine_threadsafe(gw.ensure_loaded("seg/1"), loop).result(5)
+    sync = SyncLegacyBridge(LegacyModelBridge(gw), LoopBridge(loop))
+
+    flushed = sync.flush_model_stream_pipeline("seg/1")
+    shut = sync.shutdown_model_stream_pipeline("seg/1")
+
+    assert flushed == ["t"] and shut is None
+    assert gw.calls[-2:] == [
+        ("flush_model_stream_pipeline", "seg/1"),
+        ("shutdown_model_stream_pipeline", "seg/1"),
+    ]

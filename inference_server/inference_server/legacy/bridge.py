@@ -131,6 +131,7 @@ class Route:
     model_architecture: Optional[str] = None
     model_variant: Optional[str] = None
     is_stub: bool = False
+    stream_pipeline_depth: int = 1
 
 
 _CORE_MODEL_TASK_TYPES: dict[str, tuple[str, str]] = {
@@ -598,6 +599,16 @@ class LegacyModelBridge:
 
         await self.unload(registry_id)
 
+    async def flush_model_stream_pipeline(self, model_id: str) -> Optional[list]:
+        flushed = await self.gateway.flush_model_stream_pipeline(model_id)
+
+        return flushed
+
+    async def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        await self.gateway.shutdown_model_stream_pipeline(model_id)
+
+        return None
+
     async def unload_all(self) -> None:
         models = await self._stats_models()
         for model_id in list(models):
@@ -924,6 +935,7 @@ def _apply_metadata(route: Route, entry: dict) -> None:
     route.input_width = entry.get("input_width")
     route.vram_bytes = entry.get("vram_bytes")
     route.loaded_monotonic = entry.get("loaded_monotonic")
+    route.stream_pipeline_depth = int(entry.get("stream_pipeline_depth") or 1)
     route.metadata_ts = time.monotonic()
 
 
@@ -987,6 +999,12 @@ class SyncLegacyBridge:
 
     def fetch_image(self, url) -> bytes:
         return self._run(self._bridge.fetch_image(url))
+
+    def flush_model_stream_pipeline(self, model_id) -> Optional[list]:
+        return self._run(self._bridge.flush_model_stream_pipeline(model_id))
+
+    def shutdown_model_stream_pipeline(self, model_id) -> None:
+        return self._run(self._bridge.shutdown_model_stream_pipeline(model_id))
 
     def record_request(self, route, model_id_as_requested, path, *, alias=None) -> None:
         if not model_id_as_requested:

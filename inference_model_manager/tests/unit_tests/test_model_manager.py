@@ -12,6 +12,7 @@ from concurrent.futures import Future
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from inference_model_manager.model_manager import ModelManager
@@ -1032,3 +1033,484 @@ class TestMemoryPressureEviction:
 
         monkeypatch.setattr(cfg, "INFERENCE_MEMORY_FREE_THRESHOLD", 0.0)
         assert mm_mod._memory_pressure_detected() is False
+
+
+class _FakeRemoteBackend(FakeBackend):
+    _model_mro_names = ["InstanceSegmentationModel", "object"]
+
+    def __init__(self, model_id: str, **kwargs):
+        super().__init__(model_id, **kwargs)
+        del self._fake_model
+
+    @property
+    def model(self):
+        raise AttributeError("model")
+
+    def submit_request(self, action=None, raw_input=None, validate=None, **kwargs):
+        future: Future = Future()
+        future.set_result({"prediction": "remote"})
+        return future
+
+    def stats(self) -> Dict[str, Any]:
+        return {"backend_type": "remote", "state": self.state}
+
+
+class _ReloadOnRelease:
+    def __init__(self, lock, reload, *, when):
+        self._lock = lock
+        self._reload = reload
+        self._when = when
+        self.fired = False
+
+    def __enter__(self):
+        return self._lock.__enter__()
+
+    def __exit__(self, *exc):
+        self._lock.__exit__(*exc)
+        if not self.fired and self._when():
+            self.fired = True
+            self._reload()
+
+
+def _direct_backend(model_id: str, model: Any):
+    from collections import deque
+
+    from inference_model_manager.backends.direct import DirectBackend
+
+    backend = DirectBackend.__new__(DirectBackend)
+    backend._model_id = model_id
+    backend._device_str = "cpu"
+    backend._state_value = "loaded"
+    backend._model = model
+    backend._inflight = 0
+    backend._inflight_lock = threading.Lock()
+    backend._inference_count = 0
+    backend._error_count = 0
+    backend._last_inference_ts = 0.0
+    backend._latencies = deque(maxlen=1000)
+    backend._start_ts = 0.0
+
+    return backend
+
+
+class TestStreamPipeline:
+
+    @pytest.fixture
+    def segmentation_manager(self, monkeypatch):
+        from inference_models.models.base.instance_segmentation import (
+            InstanceSegmentationModel,
+        )
+
+        from inference_model_manager.registry_defaults import lazy_register
+        from tests.unit_tests.test_stream_pipeline import FakeSegmentationModel
+
+        lazy_register(InstanceSegmentationModel)
+        monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "2")
+        mm = ModelManager()
+        backends: Dict[str, FakeBackend] = {}
+        models: Dict[str, FakeSegmentationModel] = {}
+        created: List[FakeSegmentationModel] = []
+
+        def fake_create(model_id, api_key, backend, **kwargs):
+            if model_id.startswith("remote"):
+                return _FakeRemoteBackend(model_id)
+            fb = FakeBackend(model_id)
+            fb._fake_model = FakeSegmentationModel(
+                supports_stream_pipeline=not model_id.startswith("plain")
+            )
+            fb._fake_model._inference_count = 0
+            backends[model_id] = fb
+            models[model_id] = fb._fake_model
+            created.append(fb._fake_model)
+            return fb
+
+        mm._create_backend = fake_create
+        yield mm, backends, models
+        for model in created:
+            for future in model.futures:
+                future.release.set()
+        mm.shutdown()
+
+    @staticmethod
+    def _frame(mm: ModelManager, model_id: str, context_id: str):
+        return mm.process(
+            model_id,
+            serialize=False,
+            wire_marshalling=True,
+            images=np.zeros((4, 6, 3), dtype=np.uint8),
+            stream_pipeline_context_id=context_id,
+            stream_pipeline_producer_id="producer",
+        )
+
+    def test_load_wires_the_pipeline_for_a_supported_model(self, segmentation_manager):
+        mm, _, _ = segmentation_manager
+
+        mm.load("seg/1", api_key="")
+
+        assert mm.model_supports_stream_pipeline("seg/1") is True
+        assert mm.get_model_pipeline_depth("seg/1") == 2
+        entry = next(m for m in mm.stats()["models"] if m["model_id"] == "seg/1")
+        assert entry["stream_pipeline_depth"] == 2
+
+    def test_unsupported_model_reports_depth_one(self, segmentation_manager):
+        mm, _, _ = segmentation_manager
+
+        mm.load("plain/1", api_key="")
+
+        assert mm.model_supports_stream_pipeline("plain/1") is False
+        assert mm.get_model_pipeline_depth("plain/1") == 1
+        entry = next(m for m in mm.stats()["models"] if m["model_id"] == "plain/1")
+        assert entry["stream_pipeline_depth"] == 1
+        assert mm.flush_model_stream_pipeline("plain/1") is None
+        assert mm.shutdown_model_stream_pipeline("plain/1") is None
+
+    def test_unloaded_model_reports_legacy_defaults(self, segmentation_manager):
+        mm, _, _ = segmentation_manager
+
+        assert mm.model_supports_stream_pipeline("missing/1") is False
+        assert mm.get_model_pipeline_depth("missing/1") == 1
+        assert mm.flush_model_stream_pipeline("missing/1") is None
+        assert mm.shutdown_model_stream_pipeline("missing/1") is None
+
+    def test_non_direct_backend_raises_not_implemented(self, segmentation_manager):
+        mm, _, _ = segmentation_manager
+        mm.load("remote/1", api_key="", backend="remote")
+
+        with pytest.raises(NotImplementedError):
+            mm.model_supports_stream_pipeline("remote/1")
+        with pytest.raises(NotImplementedError):
+            mm.get_model_pipeline_depth("remote/1")
+        with pytest.raises(NotImplementedError):
+            mm.flush_model_stream_pipeline("remote/1")
+        with pytest.raises(NotImplementedError):
+            mm.shutdown_model_stream_pipeline("remote/1")
+        entry = next(m for m in mm.stats()["models"] if m["model_id"] == "remote/1")
+        assert entry["stream_pipeline_depth"] == 1
+
+    def test_depth_one_does_not_wire_the_pipeline(
+        self, segmentation_manager, monkeypatch
+    ):
+        mm, _, _ = segmentation_manager
+        monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "1")
+
+        mm.load("seg/1", api_key="")
+
+        assert mm.model_supports_stream_pipeline("seg/1") is False
+        assert mm.get_model_pipeline_depth("seg/1") == 1
+
+    def test_process_routes_the_default_action_through_the_pipeline(
+        self, segmentation_manager
+    ):
+        from inference_models.models.base.async_handoff import (
+            get_async_response_context_id,
+            get_async_response_future,
+        )
+
+        mm, _, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+
+        first = self._frame(mm, "seg/1", "ctx-1")
+        second = self._frame(mm, "seg/1", "ctx-2")
+
+        model = models["seg/1"]
+        assert model.sync_calls == []
+        assert [kwargs["mask_format"] for _, kwargs in model.async_calls] == [
+            "rle",
+            "rle",
+        ]
+        assert len(first) == 0 and isinstance(first.xyxy, np.ndarray)
+        assert get_async_response_future(first) is None
+        assert get_async_response_context_id(second) == "ctx-1"
+        model.futures[0].release.set()
+        result = get_async_response_future(second).result(timeout=5)
+        assert int(result[0].xyxy[0][0]) == 1
+        model.futures[1].release.set()
+        flushed = mm.flush_model_stream_pipeline("seg/1")
+        assert [get_async_response_context_id(r) for r in flushed] == ["ctx-2"]
+
+    def test_process_without_context_id_runs_the_model_synchronously(
+        self, segmentation_manager
+    ):
+        mm, _, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+        image = np.zeros((4, 6, 3), dtype=np.uint8)
+
+        result = mm.process(
+            "seg/1", serialize=False, wire_marshalling=True, images=image
+        )
+
+        assert len(result) == 1
+        assert len(models["seg/1"].sync_calls) == 1
+        assert models["seg/1"].async_calls == []
+
+    def test_process_batches_stay_on_the_model(self, segmentation_manager):
+        mm, _, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+        images = [np.zeros((4, 6, 3), dtype=np.uint8)] * 2
+
+        result = mm.process(
+            "seg/1",
+            serialize=False,
+            wire_marshalling=True,
+            images=images,
+            stream_pipeline_context_id="ctx-1",
+        )
+
+        assert len(result) == 2
+        assert len(models["seg/1"].sync_calls) == 1
+        assert models["seg/1"].async_calls == []
+
+    def test_unload_shuts_the_pipeline_down(self, segmentation_manager):
+        mm, backends, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+        self._frame(mm, "seg/1", "ctx-1")
+        self._frame(mm, "seg/1", "ctx-2")
+        pipeline = mm._stream_pipelines["seg/1"]
+        executor = pipeline._response_executor
+        for future in models["seg/1"].futures:
+            future.release.set()
+
+        mm.unload("seg/1")
+
+        assert executor._shutdown is True
+        assert pipeline._response_executor is None
+        assert "seg/1" not in mm._stream_pipelines
+        assert backends["seg/1"]._unloaded is True
+        assert mm.model_supports_stream_pipeline("seg/1") is False
+        assert mm.get_model_pipeline_depth("seg/1") == 1
+        assert mm.flush_model_stream_pipeline("seg/1") is None
+
+    def test_unload_resolves_an_in_flight_frame(self, segmentation_manager):
+        from inference_models.models.base.async_handoff import (
+            get_async_response_future,
+        )
+
+        mm, _, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+        self._frame(mm, "seg/1", "ctx-1")
+        second = self._frame(mm, "seg/1", "ctx-2")
+        future = get_async_response_future(second)
+        for model_future in models["seg/1"].futures:
+            model_future.release.set()
+
+        mm.unload("seg/1")
+
+        assert future.done()
+        assert len(future.result(timeout=0)) == 1
+        assert "seg/1" not in mm
+
+    def test_unload_shuts_the_captured_pipeline_down_when_a_reload_interleaves(
+        self, segmentation_manager
+    ):
+        mm, _, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+        self._frame(mm, "seg/1", "ctx-1")
+        self._frame(mm, "seg/1", "ctx-2")
+        old_model = models["seg/1"]
+        old_pipeline = mm._stream_pipelines["seg/1"]
+        old_executor = old_pipeline._response_executor
+        for future in old_model.futures:
+            future.release.set()
+        mm._lifecycle_lock = _ReloadOnRelease(
+            mm._lifecycle_lock,
+            lambda: mm.load("seg/1", api_key=""),
+            when=lambda: "seg/1" not in mm._backends,
+        )
+
+        mm.unload("seg/1")
+
+        assert mm._lifecycle_lock.fired is True
+        new_pipeline = mm._stream_pipelines["seg/1"]
+        assert new_pipeline is not old_pipeline
+        assert new_pipeline.model is models["seg/1"] is not old_model
+        assert old_pipeline._response_executor is None
+        assert old_executor._shutdown is True
+        assert "seg/1" in mm
+
+    def test_eviction_shuts_the_captured_pipeline_down_when_a_reload_interleaves(
+        self, segmentation_manager, monkeypatch
+    ):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 1)
+        mm, _, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+        self._frame(mm, "seg/1", "ctx-1")
+        self._frame(mm, "seg/1", "ctx-2")
+        old_model = models["seg/1"]
+        old_pipeline = mm._stream_pipelines["seg/1"]
+        old_executor = old_pipeline._response_executor
+        for future in old_model.futures:
+            future.release.set()
+        mm._lifecycle_lock = _ReloadOnRelease(
+            mm._lifecycle_lock,
+            lambda: mm.load("seg/1", api_key="", pinned=True),
+            when=lambda: "seg/1" not in mm._backends,
+        )
+
+        mm.load("seg/2", api_key="")
+
+        assert mm._lifecycle_lock.fired is True
+        new_pipeline = mm._stream_pipelines["seg/1"]
+        assert new_pipeline is not old_pipeline
+        assert new_pipeline.model is models["seg/1"] is not old_model
+        assert old_pipeline._response_executor is None
+        assert old_executor._shutdown is True
+        assert "seg/1" in mm and "seg/2" in mm
+
+    def test_admitted_request_runs_on_the_captured_wrapper_across_a_reload(
+        self, segmentation_manager
+    ):
+        from inference_models.models.base.async_handoff import (
+            get_async_response_context_id,
+            get_async_response_future,
+        )
+
+        mm, backends, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+        old_backend, old_model = backends["seg/1"], models["seg/1"]
+        old_pipeline = mm._stream_pipelines["seg/1"]
+        admitted, resume = threading.Event(), threading.Event()
+
+        def inflight_begin():
+            admitted.set()
+            assert resume.wait(timeout=5)
+
+        old_backend.inflight_begin = inflight_begin
+        results: List[Any] = []
+        worker = threading.Thread(
+            target=lambda: results.append(self._frame(mm, "seg/1", "ctx-1"))
+        )
+        worker.start()
+        assert admitted.wait(timeout=5)
+
+        mm.unload("seg/1")
+        mm.load("seg/1", api_key="")
+        new_pipeline = mm._stream_pipelines["seg/1"]
+        resume.set()
+        worker.join(timeout=5)
+
+        assert not worker.is_alive()
+        assert new_pipeline is not old_pipeline
+        assert old_pipeline._response_executor is None
+        assert len(old_model.async_calls) == 1 and old_model.sync_calls == []
+        assert models["seg/1"].async_calls == [] and models["seg/1"].sync_calls == []
+        assert list(new_pipeline._pending_futures) == []
+        assert [f for f, _, _ in old_pipeline._pending_futures] == old_model.futures
+        assert get_async_response_context_id(results[0]) == "ctx-1"
+        assert get_async_response_future(results[0]) is None
+
+    @pytest.mark.parametrize("evict", [False, True])
+    def test_pipeline_is_drained_after_the_last_admitted_frame(
+        self, segmentation_manager, monkeypatch, evict
+    ):
+        import inference_model_manager.configuration as cfg
+        from inference_models.models.base.async_handoff import (
+            get_async_response_context_id,
+        )
+
+        from tests.unit_tests.test_stream_pipeline import (
+            FakeSegmentationModel,
+            queues_of,
+        )
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 1 if evict else 0)
+        mm, _, _ = segmentation_manager
+        model = FakeSegmentationModel()
+        backend = _direct_backend("seg/1", model)
+        fake_create = mm._create_backend
+        mm._create_backend = lambda model_id, api_key, **kwargs: (
+            backend if model_id == "seg/1" else fake_create(model_id, api_key, **kwargs)
+        )
+        mm.load("seg/1", api_key="")
+        pipeline = mm._stream_pipelines["seg/1"]
+        admitted, resume = threading.Event(), threading.Event()
+        lease_begin = backend.inflight_begin
+
+        def paused_begin():
+            lease_begin()
+            admitted.set()
+            assert resume.wait(timeout=5)
+
+        backend.inflight_begin = paused_begin
+        shutdown_pipeline = pipeline.shutdown_pipeline
+
+        def recorded_shutdown():
+            model.events.append(("shutdown", len(model.async_calls)))
+            shutdown_pipeline()
+
+        pipeline.shutdown_pipeline = recorded_shutdown
+        results: List[Any] = []
+        worker = threading.Thread(
+            target=lambda: results.append(self._frame(mm, "seg/1", "ctx-1"))
+        )
+        worker.start()
+        assert admitted.wait(timeout=5)
+        removed = threading.Event()
+
+        def remove():
+            if evict:
+                mm.load("seg/2", api_key="")
+            else:
+                mm.unload("seg/1", drain=True, drain_timeout_s=5.0)
+            removed.set()
+
+        remover = threading.Thread(target=remove)
+        remover.start()
+        assert not removed.wait(timeout=0.3)
+        resume.set()
+        worker.join(timeout=5)
+        for future in model.futures:
+            future.release.set()
+        remover.join(timeout=5)
+
+        assert not worker.is_alive() and removed.is_set()
+        assert model.events == [
+            ("async-start", 1),
+            ("async-return", 1),
+            ("shutdown", 1),
+        ]
+        assert queues_of(pipeline) == ([], [], [])
+        assert pipeline._response_executor is None
+        assert backend.model is None
+        assert "seg/1" not in mm
+        assert get_async_response_context_id(results[0]) == "ctx-1"
+
+    def test_shutdown_stops_every_pipeline(self, segmentation_manager):
+        mm, _, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+        mm.load("seg/2", api_key="")
+        for model_id in ("seg/1", "seg/2"):
+            self._frame(mm, model_id, "ctx-1")
+            self._frame(mm, model_id, "ctx-2")
+        pipelines = dict(mm._stream_pipelines)
+        executors = {k: p._response_executor for k, p in pipelines.items()}
+        for model in models.values():
+            for future in model.futures:
+                future.release.set()
+
+        mm.shutdown()
+
+        assert all(executor._shutdown for executor in executors.values())
+        assert mm._stream_pipelines == {}
+
+    def test_eviction_shuts_the_victim_pipeline_down(
+        self, segmentation_manager, monkeypatch
+    ):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 1)
+        mm, _, models = segmentation_manager
+        mm.load("seg/1", api_key="")
+        self._frame(mm, "seg/1", "ctx-1")
+        self._frame(mm, "seg/1", "ctx-2")
+        pipeline = mm._stream_pipelines["seg/1"]
+        executor = pipeline._response_executor
+        for future in models["seg/1"].futures:
+            future.release.set()
+
+        mm.load("seg/2", api_key="")
+
+        assert "seg/1" not in mm
+        assert "seg/1" not in mm._stream_pipelines
+        assert executor._shutdown is True

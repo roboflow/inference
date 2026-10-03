@@ -68,6 +68,22 @@ class FakeGateway:
             "actions": self.loaded[model_id].get("actions", {}),
         }
 
+    async def model_supports_stream_pipeline(self, model_id):
+        self.calls.append(("model_supports_stream_pipeline", model_id))
+        return await self.get_model_pipeline_depth(model_id) > 1
+
+    async def get_model_pipeline_depth(self, model_id):
+        self.calls.append(("get_model_pipeline_depth", model_id))
+        return self.loaded.get(model_id, {}).get("stream_pipeline_depth", 1)
+
+    async def flush_model_stream_pipeline(self, model_id):
+        self.calls.append(("flush_model_stream_pipeline", model_id))
+        return self.loaded.get(model_id, {}).get("stream_pipeline_flush")
+
+    async def shutdown_model_stream_pipeline(self, model_id):
+        self.calls.append(("shutdown_model_stream_pipeline", model_id))
+        return None
+
 
 class EvictedModelManager:
     def __init__(self, reload_error: Optional[BaseException] = None):

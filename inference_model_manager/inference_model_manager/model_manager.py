@@ -7,11 +7,12 @@ import logging
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.base import Backend, BackendState
 from inference_model_manager.dispatch import (
+    _build_pre_processing_overrides,
     _get_registry,
     invoke_action,
     resolve_action,
@@ -21,6 +22,9 @@ from inference_model_manager.marshalling import (
     split_batched_result,
     tensors_to_numpy,
 )
+
+if TYPE_CHECKING:
+    from inference_model_manager.stream_pipeline import StreamPipelinedModel
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +136,7 @@ class ModelManager:
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
         self._pinned: set[str] = set()
+        self._stream_pipelines: Dict[str, "StreamPipelinedModel"] = {}
         # Set by shutdown() before draining — closes admission so nothing new
         # is queued while in-flight work finishes.
         self._closed = False
@@ -240,6 +245,8 @@ class ModelManager:
         # Warmup outside the lock — model is registered, other models can load
         if warmup_iters > 0:
             self._warmup(model_id, warmup_iters)
+        if backend == "direct":
+            self._wire_stream_pipeline(model_id, b)
 
         logger.info(
             "Model '%s' loaded (state=%s, device=%s)",
@@ -292,6 +299,18 @@ class ModelManager:
                 exc_info=True,
             )
 
+    def _wire_stream_pipeline(self, model_id: str, backend: Backend) -> None:
+        from inference_model_manager.stream_pipeline import stream_pipeline_for
+
+        pipeline = stream_pipeline_for(getattr(backend, "model", None))
+        if pipeline is None:
+            return None
+        with self._lifecycle_lock:
+            if self._backends.get(model_id) is backend:
+                self._stream_pipelines[model_id] = pipeline
+
+        return None
+
     def unload(
         self, model_id: str, *, drain: bool = False, drain_timeout_s: float = 30.0
     ) -> None:
@@ -307,6 +326,7 @@ class ModelManager:
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
             self._pinned.discard(model_id)
+            pipeline = self._stream_pipelines.pop(model_id, None)
 
         if drain:
             logger.info(
@@ -318,6 +338,8 @@ class ModelManager:
         else:
             logger.info("Unloading model '%s'", model_id)
             backend.unload()
+        if pipeline is not None:
+            pipeline.shutdown_pipeline()
 
         _try_release_cuda_memory()
 
@@ -343,7 +365,7 @@ class ModelManager:
                     incoming,
                 )
                 return
-            for victim, backend in popped:
+            for victim, backend, pipeline in popped:
                 logger.info(
                     "Evicting '%s' (LRU) to make room for '%s'", victim, incoming
                 )
@@ -353,12 +375,14 @@ class ModelManager:
                     logger.warning(
                         "Draining '%s' during eviction failed", victim, exc_info=True
                     )
+                if pipeline is not None:
+                    pipeline.shutdown_pipeline()
                 _try_release_cuda_memory()
             gc.collect()
 
     def _select_and_pop_victims(
         self, incoming: str, pressure: bool, count: int
-    ) -> Optional[List[Tuple[str, Backend]]]:
+    ) -> Optional[List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]]]:
         """Atomically decide whether eviction is needed and, if so, remove the
         victims from ``_backends`` in the same lock acquisition used to select
         them — so a concurrent ``pin()`` cannot land between selection and
@@ -366,8 +390,9 @@ class ModelManager:
         ``_loading_ids`` (the incoming model's own reservation included).
 
         Returns None if nothing needs to be evicted this pass, otherwise the
-        list of (model_id, backend) pairs already popped from ``_backends``
-        (possibly empty, if every remaining candidate is pinned).
+        list of (model_id, backend, stream pipeline or None) triples already
+        popped from ``_backends`` and ``_stream_pipelines`` (possibly empty,
+        if every remaining candidate is pinned).
         """
         with self._lifecycle_lock:
             max_active = cfg.INFERENCE_MAX_ACTIVE_MODELS
@@ -380,13 +405,13 @@ class ModelManager:
                 for mid, b in self._backends.items()
                 if mid != incoming and mid not in self._pinned
             )
-            popped: List[Tuple[str, Backend]] = []
+            popped: List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]] = []
             for _, mid in candidates[:count]:
                 backend = self._backends.pop(mid, None)
                 if backend is None:
                     continue
                 self._pinned.discard(mid)
-                popped.append((mid, backend))
+                popped.append((mid, backend, self._stream_pipelines.pop(mid, None)))
             return popped
 
     # ------------------------------------------------------------------
@@ -417,6 +442,35 @@ class ModelManager:
         if model_supports_rle(backend.model) and "mask_format" not in kwargs:
             kwargs["mask_format"] = "rle"
         return kwargs, n_images
+
+    def _admit(self, model_id: str) -> Tuple[Backend, Optional["StreamPipelinedModel"]]:
+        with self._lifecycle_lock:
+            backend = self._backends.get(model_id)
+            if backend is None:
+                raise KeyError(f"Model '{model_id}' is not loaded")
+            pipeline = self._stream_pipelines.get(model_id)
+
+        return backend, pipeline
+
+    @staticmethod
+    def _invoke(
+        model: Any,
+        pipeline: Optional["StreamPipelinedModel"],
+        action: Optional[str],
+        kwargs: dict,
+    ) -> Any:
+        if pipeline is None:
+            return invoke_action(model, action=action, **kwargs)
+        _action_name, entry = resolve_action(model, action)
+        if not entry.default:
+            return invoke_action(model, action=action, **kwargs)
+        if entry.param_aliases:
+            kwargs = {entry.param_aliases.get(k, k): v for k, v in kwargs.items()}
+        kwargs = _build_pre_processing_overrides(kwargs, entry)
+
+        result = pipeline.infer(**kwargs)
+
+        return result
 
     @staticmethod
     def _wire_marshal_result(
@@ -469,7 +523,7 @@ class ModelManager:
             ValueError: If action is not supported by the model.
         """
         self._check_open()
-        backend = self._get_backend(model_id)
+        backend, pipeline = self._admit(model_id)
 
         if hasattr(backend, "submit_request"):
             raw_input = kwargs.pop("images", None)
@@ -507,7 +561,7 @@ class ModelManager:
         if _begin is not None:
             _begin()
         try:
-            result = invoke_action(backend.model, action=action, **kwargs)
+            result = self._invoke(backend.model, pipeline, action, kwargs)
             if wire_marshalling:
                 # Inside the inflight/accounting window: per-image retries are
                 # inference too — unload drains must wait for them and their
@@ -517,7 +571,7 @@ class ModelManager:
                 def _retry_single(index: int) -> Any:
                     single_kwargs = dict(kwargs)
                     single_kwargs["images"] = images[index]
-                    return invoke_action(backend.model, action=action, **single_kwargs)
+                    return self._invoke(backend.model, pipeline, action, single_kwargs)
 
                 result = self._wire_marshal_result(
                     result,
@@ -599,7 +653,7 @@ class ModelManager:
             KeyError: If model_id is not loaded.
         """
         self._check_open()
-        backend = self._get_backend(model_id)
+        backend, pipeline = self._admit(model_id)
 
         if hasattr(backend, "submit_request"):
             if raw_input is None:
@@ -631,7 +685,7 @@ class ModelManager:
             if _begin is not None:
                 _begin()
             try:
-                result = invoke_action(backend.model, action=action, **kwargs)
+                result = self._invoke(backend.model, pipeline, action, kwargs)
             except Exception:
                 backend.record_inference(t0, error=True)
                 raise
@@ -662,6 +716,94 @@ class ModelManager:
         from inference_model_manager.dispatch import list_actions
 
         return list_actions(backend.model)
+
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        """Whether the loaded model runs a depth>1 stream pipeline.
+
+        Args:
+            model_id: Loaded model key.
+
+        Returns:
+            True when the model is loaded and pipelined, False otherwise.
+
+        Raises:
+            NotImplementedError: If the model is served by a non-direct backend.
+        """
+        supported = self.get_model_pipeline_depth(model_id) > 1
+
+        return supported
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        """The model's stream pipeline depth.
+
+        Args:
+            model_id: Loaded model key.
+
+        Returns:
+            The depth, or 1 when the model is not loaded or not pipelined.
+
+        Raises:
+            NotImplementedError: If the model is served by a non-direct backend.
+        """
+        self._ensure_direct_backend(model_id)
+        depth = self._stream_pipeline_depth(model_id)
+
+        return depth
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
+        """Drain the model's in-flight pipeline frames.
+
+        Args:
+            model_id: Loaded model key.
+
+        Returns:
+            The finished detections of the in-flight frames, oldest first, or
+            None when the model is not pipelined.
+
+        Raises:
+            NotImplementedError: If the model is served by a non-direct backend.
+        """
+        self._ensure_direct_backend(model_id)
+        pipeline = self._stream_pipelines.get(model_id)
+        if pipeline is None:
+            return None
+
+        flushed = pipeline.flush()
+
+        return flushed
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        """Stop the model's pipeline worker; a no-op when it has none.
+
+        Args:
+            model_id: Loaded model key.
+
+        Raises:
+            NotImplementedError: If the model is served by a non-direct backend.
+        """
+        self._ensure_direct_backend(model_id)
+        pipeline = self._stream_pipelines.get(model_id)
+        if pipeline is not None:
+            pipeline.shutdown_pipeline()
+
+        return None
+
+    def _ensure_direct_backend(self, model_id: str) -> None:
+        backend = self._backends.get(model_id)
+        if backend is not None and getattr(backend, "model", None) is None:
+            raise NotImplementedError(
+                f"Stream pipelining is not implemented for the backend serving "
+                f"'{model_id}'"
+            )
+
+        return None
+
+    def _stream_pipeline_depth(self, model_id: str) -> int:
+        pipeline = self._stream_pipelines.get(model_id)
+        if pipeline is None:
+            return 1
+
+        return pipeline.pipeline_depth
 
     # ------------------------------------------------------------------
     # Observability
@@ -708,6 +850,7 @@ class ModelManager:
                 s["actions"] = self.get_supported_actions(model_id)
             except Exception:
                 s["actions"] = {}
+            s["stream_pipeline_depth"] = self._stream_pipeline_depth(model_id)
             for key in (
                 "input_height",
                 "input_width",
