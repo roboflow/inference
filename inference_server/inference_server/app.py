@@ -429,6 +429,11 @@ if _LEGACY_ERROR_HANDLING_ENABLED:
 app.add_middleware(_AuthMiddleware)
 app.add_middleware(BillingIntentMiddleware)
 
+if _cfg.GCP_SERVERLESS:
+    from inference_server.hosted.serverless_context import ServerlessContextMiddleware
+
+    app.add_middleware(ServerlessContextMiddleware)
+
 if _cfg.ALLOW_ORIGINS:
     app.add_middleware(
         PathAwareCORSMiddleware,

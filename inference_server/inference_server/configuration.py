@@ -433,6 +433,9 @@ SERVER_ID = uuid.uuid4().hex
 # ── Hosted deployments (hosted/, app.py, legacy/router.py) ────────────────
 LAMBDA = get_boolean_from_env("LAMBDA", default=False)
 GCP_SERVERLESS = get_boolean_from_env("GCP_SERVERLESS", default=False)
+WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING = get_boolean_from_env(
+    "WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING", default=True
+)
 ENFORCE_CREDITS_VERIFICATION = get_boolean_from_env(
     "ENFORCE_CREDITS_VERIFICATION", default=False
 )
