@@ -84,6 +84,7 @@ from inference_server.prometheus import measure_inference
 from inference_server.workflows.tensor_native import (
     SUPPORTED_TASK_TYPES,
     assemble_native_result,
+    native_action,
     native_image_payloads,
     native_params,
 )
@@ -614,15 +615,31 @@ class GatewayModelsProvider:
                 f"tensor-native execution is not available for {route.task_type} "
                 "on inference_server",
             )
-        images = kwargs.pop("images")
-        payloads = native_image_payloads(
-            images, ndarray_ok=self._bridge.accepts_ndarray
+        action = native_action(route, kwargs.pop("action", None))
+        images = kwargs.pop("images", None)
+        params = native_params(
+            route.task_type,
+            kwargs,
+            action=action,
+            model_class_name=route.model_class_name,
         )
-        params = native_params(route.task_type, kwargs)
-        raw = self._bridge.infer(route, key, route.action, payloads, params)
-        return assemble_native_result(
-            route.task_type, raw, environment.WORKFLOWS_IMAGE_TENSOR_DEVICE
+        if images is None:
+            raw = [self._bridge.infer_params_only(route, key, action, params)]
+        else:
+            payloads = native_image_payloads(
+                images, ndarray_ok=self._bridge.accepts_ndarray
+            )
+            raw = self._bridge.infer(route, key, action, payloads, params)
+
+        result = assemble_native_result(
+            route.task_type,
+            raw,
+            environment.WORKFLOWS_IMAGE_TENSOR_DEVICE,
+            action=action,
+            model_class_name=route.model_class_name,
         )
+
+        return result
 
     def load_action_recognition_model(
         self, model_id: str, api_key: Optional[str] = None, **kwargs: Any
