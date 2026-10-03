@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from roboflow_workflows.prototypes.observer import NULL_EXECUTION_OBSERVER
 from streamvision.stream.exceptions import MissingApiKeyError
 from streamvision.stream_manager.manager_app.host import (
     PipelineHostDescriptor,
@@ -22,6 +23,8 @@ from inference_server.streams.host import (
     SERVER_PIPELINE_HOST_DESCRIPTOR,
     ServerPipelineHost,
 )
+from inference_server.usage.observer import StreamUsageExecutionObserver
+from inference_server.usage.request_hook import MODEL_INVOCATIONS
 from inference_server.workflows import host as workflows_host
 from tests.unit_tests.legacy.conftest import FakeGateway
 
@@ -406,6 +409,271 @@ def test_close_is_bounded_by_the_deadline_when_the_shutdown_is_slow(
     assert elapsed < 1.5
     assert "Could not shut the pipeline gateway down" in caplog.text
     assert _loop_threads() == []
+
+
+class _RecordingCollector:
+    instances = []
+
+    def __init__(self):
+        self.calls = []
+        self.events = None
+        self.flush_delay = 0.0
+        self.stop_timeouts = []
+        _RecordingCollector.instances.append(self)
+
+    def _note(self, call):
+        self.calls.append(call)
+        if self.events is not None:
+            self.events.append(call)
+
+    def start(self):
+        self._note("start")
+
+    def record_usage(self, **row):
+        self._note("record_usage")
+
+    def flush(self):
+        time.sleep(self.flush_delay)
+        self._note("flush")
+
+    def stop(self, timeout=None):
+        self.stop_timeouts.append(timeout)
+        self._note("stop")
+
+        return True
+
+
+@pytest.fixture
+def collectors(monkeypatch):
+    _RecordingCollector.instances = []
+    monkeypatch.setattr(
+        "inference_server.usage.collector.UsageCollector", _RecordingCollector
+    )
+
+    return _RecordingCollector.instances
+
+
+def _only_collector(collectors):
+    assert len(collectors) == 1
+
+    return collectors[0]
+
+
+def test_collector_starts_with_the_gateway_and_is_bound_to_the_run(gateway, collectors):
+    host = ServerPipelineHost(gateway_kind="direct")
+
+    _, init_parameters, _ = _prepare(host)
+
+    collector = _only_collector(collectors)
+    assert collector.calls == ["start"]
+    observer = init_parameters["workflows_core.execution_observer"]
+    assert isinstance(observer, StreamUsageExecutionObserver)
+    with observer.holders_scope():
+        models = MODEL_INVOCATIONS.get()
+    provider = init_parameters["workflows_core.model_manager"]
+    assert provider._bridge._model_invocations is models
+    assert MODEL_INVOCATIONS.get() is None
+    observer.observe_workflow_run(
+        workflow=None,
+        runtime_parameters={},
+        workflow_id="wf",
+        fps=0,
+        is_preview=False,
+        run=lambda: None,
+    )
+    assert collector.calls == ["start", "record_usage"]
+    host.close()
+
+
+def test_one_collector_serves_every_workflow_of_the_host(gateway, collectors):
+    host = ServerPipelineHost(gateway_kind="direct")
+
+    _, first, _ = _prepare(host)
+    _, second, _ = _prepare(host)
+    host.close()
+
+    assert len(collectors) == 1
+    assert (
+        first["workflows_core.execution_observer"]
+        is not second["workflows_core.execution_observer"]
+    )
+
+
+def test_offline_mode_builds_no_collector_and_leaves_the_null_observer(
+    gateway, collectors, monkeypatch
+):
+    monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", True)
+    host = ServerPipelineHost(gateway_kind="direct")
+
+    _, init_parameters, _ = _prepare(host)
+    host.close()
+
+    assert collectors == []
+    assert init_parameters["workflows_core.execution_observer"] is (
+        NULL_EXECUTION_OBSERVER
+    )
+    assert gateway.calls.count(("shutdown",)) == 1
+
+
+def test_close_flushes_and_stops_the_collector_before_the_gateway_shutdown(
+    collectors, monkeypatch
+):
+    events = []
+
+    class _EventGateway(_RecordingGateway):
+        async def shutdown(self):
+            events.append("shutdown")
+
+    monkeypatch.setattr(
+        "inference_server.gateway_resolver.resolve_gateway", _EventGateway
+    )
+    host = ServerPipelineHost(gateway_kind="direct")
+    _prepare(host)
+    collector = _only_collector(collectors)
+    collector.events = events
+
+    host.close()
+    host.close()
+
+    assert events == ["flush", "stop", "shutdown"]
+    assert collector.calls == ["start", "flush", "stop"]
+    assert 0 < collector.stop_timeouts[0] <= streams_host.CLOSE_TIMEOUT_S
+    assert _loop_threads() == []
+
+
+@pytest.mark.timeout(20)
+def test_close_with_a_slow_flush_stays_within_the_deadline(
+    gateway, collectors, monkeypatch, caplog
+):
+    monkeypatch.setattr(streams_host, "CLOSE_TIMEOUT_S", 0.5)
+    host = ServerPipelineHost(gateway_kind="direct")
+    _prepare(host)
+    collector = _only_collector(collectors)
+    collector.flush_delay = 2.0
+
+    with caplog.at_level(logging.WARNING, logger=streams_host.logger.name):
+        started_at = time.monotonic()
+        host.close()
+        elapsed = time.monotonic() - started_at
+
+    assert elapsed < 1.5
+    assert "usage collector" in caplog.text
+    deadline = time.monotonic() + 5.0
+    while _loop_threads() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert _loop_threads() == []
+
+
+class _PartialStartCollector(_RecordingCollector):
+    def __init__(self):
+        super().__init__()
+        self.running = False
+
+    def start(self):
+        self.running = True
+        raise RuntimeError("partial start")
+
+    def stop(self, timeout=None):
+        self.running = False
+
+        return super().stop(timeout)
+
+
+def test_collector_failing_after_starting_is_stopped_and_the_host_retries(
+    gateway, monkeypatch
+):
+    created = []
+
+    def factory():
+        collector = _PartialStartCollector() if not created else _RecordingCollector()
+        created.append(collector)
+
+        return collector
+
+    monkeypatch.setattr("inference_server.usage.collector.UsageCollector", factory)
+    host = ServerPipelineHost(gateway_kind="direct")
+
+    with pytest.raises(RuntimeError, match="partial start"):
+        _prepare(host)
+
+    failed = created[0]
+    assert failed.running is False
+    assert failed.calls == ["stop"]
+    assert gateway.calls.count(("shutdown",)) == 1
+    assert _loop_threads() == []
+    assert host._loop is None
+
+    _prepare(host)
+    host.close()
+
+    assert len(created) == 2
+    assert created[1].calls == ["start", "flush", "stop"]
+
+
+def test_observer_receives_the_attribution_inputs(gateway, collectors, monkeypatch):
+    fetched = {"fetched": True}
+    monkeypatch.setattr(
+        workflows_host, "get_workflow_specification", lambda **kwargs: fetched
+    )
+    host = ServerPipelineHost(gateway_kind="direct")
+
+    def prepare(workflow_specification):
+        _, init_parameters, _ = host.prepare_workflow(
+            workflow_specification=workflow_specification,
+            workspace_name="workspace",
+            workflow_id="requested",
+            workflow_version_id=None,
+            api_key="key-1",
+            profiler=_RecordingProfiler(),
+        )
+
+        return init_parameters["workflows_core.execution_observer"]
+
+    inline = prepare(INLINE_SPECIFICATION)
+    named = prepare(None)
+    host.close()
+
+    assert inline._workflow_id is None
+    assert inline._specification is INLINE_SPECIFICATION
+    assert named._workflow_id == "requested"
+    assert named._specification is fetched
+
+
+def test_failed_codec_binding_tears_the_collector_down(
+    gateway, collectors, monkeypatch
+):
+    def failing_bind_loop(loop_bridge):
+        raise RuntimeError("bind failed")
+
+    monkeypatch.setattr(
+        workflows_host.GUARDED_IMAGE_CODEC, "bind_loop", failing_bind_loop
+    )
+    host = ServerPipelineHost(gateway_kind="direct")
+
+    with pytest.raises(RuntimeError, match="bind failed"):
+        _prepare(host)
+
+    collector = _only_collector(collectors)
+    assert collector.calls == ["start", "stop"]
+    assert gateway.calls.count(("shutdown",)) == 1
+    assert _loop_threads() == []
+
+
+def test_failed_collector_start_tears_the_gateway_down(gateway, monkeypatch):
+    def failing_collector():
+        raise RuntimeError("collector failed")
+
+    monkeypatch.setattr(
+        "inference_server.usage.collector.UsageCollector", failing_collector
+    )
+    host = ServerPipelineHost(gateway_kind="direct")
+
+    with pytest.raises(RuntimeError, match="collector failed"):
+        _prepare(host)
+
+    assert gateway.calls.count(("shutdown",)) == 1
+    assert _loop_threads() == []
+    assert host._loop is None
 
 
 def test_host_module_does_not_import_the_app():

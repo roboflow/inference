@@ -4,8 +4,10 @@ Built inside each pipeline process from `SERVER_PIPELINE_HOST_DESCRIPTOR`. It
 resolves workflows and their Execution Engine bindings through the server's
 gateway stack: a gateway resolved in the pipeline process and driven on a
 private event loop, the legacy model bridge over it and the gateway-backed
-models provider the Workflow routes use. The loop thread, the gateway and the
-image codec binding start on first use and live until `close()`.
+models provider the Workflow routes use. The loop thread, the gateway, the
+usage collector of the process and the image codec binding start on first use
+and live until `close()`. Every workflow run of a pipeline records one usage
+row through the collector, the way a request does on the HTTP server.
 """
 
 import asyncio
@@ -13,8 +15,10 @@ import logging
 import os
 import threading
 import time
+from contextlib import nullcontext
 from typing import Any, Dict, Optional, Tuple
 
+from roboflow_workflows.prototypes.observer import NULL_EXECUTION_OBSERVER
 from streamvision.stream.exceptions import MissingApiKeyError
 from streamvision.stream_manager.manager_app.host import PipelineHostDescriptor
 
@@ -24,6 +28,8 @@ from inference_server.legacy.bridge import (
     LoopBridge,
     SyncLegacyBridge,
 )
+from inference_server.usage import collector as usage_collector_module
+from inference_server.usage.observer import StreamUsageExecutionObserver
 from inference_server.workflows import execution
 from inference_server.workflows import host as workflows_host
 from inference_server.workflows.models_provider import GatewayModelsProvider
@@ -59,6 +65,7 @@ class ServerPipelineHost:
         self._gateway: Any = None
         self._bridge: Optional[LegacyModelBridge] = None
         self._loop_bridge: Optional[LoopBridge] = None
+        self._collector: Any = None
         self._closed = False
 
     def prepare_workflow(
@@ -101,6 +108,7 @@ class ServerPipelineHost:
         if not named_workflow_specified and not workflow_specification:
             raise ValueError(MISSING_WORKFLOW_MESSAGE)
 
+        named_from_registry = workflow_specification is None
         if workflow_specification is None:
             if api_key is None:
                 raise MissingApiKeyError(MISSING_API_KEY_MESSAGE)
@@ -116,14 +124,25 @@ class ServerPipelineHost:
                     use_cache=True,
                 )
 
-        bridge, loop_bridge = self._ensure_started()
-        provider = GatewayModelsProvider(SyncLegacyBridge(bridge, loop_bridge), api_key)
+        bridge, loop_bridge, collector = self._ensure_started()
+        observer, holders_scope = NULL_EXECUTION_OBSERVER, nullcontext()
+        if collector is not None:
+            observer = StreamUsageExecutionObserver(
+                collector,
+                workflow_id=workflow_id if named_from_registry else None,
+                specification=workflow_specification,
+            )
+            holders_scope = observer.holders_scope()
+        with holders_scope:
+            sync_bridge = SyncLegacyBridge(bridge, loop_bridge)
+        provider = GatewayModelsProvider(sync_bridge, api_key)
         init_parameters = execution.build_init_parameters(
             provider=provider,
             api_key=api_key,
             background_tasks=None,
             disable_sinks=False,
             inner_workflow_dispatch_depth=0,
+            execution_observer=observer,
         )
 
         return (
@@ -133,9 +152,11 @@ class ServerPipelineHost:
         )
 
     def close(self) -> None:
-        """Shut the gateway down and stop the loop thread. Idempotent, never raises.
+        """Flush and stop the collector, shut the gateway down, stop the loop thread.
 
-        The whole call is bounded by `CLOSE_TIMEOUT_S`. When a start holds the
+        Idempotent, never raises. The whole call is bounded by
+        `CLOSE_TIMEOUT_S`; the collector goes first so the rows of the last
+        runs are sent while the gateway is still up. When a start holds the
         host, the host is only marked closed and the starter tears its own
         gateway down once its start returns.
         """
@@ -148,10 +169,13 @@ class ServerPipelineHost:
             return None
         try:
             loop, thread, gateway = self._loop, self._thread, self._gateway
+            collector = self._collector
             self._loop, self._thread, self._gateway = None, None, None
-            self._bridge, self._loop_bridge = None, None
+            self._bridge, self._loop_bridge, self._collector = None, None, None
         finally:
             self._lock.release()
+        if collector is not None:
+            _stop_collector(collector, deadline, flush=True)
         if loop is None:
             return None
 
@@ -159,14 +183,14 @@ class ServerPipelineHost:
 
         return None
 
-    def _ensure_started(self) -> Tuple[LegacyModelBridge, LoopBridge]:
+    def _ensure_started(self) -> Tuple[LegacyModelBridge, LoopBridge, Any]:
         with self._lock:
             if self._closed:
                 raise RuntimeError("The pipeline host is closed.")
             if self._loop is None:
                 self._start()
 
-            return self._bridge, self._loop_bridge
+            return self._bridge, self._loop_bridge, self._collector
 
     def _start(self) -> None:
         os.environ.setdefault(configuration.INFERENCE_GATEWAY_ENV, self._gateway_kind)
@@ -176,20 +200,59 @@ class ServerPipelineHost:
         )
         thread.start()
         gateway = None
+        collector = None
         try:
             gateway = gateway_resolver.resolve_gateway()
             asyncio.run_coroutine_threadsafe(gateway.start(), loop).result()
+            collector = _build_usage_collector()
+            if collector is not None:
+                collector.start()
             loop_bridge = LoopBridge(loop)
             workflows_host.GUARDED_IMAGE_CODEC.bind_loop(loop_bridge)
             bridge = LegacyModelBridge(gateway)
             if self._closed:
                 raise RuntimeError("The pipeline host is closed.")
         except BaseException:
-            _stop_loop(loop, thread, gateway, time.monotonic() + CLOSE_TIMEOUT_S)
+            deadline = time.monotonic() + CLOSE_TIMEOUT_S
+            if collector is not None:
+                _stop_collector(collector, deadline, flush=False)
+            _stop_loop(loop, thread, gateway, deadline)
             raise
 
         self._loop, self._thread, self._gateway = loop, thread, gateway
         self._bridge, self._loop_bridge = bridge, loop_bridge
+        self._collector = collector
+
+
+def _build_usage_collector() -> Any:
+    if configuration.LEGACY_OFFLINE_MODE:
+        return None
+
+    usage_collector = usage_collector_module.UsageCollector()
+
+    return usage_collector
+
+
+def _stop_collector(collector: Any, deadline: float, *, flush: bool) -> None:
+    def _flush_and_stop() -> None:
+        try:
+            if flush:
+                collector.flush()
+            collector.stop(max(deadline - time.monotonic(), 0.0))
+        except BaseException as error:
+            logger.warning(
+                f"Could not stop the pipeline usage collector. Error: {error!r}"
+            )
+
+    worker = threading.Thread(
+        target=_flush_and_stop, name="pipeline-host-usage-stop", daemon=True
+    )
+    worker.start()
+    worker.join(max(deadline - time.monotonic(), 0.0))
+    if worker.is_alive():
+        logger.warning("The pipeline usage collector did not stop in time.")
+
+    return None
 
 
 def _stop_loop(
