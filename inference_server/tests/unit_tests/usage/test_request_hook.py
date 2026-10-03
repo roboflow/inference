@@ -4,7 +4,6 @@ import io
 import logging
 import time
 from types import SimpleNamespace
-from typing import Optional
 from unittest.mock import AsyncMock, patch
 
 import numpy as np
@@ -17,7 +16,6 @@ from PIL import Image
 from inference_models.errors import UnauthorizedModelAccessError
 from inference_sdk.config import apply_duration_minimum
 from inference_server import configuration
-from inference_server.framework import model_stat
 from inference_server.legacy.errors import SERVICE_MISCONFIGURATION_MESSAGE
 from inference_server.usage import request_hook
 from inference_server.usage.collector import UsageCollector
@@ -56,44 +54,6 @@ def _raising(error):
         raise error
 
     return _raise
-
-
-class FakeUsageCollector:
-    def __init__(self):
-        self.rows = []
-        self.error: Optional[Exception] = None
-
-    def record_usage(self, **row):
-        if self.error is not None:
-            raise self.error
-        self.rows.append(row)
-
-    def flush(self):
-        pass
-
-    def stop(self, timeout=None):
-        return True
-
-
-@pytest.fixture(autouse=True)
-def _reset_model_stat_cache():
-    model_stat._reset_cache_for_tests()
-    yield
-    model_stat._reset_cache_for_tests()
-
-
-@pytest.fixture
-def usage_collector():
-    return FakeUsageCollector()
-
-
-@pytest.fixture
-def usage_client(legacy_client, usage_collector, monkeypatch):
-    monkeypatch.setattr(
-        "inference_server.app._start_usage_collector", lambda: usage_collector
-    )
-
-    return legacy_client
 
 
 @pytest.fixture

@@ -86,7 +86,7 @@ def merge_resource_details(left: Any, right: Any) -> Any:
     identity (``model_id``, or ``block_type`` with ``step_name``) are combined
     by summing their amounts (``frames`` and ``execution_duration``, or
     ``execution_duration`` alone for ``custom_python``) and keeping the other
-    fields, including ``model_latency_ms``, of the later entry.
+    fields, including ``model_variant``, of the later entry.
 
     Args:
         left: Earlier resource details, a dict or its JSON text.

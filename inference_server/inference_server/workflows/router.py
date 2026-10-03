@@ -42,6 +42,8 @@ from inference_server.legacy.bridge import SyncLegacyBridge
 from inference_server.legacy.common import orjson_response, resolve_api_key
 from inference_server.legacy.errors import LegacyHTTPError
 from inference_server.middlewares.model_load import REQUEST_WORKFLOW_ID
+from inference_server.usage.observer import request_observer
+from inference_server.usage.request_hook import report_request_usage
 from inference_server.workflows import execution, host, workload
 from inference_server.workflows.errors import with_workflow_errors
 from inference_server.workflows.models_provider import GatewayModelsProvider
@@ -84,6 +86,7 @@ async def _run_workflow(
 ) -> Response:
     if workflow_request.workflow_id:
         REQUEST_WORKFLOW_ID.set(workflow_request.workflow_id)
+    request.state.workflow_specification = specification
     sink_background_tasks = (
         None
         if configuration.LAMBDA or configuration.GCP_SERVERLESS
@@ -95,6 +98,7 @@ async def _run_workflow(
         background_tasks=sink_background_tasks,
         disable_sinks=workflow_request.disable_sinks,
         inner_workflow_dispatch_depth=workflow_request.inner_workflow_dispatch_depth,
+        execution_observer=request_observer(),
     )
     result = await run_in_threadpool(
         execution.run_workflow_sync,
@@ -231,6 +235,7 @@ if not configuration.DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS:
     deprecated=True,
 )
 @with_workflow_errors
+@report_request_usage
 async def infer_from_predefined_workflow(
     request: Request,
     workspace_name: str,
@@ -278,6 +283,7 @@ async def infer_from_predefined_workflow(
     deprecated=True,
 )
 @with_workflow_errors
+@report_request_usage
 async def infer_from_workflow(
     request: Request,
     workflow_request: WorkflowSpecificationInferenceRequest,

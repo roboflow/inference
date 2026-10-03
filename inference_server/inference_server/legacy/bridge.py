@@ -47,7 +47,10 @@ from inference_server.middlewares.model_load import (
     set_requested_model_id,
 )
 from inference_server.prometheus import measure_inference
-from inference_server.usage.request_hook import record_model_invocation
+from inference_server.usage.request_hook import (
+    MODEL_INVOCATIONS,
+    record_model_invocation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -750,6 +753,7 @@ class SyncLegacyBridge:
     def __init__(self, bridge: LegacyModelBridge, loop_bridge: LoopBridge) -> None:
         self._bridge = bridge
         self._loop_bridge = loop_bridge
+        self._model_invocations = MODEL_INVOCATIONS.get()
         self.accepts_ndarray = bridge.accepts_ndarray
 
     def resolve(self, model_id, api_key, *, row_key=None, path="", alias=None) -> Route:
@@ -792,7 +796,14 @@ class SyncLegacyBridge:
         return model_id in self._bridge
 
     def _run(self, coro) -> Any:
-        return self._loop_bridge.run(coro, _sync_timeout())
+        return self._loop_bridge.run(self._with_holder(coro), _sync_timeout())
+
+    async def _with_holder(self, coro) -> Any:
+        token = MODEL_INVOCATIONS.set(self._model_invocations)
+        try:
+            return await coro
+        finally:
+            MODEL_INVOCATIONS.reset(token)
 
 
 def _sync_timeout() -> float:
