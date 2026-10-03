@@ -532,3 +532,66 @@ def test_online_mode_keeps_the_given_workflow_cache_flags():
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.split() == ["False", "False"]
+
+
+_STREAM_SETTINGS_CODE = (
+    "from inference_server import configuration as c; "
+    "print(c.ENABLE_STREAM_API, c.STREAM_API_PRELOADED_PROCESSES, "
+    "c.STREAM_MANAGER_OPERATIONS_TIMEOUT, c.STREAM_MANAGER_MAX_RAM_MB, "
+    "c.STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE, c.VIDEO_SOURCE_BUFFER_SIZE, "
+    "c.VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE)"
+)
+
+_STREAM_SETTING_NAMES = (
+    "ENABLE_STREAM_API",
+    "STREAM_API_PRELOADED_PROCESSES",
+    "STREAM_MANAGER_OPERATIONS_TIMEOUT",
+    "STREAM_MANAGER_MAX_RAM_MB",
+    "STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE",
+    "VIDEO_SOURCE_BUFFER_SIZE",
+    "VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE",
+)
+
+
+def _stream_settings(**overrides):
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in _STREAM_SETTING_NAMES
+    }
+    env.update(overrides)
+    result = subprocess.run(
+        [sys.executable, "-c", _STREAM_SETTINGS_CODE],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    return result.stdout.split()
+
+
+def test_stream_settings_default_to_legacy_values():
+    assert _stream_settings() == ["False", "0", "None", "None", "10", "None", "None"]
+
+
+def test_stream_settings_are_read_under_the_legacy_names():
+    settings = _stream_settings(
+        ENABLE_STREAM_API="True",
+        STREAM_API_PRELOADED_PROCESSES="2",
+        STREAM_MANAGER_OPERATIONS_TIMEOUT="1.5",
+        STREAM_MANAGER_MAX_RAM_MB="-512",
+        STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE="-3",
+        VIDEO_SOURCE_BUFFER_SIZE="4",
+        VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE="False",
+    )
+
+    assert settings == ["True", "2", "1.5", "512.0", "3", "4", "False"]
+
+
+def test_stream_manager_memory_settings_ignore_unparsable_values():
+    settings = _stream_settings(
+        STREAM_MANAGER_MAX_RAM_MB="lots", STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE="many"
+    )
+
+    assert settings[3:5] == ["None", "10"]

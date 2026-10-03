@@ -421,6 +421,52 @@ definition; the last column is the new reader.
 | `VLLM_SERVED_BASE_NAME` | `vllm_proxy/config.py:93` | `configuration.py:465` | the served base variant |
 | `VLLM_ADAPTER_KEY_TEMPLATE` | `vllm_proxy/config.py:97` | `configuration.py:466-469` | `base_model.model.model.language_model.layers.{suffix}` |
 
+### Read for the stream API (`inference_server/configuration.py`, mapped by `streams/configuration.py`)
+
+Read under the legacy names and defaults; `streams/configuration.py`
+`build_streams_configuration()` copies them onto `StreamsConfiguration`
+(`streamvision/stream/configuration.py`) and `install_streams_configuration()`
+installs that configuration in the process. `env.py` lines are the legacy
+definitions.
+
+| name | legacy | new | default |
+|---|---|---|---|
+| `ENABLE_STREAM_API` | `env.py:1241` | `configuration.py:481` | `False` |
+| `STREAM_API_PRELOADED_PROCESSES` | `env.py:1245` | `configuration.py:482-484` | `0` |
+| `STREAM_MANAGER_HOST` | `http_api.py:1556`, `streamvision/stream_manager/manager_app/app.py:89-103` | `configuration.py:485`; carried as `stream_manager_host` instead of being left `None` | `127.0.0.1` |
+| `STREAM_MANAGER_PORT` | `http_api.py:1557`, `manager_app/app.py:89-103` | `configuration.py:486`; carried as `stream_manager_port` | `7070` |
+| `STREAM_MANAGER_SOCKET_TIMEOUT` | `manager_app/app.py:89-103` | `configuration.py:487-489`; carried as `stream_manager_socket_timeout` | `5.0` |
+| `STREAM_MANAGER_OPERATIONS_TIMEOUT` | `http_api.py:1552-1554` | `configuration.py:490-492`; `None` when unset (no client timeout) | unset |
+| `STREAM_MANAGER_MAX_ACTIVE_PIPELINES` | `env.py:1422-1425` | `configuration.py:493-496`; never below `STREAM_API_PRELOADED_PROCESSES`, as in legacy | `8` |
+| `STREAM_MANAGER_MAX_RAM_MB` | `env.py:1405-1410` | `configuration.py:497-499`; absolute value, `None` when unset or unparsable, as in legacy | unset |
+| `STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE` | `env.py:1412-1417` | `configuration.py:500-502`; absolute value, `10` when unset or unparsable, as in legacy | `10` |
+| `VIDEO_SOURCE_BUFFER_SIZE` | `env.py:1773-1778` | `configuration.py:503-505`; when unset, `8` with `ENABLE_TENSOR_DATA_REPRESENTATION` else `64`, resolved in `streams/configuration.py` against the Workflows tensor flag | `64` (`8` tensor) |
+| `VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE` | `env.py:1723-1728` | `configuration.py:506-508`; when unset, equals `ENABLE_TENSOR_DATA_REPRESENTATION`, resolved in `streams/configuration.py` | the tensor flag |
+| `VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE` | `env.py:965-967` | `configuration.py:509-511` | `5.0` |
+| `VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE` | `env.py:962-964` | `configuration.py:512-514` | `0.1` |
+| `VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW` | `env.py:971-973` | `configuration.py:515-517` | `16` |
+| `VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES` | `env.py:968-970` | `configuration.py:518-520` | `10` |
+| `DISABLE_GSTREAMER_VIDEO_SOURCES` | `env.py:1254-1256` | `configuration.py:521-523` | `False` |
+| `DISABLE_NATIVE_STDERR_CAPTURE` | `env.py:1265-1267` | `configuration.py:524-526` | `False` |
+| `INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY` | `env.py:958` | `configuration.py:527-529` | `1` |
+| `RUNS_ON_JETSON` | `env.py:1247-1249` | `configuration.py:530-533`; `RUNNING_ON_JETSON` is the fallback spelling, as in legacy; also a flag alias, see (b) | `False` |
+| `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING` | `env.py:974-976` | `configuration.py:534-536` | `False` |
+| `INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE` | `env.py:955-957` | `configuration.py:537-542`; whether it was set explicitly is carried as `predictions_queue_size_explicit` | `512` |
+| `ALLOW_UNSAFE_GSTREAMER_PIPELINES` | `env.py:1242-1244` | `configuration.py:543-545` | `False` |
+| `DEBUG_AIORTC_QUEUES` | `env.py:978` | `configuration.py:546` | `False` |
+| `DEBUG_WEBRTC_PROCESSING_LATENCY` | `env.py:979-981` | `configuration.py:547-549` | `False` |
+| `WEBRTC_REALTIME_PROCESSING` | `env.py:982` | `configuration.py:550-552` | `True` |
+
+Also carried onto `StreamsConfiguration` from settings the server already
+reads: `ENABLE_TENSOR_DATA_REPRESENTATION` (`workflows/host.py`, through
+`SERVER_WORKFLOWS_CONFIGURATION.tensor.representation_enabled`),
+`ENABLE_WORKFLOWS_PROFILING`, `WORKFLOWS_PROFILER_BUFFER_SIZE`, `OFFLINE_MODE`
+and, for `ModelConfigDefaults`, `CLASS_AGNOSTIC_NMS` plus the
+`DEFAULT_CONFIDENCE` / `DEFAULT_IOU_THRESHOLD` / `DEFAULT_MAX_CANDIDATES` /
+`DEFAULT_MAX_DETECTIONS` fallbacks (`configuration.py:360-364`); the
+`CONFIDENCE` / `IOU_THRESHOLD` / `MAX_CANDIDATES` / `MAX_DETECTIONS` names
+stay the `ModelConfigDefaults` defaults, see the next table.
+
 ### Read by `streamvision/stream/configuration.py` (`ModelConfigDefaults`)
 
 | name | legacy | new | default |
@@ -492,7 +538,6 @@ No new package reads these. They never get an alias or a default row.
 | `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES` | `env.py:410` | legacy adapter flag forwarded as a `from_pretrained` argument; no new package reads the env |
 | `ALLOW_NUMPY_INPUT` | `env.py:48` | legacy pickled-numpy input type; the new server has no numpy input |
 | `ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS` | `env.py:732` | legacy models-cache auth; unread by any new package (hosting summary) |
-| `ALLOW_UNSAFE_GSTREAMER_PIPELINES` | `env.py:1242` | `StreamsConfiguration` field; no new package reads the env name today, spelling reserved |
 | `API_DEBUG` | `env.py:219` | legacy debug flag with no consumer in the new stack |
 | `API_PROXY_BASE_URL` | `env.py:199` | legacy weights-proxy URL; unread (hosting summary) |
 | `ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1335` | legacy assume-identity headers; unread (hosting summary) |
@@ -502,15 +547,11 @@ No new package reads these. They never get an alias or a default row.
 | `CACHE_METADATA_LOCK_TIMEOUT` | `env.py:1453` | legacy model cache lock; `inference_models` uses `INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT` with different semantics |
 | `CELERY_LOG_LEVEL` | `env.py:989` | legacy celery; none in the new stack |
 | `CORE_MODEL_BUCKET` | `env.py:927` | legacy AWS-era setting |
-| `DEBUG_AIORTC_QUEUES` | `env.py:978` | `StreamsConfiguration` field; no new package reads the env name today |
-| `DEBUG_WEBRTC_PROCESSING_LATENCY` | `env.py:979` | `StreamsConfiguration` field; no new package reads the env name today |
 | `DEDICATED_DEPLOYMENT_ID` | `env.py:1329` | legacy dedicated-deployment auth; the new `auth.py` validates keys against `API_BASE_URL` only; `configuration.py` reads it for the `hostname` and `dedicated_deployment_id` of usage rows |
 | `DEDICATED_DEPLOYMENT_WORKSPACE_URL` | `env.py:1225` | legacy dedicated-deployment auth |
 | `DEVICE` | `env.py:1223` | steers four legacy HF models only (`inference/models/qwen25vl`, `easy_ocr`, `doctr`, `sam3_3d`); `inference_models` `DEFAULT_DEVICE` (`configuration.py:43`) steers every model, so an alias would change models legacy never touched |
 | `DEVICE_ID` | `env.py:472` | legacy device management; `configuration.py` reads it for the `device_id` of usage rows |
-| `DISABLE_GSTREAMER_VIDEO_SOURCES` | `env.py:1254` | `StreamsConfiguration` field; no new package reads the env name today |
 | `DISABLE_INFERENCE_CACHE` | `env.py:480` | legacy inference-result cache; none in the new stack |
-| `DISABLE_NATIVE_STDERR_CAPTURE` | `env.py:1265` | `StreamsConfiguration` field; no new package reads the env name today |
 | `DISABLE_PREPROC_AUTO_ORIENT` | `env.py:493` | legacy ORT preprocessing; `inference_models` preprocesses per model |
 | `DISABLE_PREPROC_CONTRAST` | `env.py:496` | legacy ORT preprocessing |
 | `DISABLE_PREPROC_GRAYSCALE` | `env.py:499` | legacy ORT preprocessing |
@@ -520,10 +561,8 @@ No new package reads these. They never get an alias or a default row.
 | `DISK_CACHE_CLEANUP` | `env.py:1424` | legacy artifact cache internals |
 | `ELASTICACHE_ENDPOINT` | `env.py:551` | legacy AWS-era setting |
 | `ENABLE_BYTE_TRACK` | `env.py:561` | legacy stream-mode setting |
-| `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING` | `env.py:974` | `StreamsConfiguration` field; no new package reads the env name today |
 | `ENABLE_HTTPS` | `env.py:587` | legacy uvicorn TLS; the new entrypoints (Task 5.7) own TLS |
 | `ENABLE_PROMETHEUS` | `env.py:563` | legacy metrics; unread (hosting summary) |
-| `ENABLE_STREAM_API` | `env.py:1241` | legacy stream-manager process; unread (hosting summary) |
 | `ENFORCE_CREDITS_VERIFICATION` | `env.py:642` | unread (hosting summary) |
 | `ENFORCE_FPS` | `env.py:574` | legacy stream-mode setting |
 | `FIX_BATCH_SIZE` | `env.py:580` | legacy ORT batch padding |
@@ -533,8 +572,6 @@ No new package reads these. They never get an alias or a default row.
 | `HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT` | `env.py:1455` | legacy model manager lock |
 | `HUGGINGFACE_TOKEN` | `env.py:1222` | legacy HF token plumbing; no new package reads it |
 | `IGNORE_MODEL_DEPENDENCIES_WARNINGS` | `env.py:35` | legacy warning filter |
-| `INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE` | `env.py:955` | `StreamsConfiguration` field; no new package reads the env name today |
-| `INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY` | `env.py:958` | `StreamsConfiguration` field; no new package reads the env name today |
 | `INFERENCE_WARNINGS_DISABLED` | `env.py:27` | legacy warning filter |
 | `INFER_BUCKET` | `env.py:937` | legacy AWS-era setting |
 | `INTERNAL_WEIGHTS_URL_SUFFIX` | `env.py:203` | legacy weights-proxy suffix; unread (hosting summary) |
@@ -573,11 +610,7 @@ No new package reads these. They never get an alias or a default row.
 | `SSL_CERTFILE` | `env.py:596` | legacy uvicorn TLS |
 | `SSL_KEYFILE` | `env.py:599` | legacy uvicorn TLS |
 | `SSL_KEYFILE_PASSWORD` | `env.py:602` | legacy uvicorn TLS |
-| `STREAM_API_PRELOADED_PROCESSES` | `env.py:1245` | legacy stream-manager process; unread |
 | `STREAM_ID` | `env.py:905` | legacy device-mode setting |
-| `STREAM_MANAGER_MAX_ACTIVE_PIPELINES` | `env.py:1447` | `StreamsConfiguration` field; no new package reads the env name today |
-| `STREAM_MANAGER_MAX_RAM_MB` | `env.py:1431` | `StreamsConfiguration` field; no new package reads the env name today |
-| `STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE` | `env.py:1438` | `StreamsConfiguration` field; no new package reads the env name today |
 | `STUB_CACHE_SIZE` | `env.py:953` | legacy stub model cache |
 | `TENSORRT_CACHE_PATH` | `env.py:915` | legacy ORT TensorRT cache |
 | `TRANSIENT_ROBOFLOW_API_ERRORS` | `env.py:1401` | legacy API client |
@@ -586,12 +619,6 @@ No new package reads these. They never get an alias or a default row.
 | `USE_INFERENCE_MODELS` | `env.py:407` | legacy adapter switch; the new stack is `inference_models`-only |
 | `USE_PYTORCH_FOR_PREPROCESSING` | `env.py:475` | legacy ORT preprocessing |
 | `VERSION_CHECK_MODE` | `env.py:921` | legacy version check |
-| `VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE` | `env.py:1748` | `StreamsConfiguration` field; no new package reads the env name today |
-| `VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE` | `env.py:965` | `StreamsConfiguration` field |
-| `VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE` | `env.py:962` | `StreamsConfiguration` field |
-| `VIDEO_SOURCE_BUFFER_SIZE` | `env.py:1798` | `StreamsConfiguration` field |
-| `VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW` | `env.py:971` | `StreamsConfiguration` field |
-| `VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES` | `env.py:968` | `StreamsConfiguration` field |
 | `WEBEXEC_INFERENCE_VERSION` | `env.py:1209` | legacy webexec version pin; no `ModalConfiguration` field |
 | `WEBRTC_DATA_CHANNEL_ACK_WINDOW` | `env.py:1629` | legacy WebRTC; the new server has no WebRTC |
 | `WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY` | `env.py:1617` | legacy WebRTC |
@@ -630,7 +657,6 @@ No new package reads these. They never get an alias or a default row.
 | `WEBRTC_MODAL_VOLUME_NAME` | `env.py:1589` | legacy WebRTC Modal worker |
 | `WEBRTC_MODAL_WATCHDOG_TIMEMOUT` | `env.py:1510` | legacy WebRTC Modal worker |
 | `WEBRTC_PREVIEW_FRAME_JPEG_QUALITY` | `env.py:1644` | legacy WebRTC |
-| `WEBRTC_REALTIME_PROCESSING` | `env.py:982` | `StreamsConfiguration` field; no new package reads the env name today |
 | `WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS` | `env.py:1613` | legacy WebRTC |
 | `WEBRTC_SESSION_HEARTBEAT_URL` | `env.py:1608` | legacy WebRTC |
 | `WEBRTC_WORKER_ENABLED` | `env.py:1482` | legacy WebRTC; unread (hosting summary) |

@@ -23,6 +23,7 @@ from inference_models.utils.environment import (
     get_boolean_from_env,
     get_float_from_env,
     get_integer_from_env,
+    str2bool,
 )
 
 
@@ -43,6 +44,37 @@ def _optional_positive_integer_from_env(name: str) -> Optional[int]:
     if value <= 0:
         raise ValueError(f"{name} must be a positive integer, got {raw!r}")
     return value
+
+
+def _optional_integer_from_env(name: str) -> Optional[int]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    return get_integer_from_env(name)
+
+
+def _optional_float_from_env(name: str) -> Optional[float]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    return get_float_from_env(name)
+
+
+def _optional_boolean_from_env(name: str) -> Optional[bool]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    return get_boolean_from_env(name)
+
+
+def _absolute_number_from_env(name: str, parser, default):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return abs(parser(raw))
+    except ValueError:
+        return default
 
 
 def _telemetry_env_name(name: str) -> str:
@@ -327,6 +359,9 @@ EASYOCR_VERSION_ID = os.environ.get("EASYOCR_VERSION_ID", "english_g2")
 OWLV2_VERSION_ID = os.environ.get("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")
 CLASS_AGNOSTIC_NMS = get_boolean_from_env("CLASS_AGNOSTIC_NMS", default=False)
 DEFAULT_CONFIDENCE = 0.4
+DEFAULT_IOU_THRESHOLD = 0.3
+DEFAULT_MAX_CANDIDATES = 3000
+DEFAULT_MAX_DETECTIONS = 300
 ALLOW_ORIGINS = [o for o in os.environ.get("ALLOW_ORIGINS", "*").split(",") if o]
 DEFAULT_API_KEY = (
     os.environ.get("ROBOFLOW_API_KEY") or os.environ.get("API_KEY") or None
@@ -440,6 +475,80 @@ if LEGACY_OFFLINE_MODE:
     SINGLE_TENANT_WORKFLOW_CACHE = True
 ALLOW_WORKFLOWS_FONTS_DOWNLOAD = get_boolean_from_env(
     "ALLOW_WORKFLOWS_FONTS_DOWNLOAD", default=True
+)
+
+# ── Stream API (streams/configuration.py, streams/host.py) ────────────────
+ENABLE_STREAM_API = get_boolean_from_env("ENABLE_STREAM_API", default=False)
+STREAM_API_PRELOADED_PROCESSES = get_integer_from_env(
+    "STREAM_API_PRELOADED_PROCESSES", default=0
+)
+STREAM_MANAGER_HOST = os.environ.get("STREAM_MANAGER_HOST", "127.0.0.1")
+STREAM_MANAGER_PORT = get_integer_from_env("STREAM_MANAGER_PORT", default=7070)
+STREAM_MANAGER_SOCKET_TIMEOUT = get_float_from_env(
+    "STREAM_MANAGER_SOCKET_TIMEOUT", default=5.0
+)
+STREAM_MANAGER_OPERATIONS_TIMEOUT = _optional_float_from_env(
+    "STREAM_MANAGER_OPERATIONS_TIMEOUT"
+)
+STREAM_MANAGER_MAX_ACTIVE_PIPELINES = max(
+    get_integer_from_env("STREAM_MANAGER_MAX_ACTIVE_PIPELINES", default=8),
+    STREAM_API_PRELOADED_PROCESSES,
+)
+STREAM_MANAGER_MAX_RAM_MB = _absolute_number_from_env(
+    "STREAM_MANAGER_MAX_RAM_MB", float, default=None
+)
+STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = _absolute_number_from_env(
+    "STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE", int, default=10
+)
+VIDEO_SOURCE_BUFFER_SIZE = _optional_integer_from_env("VIDEO_SOURCE_BUFFER_SIZE")
+VIDEO_SOURCE_BUFFER_SIZE_DEFAULT = 64
+VIDEO_SOURCE_BUFFER_SIZE_TENSOR_DEFAULT = 8
+VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE = _optional_boolean_from_env(
+    "VIDEO_SOURCE_ADAPTIVE_BACKPRESSURE"
+)
+VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE = get_float_from_env(
+    "VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE", default=5.0
+)
+VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE = get_float_from_env(
+    "VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE", default=0.1
+)
+VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = get_integer_from_env(
+    "VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW", default=16
+)
+VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES = get_integer_from_env(
+    "VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES", default=10
+)
+DISABLE_GSTREAMER_VIDEO_SOURCES = get_boolean_from_env(
+    "DISABLE_GSTREAMER_VIDEO_SOURCES", default=False
+)
+DISABLE_NATIVE_STDERR_CAPTURE = get_boolean_from_env(
+    "DISABLE_NATIVE_STDERR_CAPTURE", default=False
+)
+INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY = get_integer_from_env(
+    "INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY", default=1
+)
+RUNS_ON_JETSON = str2bool(
+    os.environ.get("RUNS_ON_JETSON", os.environ.get("RUNNING_ON_JETSON", "False")),
+    variable_name="RUNS_ON_JETSON",
+)
+ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING = get_boolean_from_env(
+    "ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", default=False
+)
+INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE = get_integer_from_env(
+    "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE", default=512
+)
+INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE_EXPLICIT = (
+    "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE" in os.environ
+)
+ALLOW_UNSAFE_GSTREAMER_PIPELINES = get_boolean_from_env(
+    "ALLOW_UNSAFE_GSTREAMER_PIPELINES", default=False
+)
+DEBUG_AIORTC_QUEUES = get_boolean_from_env("DEBUG_AIORTC_QUEUES", default=False)
+DEBUG_WEBRTC_PROCESSING_LATENCY = get_boolean_from_env(
+    "DEBUG_WEBRTC_PROCESSING_LATENCY", default=False
+)
+WEBRTC_REALTIME_PROCESSING = get_boolean_from_env(
+    "WEBRTC_REALTIME_PROCESSING", default=True
 )
 
 # ── Workflows: enterprise blocks and MQTT broker policy (workflows/host.py) ─
