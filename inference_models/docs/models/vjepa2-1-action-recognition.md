@@ -8,7 +8,7 @@ This release supports the versioned `frame_anchored_multilabel_spans_v1` method 
 Frames resize directly to the square resolution recorded in the package, without cropping.
 The default is 384×384. The side must be 64 to 1080 pixels and divisible by 16.
 Windows must contain 2 to 256 frames, with an even frame count.
-Each window must fit the 524,288-token product limit: `(frames / 2) * (side / 16) ** 2`.
+Each window must fit the 81,920-token product limit: `(frames / 2) * (side / 16) ** 2`.
 This limit does not guarantee a fixed GPU memory peak. Input size, precision, and concurrent calls also affect memory use.
 Inference uses the normalization recorded in the package.
 The recorded FPS, window length, overlap, and confidence threshold drive inference.

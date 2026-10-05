@@ -106,13 +106,14 @@ def test_contract_rejects_causal_or_different_head_artifacts():
         with pytest.raises(ValueError):
             validate_config(altered)
 
-    metadata["network_input"].update(frames=256, height=1024, width=1024)
-    metadata["encoder"]["arguments"].update(num_frames=256, img_size=[1024, 1024])
-    metadata["head"].update(queries=256, offset_scale_frames=256)
+    metadata["network_input"].update(frames=160, height=512, width=512)
+    metadata["encoder"]["arguments"].update(num_frames=160, img_size=[512, 512])
+    metadata["head"].update(queries=160, offset_scale_frames=160)
     validate_config(metadata)
-    metadata["network_input"].update(height=1072, width=1072)
-    metadata["encoder"]["arguments"]["img_size"] = [1072, 1072]
-    with pytest.raises(ValueError, match="524288 vision tokens"):
+    metadata["network_input"]["frames"] = 162
+    metadata["encoder"]["arguments"]["num_frames"] = 162
+    metadata["head"].update(queries=162, offset_scale_frames=162)
+    with pytest.raises(ValueError, match="81920 vision tokens"):
         validate_config(metadata)
 
 

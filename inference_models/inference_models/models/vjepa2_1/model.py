@@ -28,7 +28,7 @@ from inference_models.weights_providers.entities import RecommendedParameters
 from .architecture import VJepaEncoder
 from .head import SpanHead
 
-MAX_WINDOW_TOKENS = 524288
+MAX_WINDOW_TOKENS = 81920
 
 
 def validate_config(config):
