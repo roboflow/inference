@@ -5,7 +5,7 @@ import math
 from contextlib import nullcontext
 from pathlib import Path
 from threading import Lock
-from typing import Optional
+from typing import Callable, Optional, Union
 
 import numpy as np
 import torch
@@ -242,16 +242,53 @@ class VJepaActionRecognition(ActionRecognitionModel):
         self.recommended_parameters = recommended_parameters
         inputs = config["network_input"]
         self._dtype = getattr(torch, inputs["autocast"])
+        self._frame_size = (inputs["height"], inputs["width"])
+        self._resize = v2.Resize(self._frame_size, antialias=inputs["antialias"])
         self._transform = v2.Compose(
             [
-                v2.Resize(
-                    (inputs["height"], inputs["width"]), antialias=inputs["antialias"]
-                ),
                 v2.ToImage(),
                 v2.ToDtype(torch.float32, scale=True),
                 v2.Normalize(*inputs["normalization"]),
             ]
         )
+
+    @property
+    def frame_storage_transform(
+        self,
+    ) -> Callable[[Union[np.ndarray, torch.Tensor]], np.ndarray]:
+        """Get the resize shared by direct inference and frame storage.
+
+        Returns:
+            The model's RGB uint8, direct-square frame preparation function.
+        """
+        return self.prepare_frame_for_storage
+
+    def prepare_frame_for_storage(
+        self, frame: Union[np.ndarray, torch.Tensor]
+    ) -> np.ndarray:
+        """Resize a frame without retaining normalized tensors or source pixels.
+
+        Args:
+            frame: An HWC RGB uint8 array or CHW RGB uint8 tensor.
+
+        Returns:
+            A CPU RGB uint8 array at the model's recorded square resolution.
+            A prepared array is returned unchanged.
+
+        Raises:
+            ValueError: If the frame is not RGB uint8.
+        """
+        if isinstance(frame, torch.Tensor):
+            frame = frame.detach().cpu().permute(1, 2, 0).numpy()
+        if frame.dtype != np.uint8 or frame.ndim != 3 or frame.shape[-1] != 3:
+            raise ValueError("V-JEPA expects RGB uint8 frames")
+
+        if frame.shape[:2] == self._frame_size:
+            prepared = frame
+        else:
+            prepared = np.array(self._resize(Image.fromarray(frame)))
+
+        return prepared
 
     @property
     def class_names(self):
@@ -323,10 +360,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
         ).get_threshold(self._classes)
         images = []
         for frame in frames:
-            if isinstance(frame, torch.Tensor):
-                frame = frame.detach().cpu().permute(1, 2, 0).numpy()
-            if frame.dtype != np.uint8 or frame.ndim != 3 or frame.shape[-1] != 3:
-                raise ValueError("V-JEPA expects RGB uint8 frames")
+            frame = self.prepare_frame_for_storage(frame)
             images.append(self._transform(Image.fromarray(frame)))
         count = len(images)
         end_limit = (

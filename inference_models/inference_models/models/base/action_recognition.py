@@ -1,7 +1,7 @@
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
-from typing import List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -89,6 +89,21 @@ class ActionRecognitionModel(ABC):
 
     span_semantics = "instances"
     confidence_threshold = None
+
+    @property
+    def frame_storage_transform(
+        self,
+    ) -> Optional[
+        Callable[[Union[np.ndarray, torch.Tensor]], Union[np.ndarray, torch.Tensor]]
+    ]:
+        """Get the optional model-owned transform used before retaining frames.
+
+        Returns:
+            A transform that prepares RGB uint8 frames for storage, or None
+            to retain the existing max-frame-side policy. The transform must
+            preserve inference pixels when called again on a prepared frame.
+        """
+        return None
 
     @property
     def video_sampling(self) -> VideoSampling:

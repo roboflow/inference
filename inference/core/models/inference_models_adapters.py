@@ -2196,10 +2196,16 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 else None
             )
             windows_classified = 0
+            frame_transform = getattr(self._model, "frame_storage_transform", None)
+            decode_kwargs = (
+                {"frame_transform": frame_transform}
+                if frame_transform is not None
+                else {"max_frame_side": effective_max_frame_side(sampling)}
+            )
             window_frames = read_frame_windows(
                 path=path,
                 windows=[window.frame_indices for window in windows],
-                max_frame_side=effective_max_frame_side(sampling),
+                **decode_kwargs,
             )
             for window, frames in zip(windows, window_frames):
                 if len(frames) < max(1, sampling.min_frames):

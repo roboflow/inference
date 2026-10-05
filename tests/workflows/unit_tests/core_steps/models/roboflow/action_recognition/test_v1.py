@@ -1245,16 +1245,33 @@ def test_buffered_frames_are_capped_to_the_trained_side():
         assert max(frame.shape[:2]) <= 8
 
 
-def test_a_model_declaring_no_side_keeps_frames_whole():
-    block, model = _make_block(responses=[[_model_segment("walk")]])
+@pytest.mark.parametrize("prepare_frames", [False, True])
+@pytest.mark.parametrize("tensor", [False, True])
+def test_a_model_declaring_no_side_keeps_frames_whole(
+    monkeypatch, prepare_frames, tensor
+):
+    block, model = _make_block(responses=[[_model_segment("walk")]], tensor=tensor)
+    transform = MagicMock(return_value=np.zeros((1, 1, 3), dtype=np.uint8))
+    if prepare_frames:
+        monkeypatch.setattr(
+            _FakeActionRecognitionModel,
+            "frame_storage_transform",
+            property(lambda self: transform),
+        )
 
-    _run(block, _make_frame(0))
-    _run(block, _make_frame(2))
+    _run(block, _make_frame(0, tensor_rgb_color=[20, 10, 0] if tensor else None))
+    stored = block._video_bookkeeping["stream-0"].sampled[0][1]
+    if prepare_frames:
+        assert stored.shape == (1, 1, 3)
+        assert stored.dtype == np.uint8
+    _run(block, _make_frame(2, tensor_rgb_color=[20, 10, 2] if tensor else None))
 
     assert len(model.calls) == 1
     original = _make_frame(0).numpy_image.shape[:2]
     for frame in model.calls[0]["frames"]:
-        assert frame.shape[:2] == original
+        shape = frame.shape[1:] if isinstance(frame, torch.Tensor) else frame.shape[:2]
+        assert shape == ((1, 1) if prepare_frames else original)
+    assert transform.call_count == (2 if prepare_frames else 0)
 
 
 def test_the_block_cap_matches_the_model_cap():

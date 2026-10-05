@@ -69,8 +69,9 @@ def _clip(frame_count: int, source_fps: float):
         f"{MODULE}.probe_video", return_value=(source_fps, frame_count)
     ), patch(
         f"{MODULE}.read_frame_windows",
-        side_effect=lambda path, windows, max_frame_side: (
-            [frame] * len(window) for window in windows
+        side_effect=lambda path, windows, max_frame_side=None, frame_transform=None: (
+            [frame_transform(frame) if frame_transform else frame] * len(window)
+            for window in windows
         ),
     ):
         source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
@@ -78,14 +79,19 @@ def _clip(frame_count: int, source_fps: float):
         yield
 
 
-def test_window_segments_map_to_clip_frame_indices() -> None:
+@pytest.mark.parametrize("prepare_frames", [False, True])
+def test_window_segments_map_to_clip_frame_indices(prepare_frames) -> None:
     model = _FakeModel(
         responses=[[ActionRecognitionPrediction(0, 15, "walk")]],
         class_names=["walk", "run"],
         sampling=VideoSampling(window_seconds=8.0, sample_fps=2.0, min_frames=4),
     )
+    prepared = MagicMock(side_effect=lambda frame: frame)
+    if prepare_frames:
+        model.frame_storage_transform = prepared
     with _clip(frame_count=100, source_fps=10.0):
         response = _adapter(model).infer_from_request(_request())
+    assert prepared.call_count == (2 if prepare_frames else 0)
     # 10 s against an 8 s window: one whole window plus the 2 s tail.
     assert response.windows_classified == 2
     assert response.source_fps == 10.0

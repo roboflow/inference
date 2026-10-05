@@ -37,3 +37,25 @@ It does not perform a separate final call when a stream ends.
 GPU numerical parity and performance require staging validation before release.
 The model retains FP32 parameters and uses the package's recorded autocast precision on CUDA.
 No temporal cache, causal attention, or TensorRT path is enabled.
+
+## Retained frames
+
+The shared action-recognition model interface exposes an optional `frame_storage_transform`.
+V-JEPA supplies its recorded direct-square resize through this hook.
+HTTP decoding and Workflows apply it before retaining frames, including tensor-input workflows.
+The hook returns CPU RGB uint8 arrays. Normalization and GPU transfer occur only during inference.
+Direct model calls use the same resize. Already prepared arrays pass through without another resize.
+Cosmos and models without the hook retain the existing longest-side resize policy.
+
+Each stored V-JEPA frame holds `3 * side * side` bytes of pixel data.
+At 160 frames and 512×512, a full window holds 120 MiB of pixels instead of source-resolution pixels.
+This describes the nominal window payload, not a total process or GPU memory guarantee.
+Decoding temporarily holds a source frame, and inference creates normalized tensors and model activations.
+Concurrent calls and caller-owned source frames also contribute to the peak.
+
+The HTTP decoder shares prepared frames between overlapping windows and releases frames after no remaining window needs them.
+Workflows discards sampled frames as they leave the rolling window.
+It tracks at most 256 streams and retains at most 5,000 timeline entries per stream, plus a copied output snapshot.
+Changing the model clears stream bookkeeping. Changing the filter, window, stride, or confidence, or moving backward in frame numbers, resets the affected stream.
+Stream eviction discards that stream's buffer and timeline. There is no explicit end-of-stream flush or immediate cleanup signal.
+Optional HTTP candidates remain request-local and grow with video length.

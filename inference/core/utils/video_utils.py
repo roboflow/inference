@@ -3,7 +3,7 @@ import binascii
 import contextlib
 import os
 import tempfile
-from typing import Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -155,6 +155,7 @@ def read_frame_windows(
     path: str,
     windows: Sequence[Sequence[int]],
     max_frame_side: Optional[int] = None,
+    frame_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
 ) -> Iterator[List[np.ndarray]]:
     """Read every window's frames in one pass, yielding a window at a time.
 
@@ -167,6 +168,16 @@ def read_frame_windows(
     model's answer moves with them. ``max_frame_side`` of ``None`` reads the
     frames at their own size, which is what a model that never trained on a
     frame side needs.
+
+    Args:
+        path: Local video path.
+        windows: Source-frame indices for each requested window.
+        max_frame_side: Optional longest-side cap applied during RGB conversion.
+        frame_transform: Optional model-owned transform applied once per decoded
+            RGB frame, before storing it for overlapping windows.
+
+    Yields:
+        Lists of prepared RGB frames in each window's requested order.
     """
     if not windows:
         return
@@ -190,7 +201,10 @@ def read_frame_windows(
             if not read_succeeded:
                 break
             if position in needed:
-                by_index[position] = _to_rgb(frame=frame, max_side=max_frame_side)
+                rgb_frame = _to_rgb(frame=frame, max_side=max_frame_side)
+                if frame_transform is not None:
+                    rgb_frame = frame_transform(rgb_frame)
+                by_index[position] = rgb_frame
             while emitted < len(windows) and last_of[emitted] <= position:
                 yield _window_frames(emitted)
                 emitted += 1

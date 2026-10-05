@@ -4,6 +4,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
+from PIL import Image
+from torchvision.transforms import v2
 
 from inference_models.models.vjepa2_1.model import (
     VJepaActionRecognition,
@@ -145,6 +147,26 @@ def test_infer_thresholds_candidates_and_masks_padded_queries(side):
     frame[:, :10, 0] = 255
     frame[:, -10:, 1] = 255
     predictions = model.infer([frame, frame], fps=4)
+    direct_inputs = captured[0].clone()
+    prepared = model.frame_storage_transform(frame)
+    assert prepared.shape == (side, side, 3)
+    assert prepared.dtype == np.uint8
+    assert model.frame_storage_transform(prepared) is prepared
+    tensor_frame = torch.from_numpy(frame).permute(2, 0, 1)
+    np.testing.assert_array_equal(model.frame_storage_transform(tensor_frame), prepared)
+    original_transform = v2.Compose(
+        [
+            v2.Resize((side, side), antialias=True),
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(*metadata["network_input"]["normalization"]),
+        ]
+    )
+    assert torch.equal(
+        direct_inputs[0, :, 0], original_transform(Image.fromarray(frame))
+    )
+    assert model.infer([prepared, prepared], fps=4) == predictions
+    assert torch.equal(captured[-1], direct_inputs)
     assert len(predictions) == 2
     assert all(row.class_name == "a" and row.end_exclusive for row in predictions)
     assert len(model.infer([frame, frame], confidence=0)) == 4

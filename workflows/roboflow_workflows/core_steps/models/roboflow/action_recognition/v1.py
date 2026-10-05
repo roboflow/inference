@@ -501,10 +501,15 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
         if frame_number >= bookkeeping.next_sample_frame_number:
-            frame = self._cap_frame_side(
-                frame=self._extract_frame(image=image),
-                max_side=effective_max_frame_side(video_sampling),
-            )
+            frame = self._extract_frame(image=image)
+            frame_transform = getattr(model, "frame_storage_transform", None)
+            if frame_transform is None:
+                frame = self._cap_frame_side(
+                    frame=frame,
+                    max_side=effective_max_frame_side(video_sampling),
+                )
+            else:
+                frame = frame_transform(frame)
             # Frames can arrive with gaps. A timestamp stranded in a gap has
             # no frame of its own, and copying this one under each would
             # flood the buffer, so the cursor snaps past them first.
