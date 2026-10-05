@@ -19,7 +19,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import Any, Optional
+from typing import Any
 
 from inference_server.legacy_env import apply_legacy_env
 
@@ -142,10 +142,7 @@ async def _preload_models(
         state.preload_finished = True
 
 
-def _start_usage_collector() -> Optional[UsageCollector]:
-    if _cfg.LEGACY_OFFLINE_MODE:
-        return None
-
+def _start_usage_collector() -> UsageCollector:
     usage_collector = UsageCollector()
     usage_collector.start()
 

@@ -616,15 +616,15 @@ class TestUsageCollectorWiring:
         assert start_usage_collector() is spy
         assert spy.started is True
 
-    def test_collector_is_not_started_in_offline_mode(self, monkeypatch):
+    def test_collector_is_started_in_offline_mode_too(self, monkeypatch):
         import inference_server.app as app_mod
 
-        monkeypatch.setattr(
-            app_mod, "UsageCollector", lambda: pytest.fail("constructed offline")
-        )
+        spy = _UsageCollectorSpy()
+        monkeypatch.setattr(app_mod, "UsageCollector", lambda: spy)
         monkeypatch.setattr(app_mod._cfg, "LEGACY_OFFLINE_MODE", True)
 
-        assert start_usage_collector() is None
+        assert start_usage_collector() is spy
+        assert spy.started is True
 
     @pytest.mark.asyncio
     async def test_lifespan_exposes_the_collector_and_flushes_then_stops_it(

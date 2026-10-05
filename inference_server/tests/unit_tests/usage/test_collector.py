@@ -347,40 +347,96 @@ def test_record_malformed_usage(collector):
     assert collector._usage[api_key][key]["api_key_hash"] == api_key
 
 
-def test_record_usage_is_noop_in_offline_mode(collector):
-    with mock.patch.object(
-        configuration, "LEGACY_OFFLINE_MODE", True
-    ), mock.patch.object(collector, "record_system_info") as record_system_info:
-        record(collector, category="model", api_key="fake")
+def test_record_usage_records_in_offline_mode(collector):
+    with mock.patch.object(configuration, "LEGACY_OFFLINE_MODE", True):
+        record(collector, category="model", api_key="fake", frames=3)
 
-    record_system_info.assert_not_called()
-    assert not collector._usage
+    key = usage_key("model", "workspace/model")
+    assert collector._usage["fake"][key]["processed_frames"] == 3
 
 
-def test_flush_queue_preserves_preexisting_records_in_offline_mode(collector):
-    persisted_payload = {"preexisting": {"resource": {"processed_frames": 1}}}
-    collector._delivery.queue = Queue()
-    collector._delivery.queue.put(persisted_payload)
+def test_offline_mode_collector_is_built_with_the_configured_queue(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", True)
+    monkeypatch.setattr(configuration, "TELEMETRY_USE_PERSISTENT_QUEUE", True)
+
+    usage_collector = UsageCollector(sqlite_db_file_path=tmp_path / "usage.db")
+
+    assert isinstance(usage_collector._delivery.queue, SQLiteQueue)
+
+
+def test_flush_posts_in_offline_mode(collector):
+    record(collector, frames=2)
 
     with mock.patch.object(configuration, "LEGACY_OFFLINE_MODE", True), mock.patch(
         POST
     ) as post_mock:
-        collector._delivery.send_queued()
+        post_mock.return_value.status_code = 200
+        collector.flush()
 
-    assert collector._delivery.queue.qsize() == 1
-    assert collector._delivery.queue.get_nowait() is persisted_payload
-    post_mock.assert_not_called()
+    post_mock.assert_called_once()
+    assert post_mock.call_args.kwargs["json"][0]["processed_frames"] == 2
+    assert queued_payloads(collector) == []
 
 
-def test_flush_does_not_post_in_offline_mode(collector):
-    record(collector)
+def usage_log_records(caplog):
+    records = [
+        record
+        for record in caplog.records
+        if record.name.startswith("inference_server.usage")
+    ]
 
-    with mock.patch.object(configuration, "LEGACY_OFFLINE_MODE", True), mock.patch(
-        POST
+    return records
+
+
+def test_an_unreachable_platform_is_logged_at_debug_only_and_keeps_the_rows(
+    collector, caplog
+):
+    record(collector, frames=4)
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.usage"), mock.patch(
+        POST, side_effect=ConnectionError("https://api.example.com?api_key=secret")
+    ):
+        collector.flush()
+
+    records = usage_log_records(caplog)
+    assert records
+    assert all(record.levelno == logging.DEBUG for record in records)
+    assert any("ConnectionError" in record.getMessage() for record in records)
+    assert "api_key=secret" not in caplog.text
+    assert total_frames(queued_payloads(collector)) == 4
+
+
+def test_a_failed_pass_logs_one_usage_line_per_failed_request(collector, caplog):
+    record(collector, api_key="key-one", frames=1)
+    record(collector, api_key="key-two", frames=1)
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.usage"), mock.patch(
+        POST, side_effect=ConnectionError("down")
     ) as post_mock:
         collector.flush()
 
-    post_mock.assert_not_called()
+    assert post_mock.call_count == 2
+    assert len(usage_log_records(caplog)) == 2
+
+
+@pytest.mark.parametrize("status_code", [401, 500, 503])
+def test_a_rejected_usage_request_is_logged_at_debug_only(
+    collector, caplog, status_code
+):
+    record(collector, frames=1)
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.usage"), mock.patch(
+        POST
+    ) as post_mock:
+        post_mock.return_value.status_code = status_code
+        collector.flush()
+
+    records = usage_log_records(caplog)
+    assert records
+    assert all(record.levelno == logging.DEBUG for record in records)
+    assert any(str(status_code) in record.getMessage() for record in records)
     assert total_frames(queued_payloads(collector)) == 1
 
 
@@ -1251,7 +1307,7 @@ def test_failed_send_logs_no_key_secret_row_or_exception_text(collector, caplog)
     ), mock.patch(POST, side_effect=error):
         collector.flush()
 
-    assert "Failed to send usage" in caplog.text
+    assert "Usage request failed: ConnectionError" in caplog.text
     for forbidden in (
         "planted-api-key",
         "planted-secret",

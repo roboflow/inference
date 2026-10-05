@@ -225,9 +225,6 @@ class ServerPipelineHost:
 
 
 def _build_usage_collector() -> Any:
-    if configuration.LEGACY_OFFLINE_MODE:
-        return None
-
     usage_collector = usage_collector_module.UsageCollector()
 
     return usage_collector

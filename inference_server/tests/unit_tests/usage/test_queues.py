@@ -331,3 +331,192 @@ def test_sqlite_put_reports_stored_when_closing_the_connection_fails_after_commi
     assert q.get_nowait() == [{"index": 1}]
     assert "Failed to close the usage database" in caplog.text
     assert "planted-secret" not in caplog.text
+
+
+def stored_rows(db_file):
+    connection = sqlite3.connect(str(db_file))
+    try:
+        rows = connection.execute(
+            "SELECT id, payload FROM usage ORDER BY id"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    return rows
+
+
+def rows_of(api_key_hash, *, frames=1, timestamp_stop=None):
+    row = {"api_key_hash": api_key_hash, "processed_frames": frames}
+    if timestamp_stop is not None:
+        row["timestamp_stop"] = timestamp_stop
+    payload = {api_key_hash: {f"request:{api_key_hash}": row}}
+
+    return payload
+
+
+def test_sqlite_take_returns_only_payloads_of_known_hashes_and_leaves_the_rest_untouched(
+    tmp_path,
+):
+    q = SQLiteQueue(db_file_path=tmp_path / "usage.db")
+    q.put(rows_of("a", frames=1))
+    q.put(rows_of("b", frames=2))
+    q.put(rows_of("a", frames=3))
+    before = stored_rows(tmp_path / "usage.db")
+
+    taken = q.take({"a"})
+
+    assert taken == [rows_of("a", frames=1), rows_of("a", frames=3)]
+    assert stored_rows(tmp_path / "usage.db") == [before[1]]
+    assert q.take(set()) == []
+    assert stored_rows(tmp_path / "usage.db") == [before[1]]
+    assert q.take({"b"}) == [rows_of("b", frames=2)]
+    assert q.empty() is True
+
+
+def test_sqlite_take_splits_a_payload_of_several_hashes_in_place(tmp_path):
+    q = SQLiteQueue(db_file_path=tmp_path / "usage.db")
+    q.put({**rows_of("a", frames=1), **rows_of("b", frames=2)})
+    ((row_id, _),) = stored_rows(tmp_path / "usage.db")
+
+    taken = q.take({"a"})
+
+    assert taken == [rows_of("a", frames=1)]
+    assert stored_rows(tmp_path / "usage.db") == [
+        (row_id, json.dumps(rows_of("b", frames=2)))
+    ]
+
+
+def test_sqlite_take_reaches_known_payloads_behind_unknown_ones(tmp_path):
+    q = SQLiteQueue(db_file_path=tmp_path / "usage.db")
+    for index in range(250):
+        q.put(rows_of("unknown", frames=index))
+    for index in range(5):
+        q.put(rows_of("known", frames=index))
+
+    taken = q.take({"known"})
+
+    assert [
+        payload["known"]["request:known"]["processed_frames"] for payload in taken
+    ] == [0, 1, 2, 3, 4]
+    assert q.qsize() == 250
+    assert q.take({"known"}) == []
+
+
+def test_sqlite_take_honours_the_batch_limit_over_the_known_payloads(tmp_path):
+    q = SQLiteQueue(db_file_path=tmp_path / "usage.db")
+    for index in range(230):
+        q.put(rows_of("unknown" if index % 2 else "known", frames=index))
+
+    first = q.take({"known"})
+    second = q.take({"known"})
+
+    assert len(first) == 100
+    assert len(second) == 15
+    assert q.qsize() == 115
+
+
+def test_get_nowait_takes_every_payload(tmp_path):
+    q = SQLiteQueue(db_file_path=tmp_path / "usage.db")
+    q.put(rows_of("a"))
+    q.put(rows_of("b"))
+
+    assert q.get_nowait() == [rows_of("a"), rows_of("b")]
+    assert q.empty() is True
+
+
+def test_sqlite_take_deletes_unknown_payloads_older_than_the_age_cap(tmp_path, caplog):
+    q = SQLiteQueue(db_file_path=tmp_path / "usage.db")
+    now_ns = queues.time.time_ns()
+    stale_ns = now_ns - (queues.SQLITE_MAX_PAYLOAD_AGE_S + 60) * 1_000_000_000
+    fresh_ns = now_ns - 60 * 1_000_000_000
+    q.put(rows_of("gone", frames=1, timestamp_stop=stale_ns))
+    q.put(rows_of("gone", frames=2, timestamp_stop=stale_ns))
+    q.put(rows_of("gone", frames=3, timestamp_stop=fresh_ns))
+    q.put(rows_of("ageless", frames=4))
+    q.put(rows_of("known", frames=5, timestamp_stop=stale_ns))
+
+    with caplog.at_level(logging.DEBUG):
+        taken = q.take({"known"})
+
+    assert taken == [rows_of("known", frames=5, timestamp_stop=stale_ns)]
+    assert [
+        json.loads(payload) for _, payload in stored_rows(tmp_path / "usage.db")
+    ] == [
+        rows_of("gone", frames=3, timestamp_stop=fresh_ns),
+        rows_of("ageless", frames=4),
+    ]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "2" in warnings[0].getMessage()
+    assert "30" in warnings[0].getMessage()
+    assert q.take({"known"}) == []
+    assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 1
+
+
+def test_sqlite_take_keeps_a_payload_holding_an_ageless_row(tmp_path):
+    q = SQLiteQueue(db_file_path=tmp_path / "usage.db")
+    stale_ns = (
+        queues.time.time_ns() - (queues.SQLITE_MAX_PAYLOAD_AGE_S + 60) * 1_000_000_000
+    )
+    mixed = {
+        **rows_of("old", frames=1, timestamp_stop=stale_ns),
+        **rows_of("ageless", frames=2),
+    }
+    q.put(mixed)
+
+    assert q.take(set()) == []
+
+    assert [
+        json.loads(payload) for _, payload in stored_rows(tmp_path / "usage.db")
+    ] == [mixed]
+
+
+def test_sqlite_take_prunes_a_payload_whose_rows_are_all_old(tmp_path):
+    q = SQLiteQueue(db_file_path=tmp_path / "usage.db")
+    stale_ns = (
+        queues.time.time_ns() - (queues.SQLITE_MAX_PAYLOAD_AGE_S + 60) * 1_000_000_000
+    )
+    q.put(
+        {
+            **rows_of("a", timestamp_stop=stale_ns),
+            **rows_of("b", timestamp_stop=stale_ns),
+        }
+    )
+
+    assert q.take(set()) == []
+
+    assert stored_rows(tmp_path / "usage.db") == []
+
+
+def test_sqlite_take_drops_an_undecodable_payload(tmp_path, caplog):
+    db_file = tmp_path / "usage.db"
+    q = SQLiteQueue(db_file_path=db_file)
+    connection = sqlite3.connect(str(db_file))
+    connection.execute("INSERT INTO usage (payload) VALUES ('not json')")
+    connection.commit()
+    connection.close()
+    q.put(rows_of("a"))
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.usage.queues"):
+        taken = q.take({"a"})
+
+    assert taken == [rows_of("a")]
+    assert q.empty() is True
+    assert "Failed to process a stored usage payload" in caplog.text
+    assert "not json" not in caplog.text
+
+
+def test_memory_queue_take_returns_known_parts_and_keeps_the_rest():
+    q = queues.MemoryQueue(maxsize=10)
+    q.put(rows_of("a", frames=1))
+    q.put(rows_of("b", frames=2))
+    q.put({**rows_of("a", frames=3), **rows_of("b", frames=4)})
+
+    taken = q.take({"a"})
+
+    assert taken == [rows_of("a", frames=1), rows_of("a", frames=3)]
+    assert list(q.queue) == [rows_of("b", frames=2), rows_of("b", frames=4)]
+    assert q.take(set()) == []
+    assert q.qsize() == 2
+    assert q.take({"b"}) == [rows_of("b", frames=2), rows_of("b", frames=4)]
+    assert q.empty() is True

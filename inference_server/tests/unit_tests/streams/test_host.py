@@ -10,7 +10,6 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from roboflow_workflows.prototypes.observer import NULL_EXECUTION_OBSERVER
 from streamvision.stream.exceptions import MissingApiKeyError
 from streamvision.stream_manager.manager_app.host import (
     PipelineHostDescriptor,
@@ -499,7 +498,7 @@ def test_one_collector_serves_every_workflow_of_the_host(gateway, collectors):
     )
 
 
-def test_offline_mode_builds_no_collector_and_leaves_the_null_observer(
+def test_offline_mode_builds_and_starts_a_collector_like_online(
     gateway, collectors, monkeypatch
 ):
     monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", True)
@@ -508,9 +507,11 @@ def test_offline_mode_builds_no_collector_and_leaves_the_null_observer(
     _, init_parameters, _ = _prepare(host)
     host.close()
 
-    assert collectors == []
-    assert init_parameters["workflows_core.execution_observer"] is (
-        NULL_EXECUTION_OBSERVER
+    collector = _only_collector(collectors)
+    assert collector.calls[0] == "start"
+    assert isinstance(
+        init_parameters["workflows_core.execution_observer"],
+        StreamUsageExecutionObserver,
     )
     assert gateway.calls.count(("shutdown",)) == 1
 

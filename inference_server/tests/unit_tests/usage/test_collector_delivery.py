@@ -1,5 +1,6 @@
 import itertools
 import json
+import logging
 import threading
 import time
 from collections import Counter, defaultdict
@@ -593,3 +594,188 @@ def test_usage_is_conserved_across_a_failed_send_a_row_bound_flush_and_a_later_s
     assert dict(accepted_steps) == dict(expected_steps)
     assert collector._delivery.queue.empty()
     assert produced_rows(collector) == []
+
+
+class CountingQueue(Queue):
+    def __init__(self):
+        super().__init__()
+        self.reads = 0
+
+    def get_nowait(self):
+        self.reads += 1
+
+        return super().get_nowait()
+
+    def take(self, known_hashes):
+        self.reads += 1
+        taken = []
+        while not super().empty():
+            taken.append(super().get_nowait())
+
+        return taken
+
+
+def backoff_s(collector):
+    remaining = collector._delivery.send_backoff_s
+
+    return remaining
+
+
+def test_a_failed_pass_defers_the_sender_by_the_flush_interval_then_doubles_it(
+    collector, monkeypatch
+):
+    monkeypatch.setattr(configuration, "TELEMETRY_FLUSH_INTERVAL", 10)
+    monkeypatch.setattr(delivery_module, "SEND_BACKOFF_CAP_S", 35)
+    record(collector, frames=1)
+    delays = []
+
+    with mock.patch(POST, side_effect=ConnectionError("down")):
+        for _ in range(5):
+            collector.flush()
+            delays.append(backoff_s(collector))
+
+    assert delays == pytest.approx([10, 20, 35, 35, 35], abs=1)
+    assert total_frames(queued_payloads(collector)) == 1
+
+
+def test_an_accepted_request_resets_the_backoff(collector, monkeypatch):
+    monkeypatch.setattr(configuration, "TELEMETRY_FLUSH_INTERVAL", 10)
+    record(collector, frames=1)
+
+    with mock.patch(POST, side_effect=ConnectionError("down")):
+        collector.flush()
+        collector.flush()
+    deferred = backoff_s(collector)
+    with mock.patch(POST) as post_mock:
+        post_mock.return_value.status_code = 200
+        collector.flush()
+    after_success = backoff_s(collector)
+    record(collector, frames=1)
+    with mock.patch(POST, side_effect=ConnectionError("down")):
+        collector.flush()
+    after_next_failure = backoff_s(collector)
+
+    assert deferred == pytest.approx(20, abs=1)
+    assert after_success == 0.0
+    assert after_next_failure == pytest.approx(10, abs=1)
+
+
+def test_a_pass_with_nothing_to_send_leaves_the_backoff_alone(collector, monkeypatch):
+    monkeypatch.setattr(configuration, "TELEMETRY_FLUSH_INTERVAL", 10)
+    record(collector, frames=1)
+
+    with mock.patch(POST, side_effect=ConnectionError("down")):
+        collector.flush()
+    collector._delivery.queue = Queue()
+    with mock.patch(POST) as post_mock:
+        collector.flush()
+
+    post_mock.assert_not_called()
+    assert backoff_s(collector) == pytest.approx(10, abs=1)
+
+
+def test_sender_lifecycle_does_not_take_rows_while_backing_off(monkeypatch):
+    monkeypatch.setattr(configuration, "TELEMETRY_FLUSH_INTERVAL", 0.01)
+    usage_collector = UsageCollector()
+    usage_collector._system_info = dict(SYSTEM_INFO)
+    queue = CountingQueue()
+    usage_collector._delivery.queue = queue
+    record(usage_collector, frames=2)
+    usage_collector._write_current_usage_to_queue()
+    usage_collector._delivery._next_send_at = time.monotonic() + 60
+
+    with mock.patch(POST) as post_mock:
+        post_mock.return_value.status_code = 200
+        try:
+            usage_collector.start()
+            threading.Event().wait(0.2)
+            reads_while_backing_off = queue.reads
+            posts_while_backing_off = post_mock.call_count
+        finally:
+            complete = usage_collector.stop()
+
+    assert complete is True
+    assert reads_while_backing_off == 0
+    assert posts_while_backing_off == 0
+    assert post_mock.call_count == 1
+    assert not usage_threads()
+
+
+def test_a_backoff_set_after_the_sender_precheck_stops_the_pass_from_taking_rows(
+    monkeypatch,
+):
+    monkeypatch.setattr(configuration, "TELEMETRY_FLUSH_INTERVAL", 10)
+    usage_collector = UsageCollector()
+    usage_collector._system_info = dict(SYSTEM_INFO)
+    delivery = usage_collector._delivery
+    queue = CountingQueue()
+    delivery.queue = queue
+    record(usage_collector, frames=2)
+    usage_collector._write_current_usage_to_queue()
+    delivery._sender_wait_s = lambda: 0.01
+    paused = threading.Event()
+    resume = threading.Event()
+    finished = threading.Event()
+    original = delivery._send_in_background
+
+    def paused_send():
+        paused.set()
+        resume.wait(WAIT_S)
+        original()
+        finished.set()
+
+    delivery._send_in_background = paused_send
+    sender = threading.Thread(target=delivery._sender_loop, daemon=True)
+
+    with mock.patch(POST, side_effect=ConnectionError("down")) as post_mock:
+        sender.start()
+        try:
+            assert paused.wait(WAIT_S)
+            queue.reads = 0
+            usage_collector.flush()
+            assert backoff_s(usage_collector) > 0
+            reads_by_flush = queue.reads
+            resume.set()
+            assert finished.wait(WAIT_S)
+        finally:
+            delivery._stopping.set()
+            resume.set()
+            sender.join(WAIT_S)
+
+    assert queue.reads == reads_by_flush
+    assert post_mock.call_count == 1
+
+
+def test_sender_lifecycle_retries_after_the_backoff_and_keeps_the_rows(
+    monkeypatch, caplog
+):
+    monkeypatch.setattr(configuration, "TELEMETRY_FLUSH_INTERVAL", 0.01)
+    usage_collector = UsageCollector()
+    usage_collector._system_info = dict(SYSTEM_INFO)
+    record(usage_collector, frames=3)
+    attempts = threading.Semaphore(0)
+
+    def post(url, **kwargs):
+        attempts.release()
+        raise ConnectionError("down")
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.usage"), mock.patch(
+        POST, side_effect=post
+    ):
+        try:
+            usage_collector.start()
+            seen = [attempts.acquire(timeout=WAIT_S) for _ in range(3)]
+        finally:
+            complete = usage_collector.stop()
+
+    assert seen == [True, True, True]
+    assert complete is True
+    assert not usage_threads()
+    assert total_frames(queued_payloads(usage_collector)) == 3
+    records = [
+        record
+        for record in caplog.records
+        if record.name.startswith("inference_server.usage")
+    ]
+    assert records
+    assert all(record.levelno == logging.DEBUG for record in records)

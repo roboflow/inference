@@ -11,7 +11,6 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
-from queue import Queue
 from threading import Event, Lock
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 from uuid import uuid4
@@ -37,7 +36,7 @@ from inference_server.usage.payload_helpers import (
     merge_resource_details,
     sha256_hash,
 )
-from inference_server.usage.queues import RedisQueue, SQLiteQueue
+from inference_server.usage.queues import MemoryQueue, RedisQueue, SQLiteQueue
 
 try:
     from streamvision.stream.session import stream_session_id as _stream_session_id_var
@@ -102,7 +101,7 @@ def _select_queue(
         else:
             return redis_queue, False
     if serverless or not configuration.TELEMETRY_USE_PERSISTENT_QUEUE:
-        memory_queue: "Queue[UsagePayload]" = Queue(
+        memory_queue: "MemoryQueue[UsagePayload]" = MemoryQueue(
             maxsize=configuration.TELEMETRY_QUEUE_SIZE
         )
 
@@ -114,7 +113,7 @@ def _select_queue(
         logger.debug(
             "Unable to create the persistent usage queue: %s", type(error).__name__
         )
-        memory_queue = Queue(maxsize=configuration.TELEMETRY_QUEUE_SIZE)
+        memory_queue = MemoryQueue(maxsize=configuration.TELEMETRY_QUEUE_SIZE)
 
         return memory_queue, False
 
@@ -511,9 +510,9 @@ class UsageCollector:
     ) -> None:
         """Add one unit of usage to the row of its aggregation key.
 
-        Nothing is recorded in offline mode or without an API key. The row is
-        selected by category, resource id, billable flag, outcome, preview flag,
-        error type, error status code and stream session.
+        Nothing is recorded without an API key. The row is selected by
+        category, resource id, billable flag, outcome, preview flag, error
+        type, error status code and stream session.
 
         Args:
             api_key: API key the usage is reported for.
@@ -543,8 +542,6 @@ class UsageCollector:
         """
         if self._admission_closed.is_set():
             self._count_ignored()
-            return
-        if configuration.LEGACY_OFFLINE_MODE:
             return
         if not api_key:
             return

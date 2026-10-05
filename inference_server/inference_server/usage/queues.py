@@ -6,8 +6,19 @@ import sqlite3
 import time
 from enum import Enum
 from pathlib import Path
+from queue import Empty, Queue
 from threading import Lock
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 from uuid import uuid4
 
 from inference_server import configuration
@@ -19,6 +30,11 @@ T = TypeVar("T")
 SQLITE_FILE_NAME = "usage.db"
 SQLITE_TIMEOUT_S = 1
 SQLITE_FLUSH_LIMIT = 100
+SQLITE_MAX_PAYLOAD_AGE_S = 30 * 24 * 3600
+STALE_PAYLOADS_LOG_LINE = (
+    "Deleted %s usage payloads older than %s days from the persistent queue"
+)
+UNDECODABLE_PAYLOAD_LOG_LINE = "Failed to process a stored usage payload: %s"
 REDIS_SORTED_SET_NAME = "UsageCollector"
 
 
@@ -29,6 +45,110 @@ class PutUnconfirmed(Enum):
 
 
 UNCONFIRMED = PutUnconfirmed.UNCONFIRMED
+
+
+def split_payload_by_api_key_hash(
+    payload: Any, known_hashes: Set[str]
+) -> Tuple[Optional[Any], Optional[Any]]:
+    """Split a stored payload into the rows of known API key hashes and the rest.
+
+    Args:
+        payload: Rows by API key hash and usage key, or a list of such payloads.
+        known_hashes: Hashes the caller can resolve to an API key.
+
+    Returns:
+        The known part and the unknown part, in the shape of the payload; each
+        is None when it holds nothing. A payload that is not a mapping is
+        unknown as a whole.
+    """
+    if isinstance(payload, list):
+        known_parts = []
+        unknown_parts = []
+        for element in payload:
+            known, unknown = split_payload_by_api_key_hash(element, known_hashes)
+            if known is not None:
+                known_parts.append(known)
+            if unknown is not None:
+                unknown_parts.append(unknown)
+
+        return known_parts or None, unknown_parts or None
+    if not isinstance(payload, dict):
+        return None, payload
+
+    known = {
+        api_key_hash: rows
+        for api_key_hash, rows in payload.items()
+        if api_key_hash in known_hashes
+    }
+    unknown = {
+        api_key_hash: rows
+        for api_key_hash, rows in payload.items()
+        if api_key_hash not in known_hashes
+    }
+
+    return known or None, unknown or None
+
+
+def _newest_timestamp_ns(payload: Any) -> Optional[int]:
+    elements = payload if isinstance(payload, list) else [payload]
+    newest = None
+    for element in elements:
+        if not isinstance(element, dict):
+            return None
+        for rows in element.values():
+            if not isinstance(rows, dict):
+                return None
+            for row in rows.values():
+                if not isinstance(row, dict):
+                    return None
+                stamp = row.get("timestamp_stop") or row.get("timestamp_start")
+                if isinstance(stamp, bool) or not isinstance(stamp, (int, float)):
+                    return None
+                newest = stamp if newest is None else max(newest, stamp)
+
+    return newest
+
+
+def _is_stale(payload: Any, now_ns: int) -> bool:
+    newest = _newest_timestamp_ns(payload)
+    if newest is None:
+        return False
+    stale = now_ns - newest > SQLITE_MAX_PAYLOAD_AGE_S * 1_000_000_000
+
+    return stale
+
+
+class MemoryQueue(Queue):
+    """In-memory usage queue of one process, read by its own sender only."""
+
+    def take(self, known_hashes: Set[str]) -> List[Any]:
+        """Remove and return the rows of known API key hashes.
+
+        The rows of other hashes are put back behind them, in their order. The
+        caller serialises every access to the queue.
+
+        Args:
+            known_hashes: Hashes the caller can resolve to an API key.
+
+        Returns:
+            The known part of every queued payload, oldest first.
+        """
+        taken: List[Any] = []
+        kept: List[Any] = []
+        for _ in range(self.qsize()):
+            try:
+                payload = self.get_nowait()
+            except Empty:
+                break
+            known, unknown = split_payload_by_api_key_hash(payload, known_hashes)
+            if known is not None:
+                taken.append(known)
+            if unknown is not None:
+                kept.append(unknown)
+        for payload in kept:
+            self.put_nowait(payload)
+
+        return taken
 
 
 class SQLiteQueue:
@@ -124,28 +244,61 @@ class SQLiteQueue:
 
         return count
 
-    def _take_oldest_batch(self, connection: sqlite3.Connection) -> List[str]:
+    def _take_batch(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        known_hashes: Optional[Set[str]],
+        limit: int,
+    ) -> Tuple[List[Any], int]:
         sql_select = (
             f"SELECT id, payload FROM {self._tbl_name} "
-            f"ORDER BY id ASC LIMIT {SQLITE_FLUSH_LIMIT}"
+            "WHERE id > ? ORDER BY id ASC LIMIT ?"
         )
+        sql_delete = f"DELETE FROM {self._tbl_name} WHERE id = ?"
+        sql_update = f"UPDATE {self._tbl_name} SET payload = ? WHERE id = ?"
+        now_ns = time.time_ns()
 
-        def select_and_delete(cursor: sqlite3.Cursor) -> List[str]:
-            cursor.execute(sql_select)
-            rows = cursor.fetchall()
-            if rows:
-                placeholders = ", ".join(["?"] * len(rows))
-                cursor.execute(
-                    f"DELETE FROM {self._tbl_name} WHERE id IN ({placeholders})",
-                    [row_id for row_id, _ in rows],
-                )
-            payloads = [payload_str for _, payload_str in rows]
+        def scan(cursor: sqlite3.Cursor) -> Tuple[List[Any], int]:
+            taken: List[Any] = []
+            stale = 0
+            last_id = 0
+            while len(taken) < limit:
+                cursor.execute(sql_select, [last_id, limit - len(taken)])
+                rows = cursor.fetchall()
+                if not rows:
+                    break
+                for row_id, payload_str in rows:
+                    last_id = row_id
+                    try:
+                        payload = json.loads(payload_str)
+                    except Exception as error:
+                        logger.debug(UNDECODABLE_PAYLOAD_LOG_LINE, type(error).__name__)
+                        cursor.execute(sql_delete, [row_id])
+                        continue
+                    if known_hashes is None:
+                        known, unknown = payload, None
+                    else:
+                        known, unknown = split_payload_by_api_key_hash(
+                            payload, known_hashes
+                        )
+                    if unknown is None:
+                        cursor.execute(sql_delete, [row_id])
+                    elif known is not None:
+                        cursor.execute(sql_update, [json.dumps(unknown), row_id])
+                    elif _is_stale(unknown, now_ns):
+                        cursor.execute(sql_delete, [row_id])
+                        stale += 1
+                    if isinstance(known, list):
+                        taken.extend(known)
+                    elif known is not None:
+                        taken.append(known)
 
-            return payloads
+            return taken, stale
 
-        payload_strs = self._in_exclusive_transaction(connection, select_and_delete)
+        outcome = self._in_exclusive_transaction(connection, scan)
 
-        return payload_strs
+        return outcome
 
     def put(
         self, payload: Any, sqlite_connection: Optional[sqlite3.Connection] = None
@@ -209,10 +362,53 @@ class SQLiteQueue:
 
         return empty
 
+    def take(
+        self,
+        known_hashes: Optional[Set[str]] = None,
+        *,
+        limit: int = SQLITE_FLUSH_LIMIT,
+        sqlite_connection: Optional[sqlite3.Connection] = None,
+    ) -> List[Any]:
+        """Remove and return the oldest payloads of known API key hashes.
+
+        The table is scanned oldest first inside one exclusive transaction
+        until ``limit`` payloads are collected. A payload holding rows of other
+        hashes keeps those rows under its own id; a payload holding only such
+        rows is left untouched, unless every row of it stopped more than
+        ``SQLITE_MAX_PAYLOAD_AGE_S`` ago, in which case it is deleted and
+        counted in one warning line. A payload that cannot be decoded is
+        deleted.
+
+        Args:
+            known_hashes: Hashes the caller can resolve to an API key; None
+                takes every payload.
+            limit: Most payloads returned by one call.
+            sqlite_connection: Connection used instead of opening the file.
+
+        Returns:
+            The decoded payloads, oldest first; empty when the table cannot be
+            read.
+        """
+        try:
+            taken, stale = self._run(
+                lambda connection: self._take_batch(
+                    connection, known_hashes=known_hashes, limit=limit
+                ),
+                sqlite_connection,
+            )
+        except Exception:
+            return []
+        if stale:
+            logger.warning(
+                STALE_PAYLOADS_LOG_LINE, stale, SQLITE_MAX_PAYLOAD_AGE_S // 86400
+            )
+
+        return taken
+
     def get_nowait(
         self, sqlite_connection: Optional[sqlite3.Connection] = None
     ) -> List[Dict[str, Any]]:
-        """Remove and return up to 100 of the oldest payloads.
+        """Remove and return up to 100 of the oldest payloads, whatever their hash.
 
         Args:
             sqlite_connection: Connection used instead of opening the file.
@@ -221,20 +417,7 @@ class SQLiteQueue:
             The decoded payloads, oldest first; empty when the table cannot be
             read.
         """
-        try:
-            payload_strs = self._run(self._take_oldest_batch, sqlite_connection)
-        except Exception:
-            return []
-
-        usage_payloads = []
-        for payload_str in payload_strs:
-            try:
-                usage_payloads.append(json.loads(payload_str))
-            except Exception as error:
-                logger.debug(
-                    "Failed to process a stored usage payload: %s",
-                    type(error).__name__,
-                )
+        usage_payloads = self.take(sqlite_connection=sqlite_connection)
 
         return usage_payloads
 

@@ -965,7 +965,36 @@ def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
 
 @mock.patch("inference_server.usage.delivery.requests.post")
 @mock.patch.object(configuration, "LEGACY_OFFLINE_MODE", True)
-def test_send_usage_payload_does_not_post_when_offline(post_mock) -> None:
+def test_send_usage_payload_posts_in_offline_mode_too(post_mock) -> None:
+    payload = {
+        "fake_hash": {
+            "workflows:workflow-1": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "workflow-1",
+                "processed_frames": 1,
+            }
+        }
+    }
+    post_mock.return_value.status_code = 200
+
+    failed_hashes = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+
+    assert failed_hashes == set()
+    post_mock.assert_called_once()
+    assert post_mock.call_args.kwargs["headers"]["Authorization"] == (
+        "Bearer fake-api-key"
+    )
+
+
+@pytest.mark.parametrize("hashes_to_api_keys", [None, {}, {"other_hash": "key"}])
+@mock.patch("inference_server.usage.delivery.requests.post")
+def test_send_usage_payload_never_posts_with_the_hash_as_the_key(
+    post_mock, hashes_to_api_keys
+) -> None:
     payload = {
         "fake_hash": {
             "workflows:workflow-1": {
@@ -979,7 +1008,7 @@ def test_send_usage_payload_does_not_post_when_offline(post_mock) -> None:
     failed_hashes = send_usage_payload(
         payload=payload,
         api_usage_endpoint_url="https://example.com/usage",
-        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+        hashes_to_api_keys=hashes_to_api_keys,
     )
 
     assert failed_hashes == {"fake_hash"}

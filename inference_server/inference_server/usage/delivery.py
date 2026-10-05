@@ -46,7 +46,10 @@ SENDER_THREAD_NAME = "usage-sender"
 DROP_LOG_LINE = "Usage rows were dropped because the pending list is full"
 UNCONFIRMED_LOG_LINE = "Usage rows were given up because the queue write is unconfirmed"
 STEP_FAILED_LOG_LINE = "Usage reporting step failed: %s"
+REQUEST_FAILED_LOG_LINE = "Usage request failed: %s"
+REQUEST_REJECTED_LOG_LINE = "Usage request rejected with HTTP %s"
 REQUEST_TIMEOUT_S = 1
+SEND_BACKOFF_CAP_S = 300.0
 INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
 
@@ -227,11 +230,14 @@ def send_usage_payload(
     The payload is left untouched; the posted rows are copies carrying the API
     key instead of its hash.
 
+    A request that raises or is answered with anything but HTTP 200 is logged
+    at DEBUG level with the error class name or the status only.
+
     Args:
         payload: Rows keyed by API key hash, then by usage key.
         api_usage_endpoint_url: URL the rows are posted to.
-        hashes_to_api_keys: API keys by their hash; a hash missing from a
-            non-empty mapping is not sent.
+        hashes_to_api_keys: API keys by their hash; a hash missing from it is
+            not sent.
         ssl_verify: Whether TLS certificates are verified.
         extra_headers: Headers added to the authorization header.
         may_post: Asked before every request; a request is not started once it
@@ -241,15 +247,10 @@ def send_usage_payload(
         API key hashes whose rows were not accepted (anything but HTTP 200, or
         no request started).
     """
-    if configuration.LEGACY_OFFLINE_MODE:
-        return set(payload.keys())
     hashes_to_api_keys = hashes_to_api_keys or {}
     api_keys_hashes_failed = set()
     for api_key_hash, workflow_payloads in payload.items():
-        if hashes_to_api_keys and api_key_hash not in hashes_to_api_keys:
-            api_keys_hashes_failed.add(api_key_hash)
-            continue
-        api_key = hashes_to_api_keys.get(api_key_hash) or api_key_hash
+        api_key = hashes_to_api_keys.get(api_key_hash)
         if not api_key:
             api_keys_hashes_failed.add(api_key_hash)
             continue
@@ -271,10 +272,12 @@ def send_usage_payload(
                 headers={"Authorization": f"Bearer {api_key}", **extra_headers},
                 timeout=REQUEST_TIMEOUT_S,
             )
-        except Exception:
+        except Exception as error:
+            logger.debug(REQUEST_FAILED_LOG_LINE, type(error).__name__)
             api_keys_hashes_failed.add(api_key_hash)
             continue
         if response.status_code != 200:
+            logger.debug(REQUEST_REJECTED_LOG_LINE, response.status_code)
             api_keys_hashes_failed.add(api_key_hash)
             continue
     return api_keys_hashes_failed
@@ -287,6 +290,9 @@ class Delivery:
     collector, the pending list, the queue, or the sender that took it from the
     queue. A stage gives a row up only after the next one confirmed it, except
     rows counted as dropped and rows counted as unconfirmed, which are not kept.
+    A sender takes from the queue only rows whose API key hash it registered;
+    a platform that does not accept its requests defers the sender thread with
+    a doubling backoff capped at ``SEND_BACKOFF_CAP_S``, the rows staying queued.
     """
 
     def __init__(
@@ -332,6 +338,10 @@ class Delivery:
 
         self._queue_lock = Lock()
 
+        self._backoff_lock = Lock()
+        self._send_failures = 0
+        self._next_send_at = 0.0
+
         self._wake = Event()
         self._stopping = Event()
         self._collector_thread: Optional[Thread] = None
@@ -357,6 +367,20 @@ class Delivery:
     def started(self) -> bool:
         """Whether the background threads were started."""
         return self._collector_thread is not None
+
+    @property
+    def send_backoff_s(self) -> float:
+        """Seconds the sender thread still waits before its next pass.
+
+        Zero when no pass is deferred. Every pass that was answered only with
+        failures defers the next one by ``TELEMETRY_FLUSH_INTERVAL`` doubled
+        per consecutive such pass, up to ``SEND_BACKOFF_CAP_S``; a pass with an
+        accepted request clears the deferral.
+        """
+        with self._backoff_lock:
+            remaining = max(0.0, self._next_send_at - time.monotonic())
+
+        return remaining
 
     @property
     def threads(self) -> List[Thread]:
@@ -397,6 +421,25 @@ class Delivery:
             }
 
         return api_keys
+
+    def _known_hashes(self) -> Set[APIKeyHash]:
+        with self._api_keys_lock:
+            known_hashes = set(self._hashed_api_keys.values())
+
+        return known_hashes
+
+    def _note_send_outcome(self, *, accepted: bool, rejected: bool) -> None:
+        with self._backoff_lock:
+            if accepted:
+                self._send_failures = 0
+                self._next_send_at = 0.0
+            elif rejected:
+                delay = min(
+                    configuration.TELEMETRY_FLUSH_INTERVAL * 2**self._send_failures,
+                    SEND_BACKOFF_CAP_S,
+                )
+                self._send_failures += 1
+                self._next_send_at = time.monotonic() + delay
 
     def _running(self) -> bool:
         return not self._stopping.is_set()
@@ -628,9 +671,15 @@ class Delivery:
         return budget
 
     def _take_raw_queue_locked(
-        self, may_read: Optional[Callable[[], bool]] = None
+        self,
+        may_read: Optional[Callable[[], bool]] = None,
+        *,
+        known_hashes: Optional[Set[APIKeyHash]] = None,
     ) -> List[APIKeyUsage]:
         usage_payloads: List[APIKeyUsage] = []
+        take = None
+        if known_hashes is not None:
+            take = getattr(self.queue, "take", None)
         budget = self._read_budget()
         reads = 0
         while budget is None or reads < budget:
@@ -640,7 +689,10 @@ class Delivery:
                 break
             reads += 1
             try:
-                payload = self.queue.get_nowait()
+                if take is not None:
+                    payload = take(known_hashes)
+                else:
+                    payload = self.queue.get_nowait()
             except Empty:
                 break
             if isinstance(payload, list):
@@ -740,11 +792,16 @@ class Delivery:
         return normalised
 
     def _take_normalised_queue_locked(
-        self, may_read: Optional[Callable[[], bool]] = None
+        self,
+        may_read: Optional[Callable[[], bool]] = None,
+        *,
+        known_hashes: Optional[Set[APIKeyHash]] = None,
     ) -> List[APIKeyUsage]:
         payloads = [
             self._normalised(payload)
-            for payload in self._take_raw_queue_locked(may_read)
+            for payload in self._take_raw_queue_locked(
+                may_read, known_hashes=known_hashes
+            )
         ]
 
         return payloads
@@ -806,32 +863,42 @@ class Delivery:
         may_start: Optional[Callable[[], bool]] = None,
         *,
         deadline: Optional[float] = None,
+        background: bool = False,
     ) -> bool:
         """Take payloads from the queue and post them, one request per API key.
 
-        The pass is bounded: it reads as many batches as the queue held when it
-        started, and stops earlier when the queue runs empty, an empty batch is
-        read or ``may_start`` refuses. Rows not read stay queued. The payloads
-        read are merged into one payload per execution session, streams apart
-        from images, with additional payloads for rows closed by the list
-        bound. Rows the platform did not accept go back to the queue while
-        ``may_start`` allows queue writes, otherwise to the pending list.
+        Only rows whose API key hash this delivery registered are taken when
+        the queue can tell them apart; rows of other hashes are left for the
+        process that serves their key. The pass is bounded: it reads as many
+        batches as the queue held when it started, and stops earlier when the
+        queue runs empty, an empty batch is read or ``may_start`` refuses. Rows
+        not read stay queued. The payloads read are merged into one payload
+        per execution session, streams apart from images, with additional
+        payloads for rows closed by the list bound. Rows the platform did not
+        accept go back to the queue while ``may_start`` allows queue writes,
+        otherwise to the pending list. The pass is made whatever the backoff
+        of the sender thread, and its outcome updates that backoff; a
+        background pass takes nothing when a backoff is pending once it holds
+        the queue lock.
 
         Args:
             may_start: Asked before every queue read and request.
             deadline: Monotonic time after which no lock is waited for.
+            background: Whether the pass is the sender thread's own.
 
         Returns:
             True when no operation was refused by ``may_start``.
         """
-        if configuration.LEGACY_OFFLINE_MODE:
-            return True
-
         gate = _SendGate(may_start or _always)
+        known_hashes = self._known_hashes()
         with lock_guard(self._queue_lock, deadline) as held:
             if not held:
                 return False
-            payloads = self._take_normalised_queue_locked(gate)
+            if background and self.send_backoff_s > 0.0:
+                return True
+            payloads = self._take_normalised_queue_locked(
+                gate, known_hashes=known_hashes
+            )
         if not payloads:
             return not gate.refused
 
@@ -860,7 +927,14 @@ class Delivery:
         hashes_to_api_keys = self._api_keys_by_hash()
         extra_headers = usage_request_headers()
 
+        accepted = False
+        rejected = False
         for payload in payloads:
+            attempted = {
+                api_key_hash
+                for api_key_hash in payload
+                if api_key_hash in hashes_to_api_keys
+            }
             api_keys_hashes_failed = send_usage_payload(
                 payload=payload,
                 api_usage_endpoint_url=api_usage_endpoint_url,
@@ -869,16 +943,16 @@ class Delivery:
                 extra_headers=extra_headers,
                 may_post=gate,
             )
-            if api_keys_hashes_failed:
-                logger.debug(
-                    "Failed to send usage of %s API key(s)",
-                    len(api_keys_hashes_failed),
-                )
+            accepted = accepted or bool(attempted - api_keys_hashes_failed)
+            rejected = rejected or bool(attempted & api_keys_hashes_failed)
             for api_key_hash in list(payload.keys()):
                 if api_key_hash not in api_keys_hashes_failed:
                     del payload[api_key_hash]
             if gate.refused:
                 break
+        self._note_send_outcome(
+            accepted=accepted, rejected=rejected and not gate.refused
+        )
 
     def _requeue(
         self, payload: APIKeyUsage, gate: _SendGate, deadline: Optional[float]
@@ -927,7 +1001,7 @@ class Delivery:
         self.drain_pending(self._running)
 
     def _send_in_background(self) -> None:
-        self.send_queued(self._running)
+        self.send_queued(self._running, background=True)
 
     def _collector_loop(self) -> None:
         guarded(self._resolve_host_in_background)
@@ -945,9 +1019,15 @@ class Delivery:
                 )
             guarded(self._drain_in_background)
 
+    def _sender_wait_s(self) -> float:
+        wait_s = max(configuration.TELEMETRY_FLUSH_INTERVAL, self.send_backoff_s)
+
+        return wait_s
+
     def _sender_loop(self) -> None:
-        while not self._stopping.wait(configuration.TELEMETRY_FLUSH_INTERVAL):
-            guarded(self._send_in_background)
+        while not self._stopping.wait(self._sender_wait_s()):
+            if self.send_backoff_s == 0.0:
+                guarded(self._send_in_background)
 
     def start(self) -> None:
         """Start the collector and sender threads; a second call does nothing."""

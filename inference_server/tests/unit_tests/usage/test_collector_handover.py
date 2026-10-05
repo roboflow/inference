@@ -760,6 +760,7 @@ def failed_send_over_a_legacy_file(monkeypatch, tmp_path, api_key):
     queues.SQLiteQueue(db_file_path=db_file).put(payload)
     usage_collector = UsageCollector(sqlite_db_file_path=db_file)
     usage_collector._system_info = dict(SYSTEM_INFO)
+    usage_collector._delivery.register_api_key(api_key)
 
     with mock.patch(POST) as post_mock:
         post_mock.return_value.status_code = 500
@@ -820,34 +821,105 @@ def test_the_sqlite_file_bytes_hold_no_plaintext_key_after_the_failed_send_witho
     assert api_key.encode() not in bytes_after_failure
 
 
-def test_rows_read_back_after_a_restart_use_the_hash_as_the_bearer_as_legacy_does(
+def sqlite_collector(db_file):
+    usage_collector = UsageCollector(sqlite_db_file_path=db_file)
+    usage_collector._system_info = dict(SYSTEM_INFO)
+
+    return usage_collector
+
+
+def stored_sqlite_rows(db_file):
+    connection = sqlite3.connect(str(db_file))
+    try:
+        rows = connection.execute(
+            "SELECT id, payload FROM usage ORDER BY id"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    return rows
+
+
+def test_rows_read_back_after_a_restart_wait_for_a_process_that_knows_the_key(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(configuration, "TELEMETRY_USE_PERSISTENT_QUEUE", True)
     db_file = tmp_path / "usage.db"
-    first_process = UsageCollector(sqlite_db_file_path=db_file)
-    first_process._system_info = dict(SYSTEM_INFO)
+    first_process = sqlite_collector(db_file)
     record(first_process, api_key="restarted-key", frames=4)
     first_process._write_current_usage_to_queue()
-    api_key_hash = sha256_hash("restarted-key", length=-1)
-    second_process = UsageCollector(sqlite_db_file_path=db_file)
-    second_process._system_info = dict(SYSTEM_INFO)
+    bytes_before = db_file.read_bytes()
+    second_process = sqlite_collector(db_file)
     assert second_process._delivery._hashed_api_keys == {}
 
     with mock.patch(POST) as post_mock:
-        post_mock.return_value.status_code = 401
-        second_process.flush()
         post_mock.return_value.status_code = 200
         second_process.flush()
+        posts_without_the_key = post_mock.call_count
+        bytes_without_the_key = db_file.read_bytes()
+        second_process._delivery.register_api_key("restarted-key")
+        second_process.flush()
 
-    assert post_mock.call_count == 2
-    for call in post_mock.call_args_list:
-        assert call.kwargs["headers"]["Authorization"] == f"Bearer {api_key_hash}"
-        (sent_row,) = call.kwargs["json"]
-        assert sent_row["api_key"] == api_key_hash
-        assert sent_row["processed_frames"] == 4
-        assert "restarted-key" not in json.dumps(call.kwargs["json"])
+    assert posts_without_the_key == 0
+    assert bytes_without_the_key == bytes_before
+    assert post_mock.call_count == 1
+    assert post_mock.call_args.kwargs["headers"]["Authorization"] == (
+        "Bearer restarted-key"
+    )
+    assert sum(row["processed_frames"] for row in sent_rows(post_mock)) == 4
     assert second_process._delivery.queue.empty()
+
+
+def test_two_processes_sharing_the_sqlite_file_each_take_the_rows_of_their_own_keys(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(configuration, "TELEMETRY_USE_PERSISTENT_QUEUE", True)
+    db_file = tmp_path / "usage.db"
+    first_process = sqlite_collector(db_file)
+    second_process = sqlite_collector(db_file)
+    record(first_process, api_key="key-a", frames=3)
+    first_process._write_current_usage_to_queue()
+    rows_of_a = stored_sqlite_rows(db_file)
+    record(second_process, api_key="key-b", frames=4)
+    second_process._write_current_usage_to_queue()
+
+    with mock.patch(POST) as post_mock:
+        post_mock.return_value.status_code = 200
+        second_process.flush()
+        rows_after_second = stored_sqlite_rows(db_file)
+        first_process.flush()
+
+    bearers = [
+        call.kwargs["headers"]["Authorization"] for call in post_mock.call_args_list
+    ]
+    assert bearers == ["Bearer key-b", "Bearer key-a"]
+    assert [
+        sum(row["processed_frames"] for row in call.kwargs["json"])
+        for call in post_mock.call_args_list
+    ] == [4, 3]
+    assert rows_after_second == rows_of_a
+    assert stored_sqlite_rows(db_file) == []
+
+
+def test_a_process_with_no_known_key_takes_nothing_from_the_shared_sqlite_file(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(configuration, "TELEMETRY_USE_PERSISTENT_QUEUE", True)
+    db_file = tmp_path / "usage.db"
+    writer = sqlite_collector(db_file)
+    record(writer, api_key="key-a", frames=3)
+    writer._write_current_usage_to_queue()
+    bytes_before = db_file.read_bytes()
+    idle_process = sqlite_collector(db_file)
+
+    with mock.patch(POST) as post_mock:
+        idle_process.flush()
+        complete = idle_process.stop()
+
+    post_mock.assert_not_called()
+    assert complete is True
+    assert db_file.read_bytes() == bytes_before
+    assert idle_process._delivery.pending_rows == 0
 
 
 def test_stop_does_not_wait_for_a_held_usage_lock(collector):
@@ -911,9 +983,9 @@ class CountingSQLiteQueue(queues.SQLiteQueue):
         self.reads = 0
         self.on_read = None
 
-    def get_nowait(self, sqlite_connection=None):
+    def take(self, known_hashes=None, **kwargs):
         self.reads += 1
-        payloads = super().get_nowait(sqlite_connection)
+        payloads = super().take(known_hashes, **kwargs)
         if self.on_read is not None:
             self.on_read()
 
@@ -929,6 +1001,7 @@ def test_the_dequeue_loop_checks_the_gate_before_every_read_and_leaves_the_rest_
 ):
     queue = CountingSQLiteQueue(db_file_path=tmp_path / "usage.db")
     set_queue(collector, queue)
+    collector._delivery.register_api_key("key")
     for index in range(250):
         queue.put({"key": {f"row-{index}": {"processed_frames": 1}}})
     gate = GateAfter(1)
