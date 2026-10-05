@@ -4,6 +4,8 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.0`
+
 ### Added
 
 - Camera, stream and stream-manager runtime moved here from `inference.core.interfaces`.
