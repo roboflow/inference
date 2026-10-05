@@ -475,6 +475,38 @@ class SegmentAnything3BlockV2(WorkflowBlock):
             Predictions aligned with the input image order.
         """
         ensure_builtin_remote_execution_allowed("SAM3 remote execution")
+        results: List[dict] = []
+        group_size = max(1, WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS)
+        for start in range(0, len(images), group_size):
+            # Finish conversion and release response data before the next group.
+            # An HTTP failure propagates here, preventing any later dispatch.
+            results.extend(
+                self._run_remote_batch(
+                    images=images[start : start + group_size],
+                    model_id=model_id,
+                    class_names=class_names,
+                    confidence=confidence,
+                    per_class_confidence=per_class_confidence,
+                    apply_nms=apply_nms,
+                    nms_iou_threshold=nms_iou_threshold,
+                    mask_representation=mask_representation,
+                )
+            )
+        return results
+
+    def _run_remote_batch(
+        self,
+        images: Batch[WorkflowImageData],
+        model_id: str,
+        class_names: List[Optional[str]],
+        confidence: float,
+        per_class_confidence: Optional[List[float]],
+        apply_nms: bool,
+        nms_iou_threshold: float,
+        mask_representation: str,
+    ) -> BlockResult:
+        """Request and convert one concurrency-sized group of images."""
+        ensure_builtin_remote_execution_allowed("SAM3 remote execution")
         if len(images) == 0:
             return []
 
@@ -487,10 +519,7 @@ class SegmentAnything3BlockV2(WorkflowBlock):
         client.configure(
             InferenceConfiguration(
                 api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-                # The endpoint segments exactly one image per request, so a
-                # batch must never be packed into a single payload; the whole
-                # batch still goes out in one SDK call so the per-image
-                # requests are issued concurrently rather than one at a time.
+                # The endpoint segments exactly one image per request.
                 max_batch_size=1,
                 max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             )

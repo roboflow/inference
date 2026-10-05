@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import weakref
 from contextvars import ContextVar
 from threading import Barrier, Event, Lock
 from unittest.mock import MagicMock
@@ -208,12 +209,18 @@ def test_remote_empty_and_single_image_batches(monkeypatch, variant, count):
 
 
 @pytest.mark.parametrize("variant", VARIANTS)
-def test_remote_http_failure_is_not_returned_as_partial_success(monkeypatch, variant):
-    block, kwargs = _block(monkeypatch, variant, 2)
-    images = _images(2)
-    first = images[0].base64_image
+@pytest.mark.parametrize("concurrency", [1, 2])
+@pytest.mark.parametrize("failed_group", [0, 1])
+def test_remote_http_failure_stops_later_groups(
+    monkeypatch, variant, concurrency, failed_group
+):
+    block, kwargs = _block(monkeypatch, variant, concurrency)
+    images = _images(7)
+    first = images[failed_group * concurrency].base64_image
+    requested = []
 
     def transport(request_data, request_method):
+        requested.append(request_data.payload["image"]["value"])
         status = 400 if request_data.payload["image"]["value"] == first else 200
         return _response(0, request_data.payload["format"], status=status)
 
@@ -222,6 +229,62 @@ def test_remote_http_failure_is_not_returned_as_partial_success(monkeypatch, var
         block.run(
             images=images, model_id="sam3/sam3_final", class_names=["box"], **kwargs
         )
+
+    expected_count = (failed_group + 1) * concurrency
+    assert len(requested) == expected_count
+    assert set(requested) == {image.base64_image for image in images[:expected_count]}
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+@pytest.mark.parametrize("concurrency", [1, 2])
+def test_remote_releases_large_polygon_responses_before_next_group(
+    monkeypatch, variant, concurrency
+):
+    block, kwargs = _block(monkeypatch, variant, concurrency)
+    if variant == "v3":
+        kwargs["output_format"] = "polygons"
+    images = _images(7)
+    indices = {image.base64_image: i for i, image in enumerate(images)}
+    http_refs, parsed_refs = [], []
+    lock = Lock()
+
+    class TrackedPayload(dict):
+        pass
+
+    class TrackedResponse(Response):
+        def json(self, **kwargs):
+            payload = TrackedPayload(super().json(**kwargs))
+            parsed_refs.append(weakref.ref(payload))
+            return payload
+
+    def transport(request_data, request_method):
+        idx = indices[request_data.payload["image"]["value"]]
+        with lock:
+            if idx >= concurrency:
+                # No raw or parsed responses from previous groups remain alive.
+                previous_count = (idx // concurrency) * concurrency
+                assert all(ref() is None for ref in http_refs[:previous_count])
+                assert all(ref() is None for ref in parsed_refs[:previous_count])
+            response = TrackedResponse()
+            response.status_code = 200
+            payload = _response(idx).json()
+            # A detailed polygon stresses both the HTTP body and decoded lists.
+            angles = np.linspace(0, 2 * np.pi, 8192, endpoint=False)
+            polygon = np.column_stack(
+                (8 + 6 * np.cos(angles), 8 + 6 * np.sin(angles))
+            ).tolist()
+            payload["prompt_results"][0]["predictions"][0]["masks"] = [polygon]
+            response._content = json.dumps(payload).encode()
+            http_refs.append(weakref.ref(response))
+            return response
+
+    monkeypatch.setattr(executors, "make_request", transport)
+    result = block.run(
+        images=images, model_id="sam3/sam3_final", class_names=["box"], **kwargs
+    )
+
+    assert len(result) == len(http_refs) == len(parsed_refs) == len(images)
+    assert all(ref() is None for ref in http_refs + parsed_refs)
 
 
 @pytest.mark.parametrize("variant", VARIANTS)
