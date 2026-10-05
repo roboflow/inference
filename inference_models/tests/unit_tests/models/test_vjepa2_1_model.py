@@ -106,6 +106,15 @@ def test_contract_rejects_causal_or_different_head_artifacts():
         with pytest.raises(ValueError):
             validate_config(altered)
 
+    metadata["network_input"].update(frames=256, height=1024, width=1024)
+    metadata["encoder"]["arguments"].update(num_frames=256, img_size=[1024, 1024])
+    metadata["head"].update(queries=256, offset_scale_frames=256)
+    validate_config(metadata)
+    metadata["network_input"].update(height=1072, width=1072)
+    metadata["encoder"]["arguments"]["img_size"] = [1072, 1072]
+    with pytest.raises(ValueError, match="524288 vision tokens"):
+        validate_config(metadata)
+
 
 @pytest.mark.parametrize("side", [256, 384, 512])
 def test_infer_thresholds_candidates_and_masks_padded_queries(side):

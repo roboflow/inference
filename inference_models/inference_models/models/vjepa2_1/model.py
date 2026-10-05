@@ -28,6 +28,8 @@ from inference_models.weights_providers.entities import RecommendedParameters
 from .architecture import VJepaEncoder
 from .head import SpanHead
 
+MAX_WINDOW_TOKENS = 524288
+
 
 def validate_config(config):
     """Validate the recorded V-JEPA inference contract.
@@ -75,6 +77,10 @@ def validate_config(config):
         )
     if not math.isfinite(inputs["fps"]) or inputs["fps"] <= 0:
         raise ValueError("V-JEPA requires a positive finite FPS")
+    if frames // 2 * (side // 16) ** 2 > MAX_WINDOW_TOKENS:
+        raise ValueError(
+            f"V-JEPA windows must not exceed {MAX_WINDOW_TOKENS} vision tokens"
+        )
     contracts = [
         (
             inputs,
