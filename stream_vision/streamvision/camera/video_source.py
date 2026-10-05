@@ -1020,6 +1020,7 @@ class VideoConsumer:
         self._desired_fps = desired_fps
         self._declared_source_fps = None
         self._is_source_video_file = None
+        self._source_total_frames: Optional[int] = None
         self._timestamp_created: Optional[datetime] = None
         self._status_update_handlers = status_update_handlers
         self._next_frame_from_video_to_accept = 1
@@ -1060,6 +1061,9 @@ class VideoConsumer:
             self._is_source_video_file = source_properties.is_file
             self._declared_source_fps = source_properties.fps
             self._timestamp_created = source_properties.timestamp_created
+            # producers report 0 / -1 when the count is unknown (e.g. streams)
+            if source_properties.is_file and source_properties.total_frames > 0:
+                self._source_total_frames = source_properties.total_frames
 
         if self._timestamp_created:
             frame_timestamp = self._timestamp_created + timedelta(
@@ -1189,6 +1193,7 @@ class VideoConsumer:
                 declared_source_fps=declared_source_fps,
                 measured_source_fps=measured_source_fps,
                 comes_from_video_file=is_source_video_file,
+                total_frames=self._source_total_frames,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
             return self._process_stream_frame_dropping_oldest(
@@ -1300,6 +1305,7 @@ class VideoConsumer:
             decoding_pace_monitor=self._decoding_pace_monitor,
             source_id=source_id,
             comes_from_video_file=is_video_file,
+            total_frames=self._source_total_frames,
         )
 
 
@@ -1411,6 +1417,7 @@ def decode_video_frame_to_buffer(
     declared_source_fps: Optional[float] = None,
     measured_source_fps: Optional[float] = None,
     comes_from_video_file: Optional[bool] = None,
+    total_frames: Optional[int] = None,
 ) -> bool:
     success, image = video.retrieve()
     if not success:
@@ -1424,6 +1431,7 @@ def decode_video_frame_to_buffer(
         measured_fps=measured_source_fps,
         source_id=source_id,
         comes_from_video_file=comes_from_video_file,
+        total_frames=total_frames,
     )
     buffer.put(video_frame)
     return True

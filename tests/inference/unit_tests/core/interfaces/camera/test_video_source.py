@@ -4,7 +4,7 @@ from datetime import datetime
 from functools import partial
 from queue import Queue
 from threading import Event, Thread
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from unittest import mock
 from unittest.mock import MagicMock, call, patch
 
@@ -1166,6 +1166,94 @@ def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
         decoded_frame.frame_timestamp == frame_timestamp
     ), "Decoded frame must carry the frame timestamp"
     assert decoded_frame.source_id == 3, "Decoded frame must carry the source id"
+
+
+def _consume_single_frame(
+    source_properties: SourceProperties,
+    buffer: Queue,
+    buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
+) -> VideoFrame:
+    consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
+        buffer_filling_strategy=buffer_filling_strategy,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    video.retrieve.return_value = (True, np.zeros((128, 128, 3), dtype=np.uint8))
+    video.discover_source_properties.return_value = source_properties
+    consumer.reset(source_properties=source_properties)
+    result = consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
+        buffer=buffer,
+        frames_buffering_allowed=True,
+    )
+    assert result is True
+    return buffer.get_nowait()
+
+
+def test_stream_consumption_propagates_total_frames_of_video_file() -> None:
+    # given
+    source_properties = SourceProperties(
+        width=128, height=128, total_frames=431, is_file=True, fps=30.0
+    )
+
+    # when
+    frame = _consume_single_frame(source_properties=source_properties, buffer=Queue())
+
+    # then
+    assert frame.frame_id == 1
+    assert frame.total_frames == 431
+
+
+def test_stream_consumption_propagates_total_frames_when_dropping_oldest() -> None:
+    # given
+    source_properties = SourceProperties(
+        width=128, height=128, total_frames=431, is_file=True, fps=30.0
+    )
+    buffer = Queue(maxsize=1)
+    buffer.put(
+        VideoFrame(
+            image=np.zeros((128, 128, 3), dtype=np.uint8),
+            frame_id=0,
+            frame_timestamp=datetime.now(),
+        )
+    )
+
+    # when
+    frame = _consume_single_frame(
+        source_properties=source_properties,
+        buffer=buffer,
+        buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
+    )
+
+    # then
+    assert frame.total_frames == 431
+
+
+@pytest.mark.parametrize(
+    "is_file, total_frames",
+    [(False, 10), (False, -1), (True, 0), (True, -1)],
+)
+def test_stream_consumption_leaves_total_frames_unset_when_unknown(
+    is_file: bool, total_frames: int
+) -> None:
+    # given
+    source_properties = SourceProperties(
+        width=128, height=128, total_frames=total_frames, is_file=is_file, fps=30.0
+    )
+
+    # when
+    frame = _consume_single_frame(source_properties=source_properties, buffer=Queue())
+
+    # then
+    assert frame.total_frames is None
 
 
 def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:

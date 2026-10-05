@@ -4,6 +4,10 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Added
+
+- `VideoFrame.total_frames` carries the source video file's frame count (`None` for streams or unknown counts). `InferencePipeline` workflow runs and WebRTC video-file uploads pass it into workflow `VideoMetadata.total_frames`.
+
 ## `0.1.0`
 
 ### Added

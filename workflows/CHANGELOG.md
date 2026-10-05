@@ -16,6 +16,13 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- `VideoMetadata` carries an optional `total_frames`: the frame count of the
+  source video file, or `None` for live streams and files that don't report it.
+  Blocks can compute playback progress as `frame_number / total_frames` (e.g. a
+  timeline overlay). Image inputs may include it under `video_metadata`.
+
 ## `0.2.4`
 
 Bundled execution engine: `1.16.1`.

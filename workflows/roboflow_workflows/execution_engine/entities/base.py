@@ -220,6 +220,13 @@ class VideoMetadata(BaseModel):
         "if not possible to be determined - pass None",
         default=None,
     )
+    total_frames: Optional[int] = Field(
+        description="Total number of frames in the source video file - only set when "
+        "frames come from a video file and the container reports the count (may be "
+        "approximate for some formats). `frame_number` counts from 1, so "
+        "`frame_number / total_frames` gives playback progress.",
+        default=None,
+    )
 
 
 class ParentOrigin(BaseModel):

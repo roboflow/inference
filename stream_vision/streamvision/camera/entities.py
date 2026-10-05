@@ -68,6 +68,7 @@ class VideoFrame:
         fps (Optional[float]): declared FPS of source (if possible to be acquired)
         measured_fps (Optional[float]): measured FPS of live stream
         comes_from_video_file (Optional[bool]): flag to determine if frame comes from video file
+        total_frames (Optional[int]): total number of frames in source video file (if known)
     """
 
     image: FrameImage
@@ -78,6 +79,7 @@ class VideoFrame:
     measured_fps: Optional[float] = None
     source_id: Optional[int] = None
     comes_from_video_file: Optional[bool] = None
+    total_frames: Optional[int] = None
 
 
 @dataclass(frozen=True)
