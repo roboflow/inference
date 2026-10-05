@@ -58,6 +58,7 @@ from inference.core.entities.requests.clip import (
 )
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
+from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
@@ -111,6 +112,7 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
+from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
     AnomalyDetectionResponse,
     ClassificationInferenceResponse,
@@ -334,6 +336,7 @@ from inference.core.managers.model_load_collector import (
     request_workflow_id,
 )
 from inference.core.managers.prometheus import InferenceInstrumentator
+from inference.core.models.embeddings import IMAGE_EMBEDDINGS, model_cache_key
 from inference.core.roboflow_api import (
     assume_identity_authorised_workspace_db_id,
     build_roboflow_api_headers,
@@ -1594,6 +1597,14 @@ class HttpInterface(BaseInterface):
                 model_id_alias=model_id_alias,
                 countinference=countinference,
                 service_secret=service_secret,
+                **(
+                    {
+                        "required_capabilities": [IMAGE_EMBEDDINGS],
+                        "output_type": inference_request.output_type,
+                    }
+                    if isinstance(inference_request, ImageEmbeddingRequest)
+                    else {}
+                ),
             )
             inference_model_id = (
                 requested_model_id
@@ -1601,7 +1612,15 @@ class HttpInterface(BaseInterface):
                 else de_aliased_model_id
             )
             resp = self.model_manager.infer_from_request_sync(
-                inference_model_id,
+                (
+                    model_cache_key(
+                        inference_model_id,
+                        [IMAGE_EMBEDDINGS],
+                        inference_request.output_type,
+                    )
+                    if isinstance(inference_request, ImageEmbeddingRequest)
+                    else inference_model_id
+                ),
                 inference_request,
                 **kwargs,
             )
@@ -2167,6 +2186,29 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+
+            @app.post(
+                "/infer/embeddings",
+                response_model=ImageEmbeddingResponse,
+                summary="Image embeddings",
+                description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+            )
+            @with_route_exceptions
+            @usage_collector("request")
+            def infer_embeddings(
+                inference_request: ImageEmbeddingRequest,
+                api_key: Optional[str] = Query(
+                    default=None, description="Roboflow API key"
+                ),
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
+                return process_inference_request(
+                    inference_request,
+                    api_key=api_key,
                     countinference=countinference,
                     service_secret=service_secret,
                 )

@@ -1200,6 +1200,44 @@ def test_get_one_page_of_model_metadata_excludes_auth_header_when_local_api_key(
     assert "Authorization" not in requests_mock.last_request.headers
 
 
+@pytest.mark.parametrize(
+    "coremltools_version, expected_query_value",
+    [(Version("9.0"), ["true"]), (None, None)],
+)
+def test_get_one_page_of_model_metadata_asks_for_coreml_packages_only_when_coreml_runs(
+    requests_mock: Mocker,
+    coremltools_version: Optional[Version],
+    expected_query_value: Optional[List[str]],
+) -> None:
+    # given
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "rfdetr",
+                "taskType": "object-detection",
+                "modelPackages": [],
+            }
+        },
+    )
+
+    # when
+    with patch.object(
+        roboflow_module,
+        "get_coreml_runtime_version",
+        return_value=coremltools_version,
+    ):
+        _ = get_one_page_of_model_metadata(model_id="my-model", api_key="some")
+
+    # then
+    assert (
+        requests_mock.last_request.qs.get("includecoremlpackages")
+        == expected_query_value
+    )
+
+
 def test_get_one_page_of_model_metadata_rejects_offline_mode(
     requests_mock: Mocker,
 ) -> None:
@@ -2526,3 +2564,81 @@ def _dummy_proxy_url_builder(
     url: str, query: Optional[Dict[str, Union[str, List[str]]]]
 ) -> str:
     return f"{DUMMY_PROXY_PREFIX}{url}"
+
+
+def test_parse_coreml_model_package_when_valid_manifest_provided() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "coreml-model-package-v1",
+            "backendType": "coreml",
+            "quantization": "fp16",
+            "dynamicBatchSize": False,
+            "staticBatchSize": 1,
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="weights.mlpackage.zip",
+                downloadUrl="https://dummy.com",
+                md5Hash="some",
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.COREML,
+        quantization=Quantization.FP16,
+        dynamic_batch_size_supported=False,
+        static_batch_size=1,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url="https://dummy.com",
+                file_handle="weights.mlpackage.zip",
+                md5_hash="some",
+            ),
+        ],
+        trusted_source=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        {
+            "type": "coreml-model-package-v1",
+            "backendType": "onnx",
+            "quantization": "fp16",
+            "staticBatchSize": 1,
+        },
+        {
+            "type": "coreml-model-package-v1",
+            "backendType": "coreml",
+            "quantization": "fp16",
+        },
+    ],
+)
+def test_parse_coreml_model_package_when_invalid_manifest_provided(
+    manifest: dict,
+) -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest=manifest,
+        packageFiles=[],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None

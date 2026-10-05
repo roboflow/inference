@@ -101,6 +101,10 @@ _PREFIX_MAP: Tuple[Tuple[str, str], ...] = (
         "streamvision.webrtc_worker.entities",
     ),
     (
+        "inference.core.interfaces.webrtc_worker.watchdog",
+        "streamvision.webrtc_worker.watchdog",
+    ),
+    (
         "inference.core.interfaces.webrtc_worker.sources",
         "streamvision.webrtc_worker.sources",
     ),
