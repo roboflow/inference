@@ -113,11 +113,14 @@ def merge_resource_details(left: Any, right: Any) -> Any:
             right_entries = []
         if not _is_entry_list(right_entries):
             continue
-        merged[key] = _merge_entries(
-            [*left_entries, *right_entries],
-            identity=identity,
-            summed_fields=summed_fields,
-        )
+        try:
+            merged[key] = _merge_entries(
+                [*left_entries, *right_entries],
+                identity=identity,
+                summed_fields=summed_fields,
+            )
+        except TypeError:
+            continue
         changed = True
     if not changed:
         return right

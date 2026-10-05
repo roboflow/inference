@@ -8,6 +8,7 @@ from inference_server import configuration
 from inference_server.usage.delivery import send_usage_payload, ssl_verify_for_endpoint
 from inference_server.usage.payload_helpers import (
     get_api_key_usage_containing_resource,
+    merge_resource_details,
     merge_usage_dicts,
     zip_usage_payloads,
 )
@@ -84,6 +85,37 @@ def test_merge_usage_dicts():
         "source_duration": 2,
         "execution_duration": 0,
     }
+
+
+def test_merge_resource_details_keeps_later_models_on_unhashable_identity():
+    left = {
+        "models": [{"model_id": [], "frames": 1}],
+        "custom_python": [
+            {"block_type": "b", "step_name": "s", "execution_duration": 1}
+        ],
+    }
+    right = {
+        "models": [{"model_id": "a/1", "frames": 2}],
+        "custom_python": [
+            {"block_type": "b", "step_name": "s", "execution_duration": 2}
+        ],
+    }
+
+    result = merge_resource_details(left, right)
+
+    assert result["models"] == [{"model_id": "a/1", "frames": 2}]
+    assert result["custom_python"] == [
+        {"block_type": "b", "step_name": "s", "execution_duration": 3}
+    ]
+
+
+def test_merge_resource_details_keeps_later_models_on_non_numeric_amount():
+    left = {"models": [{"model_id": "a/1", "frames": 1}]}
+    right = {"models": [{"model_id": "a/1", "frames": "2"}]}
+
+    result = merge_resource_details(left, right)
+
+    assert result["models"] == [{"model_id": "a/1", "frames": "2"}]
 
 
 def test_get_api_key_usage_containing_resource_with_no_payload_containing_api_key():
