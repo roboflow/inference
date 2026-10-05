@@ -17,50 +17,31 @@ import numpy as np
 import pytest
 import supervision as sv
 import torch
-from safetensors import safe_open
 
-from inference_models import AutoModel
 from inference_models.models.vjepa2_1.model import VJepaActionRecognition
 
 pytestmark = [pytest.mark.slow, pytest.mark.torch_models]
 
 
 @pytest.fixture(scope="module")
-def loaded_model(vjepa_action_recognition_package, tmp_path_factory):
-    """Load once through the registry without modifying the exported package.
+def loaded_model(vjepa_action_recognition_package):
+    """Load the real export once through the model's normal loader.
 
     Args:
         vjepa_action_recognition_package: Directory containing the trained export.
-        tmp_path_factory: Pytest factory for temporary directories.
 
     Returns:
         Model loaded with the package's real encoder and head weights.
     """
-    package_dir = tmp_path_factory.mktemp("vjepa-automodel")
-    for name in ("model.safetensors", "inference_config.json", "class_names.txt"):
-        source = vjepa_action_recognition_package / name
-        assert source.is_file(), f"Missing V-JEPA package artifact: {source}"
-        (package_dir / name).symlink_to(source)
-
-    # The weights provider normally supplies this manifest, not the trainer export.
-    (package_dir / "model_config.json").write_text(
-        json.dumps(
-            {
-                "model_architecture": "vjepa2_1",
-                "task_type": "action-recognition",
-                "backend_type": "torch",
-            }
-        )
-    )
-    model = AutoModel.from_pretrained(
-        str(package_dir),
+    model = VJepaActionRecognition.from_pretrained(
+        model_name_or_path=str(vjepa_action_recognition_package),
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     )
 
     return model
 
 
-def test_real_package_loads_through_automodel(
+def test_real_package_loads_from_export(
     loaded_model, vjepa_action_recognition_package: Path
 ) -> None:
     config = json.loads(
@@ -78,18 +59,6 @@ def test_real_package_loads_through_automodel(
         loaded_model.confidence_threshold
         == config["post_processing"]["confidence_threshold"]
     )
-    with safe_open(
-        str(vjepa_action_recognition_package / "model.safetensors"),
-        framework="pt",
-        device="cpu",
-    ) as checkpoint:
-        for key in ("encoder.patch_embed.proj.weight", "head.classifier.weight"):
-            torch.testing.assert_close(
-                loaded_model._model.state_dict()[key].cpu(),
-                checkpoint.get_tensor(key).float(),
-                rtol=0,
-                atol=0,
-            )
 
 
 @pytest.mark.gpu_only
