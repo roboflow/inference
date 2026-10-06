@@ -142,11 +142,6 @@ class FontsConfiguration:
 
 @dataclass(frozen=True)
 class ModelsConfiguration:
-    # Whether the host serves instance segmentation through inference_models.
-    # The legacy backend honours mask_decode_mode / tradeoff_factor, so block
-    # versions up to @v4 must keep forwarding them there; on inference_models
-    # those fields were discarded, so forwarding them now would change masks an
-    # existing workflow produces. Defaults to the inference_models default.
     use_inference_models: bool = True
     lmm_enabled: bool = False
     vlm_segmentation_max_polygon_vertices: int = 500
