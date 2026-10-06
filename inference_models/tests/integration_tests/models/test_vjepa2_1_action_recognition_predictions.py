@@ -6,6 +6,8 @@ From inference_models/, with CUDA available for the prediction cases:
     python -m pytest tests/integration_tests/models/test_vjepa2_1_action_recognition_predictions.py -m slow
 
 Without the override, the fixture downloads the synthetic-dataset t7 package.
+GPU prediction cases need more memory than the standard CI runner supplies.
+They stay outside CI's backend-marker groups, like the Cosmos real-weight tests.
 """
 
 import json
@@ -20,7 +22,7 @@ import torch
 
 from inference_models.models.vjepa2_1.model import VJepaActionRecognition
 
-pytestmark = [pytest.mark.slow, pytest.mark.torch_models]
+pytestmark = pytest.mark.slow
 
 
 @pytest.fixture(scope="module")
@@ -41,6 +43,7 @@ def loaded_model(vjepa_action_recognition_package):
     return model
 
 
+@pytest.mark.torch_models
 def test_real_package_loads_from_export(
     loaded_model, vjepa_action_recognition_package: Path
 ) -> None:
