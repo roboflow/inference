@@ -8,7 +8,6 @@ _CAPABILITIES_FIELD = "capabilities"
 _OUTPUT_TYPE_FIELD = "output_type"
 _CAPABILITY_MARKER = f"{_CAPABILITIES_FIELD}="
 _CAPABILITY_FIELD_SEPARATOR = ";"
-_SERVER_BUILT_KEYS: set = set()
 
 
 def routing_key(model_id: str, instance: str = "") -> str:
@@ -68,49 +67,25 @@ def capability_instance(
     return instance
 
 
-def capability_key(model_id: str, instance: str) -> str:
-    """Routing key of a capability instance the server decided to load.
-
-    Only keys built here are decoded by ``capability_load_kwargs``, so no
-    request-supplied identifier can select the capabilities a load gets.
-
-    Args:
-        model_id: Canonical model id the capability instance belongs to.
-        instance: Instance built by ``capability_instance``.
-
-    Returns:
-        The routing key, remembered as server-built.
-    """
-    key = routing_key(model_id, instance)
-    _SERVER_BUILT_KEYS.add(key)
-
-    return key
-
-
-def discard_capability_key(key: str) -> None:
-    """Forget a server-built capability key once its registration is gone.
-
-    Args:
-        key: Routing key of the unloaded registration; other keys are ignored.
-    """
-    _SERVER_BUILT_KEYS.discard(key)
-
-
 def capability_load_kwargs(key: str) -> dict:
-    """Load arguments encoded in the instance part of a server-built key.
+    """Load arguments encoded in the instance part of a routing key.
+
+    Every route refuses request input carrying a capability marker, so a key
+    whose instance is a capability instance was built by the server.
 
     Args:
         key: Routing key as produced by ``routing_key``.
 
     Returns:
         ``required_capabilities`` and, when present, ``output_type`` for a key
-        built with ``capability_key``; empty for any other key.
+        built with ``capability_instance``; empty for any other key.
     """
-    if key not in _SERVER_BUILT_KEYS:
+    instance = routed_instance(key)
+    if not is_capability_instance(instance):
         return {}
 
     kwargs = {}
-    for field in routed_instance(key).split(_CAPABILITY_FIELD_SEPARATOR):
+    for field in instance.split(_CAPABILITY_FIELD_SEPARATOR):
         name, _, value = field.partition("=")
         if name == _CAPABILITIES_FIELD:
             kwargs["required_capabilities"] = value.split(",")
@@ -121,7 +96,7 @@ def capability_load_kwargs(key: str) -> dict:
 
 
 def plain_model_id(key: str) -> str:
-    """Identity a server-built capability key reports for; other keys as given."""
+    """Identity a capability key reports for; other keys as given."""
     if is_capability_instance(routed_instance(key)):
         return routed_model_id(key)
     return key

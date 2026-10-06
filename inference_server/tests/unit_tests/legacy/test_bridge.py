@@ -33,7 +33,6 @@ from inference_server.legacy.load_failures import (
     ModelLoadFailedError,
     load_failure_error,
 )
-from inference_server.routing import capability_load_kwargs
 from inference_server.usage.request_hook import MODEL_INVOCATIONS
 from tests.unit_tests.legacy.conftest import FakeGateway
 
@@ -1643,106 +1642,6 @@ async def test_resolve_keeps_plain_and_instance_routes_apart(fake_stat):
         "ds/1",
         "ds/1:capabilities=image_embeddings",
     ]
-
-
-_EMBEDDING_INSTANCE = "capabilities=image_embeddings;output_type=logits"
-
-
-def _embedding_gateway(model_id="ds/1"):
-    return FakeGateway(
-        model_info={
-            f"{model_id}:{_EMBEDDING_INSTANCE}": {
-                "class_names": ["a"],
-                "actions": {"infer": {}, "embed_images": {}},
-                "model_class_name": "ResNetForClassificationOnnx",
-            }
-        }
-    )
-
-
-@pytest.mark.asyncio
-async def test_failed_authorization_mints_no_capability_key(fake_stat):
-    from inference_models.errors import UnauthorizedModelAccessError
-
-    fake_stat["nope/1"] = UnauthorizedModelAccessError("denied")
-    gw = FakeGateway()
-    bridge = LegacyModelBridge(gw)
-
-    with pytest.raises(PermissionError):
-        await bridge.resolve("nope/1", "key", instance=_EMBEDDING_INSTANCE)
-    with pytest.raises(LookupError):
-        await bridge.resolve("missing/1", "key", instance=_EMBEDDING_INSTANCE)
-
-    assert capability_load_kwargs(f"nope/1:{_EMBEDDING_INSTANCE}") == {}
-    assert capability_load_kwargs(f"missing/1:{_EMBEDDING_INSTANCE}") == {}
-    assert gw.calls == []
-
-
-@pytest.mark.asyncio
-async def test_unload_forgets_the_capability_key(fake_stat):
-    fake_stat["ds/1"] = ("classification", "infer")
-    gw = _embedding_gateway()
-    bridge = LegacyModelBridge(gw)
-    key = f"ds/1:{_EMBEDDING_INSTANCE}"
-
-    await bridge.resolve("ds/1", "key", instance=_EMBEDDING_INSTANCE)
-    assert capability_load_kwargs(key) == {
-        "required_capabilities": ["image_embeddings"],
-        "output_type": "logits",
-    }
-
-    await bridge.unload(key)
-
-    assert capability_load_kwargs(key) == {}
-    assert ("unload", key) in gw.calls
-
-
-@pytest.mark.asyncio
-async def test_unload_all_forgets_capability_keys(fake_stat):
-    fake_stat["ds/1"] = ("classification", "infer")
-    bridge = LegacyModelBridge(_embedding_gateway())
-    key = f"ds/1:{_EMBEDDING_INSTANCE}"
-    await bridge.resolve("ds/1", "key", instance=_EMBEDDING_INSTANCE)
-
-    await bridge.unload_all()
-
-    assert capability_load_kwargs(key) == {}
-
-
-@pytest.mark.asyncio
-async def test_observed_eviction_forgets_the_capability_key(fake_stat):
-    fake_stat["ds/1"] = ("classification", "infer")
-    gw = _embedding_gateway()
-    bridge = LegacyModelBridge(gw)
-    key = f"ds/1:{_EMBEDDING_INSTANCE}"
-    await bridge.resolve("ds/1", "key", instance=_EMBEDDING_INSTANCE)
-    await bridge.describe()
-
-    gw.loaded.pop(key)
-    await bridge.describe()
-
-    assert capability_load_kwargs(key) == {}
-
-
-@pytest.mark.asyncio
-async def test_a_key_loading_for_the_first_time_survives_a_registry_listing(
-    fake_stat,
-):
-    fake_stat["ds/1"] = ("classification", "infer")
-    gw = _embedding_gateway()
-    bridge = LegacyModelBridge(gw)
-    key = f"ds/1:{_EMBEDDING_INSTANCE}"
-    plain_ensure_loaded = gw.ensure_loaded
-
-    async def listing_during_load(model_id, instance="", api_key="", device=""):
-        await bridge.describe()
-        return await plain_ensure_loaded(model_id, instance, api_key, device)
-
-    gw.ensure_loaded = listing_during_load
-
-    await bridge.resolve("ds/1", "key", instance=_EMBEDDING_INSTANCE)
-
-    assert capability_load_kwargs(key) != {}
 
 
 @pytest.mark.asyncio

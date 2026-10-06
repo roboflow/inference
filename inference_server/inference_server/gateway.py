@@ -31,7 +31,6 @@ from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.middlewares.model_load import record_model_load
 from inference_server.routing import (
     capability_load_kwargs,
-    discard_capability_key,
     routed_model_id,
     routing_key,
 )
@@ -199,9 +198,6 @@ class ModelManagerGateway:
         # api_key/device the model last loaded with, for a mid-request
         # reload to reuse instead of falling back to anonymous defaults.
         self._load_context: dict[str, tuple[str, str]] = {}
-        # Capabilities a key was loaded with, so a mid-request reload after
-        # eviction loads the same instance without decoding the key again.
-        self._capability_kwargs: dict[str, dict] = {}
         self._load_failures: dict[str, tuple] = {}
         self._shutting_down = False
 
@@ -253,15 +249,8 @@ class ModelManagerGateway:
             # Multi-instance routing key: register under the key, fetch the
             # weights named by the bare model id (mirrors the MMP).
             kwargs["model_id_or_path"] = model_id
-            kwargs.update(self._capability_kwargs.get(key, {}))
+            kwargs.update(capability_load_kwargs(key))
         self.manager.load(key, api_key, **kwargs)
-
-    def _remember_capabilities(self, key: str) -> None:
-        if key in self._capability_kwargs:
-            return
-        load_kwargs = capability_load_kwargs(key)
-        if load_kwargs:
-            self._capability_kwargs[key] = load_kwargs
 
     async def _acquire_load_future(
         self,
@@ -303,7 +292,6 @@ class ModelManagerGateway:
             )
             drop_dead = True
         model_id = routed_model_id(key)
-        self._remember_capabilities(key)
         request_context = contextvars.copy_context()
 
         def _reload() -> None:
@@ -486,8 +474,6 @@ class ModelManagerGateway:
 
     async def unload(self, model_id: str) -> tuple:
         self._load_failures.pop(model_id, None)
-        self._capability_kwargs.pop(model_id, None)
-        discard_capability_key(model_id)
         try:
             await asyncio.get_running_loop().run_in_executor(
                 self._model_executor, lambda: self.manager.unload(model_id)

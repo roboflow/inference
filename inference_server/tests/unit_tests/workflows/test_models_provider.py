@@ -867,6 +867,35 @@ def test_run_image_embeddings_time_includes_image_loading(monkeypatch):
     assert result["time"] >= 0.05
 
 
+def test_add_model_refuses_a_model_id_carrying_a_capability_marker(fake_stat):
+    spoofed = "ds/1:capabilities=image_embeddings;output_type=logits"
+    fake_stat[spoofed] = ("classification", "infer")
+    gateway = legacy_conftest.FakeGateway()
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
+        sync = SyncLegacyBridge(LegacyModelBridge(gateway), LoopBridge(loop))
+        provider = GatewayModelsProvider(sync, api_key="k")
+
+        with pytest.raises(LegacyHTTPError) as error:
+            provider.add_model(spoofed, "k")
+        with pytest.raises(LegacyHTTPError):
+            provider.run_image_embeddings(
+                spoofed,
+                [{"type": "numpy_object", "value": np.zeros((4, 6, 3), np.uint8)}],
+                api_key="k",
+            )
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
+        loop.close()
+
+    assert error.value.status_code == 404
+    assert gateway.calls == []
+    assert spoofed not in provider
+
+
 def test_add_model_with_capabilities_registers_the_instance_under_its_key():
     bridge = _embedding_bridge("logits", [])
     provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")

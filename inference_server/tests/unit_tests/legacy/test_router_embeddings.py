@@ -505,35 +505,9 @@ def test_embedding_registrations_are_listed_and_removed_by_their_legacy_key(
     assert [c for c in gw.calls if c[0] == "unload"] == [("unload", routing_key)]
 
 
-def test_model_clear_forgets_the_capability_keys_it_unloads(legacy_client, fake_stat):
-    from inference_server.routing import capability_load_kwargs
-
-    fake_stat["ds/1"] = ("classification", "infer")
-    gw = _gateway("ds/1", "logits", _envelope("logits", [0.5]))
-    client = legacy_client(gw)
-    r = client.post(
-        "/infer/embeddings",
-        json={
-            "model_id": "ds/1",
-            "api_key": "k",
-            "image": _image(),
-            "output_type": "logits",
-        },
-    )
-    assert r.status_code == 200, r.text
-    key = "ds/1:capabilities=image_embeddings;output_type=logits"
-    assert capability_load_kwargs(key) != {}
-
-    assert client.post("/model/clear").json()["models"] == []
-
-    assert capability_load_kwargs(key) == {}
-
-
-def test_embedding_requests_for_unknown_models_mint_no_capability_keys(
+def test_embedding_requests_for_unknown_models_never_reach_the_gateway(
     legacy_client, fake_stat
 ):
-    from inference_server.routing import capability_load_kwargs
-
     gw = FakeGateway()
     client = legacy_client(gw)
 
@@ -544,10 +518,6 @@ def test_embedding_requests_for_unknown_models_mint_no_capability_keys(
         )
         assert r.status_code in (401, 404), r.text
 
-    assert all(
-        capability_load_kwargs(f"missing/{index}:capabilities=image_embeddings") == {}
-        for index in range(3)
-    )
     assert gw.calls == []
 
 

@@ -59,10 +59,7 @@ from inference_server.middlewares.model_load import (
 )
 from inference_server.prometheus import measure_inference
 from inference_server.routing import (
-    capability_key,
-    discard_capability_key,
     has_capability_marker,
-    is_capability_instance,
     parse_registration_key,
     plain_model_id,
     routing_key,
@@ -341,8 +338,6 @@ class LegacyModelBridge:
                 action="infer",
             )
         _apply_stat(route, stat)
-        if is_capability_instance(instance):
-            capability_key(model_registry_id, instance)
         try:
             if LEGACY_OFFLINE_MODE:
                 try:
@@ -612,7 +607,6 @@ class LegacyModelBridge:
         )
         result = await self.gateway.unload(registry_id)
         self._record_unload(registry_id, result)
-        discard_capability_key(registry_id)
         for key in [
             key
             for key, cached in self._routes.items()
@@ -664,7 +658,6 @@ class LegacyModelBridge:
         for model_id in list(models):
             result = await self.gateway.unload(model_id)
             self._record_unload(model_id, result)
-            discard_capability_key(model_id)
         self._routes.clear()
         self._loaded_ids.clear()
         self._preloaded_ids.clear()
@@ -805,8 +798,6 @@ class LegacyModelBridge:
     async def _stats_models(self) -> dict:
         stats = await self.gateway.stats()
         models = stats.get("models") or {}
-        for evicted in self._loaded_ids.difference(models):
-            discard_capability_key(evicted)
         self._loaded_ids = set(models)
         for route in self._routes.values():
             if route.registry_id not in self._loaded_ids:
