@@ -184,10 +184,11 @@ class TestPinningIsObservedAtTheCallSite:
         assert source.count("mask_decode_mode=mask_decode_mode,") == 4
 
 
-@pytest.mark.parametrize("version", PINNED_VERSIONS)
+@pytest.mark.parametrize("version", ALL_VERSIONS)
 @pytest.mark.parametrize("local_backend", [True, False])
-def test_remote_request_is_independent_of_local_backend(
-    monkeypatch, version, local_backend
+@pytest.mark.parametrize("remote_target", ["hosted", "local"])
+def test_remote_request_preserves_versioned_mask_settings(
+    monkeypatch, version, local_backend, remote_target
 ):
     from importlib import import_module
     from unittest.mock import MagicMock
@@ -203,7 +204,9 @@ def test_remote_request_is_independent_of_local_backend(
     block._post_process_result = MagicMock(return_value=[])
     client = MagicMock()
     monkeypatch.setattr(module, "InferenceHTTPClient", MagicMock(return_value=client))
-    monkeypatch.setattr(module, "USE_INFERENCE_MODELS", local_backend)
+    if version in PINNED_VERSIONS:
+        monkeypatch.setattr(module, "USE_INFERENCE_MODELS", local_backend)
+    monkeypatch.setattr(module, "WORKFLOWS_REMOTE_API_TARGET", remote_target)
 
     block.run_remotely(
         images=[],
@@ -221,8 +224,9 @@ def test_remote_request_is_independent_of_local_backend(
     )
 
     config = client.configure.call_args.kwargs["inference_configuration"]
-    assert config.mask_decode_mode == "accurate"
-    assert config.tradeoff_factor == 1.0
+    assert config.mask_decode_mode == ("fast" if version == "v5" else "accurate")
+    assert config.tradeoff_factor == (0.0 if version == "v5" else 1.0)
+    assert config.response_mask_format == ("rle" if version in {"v4", "v5"} else None)
 
 
 def test_v5_reduced_rle_output_can_be_decoded_on_original_image(monkeypatch):

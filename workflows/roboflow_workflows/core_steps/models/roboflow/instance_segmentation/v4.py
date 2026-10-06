@@ -411,6 +411,7 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             # The local backend flag does not identify the remote server.
             mask_decode_mode="accurate",
             tradeoff_factor=1.0,
+            response_mask_format="rle",
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",

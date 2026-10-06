@@ -47,6 +47,8 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Instance segmentation `@v4` remote execution retains its RLE response format
+  while pinning mask resolution, preserving holes and disconnected mask regions.
 - Non-tensor instance segmentation `@v5` re-encodes reduced RLE masks at the
   image grid after conversion to Supervision, so downstream blocks receive
   consistent dense and RLE representations.
