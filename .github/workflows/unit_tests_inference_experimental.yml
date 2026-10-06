@@ -39,7 +39,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
-          python -m uv pip install -e .[torch-cpu,test,model-blob-cache] --python .venv
+          # Numerical embedding graph tests exercise the ONNX CPU backend.
+          python -m uv pip install -e .[torch-cpu,onnx-cpu,test,model-blob-cache] --python .venv
       - name: 🧪 Unit Tests
         timeout-minutes: 30
         working-directory: inference_models

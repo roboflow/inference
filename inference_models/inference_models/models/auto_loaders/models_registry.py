@@ -397,6 +397,20 @@ REGISTERED_MODELS: Dict[
             "num_select",
         },
     ),
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.COREML): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_object_detection_coreml",
+            class_name="RFDetrForObjectDetectionCoreML",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    ),
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
         class_name="RFDetrForInstanceSegmentationTorch",
@@ -405,6 +419,20 @@ REGISTERED_MODELS: Dict[
         model_class=LazyClass(
             module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx",
             class_name="RFDetrForInstanceSegmentationOnnx",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    ),
+    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.COREML): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_coreml",
+            class_name="RFDetrForInstanceSegmentationCoreML",
         ),
         supported_model_features={
             "resolution",

@@ -35,6 +35,7 @@ class BackendType(str, Enum):
     ULTRALYTICS = "ultralytics"
     CUSTOM = "custom"
     VLLM = "vllm"
+    COREML = "coreml"
 
 
 AnyModel = Union[

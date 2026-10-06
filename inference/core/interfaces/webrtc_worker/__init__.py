@@ -2,6 +2,11 @@ import asyncio
 import multiprocessing
 import uuid
 
+from inference._workflows_compat import install as _install_compat_finder
+
+# Moved submodules resolve through the compat finder; it must exist first.
+_install_compat_finder()
+
 from inference.core.env import (
     WEBRTC_MODAL_ENFORCE_REGION,
     WEBRTC_MODAL_REQUIRED_REGION,

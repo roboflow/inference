@@ -106,6 +106,12 @@ PLAIN_ABSOLUTE_STYLE = "plain-absolute"
 # GPT-5.6 Terra/Luna assumed to match Sol's `max` (docs describe the set family-wide).
 OPENAI_MODELS = [
     {
+        "id": "gpt-6.1-sol",
+        "name": "GPT-6.1 Sol",
+        "reasoning_effort_values": ["low", "medium", "high", "xhigh", "max"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
+    },
+    {
         "id": "gpt-6-astra",
         "name": "GPT-6 Astra",
         "reasoning_effort_values": ["low", "medium", "high", "xhigh", "max"],
@@ -658,7 +664,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="gpt-5.1",
         description="Model to be used",
-        examples=["gpt-6-sol", "gpt-5.1", "$inputs.openai_model"],
+        examples=["gpt-6.1-sol", "gpt-6-sol", "gpt-5.1", "$inputs.openai_model"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },

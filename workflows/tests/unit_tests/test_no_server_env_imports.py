@@ -6,11 +6,7 @@ Server imports are covered by test_decontamination_lint.
 import ast
 
 from tests.unit_tests.test_configuration import environment_reads
-from tests.unit_tests.test_decontamination_lint import (
-    PROJECT_ROOT,
-    WORKFLOWS_ROOT,
-    collect_violations,
-)
+from tests.unit_tests.test_decontamination_lint import PROJECT_ROOT, WORKFLOWS_ROOT
 
 # Every direct environment read that remains inside `inference/core/workflows`
 # after Phase 5, with its owner. Phase 5 removes `inference.core.env` IMPORTS;
@@ -36,15 +32,6 @@ PERMITTED_ENVIRONMENT_READS = {
         1,
     ),
 }
-
-
-def test_no_owned_module_imports_inference_core_env() -> None:
-    offenders = sorted(
-        (path, module)
-        for path, module in collect_violations()
-        if module.startswith("inference.core.env")
-    )
-    assert not offenders, offenders
 
 
 def test_the_environment_read_inventory_is_frozen() -> None:
