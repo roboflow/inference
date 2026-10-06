@@ -192,9 +192,9 @@ jobs:
         if: steps.review-prompt.outputs.prompt_available == 'true'
         env:
           # Match the CLI version bundled with the pinned review action below.
-          CLAUDE_CODE_VERSION: "2.1.265"
+          CLAUDE_CODE_VERSION: "2.1.287"
           # linux-x64 checksum from the release's manifest.json.
-          CLAUDE_CODE_SHA256: e14738e3a58d1fc6ccc23b9c919451b4846bc27074a3fb48db976a7d595bdeeb
+          CLAUDE_CODE_SHA256: 3920489a5109cff5786a1a392c25277408ff22bc796d5edb9c16a60e5a1718f0
         run: |
           set -euo pipefail
           # Use the release binary directly: the native installer can report
@@ -261,7 +261,7 @@ jobs:
       - name: Claude review
         id: claude
         if: steps.review-prompt.outputs.prompt_available == 'true'
-        uses: anthropics/claude-code-action@0d0e0876d3eaa933f45dc692f7a4312c83caf36f # v1
+        uses: anthropics/claude-code-action@97c53473391bff1901034d4b454b5bac7ab7a029 # v1.0.239
         env:
           DISABLE_AUTOUPDATER: "1"
         with:
