@@ -37,6 +37,7 @@ from inference_server.workflows.models_provider import GatewayModelsProvider
 logger = logging.getLogger(__name__)
 
 CLOSE_TIMEOUT_S = 30.0
+LOOP_STOP_GRACE_S = 0.25
 MISSING_WORKFLOW_MESSAGE = (
     "Either (`workspace_name`, `workflow_id`) or `workflow_specification` must be "
     "provided."
@@ -259,16 +260,16 @@ def _stop_loop(
     deadline: float,
 ) -> None:
     if gateway is not None:
+        shutdown = asyncio.run_coroutine_threadsafe(gateway.shutdown(), loop)
         try:
-            asyncio.run_coroutine_threadsafe(gateway.shutdown(), loop).result(
-                max(deadline - time.monotonic(), 0.0)
-            )
+            shutdown.result(max(deadline - time.monotonic(), 0.0))
         except BaseException as error:
+            shutdown.cancel()
             logger.warning(
                 f"Could not shut the pipeline gateway down. Error: {error!r}"
             )
     loop.call_soon_threadsafe(loop.stop)
-    thread.join(max(deadline - time.monotonic(), 0.0))
+    thread.join(max(deadline - time.monotonic(), LOOP_STOP_GRACE_S))
     if thread.is_alive():
         logger.warning("The pipeline host loop thread did not stop in time.")
         return None

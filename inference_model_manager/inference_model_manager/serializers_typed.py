@@ -302,6 +302,15 @@ def serialize_embeddings(output: Any, model: Any) -> dict:
     }
 
 
+def serialize_image_embeddings(output: Any, model: Any) -> dict:
+    """Classifier embeddings with space metadata → roboflow-image-embeddings-v1"""
+    return {
+        "type": "roboflow-image-embeddings-v1",
+        "embeddings": _to_list(output["embeddings"]),
+        "embedding_info": output["embedding_info"],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Text output (captions, VLM responses, OCR)
 # ---------------------------------------------------------------------------

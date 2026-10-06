@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import torch
+from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 from roboflow_workflows import environment
 from roboflow_workflows.prototypes.models_provider import (
     UNSET,
@@ -14,6 +16,7 @@ from roboflow_workflows.prototypes.models_provider import (
     _Unset,
 )
 
+from inference_model_manager.registry_defaults import IMAGE_EMBEDDINGS_ACTION
 from inference_model_manager.stream_pipeline import STREAM_PIPELINE_PRODUCER_ID_KWARG
 from inference_models.errors import BaseInferenceModelsError
 from inference_models.models.base.action_recognition import VideoSampling
@@ -43,6 +46,7 @@ from inference_server.legacy.common import (
     as_image_list,
     decode_inline_image,
     image_dims,
+    keep_image_orientation,
     split_image,
 )
 from inference_server.legacy.entities import (
@@ -53,6 +57,7 @@ from inference_server.legacy.entities import (
     DepthEstimationRequest,
     DoctrOCRInferenceRequest,
     EasyOCRInferenceRequest,
+    ImageEmbeddingRequest,
     InstanceSegmentationInferenceRequest,
     KeypointsDetectionInferenceRequest,
     LMMInferenceRequest,
@@ -77,15 +82,19 @@ from inference_server.legacy.prompts import (
 )
 from inference_server.legacy.telemetry_recording import record_telemetry
 from inference_server.legacy.translation import (
+    IMAGE_EMBEDDING_OVERRIDE_FIELDS,
     build_embedding_calls,
+    build_image_embedding_params,
     build_interactive_segmentation_params,
     build_open_vocabulary_params,
     build_task_params,
     build_vlm_params,
     ensure_ocr_request_supported,
     ensure_request_supported,
+    make_embedding_info,
     repack_depth_estimation,
     repack_embedding_response,
+    repack_image_embeddings,
     repack_interactive_segmentation_response,
     repack_moondream_detection,
     repack_object_detection_response,
@@ -96,12 +105,20 @@ from inference_server.legacy.translation import (
     resolve_request_action,
 )
 from inference_server.prometheus import measure_inference
+from inference_server.routing import (
+    DEFAULT_EMBEDDING_OUTPUT_TYPE,
+    IMAGE_EMBEDDINGS,
+    capability_instance,
+    registration_key,
+    routing_key,
+)
 from inference_server.workflows.tensor_native import (
     SUPPORTED_TASK_TYPES,
     assemble_native_result,
     native_action,
     native_image_payloads,
     native_params,
+    numpy_to_tensors,
 )
 
 logger = logging.getLogger(__name__)
@@ -187,6 +204,7 @@ class GatewayModelsProvider:
         self._request_path = request_path
         self._model_keys: Dict[str, Optional[str]] = {}
         self._routes: Dict[str, Route] = {}
+        self._registration_keys: Dict[str, str] = {}
         self._artifact_cache: Any = None
         self._artifact_cache_resolved = False
         self._producer_id = str(id(self))
@@ -213,15 +231,36 @@ class GatewayModelsProvider:
         row_key = model_id if model_id_alias is None else model_id_alias
         alias = model_id if row_key != model_id else None
         path = self._request_path or ""
+        required_capabilities = kwargs.get("required_capabilities")
+        output_type = kwargs.get("output_type", DEFAULT_EMBEDDING_OUTPUT_TYPE)
+        instance = capability_instance(required_capabilities, output_type)
         route = self._resolve_route(
-            model_id, key, row_key=row_key, path=path, alias=alias
+            model_id,
+            key,
+            row_key=registration_key(row_key, instance),
+            path=path,
+            alias=alias,
+            instance=instance,
         )
-        self._routes[model_id] = route
+        if instance:
+            row_key = registration_key(row_key, instance)
+            self._registration_keys[registration_key(model_id, instance)] = routing_key(
+                model_id, instance
+            )
+        else:
+            self._routes[model_id] = route
         self._bridge.record_request(route, row_key, path, alias=alias)
 
     def _resolve_route(
-        self, model_id: str, api_key: Optional[str], **kwargs: Any
+        self,
+        model_id: str,
+        api_key: Optional[str],
+        *,
+        instance: str = "",
+        **kwargs: Any,
     ) -> Route:
+        if instance:
+            kwargs["instance"] = instance
         try:
             route = self._bridge.resolve(model_id, api_key, **kwargs)
         except (PermissionError, LookupError, RuntimeError) as error:
@@ -299,6 +338,109 @@ class GatewayModelsProvider:
         return self._dump(
             self._run_cv(model_id, request, api_key, extra_params=inference_kwargs)
         )
+
+    def run_image_embeddings(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        output_type: str = DEFAULT_EMBEDDING_OUTPUT_TYPE,
+    ) -> dict:
+        request = ImageEmbeddingRequest(
+            model_id=model_id,
+            image=images,
+            api_key=api_key,
+            output_type=output_type,
+            source=_WORKFLOW_SOURCE,
+        )
+        key = self._key_for(model_id, api_key)
+        route = self._embedding_route(model_id, key, output_type)
+        started = time.perf_counter()
+        payloads = self._request_payloads(request)
+        if request.disable_preproc_auto_orient:
+            payloads = [
+                keep_image_orientation(payload, ndarray_ok=self._bridge.accepts_ndarray)
+                for payload in payloads
+            ]
+        params = build_image_embedding_params(request)
+        results = self._bridge.infer(
+            route, key, IMAGE_EMBEDDINGS_ACTION, payloads, params
+        )
+        response = repack_image_embeddings(
+            results, resolve_roboflow_model_alias(model_id), request
+        )
+        response.time = time.perf_counter() - started
+        pingback.record_inference(route.registry_id, request, response)
+        result = response.model_dump(exclude_none=True)
+
+        return result
+
+    def run_tensor_image_embeddings(
+        self,
+        model_id: str,
+        images: List[Any],
+        *,
+        input_color_format: str,
+        api_key: Optional[str] = None,
+        output_type: str = DEFAULT_EMBEDDING_OUTPUT_TYPE,
+    ) -> dict:
+        """Generate embeddings as a batched tensor on the workflow tensor device.
+
+        Images cross the model manager as NumPy arrays and the embeddings come
+        back marshalled the same way, so the result is rebuilt on
+        ``WORKFLOWS_IMAGE_TENSOR_DEVICE`` rather than kept on the model device.
+
+        Args:
+            model_id: Classification model version or alias.
+            images: Materialized CHW RGB tensors or HWC BGR NumPy images.
+            input_color_format: Color ordering of the supplied images.
+            api_key: Credential used to register the model.
+            output_type: Feature vector or pre-activation logits.
+
+        Returns:
+            Mapping with a batched tensor under ``embeddings`` and the
+            compatibility metadata under ``embedding_info``.
+        """
+        key = self._key_for(model_id, api_key)
+        route = self._embedding_route(model_id, key, output_type)
+        payloads = native_image_payloads(
+            images, ndarray_ok=self._bridge.accepts_ndarray
+        )
+        params = {"output_type": output_type, "input_color_format": input_color_format}
+        results = self._bridge.infer(
+            route, key, IMAGE_EMBEDDINGS_ACTION, payloads, params
+        )
+        embeddings = torch.cat(
+            [
+                numpy_to_tensors(
+                    result["embeddings"], environment.WORKFLOWS_IMAGE_TENSOR_DEVICE
+                ).reshape(1, -1)
+                for result in results
+            ],
+            dim=0,
+        )
+        info = make_embedding_info(
+            resolve_roboflow_model_alias(model_id),
+            results[0]["embedding_info"],
+            {field: False for field in IMAGE_EMBEDDING_OVERRIDE_FIELDS},
+        )
+        result = {
+            "embeddings": embeddings,
+            "embedding_info": info.model_dump(exclude_none=True),
+        }
+
+        return result
+
+    def _embedding_route(
+        self, model_id: str, api_key: Optional[str], output_type: str
+    ) -> Route:
+        route = self._resolve_route(
+            model_id,
+            api_key,
+            instance=capability_instance([IMAGE_EMBEDDINGS], output_type),
+        )
+
+        return route
 
     def run_keypoints_detection(
         self,
@@ -891,7 +1033,7 @@ class GatewayModelsProvider:
         return None
 
     def __contains__(self, model_id: str) -> bool:
-        return model_id in self._bridge
+        return self._registration_keys.get(model_id, model_id) in self._bridge
 
     def _resolve(self, model_id: str, api_key: Optional[str]) -> Route:
         route = self._resolve_route(model_id, api_key)

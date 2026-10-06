@@ -310,6 +310,19 @@ def _guard_decoded(image: Any, limit: int) -> None:
         _reject_oversized(decoded_pixels(image), limit, "decoded")
 
 
+def guard_decoder(decode: Callable[[bytes], Any]) -> Callable[[bytes], Any]:
+    """Gate a decoder with the decompression-bomb limits of every backend decoder.
+
+    Args:
+        decode: Function turning encoded image bytes into a decoded image.
+
+    Returns:
+        The same decoder, refusing images over the decode limit before and
+        after decoding exactly as the backends do.
+    """
+    return _guarded(decode)
+
+
 def _guarded(decode: Callable[[bytes], Any]) -> Callable[[bytes], Any]:
     """Wrap a decoder with the decompression-bomb gate.
 

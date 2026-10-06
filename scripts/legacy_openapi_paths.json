@@ -75,6 +75,9 @@
     "/infer/depth-estimation/{model_id}": [
       "POST"
     ],
+    "/infer/embeddings": [
+      "POST"
+    ],
     "/infer/instance_segmentation": [
       "POST"
     ],

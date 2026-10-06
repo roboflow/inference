@@ -10,12 +10,18 @@ from dataclasses import dataclass
 from typing import Any, Optional, Union
 from urllib.parse import urlparse
 
+import cv2
 import numpy as np
 import orjson
 import requests
 import tldextract
 from fastapi import Request, Response
-from inference_model_manager.backends.decode import decoded_dims, max_decoded_pixels
+from inference_model_manager.backends.decode import (
+    decoded_dims,
+    guard_decoder,
+    max_decoded_pixels,
+)
+from inference_models.errors import ModelInputError
 from PIL import Image
 from pydantic import BaseModel
 
@@ -304,6 +310,45 @@ def _inline_payload(
     if image_type is None:
         return _inferred_payload(value, ndarray_ok=ndarray_ok, file_budget=file_budget)
     raise image_load_error(_UNKNOWN_IMAGE_TYPE_ERROR)
+
+
+def keep_image_orientation(payload: ImagePayload, *, ndarray_ok: bool) -> ImagePayload:
+    """Decode an encoded image payload as stored, ignoring its EXIF orientation.
+
+    Args:
+        payload: Image payload as loaded from the request.
+        ndarray_ok: Whether the gateway accepts NumPy arrays as image data.
+
+    Returns:
+        The decoded BGR image as a payload; array payloads are returned as is.
+
+    Raises:
+        LegacyHTTPError: If the encoded bytes cannot be decoded as an image.
+    """
+    data = payload.data
+    if not isinstance(data, bytes) or data[:6] == _NPY_MAGIC:
+        return payload
+
+    try:
+        image = _decode_as_stored(data)
+    except ValueError as error:
+        raise ModelInputError(str(error)) from error
+    decoded = _numpy_object_payload(image, ndarray_ok=ndarray_ok)
+
+    return decoded
+
+
+def _imdecode_as_stored(data: bytes) -> np.ndarray:
+    image = cv2.imdecode(
+        np.frombuffer(data, dtype=np.uint8),
+        cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION,
+    )
+    if image is None:
+        raise image_load_error(_MALFORMED_BASE64_ERROR)
+    return image
+
+
+_decode_as_stored = guard_decoder(_imdecode_as_stored)
 
 
 def _numpy_object_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:

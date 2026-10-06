@@ -190,6 +190,13 @@ _P_SAM2_SEGMENT = _p(
     },
 )
 
+IMAGE_EMBEDDINGS_ACTION = "embed_images"
+IMAGE_EMBEDDINGS_RESPONSE_TYPE = "roboflow-image-embeddings-v1"
+_P_IMAGE_EMBEDDINGS = {
+    "output_type": {"type": "str", "required": False},
+    "input_color_format": {"type": "str", "required": False},
+}
+
 _E_OD_CONF_ONLY = [
     (
         "infer",
@@ -552,6 +559,17 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "validate_texts_required",
             "serialize_embeddings",
             "roboflow-embeddings-compact-v1",
+        ),
+    ],
+    "ImageEmbeddingModel": [
+        (
+            IMAGE_EMBEDDINGS_ACTION,
+            IMAGE_EMBEDDINGS_ACTION,
+            False,
+            _p(_P_IMAGES, _P_IMAGE_EMBEDDINGS, _K_PREPROC),
+            "validate_images_required",
+            "serialize_image_embeddings",
+            IMAGE_EMBEDDINGS_RESPONSE_TYPE,
         ),
     ],
     # --- Gaze ---

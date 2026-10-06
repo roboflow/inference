@@ -20,6 +20,7 @@ from inference_server.framework.registry import (
     supported_actions_for,
 )
 from inference_server.middlewares.model_load import record_model_load
+from inference_server.routing import has_capability_marker
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,10 @@ _V2_TODO = Response(
 
 def _bearer_token(request: Request) -> str:
     return extract_bearer(request.headers.get("authorization", ""))
+
+
+def _unknown_model_response() -> Response:
+    return error_response(404, "MODEL_NOT_FOUND", "unknown model_id")
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +86,8 @@ async def v2_model_interface(
     model_id = request.query_params.get("model_id", "")
     if not model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
+    if has_capability_marker(model_id):
+        return _unknown_model_response()
 
     try:
         info = await mm.interface(model_id)
@@ -195,6 +202,8 @@ async def v2_load_model(
     model_id = request.query_params.get("model_id", "")
     if not model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
+    if has_capability_marker(model_id):
+        return _unknown_model_response()
 
     record_model_load(model_id, cold_start=False, load_time_s=0.0)
     try:
@@ -227,6 +236,8 @@ async def v2_unload_model(
     model_id = request.query_params.get("model_id", "")
     if not model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
+    if has_capability_marker(model_id):
+        return _unknown_model_response()
 
     try:
         result = await mm.unload(model_id)

@@ -604,8 +604,7 @@ LEGACY_WITHOUT_PORTABLE = {
         "flag; the portable writes_to_deployment_volume_not_retrievable pins "
         "the ENABLED branch, because with local storage disabled the block "
         "raises before it writes anything. Same reading as local_file_sink@v1 "
-        "(coordinator restriction registry; recorded in the workflows-package "
-        "module as HOST_PLUGIN_DIVERGENCES_CHECKED_ELSEWHERE)"
+        "(coordinator restriction registry)"
     ),
 }
 

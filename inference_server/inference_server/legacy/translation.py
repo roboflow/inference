@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
+import json
 import logging
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -22,6 +24,8 @@ from inference_server.legacy.entities import (
     ClassificationInferenceResponse,
     ClipCompareResponse,
     ClipEmbeddingResponse,
+    EmbeddingInfo,
+    ImageEmbeddingResponse,
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
@@ -71,6 +75,11 @@ _CONFIDENCE_ONLY_TASK_TYPES = frozenset(
         "multi-label-classification",
         "semantic-segmentation",
     ]
+)
+IMAGE_EMBEDDING_TASK_TYPES = frozenset(["classification", "multi-label-classification"])
+IMAGE_EMBEDDING_OVERRIDE_FIELDS = (
+    "disable_preproc_auto_orient",
+    *_DISABLE_PREPROC_FIELDS,
 )
 
 
@@ -869,6 +878,90 @@ def _cosine_similarity(subject: np.ndarray, prompt: np.ndarray) -> float:
     if denominator == 0.0:
         return 0.0
     return float(np.dot(subject, prompt) / denominator)
+
+
+def build_image_embedding_params(request: Any) -> dict:
+    """Model parameters of an image-embedding request.
+
+    Args:
+        request: Image-embedding request with its output type and
+            preprocessing overrides.
+
+    Returns:
+        The output type and every preprocessing step the request disables.
+    """
+    params: dict = {"output_type": request.output_type}
+    for field in _DISABLE_PREPROC_FIELDS:
+        if getattr(request, field, False):
+            params[field] = True
+
+    return params
+
+
+def make_embedding_info(model_id: str, info: dict, overrides: dict) -> EmbeddingInfo:
+    """Identify the embedding space described by a model's embedding envelope.
+
+    Args:
+        model_id: Resolved classification model id that produced the vectors.
+        info: Feature definition, dimension, normalization, the model's
+            preprocessing configuration, backend and precision as reported by
+            the model manager.
+        overrides: Preprocessing steps the request disabled, as it stated them.
+
+    Returns:
+        The metadata with a space id hashed from the model id, feature
+        definition, dimension, normalization and preprocessing.
+    """
+    preprocessing = {
+        "image_pre_processing": info["preprocessing"]["image_pre_processing"],
+        "network_input": info["preprocessing"]["network_input"],
+        "overrides": overrides,
+    }
+    identity = {
+        "model_id": model_id,
+        "feature_definition": info["feature_definition"],
+        "dimension": info["dimension"],
+        "normalization": info["normalization"],
+        "preprocessing": preprocessing,
+    }
+    space_id = hashlib.sha256(
+        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    embedding_info = EmbeddingInfo(
+        model_id=model_id,
+        space_id=space_id,
+        **{**info, "preprocessing": preprocessing},
+    )
+
+    return embedding_info
+
+
+def repack_image_embeddings(
+    results: List[Any], model_id: str, request: Any
+) -> ImageEmbeddingResponse:
+    """Build the image-embedding response from per-image model envelopes.
+
+    Args:
+        results: One embedding envelope per image, in input order.
+        model_id: Resolved classification model id that produced the vectors.
+        request: The image-embedding request answered.
+
+    Returns:
+        All vectors in input order with the metadata of their shared space.
+    """
+    embeddings = _stack_embeddings([result["embeddings"] for result in results])
+    overrides = {
+        field: getattr(request, field) for field in IMAGE_EMBEDDING_OVERRIDE_FIELDS
+    }
+    response = ImageEmbeddingResponse(
+        embeddings=embeddings.tolist(),
+        embedding_info=make_embedding_info(
+            model_id, results[0]["embedding_info"], overrides
+        ),
+        inference_id=request.id,
+    )
+
+    return response
 
 
 def repack_vlm_response(prediction: Any, dims: Tuple[int, int]) -> LMMInferenceResponse:

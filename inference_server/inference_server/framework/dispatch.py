@@ -30,7 +30,7 @@ from inference_server.framework.registry import (
 )
 from inference_server.middlewares.model_load import record_model_load
 from inference_server.prometheus import measure_inference
-from inference_server.routing import routing_key
+from inference_server.routing import has_capability_marker, routing_key
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +152,10 @@ async def handle_model_inference_request(
         return error_response(
             400, "INVALID_PARAM", "response_style must be 'compact' or 'rich'"
         )
+    if has_capability_marker(common.model_id):
+        return error_response(404, "MODEL_NOT_FOUND", "unknown model_id")
+    if has_capability_marker(common.instance):
+        return error_response(400, "INVALID_PARAM", "param 'instance'")
 
     max_body = configuration.MAX_BODY_BYTES
     content_length = request.headers.get("content-length")

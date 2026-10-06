@@ -157,6 +157,51 @@ async def test_unknown_model_returns_404():
 
 
 @pytest.mark.asyncio
+async def test_model_id_carrying_an_instance_returns_404_before_the_registry():
+    proxy = _mock_proxy()
+    with _stat_returns(("classification", "infer")) as stat:
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m:capabilities=image_embeddings"), proxy
+        )
+    assert r.status_code == 404
+    assert b"MODEL_NOT_FOUND" in r.body
+    stat.assert_not_awaited()
+    proxy.ensure_loaded.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "instance",
+    [
+        b"capabilities%3Dimage_embeddings",
+        b"b%3Acapabilities%3Dimage_embeddings",
+        b"capabilities%3Dimage_embeddings%3Bb",
+    ],
+)
+async def test_capability_instance_returns_400_before_the_registry(instance):
+    proxy = _mock_proxy()
+    with _stat_returns(("classification", "infer")) as stat:
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m&instance=" + instance), proxy
+        )
+    assert r.status_code == 400
+    assert b"INVALID_PARAM" in r.body
+    stat.assert_not_awaited()
+    proxy.ensure_loaded.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_named_instance_model_id_reaches_the_registry():
+    proxy = _mock_proxy()
+    with _stat_raises(LookupError("no such")) as stat:
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m%3Ablue&instance=green"), proxy
+        )
+    assert r.status_code == 404
+    stat.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_registry_unreachable_returns_503():
     with _stat_raises(RuntimeError("down")):
         r = await handle_model_inference_request(

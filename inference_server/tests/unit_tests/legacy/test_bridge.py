@@ -33,6 +33,7 @@ from inference_server.legacy.load_failures import (
     ModelLoadFailedError,
     load_failure_error,
 )
+from inference_server.routing import capability_load_kwargs
 from inference_server.usage.request_hook import MODEL_INVOCATIONS
 from tests.unit_tests.legacy.conftest import FakeGateway
 
@@ -1586,12 +1587,255 @@ def test_task_type_from_mro_covers_registry():
 
     unmapped = [
         name
-        for name in _ACTION_CONFIGS
+        for name, configs in _ACTION_CONFIGS.items()
         if name not in bridge_mod._TASK_TYPE_BY_MRO
         and name not in bridge_mod._NO_HTTP_ROUTE
+        and any(config[2] for config in configs)
     ]
 
     assert unmapped == []
+    assert "ImageEmbeddingModel" in _ACTION_CONFIGS
+
+
+@pytest.mark.asyncio
+async def test_resolve_with_an_instance_stats_the_model_and_loads_the_instance(
+    fake_stat,
+):
+    fake_stat["ds/1"] = ("classification", "infer")
+    instance = "capabilities=image_embeddings;output_type=logits"
+    gw = FakeGateway(
+        model_info={
+            f"ds/1:{instance}": {
+                "class_names": ["a"],
+                "actions": {"infer": {}, "embed_images": {}},
+                "model_class_name": "ResNetForClassificationOnnx",
+            }
+        }
+    )
+    bridge = LegacyModelBridge(gw)
+
+    route = await bridge.resolve("ds/1", "key", instance=instance)
+
+    assert route.registry_id == f"ds/1:{instance}"
+    assert route.model_id == "ds/1"
+    assert route.task_type == "classification"
+    assert route.actions == {"infer", "embed_images"}
+    assert ("ensure_loaded", f"ds/1:{instance}", "key") in gw.calls
+    assert f"ds/1:{instance}" in bridge and "ds/1" not in bridge
+    assert await bridge.resolve("ds/1", "key", instance=instance) is route
+
+
+@pytest.mark.asyncio
+async def test_resolve_keeps_plain_and_instance_routes_apart(fake_stat):
+    fake_stat["ds/1"] = ("classification", "infer")
+    gw = FakeGateway()
+    bridge = LegacyModelBridge(gw)
+
+    plain = await bridge.resolve("ds/1", "key")
+    embedding = await bridge.resolve(
+        "ds/1", "key", instance="capabilities=image_embeddings"
+    )
+
+    assert plain is not embedding
+    assert plain.registry_id == "ds/1"
+    assert embedding.registry_id == "ds/1:capabilities=image_embeddings"
+    assert [call[1] for call in gw.calls if call[0] == "ensure_loaded"] == [
+        "ds/1",
+        "ds/1:capabilities=image_embeddings",
+    ]
+
+
+_EMBEDDING_INSTANCE = "capabilities=image_embeddings;output_type=logits"
+
+
+def _embedding_gateway(model_id="ds/1"):
+    return FakeGateway(
+        model_info={
+            f"{model_id}:{_EMBEDDING_INSTANCE}": {
+                "class_names": ["a"],
+                "actions": {"infer": {}, "embed_images": {}},
+                "model_class_name": "ResNetForClassificationOnnx",
+            }
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_failed_authorization_mints_no_capability_key(fake_stat):
+    from inference_models.errors import UnauthorizedModelAccessError
+
+    fake_stat["nope/1"] = UnauthorizedModelAccessError("denied")
+    gw = FakeGateway()
+    bridge = LegacyModelBridge(gw)
+
+    with pytest.raises(PermissionError):
+        await bridge.resolve("nope/1", "key", instance=_EMBEDDING_INSTANCE)
+    with pytest.raises(LookupError):
+        await bridge.resolve("missing/1", "key", instance=_EMBEDDING_INSTANCE)
+
+    assert capability_load_kwargs(f"nope/1:{_EMBEDDING_INSTANCE}") == {}
+    assert capability_load_kwargs(f"missing/1:{_EMBEDDING_INSTANCE}") == {}
+    assert gw.calls == []
+
+
+@pytest.mark.asyncio
+async def test_unload_forgets_the_capability_key(fake_stat):
+    fake_stat["ds/1"] = ("classification", "infer")
+    gw = _embedding_gateway()
+    bridge = LegacyModelBridge(gw)
+    key = f"ds/1:{_EMBEDDING_INSTANCE}"
+
+    await bridge.resolve("ds/1", "key", instance=_EMBEDDING_INSTANCE)
+    assert capability_load_kwargs(key) == {
+        "required_capabilities": ["image_embeddings"],
+        "output_type": "logits",
+    }
+
+    await bridge.unload(key)
+
+    assert capability_load_kwargs(key) == {}
+    assert ("unload", key) in gw.calls
+
+
+@pytest.mark.asyncio
+async def test_unload_all_forgets_capability_keys(fake_stat):
+    fake_stat["ds/1"] = ("classification", "infer")
+    bridge = LegacyModelBridge(_embedding_gateway())
+    key = f"ds/1:{_EMBEDDING_INSTANCE}"
+    await bridge.resolve("ds/1", "key", instance=_EMBEDDING_INSTANCE)
+
+    await bridge.unload_all()
+
+    assert capability_load_kwargs(key) == {}
+
+
+@pytest.mark.asyncio
+async def test_observed_eviction_forgets_the_capability_key(fake_stat):
+    fake_stat["ds/1"] = ("classification", "infer")
+    gw = _embedding_gateway()
+    bridge = LegacyModelBridge(gw)
+    key = f"ds/1:{_EMBEDDING_INSTANCE}"
+    await bridge.resolve("ds/1", "key", instance=_EMBEDDING_INSTANCE)
+    await bridge.describe()
+
+    gw.loaded.pop(key)
+    await bridge.describe()
+
+    assert capability_load_kwargs(key) == {}
+
+
+@pytest.mark.asyncio
+async def test_a_key_loading_for_the_first_time_survives_a_registry_listing(
+    fake_stat,
+):
+    fake_stat["ds/1"] = ("classification", "infer")
+    gw = _embedding_gateway()
+    bridge = LegacyModelBridge(gw)
+    key = f"ds/1:{_EMBEDDING_INSTANCE}"
+    plain_ensure_loaded = gw.ensure_loaded
+
+    async def listing_during_load(model_id, instance="", api_key="", device=""):
+        await bridge.describe()
+        return await plain_ensure_loaded(model_id, instance, api_key, device)
+
+    gw.ensure_loaded = listing_during_load
+
+    await bridge.resolve("ds/1", "key", instance=_EMBEDDING_INSTANCE)
+
+    assert capability_load_kwargs(key) != {}
+
+
+@pytest.mark.asyncio
+async def test_resolve_keeps_named_instances_usable(fake_stat, monkeypatch):
+    monkeypatch.setattr(bridge_mod, "LEGACY_OFFLINE_MODE", True)
+    gw = FakeGateway(
+        model_info={
+            "ds/1:blue": {
+                "class_names": ["a"],
+                "actions": {"infer": {}},
+                "model_mro_names": ["ClassificationModel"],
+            }
+        }
+    )
+    await gw.load("ds/1:blue")
+    bridge = LegacyModelBridge(gw)
+
+    route = await bridge.resolve("ds/1:blue", "key")
+
+    assert route.registry_id == "ds/1:blue"
+    assert route.task_type == "classification"
+    assert ("ensure_loaded", "ds/1:blue", "key") in gw.calls
+    assert "ds/1:blue" in bridge
+    assert bridge_mod.requested_model_id_for("ds/1:blue") == "ds/1:blue"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "ds/1:capabilities=image_embeddings",
+        "ds/1:capabilities=image_embeddings;output_type=logits",
+        "ds/1:capabilities=image_embeddings:output_type=logits",
+        "ds/1:b:capabilities=image_embeddings",
+    ],
+)
+async def test_resolve_refuses_model_ids_carrying_a_capability_instance(
+    fake_stat, model_id
+):
+    fake_stat[model_id] = ("classification", "infer")
+    gw = FakeGateway()
+    bridge = LegacyModelBridge(gw)
+
+    with pytest.raises(LegacyHTTPError) as error:
+        await bridge.resolve(model_id, "key")
+    with pytest.raises(LegacyHTTPError):
+        await bridge.stat_task_type(model_id, "key")
+    with pytest.raises(LegacyHTTPError):
+        await bridge.load(model_id, "key")
+
+    assert error.value.status_code == 404
+    assert gw.calls == []
+    assert model_id not in bridge
+
+
+@pytest.mark.asyncio
+async def test_stat_task_type_reports_the_registry_task_without_loading(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    bridge = LegacyModelBridge(gw)
+
+    task_type = await bridge.stat_task_type("ds/1", "key")
+
+    assert task_type == "object-detection"
+    assert gw.calls == []
+
+
+@pytest.mark.asyncio
+async def test_stat_task_type_is_unknown_offline(fake_stat, monkeypatch):
+    monkeypatch.setattr(bridge_mod, "LEGACY_OFFLINE_MODE", True)
+    bridge = LegacyModelBridge(FakeGateway())
+
+    assert await bridge.stat_task_type("ds/1", "key") is None
+
+
+def test_requested_model_id_for_strips_the_instance_of_a_routing_key():
+    from inference_server.middlewares.model_load import set_requested_model_id
+
+    def _resolve_ids():
+        set_requested_model_id("classifiers/4", requested_model_id="resnet101")
+        return (
+            bridge_mod.requested_model_id_for("classifiers/4"),
+            bridge_mod.requested_model_id_for(
+                "classifiers/4:capabilities=image_embeddings"
+            ),
+            bridge_mod.requested_model_id_for("other/1:capabilities=image_embeddings"),
+        )
+
+    assert contextvars.copy_context().run(_resolve_ids) == (
+        "resnet101",
+        "resnet101",
+        "other/1",
+    )
 
 
 @pytest.mark.parametrize(

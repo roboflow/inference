@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import torch
 from roboflow_workflows.prototypes.models_provider import (
     InferenceResultsDC,
     ModelsProvider,
@@ -20,6 +21,7 @@ from inference_server.legacy.bridge import (
     SyncLegacyBridge,
 )
 from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.routing import routing_key
 from inference_server.workflows.models_provider import GatewayModelsProvider
 from tests.unit_tests.legacy import conftest as legacy_conftest
 
@@ -35,9 +37,11 @@ class FakeSyncBridge:
         self.recorded_requests = []
         self.resolved_rows = []
 
-    def resolve(self, model_id, api_key, *, row_key=None, path="", alias=None):
+    def resolve(
+        self, model_id, api_key, *, row_key=None, path="", alias=None, instance=""
+    ):
         self.resolved_rows.append((model_id, row_key, path, alias))
-        return self.routes[model_id]
+        return self.routes[routing_key(model_id, instance)]
 
     def record_request(self, route, model_id_as_requested, path, *, alias=None):
         self.recorded_requests.append(
@@ -708,6 +712,180 @@ def test_provider_covers_protocol():
         assert list(inspect.signature(impl).parameters) == list(
             inspect.signature(member).parameters
         ), name
+
+
+_EMBEDDING_INFO = {
+    "feature_definition": "classifier-linear-input@v1",
+    "output_type": "feature_vector",
+    "normalization": "none",
+    "dimension": 2,
+    "preprocessing": {
+        "image_pre_processing": {"auto-orient": {"enabled": True}},
+        "network_input": {"training_input_size": {"width": 224}},
+    },
+    "backend": "ResNetForClassificationOnnx",
+    "precision": "torch.float32",
+}
+_NO_OVERRIDES = {
+    "disable_preproc_auto_orient": False,
+    "disable_preproc_contrast": False,
+    "disable_preproc_grayscale": False,
+    "disable_preproc_static_crop": False,
+}
+
+
+def _embedding_instance(output_type):
+    instance = "capabilities=image_embeddings"
+    if output_type == "logits":
+        instance += ";output_type=logits"
+    return instance
+
+
+class _PerImageBridge(FakeSyncBridge):
+    def infer(self, route, api_key, action, images, params, record=True):
+        self.calls.append((route.model_id, action, params, [i.data for i in images]))
+        self.records.append(record)
+        return [self.predictions[(route.model_id, action)]() for _ in images]
+
+
+def _embedding_bridge(output_type, vectors):
+    bridge = _PerImageBridge()
+    key = routing_key("cls/1", _embedding_instance(output_type))
+    bridge.routes[key] = Route(
+        model_id="cls/1",
+        registry_id=key,
+        task_type="classification",
+        action="infer",
+        actions={"infer", "embed_images"},
+        class_names=["cat", "dog"],
+    )
+    remaining = iter(vectors)
+    bridge.predictions[("cls/1", "embed_images")] = lambda: {
+        "embeddings": np.array([next(remaining)], dtype=np.float32),
+        "embedding_info": {**_EMBEDDING_INFO, "output_type": output_type},
+    }
+    return bridge
+
+
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+def test_run_image_embeddings_returns_the_legacy_payload(output_type):
+    bridge = _embedding_bridge(output_type, [[2.0, 3.0], [4.0, 5.0]])
+    provider = GatewayModelsProvider(bridge, api_key="req-key")
+    image = np.zeros((4, 6, 3), dtype=np.uint8)
+
+    result = provider.run_image_embeddings(
+        "cls/1",
+        [{"type": "numpy_object", "value": image}] * 2,
+        api_key="key",
+        output_type=output_type,
+    )
+
+    assert result["embeddings"] == [[2.0, 3.0], [4.0, 5.0]]
+    assert result["embedding_info"]["model_id"] == "cls/1"
+    assert result["embedding_info"]["output_type"] == output_type
+    assert result["embedding_info"]["preprocessing"] == {
+        **_EMBEDDING_INFO["preprocessing"],
+        "overrides": _NO_OVERRIDES,
+    }
+    assert len(result["embedding_info"]["space_id"]) == 64
+    assert set(result) == {"inference_id", "time", "embeddings", "embedding_info"}
+    assert bridge.resolved_rows == [("cls/1", None, "", None)]
+    assert bridge.calls[0][1] == "embed_images"
+    assert bridge.calls[0][2] == {"output_type": output_type}
+    assert bridge.calls[0][3][0] is image
+
+
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+def test_run_tensor_image_embeddings_returns_a_batched_tensor(output_type):
+    bridge = _embedding_bridge(output_type, [[2.0, -3.0], [4.0, 5.0]])
+    provider = GatewayModelsProvider(bridge, api_key="req-key")
+    images = [torch.zeros((3, 4, 6), dtype=torch.uint8)] * 2
+
+    result = provider.run_tensor_image_embeddings(
+        "cls/1",
+        images,
+        input_color_format="rgb",
+        api_key="key",
+        output_type=output_type,
+    )
+
+    assert isinstance(result["embeddings"], torch.Tensor)
+    assert result["embeddings"].tolist() == [[2.0, -3.0], [4.0, 5.0]]
+    assert result["embedding_info"]["model_id"] == "cls/1"
+    assert result["embedding_info"]["output_type"] == output_type
+    assert result["embedding_info"]["preprocessing"]["overrides"] == _NO_OVERRIDES
+    assert "space_id" in result["embedding_info"]
+    assert bridge.calls[0][1] == "embed_images"
+    assert bridge.calls[0][2] == {
+        "output_type": output_type,
+        "input_color_format": "rgb",
+    }
+    assert bridge.calls[0][3][0].shape == (4, 6, 3)
+
+
+def test_run_tensor_image_embeddings_lands_on_the_workflow_tensor_device(monkeypatch):
+    from inference_server.workflows import models_provider as provider_module
+
+    monkeypatch.setattr(
+        provider_module.environment, "WORKFLOWS_IMAGE_TENSOR_DEVICE", "meta"
+    )
+    bridge = _embedding_bridge("feature_vector", [[2.0, -3.0]])
+    provider = GatewayModelsProvider(bridge, api_key="req-key")
+
+    result = provider.run_tensor_image_embeddings(
+        "cls/1",
+        [torch.zeros((3, 4, 6), dtype=torch.uint8)],
+        input_color_format="rgb",
+        api_key="key",
+    )
+
+    assert result["embeddings"].device.type == "meta"
+    assert result["embeddings"].shape == (1, 2)
+
+
+def test_run_image_embeddings_time_includes_image_loading(monkeypatch):
+    import time as time_module
+
+    from inference_server.workflows import models_provider as provider_module
+
+    original = provider_module.decode_inline_image
+
+    def slow(image, *, ndarray_ok):
+        time_module.sleep(0.05)
+        return original(image, ndarray_ok=ndarray_ok)
+
+    monkeypatch.setattr(provider_module, "decode_inline_image", slow)
+    bridge = _embedding_bridge("feature_vector", [[2.0, 3.0]])
+    provider = GatewayModelsProvider(bridge, api_key="req-key")
+
+    result = provider.run_image_embeddings(
+        "cls/1",
+        [{"type": "numpy_object", "value": np.zeros((4, 6, 3), dtype=np.uint8)}],
+        api_key="key",
+    )
+
+    assert result["time"] >= 0.05
+
+
+def test_add_model_with_capabilities_registers_the_instance_under_its_key():
+    bridge = _embedding_bridge("logits", [])
+    provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
+
+    provider.add_model(
+        "cls/1", "k", required_capabilities=["image_embeddings"], output_type="logits"
+    )
+
+    assert bridge.recorded_requests == [
+        (
+            "cls/1:capabilities=image_embeddings;output_type=logits",
+            "cls/1:capabilities=image_embeddings:output_type=logits",
+            "/workflows/run",
+            None,
+        )
+    ]
+    assert "cls/1:capabilities=image_embeddings:output_type=logits" in provider
+    assert "cls/1" not in provider
+    assert provider.get_model_pipeline_depth("cls/1") == 1
 
 
 fake_stat = legacy_conftest.fake_stat

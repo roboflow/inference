@@ -725,19 +725,24 @@ LEGACY_WITHOUT_PORTABLE = {
         "because with local storage disabled the block raises before writing "
         "anything (coordinator restriction registry)"
     ),
-}
-
-# Same divergence in the host plugin. That registry is not loadable from the
-# workflows package (no `inference.*` imports here), so it cannot be checked in
-# this module; `tests/inference/unit_tests/core/test_roboflow_plugin_workload_declarations.py`
-# owns it. Listed so the decision is discoverable from one place.
-HOST_PLUGIN_DIVERGENCES_CHECKED_ELSEWHERE = {
     (
         # NOTE: the package directory is `vision_events_bundle` (plural) but the
         # block's `type` literal is singular - do not "correct" it back.
         "roboflow_core/vision_event_bundle@v1",
-        "writes_to_deployment_volume_not_retrievable",
-    ): "same storage-flag reading as local_file_sink@v1",
+        (
+            "writes_to_deployment_volume_not_retrievable",
+            "soft",
+            ("dedicated_deployment",),
+            (),
+            (),
+        ),
+    ): (
+        "legacy emits 'bundles land on the deployment volume but are not "
+        "retrievable through the Roboflow API' on BOTH branches of the storage "
+        "flag; the portable writes_to_deployment_volume_not_retrievable pins "
+        "the enabled branch, because with local storage disabled the block "
+        "raises before it writes anything. Same reading as local_file_sink@v1"
+    ),
 }
 
 FLAG_CONSTANTS_UNDER_TEST = ("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE",)
@@ -781,6 +786,7 @@ STATE_LOSS_CODES_WITH_LEGACY_REMOTE_SCOPE = frozenset(
         "stateful_video_state_resets_on_stateless_http",
         "cooldown_timer_resets_on_stateless_http",
         "s3_append_buffer_resets_on_stateless_http",
+        "aggregation_buffer_resets_on_stateless_http",
     }
 )
 
@@ -938,7 +944,4 @@ def test_the_legacy_divergence_registry_cannot_rot(
             problems.append(
                 f"{block_type}: legacy no longer declares {axes}; remove the entry"
             )
-    assert all(
-        reason.strip() for reason in HOST_PLUGIN_DIVERGENCES_CHECKED_ELSEWHERE.values()
-    )
     assert not problems, "\n".join(problems)

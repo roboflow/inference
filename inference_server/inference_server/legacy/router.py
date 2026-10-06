@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
+from inference_model_manager.registry_defaults import IMAGE_EMBEDDINGS_ACTION
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 from inference_server import configuration, platform_http, server_identity, telemetry
 from inference_server.dependencies import get_model_manager
@@ -38,6 +39,7 @@ from inference_server.legacy.bridge import (
 from inference_server.legacy.common import (
     as_image_list,
     image_load_error,
+    keep_image_orientation,
     load_request_images,
     orjson_response,
     resolve_api_key,
@@ -62,6 +64,8 @@ from inference_server.legacy.entities import (
     DoctrOCRInferenceRequest,
     EasyOCRInferenceRequest,
     GroundingDINOInferenceRequest,
+    ImageEmbeddingRequest,
+    ImageEmbeddingResponse,
     InferenceRequestImage,
     InferenceRequestVideo,
     InstanceSegmentationInferenceRequest,
@@ -109,8 +113,10 @@ from inference_server.legacy.errors import (
 )
 from inference_server.legacy.telemetry_recording import record_telemetry
 from inference_server.legacy.translation import (
+    IMAGE_EMBEDDING_TASK_TYPES,
     build_embedding_calls,
     build_few_shot_params,
+    build_image_embedding_params,
     build_interactive_segmentation_params,
     build_open_vocabulary_params,
     build_task_params,
@@ -123,6 +129,7 @@ from inference_server.legacy.translation import (
     is_metric_depth_model_class,
     repack_depth_estimation,
     repack_embedding_response,
+    repack_image_embeddings,
     repack_interactive_segmentation_response,
     repack_moondream_detection,
     repack_object_detection_response,
@@ -140,6 +147,13 @@ from inference_server.legacy.visualization import (
 from inference_server import pingback
 from inference_server.hosted.common import service_secret_is_valid
 from inference_server.prometheus import measure_inference
+from inference_server.routing import (
+    IMAGE_EMBEDDINGS,
+    capability_instance,
+    registration_key,
+    routed_instance,
+    routed_model_id,
+)
 from inference_server.usage.request_hook import report_request_usage
 
 logger = logging.getLogger(__name__)
@@ -206,6 +220,9 @@ SAM3_EMBEDDING_REMOTE_UNSUPPORTED_MESSAGE = (
     "SAM3 embedding is not supported in remote execution mode."
 )
 _DEPTH_SINGLE_IMAGE_MESSAGE = "Depth estimation accepts a single image."
+_IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE = (
+    "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+)
 FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
     "Fine-tuned SAM 3 models are not supported on Serverless. "
     "Use the base SAM 3 model (sam3/sam3_final), a Dedicated Deployment, "
@@ -304,7 +321,10 @@ async def _models_descriptions(bridge: LegacyModelBridge) -> ModelsDescriptions:
             descriptions.append(
                 _model_description(
                     route,
-                    model_id=route.registry_id,
+                    model_id=registration_key(
+                        routed_model_id(route.registry_id),
+                        routed_instance(route.registry_id),
+                    ),
                     request_aliases=[],
                     request_paths=[],
                 )
@@ -685,6 +705,81 @@ async def infer_classification(
         expected_task_types=("classification", "multi-label-classification"),
         active_learning_eligible=True,
     )
+
+
+@infer_router.post(
+    "/infer/embeddings",
+    response_model=ImageEmbeddingResponse,
+    summary="Image embeddings",
+    description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+    response_model_exclude_none=True,
+)
+@with_legacy_errors
+@report_request_usage
+async def infer_embeddings(
+    request: Request,
+    inference_request: ImageEmbeddingRequest,
+    api_key: Optional[str] = Query(default=None, description="Roboflow API key"),
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Response:
+    api_key = resolve_api_key(request, api_key, inference_request.api_key)
+    inference_request.api_key = api_key
+    task_type = await bridge.stat_task_type(inference_request.model_id, api_key)
+    if task_type is not None and task_type not in IMAGE_EMBEDDING_TASK_TYPES:
+        raise LegacyHTTPError(501, _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE)
+
+    alias = request_alias_for(inference_request.model_id)
+    instance = capability_instance([IMAGE_EMBEDDINGS], inference_request.output_type)
+    row_key = registration_key(inference_request.model_id, instance)
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=row_key,
+        path=request.scope["path"],
+        alias=alias,
+        instance=instance,
+    )
+    bridge.record_request(route, row_key, request.scope["path"], alias=alias)
+    if route.is_stub:
+        raise LegacyHTTPError(501, _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE)
+
+    response = await _embed_images(inference_request, bridge, route, api_key)
+
+    return orjson_response(response)
+
+
+async def _embed_images(
+    inference_request: ImageEmbeddingRequest,
+    bridge: LegacyModelBridge,
+    route: Route,
+    api_key: Optional[str],
+) -> ImageEmbeddingResponse:
+    images, _ = as_image_list(inference_request.image)
+    started = time.perf_counter()
+    payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
+    if inference_request.disable_preproc_auto_orient:
+        payloads = [
+            keep_image_orientation(payload, ndarray_ok=bridge.accepts_ndarray)
+            for payload in payloads
+        ]
+    params = build_image_embedding_params(inference_request)
+    results = await bridge.infer(
+        route,
+        api_key,
+        IMAGE_EMBEDDINGS_ACTION,
+        payloads,
+        params,
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
+    response = repack_image_embeddings(
+        results,
+        resolve_roboflow_model_alias(inference_request.model_id),
+        inference_request,
+    )
+    response.time = time.perf_counter() - started
+    pingback.record_inference(route.registry_id, inference_request, response)
+
+    return response
 
 
 @infer_router.post(

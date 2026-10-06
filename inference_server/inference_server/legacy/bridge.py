@@ -58,6 +58,15 @@ from inference_server.middlewares.model_load import (
     set_requested_model_id,
 )
 from inference_server.prometheus import measure_inference
+from inference_server.routing import (
+    capability_key,
+    discard_capability_key,
+    has_capability_marker,
+    is_capability_instance,
+    parse_registration_key,
+    plain_model_id,
+    routing_key,
+)
 from inference_server.usage.request_hook import (
     MODEL_INVOCATIONS,
     record_model_invocation,
@@ -243,6 +252,12 @@ def registry_id_for(model_id: str) -> str:
     return f"{alias}{separator}{version}"
 
 
+def _plain_registry_id(model_id: str) -> str:
+    if has_capability_marker(model_id):
+        raise LegacyHTTPError(404, NOT_FOUND_MESSAGE)
+    return registry_id_for(model_id)
+
+
 def request_alias_for(model_id: str) -> Optional[str]:
     legacy_model_id = resolve_roboflow_model_alias(model_id)
     if legacy_model_id == model_id:
@@ -252,11 +267,12 @@ def request_alias_for(model_id: str) -> Optional[str]:
 
 
 def requested_model_id_for(registry_id: str) -> str:
+    model_id = plain_model_id(registry_id)
     requested = REQUESTED_MODEL_ID.get()
-    if requested is not None and requested[0] == registry_id:
+    if requested is not None and requested[0] == model_id:
         return requested[1]
 
-    return registry_id
+    return model_id
 
 
 def resolved_model_for(route: Route) -> ResolvedModel:
@@ -299,18 +315,20 @@ class LegacyModelBridge:
         row_key: Optional[str] = None,
         path: str = "",
         alias: Optional[str] = None,
+        instance: str = "",
     ) -> Route:
-        registry_id = registry_id_for(model_id)
-        set_requested_model_id(registry_id, requested_model_id=model_id)
-        if registry_id.partition("/")[2] == STUB_VERSION_ID:
-            stub_route = await _resolve_stub(model_id, registry_id, api_key)
+        model_registry_id = _plain_registry_id(model_id)
+        registry_id = routing_key(model_registry_id, instance)
+        set_requested_model_id(model_registry_id, requested_model_id=model_id)
+        if model_registry_id.partition("/")[2] == STUB_VERSION_ID:
+            stub_route = await _resolve_stub(model_id, model_registry_id, api_key)
 
             return stub_route
 
         stat: Optional[ModelStat] = None
         if not LEGACY_OFFLINE_MODE:
             try:
-                stat = await self._stat(model_id, registry_id, api_key)
+                stat = await self._stat(model_id, model_registry_id, api_key)
             except (Exception, asyncio.CancelledError):
                 self._hold_pending_request(row_key, path, alias)
                 raise
@@ -323,6 +341,8 @@ class LegacyModelBridge:
                 action="infer",
             )
         _apply_stat(route, stat)
+        if is_capability_instance(instance):
+            capability_key(model_registry_id, instance)
         try:
             if LEGACY_OFFLINE_MODE:
                 try:
@@ -344,7 +364,7 @@ class LegacyModelBridge:
             route.task_type = _task_type_from_mro(route.model_mro_names)
             route.action = _DEFAULT_ACTION_BY_TASK_TYPE.get(route.task_type, "infer")
         self._routes[registry_id] = route
-        self._routes[model_id] = route
+        self._routes[routing_key(model_id, instance)] = route
         if route.model_class_name in _NO_HTTP_ROUTE:
             raise LegacyHTTPError(
                 400,
@@ -352,6 +372,29 @@ class LegacyModelBridge:
                 "inference route.",
             )
         return route
+
+    async def stat_task_type(
+        self, model_id: str, api_key: Optional[str]
+    ) -> Optional[str]:
+        """Report a model's task type without loading it.
+
+        Args:
+            model_id: Model id as requested, alias included.
+            api_key: Credential the registry checks access with.
+
+        Returns:
+            The registry's task type, or None offline, where only a load can
+            tell.
+        """
+        registry_id = _plain_registry_id(model_id)
+        if registry_id.partition("/")[2] == STUB_VERSION_ID:
+            stat = await _stat_stub(registry_id, api_key)
+        elif LEGACY_OFFLINE_MODE:
+            return None
+        else:
+            stat = await self._stat(model_id, registry_id, api_key)
+
+        return stat.task_type
 
     def _adopt_canonical(self, route: Route, stat: Optional[ModelStat]) -> Route:
         canonical = self._routes.get(route.registry_id)
@@ -381,7 +424,9 @@ class LegacyModelBridge:
             record_telemetry(telemetry.record_model_loaded, model_id, load_time_s)
 
     async def _ensure_loaded(self, route: Route, api_key: Optional[str]) -> None:
-        record_model_load(route.registry_id, cold_start=False, load_time_s=0.0)
+        record_model_load(
+            plain_model_id(route.registry_id), cold_start=False, load_time_s=0.0
+        )
         deadline = time.monotonic() + LEGACY_LOAD_TIMEOUT_S
         while True:
             result = await self.gateway.ensure_loaded(
@@ -567,6 +612,7 @@ class LegacyModelBridge:
         )
         result = await self.gateway.unload(registry_id)
         self._record_unload(registry_id, result)
+        discard_capability_key(registry_id)
         for key in [
             key
             for key, cached in self._routes.items()
@@ -581,8 +627,12 @@ class LegacyModelBridge:
             record_telemetry(telemetry.record_model_unloaded, registry_id)
 
     async def remove(self, model_id: str) -> None:
-        registry_id = registry_id_for(model_id)
-        legacy_model_id = resolve_roboflow_model_alias(model_id)
+        requested_id, instance = parse_registration_key(model_id)
+        registry_id = routing_key(registry_id_for(requested_id), instance)
+        if instance:
+            legacy_model_id = model_id
+        else:
+            legacy_model_id = resolve_roboflow_model_alias(model_id)
         routes = {route.registry_id: route for route in await self.describe()}
         route = routes.get(registry_id)
         if route is None:
@@ -614,6 +664,7 @@ class LegacyModelBridge:
         for model_id in list(models):
             result = await self.gateway.unload(model_id)
             self._record_unload(model_id, result)
+            discard_capability_key(model_id)
         self._routes.clear()
         self._loaded_ids.clear()
         self._preloaded_ids.clear()
@@ -754,6 +805,8 @@ class LegacyModelBridge:
     async def _stats_models(self) -> dict:
         stats = await self.gateway.stats()
         models = stats.get("models") or {}
+        for evicted in self._loaded_ids.difference(models):
+            discard_capability_key(evicted)
         self._loaded_ids = set(models)
         for route in self._routes.values():
             if route.registry_id not in self._loaded_ids:
@@ -974,11 +1027,18 @@ class SyncLegacyBridge:
         self._model_invocations = MODEL_INVOCATIONS.get()
         self.accepts_ndarray = bridge.accepts_ndarray
 
-    def resolve(self, model_id, api_key, *, row_key=None, path="", alias=None) -> Route:
+    def resolve(
+        self, model_id, api_key, *, row_key=None, path="", alias=None, instance=""
+    ) -> Route:
         set_requested_model_id(registry_id_for(model_id), requested_model_id=model_id)
         return self._run(
             self._bridge.resolve(
-                model_id, api_key, row_key=row_key, path=path, alias=alias
+                model_id,
+                api_key,
+                row_key=row_key,
+                path=path,
+                alias=alias,
+                instance=instance,
             )
         )
 

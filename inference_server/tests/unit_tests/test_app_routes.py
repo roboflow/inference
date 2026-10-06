@@ -13,6 +13,7 @@ HIDDEN_ON_ANY_HOSTED_FLAG = (
     "/infer/instance_segmentation",
     "/infer/semantic_segmentation",
     "/infer/classification",
+    "/infer/embeddings",
     "/infer/keypoints_detection",
     "/clear_cache",
     "/start/{dataset_id}/{version_id}",

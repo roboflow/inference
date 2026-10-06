@@ -16,6 +16,14 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
 )
 from inference_server.gateway import ModelManagerGateway, routed_model_id, routing_key
+from inference_server.routing import (
+    capability_instance,
+    capability_key,
+    capability_load_kwargs,
+    discard_capability_key,
+    parse_registration_key,
+    registration_key,
+)
 
 
 def _fake_manager(process_return=None):
@@ -1140,6 +1148,107 @@ def test_routing_key_matches_mmp_composite_format():
 def test_routed_model_id_strips_instance_suffix():
     assert routed_model_id("acme/1") == "acme/1"
     assert routed_model_id("acme/1:b") == "acme/1"
+
+
+def test_capability_instance_mirrors_the_registration_identity():
+    assert capability_instance(None) == ""
+    assert capability_instance([]) == ""
+    assert capability_instance(["image_embeddings"]) == "capabilities=image_embeddings"
+    assert (
+        capability_instance(["image_embeddings"], "feature_vector")
+        == "capabilities=image_embeddings"
+    )
+    assert (
+        capability_instance(["image_embeddings"], "logits")
+        == "capabilities=image_embeddings;output_type=logits"
+    )
+
+
+def test_capability_load_kwargs_decode_only_keys_the_server_built():
+    key = capability_key("acme/1", capability_instance(["image_embeddings"], "logits"))
+
+    assert key == "acme/1:capabilities=image_embeddings;output_type=logits"
+    assert routed_model_id(key) == "acme/1"
+    assert capability_load_kwargs(key) == {
+        "required_capabilities": ["image_embeddings"],
+        "output_type": "logits",
+    }
+    assert capability_load_kwargs(
+        capability_key("acme/1", capability_instance(["image_embeddings"]))
+    ) == {"required_capabilities": ["image_embeddings"]}
+    assert capability_load_kwargs("acme/1") == {}
+    assert capability_load_kwargs("acme/1:b") == {}
+    assert capability_load_kwargs("acme/9:capabilities=image_embeddings") == {}
+    assert capability_load_kwargs("acme/1:b:capabilities=image_embeddings") == {}
+    assert capability_load_kwargs("acme/1:capabilities=image_embeddings:b") == {}
+
+
+def test_registration_key_is_the_legacy_form_of_a_capability_key():
+    instance = capability_instance(["image_embeddings"], "logits")
+
+    assert (
+        registration_key("ds/1", instance)
+        == "ds/1:capabilities=image_embeddings:output_type=logits"
+    )
+    assert registration_key("ds/1", "blue") == "ds/1:blue"
+    assert registration_key("ds/1") == "ds/1"
+    assert parse_registration_key(
+        "ds/1:capabilities=image_embeddings:output_type=logits"
+    ) == ("ds/1", instance)
+    assert parse_registration_key("ds/1:blue") == ("ds/1:blue", "")
+    assert parse_registration_key("ds/1") == ("ds/1", "")
+
+
+@pytest.mark.asyncio
+async def test_reload_after_eviction_keeps_the_capabilities_of_a_forgotten_key():
+    mgr = _fake_manager()
+    mgr.__contains__ = MagicMock(return_value=False)
+    wrapper = ModelManagerGateway(mgr)
+    instance = capability_instance(["image_embeddings"], "logits")
+    key = capability_key("acme/1", instance)
+    await wrapper.ensure_loaded("acme/1", instance, "key")
+    discard_capability_key(key)
+
+    await wrapper.ensure_loaded("acme/1", instance, "key")
+
+    assert mgr.load.call_count == 2
+    for call in mgr.load.call_args_list:
+        assert call.kwargs["required_capabilities"] == ["image_embeddings"]
+        assert call.kwargs["output_type"] == "logits"
+
+
+@pytest.mark.asyncio
+async def test_unload_forgets_the_capabilities_of_a_key():
+    mgr = _fake_manager()
+    mgr.__contains__ = MagicMock(return_value=False)
+    wrapper = ModelManagerGateway(mgr)
+    instance = capability_instance(["image_embeddings"], "logits")
+    key = capability_key("acme/1", instance)
+    await wrapper.ensure_loaded("acme/1", instance, "key")
+
+    assert (await wrapper.unload(key))[0] == "ok"
+    await wrapper.ensure_loaded("acme/1", instance, "key")
+
+    assert capability_load_kwargs(key) == {}
+    assert "required_capabilities" not in mgr.load.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_with_a_capability_instance_loads_with_the_capability():
+    mgr = _fake_manager()
+    mgr.__contains__ = MagicMock(return_value=False)
+    wrapper = ModelManagerGateway(mgr)
+    instance = capability_instance(["image_embeddings"], "logits")
+    capability_key("acme/1", instance)
+
+    status = await wrapper.ensure_loaded("acme/1", instance, "key")
+
+    assert status[0] == "model_ready"
+    args, kwargs = mgr.load.call_args
+    assert args[0] == "acme/1:capabilities=image_embeddings;output_type=logits"
+    assert kwargs["model_id_or_path"] == "acme/1"
+    assert kwargs["required_capabilities"] == ["image_embeddings"]
+    assert kwargs["output_type"] == "logits"
 
 
 @pytest.mark.asyncio

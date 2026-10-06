@@ -10,9 +10,11 @@ import dataclasses
 import logging
 from typing import Any, Dict, Optional
 
+from inference_model_manager.image_embeddings import describe_image_embeddings
 from inference_model_manager.registry import ActionEntry
 from inference_model_manager.registry_defaults import (
     _ACTION_CONFIGS,
+    IMAGE_EMBEDDINGS_RESPONSE_TYPE,
     PRE_PROCESSING_OVERRIDE_FIELDS,
     SAM_IMAGE_EMBEDDINGS_TYPE,
     _unpack_config,
@@ -106,7 +108,10 @@ def invoke_action(
         kwargs = {entry.param_aliases.get(k, k): v for k, v in kwargs.items()}
     kwargs = _build_pre_processing_overrides(kwargs, entry)
     kwargs = _build_sam_image_embeddings(kwargs, entry)
-    return method(**kwargs)
+    result = method(**kwargs)
+    if entry.response_type == IMAGE_EMBEDDINGS_RESPONSE_TYPE:
+        result = describe_image_embeddings(model, result, kwargs)
+    return result
 
 
 def _build_pre_processing_overrides(kwargs: dict, entry: ActionEntry) -> dict:

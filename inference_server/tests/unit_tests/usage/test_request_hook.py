@@ -1356,3 +1356,42 @@ def test_serverless_floor_applies_to_the_recorded_row(
 
     assert response.status_code == 200, response.text
     assert _only_row(usage_collector)["execution_duration"] == 0.1
+
+
+def test_embeddings_request_records_one_billable_row(
+    usage_client, usage_collector, fake_stat
+):
+    fake_stat["ds/1"] = ("classification", "infer", "resnet", "resnet-101")
+    key = "ds/1:capabilities=image_embeddings"
+    gateway = FakeGateway(
+        predictions={
+            (key, "embed_images"): {
+                "embeddings": np.array([[0.5, 0.5]], dtype=np.float32),
+                "embedding_info": {
+                    "feature_definition": "classifier-linear-input@v1",
+                    "output_type": "feature_vector",
+                    "normalization": "none",
+                    "dimension": 2,
+                    "preprocessing": {"image_pre_processing": {}, "network_input": {}},
+                    "backend": "ResNetForClassificationOnnx",
+                    "precision": "torch.float32",
+                },
+            }
+        },
+        model_info={key: {"actions": {"infer": {}, "embed_images": {}}}},
+    )
+    client = usage_client(gateway)
+
+    response = client.post(
+        "/infer/embeddings",
+        json={"model_id": "ds/1", "api_key": "k", "image": _image()},
+    )
+
+    assert response.status_code == 200, response.text
+    row = _only_row(usage_collector)
+    _assert_success_row(row, resource_id="ds/1")
+    model = row["resource_details"]["models"][0]
+    assert model["model_id"] == "ds/1"
+    assert model["model_architecture"] == "resnet"
+    assert model["task_type"] == "classification"
+    assert model["frames"] == 1
