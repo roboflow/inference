@@ -4,7 +4,10 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
-from roboflow_workflows.core_steps.common.utils import run_in_parallel
+from roboflow_workflows.core_steps.common.utils import (
+    raise_runtime_input_error_on_clip_text_too_long,
+    run_in_parallel,
+)
 from roboflow_workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -206,6 +209,7 @@ class ClipComparisonBlockV2(WorkflowBlock):
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
+    @raise_runtime_input_error_on_clip_text_too_long
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
