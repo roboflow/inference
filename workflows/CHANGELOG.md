@@ -16,9 +16,23 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.4`
+
+Bundled execution engine: `1.16.1`.
+
 ### Added
 
+- Embedding Model (`roboflow_core/embedding_model@v1`): extract feature vectors
+  before the final linear layer or logits before Softmax/Sigmoid from existing
+  single-label and multi-label ResNet, ViT and DINOv3 classifiers, including
+  pretrained ResNet aliases. List and tensor variants return embeddings compatible
+  with Cosine Similarity and metadata identifying their embedding space.
+- Local tensor-mode Embedding Model execution retains materialized tensor images
+  and embedding tensors through the model-provider boundary. Remote responses and
+  final JSON outputs remain serialized vectors.
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
+- OpenAI block (`open_ai@v7`): `gpt-6.1-sol` model option (`low`-`max` reasoning effort; object detection and instance segmentation reuse the GPT-6 prompts).
+
 ### Changed
 
 - Carries forward the `0.2.2` model catalog: Anthropic Claude v5 lists `claude-opus-5-5` (Claude Opus 5.5, 128000 max output tokens) and the temperature warning names Opus 5.x; OpenAI v7 lists `gpt-6-sol` and `gpt-6-luna` (reasoning effort `none` through `max`, structured absolute detection prompts).
@@ -30,11 +44,23 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
-- Detections Stitch (`roboflow_core/detections_stitch@v1`): segmentation masks are stitched as crop-scoped compact masks (`supervision.CompactMask`) and only the detections that survive overlap filtering are materialised at reference resolution. Previously every crop mask was first re-allocated as a full-size dense array, merged, then filtered, which needed about `N x H x W` bytes before any filtering: a 1080p frame sliced 12 ways with ~25 masks per slice took ~3 GiB inside this block and OOM-killed an 8 GiB video worker. Outputs are unchanged (same boxes, order and masks, still dense arrays); a mix of crops with and without masks now raises a clear `ValueError` instead of failing inside `Detections.merge`.
+- Detections Stitch (`roboflow_core/detections_stitch@v1`): segmentation masks are stitched as crop-scoped compact masks (`supervision.CompactMask`) and only the detections that survive overlap filtering are materialised at reference resolution. Previously every crop mask was first re-allocated as a full-size dense array, merged, then filtered, which needed about `N x H x W` bytes before any filtering: a 1080p frame sliced 12 ways with ~25 masks per slice took ~3 GiB inside this block and OOM-killed an 8 GiB video worker. Outputs keep the same boxes, order and dense masks, with one numerical correction: mask IoU is now computed from exact pixel counts instead of `float32` arithmetic, so a pair whose IoU equals `iou_threshold` is decided by the documented comparison. With `nms`, IoU equal to the threshold no longer suppresses (30 of 100 pixels at `0.3` used to round to `0.30000001` and drop a detection); with `nmm`, IoU equal to the threshold now merges (70 of 100 pixels at `0.7` used to round to `0.69999999` and keep both). A mix of crops with and without masks now raises a clear `ValueError` instead of failing inside `Detections.merge`.
+
+- CLIP v1 and CLIP Comparison v1/v2 blocks, including tensor variants, now report
+  a model's text-context-length validation error as `RuntimeInputError`, allowing
+  workflow HTTP requests to return 400 instead of 500. Other model input errors
+  retain their existing handling.
 
 - Detections Stitch (`roboflow_core/detections_stitch@v1`) with `overlap_filtering_strategy` set to `none` no longer encodes masks as compact masks and decodes them again: every mask survives, so each crop's masks are copied straight into the single dense output array (only each mask's bounding box is written). Outputs are unchanged. Measured with `supervision` 0.30.6, median block latency against the compact-mask stitch: 300 masks from twelve 640x640 crops onto 1920x1012 19 ms -> 12 ms; 48 salt-and-pepper masks from four 256x256 crops onto 640x480 14 ms -> 0.7 ms; 24 masks from four 100x100 crops onto 300x200 0.5 ms -> 0.2 ms. Peak memory stays at the size of the output.
 
 - Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
+
+### Execution engine
+
+- Dependency preloading distinguishes classification, feature-vector and logits
+  registrations for the same model ID, including runtime-selected IDs, and verifies
+  the corresponding capability-specific cache entries. Existing workflows need
+  no migration.
 
 ## `0.2.3`
 

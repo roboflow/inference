@@ -866,3 +866,115 @@ def test_detections_stitch_without_filtering_allocates_only_the_output_stack() -
     assert result.mask.nbytes == output_bytes
     # a single extra full-frame copy would add another output_bytes (~580 MB)
     assert peak < output_bytes + 64 * 1024 * 1024, f"peak={peak / 2**30:.2f} GiB"
+
+
+def _two_mask_crop(mask_a: np.ndarray, mask_b: np.ndarray) -> sv.Detections:
+    """One 10x10 crop at the reference origin holding two same-class
+    detections with confidences 0.9 and 0.8."""
+    masks = np.stack([mask_a, mask_b])
+    return sv.Detections(
+        xyxy=sv.mask_to_xyxy(masks).astype(np.float32),
+        mask=masks,
+        confidence=np.array([0.9, 0.8], dtype=np.float32),
+        class_id=np.array([0, 0]),
+        data={
+            "class_name": np.array(["a", "a"]),
+            PARENT_COORDINATES_KEY: np.array([(0, 0)] * 2),
+            PARENT_DIMENSIONS_KEY: np.array([(10, 10)] * 2),
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "iou_threshold, expected_kept",
+    [(0.29, 1), (0.3, 2), (0.31, 2)],
+)
+def test_detections_stitch_nms_keeps_both_masks_when_iou_equals_threshold(
+    iou_threshold: float,
+    expected_kept: int,
+) -> None:
+    """Intersection 30, union 100: the mask IoU is exactly 0.3. NMS suppresses
+    on IoU > threshold, so at 0.3 both detections stay. Dense float32 IoU gave
+    0.30000001 and suppressed one; that rounding artifact must not come back,
+    whichever mask representation supervision uses internally."""
+    # given
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=10, height=10)
+    mask_a = np.zeros((10, 10), dtype=bool)
+    mask_a[:, 0:5] = True
+    mask_b = np.zeros((10, 10), dtype=bool)
+    mask_b[:, 2:10] = True
+    predictions = [_two_mask_crop(mask_a, mask_b)]
+
+    # when
+    result = block.run(
+        reference_image=reference_image,
+        predictions=predictions,
+        overlap_filtering_strategy="nms",
+        iou_threshold=iou_threshold,
+    )["predictions"]
+
+    # then
+    assert len(result) == expected_kept
+    assert isinstance(result.mask, np.ndarray)
+    assert result.mask.dtype == np.bool_
+    assert result.mask.shape == (expected_kept, 10, 10)
+    expected_masks = np.stack([mask_a, mask_b])[:expected_kept]
+    expected_xyxy = np.array([[0, 0, 4, 9], [2, 0, 9, 9]], dtype=np.float32)
+    assert np.array_equal(result.mask, expected_masks)
+    assert np.array_equal(result.xyxy, expected_xyxy[:expected_kept])
+    assert np.allclose(result.confidence, [0.9, 0.8][:expected_kept])
+    assert np.array_equal(result.class_id, [0, 0][:expected_kept])
+    assert list(result.data["class_name"]) == ["a", "a"][:expected_kept]
+    # inputs untouched
+    assert np.array_equal(predictions[0].mask, np.stack([mask_a, mask_b]))
+    assert np.array_equal(predictions[0].xyxy, expected_xyxy)
+
+
+@pytest.mark.parametrize(
+    "iou_threshold, expected_kept",
+    [(0.69, 1), (0.7, 1), (0.71, 2)],
+)
+def test_detections_stitch_nmm_merges_masks_when_iou_equals_threshold(
+    iou_threshold: float,
+    expected_kept: int,
+) -> None:
+    """A 70-pixel mask inside a 100-pixel mask: the mask IoU is exactly 0.7.
+    NMM merges on IoU >= threshold, so at 0.7 the two become one. Dense float32
+    IoU gave 0.69999999 and kept them apart; that rounding artifact must not
+    come back, whichever mask representation supervision uses internally."""
+    # given
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=10, height=10)
+    mask_outer = np.ones((10, 10), dtype=bool)
+    mask_inner = np.zeros((10, 10), dtype=bool)
+    mask_inner[:, 0:7] = True
+    predictions = [_two_mask_crop(mask_outer, mask_inner)]
+
+    # when
+    result = block.run(
+        reference_image=reference_image,
+        predictions=predictions,
+        overlap_filtering_strategy="nmm",
+        iou_threshold=iou_threshold,
+    )["predictions"]
+
+    # then
+    assert len(result) == expected_kept
+    assert isinstance(result.mask, np.ndarray)
+    assert result.mask.dtype == np.bool_
+    assert result.mask.shape == (expected_kept, 10, 10)
+    assert np.array_equal(result.class_id, [0, 0][:expected_kept])
+    if expected_kept == 1:
+        # the merged detection covers the union of both masks
+        assert np.array_equal(result.mask[0], mask_outer | mask_inner)
+        assert np.array_equal(result.xyxy, [[0, 0, 9, 9]])
+        assert list(result.data["class_name"]) == ["a"]
+    else:
+        assert np.array_equal(result.mask, np.stack([mask_outer, mask_inner]))
+        assert np.array_equal(result.xyxy, [[0, 0, 9, 9], [0, 0, 6, 9]])
+        assert np.allclose(result.confidence, [0.9, 0.8])
+        assert list(result.data["class_name"]) == ["a", "a"]
+    # inputs untouched
+    assert np.array_equal(predictions[0].mask, np.stack([mask_outer, mask_inner]))
+    assert np.array_equal(predictions[0].xyxy, [[0, 0, 9, 9], [0, 0, 6, 9]])

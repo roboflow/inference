@@ -8,6 +8,7 @@ from typing import Dict, Tuple, Union
 
 import cv2
 from numpy import ndarray
+from streamvision.camera.capture_properties import apply_capture_properties
 from streamvision.camera.entities import SourceProperties, VideoFrameProducer
 from streamvision.camera.gstreamer_rtsp_pipeline import (
     build_gstreamer_rtsp_pipeline,
@@ -51,10 +52,10 @@ class GStreamerRtspVideoFrameProducer(VideoFrameProducer):
     def retrieve(self) -> Tuple[bool, ndarray]:
         return self.stream.retrieve()
 
-    def initialize_source_properties(self, properties: Dict[str, float]) -> None:
-        for property_id, value in properties.items():
-            cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
-            self.stream.set(cv2_id, value)
+    def initialize_source_properties(
+        self, properties: Dict[str, Union[float, str]]
+    ) -> None:
+        apply_capture_properties(self.stream, properties=properties)
 
     def discover_source_properties(self) -> SourceProperties:
         width = int(self.stream.get(cv2.CAP_PROP_FRAME_WIDTH))

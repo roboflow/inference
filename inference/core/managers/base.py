@@ -9,6 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from inference.core.cache import model_monitoring as model_monitoring_cache_module
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
@@ -24,6 +25,7 @@ from inference.core.env import (
 )
 from inference.core.exceptions import (
     InferenceModelNotFound,
+    ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
     RoboflowAPINotAuthorizedError,
 )
@@ -36,6 +38,7 @@ from inference.core.managers.model_load_collector import (
 )
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
+from inference.core.models.embeddings import model_cache_key
 from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import (
     ModelEndpointType,
@@ -128,6 +131,8 @@ class ModelManager:
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        required_capabilities: Optional[List[str]] = None,
+        output_type: str = "feature_vector",
     ) -> None:
         """Adds a new model to the manager.
 
@@ -151,7 +156,10 @@ class ModelManager:
         logger.debug(
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
-        resolved_identifier = model_id if model_id_alias is None else model_id_alias
+        registry_identifier = model_id if model_id_alias is None else model_id_alias
+        resolved_identifier = model_cache_key(
+            registry_identifier, required_capabilities, output_type
+        )
         self.record_request_metadata(
             model_id=resolved_identifier,
             original_model_id=model_id,
@@ -178,13 +186,25 @@ class ModelManager:
                     t_load_start = time.perf_counter()
                     vram_before = _get_cuda_memory_allocated()
                     model_class = self.model_registry.get_model(
-                        resolved_identifier,
+                        registry_identifier,
                         api_key,
                         countinference=countinference,
                         service_secret=service_secret,
                     )
+                    if required_capabilities and not hasattr(
+                        model_class, "infer_embeddings_from_request"
+                    ):
+                        raise ModelDeploymentNotSupportedError(
+                            "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+                        )
 
                     extra_init_kwargs = {}
+                    if required_capabilities:
+                        extra_init_kwargs["required_capabilities"] = (
+                            required_capabilities
+                        )
+                    if "image_embeddings" in (required_capabilities or []):
+                        extra_init_kwargs["output_type"] = output_type
                     if USE_INFERENCE_MODELS:
                         extra_init_kwargs["torchscript_state_global_lock"] = (
                             self.torchscript_state_global_lock
@@ -518,26 +538,70 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
+        if isinstance(request, ImageEmbeddingRequest):
+            return model.infer_embeddings_from_request(request)
         return model.infer_from_request(request)
 
     def model_infer_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
+        if isinstance(request, ImageEmbeddingRequest):
+            return model.infer_embeddings_from_request(request)
         return model.infer_from_request(request)
 
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        """Run native model inference with cache lookup and telemetry.
+
+        Args:
+            model_id: Registered model key.
+            **kwargs: Native images and model-specific inference options.
+
+        Returns:
+            The model's native predictions without HTTP serialization.
+
+        Raises:
+            InferenceModelNotFound: If the model is not registered.
+            NotImplementedError: If the model does not support native inference.
+        """
+        result = self._run_tensor_native_operation(
+            model_id=model_id, operation="run_tensor_native_inference", kwargs=kwargs
+        )
+
+        return result
+
+    def run_tensor_native_embeddings(self, model_id: str, **kwargs) -> dict:
+        """Generate tensor embeddings using the registered model instance.
+
+        Args:
+            model_id: Capability-specific model registration key.
+            **kwargs: Images, color format, output type and preprocessing options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+
+        Raises:
+            InferenceModelNotFound: If the model is not registered.
+            NotImplementedError: If the model does not support tensor embeddings.
+        """
+        result = self._run_tensor_native_operation(
+            model_id=model_id, operation="run_tensor_native_embeddings", kwargs=kwargs
+        )
+
+        return result
+
+    def _run_tensor_native_operation(self, *, model_id, operation, kwargs):
         with start_span(
             "model.infer",
             {
                 "model.id": model_id,
-                "model.infer.caller": "run_tensor_native_inference",
+                "model.infer.caller": operation,
             },
         ):
             try:
                 t_infer_start = time.perf_counter()
                 model = self._get_model_reference(model_id=model_id)
-                result = model.run_tensor_native_inference(**kwargs)
+                result = getattr(model, operation)(**kwargs)
                 record_inference(model_id, time.perf_counter() - t_infer_start)
                 return result
             except Exception as error:
