@@ -17,6 +17,7 @@ class FakeGateway:
         self.loaded: dict[str, dict] = {}
         self.calls: list[tuple] = []
         self.ensure_results: list[tuple] = []
+        self.pinned: list[str] = []
 
     async def start(self): ...
 
@@ -31,8 +32,10 @@ class FakeGateway:
         )
         return ("model_ready",)
 
-    async def load(self, model_id, api_key="", timeout_s=None):
+    async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
         self.calls.append(("load", model_id, api_key))
+        if pinned:
+            self.pinned.append(model_id)
         self.loaded.setdefault(
             model_id, dict(self.model_info.get(model_id, {}), state="loaded")
         )
@@ -64,6 +67,59 @@ class FakeGateway:
             "model_id": model_id,
             "actions": self.loaded[model_id].get("actions", {}),
         }
+
+    async def model_supports_stream_pipeline(self, model_id):
+        self.calls.append(("model_supports_stream_pipeline", model_id))
+        return await self.get_model_pipeline_depth(model_id) > 1
+
+    async def get_model_pipeline_depth(self, model_id):
+        self.calls.append(("get_model_pipeline_depth", model_id))
+        return self.loaded.get(model_id, {}).get("stream_pipeline_depth", 1)
+
+    async def flush_model_stream_pipeline(self, model_id):
+        self.calls.append(("flush_model_stream_pipeline", model_id))
+        return self.loaded.get(model_id, {}).get("stream_pipeline_flush")
+
+    async def shutdown_model_stream_pipeline(self, model_id):
+        self.calls.append(("shutdown_model_stream_pipeline", model_id))
+        return None
+
+
+class EvictedModelManager:
+    def __init__(self, reload_error: Optional[BaseException] = None):
+        self.reload_error = reload_error
+        self.loaded: set[str] = set()
+        self.load_calls = 0
+        self.process_calls = 0
+        self.executor = None
+
+    def __contains__(self, key):
+        return key in self.loaded
+
+    def load(self, key, api_key, **kwargs):
+        self.load_calls += 1
+        if self.load_calls > 1 and self.reload_error is not None:
+            raise self.reload_error
+        self.loaded.add(key)
+
+    def unload(self, key):
+        self.loaded.discard(key)
+
+    def stats(self):
+        return {
+            "models": [
+                {"model_id": key, "class_names": ["cat"], "actions": {"infer": {}}}
+                for key in self.loaded
+            ]
+        }
+
+    def shutdown(self):
+        pass
+
+    async def process_async(self, key, **kwargs):
+        self.process_calls += 1
+        self.loaded.discard(key)
+        raise KeyError(key)
 
 
 def route_paths(app) -> set[str]:
@@ -106,10 +162,37 @@ def fake_stat(monkeypatch):
             raise ModelNotFoundError(message=model_id, help_url="")
         if isinstance(outcome, Exception):
             raise outcome
-        return SimpleNamespace(task_type=outcome[0])
+        meta = SimpleNamespace(task_type=outcome[0])
+        if len(outcome) > 2:
+            meta.model_architecture, meta.model_variant = outcome[2], outcome[3]
+        return meta
 
     monkeypatch.setattr(model_stat, "get_one_page_of_model_metadata", _metadata)
     return table
+
+
+class KeyGatedStat:
+    def __init__(self, task_type: str = "object-detection"):
+        self.task_type = task_type
+        self.denied_keys: set = set()
+        self.calls: list[tuple] = []
+
+
+@pytest.fixture
+def key_gated_stat(monkeypatch):
+    from inference_models.errors import UnauthorizedModelAccessError
+    from inference_server.framework import model_stat
+
+    gate = KeyGatedStat()
+
+    def _metadata(model_id: str, api_key: Optional[str] = None, **_):
+        gate.calls.append((model_id, api_key))
+        if api_key in gate.denied_keys:
+            raise UnauthorizedModelAccessError("denied")
+        return SimpleNamespace(task_type=gate.task_type)
+
+    monkeypatch.setattr(model_stat, "get_one_page_of_model_metadata", _metadata)
+    return gate
 
 
 @pytest.fixture

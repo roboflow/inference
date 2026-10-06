@@ -19,6 +19,7 @@ from inference_server.framework.registry import (
     DYNAMIC_MODELS_HANDLERS,
     supported_actions_for,
 )
+from inference_server.middlewares.model_load import record_model_load
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,7 @@ async def v2_load_model(
     if not model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
 
+    record_model_load(model_id, cold_start=False, load_time_s=0.0)
     try:
         result = await mm.load(model_id, api_key)
     except asyncio.TimeoutError:

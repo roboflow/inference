@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 import urllib.parse
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,8 +18,10 @@ from inference_models.errors import (
 from inference_models.weights_providers import roboflow as roboflow_provider
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.model_stat import (
+    ModelStat,
     _reset_cache_for_tests,
     _TtlLruCache,
+    stat_model_details_while_checking_auth,
     stat_model_while_checking_auth,
 )
 
@@ -320,9 +323,9 @@ async def test_pipeline_result_is_not_cached_under_the_synthetic_id():
         await stat_model_while_checking_auth(
             CommonRequestParams(model_id="pp_ocr/small-medium", api_key="k")
         )
-        assert model_stat._cache.get(("pp_ocr/small-medium", "k")) is None
-        model_stat._cache._data.pop((_DET_SMALL, "k"))
-        model_stat._cache._data.pop((_REC_MEDIUM, "k"))
+        assert model_stat._cache.get(("pp_ocr/small-medium", "k", ())) is None
+        model_stat._cache._data.pop((_DET_SMALL, "k", ()))
+        model_stat._cache._data.pop((_REC_MEDIUM, "k", ()))
         table[_REC_MEDIUM] = UnauthorizedModelAccessError(
             message=_REC_MEDIUM, help_url=""
         )
@@ -398,3 +401,114 @@ async def test_registry_lookup_hits_the_api_directly_without_secure_gateway(
         f"{roboflow_provider.ROBOFLOW_API_HOST}/models/v1/external/weights"
         "?modelId=acme%2F1"
     )
+
+
+@pytest.mark.asyncio
+async def test_access_granted_to_one_key_is_not_shared_with_another_key():
+    calls: list = []
+
+    def _metadata(model_id, api_key=None, **_):
+        calls.append((model_id, api_key))
+        if api_key == "key-b":
+            raise UnauthorizedModelAccessError(message=model_id, help_url="")
+        return _meta()
+
+    with patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        side_effect=_metadata,
+    ):
+        await stat_model_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="key-a")
+        )
+        for _ in range(2):
+            with pytest.raises(PermissionError):
+                await stat_model_while_checking_auth(
+                    CommonRequestParams(model_id="acme/1", api_key="key-b")
+                )
+        await stat_model_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="key-a")
+        )
+
+    assert calls == [("acme/1", "key-a"), ("acme/1", "key-b"), ("acme/1", "key-b")]
+
+
+def _registry_meta(task_type="object-detection", architecture="rfdetr", variant="s"):
+    return SimpleNamespace(
+        task_type=task_type, model_architecture=architecture, model_variant=variant
+    )
+
+
+@pytest.mark.asyncio
+async def test_v2_callers_still_receive_the_task_type_and_action_pair_only():
+    with patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        return_value=_registry_meta(),
+    ):
+        result = await stat_model_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="k")
+        )
+
+    assert type(result) is tuple
+    assert result == ("object-detection", "infer")
+
+
+@pytest.mark.asyncio
+async def test_details_carry_architecture_and_variant_from_one_registry_call():
+    with patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        return_value=_registry_meta(),
+    ) as registry:
+        pair = await stat_model_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="k")
+        )
+        details = await stat_model_details_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="k")
+        )
+
+    assert pair == ("object-detection", "infer")
+    assert details == ModelStat(
+        task_type="object-detection",
+        default_action="infer",
+        model_architecture="rfdetr",
+        model_variant="s",
+    )
+    assert registry.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_details_leave_out_an_architecture_or_variant_the_registry_omits():
+    with patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        return_value=SimpleNamespace(task_type="object-detection"),
+    ):
+        details = await stat_model_details_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="k")
+        )
+
+    assert details.model_architecture is None
+    assert details.model_variant is None
+
+
+@pytest.mark.asyncio
+async def test_details_of_a_pipeline_id_name_its_family_and_stage_tokens():
+    table = {_DET_SMALL: "object-detection", _REC_MEDIUM: "text-only-ocr"}
+    with _recording_registry(table, []):
+        details = await stat_model_details_while_checking_auth(
+            CommonRequestParams(model_id="pp_ocr/small-medium", api_key="k")
+        )
+
+    assert details == ModelStat(
+        task_type="structured-ocr",
+        default_action="infer",
+        model_architecture="pp_ocr",
+        model_variant="small-medium",
+    )
+
+
+@pytest.mark.asyncio
+async def test_details_of_passthrough_carry_no_architecture():
+    details = await stat_model_details_while_checking_auth(
+        CommonRequestParams(model_id="passthrough/x", api_key="k")
+    )
+
+    assert details == ModelStat(task_type="passthrough", default_action="infer")

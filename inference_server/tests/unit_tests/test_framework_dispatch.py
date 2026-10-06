@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,6 +22,8 @@ from inference_server.framework.entities import (
 )
 from inference_server.framework.input_parsers import extract_images_and_params
 from inference_server.framework.registry import _HANDLERS
+from inference_server.gateway import ModelManagerGateway
+from tests.unit_tests.legacy.conftest import EvictedModelManager
 
 _JPEG = bytes(
     [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]
@@ -260,7 +264,7 @@ async def test_param_defaults_injected_when_absent(fake_handler_entry):
         r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
     assert r.status_code == 200
     passed = fake_handler_entry["handler"].await_args.args[1]["params"]
-    assert passed["mask_format"] is "rle"
+    assert passed["mask_format"] == "rle"
 
 
 @pytest.mark.asyncio
@@ -582,6 +586,24 @@ async def test_happy_path_invokes_full_pipeline(fake_handler_entry):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_records_the_model_id_before_the_load(fake_handler_entry):
+    from inference_server.middlewares.model_load import MODEL_LOAD_EVENTS
+
+    proxy = _mock_proxy()
+    events = []
+    token = MODEL_LOAD_EVENTS.set(events)
+    try:
+        with _stat_returns(("fake-task", "infer")):
+            r = await handle_model_inference_request(
+                _request(query=b"model_id=acme/1"), proxy
+            )
+    finally:
+        MODEL_LOAD_EVENTS.reset(token)
+    assert r.status_code == 200
+    assert events == [("acme/1", False, 0.0)]
+
+
+@pytest.mark.asyncio
 async def test_client_action_overrides_api_default(fake_handler_entry):
     _HANDLERS[("fake-task", "embed_text")] = _HANDLERS[("fake-task", "infer")]
     with _stat_returns(("fake-task", "infer")):
@@ -672,3 +694,77 @@ async def test_pipeline_model_id_dispatches_after_stage_authorization(
         ("pp-ocrv6-rec/medium", "k1"),
     ]
     assert proxy.ensure_loaded.await_args.args[0] == "pp_ocr/small-medium"
+
+
+@pytest.mark.asyncio
+async def test_failed_reload_after_eviction_answers_inference_failed(
+    fake_handler_entry, caplog
+):
+    async def _infer(action, input_data, proxy, server_hooks):
+        return await proxy.infer(model_id="acme/1", image=b"x")
+
+    fake_handler_entry["handler"].side_effect = _infer
+    manager = EvictedModelManager(reload_error=ValueError("broken"))
+
+    with _stat_returns(("fake-task", "infer")), caplog.at_level(
+        logging.ERROR, logger="inference_server.framework.dispatch"
+    ):
+        response = await handle_model_inference_request(
+            _request(query=b"model_id=acme/1"), ModelManagerGateway(manager)
+        )
+
+    body = json.loads(response.body)
+    assert response.status_code == 500
+    assert set(body) == {"error_code", "description"}
+    assert body["error_code"] == "INFERENCE_FAILED"
+    assert re.fullmatch(r"inference failed \(ref [0-9a-f]{8}\)", body["description"])
+    assert "retry-after" not in response.headers
+    assert manager.load_calls == 2 and manager.process_calls == 1
+    assert [
+        re.sub(r"ref [0-9a-f]{8}", "ref X", record.getMessage())
+        for record in caplog.records
+    ] == ["[dispatch] inference failed (ref X): reload after eviction failed"]
+
+
+@pytest.mark.asyncio
+async def test_loaded_model_is_refused_to_a_key_without_access(fake_handler_entry):
+    from inference_models.errors import UnauthorizedModelAccessError
+    from inference_server.framework import model_stat
+
+    calls: list = []
+
+    def _metadata(model_id, api_key=None, **_):
+        calls.append((model_id, api_key))
+        if api_key == "key-b":
+            raise UnauthorizedModelAccessError(message=model_id, help_url="")
+        return MagicMock(task_type="fake-task")
+
+    def _request_with_key(key):
+        return _request(
+            query=b"model_id=m", headers=[(b"authorization", f"Bearer {key}".encode())]
+        )
+
+    proxy = _mock_proxy()
+    model_stat._reset_cache_for_tests()
+    try:
+        with patch(
+            "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+            side_effect=_metadata,
+        ):
+            granted = await handle_model_inference_request(
+                _request_with_key("key-a"), proxy
+            )
+            refused = await handle_model_inference_request(
+                _request_with_key("key-b"), proxy
+            )
+            refused_again = await handle_model_inference_request(
+                _request_with_key("key-b"), proxy
+            )
+    finally:
+        model_stat._reset_cache_for_tests()
+
+    assert granted.status_code == 200
+    assert refused.status_code == 401 and refused_again.status_code == 401
+    assert fake_handler_entry["handler"].await_count == 1
+    assert proxy.ensure_loaded.await_count == 1
+    assert calls == [("m", "key-a"), ("m", "key-b"), ("m", "key-b")]

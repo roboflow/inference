@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class BackendState(str, Enum):
@@ -55,6 +55,37 @@ def detect_max_batch_size(model) -> Optional[int]:
             return sbs
         return getattr(trt_cfg, "dynamic_batch_size_max", None)
     return None
+
+
+def detect_input_size(model) -> Tuple[Optional[int], Optional[int]]:
+    """Read the fixed network input size of a model.
+
+    Args:
+        model: Loaded model instance.
+
+    Returns:
+        ``(height, width)`` from ``_inference_config.network_input``, or
+        ``(None, None)`` when the config is missing, the model accepts a
+        dynamic spatial size, or the size is not a positive integer.
+    """
+    network_input = getattr(
+        getattr(model, "_inference_config", None), "network_input", None
+    )
+    if network_input is None:
+        return None, None
+    if getattr(network_input, "dynamic_spatial_size_supported", False):
+        return None, None
+
+    training_input_size = getattr(network_input, "training_input_size", None)
+    try:
+        height = int(getattr(training_input_size, "height", None))
+        width = int(getattr(training_input_size, "width", None))
+    except (TypeError, ValueError):
+        return None, None
+    if height <= 0 or width <= 0:
+        return None, None
+
+    return height, width
 
 
 def attach_model_caches(model) -> None:

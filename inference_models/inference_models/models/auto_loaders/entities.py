@@ -34,6 +34,7 @@ class BackendType(str, Enum):
     HF = "hugging-face"
     ULTRALYTICS = "ultralytics"
     CUSTOM = "custom"
+    VLLM = "vllm"
 
 
 AnyModel = Union[

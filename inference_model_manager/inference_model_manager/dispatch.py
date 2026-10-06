@@ -6,12 +6,15 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from typing import Any, Dict, Optional
 
 from inference_model_manager.registry import ActionEntry
 from inference_model_manager.registry_defaults import (
     _ACTION_CONFIGS,
+    PRE_PROCESSING_OVERRIDE_FIELDS,
+    SAM_IMAGE_EMBEDDINGS_TYPE,
     _unpack_config,
     lazy_register,
     registry,
@@ -101,7 +104,121 @@ def invoke_action(
         )
     if entry.param_aliases:
         kwargs = {entry.param_aliases.get(k, k): v for k, v in kwargs.items()}
+    kwargs = _build_pre_processing_overrides(kwargs, entry)
+    kwargs = _build_sam_image_embeddings(kwargs, entry)
     return method(**kwargs)
+
+
+def _build_pre_processing_overrides(kwargs: dict, entry: ActionEntry) -> dict:
+    if not any(flag in entry.params for flag in PRE_PROCESSING_OVERRIDE_FIELDS):
+        for flag in PRE_PROCESSING_OVERRIDE_FIELDS:
+            kwargs.pop(flag, None)
+        return kwargs
+    if not any(flag in kwargs for flag in PRE_PROCESSING_OVERRIDE_FIELDS):
+        return kwargs
+
+    from inference_models.models.auto_loaders.entities import PreProcessingOverrides
+
+    overrides = kwargs.get("pre_processing_overrides") or PreProcessingOverrides()
+    enabled = {
+        field: True
+        for flag, field in PRE_PROCESSING_OVERRIDE_FIELDS.items()
+        if kwargs.pop(flag, False)
+    }
+    kwargs["pre_processing_overrides"] = dataclasses.replace(overrides, **enabled)
+    return kwargs
+
+
+def _build_sam_image_embeddings(kwargs: dict, entry: ActionEntry) -> dict:
+    if not isinstance(entry.params, dict):
+        return kwargs
+    declared = entry.params.get("embeddings") or {}
+    if declared.get("type") != SAM_IMAGE_EMBEDDINGS_TYPE:
+        return kwargs
+    embeddings = kwargs.get("embeddings")
+    if isinstance(embeddings, dict):
+        kwargs["embeddings"] = _sam_image_embeddings_from_wire(
+            embeddings, _single_image(kwargs.get("images"))
+        )
+    elif isinstance(embeddings, list) and any(isinstance(e, dict) for e in embeddings):
+        images = kwargs.get("images")
+        kwargs["embeddings"] = [
+            (
+                _sam_image_embeddings_from_wire(e, _image_at(images, index))
+                if isinstance(e, dict)
+                else e
+            )
+            for index, e in enumerate(embeddings)
+        ]
+    return kwargs
+
+
+def _single_image(images: Any) -> Any:
+    if isinstance(images, list):
+        return images[0] if images else None
+    return images
+
+
+def _image_at(images: Any, index: int) -> Any:
+    if isinstance(images, list):
+        return images[index] if index < len(images) else None
+    return images if index == 0 else None
+
+
+def _validate_sam_embeddings_wire(wire: Any) -> None:
+    import numpy as np
+
+    if not isinstance(wire, dict) or not {
+        "embeddings",
+        "image_hash",
+        "image_size_hw",
+    } <= set(wire):
+        raise ValueError(
+            "embeddings must be a dict with embeddings, image_hash and image_size_hw"
+        )
+    array = wire["embeddings"]
+    if not isinstance(array, np.ndarray) or array.dtype.kind not in "fiu":
+        raise ValueError("embeddings must be a numeric array")
+    if wire["image_hash"] is not None and not isinstance(wire["image_hash"], str):
+        raise ValueError("image_hash must be a string")
+    size = wire["image_size_hw"]
+    if size is not None and not (
+        isinstance(size, (list, tuple))
+        and len(size) == 2
+        and all(
+            isinstance(side, int) and not isinstance(side, bool) and side > 0
+            for side in size
+        )
+    ):
+        raise ValueError("image_size_hw must be two positive integers")
+
+
+def _sam_image_embeddings_from_wire(wire: dict, image: Any) -> Any:
+    import torch
+    from inference_models.models.sam.entities import SAMImageEmbeddings
+    from inference_models.models.sam.sam_torch import compute_image_hash
+
+    _validate_sam_embeddings_wire(wire)
+    image_hash = wire.get("image_hash")
+    if image_hash is None:
+        if image is None:
+            raise ValueError("image_id is required when image not provided")
+        image_hash = compute_image_hash(image=image)
+    image_size_hw = wire.get("image_size_hw")
+    if image_size_hw is None:
+        if image is None:
+            raise ValueError(
+                "orig_im_size is required when image not provided and embeddings "
+                "are injected by client."
+            )
+        image_size_hw = (image.shape[0], image.shape[1])
+
+    entity = SAMImageEmbeddings(
+        image_hash=image_hash,
+        image_size_hw=(image_size_hw[0], image_size_hw[1]),
+        embeddings=torch.from_numpy(wire["embeddings"]),
+    )
+    return entity
 
 
 def list_actions(model: Any) -> Dict[str, Dict[str, Any]]:

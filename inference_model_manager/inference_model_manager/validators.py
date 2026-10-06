@@ -6,6 +6,8 @@ Raises ValueError with clear, actionable message on bad input.
 
 from __future__ import annotations
 
+import math
+
 
 def validate_images_required(kwargs: dict) -> dict:
     if "images" not in kwargs:
@@ -38,6 +40,25 @@ def validate_images_and_prompt(kwargs: dict) -> dict:
 def validate_prompt_only(kwargs: dict) -> dict:
     if "prompt" not in kwargs:
         raise ValueError("'prompt' param required")
+    return kwargs
+
+
+def validate_frames_and_fps(kwargs: dict) -> dict:
+    frames = kwargs.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError(
+            "'frames' param required as a non-empty list for action recognition"
+        )
+    fps = kwargs.get("fps")
+    if fps is None:
+        raise ValueError("'fps' param required for action recognition")
+    if (
+        isinstance(fps, bool)
+        or not isinstance(fps, (int, float))
+        or not math.isfinite(fps)
+        or fps <= 0
+    ):
+        raise ValueError("'fps' param must be a finite number greater than 0")
     return kwargs
 
 

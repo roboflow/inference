@@ -4,11 +4,12 @@ import logging
 import os
 import subprocess
 import sys
+import traceback
 
 import pytest
 import requests
 import requests_mock as rm
-from inference_models.errors import ModelRetrievalError
+from inference_models.errors import ModelRetrievalError, RetryError
 
 
 def test_configuration_installed_on_import(monkeypatch):
@@ -21,7 +22,7 @@ def test_configuration_installed_on_import(monkeypatch):
 
 
 def test_offline_mode_forces_local_step_execution(monkeypatch):
-    monkeypatch.setenv("OFFLINE_MODE", "true")
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
     monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "REMOTE")
     import inference_server.workflows.host as host
 
@@ -33,8 +34,21 @@ def test_offline_mode_forces_local_step_execution(monkeypatch):
     )
 
 
+def test_workflows_offline_follows_model_layer_when_server_setting_is_online(
+    monkeypatch,
+):
+    monkeypatch.setattr("inference_server.configuration.OFFLINE_MODE", False)
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
+    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
+    import inference_server.workflows.host as host
+
+    assert host.build_workflows_configuration().platform.offline_mode is True
+
+
 def test_secure_gateway_with_hosted_remote_target_forces_local(monkeypatch):
-    monkeypatch.setenv("SECURE_GATEWAY", "https://gw.example")
+    monkeypatch.setattr(
+        "inference_server.configuration.SECURE_GATEWAY", "https://gw.example"
+    )
     monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
     monkeypatch.setenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
     import inference_server.workflows.host as host
@@ -46,7 +60,7 @@ def test_secure_gateway_with_hosted_remote_target_forces_local(monkeypatch):
 
 
 def test_offline_modal_execution_is_refused(monkeypatch):
-    monkeypatch.setenv("OFFLINE_MODE", "true")
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
     monkeypatch.setenv("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal")
     import inference_server.workflows.host as host
 
@@ -80,12 +94,103 @@ def test_platform_client_posts_with_headers_and_key():
         assert host.PLATFORM_CLIENT.post("x/y", api_key="k", payload={"a": 1}) == {
             "ok": 1
         }
-        assert m.last_request.headers["x-allow-chunked-response"] == "true"
+        assert m.last_request.headers["X-Allow-Chunked"] == "true"
 
 
-def test_platform_client_error_raises_legacy_http_error():
+_PLATFORM_KEY = "-".join(["secret", "key"])
+_TRANSPORT_KEY = "".join(["SEC", "RET"])
+
+
+def _formatted(error):
+    return "".join(traceback.format_exception(type(error), error, error.__traceback__))
+
+
+@pytest.mark.parametrize(
+    "status_code,error_class_name,message",
+    [
+        (
+            401,
+            "RoboflowAPINotAuthorizedError",
+            "Unauthorized access to roboflow API - check API key. Visit "
+            "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+            "to learn how to retrieve one.",
+        ),
+        (
+            402,
+            "PaymentRequiredError",
+            "Not enough credits to perform this request. Verify your workspace "
+            "billing page.",
+        ),
+        (
+            403,
+            "RoboflowAPIForbiddenError",
+            "Unauthorized access to roboflow API - check API key regarding "
+            "correctness and required scopes. Visit "
+            "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+            "to learn how to retrieve one.",
+        ),
+        (
+            404,
+            "RoboflowAPINotNotFoundError",
+            "Could not find requested Roboflow resource. Check that the provided "
+            "dataset and version are correct, and check that the provided Roboflow "
+            "API key has the correct permissions.",
+        ),
+        (
+            423,
+            "RoboflowAPIUsagePausedError",
+            "Roboflow API usage is paused. Please contact your workspace "
+            "administrator to re-enable api keys.",
+        ),
+        (
+            400,
+            "RoboflowAPIUnsuccessfulRequestError",
+            "Unsuccessful request to Roboflow API with response code: 400",
+        ),
+        (
+            429,
+            "RoboflowAPIUnsuccessfulRequestError",
+            "Unsuccessful request to Roboflow API with response code: 429",
+        ),
+        (
+            500,
+            "RoboflowAPIUnsuccessfulRequestError",
+            "Unsuccessful request to Roboflow API with response code: 500",
+        ),
+        (
+            507,
+            "RoboflowAPIUnsuccessfulRequestError",
+            "Unsuccessful request to Roboflow API with response code: 507",
+        ),
+    ],
+)
+def test_platform_client_post_error_without_block_handler_raises_platform_class(
+    status_code, error_class_name, message
+):
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import LegacyHTTPError
+
+    with rm.Mocker() as m:
+        m.post(
+            "https://api.roboflow.com/x/z?api_key=secret-key",
+            status_code=status_code,
+            json={"message": "denied for api_key=secret-key"},
+        )
+        with pytest.raises(Exception) as exc:
+            host.PLATFORM_CLIENT.post("x/z", api_key=_PLATFORM_KEY)
+    assert type(exc.value).__name__ == error_class_name
+    assert str(exc.value) == message
+    assert exc.value.__cause__ is None
+    assert _PLATFORM_KEY not in _formatted(exc.value)
+
+
+def test_platform_client_post_error_with_block_handler_reaches_the_handler():
+    import inference_server.workflows.host as host
+
+    class _BlockError(Exception):
+        pass
+
+    def _handle(error):
+        raise _BlockError(str(error))
 
     with rm.Mocker() as m:
         m.post(
@@ -93,24 +198,68 @@ def test_platform_client_error_raises_legacy_http_error():
             status_code=403,
             json={"message": "denied for api_key=secret-key"},
         )
-        with pytest.raises(LegacyHTTPError) as exc:
-            host.PLATFORM_CLIENT.post("x/z", api_key="secret-key")
-    assert exc.value.status_code == 403
-    assert "secret-key" not in exc.value.message
+        with pytest.raises(_BlockError) as exc:
+            host.PLATFORM_CLIENT.post(
+                "x/z", api_key="secret-key", http_errors_handlers={403: _handle}
+            )
+    assert str(exc.value) == "denied for api_key=se***ey"
 
 
-def test_platform_client_treats_non_2xx_as_error():
+def test_platform_client_block_handler_returning_leads_to_unsuccessful_request():
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import LegacyHTTPError
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIUnsuccessfulRequestError,
+    )
+
+    seen = []
+    with rm.Mocker() as m:
+        m.post(
+            "https://api.roboflow.com/x/c?api_key=k",
+            status_code=418,
+            json={"message": "teapot"},
+        )
+        with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc:
+            host.PLATFORM_CLIENT.post(
+                "x/c", api_key="k", http_errors_handlers={418: seen.append}
+            )
+    assert str(exc.value) == (
+        "Unsuccessful request to Roboflow API with response code: 418"
+    )
+    assert len(seen) == 1 and str(seen[0]) == "teapot"
+
+
+def test_platform_client_304_with_returning_block_handler_is_unsuccessful_request():
+    import inference_server.workflows.host as host
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIUnsuccessfulRequestError,
+    )
 
     seen = []
     with rm.Mocker() as m:
         m.post("https://api.roboflow.com/x/c?api_key=k", status_code=304)
-        with pytest.raises(LegacyHTTPError) as exc:
+        with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc:
             host.PLATFORM_CLIENT.post(
                 "x/c", api_key="k", http_errors_handlers={304: seen.append}
             )
-    assert exc.value.status_code == 304 and len(seen) == 1
+    assert str(exc.value) == (
+        "Unsuccessful request to Roboflow API with response code: 304"
+    )
+    assert len(seen) == 1
+
+
+def test_platform_client_304_without_block_handler_is_unsuccessful_request():
+    import inference_server.workflows.host as host
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIUnsuccessfulRequestError,
+    )
+
+    with rm.Mocker() as m:
+        m.post("https://api.roboflow.com/x/c?api_key=k", status_code=304)
+        with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc:
+            host.PLATFORM_CLIENT.post("x/c", api_key="k")
+    assert str(exc.value) == (
+        "Unsuccessful request to Roboflow API with response code: 304"
+    )
 
 
 def test_build_api_headers_merge_order(monkeypatch):
@@ -120,17 +269,16 @@ def test_build_api_headers_merge_order(monkeypatch):
     monkeypatch.setattr(
         configuration,
         "ROBOFLOW_API_EXTRA_HEADERS",
-        json.dumps({"x-allow-chunked-response": "from-extra", "x-extra": "1"}),
+        json.dumps({"X-Allow-Chunked": "from-extra", "x-extra": "1", "x-both": "e"}),
     )
     headers = host.PLATFORM_CLIENT.build_api_headers()
-    assert headers["x-allow-chunked-response"] == "from-extra"
+    assert headers["X-Allow-Chunked"] == "true"
     assert headers["x-extra"] == "1"
-    assert (
-        host.PLATFORM_CLIENT.build_api_headers(
-            explicit_headers={"x-allow-chunked-response": "from-explicit"}
-        )["x-allow-chunked-response"]
-        == "from-explicit"
+    headers = host.PLATFORM_CLIENT.build_api_headers(
+        explicit_headers={"x-both": "from-explicit", "X-Allow-Chunked": "explicit"}
     )
+    assert headers["x-both"] == "from-explicit"
+    assert headers["X-Allow-Chunked"] == "true"
 
 
 def test_get_workflow_specification_extracts_and_caches():
@@ -186,13 +334,75 @@ async def test_image_codec_fetches_url_from_plain_worker_thread(monkeypatch):
     async def _fetch(urls):
         return [buf.getvalue() for _ in urls], None
 
-    monkeypatch.setattr("inference_server.legacy.bridge.fetch_images_from_urls", _fetch)
+    monkeypatch.setattr("inference_server.legacy.bridge.fetch_url_images", _fetch)
     host.GUARDED_IMAGE_CODEC.bind_loop(LoopBridge(asyncio.get_running_loop()))
     with ThreadPoolExecutor(max_workers=1) as pool:
         image = await asyncio.get_running_loop().run_in_executor(
             pool, lambda: host.GUARDED_IMAGE_CODEC.fetch_url("https://a/1.jpg")
         )
     assert image.shape == (3, 4, 3)
+
+
+@pytest.mark.parametrize(
+    "url,switch,fetched",
+    [
+        ("http://example.com/1.jpg", None, []),
+        ("https://192.168.1.5/1.jpg", None, []),
+        ("https://myhost/1.jpg", None, []),
+        (
+            "http://example.com/1.jpg",
+            "ALLOW_NON_HTTPS_URL_INPUT",
+            [["http://example.com/1.jpg"]],
+        ),
+        (
+            "https://192.168.1.5/1.jpg",
+            "ALLOW_URL_INPUT_WITHOUT_FQDN",
+            [["https://192.168.1.5/1.jpg"]],
+        ),
+        ("https://example.com/1.jpg", None, [["https://example.com/1.jpg"]]),
+    ],
+)
+@pytest.mark.asyncio
+async def test_image_codec_applies_the_url_rules_of_the_legacy_routes(
+    monkeypatch, url, switch, fetched
+):
+    import asyncio
+    import io
+    from concurrent.futures import ThreadPoolExecutor
+
+    from PIL import Image
+    from roboflow_workflows.errors import WorkflowImageLoadError
+
+    import inference_server.workflows.host as host
+    from inference_server.legacy.bridge import LoopBridge
+
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 3)).save(buf, format="JPEG")
+    seen = []
+
+    async def _fetch(urls, destination_policy=None):
+        seen.append(urls)
+        return [buf.getvalue() for _ in urls], None
+
+    monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
+    for name in ("ALLOW_NON_HTTPS_URL_INPUT", "ALLOW_URL_INPUT_WITHOUT_FQDN"):
+        monkeypatch.setattr(f"inference_server.configuration.{name}", name == switch)
+    host.GUARDED_IMAGE_CODEC.bind_loop(LoopBridge(asyncio.get_running_loop()))
+
+    def _load():
+        try:
+            return host.GUARDED_IMAGE_CODEC.fetch_url(url).shape
+        except WorkflowImageLoadError as error:
+            return error.public_message
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        outcome = await asyncio.get_running_loop().run_in_executor(pool, _load)
+
+    assert seen == fetched
+    if fetched:
+        assert outcome == (3, 4, 3)
+    else:
+        assert outcome == "Could not fetch image from the given URL."
 
 
 def test_bind_image_codec_installs_the_object_from_init_parameters():
@@ -214,15 +424,74 @@ def test_bind_image_codec_installs_the_object_from_init_parameters():
     reset_image_codec()
 
 
-def test_workspace_resolver_returns_none_on_failure():
+@pytest.fixture
+def clean_workspace_cache():
+    import inference_server.workflows.host as host
+
+    host.clear_workspace_cache()
+    yield
+    host.clear_workspace_cache()
+
+
+@pytest.mark.parametrize(
+    "status_code,error_class_name",
+    [
+        (401, "RoboflowAPINotAuthorizedError"),
+        (402, "PaymentRequiredError"),
+        (403, "RoboflowAPIForbiddenError"),
+        (404, "RoboflowAPINotNotFoundError"),
+        (423, "RoboflowAPIUsagePausedError"),
+        (500, "RoboflowAPIUnsuccessfulRequestError"),
+    ],
+)
+def test_workspace_resolver_raises_when_the_platform_refuses(
+    clean_workspace_cache, status_code, error_class_name
+):
     import inference_server.workflows.host as host
 
     with rm.Mocker() as m:
-        m.get("https://api.roboflow.com/?api_key=bad&nocache=true", status_code=401)
-        assert host.WORKSPACE_RESOLVER.resolve_workspace("bad") is None
+        m.get(
+            "https://api.roboflow.com/?api_key=bad&nocache=true",
+            status_code=status_code,
+        )
+        with pytest.raises(Exception) as exc:
+            host.WORKSPACE_RESOLVER.resolve_workspace("bad")
+    assert type(exc.value).__name__ == error_class_name
+    assert exc.value.__cause__ is None
 
 
-def test_workspace_resolver_returns_workspace():
+@pytest.mark.parametrize("payload", [{}, {"workspace": None}, {"workspace": "a b"}])
+def test_workspace_resolver_returns_none_for_a_workspace_load_error(
+    clean_workspace_cache, payload
+):
+    import inference_server.workflows.host as host
+
+    with rm.Mocker() as m:
+        m.get("https://api.roboflow.com/?api_key=odd&nocache=true", json=payload)
+        assert host.WORKSPACE_RESOLVER.resolve_workspace("odd") is None
+
+
+@pytest.mark.parametrize("api_key", [None, ""])
+def test_workspace_resolver_returns_none_without_api_key(api_key):
+    import inference_server.workflows.host as host
+
+    with rm.Mocker() as m:
+        assert host.WORKSPACE_RESOLVER.resolve_workspace(api_key) is None
+        assert m.call_count == 0
+
+
+def test_workspace_resolver_returns_none_offline_without_calling_the_platform(
+    clean_workspace_cache, monkeypatch
+):
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", True)
+    with rm.Mocker() as m:
+        assert host.WORKSPACE_RESOLVER.resolve_workspace("good") is None
+        assert m.call_count == 0
+
+
+def test_workspace_resolver_returns_workspace(clean_workspace_cache):
     import inference_server.workflows.host as host
 
     with rm.Mocker() as m:
@@ -255,26 +524,16 @@ def test_step_error_handler_maps_unauthorized():
     assert exc.value.status_code == 401
 
 
-def test_step_error_handler_maps_permission_error_to_401():
-    from roboflow_workflows.errors import ClientCausedStepExecutionError
-
+def test_step_error_handler_leaves_builtin_permission_error_unmapped():
     import inference_server.workflows.host as host
 
-    with pytest.raises(ClientCausedStepExecutionError) as exc:
-        host.step_error_handler("step", PermissionError("nope"))
-    assert exc.value.status_code == 401
-    assert "Roboflow API key" in exc.value.public_message
+    assert host.step_error_handler("step", PermissionError("nope")) is None
 
 
-def test_step_error_handler_maps_lookup_error_to_404():
-    from roboflow_workflows.errors import ClientCausedStepExecutionError
-
+def test_step_error_handler_leaves_builtin_lookup_error_unmapped():
     import inference_server.workflows.host as host
 
-    with pytest.raises(ClientCausedStepExecutionError) as exc:
-        host.step_error_handler("step", LookupError("ds/1"))
-    assert exc.value.status_code == 404
-    assert "not existing model" in exc.value.public_message
+    assert host.step_error_handler("step", LookupError("ds/1")) is None
 
 
 def test_step_error_handler_maps_legacy_http_error_and_sdk_error():
@@ -297,6 +556,17 @@ def test_step_error_handler_maps_legacy_http_error_and_sdk_error():
         )
     assert exc.value.status_code == 507
     assert host.step_error_handler("step", ValueError("unmapped")) is None
+
+
+def test_step_error_handler_leaves_a_model_input_error_unconverted():
+    from inference_models.errors import ModelInputError
+
+    import inference_server.workflows.host as host
+
+    assert (
+        host.step_error_handler("step", ModelInputError("bad shape", help_url="u"))
+        is None
+    )
 
 
 def test_step_error_handler_maps_feature_deprecated():
@@ -334,6 +604,7 @@ def test_configuration_is_installed_before_environment_is_imported():
         env={
             **os.environ,
             "OFFLINE_MODE": "true",
+            "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START": "true",
             "WORKFLOWS_STEP_EXECUTION_MODE": "remote",
         },
         capture_output=True,
@@ -363,8 +634,11 @@ def _retrieval_error(status_code):
 
 
 def test_platform_client_post_sanitizes_transport_errors(monkeypatch):
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIConnectionError,
+    )
+
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import LegacyHTTPError
 
     monkeypatch.setattr(
         requests,
@@ -373,23 +647,26 @@ def test_platform_client_post_sanitizes_transport_errors(monkeypatch):
             requests.exceptions.ConnectionError("http://x/?api_key=SECRET")
         ),
     )
-    with pytest.raises(LegacyHTTPError) as exc:
-        host.PLATFORM_CLIENT.post("x/y", api_key="SECRET")
-    assert exc.value.status_code == 503 and "SECRET" not in exc.value.message
+    with pytest.raises(RoboflowAPIConnectionError) as exc:
+        host.PLATFORM_CLIENT.post("x/y", api_key=_TRANSPORT_KEY)
+    assert str(exc.value) == "Could not connect to Roboflow API."
+    assert _TRANSPORT_KEY not in _formatted(exc.value)
 
 
-def test_platform_client_post_maps_timeout_to_504(monkeypatch):
+def test_platform_client_post_maps_timeout_to_the_platform_timeout_error(monkeypatch):
+    from roboflow_workflows.prototypes.platform_errors import RoboflowAPITimeoutError
+
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import LegacyHTTPError
 
     monkeypatch.setattr(
         requests,
         "post",
         _raise_request_error(requests.exceptions.Timeout("http://x/?api_key=SECRET")),
     )
-    with pytest.raises(LegacyHTTPError) as exc:
-        host.PLATFORM_CLIENT.post("x/y", api_key="SECRET")
-    assert exc.value.status_code == 504 and "SECRET" not in exc.value.message
+    with pytest.raises(RoboflowAPITimeoutError) as exc:
+        host.PLATFORM_CLIENT.post("x/y", api_key=_TRANSPORT_KEY)
+    assert str(exc.value) == "Timeout when attempting to connect to Roboflow API."
+    assert _TRANSPORT_KEY not in _formatted(exc.value)
 
 
 def test_fetch_workflow_response_sanitizes_transport_errors(monkeypatch):
@@ -413,7 +690,13 @@ def test_fetch_workflow_response_sanitizes_transport_errors(monkeypatch):
     assert exc.value.status_code == 503 and "SECRET" not in exc.value.message
 
 
-def test_workspace_resolver_does_not_log_the_api_key(monkeypatch, caplog):
+def test_workspace_resolver_connection_failure_does_not_carry_the_api_key(
+    clean_workspace_cache, monkeypatch, caplog
+):
+    from roboflow_workflows.prototypes.platform_errors import (
+        RoboflowAPIConnectionError,
+    )
+
     import inference_server.workflows.host as host
 
     monkeypatch.setattr(
@@ -423,39 +706,39 @@ def test_workspace_resolver_does_not_log_the_api_key(monkeypatch, caplog):
             requests.exceptions.ConnectionError("http://x/?api_key=SECRET")
         ),
     )
-    with caplog.at_level(logging.WARNING, logger="inference_server.workflows.host"):
-        assert host.WORKSPACE_RESOLVER.resolve_workspace("SECRET") is None
-    assert caplog.records and "SECRET" not in caplog.text
+    with caplog.at_level(logging.DEBUG, logger="inference_server.workflows.host"):
+        with pytest.raises(RoboflowAPIConnectionError) as exc:
+            host.WORKSPACE_RESOLVER.resolve_workspace(_TRANSPORT_KEY)
+    assert str(exc.value) == "Could not connect to Roboflow API."
+    assert _TRANSPORT_KEY not in _formatted(exc.value)
+    assert "SECRET" not in caplog.text
 
 
-def test_step_error_handler_unwraps_registry_model_access_error():
+def test_step_error_handler_maps_registry_model_access_error():
     from roboflow_workflows.errors import ClientCausedStepExecutionError
 
     import inference_server.workflows.host as host
 
-    try:
-        raise RuntimeError("denied") from _retrieval_error(403)
-    except RuntimeError as error:
-        wrapped = error
+    error = _retrieval_error(403)
     with pytest.raises(ClientCausedStepExecutionError) as exc:
-        host.step_error_handler("step", wrapped)
+        host.step_error_handler("step", error)
     assert exc.value.status_code == 403 and exc.value.block_id == "step"
+    assert exc.value.inner_error is error
 
 
-def test_step_error_handler_unwraps_registry_os_error():
-    from roboflow_workflows.errors import ClientCausedStepExecutionError
-
+@pytest.mark.parametrize(
+    "cause",
+    [_retrieval_error(403), RetryError("down"), OSError("down"), TimeoutError("slow")],
+)
+def test_step_error_handler_leaves_a_wrapped_registry_failure_unmapped(cause):
     import inference_server.workflows.host as host
-    from inference_server.legacy.errors import REGISTRY_UNREACHABLE_MESSAGE
 
     try:
-        raise RuntimeError("unreachable") from OSError("down")
+        raise RuntimeError("unreachable") from cause
     except RuntimeError as error:
         wrapped = error
-    with pytest.raises(ClientCausedStepExecutionError) as exc:
-        host.step_error_handler("step", wrapped)
-    assert exc.value.status_code == 503
-    assert exc.value.public_message == REGISTRY_UNREACHABLE_MESSAGE
+
+    assert host.step_error_handler("step", wrapped) is None
 
 
 def test_step_error_handler_leaves_plain_runtime_error_unmapped():
@@ -520,3 +803,65 @@ def test_local_workflow_response_missing_file(monkeypatch, tmp_path):
     monkeypatch.setattr(configuration, "MODEL_CACHE_DIR", str(tmp_path))
     with pytest.raises(FileNotFoundError):
         host._local_workflow_response("wf")
+
+
+@pytest.mark.parametrize(
+    "endpoint", ["apiproxy/gemini", "/api-proxy/x", "apiproxy", "api-proxy/"]
+)
+def test_platform_client_post_sends_proxy_endpoints_to_the_proxy_base_url(
+    monkeypatch, endpoint
+):
+    from inference_server import configuration
+
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr(configuration, "API_BASE_URL", "https://api.example.com")
+    monkeypatch.setattr(
+        configuration, "API_PROXY_BASE_URL", "https://proxy.example.com/"
+    )
+    with rm.Mocker() as m:
+        m.post(rm.ANY, json={})
+        host.PLATFORM_CLIENT.post(endpoint, api_key="k")
+        assert m.last_request.url.startswith(
+            f"https://proxy.example.com/{endpoint.strip('/')}?"
+        )
+
+
+@pytest.mark.parametrize(
+    "endpoint", ["dataset/abc/upload", "apiproxyfoo", "x/apiproxy/y", "x/api-proxy"]
+)
+def test_platform_client_post_keeps_other_endpoints_on_the_api_base_url(
+    monkeypatch, endpoint
+):
+    from inference_server import configuration
+
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr(configuration, "API_BASE_URL", "https://api.example.com")
+    monkeypatch.setattr(
+        configuration, "API_PROXY_BASE_URL", "https://proxy.example.com"
+    )
+    with rm.Mocker() as m:
+        m.post(rm.ANY, json={})
+        host.PLATFORM_CLIENT.post(endpoint, api_key="k")
+        assert m.last_request.url.startswith(f"https://api.example.com/{endpoint}?")
+
+
+def test_api_proxy_base_url_defaults_to_the_api_base_url():
+    env = {
+        key: value for key, value in os.environ.items() if key != "API_PROXY_BASE_URL"
+    }
+    env["API_BASE_URL"] = "https://api.example.com"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from inference_server import configuration;"
+            "print(configuration.API_PROXY_BASE_URL)",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "https://api.example.com"

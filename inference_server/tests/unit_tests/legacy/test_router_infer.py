@@ -3,9 +3,42 @@ import io
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    EnvironmentConfigurationError,
+    FileHashSumMissmatch,
+    ForbiddenModelAccessError,
+    InvalidParameterError,
+    MissingDependencyError,
+    ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageRestrictedError,
+    ModelRetrievalError,
+    NoModelPackagesAvailableError,
+    PaymentRequiredModelAccessError,
+    RetryError,
+    UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
+)
 from PIL import Image
 
-from tests.unit_tests.legacy.conftest import FakeGateway
+from inference_server.gateway import ModelManagerGateway, ReloadAfterEvictionError
+from inference_server.legacy import router as router_module
+from inference_server.legacy.translation import repack_prediction
+from tests.unit_tests.legacy.conftest import EvictedModelManager, FakeGateway
+from tests.unit_tests.legacy.test_errors import (
+    FORBIDDEN,
+    HELP_SUFFIX,
+    HELP_URL,
+    INTERNAL_ERROR,
+    MISCONFIGURATION,
+    NOT_FOUND,
+    PAYMENT_REQUIRED,
+    RESTRICTED,
+    UNAUTHORIZED,
+    USAGE_PAUSED,
+)
 
 
 def _jpeg_b64(w=8, h=6):
@@ -89,8 +122,8 @@ def test_infer_response_carries_resolved_model_and_registry_tracks_alias(
     )
     assert r.json()["resolved_model"] == {"model_id": "coco/3"}
     entry = c.get("/model/registry").json()["models"][0]
-    assert entry["model_id"] == "coco/3"
-    assert entry["request_aliases"] == ["yolov8n-640"]
+    assert entry["model_id"] == "yolov8n-640"
+    assert entry["request_aliases"] == ["coco/3"]
     assert entry["request_paths"] == ["/infer/object_detection"]
 
 
@@ -135,6 +168,27 @@ def test_oversized_content_length_is_413(legacy_client, fake_stat, monkeypatch):
     }
 
 
+def test_infer_classification_forwards_include_anomaly_map(legacy_client, fake_stat):
+    fake_stat["ds/1"] = ("classification", "infer")
+    gw = FakeGateway(
+        predictions={
+            ("ds/1", "infer"): SimpleNamespace(confidence=np.array([0.1, 0.9]))
+        },
+        model_info={"ds/1": {"class_names": ["normal", "anomalous"]}},
+    )
+    r = legacy_client(gw).post(
+        "/infer/classification",
+        json={
+            "model_id": "ds/1",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+            "include_anomaly_map": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    infer_call = next(c for c in gw.calls if c[0] == "infer")
+    assert infer_call[3]["include_anomaly_map"] is True
+
+
 def test_wrong_task_type_is_400(legacy_client, fake_stat):
     fake_stat["ds/1"] = ("classification", "infer")
     r = legacy_client(FakeGateway()).post(
@@ -169,3 +223,540 @@ def test_unsupported_legacy_param_is_501(legacy_client, fake_stat):
         },
     )
     assert r.status_code == 501
+
+
+def test_infer_forwards_disable_preproc_flags_to_the_model(legacy_client, fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _det()},
+        model_info={"ds/1": {"class_names": ["cat"]}},
+    )
+    r = legacy_client(gw).post(
+        "/infer/object_detection",
+        json={
+            "model_id": "ds/1",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+            "disable_preproc_contrast": True,
+            "disable_preproc_grayscale": True,
+            "disable_preproc_static_crop": True,
+            "max_candidates": 100,
+            "fix_batch_size": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    params = next(c for c in gw.calls if c[0] == "infer")[3]
+    assert params["disable_preproc_contrast"] is True
+    assert params["disable_preproc_grayscale"] is True
+    assert params["disable_preproc_static_crop"] is True
+    assert "max_candidates" not in params and "fix_batch_size" not in params
+
+
+def _semantic_prediction():
+    return SimpleNamespace(
+        segmentation_map=np.array([[0, 1], [1, 0]]),
+        confidence=np.array([[1.0, 0.5], [0.5, 1.0]]),
+    )
+
+
+def _post_semantic(legacy_client, fake_stat, mask_format, monkeypatch):
+    fake_stat["ds/1"] = ("semantic-segmentation", "infer")
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _semantic_prediction()},
+        model_info={"ds/1": {"class_names": ["bg", "fg"], "actions": {"infer": {}}}},
+    )
+    received = []
+
+    def recording_repack(*args, **kwargs):
+        received.append(args[-1].response_mask_format)
+        return repack_prediction(*args, **kwargs)
+
+    monkeypatch.setattr(router_module, "repack_prediction", recording_repack)
+    response = legacy_client(gw).post(
+        "/infer/semantic_segmentation",
+        json={
+            "model_id": "ds/1",
+            "api_key": "k",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+            "response_mask_format": mask_format,
+        },
+    )
+    return response, received
+
+
+def test_semantic_segmentation_numpy_mask_format_is_served_as_base64_png(
+    legacy_client, fake_stat, monkeypatch
+):
+    png_response, png_received = _post_semantic(
+        legacy_client, fake_stat, "base64_png", monkeypatch
+    )
+    numpy_response, numpy_received = _post_semantic(
+        legacy_client, fake_stat, "numpy", monkeypatch
+    )
+
+    assert png_response.status_code == 200
+    assert numpy_response.status_code == 200
+    assert numpy_response.json()["predictions"] == png_response.json()["predictions"]
+    assert png_received == ["base64_png"]
+    assert numpy_received == ["base64_png"]
+
+
+def test_semantic_segmentation_unknown_mask_format_is_422(
+    legacy_client, fake_stat, monkeypatch
+):
+    response, received = _post_semantic(legacy_client, fake_stat, "rle", monkeypatch)
+
+    assert response.status_code == 422
+    assert received == []
+
+
+class FailingLoadManager:
+    def __init__(self, error):
+        self.error = error
+        self.load_calls = 0
+        self.executor = None
+
+    def __contains__(self, key):
+        return False
+
+    def load(self, key, api_key, **kwargs):
+        self.load_calls += 1
+        raise self.error
+
+    def unload(self, key):
+        raise KeyError(key)
+
+    def stats(self):
+        return {"models": []}
+
+    def shutdown(self):
+        pass
+
+
+LOAD_FAILURE_MATRIX = [
+    pytest.param(
+        UnauthorizedModelAccessError("denied"),
+        401,
+        {"message": UNAUTHORIZED},
+        id="unauthorized",
+    ),
+    pytest.param(
+        PaymentRequiredModelAccessError("no credits"),
+        402,
+        {"message": PAYMENT_REQUIRED},
+        id="payment-required",
+    ),
+    pytest.param(
+        ForbiddenModelAccessError("denied"),
+        403,
+        {"message": FORBIDDEN},
+        id="forbidden",
+    ),
+    pytest.param(
+        UsagePausedModelAccessError("paused"),
+        423,
+        {"message": USAGE_PAUSED},
+        id="usage-paused",
+    ),
+    pytest.param(
+        ModelNotFoundError("missing"), 404, {"message": NOT_FOUND}, id="not-found"
+    ),
+    pytest.param(
+        ModelRetrievalError("empty package list", help_url=HELP_URL),
+        500,
+        {
+            "message": f"Could not retrieve model empty package list{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="retrieval",
+    ),
+    pytest.param(
+        RetryError("Connectivity error"), 500, INTERNAL_ERROR, id="registry-retry"
+    ),
+    pytest.param(
+        ModelPackageAlternativesExhaustedError(
+            "none loaded",
+            help_url=HELP_URL,
+            alternatives_errors=[RetryError("Connectivity error for URL")],
+        ),
+        500,
+        {
+            "message": f"Model loading failed: none loaded{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="alternatives-exhausted",
+    ),
+    pytest.param(
+        ModelPackageAlternativesExhaustedError(
+            "none loaded",
+            help_url=HELP_URL,
+            alternatives_errors=[
+                RuntimeError("no cuda"),
+                ModelPackageRestrictedError("too big"),
+            ],
+        ),
+        507,
+        {"message": RESTRICTED, "help_url": HELP_URL},
+        id="alternatives-exhausted-restricted",
+    ),
+    pytest.param(
+        ModelPackageRestrictedError("too big", help_url=HELP_URL),
+        507,
+        {"message": RESTRICTED},
+        id="restricted",
+    ),
+    pytest.param(
+        NoModelPackagesAvailableError("no package", help_url=HELP_URL),
+        500,
+        {
+            "message": f"Could not negotiate model package - no package{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="negotiation",
+    ),
+    pytest.param(
+        MissingDependencyError("no pycuda"),
+        500,
+        MISCONFIGURATION,
+        id="missing-dependency",
+    ),
+    pytest.param(
+        EnvironmentConfigurationError("no provider"),
+        500,
+        MISCONFIGURATION,
+        id="environment",
+    ),
+    pytest.param(
+        InvalidParameterError("bad device"),
+        500,
+        MISCONFIGURATION,
+        id="invalid-parameter",
+    ),
+    pytest.param(
+        CorruptedModelPackageError("bad file", help_url=HELP_URL),
+        500,
+        {
+            "message": f"Model loading failed: bad file{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="corrupted-package",
+    ),
+    pytest.param(
+        FileHashSumMissmatch("md5 differs", help_url=HELP_URL),
+        500,
+        {
+            "message": f"Issue with model package file: md5 differs{HELP_SUFFIX}",
+            "help_url": HELP_URL,
+        },
+        id="file-hash",
+    ),
+    pytest.param(ValueError("unsafe id"), 500, INTERNAL_ERROR, id="value-error"),
+    pytest.param(TimeoutError("lock"), 500, INTERNAL_ERROR, id="timeout-in-load"),
+]
+
+
+def _infer_request(client):
+    response = client.post(
+        "/infer/object_detection",
+        json={
+            "model_id": "ds/1",
+            "api_key": "k",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+        },
+    )
+    return response
+
+
+@pytest.mark.parametrize("error,status,body", LOAD_FAILURE_MATRIX)
+def test_load_failure_on_an_inference_route_answers_like_legacy(
+    legacy_client, fake_stat, error, status, body
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    manager = FailingLoadManager(error)
+
+    response = _infer_request(legacy_client(ModelManagerGateway(manager)))
+
+    assert response.status_code == status
+    assert response.json() == body
+    assert response.headers["content-type"] == "application/json"
+    assert "retry-after" not in response.headers
+    assert manager.load_calls == 1
+
+
+@pytest.mark.parametrize("failure", [("error", 5), ("error", 3), ("error",)])
+def test_load_failure_without_a_description_is_a_broken_package(
+    legacy_client, fake_stat, failure
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    gw.ensure_results = [failure]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 500
+    assert response.json() == {"message": "Model package is broken."}
+    assert "retry-after" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        {"error_type": "SomethingElseError", "message": "boom"},
+        {"error_type": "Optional", "message": "boom"},
+        {"error_type": "PermissionError", "message": "denied"},
+        {"message": "boom"},
+        {},
+    ],
+)
+def test_load_failure_of_an_unknown_kind_is_an_internal_error(
+    legacy_client, fake_stat, detail
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    gw.ensure_results = [("error", 5, detail)]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 500
+    assert response.json() == INTERNAL_ERROR
+    assert "retry-after" not in response.headers
+
+
+def test_model_reported_as_not_loaded_answers_not_ready_with_retry_after(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    gw.ensure_results = [("error", 6)]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "message": "Model is temporarily not ready - retry request."
+    }
+    assert response.headers["retry-after"] == "1"
+
+
+def test_load_deadline_answers_not_ready_with_retry_after(
+    legacy_client, fake_stat, monkeypatch
+):
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_LOAD_POLL_INTERVAL_S", 0)
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_LOAD_TIMEOUT_S", 0)
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    gw.ensure_results = [("load_timeout", 10)]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "message": "Model is temporarily not ready - retry request."
+    }
+    assert response.headers["retry-after"] == "1"
+
+
+@pytest.mark.parametrize(
+    "error,message",
+    [
+        (
+            ModelPackageAlternativesExhaustedError(
+                "none loaded: Connectivity error for URL: "
+                "https://host/x?api_key=SECRET&y=1 and "
+                "https://storage.example/a/b.onnx?X-Goog-Signature=SECRET",
+                alternatives_errors=[RetryError("https://host/x?api_key=SECRET")],
+            ),
+            "Model loading failed: none loaded: Connectivity error for URL: "
+            "https://host/*** and https://storage.example/***",
+        ),
+        (
+            ModelRetrievalError("failed for https://host/x?api_key=SECRET&y=1"),
+            "Could not retrieve model failed for https://host/***",
+        ),
+        (
+            FileHashSumMissmatch(
+                "bad md5 for url: https://storage.example/a/b.onnx"
+                "?X-Goog-Signature=SECRET&X-Goog-Expires=60"
+            ),
+            "Issue with model package file: bad md5 for url: "
+            "https://storage.example/***",
+        ),
+        (
+            ModelRetrievalError("request with api_key=SECRET failed"),
+            "Could not retrieve model request with api_key=*** failed",
+        ),
+        (
+            ModelRetrievalError("denied\nAuthorization: Bearer SECRET"),
+            "Could not retrieve model denied\nAuthorization: ***",
+        ),
+    ],
+)
+def test_load_failure_answer_hides_urls_and_secret_values(
+    legacy_client, fake_stat, error, message
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    client = legacy_client(ModelManagerGateway(FailingLoadManager(error)))
+
+    response = _infer_request(client)
+
+    assert response.status_code == 500
+    assert response.json() == {"message": message, "help_url": None}
+    assert "SECRET" not in response.text
+
+
+def test_offline_load_failure_with_a_description_answers_by_its_cause(
+    legacy_client, fake_stat, monkeypatch
+):
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
+    error = ModelRetrievalError(
+        "Cannot fetch Roboflow model metadata - OFFLINE_MODE is enabled. All "
+        "models must be pre-cached locally.",
+        help_url=HELP_URL,
+    )
+    manager = FailingLoadManager(error)
+
+    response = _infer_request(legacy_client(ModelManagerGateway(manager)))
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "message": "Could not retrieve model Cannot fetch Roboflow model metadata "
+        f"- OFFLINE_MODE is enabled. All models must be pre-cached locally.{HELP_SUFFIX}",
+        "help_url": HELP_URL,
+    }
+    assert fake_stat == {}
+
+
+def test_offline_load_failure_without_a_description_is_404(
+    legacy_client, fake_stat, monkeypatch
+):
+    monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
+    gw = FakeGateway()
+    gw.ensure_results = [("error", 5)]
+
+    response = _infer_request(legacy_client(gw))
+
+    assert response.status_code == 404
+    assert response.json() == {"message": "Model ds/1 not available offline"}
+
+
+NOT_READY = {"message": "Model is temporarily not ready - retry request."}
+
+
+@pytest.mark.parametrize(
+    "reload_error,status,body",
+    [
+        (UnauthorizedModelAccessError("denied"), 401, {"message": UNAUTHORIZED}),
+        (
+            PaymentRequiredModelAccessError("no credits"),
+            402,
+            {"message": PAYMENT_REQUIRED},
+        ),
+        (ModelNotFoundError("missing"), 404, {"message": NOT_FOUND}),
+        (ModelPackageRestrictedError("too big"), 507, {"message": RESTRICTED}),
+        (ValueError("unsafe id"), 500, INTERNAL_ERROR),
+    ],
+    ids=lambda value: type(value).__name__ if isinstance(value, Exception) else None,
+)
+def test_failed_reload_after_eviction_answers_like_the_load_path(
+    legacy_client, fake_stat, reload_error, status, body
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    manager = EvictedModelManager(reload_error=reload_error)
+
+    response = _infer_request(legacy_client(ModelManagerGateway(manager)))
+
+    assert response.status_code == status
+    assert response.json() == body
+    assert "retry-after" not in response.headers
+    assert manager.load_calls == 2 and manager.process_calls == 1
+
+
+def _gateway_failing_inference(error, **attributes):
+    gateway = FakeGateway(model_info={"ds/1": {"class_names": ["cat"]}})
+
+    async def _raise(**kwargs):
+        raise error
+
+    gateway.infer = _raise
+    for name, value in attributes.items():
+        setattr(gateway, name, value)
+
+    return gateway
+
+
+@pytest.mark.parametrize("attributes", [{}, {"last_load_failure": lambda key: None}])
+def test_failed_reload_after_eviction_without_a_recorded_cause_answers_not_ready(
+    legacy_client, fake_stat, attributes
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _gateway_failing_inference(
+        ReloadAfterEvictionError("reload after eviction failed"), **attributes
+    )
+
+    response = _infer_request(legacy_client(gateway))
+
+    assert response.status_code == 503
+    assert response.json() == NOT_READY
+    assert response.headers["retry-after"] == "1"
+
+
+def test_failed_reload_after_eviction_whose_recorded_cause_is_gone_answers_not_ready(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    manager = EvictedModelManager(reload_error=UnauthorizedModelAccessError("denied"))
+    gateway = ModelManagerGateway(manager)
+    gateway._remember_load_failure = lambda key, failure: None
+
+    response = _infer_request(legacy_client(gateway))
+
+    assert manager.load_calls == 2
+    assert response.status_code == 503
+    assert response.json() == NOT_READY
+    assert response.headers["retry-after"] == "1"
+
+
+def test_runtime_error_with_the_reload_message_is_not_taken_for_a_failed_reload(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _gateway_failing_inference(
+        RuntimeError("reload after eviction failed"),
+        last_load_failure=lambda key: ("error", 5, {"error_type": "x"}),
+    )
+
+    response = _infer_request(legacy_client(gateway))
+
+    assert response.status_code == 500
+    assert response.json() == INTERNAL_ERROR
+    assert "retry-after" not in response.headers
+
+
+def _post_infer_with_key(client, api_key):
+    return client.post(
+        "/infer/object_detection",
+        json={
+            "model_id": "ds/1",
+            "api_key": api_key,
+            "image": {"type": "base64", "value": _jpeg_b64()},
+        },
+    )
+
+
+def test_loaded_model_is_refused_to_a_key_without_access_and_served_to_the_owner(
+    legacy_client, key_gated_stat
+):
+    key_gated_stat.denied_keys = {"key-b"}
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _det()},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
+    )
+    client = legacy_client(gw)
+
+    assert _post_infer_with_key(client, "key-a").status_code == 200
+    refused = _post_infer_with_key(client, "key-b")
+    assert refused.status_code == 401
+    assert refused.json() == {"message": UNAUTHORIZED}
+    assert len([c for c in gw.calls if c[0] == "infer"]) == 1
+    assert _post_infer_with_key(client, "key-a").status_code == 200
+    assert len([c for c in gw.calls if c[0] == "infer"]) == 2
+    assert ("ds/1", "key-b") in key_gated_stat.calls

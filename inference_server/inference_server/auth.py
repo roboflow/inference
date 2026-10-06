@@ -18,11 +18,12 @@ import hashlib
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import aiohttp
+from yarl import URL
 
-from inference_server import configuration
+from inference_server import configuration, platform_http
 from inference_server.errors import AuthBackendUnavailable
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ _CACHE_TTL_S = configuration.AUTH_CACHE_TTL_S
 _CACHE_FAIL_TTL_S = configuration.AUTH_CACHE_FAIL_TTL_S
 _MAX_CACHE_SIZE = configuration.AUTH_CACHE_MAX_SIZE
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
+_WRAPPED_KEY_PREFIX = "gateway:"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,8 +92,37 @@ def _enforce_cache_limit() -> None:
             del _cache[k]
 
 
-async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
+async def close_session() -> None:
+    global _session
+    session, _session = _session, None
+    if session is not None and not session.closed:
+        await session.close()
+
+
+def _lookup_request(
+    api_key: str, through_secure_gateway: bool
+) -> tuple[Any, dict[str, Any], bool]:
+    base_url = f"{API_BASE_URL}/"
+    params = {"api_key": api_key, "nocache": "true"}
+    direct_request = (base_url, {"params": params}, False)
+    if not through_secure_gateway:
+        return direct_request
+
+    direct_url = platform_http._add_params_to_url(base_url, list(params.items()))
+    wrapped_url = platform_http.wrap_url(direct_url)
+    if wrapped_url == direct_url:
+        return direct_request
+
+    return URL(wrapped_url, encoded=True), {}, True
+
+
+async def validate_api_key(
+    api_key: str, *, through_secure_gateway: bool = False
+) -> tuple[bool, Optional[str]]:
     """Validate api_key against Roboflow API.
+
+    ``through_secure_gateway`` sends the lookup through ``SECURE_GATEWAY`` when
+    one is configured; the default is the direct call.
 
     Returns:
         (True, workspace_id) on success.
@@ -106,26 +137,33 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
     Results are cached in-memory with TTL. Concurrent misses on the same key
     share a single upstream request (single-flight).
     """
+    url, request_kwargs, wrapped = _lookup_request(api_key, through_secure_gateway)
     key_hash = _key_hash(api_key)
+    if wrapped:
+        key_hash = f"{_WRAPPED_KEY_PREFIX}{key_hash}"
     entry = _cache.get(key_hash)
     if entry is not None and entry.expires_at > time.monotonic():
         return entry.valid, entry.workspace_id
 
     task = _inflight.get(key_hash)
     if task is None:
-        task = asyncio.ensure_future(_validate_uncached(api_key, key_hash))
+        task = asyncio.ensure_future(
+            _validate_uncached(url, request_kwargs, key_hash, through_secure_gateway)
+        )
         _inflight[key_hash] = task
         task.add_done_callback(lambda _: _inflight.pop(key_hash, None))
     return await asyncio.shield(task)
 
 
-async def _validate_uncached(api_key: str, key_hash: str) -> tuple[bool, Optional[str]]:
+async def _validate_uncached(
+    url: Any,
+    request_kwargs: dict[str, Any],
+    key_hash: str,
+    through_secure_gateway: bool = False,
+) -> tuple[bool, Optional[str]]:
     try:
         session = _get_session()
-        async with session.get(
-            f"{API_BASE_URL}/",
-            params={"api_key": api_key, "nocache": "true"},
-        ) as resp:
+        async with session.get(url, **request_kwargs) as resp:
             if resp.status >= 500 or resp.status == 429:
                 raise AuthBackendUnavailable(
                     f"auth backend returned status {resp.status}"
@@ -142,6 +180,11 @@ async def _validate_uncached(api_key: str, key_hash: str) -> tuple[bool, Optiona
     except AuthBackendUnavailable:
         raise
     except Exception as exc:
+        if through_secure_gateway:
+            logger.warning(
+                "Auth validation failed (network error): %s", type(exc).__name__
+            )
+            raise AuthBackendUnavailable(type(exc).__name__) from None
         logger.warning("Auth validation failed (network error)", exc_info=True)
         raise AuthBackendUnavailable(str(exc)) from exc
 

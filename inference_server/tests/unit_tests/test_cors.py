@@ -167,3 +167,36 @@ def test_body_limit_applies_when_only_builder_is_enabled(tmp_path, monkeypatch):
             assert response.json() == {"message": "Request payload too large."}
     finally:
         _restore_app(monkeypatch, module)
+
+
+def test_body_limit_applies_when_only_streams_are_enabled(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        "inference_server.streams.configuration.install_streams_configuration",
+        lambda: None,
+    )
+    module = _reloaded_app(
+        monkeypatch,
+        tmp_path,
+        ENABLE_STREAM_API=True,
+        ENABLE_BUILDER=False,
+        LEGACY_ROUTES_ENABLED=False,
+        DISABLE_WORKFLOW_ENDPOINTS=True,
+        MAX_BODY_BYTES=16,
+    )
+    try:
+        stream_client = AsyncMock()
+        module.app.state.stream_manager_client = stream_client
+        with TestClient(module.app, raise_server_exceptions=False) as client:
+            module.app.state.stream_manager_client = stream_client
+            response = client.post(
+                "/inference_pipelines/initialise",
+                content=b"{" + b" " * 64 + b"}",
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 413
+            assert response.json() == {"message": "Request payload too large."}
+            stream_client.initialise_pipeline.assert_not_called()
+    finally:
+        _restore_app(monkeypatch, module)

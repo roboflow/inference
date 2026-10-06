@@ -1,7 +1,15 @@
 """Unit tests for registry_defaults — class-vs-MRO skip logic on _register_from_config."""
 
+import pytest
+
 from inference_model_manager import registry_defaults
 from inference_model_manager.registry import ModelRegistry
+
+PREPROC_FLAGS = {
+    "disable_preproc_contrast",
+    "disable_preproc_grayscale",
+    "disable_preproc_static_crop",
+}
 
 
 def test_subclass_override_registers_after_base(monkeypatch):
@@ -292,6 +300,61 @@ def test_cosmos3_edge_reasoner_action_config():
     assert prompt_action[7] == {}
 
 
+def test_action_recognition_action_config():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
+
+    cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["ActionRecognitionModel"]}
+    infer_action = cfgs["infer"]
+
+    assert infer_action[1] == "infer"
+    assert infer_action[2] is True
+    assert infer_action[3] == {
+        "frames": {"type": "list", "required": True},
+        "class_names": {"type": "list[str]", "required": False},
+        "fps": {"type": "float", "required": True},
+    }
+    assert "images" not in infer_action[3]
+    assert infer_action[4] == "validate_frames_and_fps"
+    assert infer_action[5] == "serialize_passthrough"
+    assert infer_action[6] == "roboflow-action-recognition-v1"
+    assert infer_action[7] == {}
+
+
+@pytest.mark.parametrize(
+    "kwargs,message",
+    [
+        ({"fps": 4.0}, "'frames'"),
+        ({"frames": [], "fps": 4.0}, "'frames'"),
+        ({"frames": "not-a-list", "fps": 4.0}, "'frames'"),
+        ({"frames": [object()]}, "'fps'"),
+        ({"frames": [object()], "fps": None}, "'fps'"),
+        ({"frames": [object()], "fps": 0}, "'fps'"),
+        ({"frames": [object()], "fps": 0.0}, "'fps'"),
+        ({"frames": [object()], "fps": -1}, "'fps'"),
+        ({"frames": [object()], "fps": float("nan")}, "'fps'"),
+        ({"frames": [object()], "fps": float("inf")}, "'fps'"),
+        ({"frames": [object()], "fps": "12"}, "'fps'"),
+        ({"frames": [object()], "fps": True}, "'fps'"),
+    ],
+)
+def test_validate_frames_and_fps_rejects_missing_inputs(kwargs, message):
+    from inference_model_manager.validators import validate_frames_and_fps
+
+    with pytest.raises(ValueError, match=message):
+        validate_frames_and_fps(kwargs)
+
+
+def test_validate_frames_and_fps_returns_kwargs_unchanged():
+    from inference_model_manager.validators import validate_frames_and_fps
+
+    kwargs = {"frames": [object(), object()], "class_names": None, "fps": 4.0}
+
+    assert validate_frames_and_fps(kwargs) is kwargs
+
+
 def test_model_owned_defaults_not_injected():
     from inference_model_manager.registry_defaults import _K_ISEG, _K_KP, _K_OD
 
@@ -315,14 +378,14 @@ def test_per_family_detector_contracts():
         "YOLO26ForObjectDetectionTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence"}, key
+        assert set(p) == {"images", "confidence", *PREPROC_FLAGS}, key
 
     for key in (
         "YOLOv10ForObjectDetectionOnnx",
         "YOLOv10ForObjectDetectionTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence", "max_detections"}, key
+        assert set(p) == {"images", "confidence", "max_detections", *PREPROC_FLAGS}, key
 
     p = params_of("RoboflowInstantHF")
     assert set(p) == {"images", "confidence", "iou_threshold", "max_detections"}
@@ -361,6 +424,7 @@ def test_per_family_detector_contracts():
             "max_detections",
             "class_agnostic_nms",
             "mask_format",
+            *PREPROC_FLAGS,
         }, key
 
     for key in (
@@ -369,7 +433,13 @@ def test_per_family_detector_contracts():
         "RFDetrForInstanceSegmentationTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence", "mask_format", "max_detections"}, key
+        assert set(p) == {
+            "images",
+            "confidence",
+            "mask_format",
+            "max_detections",
+            *PREPROC_FLAGS,
+        }, key
 
     for key in (
         "YOLO26ForInstanceSegmentationOnnx",
@@ -377,7 +447,7 @@ def test_per_family_detector_contracts():
         "YOLO26ForInstanceSegmentationTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence", "mask_format"}, key
+        assert set(p) == {"images", "confidence", "mask_format", *PREPROC_FLAGS}, key
 
     for key in (
         "RFDetrForKeyPointsONNX",
@@ -386,11 +456,16 @@ def test_per_family_detector_contracts():
         "YOLO26ForKeyPointsDetectionTRT",
     ):
         p = params_of(key)
-        assert set(p) == {"images", "confidence", "key_points_threshold"}, key
+        assert set(p) == {
+            "images",
+            "confidence",
+            "key_points_threshold",
+            *PREPROC_FLAGS,
+        }, key
 
     for key in ("SemanticSegmentationModel", "MultiLabelClassificationModel"):
         p = params_of(key)
-        assert set(p) == {"images", "confidence"}, key
+        assert set(p) == {"images", "confidence", *PREPROC_FLAGS}, key
         assert p["confidence"] == {"type": "float", "required": False}, key
 
 
@@ -457,6 +532,20 @@ def test_vlm_generation_params():
     for action in ("recognize_text", "recognize_table", "recognize_formula"):
         p = glm[action][3]
         assert "max_new_tokens" in p and "do_sample" in p and "skip_special_tokens" in p
+
+
+@pytest.mark.parametrize(
+    "proxy_name, hf_name",
+    [
+        ("Qwen3VLVLLMProxy", "Qwen3VLHF"),
+        ("Qwen35VLLMProxy", "Qwen35HF"),
+        ("Qwen38VLLMProxy", "Qwen35HF"),
+    ],
+)
+def test_vllm_proxy_action_configs_equal_the_hf_rows(proxy_name, hf_name):
+    from inference_model_manager.registry_defaults import _ACTION_CONFIGS
+
+    assert _ACTION_CONFIGS[proxy_name] == _ACTION_CONFIGS[hf_name]
 
 
 def test_vlm_generation_contracts_match_model_signatures():
@@ -554,3 +643,77 @@ def test_owlv2_few_shot_registers_alongside_zero_shot_default(monkeypatch):
     assert few_shot is not None
     assert few_shot.default is False
     assert few_shot.method == "infer_with_reference_examples"
+
+
+def test_classification_declares_include_anomaly_map():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
+
+    params = _unpack_config(_ACTION_CONFIGS["ClassificationModel"][0])[3]
+
+    assert set(params) == {"images", "include_anomaly_map", *PREPROC_FLAGS}
+    assert params["include_anomaly_map"] == {"type": "bool", "required": False}
+
+
+def test_roboflow_trained_families_declare_pre_processing_flags():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        PRE_PROCESSING_OVERRIDE_FIELDS,
+        _unpack_config,
+    )
+
+    assert PRE_PROCESSING_OVERRIDE_FIELDS == {
+        "disable_preproc_contrast": "disable_contrast_enhancement",
+        "disable_preproc_grayscale": "disable_grayscale",
+        "disable_preproc_static_crop": "disable_static_crop",
+    }
+    declaring = (
+        "ObjectDetectionModel",
+        "RFDetrForObjectDetectionTorch",
+        "RFDetrForObjectDetectionONNX",
+        "RFDetrForObjectDetectionTRT",
+        "YOLO26ForObjectDetectionOnnx",
+        "YOLO26ForObjectDetectionTorchScript",
+        "YOLO26ForObjectDetectionTRT",
+        "YOLOv10ForObjectDetectionOnnx",
+        "YOLOv10ForObjectDetectionTRT",
+        "ClassificationModel",
+        "MultiLabelClassificationModel",
+        "InstanceSegmentationModel",
+        "YOLOv5ForInstanceSegmentationOnnx",
+        "YOLOv5ForInstanceSegmentationTRT",
+        "YOLOv7ForInstanceSegmentationOnnx",
+        "YOLOv7ForInstanceSegmentationTRT",
+        "YOLOACTForInstanceSegmentationOnnx",
+        "YOLOACTForInstanceSegmentationTRT",
+        "RFDetrForInstanceSegmentationTorch",
+        "RFDetrForInstanceSegmentationOnnx",
+        "RFDetrForInstanceSegmentationTRT",
+        "YOLO26ForInstanceSegmentationOnnx",
+        "YOLO26ForInstanceSegmentationTorchScript",
+        "YOLO26ForInstanceSegmentationTRT",
+        "SemanticSegmentationModel",
+        "KeyPointsDetectionModel",
+        "RFDetrForKeyPointsONNX",
+        "YOLO26ForKeyPointsDetectionOnnx",
+        "YOLO26ForKeyPointsDetectionTorchScript",
+        "YOLO26ForKeyPointsDetectionTRT",
+    )
+    for key in declaring:
+        params = _unpack_config(_ACTION_CONFIGS[key][0])[3]
+        for flag in PRE_PROCESSING_OVERRIDE_FIELDS:
+            assert params[flag] == {"type": "bool", "required": False}, (key, flag)
+
+    not_declaring = (
+        "OpenVocabularyObjectDetectionModel",
+        "OWLv2HF",
+        "PPOCRv6DetectionOnnx",
+        "RoboflowInstantHF",
+        "GroundingDinoForObjectDetectionTorch",
+        "DepthEstimationModel",
+    )
+    for key in not_declaring:
+        params = _unpack_config(_ACTION_CONFIGS[key][0])[3]
+        assert not set(params) & set(PRE_PROCESSING_OVERRIDE_FIELDS), key

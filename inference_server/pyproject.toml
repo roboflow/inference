@@ -1,11 +1,11 @@
 [project]
 name = "inference-server"
-version = "0.4.0"
+version = "0.4.1"
 description = "FastAPI inference server — direct client for inference-model-manager"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-  "inference-model-manager==0.5.0",
+  "inference-model-manager==0.5.2",
   "inference-sdk>=1.6.0",
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
@@ -31,7 +31,15 @@ onnx-cu118 = ["inference-model-manager[onnx-cu118]"]
 onnx-cu12 = ["inference-model-manager[onnx-cu12]"]
 onnx-jp6-cu126 = ["inference-model-manager[onnx-jp6-cu126]"]
 trt10-runtime = ["inference-model-manager[trt10-runtime]"]
-workflows = ["roboflow-workflows>=0.2.3rc1"]
+workflows = ["roboflow-workflows>=0.2.4rc3"]
+otel = [
+  "opentelemetry-api~=1.41.1",
+  "opentelemetry-sdk~=1.41.1",
+  "opentelemetry-exporter-otlp-proto-grpc~=1.41.1",
+  "opentelemetry-exporter-otlp-proto-http~=1.41.1",
+  "opentelemetry-instrumentation-fastapi",
+  "opentelemetry-instrumentation-requests",
+]
 test = [
   "pytest>=8.0.0",
   "pytest-asyncio>=1.0.0",

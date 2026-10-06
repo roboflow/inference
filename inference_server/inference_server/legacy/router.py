@@ -1,8 +1,10 @@
+import asyncio
 import base64
 import logging
 import time
 from typing import Any, List, Literal, Optional, Tuple, Union
 
+import numpy as np
 from fastapi import (
     APIRouter,
     Depends,
@@ -14,20 +16,38 @@ from fastapi import (
     Response,
 )
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
-from inference_server import configuration
+from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
+from inference_server import configuration, platform_http, server_identity, telemetry
 from inference_server.dependencies import get_model_manager
-from inference_server.legacy.bridge import LegacyModelBridge, Route, resolved_model_for
+from inference_server.legacy.action_recognition import (
+    ACTION_RECOGNITION_TASK,
+    classify_video,
+    ensure_action_recognition_route,
+)
+from inference_server.legacy.active_learning_registration import register_inference
+from inference_server.legacy.bridge import (
+    LegacyModelBridge,
+    Route,
+    request_alias_for,
+    requested_model_id_for,
+    resolved_model_for,
+)
 from inference_server.legacy.common import (
     as_image_list,
+    image_load_error,
     load_request_images,
     orjson_response,
     resolve_api_key,
 )
 from inference_server.legacy.cuda_health import check_cuda_health
 from inference_server.legacy.entities import (
+    ActionRecognitionInferenceRequest,
+    ActionRecognitionInferenceResponse,
     AddModelRequest,
+    AnomalyDetectionResponse,
     ClassificationInferenceRequest,
     ClassificationInferenceResponse,
     ClearModelRequest,
@@ -43,6 +63,7 @@ from inference_server.legacy.entities import (
     EasyOCRInferenceRequest,
     GroundingDINOInferenceRequest,
     InferenceRequestImage,
+    InferenceRequestVideo,
     InstanceSegmentationInferenceRequest,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceRequest,
@@ -55,6 +76,7 @@ from inference_server.legacy.entities import (
     ObjectDetectionInferenceRequest,
     ObjectDetectionInferenceResponse,
     OCRInferenceResponse,
+    OwlV2InferenceRequest,
     PerceptionEncoderCompareRequest,
     PerceptionEncoderCompareResponse,
     PerceptionEncoderEmbeddingResponse,
@@ -75,12 +97,20 @@ from inference_server.legacy.entities import (
     SemanticSegmentationInferenceRequest,
     SemanticSegmentationInferenceResponse,
     ServerVersionInfo,
+    StubResponse,
     TrOCRInferenceRequest,
     YOLOWorldInferenceRequest,
 )
-from inference_server.legacy.errors import LegacyHTTPError, with_legacy_errors
+from inference_server.legacy.errors import (
+    LegacyHTTPError,
+    MissingServiceSecretError,
+    redact_text,
+    with_legacy_errors,
+)
+from inference_server.legacy.telemetry_recording import record_telemetry
 from inference_server.legacy.translation import (
     build_embedding_calls,
+    build_few_shot_params,
     build_interactive_segmentation_params,
     build_open_vocabulary_params,
     build_task_params,
@@ -89,6 +119,8 @@ from inference_server.legacy.translation import (
     encode_normalized_depth_to_png16,
     ensure_ocr_request_supported,
     ensure_request_supported,
+    few_shot_class_names,
+    is_metric_depth_model_class,
     repack_depth_estimation,
     repack_embedding_response,
     repack_interactive_segmentation_response,
@@ -101,11 +133,19 @@ from inference_server.legacy.translation import (
     requested_open_vocabulary_classes,
     resolve_request_action,
 )
-from inference_server.legacy.visualization import render_visualization
+from inference_server.legacy.visualization import (
+    encode_image_to_jpeg_bytes,
+    render_visualization,
+)
+from inference_server import pingback
+from inference_server.hosted.common import service_secret_is_valid
+from inference_server.prometheus import measure_inference
+from inference_server.usage.request_hook import report_request_usage
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["legacy"])
+infer_router = APIRouter(tags=["legacy"])
 control_plane_router = APIRouter(tags=["legacy"])
 registry_router = APIRouter(tags=["legacy"])
 catch_all_router = APIRouter(tags=["legacy"])
@@ -138,7 +178,6 @@ _CORE_MODEL_ROUTER_GROUPS = (
     (("CORE_MODEL_GROUNDINGDINO_ENABLED",), grounding_dino_router),
     (("CORE_MODEL_OWLV2_ENABLED",), owlv2_router),
     (("CORE_MODEL_GAZE_ENABLED",), gaze_router),
-    (("LMM_ENABLED", "MOONDREAM2_ENABLED"), lmm_router),
     (("DEPTH_ESTIMATION_ENABLED",), depth_router),
     (("CORE_MODEL_SAM_ENABLED",), sam_router),
     (("CORE_MODEL_SAM2_ENABLED",), sam2_router),
@@ -148,11 +187,11 @@ _CORE_MODEL_ROUTER_GROUPS = (
 )
 
 _VISUALIZATION_FORMATS = ("image", "image_and_json")
-_CONTENT_TYPE_MISSING_MESSAGE = "Request must include a Content-Type header"
+_CONTENT_TYPE_MISSING_MESSAGE = "Content-Type header not provided with request."
+_CONTENT_TYPE_INVALID_MESSAGE = "Invalid Content-Type header provided with request."
 _MULTIPART_PART_MISSING_MESSAGE = (
     "Expected image to be send in part named 'file' of multipart/form-data request"
 )
-_EMPTY_BODY_MESSAGE = "Image not found in request body."
 _YOLO_WORLD_UNSUPPORTED_MESSAGE = (
     "YOLO-World is not supported by this inference server configuration."
 )
@@ -161,9 +200,8 @@ _TASK_UNAVAILABLE_MESSAGE = (
     "{route} is not available on inference_server: no model class for this task is "
     "registered with the model manager"
 )
-SAM3_REMOTE_UNSUPPORTED_MESSAGE = (
-    "SAM3_EXEC_MODE=remote proxying is not available on inference_server"
-)
+SAM3_CONCEPT_REMOTE_FAILURE_MESSAGE = "SAM3 remote request failed."
+SAM3_VISUAL_REMOTE_FAILURE_MESSAGE = "SAM3 visual_segment remote request failed."
 SAM3_EMBEDDING_REMOTE_UNSUPPORTED_MESSAGE = (
     "SAM3 embedding is not supported in remote execution mode."
 )
@@ -194,14 +232,22 @@ def get_bridge(request: Request) -> LegacyModelBridge:
 
 
 def include_legacy_routers(app: FastAPI) -> None:
+    hosted = configuration.LAMBDA or configuration.GCP_SERVERLESS
     app.include_router(router)
+    if not hosted:
+        app.include_router(infer_router)
+    if not configuration.LAMBDA and (
+        configuration.LMM_ENABLED or configuration.MOONDREAM2_ENABLED
+    ):
+        app.include_router(lmm_router)
     if configuration.CORE_MODELS_ENABLED:
         for flag_names, group_router in _CORE_MODEL_ROUTER_GROUPS:
             if any(getattr(configuration, name) for name in flag_names):
                 app.include_router(group_router)
     if configuration.LEGACY_CONTROL_PLANE_ROUTES_ENABLED:
-        app.include_router(control_plane_router)
-        if configuration.GET_MODEL_REGISTRY_ENABLED:
+        if not hosted:
+            app.include_router(control_plane_router)
+        if not configuration.LAMBDA and configuration.GET_MODEL_REGISTRY_ENABLED:
             app.include_router(registry_router)
 
 
@@ -217,10 +263,12 @@ def include_legacy_catch_all(app: FastAPI) -> None:
     description="Get the server name and version number",
 )
 async def info() -> ServerVersionInfo:
+    server_id = await asyncio.to_thread(server_identity.get_inference_server_id)
+
     return ServerVersionInfo(
         name="Roboflow Inference Server",
         version=configuration.SERVER_VERSION,
-        uuid=configuration.INFERENCE_SERVER_ID or configuration.SERVER_ID,
+        uuid=server_id,
     )
 
 
@@ -236,29 +284,67 @@ async def healthz() -> Response:
 
 
 @router.get("/readiness", status_code=200)
-async def readiness(model_manager: Any = Depends(get_model_manager)) -> Response:
+async def readiness(
+    request: Request, model_manager: Any = Depends(get_model_manager)
+) -> Response:
     try:
-        stats = await model_manager.stats()
+        await model_manager.stats()
     except Exception:
         return JSONResponse(content={"status": "not ready"}, status_code=503)
-    models = stats.get("models", {})
-    for model_id in configuration.preload_model_ids():
-        if models.get(model_id, {}).get("state") != "loaded":
-            return JSONResponse(content={"status": "not ready"}, status_code=503)
+    if not request.app.state.preload_finished:
+        return JSONResponse(content={"status": "not ready"}, status_code=503)
     return JSONResponse(content={"status": "ready"})
 
 
 async def _models_descriptions(bridge: LegacyModelBridge) -> ModelsDescriptions:
-    return ModelsDescriptions.from_models_descriptions(
-        [
-            ModelDescriptionEntity(
-                model_id=route.registry_id,
-                task_type=route.task_type,
-                request_aliases=sorted(route.request_aliases - {route.registry_id}),
-                request_paths=sorted(route.request_paths),
+    routes = await bridge.describe()
+    descriptions = []
+    for route in routes:
+        if not route.requested_at:
+            descriptions.append(
+                _model_description(
+                    route,
+                    model_id=route.registry_id,
+                    request_aliases=[],
+                    request_paths=[],
+                )
             )
-            for route in await bridge.describe()
-        ]
+            continue
+        for model_id in sorted(route.requested_at):
+            descriptions.append(
+                _model_description(
+                    route,
+                    model_id=model_id,
+                    request_aliases=sorted(
+                        route.request_aliases_by_id.get(model_id, ())
+                    ),
+                    request_paths=sorted(route.request_paths_by_id.get(model_id, {})),
+                )
+            )
+
+    models_descriptions = ModelsDescriptions.from_models_descriptions(
+        descriptions,
+        model_vram_bytes=[route.vram_bytes for route in routes],
+    )
+
+    return models_descriptions
+
+
+def _model_description(
+    route: Route,
+    *,
+    model_id: str,
+    request_aliases: list[str],
+    request_paths: list[str],
+) -> ModelDescriptionEntity:
+    return ModelDescriptionEntity(
+        model_id=model_id,
+        task_type=route.task_type,
+        input_height=route.input_height,
+        input_width=route.input_width,
+        vram_bytes=route.vram_bytes,
+        request_aliases=request_aliases,
+        request_paths=request_paths,
     )
 
 
@@ -288,8 +374,14 @@ async def model_add(
     api_key = resolve_api_key(
         request, request.query_params.get("api_key"), add_model_request.api_key
     )
-    route = await bridge.load_pinned(add_model_request.model_id, api_key)
-    bridge.record_request(route, add_model_request.model_id, request.scope["path"])
+    row_key = resolve_roboflow_model_alias(add_model_request.model_id)
+    route = await bridge.load(
+        add_model_request.model_id,
+        api_key,
+        row_key=row_key,
+        path=request.scope["path"],
+    )
+    bridge.record_request(route, row_key, request.scope["path"])
     return await _models_descriptions(bridge)
 
 
@@ -304,7 +396,7 @@ async def model_remove(
     clear_model_request: ClearModelRequest,
     bridge: LegacyModelBridge = Depends(get_bridge),
 ):
-    await bridge.unload(clear_model_request.model_id)
+    await bridge.remove(clear_model_request.model_id)
     return await _models_descriptions(bridge)
 
 
@@ -347,7 +439,9 @@ async def model_add_legacy(
 ) -> Response:
     model_id = f"{dataset_id}/{version_id}"
     resolved_key = resolve_api_key(request, api_key, None)
-    route = await bridge.load_pinned(model_id, resolved_key)
+    route = await bridge.load(
+        model_id, resolved_key, row_key=model_id, path=request.scope["path"]
+    )
     bridge.record_request(route, model_id, request.scope["path"])
     return JSONResponse(
         {"status": 200, "message": "inference session started from local memory."}
@@ -360,19 +454,63 @@ async def _run_cv_inference(
     bridge: LegacyModelBridge,
     *,
     expected_task_types: Tuple[str, ...],
+    active_learning_eligible: bool = False,
 ) -> Response:
     api_key = resolve_api_key(
         request, request.query_params.get("api_key"), inference_request.api_key
     )
     inference_request.api_key = api_key
-    route = await bridge.resolve(inference_request.model_id, api_key)
-    bridge.record_request(route, inference_request.model_id, request.scope["path"])
+    alias = request_alias_for(inference_request.model_id)
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=inference_request.model_id,
+        path=request.scope["path"],
+        alias=alias,
+    )
+    bridge.record_request(
+        route,
+        inference_request.model_id,
+        request.scope["path"],
+        alias=alias,
+    )
+    if route.is_stub:
+        return orjson_response(_stub_response(inference_request, route))
+
     if route.task_type not in expected_task_types:
         raise LegacyHTTPError(
             400,
             f"Model {inference_request.model_id!r} is a {route.task_type} model.",
         )
-    return await _infer_and_repack(inference_request, bridge, route, api_key)
+    return await _infer_and_repack(
+        inference_request,
+        bridge,
+        route,
+        api_key,
+        active_learning_eligible=active_learning_eligible,
+    )
+
+
+def _model_monitoring_enabled(inference_request) -> bool:
+    return not getattr(inference_request, "disable_model_monitoring", False)
+
+
+def _stub_response(inference_request, route: Route) -> StubResponse:
+    started = time.perf_counter()
+    visualization = None
+    if getattr(inference_request, "visualize_predictions", False):
+        visualization = encode_image_to_jpeg_bytes(
+            np.zeros((128, 128, 3), dtype=np.uint8)
+        )
+    response = StubResponse(
+        is_stub=True,
+        model_id=resolve_roboflow_model_alias(route.model_id),
+        task_type=route.task_type,
+        visualization=visualization,
+    )
+    response.time = time.perf_counter() - started
+
+    return response
 
 
 async def _infer_and_repack(
@@ -381,6 +519,7 @@ async def _infer_and_repack(
     route: Route,
     api_key: Optional[str],
     image_format: Optional[str] = None,
+    active_learning_eligible: bool = False,
 ) -> Response:
     ensure_request_supported(inference_request.model_id, inference_request, route)
     visualize = image_format in _VISUALIZATION_FORMATS or bool(
@@ -390,7 +529,14 @@ async def _infer_and_repack(
     payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
     params = build_task_params(route.task_type, route.action, inference_request, route)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, route.action, payloads, params)
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        route.action,
+        payloads,
+        params,
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
     responses = []
     for prediction, payload in zip(predictions, payloads):
@@ -410,24 +556,37 @@ async def _infer_and_repack(
                 route, inference_request, response, payload
             )
         responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
     if image_format == "image":
-        return Response(
+        http_response = Response(
             content=responses[0].visualization if responses else None,
             media_type="image/jpeg",
         )
-    return orjson_response(responses if is_batch else responses[0])
+    else:
+        http_response = orjson_response(responses if is_batch else responses[0])
+    await register_inference(
+        inference_request,
+        task_type=route.task_type,
+        payloads=payloads,
+        responses=responses,
+        eligible=active_learning_eligible,
+    )
+    return http_response
 
 
-@router.post(
+@infer_router.post(
     "/infer/object_detection",
     response_model=Union[
-        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
+        ObjectDetectionInferenceResponse,
+        List[ObjectDetectionInferenceResponse],
+        StubResponse,
     ],
     summary="Object detection infer",
     description="Run inference with the specified object detection model",
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_object_detection(
     request: Request,
     inference_request: ObjectDetectionInferenceRequest,
@@ -438,20 +597,23 @@ async def infer_object_detection(
         inference_request,
         bridge,
         expected_task_types=("object-detection",),
+        active_learning_eligible=True,
     )
 
 
-@router.post(
+@infer_router.post(
     "/infer/instance_segmentation",
     response_model=Union[
         InstanceSegmentationInferenceResponse,
         List[InstanceSegmentationInferenceResponse],
+        StubResponse,
     ],
     summary="Instance segmentation infer",
     description="Run inference with the specified instance segmentation model",
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_instance_segmentation(
     request: Request,
     inference_request: InstanceSegmentationInferenceRequest,
@@ -462,46 +624,55 @@ async def infer_instance_segmentation(
         inference_request,
         bridge,
         expected_task_types=("instance-segmentation",),
+        active_learning_eligible=True,
     )
 
 
-@router.post(
+@infer_router.post(
     "/infer/semantic_segmentation",
     response_model=Union[
         SemanticSegmentationInferenceResponse,
         List[SemanticSegmentationInferenceResponse],
+        StubResponse,
     ],
     summary="Semantic segmentation infer",
     description="Run inference with the specified semantic segmentation model",
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_semantic_segmentation(
     request: Request,
     inference_request: SemanticSegmentationInferenceRequest,
     bridge: LegacyModelBridge = Depends(get_bridge),
 ) -> Response:
+    inference_request.response_mask_format = "base64_png"
     return await _run_cv_inference(
         request,
         inference_request,
         bridge,
         expected_task_types=("semantic-segmentation",),
+        active_learning_eligible=True,
     )
 
 
-@router.post(
+@infer_router.post(
     "/infer/classification",
     response_model=Union[
         ClassificationInferenceResponse,
         List[ClassificationInferenceResponse],
         MultiLabelClassificationInferenceResponse,
         List[MultiLabelClassificationInferenceResponse],
+        AnomalyDetectionResponse,
+        List[AnomalyDetectionResponse],
+        StubResponse,
     ],
     summary="Classification infer",
     description="Run inference with the specified classification model",
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_classification(
     request: Request,
     inference_request: ClassificationInferenceRequest,
@@ -512,19 +683,23 @@ async def infer_classification(
         inference_request,
         bridge,
         expected_task_types=("classification", "multi-label-classification"),
+        active_learning_eligible=True,
     )
 
 
-@router.post(
+@infer_router.post(
     "/infer/keypoints_detection",
     response_model=Union[
-        KeypointsDetectionInferenceResponse, List[KeypointsDetectionInferenceResponse]
+        KeypointsDetectionInferenceResponse,
+        List[KeypointsDetectionInferenceResponse],
+        StubResponse,
     ],
     summary="Keypoints detection infer",
     description="Run inference with the specified keypoints detection model",
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_keypoints(
     request: Request,
     inference_request: KeypointsDetectionInferenceRequest,
@@ -538,57 +713,144 @@ async def infer_keypoints(
     )
 
 
-@action_recognition_router.post("/infer/action_recognition")
+@action_recognition_router.post(
+    "/infer/action_recognition",
+    response_model=Union[ActionRecognitionInferenceResponse, StubResponse],
+    summary="Action Recognition",
+    description=(
+        "Classify the actions in a video clip. The model states how the clip is "
+        "cut and how its frames are sampled, so a caller sends the clip and "
+        "nothing else. Frame indices in the response count from the first frame "
+        "of the clip, and windows_classified reports how many calls the clip was "
+        "cut into. A fine-tuned model reports its own classes. A zero-shot model "
+        "names the events it finds in its own words. Frames are chosen by the "
+        "clip's nominal frame rate, so a variable-frame-rate source is sampled at "
+        "different instants than the model trained on. Send the clip as a URL. "
+        "Base64 grows it by a third and holds the whole request in memory, so it "
+        "suits short clips only."
+    ),
+    response_model_exclude_none=True,
+)
 @with_legacy_errors
-async def infer_action_recognition(request: Request) -> Response:
-    raise LegacyHTTPError(
-        501,
-        _TASK_UNAVAILABLE_MESSAGE.format(route="/infer/action_recognition"),
+@report_request_usage
+async def infer_action_recognition(
+    request: Request,
+    inference_request: ActionRecognitionInferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Response:
+    api_key = resolve_api_key(
+        request, request.query_params.get("api_key"), inference_request.api_key
     )
+    inference_request.api_key = api_key
+    alias = request_alias_for(inference_request.model_id)
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=inference_request.model_id,
+        path=request.scope["path"],
+        alias=alias,
+    )
+    bridge.record_request(
+        route,
+        inference_request.model_id,
+        request.scope["path"],
+        alias=alias,
+    )
+    if route.is_stub:
+        return orjson_response(_stub_response(inference_request, route))
+
+    ensure_action_recognition_route(inference_request.model_id, route)
+    http_response = await _classify_and_repack(inference_request, bridge, route)
+
+    return http_response
+
+
+async def _classify_and_repack(
+    inference_request: ActionRecognitionInferenceRequest,
+    bridge: LegacyModelBridge,
+    route: Route,
+) -> Response:
+    started = time.perf_counter()
+    response = await classify_video(
+        route,
+        inference_request.api_key,
+        bridge,
+        video_type=inference_request.video.type,
+        video_value=inference_request.video.value,
+        class_filter=inference_request.class_filter or None,
+    )
+    response.time = time.perf_counter() - started
+    response.inference_id = inference_request.id
+    response.resolved_model = resolved_model_for(route)
+    pingback.record_inference(route.registry_id, inference_request, response)
+    http_response = orjson_response(response)
+
+    return http_response
+
+
+def _parse_legacy_class_filter(class_filter: Optional[str]) -> Optional[List[str]]:
+    if not class_filter:
+        return None
+    classes = [entry.strip() for entry in class_filter.split(",") if entry.strip()]
+    return classes or None
 
 
 @sam3_3d_router.post("/sam3_3d/infer")
 @with_legacy_errors
+@report_request_usage
 async def infer_sam3_3d(request: Request) -> Response:
     raise LegacyHTTPError(501, _TASK_UNAVAILABLE_MESSAGE.format(route="/sam3_3d/infer"))
 
 
-@owlv2_router.post("/owlv2/infer")
+@owlv2_router.post(
+    "/owlv2/infer",
+    response_model=Union[
+        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
+    ],
+    summary="Owlv2 image prompting",
+    description="Run the google owlv2 model to few-shot object detect",
+    response_model_exclude_none=True,
+)
 @with_legacy_errors
-async def infer_owlv2(request: Request) -> Response:
-    raise LegacyHTTPError(
-        501,
-        "/owlv2/infer few-shot detection with training_data is not available "
-        "on inference_server",
-    )
+@report_request_usage
+async def infer_owlv2(
+    request: Request,
+    inference_request: OwlV2InferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_few_shot_detection(request, inference_request, bridge, "owlv2")
 
 
 async def _catch_all_image(
     request: Request, image: Optional[str], image_type: Optional[str]
 ) -> InferenceRequestImage:
+    content_type = request.headers.get("Content-Type")
+    part = None
+    if content_type is not None and "multipart/form-data" in content_type:
+        form = await request.form()
+        if "file" not in form:
+            raise image_load_error(_MULTIPART_PART_MISSING_MESSAGE)
+        part = form["file"]
     if image is not None:
         return InferenceRequestImage(type="url", value=image)
-    content_type = request.headers.get("Content-Type")
     if content_type is None:
         raise LegacyHTTPError(400, _CONTENT_TYPE_MISSING_MESSAGE)
-    if "multipart/form-data" in content_type:
-        form = await request.form()
-        part = form.get("file")
-        if part is None:
-            raise LegacyHTTPError(400, _MULTIPART_PART_MISSING_MESSAGE)
-        data = await part.read() if isinstance(part, UploadFile) else part.encode()
+    if isinstance(part, UploadFile):
+        data = await part.read()
         return InferenceRequestImage(
             type="base64", value=base64.b64encode(data).decode("ascii")
         )
+    if part is not None:
+        raise LegacyHTTPError(400, _CONTENT_TYPE_INVALID_MESSAGE)
+
     body = await request.body()
-    if not body:
-        raise LegacyHTTPError(400, _EMPTY_BODY_MESSAGE)
     return InferenceRequestImage(type=image_type, value=body)
 
 
 @catch_all_router.get("/{dataset_id}/{version_id}")
 @catch_all_router.post("/{dataset_id}/{version_id}")
 @with_legacy_errors
+@report_request_usage
 async def legacy_infer_from_request(
     request: Request,
     dataset_id: str = Path(
@@ -707,6 +969,26 @@ async def legacy_infer_from_request(
 ) -> Response:
     model_id = f"{dataset_id}/{version_id}"
     resolved_key = resolve_api_key(request, api_key, None)
+    request_image = await _catch_all_image(request, image, image_type)
+    if not countinference and not service_secret_is_valid(service_secret):
+        raise MissingServiceSecretError()
+    route = await bridge.resolve(
+        model_id, resolved_key, row_key=model_id, path=request.scope["path"]
+    )
+    bridge.record_request(route, model_id, request.scope["path"])
+    if route.task_type == ACTION_RECOGNITION_TASK and not route.is_stub:
+        inference_request = ActionRecognitionInferenceRequest(
+            api_key=resolved_key,
+            model_id=model_id,
+            video=InferenceRequestVideo(
+                type=request_image.type, value=request_image.value
+            ),
+            class_filter=_parse_legacy_class_filter(class_filter),
+        )
+        http_response = await _classify_and_repack(inference_request, bridge, route)
+
+        return http_response
+
     if isinstance(confidence, (int, float)):
         if confidence >= 1:
             confidence /= 100
@@ -714,9 +996,6 @@ async def legacy_infer_from_request(
             confidence = configuration.CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
     if overlap >= 1:
         overlap /= 100
-    request_image = await _catch_all_image(request, image, image_type)
-    route = await bridge.resolve(model_id, resolved_key)
-    bridge.record_request(route, model_id, request.scope["path"])
     request_type = ObjectDetectionInferenceRequest
     extra_args: dict = {}
     if route.task_type == "instance-segmentation":
@@ -735,34 +1014,46 @@ async def legacy_infer_from_request(
         extra_args = {"keypoint_confidence": keypoint_confidence}
     elif route.task_type == "semantic-segmentation":
         request_type = SemanticSegmentationInferenceRequest
-    inference_request = request_type(
-        api_key=resolved_key,
-        model_id=model_id,
-        image=request_image,
-        confidence=confidence,
-        iou_threshold=overlap,
-        max_detections=max_detections,
-        visualization_labels=labels,
-        visualization_stroke_width=stroke,
-        visualize_predictions=format in _VISUALIZATION_FORMATS,
-        disable_preproc_auto_orient=disable_preproc_auto_orient,
-        disable_preproc_contrast=disable_preproc_contrast,
-        disable_preproc_grayscale=disable_preproc_grayscale,
-        disable_preproc_static_crop=disable_preproc_static_crop,
-        disable_active_learning=disable_active_learning,
-        active_learning_target_dataset=active_learning_target_dataset,
-        source=source,
-        source_info=source_info,
-        usage_billable=countinference,
-        disable_model_monitoring=disable_model_monitoring,
-        **extra_args,
-    )
+    try:
+        inference_request = request_type(
+            api_key=resolved_key,
+            model_id=model_id,
+            image=request_image,
+            confidence=confidence,
+            iou_threshold=overlap,
+            max_detections=max_detections,
+            visualization_labels=labels,
+            visualization_stroke_width=stroke,
+            visualize_predictions=format in _VISUALIZATION_FORMATS,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
+            source=source,
+            source_info=source_info,
+            usage_billable=countinference,
+            disable_model_monitoring=disable_model_monitoring,
+            **extra_args,
+        )
+    except ValidationError as error:
+        raise LegacyHTTPError(400, str(error)) from error
+    if route.is_stub:
+        stub_response = _stub_response(inference_request, route)
+        if format == "image":
+            return Response(
+                content=stub_response.visualization, media_type="image/jpeg"
+            )
+        return orjson_response(stub_response)
+
     return await _infer_and_repack(
         inference_request,
         bridge,
         route,
         resolved_key,
         image_format=format if format in _VISUALIZATION_FORMATS else None,
+        active_learning_eligible=True,
     )
 
 
@@ -777,7 +1068,9 @@ async def _resolve_core_model(
     )
     inference_request.api_key = api_key
     core_model_id = f"{core}/{getattr(inference_request, f'{core}_version_id')}"
-    route = await bridge.resolve(core_model_id, api_key)
+    route = await bridge.resolve(
+        core_model_id, api_key, row_key=core_model_id, path=request.scope["path"]
+    )
     bridge.record_request(route, core_model_id, request.scope["path"])
     return route, core_model_id, api_key
 
@@ -807,28 +1100,50 @@ async def _run_embedding(
         ndarray_ok=bridge.accepts_ndarray,
     )
     payload_by_position = dict(zip(image_positions, payloads))
+    await bridge.ensure_loaded(route, api_key)
+    model_monitoring = _model_monitoring_enabled(inference_request)
     started = time.perf_counter()
     results = []
-    for position, call in enumerate(calls):
-        payload = payload_by_position.get(position)
-        if payload is None:
-            results.append(
-                await bridge.infer_params_only(
-                    route, api_key, call["action"], call["params"]
+    with measure_inference(
+        route.registry_id,
+        responses=1,
+        monitoring=model_monitoring,
+    ):
+        for position, call in enumerate(calls):
+            payload = payload_by_position.get(position)
+            if payload is None:
+                results.append(
+                    await bridge.infer_params_only(
+                        route,
+                        api_key,
+                        call["action"],
+                        call["params"],
+                        model_monitoring=model_monitoring,
+                        record=False,
+                    )
+                )
+                continue
+            results.extend(
+                await bridge.infer(
+                    route,
+                    api_key,
+                    call["action"],
+                    [payload],
+                    call["params"],
+                    model_monitoring=model_monitoring,
+                    record=False,
                 )
             )
-            continue
-        results.extend(
-            await bridge.infer(
-                route, api_key, call["action"], [payload], call["params"]
-            )
-        )
     elapsed = time.perf_counter() - started
+    record_telemetry(
+        telemetry.record_inference, requested_model_id_for(route.registry_id), elapsed
+    )
     response = repack_embedding_response(
         action, inference_request, results, prompt_keys
     )
     response.time = elapsed
     response.resolved_model = resolved_model_for(route)
+    pingback.record_inference(route.registry_id, inference_request, response)
     return response
 
 
@@ -841,6 +1156,7 @@ async def _run_ocr(
     structured: bool,
     generate_bounding_boxes: Optional[bool] = None,
     class_from_text: bool = False,
+    params: Optional[dict] = None,
 ) -> Response:
     ensure_ocr_request_supported(inference_request)
     route, _, api_key = await _resolve_core_model(
@@ -848,7 +1164,14 @@ async def _run_ocr(
     )
     payloads, is_batch = await _load_images(inference_request, bridge)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, route.action, payloads, {})
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        route.action,
+        payloads,
+        params or {},
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
     responses = []
     for prediction, payload in zip(predictions, payloads):
@@ -867,6 +1190,7 @@ async def _run_ocr(
         response.time = elapsed
         response.resolved_model = resolved_model_for(route)
         responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
     return orjson_response(responses if is_batch else responses[0], keep_parent_id=True)
 
 
@@ -884,7 +1208,14 @@ async def _run_open_vocabulary_detection(
     class_names = requested_open_vocabulary_classes(inference_request)
     payloads, is_batch = await _load_images(inference_request, bridge)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, route.action, payloads, params)
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        route.action,
+        payloads,
+        params,
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
     responses = []
     for prediction, payload in zip(predictions, payloads):
@@ -895,6 +1226,54 @@ async def _run_open_vocabulary_detection(
         response.inference_id = inference_request.id
         response.resolved_model = resolved_model_for(route)
         responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
+    return responses if is_batch else responses[0]
+
+
+async def _run_few_shot_detection(
+    request: Request,
+    inference_request,
+    bridge: LegacyModelBridge,
+    core: str,
+) -> Any:
+    route, _, api_key = await _resolve_core_model(
+        request, inference_request, bridge, core
+    )
+    payloads, is_batch = await _load_images(inference_request, bridge)
+    references = await load_request_images(
+        [example.image for example in inference_request.training_data],
+        ndarray_ok=False,
+    )
+    params = build_few_shot_params(
+        inference_request, [reference.data for reference in references]
+    )
+    started = time.perf_counter()
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        "infer_with_reference_examples",
+        payloads,
+        params,
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
+    elapsed = time.perf_counter() - started
+    responses = []
+    for prediction, payload in zip(predictions, payloads):
+        response = repack_object_detection_response(
+            prediction,
+            (payload.width, payload.height),
+            few_shot_class_names(prediction, inference_request),
+            inference_request,
+        )
+        response.time = elapsed
+        response.inference_id = inference_request.id
+        response.resolved_model = resolved_model_for(route)
+        if inference_request.visualize_predictions:
+            response.visualization = render_visualization(
+                route, inference_request, response, payload
+            )
+        responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
     return responses if is_batch else responses[0]
 
 
@@ -905,6 +1284,7 @@ async def _run_open_vocabulary_detection(
     description="Run the Open AI CLIP model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def clip_embed_image(
     request: Request,
     inference_request: ClipImageEmbeddingRequest,
@@ -920,6 +1300,7 @@ async def clip_embed_image(
     description="Run the Open AI CLIP model to embed text data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def clip_embed_text(
     request: Request,
     inference_request: ClipTextEmbeddingRequest,
@@ -935,6 +1316,7 @@ async def clip_embed_text(
     description="Run the Open AI CLIP model to compute similarity scores.",
 )
 @with_legacy_errors
+@report_request_usage
 async def clip_compare(
     request: Request,
     inference_request: ClipCompareRequest,
@@ -950,6 +1332,7 @@ async def clip_compare(
     description="Run the Meta Perception Encoder model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def perception_encoder_embed_image(
     request: Request,
     inference_request: PerceptionEncoderImageEmbeddingRequest,
@@ -967,6 +1350,7 @@ async def perception_encoder_embed_image(
     description="Run the Meta Perception Encoder model to embed text data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def perception_encoder_embed_text(
     request: Request,
     inference_request: PerceptionEncoderTextEmbeddingRequest,
@@ -984,6 +1368,7 @@ async def perception_encoder_embed_text(
     description="Run the Meta Perception Encoder model to compute similarity scores.",
 )
 @with_legacy_errors
+@report_request_usage
 async def perception_encoder_compare(
     request: Request,
     inference_request: PerceptionEncoderCompareRequest,
@@ -1001,6 +1386,7 @@ async def perception_encoder_compare(
     description="Run the DocTR OCR model to retrieve text in an image.",
 )
 @with_legacy_errors
+@report_request_usage
 async def doctr_retrieve_text(
     request: Request,
     inference_request: DoctrOCRInferenceRequest,
@@ -1016,13 +1402,21 @@ async def doctr_retrieve_text(
     description="Run the EasyOCR model to retrieve text in an image.",
 )
 @with_legacy_errors
+@report_request_usage
 async def easy_ocr_retrieve_text(
     request: Request,
     inference_request: EasyOCRInferenceRequest,
     bridge: LegacyModelBridge = Depends(get_bridge),
 ) -> Response:
     return await _run_ocr(
-        request, inference_request, bridge, "easy_ocr", structured=True
+        request,
+        inference_request,
+        bridge,
+        "easy_ocr",
+        structured=True,
+        generate_bounding_boxes=True,
+        class_from_text=True,
+        params={"confidence": 0.0},
     )
 
 
@@ -1033,6 +1427,7 @@ async def easy_ocr_retrieve_text(
     description="Run the TrOCR model to retrieve text in an image.",
 )
 @with_legacy_errors
+@report_request_usage
 async def trocr_retrieve_text(
     request: Request,
     inference_request: TrOCRInferenceRequest,
@@ -1048,6 +1443,7 @@ async def trocr_retrieve_text(
     description="Run PP-OCRv6 two-stage OCR to retrieve text in an image.",
 )
 @with_legacy_errors
+@report_request_usage
 async def pp_ocr_retrieve_text(
     request: Request,
     inference_request: PPOCRInferenceRequest,
@@ -1074,6 +1470,7 @@ async def pp_ocr_retrieve_text(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def yolo_world_infer(
     request: Request,
     inference_request: YOLOWorldInferenceRequest,
@@ -1091,6 +1488,7 @@ async def yolo_world_infer(
     description="Run the Grounding DINO zero-shot object detection model.",
 )
 @with_legacy_errors
+@report_request_usage
 async def grounding_dino_infer(
     request: Request,
     inference_request: GroundingDINOInferenceRequest,
@@ -1137,17 +1535,38 @@ async def _run_lmm(
         request, request.query_params.get("api_key"), inference_request.api_key
     )
     inference_request.api_key = api_key
-    route = await bridge.resolve(inference_request.model_id, api_key)
-    bridge.record_request(route, inference_request.model_id, request.scope["path"])
+    alias = request_alias_for(inference_request.model_id)
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=inference_request.model_id,
+        path=request.scope["path"],
+        alias=alias,
+    )
+    bridge.record_request(
+        route,
+        inference_request.model_id,
+        request.scope["path"],
+        alias=alias,
+    )
     ensure_request_supported(inference_request.model_id, inference_request, route)
     action = resolve_request_action(route, inference_request)
     if action == "detect":
         params = {"classes": [getattr(inference_request, "prompt", None)]}
     else:
-        params = build_vlm_params(inference_request)
+        params = build_vlm_params(
+            inference_request, model_class_name=route.model_class_name
+        )
     payloads, is_batch = await _load_images(inference_request, bridge)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, action, payloads, params)
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        action,
+        payloads,
+        params,
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
     responses = []
     for prediction, payload in zip(predictions, payloads):
@@ -1160,6 +1579,7 @@ async def _run_lmm(
         response.inference_id = inference_request.id
         response.resolved_model = resolved_model_for(route)
         responses.append(response)
+    pingback.record_inference(route.registry_id, inference_request, responses)
     return responses if is_batch else responses[0]
 
 
@@ -1176,6 +1596,7 @@ async def _run_lmm(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_lmm(
     request: Request,
     inference_request: LMMInferenceRequest,
@@ -1200,6 +1621,7 @@ async def infer_lmm(
     response_model_exclude_none=True,
 )
 @with_legacy_errors
+@report_request_usage
 async def infer_lmm_with_model_id(
     request: Request,
     inference_request: LMMInferenceRequest,
@@ -1239,13 +1661,27 @@ async def _run_depth_estimation(
         request, request.query_params.get("api_key"), inference_request.api_key
     )
     inference_request.api_key = api_key
-    route = await bridge.resolve(inference_request.model_id, api_key)
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=inference_request.model_id,
+        path=request.scope["path"],
+    )
     bridge.record_request(route, inference_request.model_id, request.scope["path"])
     payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
     started = time.perf_counter()
-    predictions = await bridge.infer(route, api_key, route.action, payloads, {})
+    predictions = await bridge.infer(
+        route,
+        api_key,
+        route.action,
+        payloads,
+        {},
+        model_monitoring=_model_monitoring_enabled(inference_request),
+    )
     elapsed = time.perf_counter() - started
-    depth = repack_depth_estimation(predictions[0])
+    depth = repack_depth_estimation(
+        predictions[0], invert=is_metric_depth_model_class(route.model_class_name)
+    )
     normalized_depth = depth["normalized_depth"]
     if inference_request.depth_map_format == "png8":
         serialized_depth = encode_normalized_depth_to_png8(normalized_depth)
@@ -1261,6 +1697,7 @@ async def _run_depth_estimation(
     response.time = elapsed
     response.inference_id = inference_request.id
     response.resolved_model = resolved_model_for(route)
+    pingback.record_inference(route.registry_id, inference_request, response)
     return response
 
 
@@ -1271,6 +1708,7 @@ async def _run_depth_estimation(
     description="Run the depth estimation model to generate a depth map.",
 )
 @with_legacy_errors
+@report_request_usage
 async def depth_estimation(
     request: Request,
     inference_request: DepthEstimationRequest,
@@ -1289,6 +1727,7 @@ async def depth_estimation(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def depth_estimation_with_model_id(
     request: Request,
     inference_request: DepthEstimationRequest,
@@ -1300,9 +1739,94 @@ async def depth_estimation_with_model_id(
     )
 
 
-def _ensure_sam3_local_execution() -> None:
-    if configuration.SAM3_EXEC_MODE == "remote":
-        raise LegacyHTTPError(501, SAM3_REMOTE_UNSUPPORTED_MESSAGE)
+def _sam3_remote_headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    if configuration.ROBOFLOW_INTERNAL_SERVICE_NAME:
+        headers["X-Roboflow-Internal-Service-Name"] = (
+            configuration.ROBOFLOW_INTERNAL_SERVICE_NAME
+        )
+    if configuration.ROBOFLOW_INTERNAL_SERVICE_SECRET:
+        headers["X-Roboflow-Internal-Service-Secret"] = (
+            configuration.ROBOFLOW_INTERNAL_SERVICE_SECRET
+        )
+    all_headers = platform_http.build_api_headers(explicit_headers=headers)
+
+    return all_headers
+
+
+def _post_sam3_remote(
+    proxy_path: str, payload: dict, api_key: Optional[str], response_model: type
+) -> Any:
+    url = platform_http.wrap_url(
+        f"{configuration.API_BASE_URL}/inferenceproxy/{proxy_path}?api_key={api_key}"
+    )
+    response = platform_http._platform_request(
+        "post", url, headers=_sam3_remote_headers(), json=payload, timeout=60
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"platform answered {response.status_code}")
+    parsed = response_model(**response.json())
+
+    return parsed
+
+
+async def _sam3_remote(
+    proxy_path: str,
+    payload: dict,
+    api_key: Optional[str],
+    response_model: type,
+    failure_message: str,
+) -> Any:
+    try:
+        parsed = await asyncio.to_thread(
+            _post_sam3_remote, proxy_path, payload, api_key, response_model
+        )
+    except Exception as error:
+        logger.error("%s %s", failure_message, redact_text(str(error), (api_key,)))
+        raise HTTPException(status_code=500, detail=failure_message) from None
+
+    return parsed
+
+
+def _sam3_concept_remote_payload(inference_request: Sam3SegmentationRequest) -> dict:
+    prompts = []
+    for prompt in inference_request.prompts:
+        prompt_data = prompt.model_dump(exclude_none=True)
+        if "type" not in prompt_data and "text" in prompt_data:
+            prompt_data["type"] = "text"
+        prompts.append(prompt_data)
+    payload = {
+        "image": {
+            "type": inference_request.image.type,
+            "value": inference_request.image.value,
+        },
+        "prompts": prompts,
+        "output_prob_thresh": inference_request.output_prob_thresh,
+        "source": inference_request.source,
+        "source_info": inference_request.source_info,
+    }
+
+    return payload
+
+
+def _sam3_visual_remote_payload(inference_request: Sam2SegmentationRequest) -> dict:
+    prompts = (
+        inference_request.prompts.model_dump(exclude_none=True)
+        if inference_request.prompts
+        else None
+    )
+    payload = {
+        "image": {
+            "type": inference_request.image.type,
+            "value": inference_request.image.value,
+        },
+        "prompts": prompts,
+        "multimask_output": inference_request.multimask_output,
+        "source": inference_request.source,
+        "source_info": inference_request.source_info,
+    }
+
+    return payload
 
 
 async def _run_interactive_segmentation(
@@ -1315,25 +1839,46 @@ async def _run_interactive_segmentation(
         request, request.query_params.get("api_key"), inference_request.api_key
     )
     inference_request.api_key = api_key
-    route = await bridge.resolve(model_id, api_key)
+    route = await bridge.resolve(
+        model_id, api_key, row_key=model_id, path=request.scope["path"]
+    )
     bridge.record_request(route, model_id, request.scope["path"])
     action = resolve_request_action(route, inference_request)
-    params = build_interactive_segmentation_params(action, inference_request, api_key)
+    params = build_interactive_segmentation_params(
+        action, inference_request, api_key, model_id=model_id
+    )
     image = getattr(inference_request, "image", None)
+    model_monitoring = _model_monitoring_enabled(inference_request)
     started = time.perf_counter()
     if image is None:
-        prediction = await bridge.infer_params_only(route, api_key, action, params)
+        prediction = await bridge.infer_params_only(
+            route, api_key, action, params, model_monitoring=model_monitoring
+        )
     else:
         images, _ = as_image_list(image)
         payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
-        prediction = (await bridge.infer(route, api_key, action, payloads, params))[0]
+        prediction = (
+            await bridge.infer(
+                route,
+                api_key,
+                action,
+                payloads,
+                params,
+                model_monitoring=model_monitoring,
+            )
+        )[0]
     elapsed = time.perf_counter() - started
     response = repack_interactive_segmentation_response(
         action, prediction, inference_request, api_key
     )
+    if isinstance(response, bytes):
+        return Response(
+            content=response, headers={"Content-Type": "application/octet-stream"}
+        )
     response.time = elapsed
     response.inference_id = inference_request.id
     response.resolved_model = resolved_model_for(route)
+    pingback.record_inference(route.registry_id, inference_request, response)
     return response
 
 
@@ -1344,6 +1889,7 @@ async def _run_interactive_segmentation(
     description="Run the Meta AI Segment Anything Model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def sam_embed_image(
     request: Request,
     inference_request: SamEmbeddingRequest,
@@ -1373,6 +1919,7 @@ async def sam_embed_image(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def sam_segment_image(
     request: Request,
     inference_request: SamSegmentationRequest,
@@ -1393,6 +1940,7 @@ async def sam_segment_image(
     description="Run the Meta AI Segment Anything 2 Model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def sam2_embed_image(
     request: Request,
     inference_request: Sam2EmbeddingRequest,
@@ -1416,6 +1964,7 @@ async def sam2_embed_image(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def sam2_segment_image(
     request: Request,
     inference_request: Sam2SegmentationRequest,
@@ -1436,6 +1985,7 @@ async def sam2_segment_image(
     description="Run the SAM3 interactive model to embed image data.",
 )
 @with_legacy_errors
+@report_request_usage
 async def sam3_embed_image(
     request: Request,
     inference_request: Sam2EmbeddingRequest,
@@ -1460,6 +2010,7 @@ async def sam3_embed_image(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def sam3_concept_segment(
     request: Request,
     inference_request: Sam3SegmentationRequest,
@@ -1480,7 +2031,18 @@ async def sam3_concept_segment(
     if not configuration.SAM3_FINE_TUNED_MODELS_ENABLED:
         if not inference_request.model_id.startswith("sam3/"):
             raise LegacyHTTPError(501, FINE_TUNED_SAM3_DEPLOYMENT_ERROR)
-    _ensure_sam3_local_execution()
+    if configuration.SAM3_EXEC_MODE == "remote":
+        api_key = resolve_api_key(
+            request, request.query_params.get("api_key"), inference_request.api_key
+        )
+        inference_request.api_key = api_key
+        return await _sam3_remote(
+            "seg-preview",
+            _sam3_concept_remote_payload(inference_request),
+            api_key,
+            Sam3SegmentationResponse,
+            SAM3_CONCEPT_REMOTE_FAILURE_MESSAGE,
+        )
     return await _run_interactive_segmentation(
         request, inference_request, bridge, inference_request.model_id
     )
@@ -1496,6 +2058,7 @@ async def sam3_concept_segment(
     ),
 )
 @with_legacy_errors
+@report_request_usage
 async def sam3_visual_segment(
     request: Request,
     inference_request: Sam2SegmentationRequest,
@@ -1513,7 +2076,18 @@ async def sam3_visual_segment(
         inference_request.source = request_source
     if request_source_info is not None:
         inference_request.source_info = request_source_info
-    _ensure_sam3_local_execution()
+    if configuration.SAM3_EXEC_MODE == "remote":
+        api_key = resolve_api_key(
+            request, request.query_params.get("api_key"), inference_request.api_key
+        )
+        inference_request.api_key = api_key
+        return await _sam3_remote(
+            "sam3-pvs",
+            _sam3_visual_remote_payload(inference_request),
+            api_key,
+            Sam2SegmentationResponse,
+            SAM3_VISUAL_REMOTE_FAILURE_MESSAGE,
+        )
     return await _run_interactive_segmentation(
         request, inference_request, bridge, SAM3_INTERACTIVE_MODEL_ID
     )

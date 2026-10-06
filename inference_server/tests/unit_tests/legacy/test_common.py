@@ -99,18 +99,21 @@ def test_decode_inline_image_numpy_object_becomes_npy_bytes_when_not_allowed():
 def test_decode_inline_image_pickled_numpy_refused():
     with pytest.raises(LegacyHTTPError) as exc:
         decode_inline_image({"type": "numpy", "value": b"x"}, ndarray_ok=False)
-    assert exc.value.status_code == 501
+    assert exc.value.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_load_request_images_fetches_urls_in_one_batch(monkeypatch):
     seen = []
 
-    async def _fetch(urls):
+    async def _fetch(urls, destination_policy=None):
         seen.append(urls)
         return [_jpeg(3, 2) for _ in urls], None
 
     monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
     out = await load_request_images(
         [
             {"type": "url", "value": "https://a/1.jpg"},
@@ -138,7 +141,7 @@ async def test_load_request_images_enforces_count_limit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_load_request_images_refuses_urls_offline(monkeypatch):
-    monkeypatch.setattr("inference_server.legacy.common.OFFLINE_MODE", True)
+    monkeypatch.setattr("inference_server.legacy.common.LEGACY_OFFLINE_MODE", True)
     with pytest.raises(LegacyHTTPError) as exc:
         await load_request_images(
             [{"type": "url", "value": "https://a/1.jpg"}], ndarray_ok=False
@@ -155,6 +158,45 @@ def test_resolve_api_key_precedence(monkeypatch):
     assert resolve_api_key(_request(), None, None) is None
     monkeypatch.setattr("inference_server.legacy.common.DEFAULT_API_KEY", "ENV")
     assert resolve_api_key(_request(), None, None) == "ENV"
+
+
+def test_resolve_api_key_ignores_header_when_switch_off(monkeypatch):
+    monkeypatch.setattr("inference_server.legacy.common.DEFAULT_API_KEY", None)
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_API_KEY_FROM_HEADERS", False
+    )
+    req = _request(headers=[(b"authorization", b"Bearer H")])
+    assert resolve_api_key(req, "Q", "B") == "Q"
+    assert resolve_api_key(req, None, "B") == "B"
+    assert resolve_api_key(req, None, None) is None
+
+
+def test_resolve_api_key_uses_header_when_switch_on(monkeypatch):
+    monkeypatch.setattr("inference_server.legacy.common.DEFAULT_API_KEY", None)
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_API_KEY_FROM_HEADERS", True
+    )
+    req = _request(headers=[(b"authorization", b"Bearer H")])
+    assert resolve_api_key(req, None, "B") == "H"
+
+
+@pytest.mark.parametrize("switch", [True, False])
+def test_v2_bearer_key_ignores_header_switch(monkeypatch, switch):
+    from inference_server.routers.v2_models import _bearer_token
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_API_KEY_FROM_HEADERS", switch
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "query_string": b"",
+            "headers": [(b"authorization", b"Bearer H")],
+        }
+    )
+    assert _bearer_token(request) == "H"
 
 
 def test_as_image_list():

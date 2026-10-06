@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import gc
 import weakref
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from inference_models.errors import ModelNotFoundError
+from inference_models.errors import (
+    ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageRestrictedError,
+    NoModelPackagesAvailableError,
+    PaymentRequiredModelAccessError,
+    UnauthorizedModelAccessError,
+)
 from inference_server.gateway import ModelManagerGateway, routed_model_id, routing_key
 
 
@@ -232,8 +240,346 @@ async def test_load_failure_maps_to_load_failed_code():
             raise RuntimeError("weights download failed")
 
     wrapper = ModelManagerGateway(_Manager())
-    assert await wrapper.load("m", "key") == ("error", 5)
+    assert await wrapper.load("m", "key") == (
+        "error",
+        5,
+        _detail("RuntimeError", "weights download failed"),
+    )
     assert (await wrapper.ensure_loaded("m"))[:2] == ("error", 5)
+
+
+HELP_URL = "https://help.example/errors"
+
+
+def _detail(error_type, message, help_url=None, status_code=None, restricted=False):
+    return {
+        "error_type": error_type,
+        "message": message,
+        "help_url": help_url,
+        "status_code": status_code,
+        "restricted": restricted,
+    }
+
+
+class _FailingManager:
+    def __init__(self, error):
+        self.error = error
+        self.load_calls = 0
+
+    def __contains__(self, model_id):
+        return False
+
+    def load(self, model_id, api_key, **kwargs):
+        self.load_calls += 1
+        raise self.error
+
+
+LOAD_FAILURES = [
+    pytest.param(
+        ModelPackageRestrictedError("too big", help_url=HELP_URL),
+        _detail("ModelPackageRestrictedError", "too big", HELP_URL, restricted=True),
+        id="restricted",
+    ),
+    pytest.param(
+        ModelPackageAlternativesExhaustedError(
+            "none loaded",
+            help_url=HELP_URL,
+            alternatives_errors=[ModelPackageRestrictedError("too big")],
+        ),
+        _detail(
+            "ModelPackageAlternativesExhaustedError",
+            "none loaded",
+            HELP_URL,
+            restricted=True,
+        ),
+        id="alternatives-exhausted-restricted",
+    ),
+    pytest.param(
+        ModelPackageAlternativesExhaustedError(
+            "none loaded",
+            help_url=HELP_URL,
+            alternatives_errors=[RuntimeError("no cuda")],
+        ),
+        _detail("ModelPackageAlternativesExhaustedError", "none loaded", HELP_URL),
+        id="alternatives-exhausted",
+    ),
+    pytest.param(
+        NoModelPackagesAvailableError("no package", help_url=HELP_URL),
+        _detail("NoModelPackagesAvailableError", "no package", HELP_URL),
+        id="negotiation",
+    ),
+    pytest.param(
+        UnauthorizedModelAccessError("denied"),
+        _detail("UnauthorizedModelAccessError", "denied"),
+        id="unauthorized",
+    ),
+    pytest.param(
+        PaymentRequiredModelAccessError("no credits"),
+        _detail("PaymentRequiredModelAccessError", "no credits", status_code=402),
+        id="payment-required",
+    ),
+    pytest.param(
+        ModelNotFoundError("missing"),
+        _detail("ModelNotFoundError", "missing"),
+        id="not-found",
+    ),
+    pytest.param(RuntimeError("boom"), _detail("RuntimeError", "boom"), id="runtime"),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error,detail", LOAD_FAILURES)
+async def test_ensure_loaded_failure_describes_the_error(error, detail):
+    import json
+
+    wrapper = ModelManagerGateway(_FailingManager(error))
+
+    status = await wrapper.ensure_loaded("m")
+
+    assert status == ("error", 5, detail)
+    assert json.loads(json.dumps(status[2])) == detail
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error,detail", LOAD_FAILURES)
+@pytest.mark.parametrize("pinned", [True, False])
+async def test_explicit_load_failure_describes_the_error(error, detail, pinned):
+    wrapper = ModelManagerGateway(_FailingManager(error))
+
+    status = await wrapper.load("m", "key", pinned=pinned)
+
+    assert status == ("error", 5, detail)
+
+
+@pytest.mark.asyncio
+async def test_last_load_failure_reports_a_load_that_failed_after_the_wait_ended():
+    import asyncio
+    import threading
+
+    release = threading.Event()
+
+    class _SlowFailingManager(_FailingManager):
+        def load(self, model_id, api_key, **kwargs):
+            self.load_calls += 1
+            release.wait(timeout=5)
+            raise self.error
+
+    mgr = _SlowFailingManager(ModelNotFoundError("missing"))
+    wrapper = ModelManagerGateway(mgr, load_wait_s=0.05)
+
+    assert wrapper.last_load_failure("m") is None
+    assert await wrapper.ensure_loaded("m") == ("load_timeout", 0)
+    assert wrapper.last_load_failure("m") is None
+    release.set()
+    for _ in range(200):
+        if wrapper.last_load_failure("m") is not None:
+            break
+        await asyncio.sleep(0.01)
+
+    failure = ("error", 5, _detail("ModelNotFoundError", "missing"))
+    assert wrapper.last_load_failure("m") == failure
+    assert wrapper.last_load_failure("m") == failure
+    assert wrapper.last_load_failure("other") is None
+    assert mgr.load_calls == 1
+
+
+async def _failed_load(wrapper, model_id):
+    import asyncio
+
+    assert (await wrapper.ensure_loaded(model_id))[:2] == ("error", 5)
+    await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_remembered_load_failures_are_bounded_dropping_the_oldest(monkeypatch):
+    from inference_server import gateway as gateway_mod
+
+    monkeypatch.setattr(gateway_mod, "_MAX_REMEMBERED_LOAD_FAILURES", 3)
+    wrapper = ModelManagerGateway(_FailingManager(RuntimeError("boom")))
+
+    for index in range(6):
+        await _failed_load(wrapper, f"m{index}")
+    await _failed_load(wrapper, "m3")
+
+    assert list(wrapper._load_failures) == ["m4", "m5", "m3"]
+    assert wrapper.last_load_failure("m0") is None
+    assert wrapper.last_load_failure("m3") is not None
+
+
+def test_remembered_load_failures_bound_is_256():
+    from inference_server import gateway as gateway_mod
+
+    assert gateway_mod._MAX_REMEMBERED_LOAD_FAILURES == 256
+
+
+@pytest.mark.asyncio
+async def test_unload_drops_the_remembered_load_failure():
+    class _Manager(_FailingManager):
+        def unload(self, model_id):
+            raise KeyError(model_id)
+
+    wrapper = ModelManagerGateway(_Manager(RuntimeError("boom")))
+    await _failed_load(wrapper, "m")
+    await _failed_load(wrapper, "other")
+
+    assert await wrapper.unload("m") == ("error", 6)
+
+    assert wrapper.last_load_failure("m") is None
+    assert wrapper.last_load_failure("other") is not None
+
+
+@pytest.mark.asyncio
+async def test_shutdown_clears_the_remembered_load_failures():
+    class _Manager(_FailingManager):
+        def shutdown(self):
+            pass
+
+    wrapper = ModelManagerGateway(_Manager(RuntimeError("boom")))
+    await _failed_load(wrapper, "m")
+
+    await wrapper.shutdown()
+
+    assert wrapper._load_failures == {}
+
+
+@pytest.mark.asyncio
+async def test_load_failing_while_shutdown_waits_is_not_remembered():
+    import asyncio
+    import threading
+
+    release = threading.Event()
+
+    class _Manager(_FailingManager):
+        def load(self, model_id, api_key, **kwargs):
+            release.wait(timeout=5)
+            raise self.error
+
+        def shutdown(self):
+            pass
+
+    wrapper = ModelManagerGateway(_Manager(RuntimeError("boom")), load_wait_s=0.05)
+
+    assert await wrapper.ensure_loaded("m") == ("load_timeout", 0)
+    await wrapper.shutdown()
+    release.set()
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+
+    assert wrapper._load_failures == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error,message",
+    [
+        (
+            RuntimeError(
+                "Connectivity error for URL: https://host/x?api_key=SECRET&y=1"
+            ),
+            "Connectivity error for URL: https://host/***",
+        ),
+        (
+            NoModelPackagesAvailableError(
+                "no package at https://host/x?y=1&api_key=SECRET#SECRET then",
+                help_url=HELP_URL,
+            ),
+            "no package at https://host/*** then",
+        ),
+        (
+            RuntimeError(
+                "bad md5 for https://user:SECRET@host:8443/a/b.onnx"
+                "?X-Goog-Signature=abc#f"
+            ),
+            "bad md5 for https://host/***",
+        ),
+        (
+            RuntimeError(
+                "first https://one.example/a?token=SECRET and "
+                "second http://two.example/b.bin?sig=SECRET&x=1 failed"
+            ),
+            "first https://one.example/*** and second http://two.example/*** failed",
+        ),
+        (
+            RuntimeError("request with api_key=SECRET&service_secret=SECRET failed"),
+            "request with api_key=***&service_secret=*** failed",
+        ),
+        (
+            RuntimeError("no query in https://host/x/y.onnx here"),
+            "no query in https://host/*** here",
+        ),
+        (
+            RuntimeError("Is the model ready? Try again."),
+            "Is the model ready? Try again.",
+        ),
+    ],
+)
+async def test_load_failure_message_hides_urls_and_secret_values(error, message):
+    wrapper = ModelManagerGateway(_FailingManager(error))
+
+    ensured = await wrapper.ensure_loaded("m")
+    loaded = await wrapper.load("m", "key")
+
+    for result in (ensured, loaded, wrapper.last_load_failure("m")):
+        assert result[2]["message"] == message
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("api_key=SECRET", "api_key=***"),
+        ('api_key="SECRET"', 'api_key="***"'),
+        ('{"api_key": "SECRET"}', '{"api_key": "***"}'),
+        ("api_key%3DSECRET", "api_key%3D***"),
+        ("Authorization: Bearer SECRET", "Authorization: ***"),
+        ("service_secret=abc&x=1", "service_secret=***&x=1"),
+        ("https://user:S%45CRET@host/x", "https://host/***"),
+        ("https://host/x#token=SECRET", "https://host/***"),
+        ("https://host/x?token=abc'SECRET", "https://host/***"),
+        (
+            "https://a.example/x?k=1 then https://b.example:81/y",
+            "https://a.example/*** then https://b.example/***",
+        ),
+        ("Is the model ready? Try again.", "Is the model ready? Try again."),
+        ("weights download failed", "weights download failed"),
+        ("https://host", "https://host"),
+        ("https://host/", "https://host/"),
+    ],
+)
+def test_redact_secrets_rewrites_urls_and_secret_values(text, expected):
+    from inference_server.gateway import _redact_secrets
+
+    assert _redact_secrets(text) == expected
+
+
+@pytest.mark.asyncio
+async def test_last_load_failure_is_dropped_when_a_new_load_starts():
+    import asyncio
+
+    class _FailingOnceManager:
+        def __init__(self):
+            self.loaded = set()
+            self.load_calls = 0
+
+        def __contains__(self, model_id):
+            return model_id in self.loaded
+
+        def load(self, model_id, api_key, **kwargs):
+            self.load_calls += 1
+            if self.load_calls == 1:
+                raise RuntimeError("boom")
+            self.loaded.add(model_id)
+
+    wrapper = ModelManagerGateway(_FailingOnceManager())
+
+    assert (await wrapper.ensure_loaded("m"))[:2] == ("error", 5)
+    await asyncio.sleep(0)
+    assert wrapper.last_load_failure("m") == (
+        "error",
+        5,
+        _detail("RuntimeError", "boom"),
+    )
+    assert await wrapper.ensure_loaded("m") == ("model_ready",)
+    assert wrapper.last_load_failure("m") is None
 
 
 @pytest.mark.asyncio
@@ -345,7 +691,11 @@ async def test_inner_load_timeout_error_is_load_failure_not_deadline():
             raise TimeoutError("worker start timed out")
 
     wrapper = ModelManagerGateway(_Manager())
-    assert await wrapper.load("m", "key", timeout_s=5.0) == ("error", 5)
+    assert await wrapper.load("m", "key", timeout_s=5.0) == (
+        "error",
+        5,
+        _detail("TimeoutError", "worker start timed out"),
+    )
 
 
 @pytest.mark.asyncio
@@ -377,6 +727,52 @@ async def test_dead_backend_is_unloaded_and_reloaded():
     assert await wrapper.ensure_loaded("m") == ("model_ready",)
     assert mgr.unload_calls == 1
     assert mgr.load_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_abandoned_initiator_leaves_no_state_in_the_gateway():
+    import asyncio
+    import threading
+    import time
+
+    from inference_server.middlewares.model_load import MODEL_LOAD_EVENTS
+
+    class _Events(list):
+        pass
+
+    release = threading.Event()
+
+    class _Manager:
+        def __init__(self):
+            self.loaded = set()
+
+        def __contains__(self, model_id):
+            return model_id in self.loaded
+
+        def load(self, model_id, api_key, **kwargs):
+            release.wait(timeout=5)
+            self.loaded.add(model_id)
+
+    mgr = _Manager()
+    wrapper = ModelManagerGateway(mgr, load_wait_s=0.05)
+    events = _Events()
+    events_ref = weakref.ref(events)
+    token = MODEL_LOAD_EVENTS.set(events)
+    try:
+        assert await wrapper.ensure_loaded("m") == ("load_timeout", 0)
+    finally:
+        MODEL_LOAD_EVENTS.reset(token)
+    del events
+    release.set()
+    deadline = time.monotonic() + 5
+    while wrapper._pending_loads and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    gc.collect()
+
+    assert "m" in mgr.loaded
+    assert wrapper._pending_loads == {}
+    assert not hasattr(wrapper, "_load_owners")
+    assert events_ref() is None
 
 
 class _RaisingManager:
@@ -861,15 +1257,19 @@ class TestPreloadModels:
         calls = []
 
         class _Proxy:
-            async def load(self, mid, api_key="", timeout_s=None):
+            async def load(self, mid, api_key="", timeout_s=None, pinned=True):
                 calls.append((mid, api_key))
                 if mid == "bad":
                     raise RuntimeError("boom")
                 return ("ok",)
 
-        await _preload_models(_Proxy(), ["a", "bad", "b"], api_key="k")
+        state = SimpleNamespace(preload_finished=False)
+        await _preload_models(
+            state, _Proxy(), [("a", "k"), ("bad", "k"), ("b", "k")], []
+        )
         assert {c[0] for c in calls} == {"a", "bad", "b"}
         assert all(c[1] == "k" for c in calls)
+        assert state.preload_finished is True
 
 
 class _CapBackend:
@@ -967,6 +1367,37 @@ class TestPinnedLoadRace:
         finally:
             manager.load = real_load
             manager.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_load_unpinned_evictable(self, monkeypatch):
+        import inference_model_manager.configuration as mm_cfg
+        from inference_model_manager.model_manager import ModelManager
+
+        monkeypatch.setattr(mm_cfg, "INFERENCE_MAX_ACTIVE_MODELS", 1)
+        manager = ModelManager()
+        manager._create_backend = lambda model_id, api_key, backend, **kw: _CapBackend(
+            model_id
+        )
+        try:
+            wrapper = ModelManagerGateway(manager)
+
+            assert await wrapper.load("m0", "key", pinned=False) == ("ok",)
+            assert manager._pinned == set()
+
+            assert await wrapper.load("m1", "key", pinned=False) == ("ok",)
+            assert manager.loaded_models == ["m1"]
+            assert manager._pinned == set()
+        finally:
+            manager.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_load_unpinned_skips_pin(self):
+        mgr = _PinTrackingManager()
+        wrapper = ModelManagerGateway(mgr)
+
+        assert await wrapper.load("m", "key", pinned=False) == ("ok",)
+        assert mgr.loaded == {"m"}
+        assert mgr.pinned == set()
 
     @pytest.mark.asyncio
     async def test_ensure_loaded_keeps_auto_loads_unpinned(self):
@@ -1111,9 +1542,8 @@ class TestInferRetriesLostModel:
         mgr = _EvictingManager(KeyError("Model 'm' is not loaded"))
         wrapper = ModelManagerGateway(mgr)
 
-        assert await wrapper.ensure_loaded("m", "", "authorized-key", "cuda:1") == (
-            "model_ready",
-        )
+        loaded = await wrapper.ensure_loaded("m", "", "authorized-key", "cuda:1")
+        assert loaded == ("model_ready",)
         assert await wrapper.ensure_loaded("m") == ("model_ready",)
 
         assert await wrapper.infer(model_id="m", image=b"x") == {"served": "m"}
@@ -1172,6 +1602,7 @@ async def test_failed_pipeline_stage_is_released_without_cyclic_gc():
             assert await wrapper.ensure_loaded("pp_ocr/small-small", api_key="k") == (
                 "error",
                 5,
+                _detail("ModelNotFoundError", "rec"),
             )
         ref = weakref.ref(created[0])
         created.clear()
@@ -1179,3 +1610,41 @@ async def test_failed_pipeline_stage_is_released_without_cyclic_gc():
     finally:
         gc.enable()
         manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_stream_pipeline_methods_run_on_model_executor():
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    threads = {}
+
+    def _record(name, value):
+        def _call(model_id):
+            threads[name] = (threading.current_thread().name, model_id)
+            return value
+
+        return _call
+
+    mgr = _fake_manager()
+    mgr.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="model-exec")
+    mgr.model_supports_stream_pipeline = _record("supports", True)
+    mgr.get_model_pipeline_depth = _record("depth", 2)
+    mgr.flush_model_stream_pipeline = _record("flush", ["tail"])
+    mgr.shutdown_model_stream_pipeline = _record("shutdown", None)
+    gateway = ModelManagerGateway(mgr)
+    try:
+        results = (
+            await gateway.model_supports_stream_pipeline("seg/1"),
+            await gateway.get_model_pipeline_depth("seg/1"),
+            await gateway.flush_model_stream_pipeline("seg/1"),
+            await gateway.shutdown_model_stream_pipeline("seg/1"),
+        )
+    finally:
+        mgr.executor.shutdown(wait=True)
+
+    assert results == (True, 2, ["tail"], None)
+    assert set(threads) == {"supports", "depth", "flush", "shutdown"}
+    for thread_name, model_id in threads.values():
+        assert thread_name.startswith("model-exec")
+        assert model_id == "seg/1"

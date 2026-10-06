@@ -2,10 +2,12 @@ import asyncio
 import base64
 import datetime
 import gzip
+import inspect
 import json
 import logging
 import struct
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import time
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import orjson
 import supervision as sv
@@ -27,9 +29,6 @@ from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.env import (
-    LEGACY_MMP_ADAPTER_BUNDLED_BACKEND,
-    LEGACY_MMP_ADAPTER_ENABLED,
-    LEGACY_MMP_ADAPTER_MODE,
     OFFLINE_MODE,
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
@@ -86,7 +85,6 @@ from inference.core.utils.mjpeg import open_mjpeg_player
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
-from inference_models.utils.performance import performance_profiler
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -301,11 +299,6 @@ class VideoFrameProcessor:
         self._stop_processing = False
         self._termination_reason: Optional[str] = None
         self._processing_complete_sent = False
-        self._performance_profile_flushed = False
-        self._last_frame_completed_ns: Optional[int] = None
-        self._last_source_media_time_s: Optional[float] = None
-        self._model_manager = model_manager
-        self._legacy_model_metadata_recorded = False
         self.heartbeat_callback = heartbeat_callback
 
         self.has_video_track = has_video_track
@@ -341,41 +334,6 @@ class VideoFrameProcessor:
                 f"data_output must be list or None, got {type(data_output).__name__}"
             )
 
-        performance_profiler.set_metadata(
-            "legacy_mmp_adapter_enabled", LEGACY_MMP_ADAPTER_ENABLED
-        )
-        performance_profiler.set_metadata(
-            "legacy_mmp_adapter_mode", LEGACY_MMP_ADAPTER_MODE
-        )
-        performance_profiler.set_metadata(
-            "legacy_mmp_adapter_bundled_backend",
-            LEGACY_MMP_ADAPTER_BUNDLED_BACKEND,
-        )
-        performance_profiler.set_metadata("has_video_track", has_video_track)
-        performance_profiler.set_metadata("declared_fps", declared_fps)
-        performance_profiler.set_metadata("data_mode", self._data_mode.value)
-        performance_profiler.set_metadata(
-            "model_manager_class",
-            type(model_manager).__name__ if model_manager is not None else None,
-        )
-        performance_profiler.set_metadata(
-            "workflow_version_id", workflow_configuration.workflow_version_id
-        )
-        workflow_specification = workflow_configuration.workflow_specification or {}
-        performance_profiler.set_metadata(
-            "workflow_engine_version", workflow_specification.get("version")
-        )
-        performance_profiler.set_metadata(
-            "workflow_step_types",
-            sorted(
-                {
-                    str(step.get("type"))
-                    for step in workflow_specification.get("steps", [])
-                    if step.get("type") is not None
-                }
-            ),
-        )
-
         self._validate_output_fields(workflow_configuration)
 
         self._inference_pipeline = InferencePipeline.init_with_workflow(
@@ -405,111 +363,9 @@ class VideoFrameProcessor:
     async def close(self):
         self._track_active = False
         self._stop_processing = True
-        try:
-            # Clean up video upload handler if present
-            if self.video_upload_handler is not None:
-                await self.video_upload_handler.cleanup()
-        finally:
-            self._flush_performance_profile()
-
-    def _flush_performance_profile(self) -> None:
-        if self._performance_profile_flushed:
-            return
-        self._performance_profile_flushed = True
-        try:
-            performance_profiler.flush(force=True)
-        except Exception:
-            logger.warning("Could not flush WebRTC performance profile", exc_info=True)
-
-    def _record_source_queue_depth(self) -> None:
-        if not performance_profiler.enabled:
-            return
-        queue = getattr(self.track, "_queue", None)
-        if queue is None:
-            return
-        try:
-            performance_profiler.record(
-                "source.queue_depth", float(queue.qsize()), "frames"
-            )
-        except Exception:
-            logger.debug("Could not inspect WebRTC source queue", exc_info=True)
-
-    def _record_source_media_interval(self, frame: VideoFrame) -> None:
-        if not performance_profiler.enabled:
-            return
-        if frame.pts is None or frame.time_base is None:
-            return
-        media_time_s = float(frame.pts * frame.time_base)
-        if self._last_source_media_time_s is not None:
-            interval_ms = (media_time_s - self._last_source_media_time_s) * 1000
-            if interval_ms > 0:
-                performance_profiler.record("source.media_interval", interval_ms, "ms")
-        self._last_source_media_time_s = media_time_s
-
-    def _record_legacy_model_metadata(self) -> None:
-        if (
-            not performance_profiler.enabled
-            or LEGACY_MMP_ADAPTER_ENABLED
-            or self._legacy_model_metadata_recorded
-            or self._model_manager is None
-        ):
-            return
-        try:
-            models = self._model_manager.models()
-            if not models:
-                return
-            details = []
-            for model_id, model in sorted(models.items()):
-                details.append(
-                    {
-                        "model_id": model_id,
-                        "class": f"{type(model).__module__}.{type(model).__name__}",
-                        "task_type": getattr(model, "task_type", None),
-                        "batch_size": getattr(model, "batch_size", None),
-                        "device": getattr(model, "device", None),
-                        "execution_provider": getattr(
-                            model, "execution_provider", None
-                        ),
-                    }
-                )
-            performance_profiler.set_metadata("legacy_models", details)
-            self._legacy_model_metadata_recorded = True
-        except Exception:
-            logger.debug("Could not inspect legacy models", exc_info=True)
-
-    @staticmethod
-    def _record_frame_dimensions(frame: VideoFrame) -> None:
-        if not performance_profiler.enabled:
-            return
-        performance_profiler.record("frame.width", float(frame.width), "pixels")
-        performance_profiler.record("frame.height", float(frame.height), "pixels")
-        performance_profiler.record(
-            "frame.pixels", float(frame.width * frame.height), "pixels"
-        )
-
-    def _record_frame_complete(
-        self, frame_started_ns: Optional[int], frame_completed_ns: Optional[int]
-    ) -> None:
-        if not performance_profiler.enabled:
-            return
-        performance_profiler.stop(
-            "frame.total", frame_started_ns, end_ns=frame_completed_ns
-        )
-        if self._last_frame_completed_ns is not None and frame_completed_ns is not None:
-            performance_profiler.record(
-                "frame.interval",
-                (frame_completed_ns - self._last_frame_completed_ns) / 1_000_000,
-                "ms",
-            )
-        self._last_frame_completed_ns = frame_completed_ns
-        processed_fps = self._fps_monitor.fps
-        if processed_fps is not None:
-            performance_profiler.record(
-                "frame.processed_fps", float(processed_fps), "fps"
-            )
-        self._record_legacy_model_metadata()
-        performance_profiler.increment("frames.processed")
-        performance_profiler.flush()
+        # Clean up video upload handler if present
+        if self.video_upload_handler is not None:
+            await self.video_upload_handler.cleanup()
 
     def record_ack(self, ack: int) -> None:
         """Record cumulative ACK from the client.
@@ -638,79 +494,57 @@ class VideoFrameProcessor:
         )
 
         if self._data_mode == DataOutputMode.NONE:
-            serialize_started = performance_profiler.start()
-            try:
-                json_bytes = await asyncio.to_thread(
-                    lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
-                )
-            finally:
-                performance_profiler.stop("data.serialize", serialize_started)
-            performance_profiler.record("data.bytes", float(len(json_bytes)), "bytes")
-            send_started = performance_profiler.start()
-            try:
-                await send_chunked_data(
-                    self.data_channel,
-                    frame_id,
-                    json_bytes,
-                    heartbeat_callback=self.heartbeat_callback,
-                )
-            finally:
-                performance_profiler.stop("data.send", send_started)
+            json_bytes = await asyncio.to_thread(
+                lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
+            )
+            await send_chunked_data(
+                self.data_channel,
+                frame_id,
+                json_bytes,
+                heartbeat_callback=self.heartbeat_callback,
+            )
             return
 
-        serialize_started = performance_profiler.start()
-        try:
-            if self._data_mode == DataOutputMode.ALL:
-                fields_to_send = list(workflow_output.keys())
-            else:
-                fields_to_send = self.data_output
+        if self._data_mode == DataOutputMode.ALL:
+            fields_to_send = list(workflow_output.keys())
+        else:
+            fields_to_send = self.data_output
 
-            serialized_outputs, serialization_errors = await asyncio.to_thread(
-                VideoFrameProcessor.serialize_outputs_sync,
-                fields_to_send,
-                workflow_output,
-                self._data_mode,
+        serialized_outputs, serialization_errors = await asyncio.to_thread(
+            VideoFrameProcessor.serialize_outputs_sync,
+            fields_to_send,
+            workflow_output,
+            self._data_mode,
+        )
+
+        webrtc_output.errors.extend(serialization_errors)
+        if serialized_outputs:
+            webrtc_output.serialized_output_data = serialized_outputs
+
+        # TODO: use orjson
+        json_bytes = await asyncio.to_thread(
+            lambda: orjson.dumps(
+                webrtc_output.model_dump(),
+                default=default_encoder,
+                option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY,
             )
-
-            webrtc_output.errors.extend(serialization_errors)
-            if serialized_outputs:
-                webrtc_output.serialized_output_data = serialized_outputs
-
-            # TODO: use orjson
-            json_bytes = await asyncio.to_thread(
-                lambda: orjson.dumps(
-                    webrtc_output.model_dump(),
-                    default=default_encoder,
-                    option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY,
-                )
-            )
-        finally:
-            performance_profiler.stop("data.serialize", serialize_started)
+        )
 
         if WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION:
 
             def compress_json():
                 return gzip.compress(json_bytes, compresslevel=6)
 
-            compress_started = performance_profiler.start()
-            try:
-                output_bytes = await asyncio.to_thread(compress_json)
-            finally:
-                performance_profiler.stop("data.compress", compress_started)
+            output_bytes = await asyncio.to_thread(compress_json)
         else:
             output_bytes = json_bytes
 
-        performance_profiler.record("data.bytes", float(len(output_bytes)), "bytes")
-        send_started = performance_profiler.start()
-        try:
-            success = await send_chunked_data(
-                self.data_channel,
-                frame_id,
-                output_bytes,
-                heartbeat_callback=self.heartbeat_callback,
-            )
-        finally:
-            performance_profiler.stop("data.send", send_started)
+        success = await send_chunked_data(
+            self.data_channel,
+            frame_id,
+            output_bytes,
+            heartbeat_callback=self.heartbeat_callback,
+        )
         if not success:
             logger.error("[SEND_OUTPUT] Frame %d failed", frame_id)
 
@@ -753,14 +587,7 @@ class VideoFrameProcessor:
 
         try:
             while not self._stop_processing:
-                frame_started = performance_profiler.start()
-                ack_started = performance_profiler.start()
-                try:
-                    await self._wait_for_ack_window(
-                        next_frame_id=self._received_frames + 1
-                    )
-                finally:
-                    performance_profiler.stop("ack.wait", ack_started)
+                await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
                 if self._check_termination():
                     await self._send_processing_complete()
                     self._signal_termination()
@@ -770,29 +597,17 @@ class VideoFrameProcessor:
                 if not self.track or self.track.readyState == "ended":
                     break
 
-                self._record_source_queue_depth()
-
                 # Drain queue for realtime RTSP
                 if (
                     isinstance(self.track, PlayerStreamTrack)
                     and self.realtime_processing
                 ):
-                    drained = 0
                     while self.track._queue.qsize() > 30:
                         self.track._queue.get_nowait()
-                        drained += 1
-                    if drained:
-                        performance_profiler.increment("source.frames_drained", drained)
 
-                source_started = performance_profiler.start()
-                try:
-                    frame = await self.track.recv()
-                finally:
-                    performance_profiler.stop("source.wait", source_started)
+                frame = await self.track.recv()
                 self._received_frames += 1
                 self._fps_monitor.tick()
-                self._record_frame_dimensions(frame)
-                self._record_source_media_interval(frame)
                 frame_timestamp = datetime.datetime.now()
 
                 workflow_output, _, errors = await self._process_frame_async(
@@ -805,10 +620,6 @@ class VideoFrameProcessor:
                 await self._send_data_output(
                     workflow_output, frame_timestamp, frame, errors
                 )
-                self._record_frame_complete(
-                    frame_started_ns=frame_started,
-                    frame_completed_ns=performance_profiler.start(),
-                )
 
         except asyncio.CancelledError as exc:
             # No one will catch this exception as it's executed in a create_task
@@ -820,10 +631,7 @@ class VideoFrameProcessor:
                 "[DATA_ONLY] Error at frame %d: %s", self._received_frames, exc
             )
         finally:
-            try:
-                await self._send_processing_complete()
-            finally:
-                self._flush_performance_profile()
+            await self._send_processing_complete()
 
     @staticmethod
     def _ensure_workflow_specification(
@@ -905,51 +713,19 @@ class VideoFrameProcessor:
             if len(self._fps_monitor.all_timestamps) > 1
             else self._declared_fps
         )
-        if not performance_profiler.enabled:
-            return await loop.run_in_executor(
-                None,
-                process_frame,
-                frame,
-                frame_id,
-                self._declared_fps,
-                measured_fps,
-                self._file_processing,
-                self._inference_pipeline,
-                stream_output,
-                render_output,
-                include_errors_on_frame,
-            )
-
-        executor_started = performance_profiler.start()
-
-        def _run_process_frame():
-            worker_started = performance_profiler.start()
-            performance_profiler.stop(
-                "frame.executor.queue", executor_started, end_ns=worker_started
-            )
-            return process_frame(
-                frame,
-                frame_id,
-                self._declared_fps,
-                measured_fps,
-                self._file_processing,
-                self._inference_pipeline,
-                stream_output,
-                render_output,
-                include_errors_on_frame,
-            )
-
-        try:
-            result = await loop.run_in_executor(None, _run_process_frame)
-        except asyncio.CancelledError:
-            performance_profiler.increment("frame.executor.cancelled")
-            raise
-        except Exception:
-            performance_profiler.increment("frame.executor.errors")
-            raise
-        else:
-            performance_profiler.stop("frame.executor.total", executor_started)
-            return result
+        return await loop.run_in_executor(
+            None,
+            process_frame,
+            frame,
+            frame_id,
+            self._declared_fps,
+            measured_fps,
+            self._file_processing,
+            self._inference_pipeline,
+            stream_output,
+            render_output,
+            include_errors_on_frame,
+        )
 
 
 class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
@@ -1013,14 +789,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             self.stream_output = ""
 
     async def recv(self):
-        frame_started = performance_profiler.start()
-        if self._last_frame_completed_ns is not None and frame_started is not None:
-            performance_profiler.record(
-                "video.output_pacing",
-                (frame_started - self._last_frame_completed_ns) / 1_000_000,
-                "ms",
-            )
-
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
@@ -1038,11 +806,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
                 raise MediaStreamError("Track not available after wait")
 
         # Optional ACK pacing: block producing the next frame if we're too far ahead.
-        ack_started = performance_profiler.start()
-        try:
-            await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
-        finally:
-            performance_profiler.stop("ack.wait", ack_started)
+        await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
 
         if self._check_termination():
             logger.warning("[RECV] Termination triggered, closing gracefully")
@@ -1052,7 +816,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             raise MediaStreamError(f"Processing terminated: {reason}")
 
         # Drain queue if using PlayerStreamTrack (RTSP/video file)
-        self._record_source_queue_depth()
         if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
             queue_size = self.track._queue.qsize()
             if queue_size > 30:
@@ -1063,14 +826,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
                 logger.info(
                     "[RECV] Drained %d frames from queue (was %d)", drained, queue_size
                 )
-                performance_profiler.increment("source.frames_drained", drained)
 
         try:
-            source_started = performance_profiler.start()
-            try:
-                frame: VideoFrame = await self.track.recv()
-            finally:
-                performance_profiler.stop("source.wait", source_started)
+            frame: VideoFrame = await self.track.recv()
         except MediaStreamError:
             logger.info("[RECV] Track ended after %d frames", self._received_frames)
             await self._send_processing_complete()
@@ -1078,8 +836,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
 
         self._received_frames += 1
         self._fps_monitor.tick()
-        self._record_frame_dimensions(frame)
-        self._record_source_media_interval(frame)
         frame_id = self._received_frames
         frame_timestamp = datetime.datetime.now()
 
@@ -1102,10 +858,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if errors:
             logger.warning("[RECV] Frame %d errors: %s", frame_id, errors)
 
-        self._record_frame_complete(
-            frame_started_ns=frame_started,
-            frame_completed_ns=performance_profiler.start(),
-        )
         return new_frame
 
 
@@ -1147,9 +899,19 @@ def _open_media_player(file: str, **kwargs) -> MediaPlayer:
         ) from None
 
 
+async def _deliver_answer(
+    callback: Callable[[WebRTCWorkerResult], Optional[Awaitable[None]]],
+    result: WebRTCWorkerResult,
+) -> None:
+    """Await async transports while retaining synchronous worker callbacks."""
+    delivery = callback(result)
+    if inspect.isawaitable(delivery):
+        await delivery
+
+
 async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
-    send_answer: Callable[[WebRTCWorkerResult], None],
+    send_answer: Callable[[WebRTCWorkerResult], Optional[Awaitable[None]]],
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
     model_manager: Optional[ModelManager] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
@@ -1264,41 +1026,45 @@ async def init_rtc_peer_connection_with_loop(
     ) as error:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message="Could not decode InferencePipeline initialisation command payload.",
-            )
+            ),
         )
         return
     except WebRTCConfigurationError as error:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message=str(error),
-            )
+            ),
         )
         return
     except RoboflowAPINotAuthorizedError:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotAuthorizedError.__name__,
                 error_message="Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
-            )
+            ),
         )
         return
     except RoboflowAPINotNotFoundError:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotNotFoundError.__name__,
                 error_message="Requested Roboflow resources (models / workflows etc.) not available or wrong API key used.",
-            )
+            ),
         )
         return
     except WorkflowSyntaxError as error:
@@ -1309,7 +1075,8 @@ async def init_rtc_peer_connection_with_loop(
             blocks_errors_serialized = [
                 block_error.model_dump() for block_error in error.blocks_errors
             ]
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=WorkflowSyntaxError.__name__,
                 error_message=error.public_message,
@@ -1317,27 +1084,30 @@ async def init_rtc_peer_connection_with_loop(
                 inner_error=str(error.inner_error) if error.inner_error else None,
                 inner_error_type=error.inner_error_type,
                 blocks_errors=blocks_errors_serialized,
-            )
+            ),
         )
         return
     except WorkflowError as error:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=WorkflowError.__name__,
                 error_message=str(error),
-            )
+            ),
         )
         return
     except Exception as error:
-        send_answer(
+        logger.exception("WebRTC pipeline initialization failed")
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message=str(error),
-            )
+            ),
         )
-        return
+        raise
 
     peer_connection = RTCPeerConnectionWithLoop(
         configuration=_build_rtc_configuration(
@@ -1620,13 +1390,14 @@ async def init_rtc_peer_connection_with_loop(
         peer_connection.connectionState,
     )
 
-    send_answer(
+    await _deliver_answer(
+        send_answer,
         WebRTCWorkerResult(
             answer={
                 "type": peer_connection.localDescription.type,
                 "sdp": peer_connection.localDescription.sdp,
             },
-        )
+        ),
     )
 
     logger.info("Answer sent, waiting for termination event")

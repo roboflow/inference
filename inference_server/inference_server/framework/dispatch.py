@@ -28,7 +28,9 @@ from inference_server.framework.registry import (
     has_handler_for_model_type,
     supported_actions_for,
 )
-from inference_server.response_headers import record_model_used
+from inference_server.middlewares.model_load import record_model_load
+from inference_server.prometheus import measure_inference
+from inference_server.routing import routing_key
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +215,7 @@ async def handle_model_inference_request(
         return err
     _apply_param_defaults(params_spec, input_data["params"])
 
-    record_model_used(common.model_id)
+    record_model_load(common.model_id, cold_start=False, load_time_s=0.0)
     status = await proxy.ensure_loaded(
         common.model_id, common.instance, common.api_key, common.device
     )
@@ -229,7 +231,13 @@ async def handle_model_inference_request(
         return error_response(500, "LOAD_FAILED", "model load failed")
 
     try:
-        prediction = await description.handler(action, input_data, proxy, server_hooks)
+        with measure_inference(
+            routing_key(common.model_id, common.instance),
+            responses=max(len(input_data.get("images") or ()), 1),
+        ):
+            prediction = await description.handler(
+                action, input_data, proxy, server_hooks
+            )
     except PayloadTooLargeError as exc:
         logger.warning("Payload too large: %s", exc)
         return error_response(413, "PAYLOAD_TOO_LARGE", "payload too large")

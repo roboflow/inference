@@ -8,7 +8,11 @@
 
 from __future__ import annotations
 
-from inference_model_manager.model_manager import ModelManager
+from inference_server.legacy_env import apply_legacy_env
+
+apply_legacy_env()
+
+from inference_model_manager.model_manager import ModelManager  # noqa: E402
 
 
 def launch_inprocess() -> ModelManager:

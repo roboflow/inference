@@ -3,6 +3,8 @@ happen before anything imports `roboflow_workflows.environment`."""
 
 from __future__ import annotations
 
+import functools
+import importlib
 import json
 import logging
 import os
@@ -11,6 +13,7 @@ import re
 import socket
 import stat
 import threading
+import time
 import urllib.parse
 import uuid
 import warnings
@@ -44,6 +47,7 @@ from inference_server import configuration
 logger = logging.getLogger(__name__)
 
 _ALLOWED_API_KEY_TRANSPORTS = ("legacy", "both", "header")
+_API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 _API_KEY_PATTERN = re.compile(r"api_key=(.[^&]*)")
 _MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
 
@@ -65,8 +69,8 @@ def _optional_address_set(raw: Optional[str]) -> Optional[Tuple[str, ...]]:
 
 
 def build_workflows_configuration() -> WorkflowsConfiguration:
-    offline_mode = get_boolean_from_env("OFFLINE_MODE", default=False)
-    secure_gateway = os.environ.get("SECURE_GATEWAY") or None
+    offline_mode = configuration.LEGACY_OFFLINE_MODE
+    secure_gateway = configuration.SECURE_GATEWAY
     step_execution_mode = os.environ.get(
         "WORKFLOWS_STEP_EXECUTION_MODE", "local"
     ).lower()
@@ -195,6 +199,8 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
             kafka_sinks_whitelisted_bootstrap_servers=_optional_csv(
                 os.environ.get("KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS")
             ),
+            allow_mqtt_blocks_user_provided_host=configuration.MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST,
+            mqtt_blocks_whitelisted_hosts=configuration.MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS,
         ),
         tensor=TensorConfiguration(
             representation_enabled=tensor_representation_enabled,
@@ -285,8 +291,8 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
             api_base_url=configuration.API_BASE_URL,
             offline_mode=offline_mode,
             secure_gateway=secure_gateway,
-            gcp_serverless=False,
-            lambda_runtime=False,
+            gcp_serverless=configuration.GCP_SERVERLESS,
+            lambda_runtime=configuration.LAMBDA,
         ),
         fonts=FontsConfiguration(
             allow_download=configuration.ALLOW_WORKFLOWS_FONTS_DOWNLOAD,
@@ -371,8 +377,53 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
     )
 
 
+ENTERPRISE_BLOCKS_PLUGIN = "roboflow_workflows.enterprise_blocks.loader"
+
+
+def expand_enterprise_blocks_plugin() -> None:
+    """Prepend the enterprise blocks loader to `WORKFLOWS_PLUGINS` when enabled.
+
+    The loader goes first so the block order stays core, enterprise, then custom
+    plugins. A loader that is already listed keeps its position.
+    """
+    if not configuration.LOAD_ENTERPRISE_BLOCKS:
+        return
+
+    plugins = [
+        plugin
+        for plugin in os.environ.get("WORKFLOWS_PLUGINS", "").split(",")
+        if plugin
+    ]
+    if ENTERPRISE_BLOCKS_PLUGIN in plugins:
+        return
+
+    os.environ["WORKFLOWS_PLUGINS"] = ",".join([ENTERPRISE_BLOCKS_PLUGIN] + plugins)
+
+
+def require_enterprise_blocks_plugin() -> None:
+    """Fail at startup when enterprise blocks are enabled but cannot be imported.
+
+    Raises:
+        RuntimeError: When `LOAD_ENTERPRISE_BLOCKS` is set and the enterprise
+            loader or one of its dependencies is missing.
+    """
+    if not configuration.LOAD_ENTERPRISE_BLOCKS:
+        return
+
+    try:
+        importlib.import_module(ENTERPRISE_BLOCKS_PLUGIN)
+    except ImportError as error:
+        raise RuntimeError(
+            "LOAD_ENTERPRISE_BLOCKS is enabled but the enterprise Workflow blocks "
+            f"cannot be imported ({error}). Install the `enterprise` extra: "
+            "roboflow-workflows[enterprise]."
+        ) from error
+
+
+expand_enterprise_blocks_plugin()
 SERVER_WORKFLOWS_CONFIGURATION = build_workflows_configuration()
 configure_process(SERVER_WORKFLOWS_CONFIGURATION)
+require_enterprise_blocks_plugin()
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
@@ -404,21 +455,17 @@ from roboflow_workflows.utils.image_encoding import (  # noqa: E402
     convert_gray_image_to_bgr,
     decode_encoded_image_bytes,
 )
-from roboflow_workflows.utils.in_memory_cache import (  # noqa: E402
-    InMemoryWorkflowsCache,
-)
-
+from inference_model_manager.pipelines import InvalidPipelineIdError  # noqa: E402
 from inference_models.errors import (  # noqa: E402
     ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
     ModelPackageRestrictedError,
     ModelRetrievalError,
-    RetryError,
     UnauthorizedModelAccessError,
 )
-from inference_models.weights_providers.roboflow import (  # noqa: E402
-    roboflow_secure_gateway_proxy_url_builder,
-)
 from inference_sdk.http.errors import HTTPCallErrorError  # noqa: E402
+from inference_server import platform_http, telemetry  # noqa: E402
+from inference_server.errors import ServerBusyError  # noqa: E402
 from inference_server.framework.input_parsers.url_fetch import (  # noqa: E402
     URL_FETCH_TIMEOUT_S,
 )
@@ -426,15 +473,35 @@ from inference_server.framework.model_stat import _TtlLruCache  # noqa: E402
 from inference_server.legacy import bridge as legacy_bridge  # noqa: E402
 from inference_server.legacy.bridge import LoopBridge  # noqa: E402
 from inference_server.legacy.errors import (  # noqa: E402
-    REGISTRY_UNREACHABLE_MESSAGE,
+    MODEL_ACCESS_ERROR_MESSAGES,
+    NOT_FOUND_MESSAGE,
+    REGISTRY_REQUEST_FAILED_MESSAGE,
+    UNAUTHORIZED_MESSAGE,
+    ImageFetchError,
     LegacyHTTPError,
+    ModelNotReadyError,
 )
+from inference_server.legacy.telemetry_recording import record_telemetry  # noqa: E402
+from inference_server.platform_http import (  # noqa: E402
+    API_REQUEST_TIMEOUT_S,
+    _add_params_to_url,
+    _platform_request,
+)
+from inference_server.workflows import definition_cache  # noqa: E402
+from inference_server.workflows.errors import (  # noqa: E402
+    MalformedRoboflowAPIResponseError,
+    ModelDeploymentNotSupportedError,
+    PaymentRequiredError,
+    RoboflowAPIUsagePausedError,
+    WorkspaceLoadError,
+)
+from inference_server.workflows.redis_cache import build_workflows_cache  # noqa: E402
 
-API_REQUEST_TIMEOUT_S = get_float_from_env(
-    "ROBOFLOW_API_REQUEST_TIMEOUT", default=120.0
-)
 _URL_FETCH_BRIDGE_TIMEOUT_S = URL_FETCH_TIMEOUT_S + 5
 _IMAGE_LOADING_CONTEXT = "workflow_execution | image_loading"
+_NUMPY_INPUT_REFUSAL = (
+    "NumPy image type is not supported in this configuration of `inference`."
+)
 _STEP_EXECUTION_CONTEXT = "workflow_execution | step_execution"
 _MODEL_ACCESS_ERROR_MESSAGES = {
     402: "Not enough credits to execute step {step_name}. Verify your workspace billing page.",
@@ -466,19 +533,6 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
 
 def _is_successful(response: requests.Response) -> bool:
     return 200 <= response.status_code < 300
-
-
-def _platform_request(method: str, url: str, **kwargs: Any) -> requests.Response:
-    try:
-        return getattr(requests, method)(url=url, **kwargs)
-    except requests.exceptions.Timeout as error:
-        raise LegacyHTTPError(
-            504, "Timeout when attempting to connect to Roboflow API."
-        ) from error
-    except requests.exceptions.RequestException as error:
-        raise LegacyHTTPError(
-            503, "Internal error. Could not connect to Roboflow API."
-        ) from error
 
 
 def _api_error_message(response: requests.Response, api_key: Optional[str]) -> str:
@@ -540,7 +594,7 @@ _FORBIDDEN_MESSAGE = (
 _PLATFORM_API_ERRORS: Dict[int, Tuple[type, str]] = {
     401: (RoboflowAPINotAuthorizedError, _NOT_AUTHORIZED_MESSAGE),
     402: (
-        RoboflowAPIUnsuccessfulRequestError,
+        PaymentRequiredError,
         "Not enough credits to perform this request. Verify your workspace billing page.",
     ),
     403: (RoboflowAPIForbiddenError, _FORBIDDEN_MESSAGE),
@@ -551,10 +605,17 @@ _PLATFORM_API_ERRORS: Dict[int, Tuple[type, str]] = {
         "the correct permissions.",
     ),
     423: (
-        RoboflowAPIUnsuccessfulRequestError,
+        RoboflowAPIUsagePausedError,
         "Roboflow API usage is paused. Please contact your workspace administrator "
         "to re-enable api keys.",
     ),
+}
+
+
+_WORKFLOW_FETCH_FAILURE_MESSAGES = {
+    401: UNAUTHORIZED_MESSAGE,
+    404: NOT_FOUND_MESSAGE,
+    **MODEL_ACCESS_ERROR_MESSAGES,
 }
 
 
@@ -589,20 +650,67 @@ def _translate_platform_api_errors(
         if status_code in handlers:
             error_class, message = handlers[status_code]
             raise error_class(message) from error
-        raise RoboflowAPIUnsuccessfulRequestError(
-            f"Unsuccessful request to Roboflow API with response code: {status_code}"
-        ) from error
+        raise _unsuccessful_request_error(status_code) from error
     except (requests.exceptions.InvalidJSONError, ValueError) as error:
-        raise RoboflowAPIRequestError(
+        raise MalformedRoboflowAPIResponseError(
             "Could not decode JSON response from Roboflow API."
         ) from error
 
 
+def _platform_api_error(status_code: int) -> Exception:
+    if status_code in _PLATFORM_API_ERRORS:
+        error_class, message = _PLATFORM_API_ERRORS[status_code]
+        return error_class(message)
+
+    return _unsuccessful_request_error(status_code)
+
+
+def _unsuccessful_request_error(
+    status_code: int,
+) -> RoboflowAPIUnsuccessfulRequestError:
+    return RoboflowAPIUnsuccessfulRequestError(
+        f"Unsuccessful request to Roboflow API with response code: {status_code}"
+    )
+
+
 def _refuse_when_offline(operation: str) -> None:
-    if configuration.OFFLINE_MODE:
+    if configuration.LEGACY_OFFLINE_MODE:
         raise RoboflowAPIConnectionError(
             f"Cannot {operation} at Roboflow - OFFLINE_MODE is enabled."
         )
+
+
+def _records_api_call(function_name: str) -> Callable:
+    def decorator(function: Callable) -> Callable:
+        @functools.wraps(function)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            started = time.perf_counter()
+            try:
+                result = function(*args, **kwargs)
+            finally:
+                record_telemetry(
+                    telemetry.record_api_call,
+                    function_name,
+                    time.perf_counter() - started,
+                )
+
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+def _api_base_url_for_endpoint(endpoint: str) -> str:
+    """Return the platform base URL serving ``endpoint``, proxy prefixes included."""
+    normalized_endpoint = endpoint.strip("/")
+    for prefix in _API_PROXY_ENDPOINT_PREFIXES:
+        if normalized_endpoint == prefix or normalized_endpoint.startswith(
+            f"{prefix}/"
+        ):
+            return configuration.API_PROXY_BASE_URL
+
+    return configuration.API_BASE_URL
 
 
 def _api_url(path: str) -> str:
@@ -630,6 +738,7 @@ def collect_system_info() -> dict:
 
 
 class ServerRoboflowPlatformClient:
+    @_records_api_call("_make_request")
     def post(
         self,
         endpoint: str,
@@ -644,39 +753,41 @@ class ServerRoboflowPlatformClient:
             url_params.append(("api_key", api_key))
         if params:
             url_params.extend(params)
+        base_url = _api_base_url_for_endpoint(endpoint)
         url = _add_params_to_url(
-            url=f"{configuration.API_BASE_URL.rstrip('/')}/{endpoint.strip('/')}",
+            url=f"{base_url.rstrip('/')}/{endpoint.strip('/')}",
             params=url_params,
         )
-        response = _platform_request(
-            "post",
-            self.wrap_url(url),
-            json=payload,
-            headers=self.build_api_headers(),
-            timeout=API_REQUEST_TIMEOUT_S,
-        )
+        try:
+            response = _platform_request(
+                "post",
+                self.wrap_url(url),
+                json=payload,
+                headers=self.build_api_headers(),
+                timeout=API_REQUEST_TIMEOUT_S,
+            )
+        except LegacyHTTPError as error:
+            if error.status_code == 504:
+                raise RoboflowAPITimeoutError(
+                    "Timeout when attempting to connect to Roboflow API."
+                ) from None
+            raise RoboflowAPIConnectionError(
+                "Could not connect to Roboflow API."
+            ) from None
         if not _is_successful(response):
-            message = _api_error_message(response, api_key)
             handler = (http_errors_handlers or {}).get(response.status_code)
-            if handler is not None:
-                handler(requests.exceptions.HTTPError(message, response=response))
-            raise LegacyHTTPError(response.status_code, message)
+            if handler is None:
+                raise _platform_api_error(response.status_code)
+
+            message = _api_error_message(response, api_key)
+            handler(requests.exceptions.HTTPError(message, response=response))
+            raise _unsuccessful_request_error(response.status_code)
         return response.json()
 
     def build_api_headers(
         self, explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None
     ) -> Dict[str, Union[str, List[str]]]:
-        headers: Dict[str, Union[str, List[str]]] = {
-            "x-roboflow-inference-version": configuration.SERVER_VERSION,
-            "x-allow-chunked-response": "true",
-        }
-        if configuration.ROBOFLOW_API_EXTRA_HEADERS:
-            try:
-                headers.update(json.loads(configuration.ROBOFLOW_API_EXTRA_HEADERS))
-            except ValueError:
-                logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
-        headers.update(explicit_headers or {})
-        return headers
+        return platform_http.build_api_headers(explicit_headers=explicit_headers)
 
     def build_weights_provider_headers(
         self,
@@ -692,7 +803,7 @@ class ServerRoboflowPlatformClient:
         return self.build_api_headers()
 
     def wrap_url(self, url: str) -> str:
-        return roboflow_secure_gateway_proxy_url_builder(url, None)
+        return platform_http.wrap_url(url)
 
     # The Roboflow-platform blocks' operations. Endpoints, payloads, query
     # parameters and error classes are those of `inference.core.roboflow_api`.
@@ -704,6 +815,7 @@ class ServerRoboflowPlatformClient:
             url=self.wrap_url(url),
             headers=headers if headers is not None else self.build_api_headers(),
             timeout=API_REQUEST_TIMEOUT_S,
+            **platform_http.tls_verification_options(),
             **kwargs,
         )
         _api_key_safe_raise_for_status(response=response)
@@ -711,9 +823,7 @@ class ServerRoboflowPlatformClient:
 
     def get_roboflow_workspace(self, api_key: str) -> str:
         if not api_key:
-            raise RoboflowAPIRequestError(
-                "Empty workspace encountered, check your API key."
-            )
+            raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
         cache_key = sha256(api_key.encode("utf-8")).hexdigest()
         with _WORKSPACE_CACHE_LOCK:
             cached_workspace_id = _WORKSPACE_CACHE.get(cache_key)
@@ -724,6 +834,7 @@ class ServerRoboflowPlatformClient:
             _WORKSPACE_CACHE.set(cache_key, workspace_id)
         return workspace_id
 
+    @_records_api_call("get_roboflow_workspace")
     def _fetch_roboflow_workspace(self, api_key: str) -> str:
         # Guarded behind the cache lookup: the legacy server's `ttl_cache`
         # still answers for an already-resolved key while OFFLINE_MODE is on.
@@ -737,6 +848,7 @@ class ServerRoboflowPlatformClient:
                 url=self.wrap_url(url),
                 headers=self.build_api_headers(),
                 timeout=API_REQUEST_TIMEOUT_S,
+                **platform_http.tls_verification_options(),
             )
             _api_key_safe_raise_for_status(response=response)
             return response.json()
@@ -745,11 +857,145 @@ class ServerRoboflowPlatformClient:
         if not isinstance(workspace_id, str) or not _WORKSPACE_ID_PATTERN.fullmatch(
             workspace_id
         ):
-            raise RoboflowAPIRequestError(
-                "Empty workspace encountered, check your API key."
-            )
+            raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
         return workspace_id
 
+    def _get_from_api(self, url: str) -> dict:
+        def _call() -> dict:
+            response = requests.get(
+                url=self.wrap_url(url),
+                headers=self.build_api_headers(),
+                timeout=API_REQUEST_TIMEOUT_S,
+                **platform_http.tls_verification_options(),
+            )
+            _api_key_safe_raise_for_status(response=response)
+            return response.json()
+
+        parsed_response = _translate_platform_api_errors(_call)
+
+        return parsed_response
+
+    @_records_api_call("get_roboflow_dataset_type")
+    def get_roboflow_dataset_type(
+        self, api_key: str, workspace_id: str, dataset_id: str
+    ) -> str:
+        """Fetch the task type of a Roboflow project.
+
+        Args:
+            api_key: Roboflow API key.
+            workspace_id: Workspace owning the project.
+            dataset_id: Project identifier.
+
+        Returns:
+            The project type, ``object-detection`` when the platform reports none.
+
+        Raises:
+            RoboflowAPIRequestError: If the platform cannot be reached or rejects
+                the request.
+        """
+        _refuse_when_offline(operation="fetch dataset type")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/{dataset_id}"),
+            params=[("api_key", api_key), ("nocache", "true")],
+        )
+
+        project = self._get_from_api(url).get("project", {})
+        if "type" not in project:
+            logger.warning(
+                "Project task type not defined for workspace=%s and dataset=%s, "
+                "defaulting to object-detection.",
+                workspace_id,
+                dataset_id,
+            )
+        dataset_type = project.get("type", "object-detection")
+
+        return dataset_type
+
+    @_records_api_call("get_roboflow_active_learning_configuration")
+    def get_roboflow_active_learning_configuration(
+        self, api_key: str, workspace_id: str, dataset_id: str
+    ) -> dict:
+        """Fetch the active learning configuration of a Roboflow project.
+
+        Args:
+            api_key: Roboflow API key.
+            workspace_id: Workspace owning the project.
+            dataset_id: Project identifier.
+
+        Returns:
+            The configuration document as the platform returns it.
+
+        Raises:
+            RoboflowAPIRequestError: If the platform cannot be reached or rejects
+                the request.
+        """
+        _refuse_when_offline(operation="fetch active learning configuration")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/{dataset_id}/active_learning"),
+            params=[("api_key", api_key)],
+        )
+
+        active_learning_configuration = self._get_from_api(url)
+
+        return active_learning_configuration
+
+    @_records_api_call("get_roboflow_labeling_batches")
+    def get_roboflow_labeling_batches(
+        self, api_key: str, workspace_id: str, dataset_id: str
+    ) -> dict:
+        """Fetch the labeling batches of a Roboflow project.
+
+        Args:
+            api_key: Roboflow API key.
+            workspace_id: Workspace owning the project.
+            dataset_id: Project identifier.
+
+        Returns:
+            The platform response, with the batches under ``batches``.
+
+        Raises:
+            RoboflowAPIRequestError: If the platform cannot be reached or rejects
+                the request.
+        """
+        _refuse_when_offline(operation="fetch labeling batches")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/{dataset_id}/batches"),
+            params=[("api_key", api_key)],
+        )
+
+        labeling_batches = self._get_from_api(url)
+
+        return labeling_batches
+
+    @_records_api_call("get_roboflow_labeling_jobs")
+    def get_roboflow_labeling_jobs(
+        self, api_key: str, workspace_id: str, dataset_id: str
+    ) -> dict:
+        """Fetch the labeling jobs of a Roboflow project.
+
+        Args:
+            api_key: Roboflow API key.
+            workspace_id: Workspace owning the project.
+            dataset_id: Project identifier.
+
+        Returns:
+            The platform response, with the jobs under ``jobs``.
+
+        Raises:
+            RoboflowAPIRequestError: If the platform cannot be reached or rejects
+                the request.
+        """
+        _refuse_when_offline(operation="fetch labeling jobs")
+        url = _add_params_to_url(
+            url=_api_url(f"{workspace_id}/{dataset_id}/jobs"),
+            params=[("api_key", api_key)],
+        )
+
+        labeling_jobs = self._get_from_api(url)
+
+        return labeling_jobs
+
+    @_records_api_call("add_custom_metadata")
     def add_custom_metadata(
         self,
         api_key: str,
@@ -758,7 +1004,7 @@ class ServerRoboflowPlatformClient:
         field_name: str,
         field_value: str,
     ) -> None:
-        if configuration.OFFLINE_MODE:
+        if configuration.LEGACY_OFFLINE_MODE:
             return None
         url = _add_params_to_url(
             url=_api_url(f"{workspace_id}/inference-stats/metadata"),
@@ -775,6 +1021,7 @@ class ServerRoboflowPlatformClient:
         }
         _translate_platform_api_errors(lambda: self._post_to_api(url, json=payload))
 
+    @_records_api_call("register_image_at_roboflow")
     def register_image_at_roboflow(
         self,
         api_key: str,
@@ -808,6 +1055,7 @@ class ServerRoboflowPlatformClient:
             )
         return parsed_response
 
+    @_records_api_call("annotate_image_at_roboflow")
     def annotate_image_at_roboflow(
         self,
         api_key: str,
@@ -848,6 +1096,7 @@ class ServerRoboflowPlatformClient:
             )
         return parsed_response
 
+    @_records_api_call("update_image_metadata_at_roboflow")
     def update_image_metadata_at_roboflow(
         self,
         api_key: str,
@@ -871,6 +1120,7 @@ class ServerRoboflowPlatformClient:
             lambda: self._post_to_api(url, json=payload).json()
         )
 
+    @_records_api_call("batch_update_image_metadata_at_roboflow")
     def batch_update_image_metadata_at_roboflow(
         self,
         api_key: str,
@@ -886,6 +1136,7 @@ class ServerRoboflowPlatformClient:
             lambda: self._post_to_api(url, json={"updates": updates}).json()
         )
 
+    @_records_api_call("_make_request")
     def search_project_images_at_roboflow(
         self,
         api_key: str,
@@ -909,13 +1160,14 @@ class ServerRoboflowPlatformClient:
             lambda: self._post_to_api(url, json=payload).json()
         )
 
+    @_records_api_call("send_inference_results_to_model_monitoring")
     def send_inference_results_to_model_monitoring(
         self,
         api_key: str,
         workspace_id: str,
         inference_data: dict,
     ) -> None:
-        if configuration.OFFLINE_MODE:
+        if configuration.LEGACY_OFFLINE_MODE:
             return None
         url = _add_params_to_url(
             url=_api_url(f"{workspace_id}/inference-stats"),
@@ -937,27 +1189,16 @@ class ServerRoboflowPlatformClient:
 
 class ServerWorkspaceResolver:
     def resolve_workspace(self, api_key: Optional[str]) -> Optional[str]:
-        if not api_key:
+        if not api_key or configuration.LEGACY_OFFLINE_MODE:
             return None
-        url = _add_params_to_url(
-            url=f"{configuration.API_BASE_URL.rstrip('/')}/",
-            params=[("api_key", api_key), ("nocache", "true")],
-        )
+
         try:
-            response = _platform_request(
-                "get",
-                PLATFORM_CLIENT.wrap_url(url),
-                headers=PLATFORM_CLIENT.build_api_headers(),
-                timeout=API_REQUEST_TIMEOUT_S,
-            )
-            if not _is_successful(response):
-                return None
-            workspace_id = response.json().get("workspace")
-        except Exception as error:
-            logger.warning("Could not resolve Roboflow workspace: %s", error)
+            workspace_id = PLATFORM_CLIENT.get_roboflow_workspace(api_key)
+        except WorkspaceLoadError:
             return None
-        if not isinstance(workspace_id, str) or not workspace_id:
-            return None
+        except RoboflowAPIRequestError as error:
+            raise error from None
+
         return workspace_id
 
 
@@ -1001,7 +1242,7 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
     def fetch_url(
         self, value: str, cv_imread_flags: int = cv2.IMREAD_COLOR
     ) -> np.ndarray:
-        if configuration.OFFLINE_MODE:
+        if configuration.LEGACY_OFFLINE_MODE:
             raise WorkflowImageLoadError(
                 public_message="Loading images from a URL is not available while "
                 "OFFLINE_MODE is enabled.",
@@ -1015,7 +1256,7 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
         if self._loop_bridge is None:
             raise RuntimeError("codec loop not bound")
         images, error = self._loop_bridge.run(
-            legacy_bridge.fetch_images_from_urls([value]),
+            legacy_bridge.fetch_url_images([value]),
             timeout=_URL_FETCH_BRIDGE_TIMEOUT_S,
         )
         if error is not None or not images:
@@ -1024,6 +1265,21 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
                 context=_IMAGE_LOADING_CONTEXT,
             )
         return decode_encoded_image_bytes(images[0], cv_imread_flags=cv_imread_flags)
+
+    def decode_string(
+        self,
+        value: Union[str, bytes, bytearray],
+        cv_imread_flags: int = cv2.IMREAD_COLOR,
+    ) -> Tuple[np.ndarray, bool]:
+        try:
+            decoded = super().decode_string(value, cv_imread_flags=cv_imread_flags)
+        except WorkflowImageLoadError as error:
+            raise WorkflowImageLoadError(
+                public_message=_NUMPY_INPUT_REFUSAL,
+                context=_IMAGE_LOADING_CONTEXT,
+            ) from error
+
+        return decoded
 
     def ensure_local_file_load_allowed(self, path: str) -> None:
         if not configuration.ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
@@ -1047,7 +1303,7 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
 PLATFORM_CLIENT = ServerRoboflowPlatformClient()
 WORKSPACE_RESOLVER = ServerWorkspaceResolver()
 GUARDED_IMAGE_CODEC = ServerImageCodec()
-WORKFLOWS_CACHE = InMemoryWorkflowsCache()
+WORKFLOWS_CACHE = build_workflows_cache()
 
 
 def bind_image_codec(init_parameters: Dict[str, Any]) -> None:
@@ -1095,12 +1351,31 @@ def _local_workflow_response(workflow_id: str) -> dict:
             os.close(descriptor)
 
 
+def _workflow_fetch_failure(status_code: int) -> LegacyHTTPError:
+    message = _WORKFLOW_FETCH_FAILURE_MESSAGES.get(status_code)
+    if message is None:
+        return LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE)
+
+    return LegacyHTTPError(status_code, message)
+
+
+_PLATFORM_UNREACHABLE_CAUSES = (
+    requests.exceptions.ConnectionError,
+    ConnectionError,
+    requests.exceptions.Timeout,
+)
+
+
 def _fetch_workflow_response(
     api_key: Optional[str],
     workspace_id: str,
     workflow_id: str,
     workflow_version_id: Optional[str],
 ) -> dict:
+    if configuration.LEGACY_OFFLINE_MODE:
+        raise LegacyHTTPError(
+            503, "Internal error. Could not connect to Roboflow API."
+        ) from ConnectionError("OFFLINE_MODE is enabled - cannot make API requests.")
     params: List[Tuple[str, str]] = []
     if api_key:
         params.append(("api_key", api_key))
@@ -1117,12 +1392,79 @@ def _fetch_workflow_response(
         timeout=API_REQUEST_TIMEOUT_S,
     )
     if not _is_successful(response):
-        raise LegacyHTTPError(
-            response.status_code, _api_error_message(response, api_key)
+        raise _workflow_fetch_failure(response.status_code)
+    try:
+        payload = response.json()
+    except ValueError as error:
+        raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE) from error
+
+    return payload
+
+
+def _fetch_workflow_response_with_file_cache(
+    api_key: Optional[str],
+    workspace_id: str,
+    workflow_id: str,
+    workflow_version_id: Optional[str],
+) -> dict:
+    try:
+        response = _fetch_workflow_response(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
         )
-    return response.json()
+    except LegacyHTTPError as error:
+        if (
+            not configuration.USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS
+            or not isinstance(error.__cause__, _PLATFORM_UNREACHABLE_CAUSES)
+        ):
+            raise
+        cached_response = definition_cache.load_definition(
+            workspace_id,
+            workflow_id,
+            api_key=api_key,
+            workflow_version_id=workflow_version_id,
+        )
+        if cached_response is None:
+            raise
+        return cached_response
+
+    if configuration.USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+        definition_cache.store_definition(
+            workspace_id,
+            workflow_id,
+            api_key=api_key,
+            workflow_version_id=workflow_version_id,
+            response=response,
+        )
+
+    return response
 
 
+def _try_read_definition_cache(cache_key: str) -> Optional[dict]:
+    try:
+        return WORKFLOWS_CACHE.get(cache_key)
+    except Exception as error:
+        logger.warning(
+            "Workflow definition cache unavailable, fetching from Roboflow API: %s",
+            type(error).__name__,
+        )
+        return None
+
+
+def _try_write_definition_cache(cache_key: str, specification: dict) -> None:
+    try:
+        WORKFLOWS_CACHE.set(
+            cache_key,
+            specification,
+            expire=configuration.WORKFLOWS_DEFINITION_CACHE_TTL_S,
+        )
+    except Exception as error:
+        logger.warning("Failed to cache workflow definition: %s", type(error).__name__)
+
+
+@_records_api_call("get_workflow_specification")
 def get_workflow_specification(
     api_key: Optional[str],
     workspace_id: str,
@@ -1135,18 +1477,20 @@ def get_workflow_specification(
         f"{sha256((api_key or '').encode()).hexdigest()}"
     )
     if use_cache:
-        cached = WORKFLOWS_CACHE.get(cache_key)
+        cached = _try_read_definition_cache(cache_key)
         if cached:
             return cached
     if workspace_id == "local":
         response = _local_workflow_response(workflow_id)
     else:
-        response = _fetch_workflow_response(
+        response = _fetch_workflow_response_with_file_cache(
             api_key=api_key,
             workspace_id=workspace_id,
             workflow_id=workflow_id,
             workflow_version_id=workflow_version_id,
         )
+    if "workflow" not in response or "config" not in response["workflow"]:
+        raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE)
     try:
         raw_config = response["workflow"]["config"]
         config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
@@ -1154,16 +1498,10 @@ def get_workflow_specification(
         if not isinstance(specification, dict):
             raise TypeError("Workflow specification must be a dictionary")
     except (KeyError, TypeError, ValueError) as error:
-        raise LegacyHTTPError(
-            502, "Could not find workflow specification in API response"
-        ) from error
+        raise LegacyHTTPError(502, REGISTRY_REQUEST_FAILED_MESSAGE) from error
     specification["id"] = response["workflow"].get("id")
     if use_cache:
-        WORKFLOWS_CACHE.set(
-            cache_key,
-            specification,
-            expire=configuration.WORKFLOWS_DEFINITION_CACHE_TTL_S,
-        )
+        _try_write_definition_cache(cache_key, specification)
     return specification
 
 
@@ -1216,22 +1554,6 @@ def _runtime_limited(step_name: str, message: str, error: Exception) -> None:
 
 
 def step_error_handler(step_name: str, error: Exception) -> None:
-    if isinstance(error, RuntimeError) and isinstance(
-        error.__cause__, (RetryError, ModelRetrievalError, OSError)
-    ):
-        cause = error.__cause__
-        if (
-            isinstance(cause, ModelRetrievalError)
-            and getattr(cause, "status_code", None) in _MODEL_ACCESS_ERROR_MESSAGES
-        ):
-            return step_error_handler(step_name, cause)
-        _client_caused(
-            step_name,
-            503,
-            REGISTRY_UNREACHABLE_MESSAGE,
-            error,
-            _STEP_EXECUTION_CONTEXT,
-        )
     if isinstance(error, FeatureDeprecatedError):
         _client_caused(
             step_name,
@@ -1240,7 +1562,33 @@ def step_error_handler(step_name: str, error: Exception) -> None:
             error,
             "workflow_execution | step_execution | feature_deprecated",
         )
-    if isinstance(error, (UnauthorizedModelAccessError, PermissionError)):
+    if isinstance(error, (ModelNotReadyError, ServerBusyError)):
+        raise error
+    if isinstance(error, LookupError) and isinstance(
+        error.__cause__, InvalidPipelineIdError
+    ):
+        _client_caused(
+            step_name,
+            400,
+            f"Problem with Workflow Block configuration - {error}",
+            error.__cause__,
+            _STEP_EXECUTION_CONTEXT,
+        )
+    if isinstance(error, ModelPackageRestrictedError) or (
+        isinstance(error, ModelPackageAlternativesExhaustedError)
+        and any(
+            isinstance(alternative_error, ModelPackageRestrictedError)
+            for alternative_error in error.alternatives_errors or []
+        )
+    ):
+        _runtime_limited(
+            step_name,
+            "Model loading failed due to restrictions of server configuration - "
+            "usually due to excessive runtime memory requirement of the model (for "
+            "instance caused by large input size).",
+            error,
+        )
+    if isinstance(error, (RoboflowAPINotAuthorizedError, UnauthorizedModelAccessError)):
         _client_caused(
             step_name,
             401,
@@ -1250,25 +1598,34 @@ def step_error_handler(step_name: str, error: Exception) -> None:
             error,
             _STEP_EXECUTION_CONTEXT,
         )
-    if isinstance(error, ModelNotFoundError) or (
-        isinstance(error, LookupError) and not isinstance(error, (KeyError, IndexError))
-    ):
+    if isinstance(error, PaymentRequiredError):
         _client_caused(
             step_name,
-            404,
-            f"Could not find requested Roboflow resource while execution of step "
-            f"{step_name} - details of error: {error}. This error usually mean the "
-            f"problem with not existing model.",
+            402,
+            f"Not enough credits to execute step {step_name}. "
+            f"Verify your workspace billing page. Details: {error}",
             error,
             _STEP_EXECUTION_CONTEXT,
         )
-    if isinstance(error, ModelPackageRestrictedError):
-        _runtime_limited(
+    if isinstance(error, RoboflowAPIForbiddenError):
+        _client_caused(
             step_name,
-            "Model loading failed due to restrictions of server configuration - "
-            "usually due to excessive runtime memory requirement of the model (for "
-            "instance caused by large input size).",
+            403,
+            f"Forbidden error occurred while execution of step {step_name} - "
+            f"details of error: {error}. This error usually mean the problem with "
+            f"Roboflow API key.",
             error,
+            _STEP_EXECUTION_CONTEXT,
+        )
+    if isinstance(error, RoboflowAPIUsagePausedError):
+        _client_caused(
+            step_name,
+            423,
+            f"Roboflow API usage is paused while executing step {step_name}. "
+            f"Contact your workspace administrator to re-enable API keys. "
+            f"Details: {error}",
+            error,
+            _STEP_EXECUTION_CONTEXT,
         )
     if isinstance(error, ModelRetrievalError):
         status_code = getattr(error, "status_code", None)
@@ -1281,16 +1638,32 @@ def step_error_handler(step_name: str, error: Exception) -> None:
                 error,
                 _STEP_EXECUTION_CONTEXT,
             )
-    if isinstance(error, LegacyHTTPError):
-        if error.status_code == 507:
-            _runtime_limited(step_name, error.message, error)
+    if isinstance(error, (RoboflowAPINotNotFoundError, ModelNotFoundError)):
         _client_caused(
             step_name,
-            error.status_code,
-            error.message,
+            404,
+            f"Could not find requested Roboflow resource while execution of step "
+            f"{step_name} - details of error: {error}. This error usually mean the "
+            f"problem with not existing model.",
             error,
             _STEP_EXECUTION_CONTEXT,
         )
+    if isinstance(error, LegacyHTTPError):
+        if error.status_code == 507:
+            _runtime_limited(step_name, error.message, error)
+        if (
+            error.status_code < 500
+            or error.status_code == 501
+            or isinstance(error, ImageFetchError)
+        ):
+            _client_caused(
+                step_name,
+                error.status_code,
+                error.message,
+                error,
+                _STEP_EXECUTION_CONTEXT,
+            )
+        return None
     if isinstance(error, HTTPCallErrorError):
         return _handle_remote_call_error(step_name, error)
     return None
@@ -1327,14 +1700,17 @@ def _handle_remote_call_error(step_name: str, error: HTTPCallErrorError) -> None
             error,
         )
     if error.status_code == 501:
-        _client_caused(
-            step_name,
-            501,
+        public_message = (
             error.api_message
-            or f"Remote execution of step {step_name} is not supported on this deployment.",
-            error,
-            "workflow_execution | step_execution | deployment_not_supported",
+            or f"Remote execution of step {step_name} is not supported on this deployment."
         )
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=501,
+            public_message=public_message,
+            context="workflow_execution | step_execution | deployment_not_supported",
+            inner_error=ModelDeploymentNotSupportedError(public_message),
+        ) from error
     message = _REMOTE_CALL_ERROR_MESSAGES.get(error.status_code)
     if message is None:
         return None

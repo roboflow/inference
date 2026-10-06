@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 import time
 import types
 from collections import defaultdict
@@ -52,9 +53,11 @@ def _install_failing_blocks(monkeypatch, error):
 
 @pytest.fixture
 def models_cache_dir(tmp_path, monkeypatch):
-    cache_dir = tmp_path / "models-cache"
-    cache_dir.mkdir()
-    monkeypatch.setattr(models, "generate_models_cache_dir", lambda: str(cache_dir))
+    cache_root = tmp_path / "cache-root"
+    cache_dir = cache_root / "models-cache"
+    cache_dir.mkdir(parents=True)
+    monkeypatch.setattr(configuration, "MODEL_CACHE_DIR", str(cache_root))
+    monkeypatch.setattr(configuration, "INFERENCE_HOME", str(cache_root))
     return cache_dir
 
 
@@ -291,7 +294,7 @@ async def test_offline_mode_hides_models_absent_from_registry(
     from inference_models.weights_providers import offline_registry
 
     _install_blocks(monkeypatch, [])
-    monkeypatch.setattr(configuration, "OFFLINE_MODE", True)
+    monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", True)
     record = offline_registry.OfflineModelStatus(
         canonical_model_id="ws/od/1",
         requested_aliases=[],
@@ -320,13 +323,30 @@ async def test_offline_mode_hides_models_absent_from_registry(
 
 
 @pytest.mark.asyncio
+async def test_model_layer_offline_filters_listing_when_server_setting_is_online(
+    monkeypatch, models_cache_dir
+):
+    from inference_models.weights_providers import offline_registry
+
+    _install_blocks(monkeypatch, [])
+    monkeypatch.setattr(configuration, "OFFLINE_MODE", False)
+    monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", True)
+    monkeypatch.setattr(offline_registry, "list_records_status", lambda: [])
+    bridge = FakeBridge([make_route("ws/od/1", "object-detection")])
+
+    listed = await models.list_models(bridge)
+
+    assert listed == []
+
+
+@pytest.mark.asyncio
 async def test_offline_mode_keeps_listing_when_registry_unreadable(
     monkeypatch, models_cache_dir
 ):
     from inference_models.weights_providers import offline_registry
 
     _install_blocks(monkeypatch, [])
-    monkeypatch.setattr(configuration, "OFFLINE_MODE", True)
+    monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", True)
 
     def _raise():
         raise RuntimeError("registry unreadable")
@@ -423,9 +443,9 @@ def test_models_route_returns_models_and_caches_them(
     async def fake_list_models(bridge):
         result = payloads[min(calls["count"], len(payloads) - 1)]
         calls["count"] += 1
-        return result
+        return result, False
 
-    monkeypatch.setattr(models, "list_models", fake_list_models)
+    monkeypatch.setattr(models, "list_models_with_status", fake_list_models)
     real_time = time.time
     offset = {"value": 0.0}
     monkeypatch.setattr(builder_env.time, "time", lambda: real_time() + offset["value"])
@@ -466,3 +486,210 @@ async def test_model_in_both_manager_and_cache_keeps_cached_architecture(
 
     assert [entry["model_id"] for entry in listed] == ["ws/od/1"]
     assert listed[0]["model_architecture"] == "yolov8"
+
+
+@pytest.mark.asyncio
+async def test_lists_models_cached_in_either_root_and_either_layout(
+    monkeypatch, tmp_path
+):
+    _install_blocks(monkeypatch, _task_blocks())
+    server_root = tmp_path / "server_cache"
+    models_home = tmp_path / "models_home"
+    traditional = server_root / "ws" / "trad" / "1"
+    traditional.mkdir(parents=True)
+    (traditional / "model_type.json").write_text(
+        json.dumps(
+            {
+                "model_id": "ws/trad/1",
+                "project_task_type": "object-detection",
+                "model_type": "yolov8n",
+            }
+        )
+    )
+    (traditional / "weights.onnx").write_bytes(b"x")
+    monkeypatch.setattr(configuration, "MODEL_CACHE_DIR", str(server_root))
+    monkeypatch.setattr(configuration, "INFERENCE_HOME", str(models_home))
+    _write_package(
+        models_home / "models-cache",
+        "ws/im/2",
+        "pkga",
+        {
+            "model_id": "ws/im/2",
+            "task_type": "classification",
+            "model_architecture": "vit",
+        },
+    )
+
+    listed = await models.list_models(FakeBridge([]))
+
+    by_id = {entry["model_id"]: entry for entry in listed}
+    assert set(by_id) == {"ws/trad/1", "ws/im/2"}
+    assert by_id["ws/trad/1"]["compatible_block_types"] == [_DETECTION_BLOCK]
+    assert by_id["ws/im/2"]["compatible_block_types"] == [_CLASSIFICATION_BLOCK]
+
+
+@pytest.mark.asyncio
+async def test_foundation_model_cached_in_the_traditional_layout_is_listed(
+    monkeypatch, models_cache_dir
+):
+    from inference_server.builder import model_cache
+
+    foundation_block = _make_block("roboflow_core/clip@v1", variants=["clip/ViT-B-16"])
+    _install_blocks(monkeypatch, [foundation_block])
+    cache_root = models_cache_dir.parent
+    cache_key = model_cache.get_model_id_cache_path(
+        model_id="clip/ViT-B-16", cache_dir_root=str(cache_root)
+    )
+    (cache_root / cache_key).mkdir(parents=True)
+    (cache_root / cache_key / "textual.onnx").write_bytes(b"x")
+
+    listed = await models.list_models(FakeBridge([]))
+
+    by_id = {entry["model_id"]: entry for entry in listed}
+    assert by_id["clip/ViT-B-16"]["is_foundation"] is True
+
+
+class _ThreadRecordingBridge(FakeBridge):
+    def __init__(self):
+        super().__init__([])
+        self.loop_thread = None
+
+    async def describe(self):
+        self.loop_thread = threading.get_ident()
+        return []
+
+
+def _write_traditional_model(root, model_id, task_type, architecture):
+    model_dir = root / model_id
+    model_dir.mkdir(parents=True)
+    (model_dir / "model_type.json").write_text(
+        json.dumps(
+            {
+                "model_id": model_id,
+                "project_task_type": task_type,
+                "model_type": architecture,
+            }
+        )
+    )
+    (model_dir / "weights.onnx").write_bytes(b"x")
+
+
+@pytest.fixture
+def two_roots(tmp_path, monkeypatch):
+    server_root = tmp_path / "server_cache"
+    models_home = tmp_path / "models_home"
+    server_root.mkdir()
+    models_home.mkdir()
+    monkeypatch.setattr(configuration, "MODEL_CACHE_DIR", str(server_root))
+    monkeypatch.setattr(configuration, "INFERENCE_HOME", str(models_home))
+    monkeypatch.setattr(configuration, "LEGACY_OFFLINE_MODE", False)
+    return server_root, models_home
+
+
+@pytest.mark.parametrize("layout", ["traditional", "inference_models"])
+@pytest.mark.parametrize("root", ["server_root", "models_home"])
+def test_models_route_lists_a_model_cached_in_each_root_and_layout(
+    builder_app, builder_env, monkeypatch, two_roots, root, layout
+):
+    _install_blocks(monkeypatch, _task_blocks())
+    server_root, models_home = two_roots
+    target_root = server_root if root == "server_root" else models_home
+    if layout == "traditional":
+        _write_traditional_model(
+            target_root, "ws/combo/1", "object-detection", "yolov8n"
+        )
+    else:
+        _write_package(
+            target_root / "models-cache",
+            "ws/combo/1",
+            "pkga",
+            {
+                "model_id": "ws/combo/1",
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+            },
+        )
+    client = TestClient(builder_app)
+
+    response = client.get("/build/api/models", headers={"X-CSRF": builder_env.csrf})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "truncated" not in body
+    combo = [entry for entry in body["models"] if entry["model_id"] == "ws/combo/1"]
+    assert len(combo) == 1
+    assert combo[0]["task_type"] == "object-detection"
+    assert combo[0]["model_architecture"] == "yolov8n"
+    assert combo[0]["is_foundation"] is False
+    assert combo[0]["compatible_block_types"] == [_DETECTION_BLOCK]
+
+
+def test_models_route_runs_the_cache_scan_off_the_event_loop(
+    builder_app, builder_env, monkeypatch, two_roots
+):
+    from inference_server.builder import model_cache
+    from inference_server.legacy.router import get_bridge
+
+    _install_blocks(monkeypatch, _task_blocks())
+    bridge = _ThreadRecordingBridge()
+    builder_app.dependency_overrides[get_bridge] = lambda: bridge
+    scan_threads = []
+    real_scan = model_cache.scan_cached_models
+
+    def recording_scan(*args, **kwargs):
+        scan_threads.append(threading.get_ident())
+        return real_scan(*args, **kwargs)
+
+    monkeypatch.setattr(model_cache, "scan_cached_models", recording_scan)
+    client = TestClient(builder_app)
+
+    response = client.get("/build/api/models", headers={"X-CSRF": builder_env.csrf})
+
+    assert response.status_code == 200
+    assert scan_threads
+    assert bridge.loop_thread is not None
+    assert all(thread != bridge.loop_thread for thread in scan_threads)
+
+
+@pytest.mark.asyncio
+async def test_list_models_with_status_reports_a_truncated_scan(monkeypatch, two_roots):
+    from inference_server.builder import model_cache
+
+    _install_blocks(monkeypatch, _task_blocks())
+    server_root, _ = two_roots
+    for index in range(10):
+        _write_traditional_model(
+            server_root, f"ws/many{index}/1", "object-detection", "yolov8n"
+        )
+    monkeypatch.setattr(model_cache, "MAX_SCAN_ENTRIES", 5)
+
+    listed, truncated = await models.list_models_with_status(FakeBridge([]))
+
+    assert truncated is True
+    assert len(listed) < 10
+
+
+def test_models_route_adds_truncated_only_for_an_incomplete_scan(
+    builder_app, builder_env, monkeypatch
+):
+    outcomes = [([{"model_id": "a"}], True), ([{"model_id": "b"}], False)]
+
+    async def fake_list_models(bridge):
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(models, "list_models_with_status", fake_list_models)
+    real_time = time.time
+    offset = {"value": 0.0}
+    monkeypatch.setattr(builder_env.time, "time", lambda: real_time() + offset["value"])
+    client = TestClient(builder_app)
+    headers = {"X-CSRF": builder_env.csrf}
+
+    truncated = client.get("/build/api/models", headers=headers)
+    assert truncated.json() == {"models": [{"model_id": "a"}], "truncated": True}
+
+    cached = client.get("/build/api/models", headers=headers)
+    assert cached.json() == {"models": [{"model_id": "a"}], "truncated": True}
+
+    offset["value"] = 31.0
+    complete = client.get("/build/api/models", headers=headers)
+    assert complete.json() == {"models": [{"model_id": "b"}]}

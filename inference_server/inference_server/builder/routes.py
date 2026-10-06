@@ -181,7 +181,7 @@ async def get_all_workflows():
 
 
 _RESERVED_WORKFLOW_IDS = {"models"}
-_models_cache: Optional[Tuple[float, List[Dict[str, Any]]]] = None
+_models_cache: Optional[Tuple[float, Dict[str, Any]]] = None
 _MODELS_CACHE_TTL = 30.0
 _models_lock = asyncio.Lock()
 
@@ -197,13 +197,16 @@ async def get_cached_models(bridge: LegacyModelBridge = Depends(get_bridge)):
         if _models_cache is not None:
             cached_at, cached_result = _models_cache
             if now - cached_at < _MODELS_CACHE_TTL:
-                return JSONResponse(content={"models": cached_result})
+                return JSONResponse(content=cached_result)
 
-        listed_models = await models.list_models(bridge)
+        listed_models, truncated = await models.list_models_with_status(bridge)
+        content: Dict[str, Any] = {"models": listed_models}
+        if truncated:
+            content["truncated"] = True
 
-        _models_cache = (now, listed_models)
+        _models_cache = (now, content)
 
-    return JSONResponse(content={"models": listed_models})
+    return JSONResponse(content=content)
 
 
 @router.get("/api/{workflow_id}", dependencies=[Depends(verify_csrf_token)])

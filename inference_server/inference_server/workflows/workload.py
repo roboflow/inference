@@ -103,7 +103,7 @@ class RegistryModelMetadataProvider:
     ) -> ModelMetadataLookup:
         if provider != ROBOFLOW_PROVIDER:
             return ModelMetadataLookup(status="unavailable")
-        if configuration.OFFLINE_MODE:
+        if configuration.LEGACY_OFFLINE_MODE:
             return ModelMetadataLookup(status="unavailable")
         cache_key = (self._api_key, model_id)
         with _METADATA_CACHE_LOCK:

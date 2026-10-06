@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import gc
 import logging
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.base import Backend, BackendState
 from inference_model_manager.dispatch import (
+    _build_pre_processing_overrides,
     _get_registry,
     invoke_action,
     resolve_action,
@@ -20,7 +22,9 @@ from inference_model_manager.marshalling import (
     split_batched_result,
     tensors_to_numpy,
 )
-from inference_models.utils.performance import performance_profiler
+
+if TYPE_CHECKING:
+    from inference_model_manager.stream_pipeline import StreamPipelinedModel
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +136,7 @@ class ModelManager:
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
         self._pinned: set[str] = set()
+        self._stream_pipelines: Dict[str, "StreamPipelinedModel"] = {}
         # Set by shutdown() before draining — closes admission so nothing new
         # is queued while in-flight work finishes.
         self._closed = False
@@ -140,9 +145,6 @@ class ModelManager:
         self._executor = ThreadPoolExecutor(
             max_workers=cfg.INFERENCE_DIRECT_MAX_WORKERS,
             thread_name_prefix="mm-worker",
-        )
-        performance_profiler.set_metadata(
-            "manager.direct_max_workers", cfg.INFERENCE_DIRECT_MAX_WORKERS
         )
 
     # ------------------------------------------------------------------
@@ -237,20 +239,14 @@ class ModelManager:
                 self._backends[model_id] = b
                 if pinned:
                     self._pinned.add(model_id)
-            performance_profiler.set_metadata("manager.model_id", model_id)
-            performance_profiler.set_metadata("manager.backend", backend)
-            performance_profiler.set_metadata("manager.device", b.device)
-            model = getattr(b, "model", None)
-            if model is not None:
-                performance_profiler.set_metadata(
-                    "manager.model_class", type(model).__name__
-                )
         finally:
             self._loading_ids.discard(model_id)
 
         # Warmup outside the lock — model is registered, other models can load
         if warmup_iters > 0:
             self._warmup(model_id, warmup_iters)
+        if backend == "direct":
+            self._wire_stream_pipeline(model_id, b)
 
         logger.info(
             "Model '%s' loaded (state=%s, device=%s)",
@@ -303,6 +299,18 @@ class ModelManager:
                 exc_info=True,
             )
 
+    def _wire_stream_pipeline(self, model_id: str, backend: Backend) -> None:
+        from inference_model_manager.stream_pipeline import stream_pipeline_for
+
+        pipeline = stream_pipeline_for(getattr(backend, "model", None))
+        if pipeline is None:
+            return None
+        with self._lifecycle_lock:
+            if self._backends.get(model_id) is backend:
+                self._stream_pipelines[model_id] = pipeline
+
+        return None
+
     def unload(
         self, model_id: str, *, drain: bool = False, drain_timeout_s: float = 30.0
     ) -> None:
@@ -318,6 +326,7 @@ class ModelManager:
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
             self._pinned.discard(model_id)
+            pipeline = self._stream_pipelines.pop(model_id, None)
 
         if drain:
             logger.info(
@@ -329,6 +338,8 @@ class ModelManager:
         else:
             logger.info("Unloading model '%s'", model_id)
             backend.unload()
+        if pipeline is not None:
+            pipeline.shutdown_pipeline()
 
         _try_release_cuda_memory()
 
@@ -354,7 +365,7 @@ class ModelManager:
                     incoming,
                 )
                 return
-            for victim, backend in popped:
+            for victim, backend, pipeline in popped:
                 logger.info(
                     "Evicting '%s' (LRU) to make room for '%s'", victim, incoming
                 )
@@ -364,12 +375,14 @@ class ModelManager:
                     logger.warning(
                         "Draining '%s' during eviction failed", victim, exc_info=True
                     )
+                if pipeline is not None:
+                    pipeline.shutdown_pipeline()
                 _try_release_cuda_memory()
             gc.collect()
 
     def _select_and_pop_victims(
         self, incoming: str, pressure: bool, count: int
-    ) -> Optional[List[Tuple[str, Backend]]]:
+    ) -> Optional[List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]]]:
         """Atomically decide whether eviction is needed and, if so, remove the
         victims from ``_backends`` in the same lock acquisition used to select
         them — so a concurrent ``pin()`` cannot land between selection and
@@ -377,8 +390,9 @@ class ModelManager:
         ``_loading_ids`` (the incoming model's own reservation included).
 
         Returns None if nothing needs to be evicted this pass, otherwise the
-        list of (model_id, backend) pairs already popped from ``_backends``
-        (possibly empty, if every remaining candidate is pinned).
+        list of (model_id, backend, stream pipeline or None) triples already
+        popped from ``_backends`` and ``_stream_pipelines`` (possibly empty,
+        if every remaining candidate is pinned).
         """
         with self._lifecycle_lock:
             max_active = cfg.INFERENCE_MAX_ACTIVE_MODELS
@@ -391,13 +405,13 @@ class ModelManager:
                 for mid, b in self._backends.items()
                 if mid != incoming and mid not in self._pinned
             )
-            popped: List[Tuple[str, Backend]] = []
+            popped: List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]] = []
             for _, mid in candidates[:count]:
                 backend = self._backends.pop(mid, None)
                 if backend is None:
                     continue
                 self._pinned.discard(mid)
-                popped.append((mid, backend))
+                popped.append((mid, backend, self._stream_pipelines.pop(mid, None)))
             return popped
 
     # ------------------------------------------------------------------
@@ -407,9 +421,13 @@ class ModelManager:
     def _wire_marshal_inputs(self, backend: Any, kwargs: dict) -> tuple:
         """Direct-backend half of the subprocess worker's input handling:
         decode encoded image bytes and inject mask_format=rle for models
-        that support it. Returns (kwargs, n_images) for result mapping."""
+        that support it. Returns (kwargs, n_images) for result mapping;
+        n_images is None for a params-only call."""
         images = kwargs.get("images")
-        n_images = len(images) if isinstance(images, list) else 1
+        if images is None:
+            n_images = None
+        else:
+            n_images = len(images) if isinstance(images, list) else 1
         if images is None:
             # The worker invokes params-only requests WITHOUT an images kwarg
             # (zero-byte slot); mirror that exactly.
@@ -425,14 +443,46 @@ class ModelManager:
             kwargs["mask_format"] = "rle"
         return kwargs, n_images
 
+    def _admit(self, model_id: str) -> Tuple[Backend, Optional["StreamPipelinedModel"]]:
+        with self._lifecycle_lock:
+            backend = self._backends.get(model_id)
+            if backend is None:
+                raise KeyError(f"Model '{model_id}' is not loaded")
+            pipeline = self._stream_pipelines.get(model_id)
+
+        return backend, pipeline
+
+    @staticmethod
+    def _invoke(
+        model: Any,
+        pipeline: Optional["StreamPipelinedModel"],
+        action: Optional[str],
+        kwargs: dict,
+    ) -> Any:
+        if pipeline is None:
+            return invoke_action(model, action=action, **kwargs)
+        _action_name, entry = resolve_action(model, action)
+        if not entry.default:
+            return invoke_action(model, action=action, **kwargs)
+        if entry.param_aliases:
+            kwargs = {entry.param_aliases.get(k, k): v for k, v in kwargs.items()}
+        kwargs = _build_pre_processing_overrides(kwargs, entry)
+
+        result = pipeline.infer(**kwargs)
+
+        return result
+
     @staticmethod
     def _wire_marshal_result(
-        raw_out: Any, n_images: int, retry_single: Optional[Callable] = None
+        raw_out: Any, n_images: Optional[int], retry_single: Optional[Callable] = None
     ) -> Any:
         """Direct-backend half of the worker's result handling: the same
         per-image mapping as the worker's sub_results block (including the
         per-image retry when a batched call returns a mismatched shape),
-        then tensors -> CPU numpy."""
+        then tensors -> CPU numpy. A params-only call (n_images None) has no
+        per-image semantics: the result is returned whole."""
+        if n_images is None:
+            return tensors_to_numpy(raw_out)
         results = split_batched_result(raw_out, n_images, retry_single=retry_single)
         results = [tensors_to_numpy(result) for result in results]
         return results[0] if n_images == 1 else results
@@ -473,7 +523,7 @@ class ModelManager:
             ValueError: If action is not supported by the model.
         """
         self._check_open()
-        backend = self._get_backend(model_id)
+        backend, pipeline = self._admit(model_id)
 
         if hasattr(backend, "submit_request"):
             raw_input = kwargs.pop("images", None)
@@ -496,94 +546,38 @@ class ModelManager:
                     return entry.serializer(result, backend)
             return result
 
-        action_setup_ns = 0
-        action_setup_started = performance_profiler.start()
-        try:
-            # Resolve action (validates it exists, raises ValueError if not)
-            action_name, _entry = resolve_action(backend.model, action)
-        finally:
-            if action_setup_started is not None:
-                action_setup_ns += time.perf_counter_ns() - action_setup_started
+        # Resolve action (validates it exists, raises ValueError if not)
+        action_name, _entry = resolve_action(backend.model, action)
 
         n_images = 1
         if wire_marshalling:
-            decode_started = performance_profiler.start()
-            performance_profiler.increment("manager.input_decode.calls")
-            try:
-                kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
-            finally:
-                performance_profiler.stop("manager.input_decode", decode_started)
+            kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
 
-        action_setup_started = performance_profiler.start()
-        try:
-            # Validate kwargs through registry (if entry exists)
-            kwargs = _get_registry().validate(backend.model, action_name, kwargs)
-        finally:
-            if action_setup_started is not None:
-                action_setup_ns += time.perf_counter_ns() - action_setup_started
-                performance_profiler.record(
-                    "manager.action_setup", action_setup_ns / 1_000_000, "ms"
-                )
+        # Validate kwargs through registry (if entry exists)
+        kwargs = _get_registry().validate(backend.model, action_name, kwargs)
 
         t0 = time.monotonic()
         _begin = getattr(backend, "inflight_begin", None)
         if _begin is not None:
-            inflight_started = performance_profiler.start()
-            try:
-                _begin()
-            finally:
-                performance_profiler.stop("manager.inflight_wait", inflight_started)
+            _begin()
         try:
-            invoke_started = performance_profiler.start()
-            performance_profiler.increment("manager.model_invoke.calls")
-            try:
-                result = invoke_action(backend.model, action=action, **kwargs)
-            finally:
-                performance_profiler.stop("manager.model_invoke", invoke_started)
+            result = self._invoke(backend.model, pipeline, action, kwargs)
             if wire_marshalling:
                 # Inside the inflight/accounting window: per-image retries are
                 # inference too — unload drains must wait for them and their
                 # failures must count as errors.
                 images = kwargs.get("images")
-                retry_invoke_ns = 0
 
                 def _retry_single(index: int) -> Any:
-                    nonlocal retry_invoke_ns
                     single_kwargs = dict(kwargs)
                     single_kwargs["images"] = images[index]
-                    retry_started = performance_profiler.start()
-                    performance_profiler.increment("manager.model_invoke.calls")
-                    try:
-                        return invoke_action(
-                            backend.model, action=action, **single_kwargs
-                        )
-                    finally:
-                        if retry_started is not None:
-                            retry_ended = time.perf_counter_ns()
-                            retry_invoke_ns += retry_ended - retry_started
-                            performance_profiler.stop(
-                                "manager.model_invoke", retry_started, retry_ended
-                            )
+                    return self._invoke(backend.model, pipeline, action, single_kwargs)
 
-                marshal_started = performance_profiler.start()
-                performance_profiler.increment("manager.result_marshal.calls")
-                try:
-                    result = self._wire_marshal_result(
-                        result,
-                        n_images,
-                        retry_single=(
-                            _retry_single if isinstance(images, list) else None
-                        ),
-                    )
-                finally:
-                    if marshal_started is not None:
-                        marshal_ended = time.perf_counter_ns()
-                        performance_profiler.record(
-                            "manager.result_marshal",
-                            max(0, marshal_ended - marshal_started - retry_invoke_ns)
-                            / 1_000_000,
-                            "ms",
-                        )
+                result = self._wire_marshal_result(
+                    result,
+                    n_images,
+                    retry_single=(_retry_single if isinstance(images, list) else None),
+                )
             if serialize:
                 # Inside the in-flight lease: serialization still reads
                 # backend.model, which an unload would drop underneath it.
@@ -619,63 +613,18 @@ class ModelManager:
         """
         self._check_open()
         loop = asyncio.get_running_loop()
-        if not performance_profiler.enabled:
-            return await loop.run_in_executor(
-                self._executor,
-                lambda: self.process(
-                    model_id,
-                    action=action,
-                    serialize=serialize,
-                    wire_marshalling=wire_marshalling,
-                    **kwargs,
-                ),
-            )
-
-        queue_started = performance_profiler.start()
-        return_started = [None]
-
-        def _run() -> Any:
-            performance_profiler.stop("manager.executor.queue", queue_started)
-            process_started = performance_profiler.start()
-            try:
-                return self.process(
-                    model_id,
-                    action=action,
-                    serialize=serialize,
-                    wire_marshalling=wire_marshalling,
-                    **kwargs,
-                )
-            finally:
-                process_ended = time.perf_counter_ns()
-                performance_profiler.stop(
-                    "manager.process.total", process_started, process_ended
-                )
-                return_started[0] = process_ended
-
-        try:
-            result = await loop.run_in_executor(self._executor, _run)
-        except asyncio.CancelledError:
-            performance_profiler.increment("manager.executor.cancelled")
-            raise
-        except Exception:
-            executor_ended = time.perf_counter_ns()
-            performance_profiler.stop(
-                "manager.return", return_started[0], executor_ended
-            )
-            performance_profiler.stop(
-                "manager.executor.total", queue_started, executor_ended
-            )
-            performance_profiler.increment("manager.executor.errors")
-            raise
-        else:
-            executor_ended = time.perf_counter_ns()
-            performance_profiler.stop(
-                "manager.return", return_started[0], executor_ended
-            )
-            performance_profiler.stop(
-                "manager.executor.total", queue_started, executor_ended
-            )
-            return result
+        context = contextvars.copy_context()
+        return await loop.run_in_executor(
+            self._executor,
+            lambda: context.run(
+                self.process,
+                model_id,
+                action=action,
+                serialize=serialize,
+                wire_marshalling=wire_marshalling,
+                **kwargs,
+            ),
+        )
 
     def submit(
         self,
@@ -704,7 +653,7 @@ class ModelManager:
             KeyError: If model_id is not loaded.
         """
         self._check_open()
-        backend = self._get_backend(model_id)
+        backend, pipeline = self._admit(model_id)
 
         if hasattr(backend, "submit_request"):
             if raw_input is None:
@@ -736,7 +685,7 @@ class ModelManager:
             if _begin is not None:
                 _begin()
             try:
-                result = invoke_action(backend.model, action=action, **kwargs)
+                result = self._invoke(backend.model, pipeline, action, kwargs)
             except Exception:
                 backend.record_inference(t0, error=True)
                 raise
@@ -767,6 +716,94 @@ class ModelManager:
         from inference_model_manager.dispatch import list_actions
 
         return list_actions(backend.model)
+
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        """Whether the loaded model runs a depth>1 stream pipeline.
+
+        Args:
+            model_id: Loaded model key.
+
+        Returns:
+            True when the model is loaded and pipelined, False otherwise.
+
+        Raises:
+            NotImplementedError: If the model is served by a non-direct backend.
+        """
+        supported = self.get_model_pipeline_depth(model_id) > 1
+
+        return supported
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        """The model's stream pipeline depth.
+
+        Args:
+            model_id: Loaded model key.
+
+        Returns:
+            The depth, or 1 when the model is not loaded or not pipelined.
+
+        Raises:
+            NotImplementedError: If the model is served by a non-direct backend.
+        """
+        self._ensure_direct_backend(model_id)
+        depth = self._stream_pipeline_depth(model_id)
+
+        return depth
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
+        """Drain the model's in-flight pipeline frames.
+
+        Args:
+            model_id: Loaded model key.
+
+        Returns:
+            The finished detections of the in-flight frames, oldest first, or
+            None when the model is not pipelined.
+
+        Raises:
+            NotImplementedError: If the model is served by a non-direct backend.
+        """
+        self._ensure_direct_backend(model_id)
+        pipeline = self._stream_pipelines.get(model_id)
+        if pipeline is None:
+            return None
+
+        flushed = pipeline.flush()
+
+        return flushed
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        """Stop the model's pipeline worker; a no-op when it has none.
+
+        Args:
+            model_id: Loaded model key.
+
+        Raises:
+            NotImplementedError: If the model is served by a non-direct backend.
+        """
+        self._ensure_direct_backend(model_id)
+        pipeline = self._stream_pipelines.get(model_id)
+        if pipeline is not None:
+            pipeline.shutdown_pipeline()
+
+        return None
+
+    def _ensure_direct_backend(self, model_id: str) -> None:
+        backend = self._backends.get(model_id)
+        if backend is not None and getattr(backend, "model", None) is None:
+            raise NotImplementedError(
+                f"Stream pipelining is not implemented for the backend serving "
+                f"'{model_id}'"
+            )
+
+        return None
+
+    def _stream_pipeline_depth(self, model_id: str) -> int:
+        pipeline = self._stream_pipelines.get(model_id)
+        if pipeline is None:
+            return 1
+
+        return pipeline.pipeline_depth
 
     # ------------------------------------------------------------------
     # Observability
@@ -806,15 +843,31 @@ class ModelManager:
             except Exception:
                 s["key_points_classes"] = None
             try:
+                s["video_sampling"] = getattr(backend, "video_sampling", None)
+            except Exception:
+                s["video_sampling"] = None
+            try:
                 s["actions"] = self.get_supported_actions(model_id)
             except Exception:
                 s["actions"] = {}
+            s["stream_pipeline_depth"] = self._stream_pipeline_depth(model_id)
+            for key in (
+                "input_height",
+                "input_width",
+                "vram_bytes",
+                "loaded_monotonic",
+            ):
+                s.setdefault(key, None)
             models.append(s)
+
+        vram_values = [s["vram_bytes"] for s in models if s["vram_bytes"] is not None]
+        total_vram_bytes = sum(vram_values) if vram_values else None
 
         return {
             "gpus": gpu_info,
             "models_loaded": self.loaded_models,
             "models": models,
+            "total_vram_bytes": total_vram_bytes,
         }
 
     def model_stats(self, model_id: str) -> Dict[str, Any]:

@@ -29,6 +29,7 @@ from filelock import FileLock
 from rich.console import Console
 from rich.text import Text
 
+from inference_models import configuration
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     DISABLED_INFERENCE_MODELS_BACKENDS,
@@ -229,6 +230,22 @@ def _resolve_effective_api_key(
     ):
         return ROBOFLOW_API_KEY
     return api_key
+
+
+def _resolve_vllm_proxy_class(model_metadata: ModelMetadata) -> Optional[type]:
+    """Return the vLLM proxy class registered for the model, if any."""
+    if not model_implementation_exists(
+        model_architecture=model_metadata.model_architecture,
+        task_type=model_metadata.task_type,
+        backend=BackendType.VLLM,
+    ):
+        return None
+    proxy_class = resolve_model_class(
+        model_architecture=model_metadata.model_architecture,
+        task_type=model_metadata.task_type,
+        backend=BackendType.VLLM,
+    )
+    return proxy_class
 
 
 def _swap_describe_provider_when_offline(weights_provider: str) -> str:
@@ -1850,6 +1867,35 @@ class AutoModel:
             # that still may end up with ambiguous behavior - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
+            prefetched_model_metadata: Optional[ModelMetadata] = None
+            if configuration.VLLM_PROXY_ENABLED:
+                try:
+                    prefetched_model_metadata = get_model_from_provider(
+                        provider=weights_provider,
+                        model_id=model_id_or_path,
+                        api_key=api_key,
+                        weights_provider_extra_query_params=weights_provider_extra_query_params,
+                        weights_provider_extra_headers=weights_provider_extra_headers,
+                    )
+                except (
+                    UnauthorizedModelAccessError,
+                    ForbiddenModelAccessError,
+                ) as error:
+                    model_access_manager.on_model_access_forbidden(
+                        model_id=model_id_or_path, api_key=api_key
+                    )
+                    raise error
+                vllm_proxy_class = _resolve_vllm_proxy_class(
+                    model_metadata=prefetched_model_metadata
+                )
+                if vllm_proxy_class is not None:
+                    return vllm_proxy_class.from_model_metadata(
+                        model_id=model_id_or_path,
+                        metadata=prefetched_model_metadata,
+                        api_key=api_key,
+                        weights_provider_extra_headers=weights_provider_extra_headers,
+                        **model_init_kwargs,
+                    )
             dependency_models_params = dependency_models_params or {}
             if forwarded_kwargs is None:
                 forwarded_kwargs = (
@@ -1947,13 +1993,16 @@ class AutoModel:
             warm_up_metadata: Optional[ModelMetadata] = None
             if OFFLINE_MODE_WARM_UP and weights_provider == "roboflow":
                 try:
-                    warm_up_metadata = get_model_from_provider(
-                        provider=weights_provider,
-                        model_id=model_id_or_path,
-                        api_key=api_key,
-                        weights_provider_extra_query_params=weights_provider_extra_query_params,
-                        weights_provider_extra_headers=weights_provider_extra_headers,
-                    )
+                    if prefetched_model_metadata is not None:
+                        warm_up_metadata = prefetched_model_metadata
+                    else:
+                        warm_up_metadata = get_model_from_provider(
+                            provider=weights_provider,
+                            model_id=model_id_or_path,
+                            api_key=api_key,
+                            weights_provider_extra_query_params=weights_provider_extra_query_params,
+                            weights_provider_extra_headers=weights_provider_extra_headers,
+                        )
                 except Exception as error:
                     LOGGER.warning(
                         "Warm-up metadata pre-fetch failed for %s (%s); the "
@@ -1978,6 +2027,8 @@ class AutoModel:
             try:
                 if warm_up_metadata is not None:
                     model_metadata = warm_up_metadata
+                elif prefetched_model_metadata is not None:
+                    model_metadata = prefetched_model_metadata
                 else:
                     model_metadata = get_model_from_provider(
                         provider=weights_provider,

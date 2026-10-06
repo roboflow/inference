@@ -53,7 +53,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install \
         -e ".[torch-cu124,onnx-cu12,trt10-runtime]" \
         -e "../inference_model_manager" \
-        -e "../inference_server[workflows]"
+        -e "../inference_server[workflows,otel]"
 
 # ── source layer: real packages over the stubs (editable finders already point
 #    at these dirs, so no reinstall needed) ─────────────────────────────────
@@ -91,8 +91,27 @@ RUN { ls -d /opt/venv/lib/python*/site-packages/nvidia/*/lib \
       > /etc/ld.so.conf.d/nvidia-pip.conf \
     && ldconfig
 
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
+COPY inference_server/inference_server/entrypoints/cpu_http.py inference_server/inference_server/entrypoints/gpu_http.py /app/inference_server/
+
 WORKDIR /app/inference_server
+
+# Same defaults as the legacy server image.
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False \
+    PROJECT=roboflow-platform \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    API_LOGGING_ENABLED=True \
+    LMM_ENABLED=True \
+    CORE_MODEL_SAM2_ENABLED=True \
+    CORE_MODEL_SAM3_ENABLED=True \
+    CORE_MODEL_OWLV2_ENABLED=True \
+    ENABLE_PROMETHEUS=True
 
 EXPOSE 9001
 
-CMD ["python", "-m", "inference_server.app"]
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

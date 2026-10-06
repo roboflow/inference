@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## `0.39.1rc1`
 
 ### Added
 
@@ -26,18 +26,15 @@
   preserving pixel values while avoiding a full-resolution channel copy.
 - Removed the unused `threaded-exact-v1` RF-DETR preprocessor and its worker-count options.
 
+### Removed
+
+- `inference_models.utils.performance` and its `performance_profiler` are gone (opt-in profiler, no replacement).
+
 ### Fixed
 
 - RF-DETR Triton preprocessing no longer falls back for dataset-version resize
   metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
   flags disabling already-inactive crop, contrast, and grayscale transforms.
-
-### Added
-
-- `inference_models.utils.performance` exposes `performance_profiler`, an opt-in
-  sampled wall-clock profiler for the model hot path. `inference-model-manager`
-  imports it, so it must ship in a release before that package can resolve
-  against PyPI.
 
 ---
 

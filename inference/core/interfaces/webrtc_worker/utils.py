@@ -20,7 +20,6 @@ from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
-from inference_models.utils.performance import performance_profiler
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -56,11 +55,7 @@ def process_frame(
     Optional[VideoFrame],
     List[str],
 ]:
-    av_started = performance_profiler.start()
-    try:
-        np_image = frame.to_ndarray(format="bgr24")
-    finally:
-        performance_profiler.stop("av.to_numpy", av_started)
+    np_image = frame.to_ndarray(format="bgr24")
     workflow_output: Dict[str, Union[WorkflowImageData, Any]] = {}
     errors = []
 
@@ -73,11 +68,7 @@ def process_frame(
             fps=declared_fps,
             measured_fps=measured_fps,
         )
-        workflow_started = performance_profiler.start()
-        try:
-            workflow_output = inference_pipeline._on_video_frame([video_frame])[0]
-        finally:
-            performance_profiler.stop("workflow.total", workflow_started)
+        workflow_output = inference_pipeline._on_video_frame([video_frame])[0]
     except Exception as e:
         logger.exception("Error in workflow processing")
         errors.append(str(e))
@@ -85,45 +76,41 @@ def process_frame(
     if not render_output:
         return workflow_output, None, errors
 
-    render_started = performance_profiler.start()
-    try:
-        if stream_output is None:
-            errors.append("stream_output is required when render_output=True")
-            return (
-                workflow_output,
-                VideoFrame.from_ndarray(np_image, format="bgr24"),
-                errors,
-            )
-
-        result_np_image: Optional[np.ndarray] = None
-        try:
-            result_np_image = get_frame_from_workflow_output(
-                workflow_output=workflow_output,
-                frame_output_key=stream_output,
-            )
-            if result_np_image is None:
-                errors.append("Visualisation blocks were not executed")
-                errors.append("or workflow was not configured to output visuals.")
-                errors.append("Please try to adjust the scene so models detect objects")
-                errors.append("or stop preview, update workflow and try again.")
-                result_np_image = np_image
-        except Exception as e:
-            logger.exception("Error extracting visual output")
-            result_np_image = np_image
-            errors.append(str(e))
-
-        if include_errors_on_frame and errors:
-            result_np_image = overlay_text_on_np_frame(
-                frame=result_np_image,
-                text=errors,
-            )
+    if stream_output is None:
+        errors.append("stream_output is required when render_output=True")
         return (
             workflow_output,
-            VideoFrame.from_ndarray(result_np_image, format="bgr24"),
+            VideoFrame.from_ndarray(np_image, format="bgr24"),
             errors,
         )
-    finally:
-        performance_profiler.stop("render.to_av", render_started)
+
+    result_np_image: Optional[np.ndarray] = None
+    try:
+        result_np_image = get_frame_from_workflow_output(
+            workflow_output=workflow_output,
+            frame_output_key=stream_output,
+        )
+        if result_np_image is None:
+            errors.append("Visualisation blocks were not executed")
+            errors.append("or workflow was not configured to output visuals.")
+            errors.append("Please try to adjust the scene so models detect objects")
+            errors.append("or stop preview, update workflow and try again.")
+            result_np_image = np_image
+    except Exception as e:
+        logger.exception("Error extracting visual output")
+        result_np_image = np_image
+        errors.append(str(e))
+
+    if include_errors_on_frame and errors:
+        result_np_image = overlay_text_on_np_frame(
+            frame=result_np_image,
+            text=errors,
+        )
+    return (
+        workflow_output,
+        VideoFrame.from_ndarray(result_np_image, format="bgr24"),
+        errors,
+    )
 
 
 def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):

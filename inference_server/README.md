@@ -22,7 +22,8 @@ uv pip install -e ".[torch-cpu,onnx-cpu]"
 uv pip install -e ".[torch-cu124,onnx-cu12]"
 ```
 
-Extras cascade through `inference-model-manager` to `inference-models`.
+Extras cascade through `inference-model-manager` to `inference-models`. The
+`otel` extra installs the OpenTelemetry packages behind `OTEL_TRACING_ENABLED`.
 
 ## Quick start
 
@@ -71,10 +72,13 @@ without a code change here:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `HOST` | `0.0.0.0` | HTTP bind address (`__main__` dev runner) |
 | `PORT` | `9001` | HTTP port (`__main__` dev runner) |
 | `NUM_WORKERS` | `1` | uvicorn worker processes (`__main__` dev runner) |
 | `INFERENCE_GATEWAY` | `direct` | Gateway resolved by `gateway_resolver.resolve_gateway()` |
-| `INFERENCE_PRELOAD_MODELS` | | Comma-separated model IDs loaded at server startup; `/v2/server/ready` reports not-ready until each finishes loading |
+| `INFERENCE_PRELOAD_MODELS` | | Comma-separated model IDs loaded unpinned at server startup, two at a time; an entry may carry its own key as `model_id:api_key`. `/readiness` and `/v2/server/ready` report not-ready until the startup loads have finished, whether or not they succeeded |
+| `PINNED_MODELS` | | Comma-separated model IDs loaded at startup like `INFERENCE_PRELOAD_MODELS` but pinned against eviction; same `model_id:api_key` form |
+| `PRELOAD_HF_IDS` | | Comma-separated OWLv2 Hugging Face IDs loaded unpinned at startup as `owlv2/<name>` (the part after the last `/`); readiness does not wait for them |
 | `INFERENCE_LOAD_WAIT_S` | `10.0` | Seconds `ensure_loaded()` waits before reporting a load timeout |
 | `INFERENCE_INFER_TIMEOUT_S` | `30.0` | Per-request inference timeout |
 | `INFERENCE_MAX_BODY_BYTES` | `100MB` | Max request body / aggregate URL-image size |
@@ -83,7 +87,7 @@ without a code change here:
 | `ENABLE_CONTROL_PLANE_ROUTES` | `false` | Enables model list/load/unload and server info/metrics routes; they accept any valid key without workspace scoping |
 | `INFERENCE_MAX_ACTIVE_MODELS` | `8` | Max concurrently loaded models (direct gateway); LRU drain-unload on overflow, `<=0` unbounded |
 | `INFERENCE_MEMORY_FREE_THRESHOLD` | `0` | Free-VRAM fraction below which loads evict LRU models first; `0` off |
-| `PRELOAD_API_KEY` | | API key for `INFERENCE_PRELOAD_MODELS` startup loads |
+| `PRELOAD_API_KEY` | `ROBOFLOW_API_KEY` | API key for `INFERENCE_PRELOAD_MODELS`, `PINNED_MODELS` and `PRELOAD_HF_IDS` startup loads when an entry carries no key of its own |
 | `MAX_INFERENCE_MODELS_CACHE_SIZE_MB` | `-1` | Disk cache watchdog size cap; `-1` off |
 | `INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES` | `60` | Disk cache watchdog interval |
 | `ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG` | `false` | Periodic CUDA cache reclamation daemon |
@@ -114,6 +118,20 @@ are dropped at startup instead of registered.
 | `ALLOW_URL_INPUT` | `true` | Allow images to be fetched from a URL |
 | `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM` | `false` | Allow images to be loaded from a local path |
 | `ALLOW_ORIGINS` | `*` | Comma-separated CORS origins |
+| `CORRELATION_ID_HEADER` | `X-Request-ID` | Request header read as the correlation id and echoed on every response; generated when absent. Honoured only with `API_LOGGING_ENABLED=true`; otherwise the header is always `X-Request-ID`, like the legacy server's library defaults |
+| `API_LOGGING_ENABLED` | `false` | When `true`, the correlation id comes from `CORRELATION_ID_HEADER` and any non-empty value is accepted, and application logs are one JSON object per line carrying `CORRELATION_ID_LOG_KEY`, `execution_id`, `trace_id` and `span_id` when present; when `false`, it comes from `X-Request-ID`, a value that is not a UUID is replaced, and logs are plain lines |
+| `LOG_LEVEL` | `WARNING` | Level of the `inference_server` logger; uvicorn's own loggers keep uvicorn's defaults |
+| `STRUCTURED_API_LOGGING` | `false` | With `API_LOGGING_ENABLED=true`, replaces uvicorn's access line with one JSON object per response logged at `INFO` through the application logger (`method`, `path`, `status`, `duration_ms`, the correlation key and the legacy `processing_time`, `model_*`, `workflow_id`, `workspace_id`, `execution_id` and `trace_id` fields read from the response headers); health paths log at `DEBUG` |
+| `CORRELATION_ID_LOG_KEY` | `request_id` | JSON log field carrying the correlation id with `API_LOGGING_ENABLED=true` |
+| `OTEL_TRACING_ENABLED` | `false` | OpenTelemetry tracing: FastAPI and `requests` instrumentation, OTLP span export, `X-Trace-Id` on every response and `X-Force-Trace: true` to sample one request. Needs the `otel` extra; forced off under `OFFLINE_MODE` |
+| `OTEL_SERVICE_NAME` | `inference-server` | `service.name` resource attribute; `service.instance.id` is `INFERENCE_SERVER_ID` or a per-process id |
+| `OTEL_EXPORTER_PROTOCOL` | `grpc` | `grpc` or `http` OTLP transport |
+| `OTEL_EXPORTER_ENDPOINT` | `localhost:4317` | OTLP collector `host:port` for spans |
+| `OTEL_SAMPLING_RATE` | `1.0` | Root span sampling ratio; parent decisions are honoured |
+| `OTEL_TRACE_EXPORT_INTERVAL_MS` | `5000` | Span batch export interval |
+| `OTEL_METRICS_ENABLED` | `true` | With tracing enabled, exports the model load, inference, API-call and error metrics over OTLP; forced off under `OFFLINE_MODE` |
+| `OTEL_METRIC_EXPORTER_ENDPOINT` | `OTEL_EXPORTER_ENDPOINT` | OTLP collector `host:port` for metrics when it differs from the span collector |
+| `OTEL_METRIC_EXPORT_INTERVAL_MS` | `10000` | Metric export interval |
 | `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS` | `16` | Thread-pool size backing workflow execution |
 | `WORKFLOWS_MAX_CONCURRENT_STEPS` | `8` | Max concurrent steps per workflow run |
 | `LANDING_DIR` | `<checkout>/inference/landing/out` | Directory of the exported legacy landing page served at `/`; the Docker images set it to `/app/landing` |
@@ -122,8 +140,10 @@ are dropped at startup instead of registered.
 | `BUILDER_ORIGIN` | `https://app.roboflow.com`, or `https://app.roboflow.one` when `PROJECT=roboflow-staging` | Origin allowed to call `/build/api/*` and `/workflows/*` from the browser |
 
 `/` serves the legacy landing page from `LANDING_DIR`; its dashboard tab calls
-`/metrics`, `/logs`, and `/inference_pipelines`, which are not ported here and
-answer 404.
+`/metrics`, `/logs`, and `/inference_pipelines`. `/logs` answers with the recent
+log records when `ENABLE_IN_MEMORY_LOGS=true` and 404 otherwise; `/metrics` is
+not ported here and answers 404; `/inference_pipelines/*` is served when
+`ENABLE_STREAM_API=true` (see below) and answers 404 otherwise.
 
 `/build` serves the Workflow Builder; local workflows are stored under
 `MODEL_CACHE_DIR/workflow/local` and run through `/workflows/run` with
@@ -140,19 +160,35 @@ workspace check.
 
 A few legacy behaviours are not (yet) available here:
 
-- Inference pipelines (`/inference_pipelines/*`), the stream manager, and the
-  WebRTC worker routes (`/initialise_webrtc_worker`, `/webrtc/session/*`) are
-  not ported; requests to these paths 404.
+- Inference pipelines (`/inference_pipelines/*`) are served when
+  `ENABLE_STREAM_API=true`: the lifespan starts one `streamvision` stream
+  manager process per uvicorn worker (`STREAM_API_PRELOADED_PROCESSES` idle
+  pipeline processes, reached through `STREAM_MANAGER_HOST` /
+  `STREAM_MANAGER_PORT` / `STREAM_MANAGER_OPERATIONS_TIMEOUT`) and stops it on
+  shutdown; with `NUM_WORKERS` above 1 only the first manager can bind the port.
+  The WebRTC worker routes (`/initialise_webrtc_worker`, `/webrtc/session/*`)
+  are not ported; requests to these paths 404.
 - Several routes and parameters that legacy accepted now return 501 instead
-  of the real behaviour: `/owlv2/infer`, `/infer/action_recognition`, and
-  `/sam3_3d/infer`; `SAM3_EXEC_MODE=remote` is not proxied to the Roboflow
-  API; `format=binary` on the SAM/SAM2/SAM3 segmentation routes is not implemented (embedding routes still return binary).
+  of the real behaviour: `/sam3_3d/infer`; `/sam3/embed_image` with
+  `SAM3_EXEC_MODE=remote` (concept and visual segmentation are proxied to the
+  Roboflow API); `format=binary` on the SAM/SAM2/SAM3 segmentation routes is not implemented (embedding routes still return binary).
 - Prediction visualization (`format=image`, `visualize_predictions`) uses the
   class colours the model manager reports, else the legacy default palette; the
   per-model colour mapping is not fetched from the Roboflow API.
-- Usage tracking, model-monitoring pingback, active learning, and other
-  telemetry/usage reporting side effects of the legacy server are not yet
-  ported.
+- Usage reporting is ported for the legacy model routes (`/infer/*`, the core
+  model routes and `/{dataset_id}/{version_id}`) and the workflow run routes
+  (`/workflows/run`, `/infer/workflows`, `/{workspace_name}/workflows/{workflow_id}`,
+  `/infer/workflows/{workspace_name}/{workflow_id}`): one `request` row per
+  request, carrying the models it invoked and, for workflows, the steps and the
+  custom Python blocks it ran, is posted to `TELEMETRY_API_USAGE_ENDPOINT_URL`;
+  the per-model, `workflows` and `workflow_block` rows of the legacy server are
+  not sent, and stream routes report nothing yet. Other
+  telemetry side effects of the legacy server are not ported. Active learning is ported for
+  `/infer/object_detection`, `/infer/instance_segmentation`,
+  `/infer/classification` and `/{dataset_id}/{version_id}`; it needs the
+  `workflows` extra and `ACTIVE_LEARNING_ENABLED=false` turns it off. The periodic pingback to
+  `METRICS_URL` is ported for inferences served through the legacy routes and
+  Workflows steps; `METRICS_ENABLED=false` turns it off.
 
 ## Running the legacy integration suite against this image
 
@@ -168,4 +204,4 @@ USE_INFERENCE_MODELS=true PORT=9101 SKIP_LMM_TEST=True \
 make stop_test_docker
 ```
 
-The nine key variables are the ones the CI workflows pass (`tests/inference/integration_tests/README.md` explains the `<project_slug>_API_KEY` convention). `USE_INFERENCE_MODELS=true` on the client side selects the `*_inference_models.json` expectation files. `test_video_processing_endpoints.py` targets `/inference_pipelines/*`, which this server does not serve yet. Failures elsewhere are parity findings; do not regenerate the expectation files from this server.
+The nine key variables are the ones the CI workflows pass (`tests/inference/integration_tests/README.md` explains the `<project_slug>_API_KEY` convention). `USE_INFERENCE_MODELS=true` on the client side selects the `*_inference_models.json` expectation files. `test_video_processing_endpoints.py` targets `/inference_pipelines/*`, which this server serves only with `ENABLE_STREAM_API=true`. Failures elsewhere are parity findings; do not regenerate the expectation files from this server.

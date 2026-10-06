@@ -42,6 +42,7 @@ def build_init_parameters(
     disable_sinks: bool,
     inner_workflow_dispatch_depth: int,
     step_execution_mode: Optional[str] = None,
+    execution_observer: Any = NULL_EXECUTION_OBSERVER,
 ) -> Dict[str, Any]:
     init_parameters: Dict[str, Any] = {
         "workflows_core.model_manager": provider,
@@ -49,7 +50,7 @@ def build_init_parameters(
         "workflows_core.background_tasks": background_tasks,
         "workflows_core.disable_sinks": disable_sinks,
         "workflows_core.inner_workflow_dispatch_depth": inner_workflow_dispatch_depth,
-        "workflows_core.execution_observer": NULL_EXECUTION_OBSERVER,
+        "workflows_core.execution_observer": execution_observer,
         "workflows_core.configuration": host.SERVER_WORKFLOWS_CONFIGURATION,
         **host.workflows_platform_bindings(),
     }
