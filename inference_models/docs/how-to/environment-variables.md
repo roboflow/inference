@@ -17,14 +17,10 @@ export INFERENCE_HOME="/path/to/cache"
 export DEFAULT_DEVICE="cuda:0"
 ```
 
-Or use a `.env` file in your project root:
-
-```bash
-# .env file
-ROBOFLOW_API_KEY=your_api_key_here
-MODEL_CACHE_DIR=/path/to/cache
-DEFAULT_DEVICE=cuda:0
-```
+`inference-models` reads the process environment when it is first imported and
+then loads a `.env` file from the current working directory without overriding
+already-set process values. This matches the `inference` package, so package
+import order cannot change the selected cache or offline mode.
 
 ## Core Configuration
 
@@ -56,10 +52,163 @@ export ROBOFLOW_API_HOST="https://api.roboflow.com"
 ### Model Cache
 
 **`INFERENCE_HOME`**  
-Directory where downloaded models are cached. Default: `/tmp/cache`
+Directory where downloaded models are cached. If it is unset,
+`MODEL_CACHE_DIR` is used; if both are unset, the default is `/tmp/cache`.
 
 ```bash
 export INFERENCE_HOME="/home/user/.cache/inference-models"
+```
+
+**`OFFLINE_MODE`**
+Startup-only switch for loading network-provider models exclusively from a
+trusted, compatible local cache.
+
+```bash
+export OFFLINE_MODE="True"
+```
+
+The first import of either `inference` or `inference_models` latches this value
+for the process. Changing or removing the variable later does not change the
+mode; restart the process instead. Child processes inherit the latch when they
+inherit the parent environment with Inference's private marker intact. That
+marker is trusted internal process state, not a security boundary against
+arbitrary code already running in the process. A child launched with a
+deliberately rewritten or sanitized environment is a new startup boundary, so
+use operating-system or network-level isolation when a hard air gap is required.
+
+The startup latch also enables the Hugging Face and Ultralytics dependency
+offline controls before Inference imports those libraries, preventing their
+built-in connectivity checks and online-gated behavior.
+If `HF_HOME` is not explicitly configured, both packages set it before heavy
+imports to `$INFERENCE_HOME/hf_home`, `$MODEL_CACHE_DIR/hf_home`, or
+`/tmp/cache/hf_home` in that order. This keeps implicit Hugging Face backbone,
+processor, and checkpoint downloads in the mounted cache across the
+online-warm and fresh-offline phases.
+
+In `OFFLINE_MODE` the `roboflow` weights provider is transparently replaced by
+the `roboflow-offline-weights` provider, which serves models from the
+**offline-weights registry** (`$INFERENCE_HOME/offline-weights-registry/`).
+The registry is built by running online with `OFFLINE_MODE_WARM_UP=True` (see
+below); a model without a registry record cannot be loaded offline. Offline
+loads re-run the standard package auto-negotiation against the recorded
+provider metadata (backend, quantization, batch and TensorRT/CUDA environment
+requirements) and verify that every recorded artefact file is present — no
+per-load hashing. The operator owns the integrity of the mounted storage; use
+`AutoModel.verify_offline_model(model_id, check_hashes=True)` for an explicit
+integrity check and `AutoModel.list_offline_models()` to inspect the
+registry. TensorRT execution
+provider engine caches are written and reused in offline mode like in any
+other mode, so warm restarts stay fast. Custom (non-Roboflow) weights
+providers are not restricted by `OFFLINE_MODE`; keeping them offline is the
+operator's responsibility. `OFFLINE_MODE` is refused on hosted/serverless
+deployments.
+
+**`OFFLINE_MODE_WARM_UP`**
+Online mode plus offline-cache building. Mutually exclusive with
+`OFFLINE_MODE` — enabling both fails at model load.
+
+```bash
+export OFFLINE_MODE_WARM_UP="True"
+```
+
+While enabled, every requested model triggers a metadata pre-fetch from the
+Roboflow API (cache hits included), and each package that auto-negotiation
+selected and that initialized successfully is recorded in the offline-weights
+registry together with the full provider metadata. If the pre-fetch fails, the
+model is served normally from the online cache with a warning and is NOT
+registered. The intended flow: run the full workload once with
+`OFFLINE_MODE_WARM_UP=True` and network access, confirm the registry with
+`AutoModel.list_offline_models()`, then restart with `OFFLINE_MODE=True`.
+Caches warmed by inference-models `<= 0.35` contain no registry records and
+need one warm-up run.
+
+#### Shared S3-Compatible Blob Cache
+
+Roboflow Inference can use an S3-compatible service as an optional read-through
+cache for content-hashed model files. The process holds a single shared cache
+instance (`get_shared_model_blob_cache()`), used by the model manager for every
+model load and by model preloading (for example OWLv2 under `PRELOAD_HF_IDS`),
+so one S3 client, one upload queue, and one health view serve the whole
+process. Cache reads and writes are best-effort. A miss, error, corrupt
+object, or timeout falls back to the original model source.
+
+Standalone library installations must include the cache-specific dependencies:
+
+```bash
+pip install 'inference-models[model-blob-cache]'
+```
+
+Roboflow Inference server installations already include the required S3 SDK.
+
+```bash
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_ENABLED=true
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_BUCKET="model-cache"
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_PREFIX="model-blobs"             # default
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_ENDPOINT_URL="https://objects.example.com"
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_REGION="region-1"
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_ADDRESSING_STYLE="path"           # auto|path|virtual
+```
+
+Environment variables configure cache instances; they do not globally change
+the library's download functions. Standalone `inference-models` callers must
+inject the cache explicitly. Use the process-wide shared instance - every
+real cache instance owns an S3 client and a pair of background upload
+threads, so long-lived callers should not mint their own:
+
+```python
+from inference_models import AutoModel
+from inference_models.utils.model_blob_cache import get_shared_model_blob_cache
+
+model = AutoModel.from_pretrained(
+    "model-id",
+    content_addressed_artifact_cache=get_shared_model_blob_cache(),
+)
+```
+
+`create_model_blob_cache()` remains available when a caller genuinely needs a
+private instance built from the current environment (for example, tests that
+reconfigure the cache between calls).
+
+By default, the client uses the standard AWS credential chain. To provide
+cache-specific static credentials, set both
+`INFERENCE_MODELS_MODEL_BLOB_CACHE_ACCESS_KEY_ID` and `INFERENCE_MODELS_MODEL_BLOB_CACHE_SECRET_ACCESS_KEY`.
+
+Timeout, size-cap, and circuit-breaker settings have these defaults.
+`CONNECT_TIMEOUT_SECONDS` and `READ_TIMEOUT_SECONDS` bound the S3 client
+itself, so a stalled or hung connection is cut off there rather than by a
+separate whole-transfer timer. `MAX_OBJECT_BYTES` is a sanity cap on a
+network-backed cache accepting arbitrary bytes under a caller-supplied key,
+independent of the per-file MD5 verification the cache performs once a
+download completes:
+
+```bash
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS=1
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS=2
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_MAX_OBJECT_BYTES=21474836480  # 20 GiB, default
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD=3
+export INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS=60
+```
+
+A typo'd number (letters where a timeout should be, for example) stops the
+library from starting. Anything else wrong — an out-of-range timeout, an
+unsupported addressing style, a missing bucket, or only one of the two
+credential values set — just leaves the cache disabled, and models keep
+downloading the normal way.
+
+After `INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD` failures, the cache
+stops trying the endpoint for `INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS`
+before trying it again.
+
+Give the bucket an `AbortIncompleteMultipartUpload` lifecycle rule. Cache
+writes are best-effort background work with no retry, so a network blip or a
+process restart mid-upload can leave parts of a multipart upload (objects
+above ~8 MiB) orphaned in the bucket - never completed, invisible to normal
+listings, but still billed:
+
+```bash
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket model-cache \
+  --lifecycle-configuration '{"Rules":[{"ID":"abort-orphaned-model-blob-uploads","Status":"Enabled","Filter":{"Prefix":"model-blobs/"},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
 ```
 
 ### Device Selection
@@ -106,8 +255,30 @@ Override ONNX execution providers, comma separated, no spaces.
 Default: `CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider`
 
 ```bash
-export ONNX_EXECUTION_PROVIDERS="CPUExecutionProvider"
+export ONNXRUNTIME_EXECUTION_PROVIDERS="CPUExecutionProvider"
 ```
+
+### CoreML (Apple Silicon)
+
+These apply to models that configure the `CoreMLExecutionProvider` themselves (currently RF-DETR),
+and only with onnxruntime 1.21 or newer; older versions run CoreML with onnxruntime's defaults.
+`INFERENCE_MODELS_COREML_COMPUTE_UNITS` also sets where native Core ML packages (the `coreml` backend) run.
+
+**`INFERENCE_MODELS_COREML_MODEL_FORMAT`**
+CoreML model format. `MLProgram` supports the transformer ops RF-DETR needs; `NeuralNetwork`
+(onnxruntime's own default) runs most of the graph on the CPU.
+Default: `MLProgram`
+
+**`INFERENCE_MODELS_COREML_COMPUTE_UNITS`**
+CoreML compute units: `CPUAndGPU`, `ALL`, `CPUAndNeuralEngine` or `CPUOnly`. FP32 models never run
+on the Neural Engine, so `ALL` gives the same speed as `CPUAndGPU` but compiles slower.
+Default: `CPUAndGPU`
+
+**`INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED`**
+Cache the compiled CoreML model in the model package (`coreml_cache/`), so only the first load of a
+model compiles it (about 20 s for RF-DETR) and later loads take well under a second. The cache takes
+roughly 4x the model's size on disk and is never written for offline or read-only packages.
+Default: `true`
 
 ## Prediction Parameter Defaults
 
@@ -134,6 +305,16 @@ Default maximum number of detections to return. Default: `300`
 
 ```bash
 export INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS="100"
+```
+
+**`INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE`**
+Number of instance-segmentation masks upscaled to original resolution per
+slice when producing dense masks. Bounds postprocessing memory (the float32
+working set is `chunk x H x W` instead of `detections x H x W`). Must be
+`>= 1`. Default: `16`
+
+```bash
+export INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE="16"
 ```
 
 **`INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS`**
@@ -365,6 +546,22 @@ Default: `64`
 export INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K="32"
 ```
 
+#### Qwen3.8
+
+**`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS`**
+Default: `512`
+
+```bash
+export INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS="1024"
+```
+
+**`INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
+
+```bash
+export INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE="true"
+```
+
 #### Qwen2.5-VL
 
 **`INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS`**
@@ -386,6 +583,44 @@ Default: `true`
 
 ```bash
 export INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS="false"
+```
+
+#### Mage-VL
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS`**
+Default: `512`
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS="1024"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE="true"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE`**
+Default: `hevc`. Allowed values: `hevc`, `dcvc-rt`. Any other value fails at import
+with `InvalidEnvVariable`.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE="dcvc-rt"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS`**
+Default: `16`. Must be a positive integer.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS="24"
+```
+
+**`INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS`**
+Default: `153664`. Must be a positive integer.
+
+```bash
+export INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS="200000"
 ```
 
 #### Qwen3-VL
@@ -421,6 +656,151 @@ Default: Inherits from `INFERENCE_MODELS_DEFAULT_CONFIDENCE`
 ```bash
 export INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE="0.5"
 ```
+
+**`INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS`**
+Default cap on RF-DETR instance-segmentation detections, applied by score
+BEFORE masks are upscaled to original resolution (bounds mask memory).
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS`
+
+```bash
+export INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS="300"
+```
+
+The following variables select RF-DETR object-detection pipeline implementations when a client
+cannot pass backend-specific `from_pretrained` arguments. Explicit arguments take
+precedence over these environment variables.
+
+See [Inference-Path Optimization Architecture](../contributors/inference-path-optimization-architecture.md)
+for the selection model and the complete RF-DETR execution flow.
+
+**`INFERENCE_MODELS_RFDETR_PREPROCESSOR`**
+Default: `auto` (prefers compatible Triton, then base)
+
+Supported values: `base`, `auto`, `triton-universal-v1`, `pillow-simd-v1`.
+
+```bash
+export INFERENCE_MODELS_RFDETR_PREPROCESSOR="triton-universal-v1"
+```
+
+`pillow-simd-v1` is opt-in and declares numerical differences from standard Pillow.
+It requires Linux x86-64 with SSE4.1 and Pillow-SIMD >=12.3.0.post0 installed
+separately from standard Pillow. It is not compatible with Jetson ARM.
+
+**`INFERENCE_MODELS_PILLOW_SIMD_PATH`**
+Default: `/opt/pillow_simd`
+
+Directory containing the optional SIMD `PIL` package. An empty value disables it.
+The selected preprocessor loads it under an isolated module name; it never replaces
+the standard `PIL` used by `base`. The x86 ONNX Dockerfiles install the pinned
+12.3.0.post0 build here. Absence or incompatibility selects the declared fallback.
+
+**`INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS`**
+Default: `35389440` (`8192 * 4320`, full 8K DCI)
+
+**`INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION`**
+Default: `8192`
+
+These limits bound the pinned-host and CUDA staging buffers used by
+`triton-universal-v1`. A uint8 source exceeding either limit is routed through the
+declared base-preprocessor fallback before shape-sized GPU buffers are allocated.
+
+```bash
+export INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS="35389440"
+export INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION="8192"
+```
+
+**`INFERENCE_MODELS_RFDETR_POSTPROCESSOR`**
+Default: `auto` (TensorRT prefers `triton-fused-v1`; Torch/ONNX use `base`)
+
+Supported values: `base`, `auto`, `triton-fused-v1`.
+
+`triton-fused-v1` is registered only for TensorRT. Torch and ONNX accept `base`
+or `auto`; explicit TensorRT-only IDs raise an unknown-implementation error.
+
+```bash
+export INFERENCE_MODELS_RFDETR_POSTPROCESSOR="triton-fused-v1"
+```
+
+Code that can pass backend-specific arguments may instead provide a composed, immutable
+execution plan:
+
+```python
+from inference_models import AutoModel
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
+)
+
+plan = RFDetrExecutionPlan(
+    preprocessor_id="triton-universal-v1",
+    buffer_strategy_id="base",
+    scheduler_id="base",
+    postprocessor_id="triton-fused-v1",
+    engine_plugin_id="base",
+    allow_compatibility_fallback=True,
+    allow_runtime_failure_fallback=True,
+)
+model = AutoModel.from_pretrained(
+    "rfdetr-small",
+    backend="trt",
+    execution_plan=plan,
+)
+```
+
+The previous `rfdetr_execution_plan` keyword remains supported as a deprecated
+alias until October 24, 2026. It emits a `FutureWarning`; migrate calls to
+`execution_plan`. Passing the alias together with a non-`None` `execution_plan`
+raises a `TypeError`.
+
+Public preprocessing synchronizes by default, so its result can be consumed by an
+independent `forward()` call without relying on model-owned readiness state:
+
+```python
+model = AutoModel.from_pretrained(
+    "rfdetr-small",
+    backend="trt",
+    execution_plan=plan,
+)
+preprocessed, metadata = model.pre_process(image)
+raw_predictions = model.forward(preprocessed)
+```
+
+This invocation-boundary policy is intentionally separate from the execution plan.
+Composed `model(...)` and `infer()` calls pass
+`independent_stage_execution=False` to preprocessing internally, record a CUDA event,
+and let `forward()` wait on that event without a host synchronization.
+
+The buffer-strategy, scheduler, and engine-plugin stages are also registry-backed. They
+currently expose real `base` implementations that preserve framework tensor ownership,
+the existing stream/event schedule, and the existing TensorRT execution boundary.
+`auto` resolves to `base` for these categories until validated alternatives are added;
+unknown explicit IDs raise an error. When supplied, an explicit plan takes precedence
+and the implementation-selection environment variables are not read.
+
+When a selected optimized stage declares that it cannot preserve a model or request
+contract, RF-DETR uses its declared `base` fallback and records the requested
+implementation, effective implementation, and reason in logs and runtime metadata.
+This policy applies consistently to preprocessing and postprocessing. Set
+`allow_compatibility_fallback=False` in an explicit plan to require the selected
+implementation or an error; this global strictness gate also prevents runtime-failure
+fallback.
+
+Recoverable execution failures, such as recognized Triton JIT compilation or launch
+failures, may follow the declared `base` fallback when both
+`allow_compatibility_fallback=True` and `allow_runtime_failure_fallback=True`. Both
+fields default to `True`. Set `allow_runtime_failure_fallback=False` to retain
+compatibility fallback for unsupported model or request contracts while requiring
+runtime execution failures to surface as `ModelRuntimeError`. Allocation and other
+unclassified execution failures are never converted into fallbacks.
+
+An all-`False` `PreProcessingOverrides` object is a no-op and remains compatible with
+`triton-universal-v1`. Requests with any active preprocessing override use the declared
+`base` fallback. A distinct request-level fallback reason is warned once per model
+instance rather than once per inference.
+
+When Triton is unavailable, uint8 universal preprocessing and fused postprocessing
+declare a compatibility miss and use their `base` fallback. Floating-point tensor
+preprocessing remains eligible for `triton-universal-v1` because that input path uses
+Torch operations and does not require Triton kernels.
 
 #### Roboflow Instant
 
@@ -682,6 +1062,18 @@ export DISABLE_INTERACTIVE_PROGRESS_BARS="true"
 
 
 ## Advanced Configuration
+
+### SAM3
+
+**`INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE`**
+Number of SAM3 concept-segmentation masks upscaled to original resolution and
+encoded per slice. Bounds postprocessing memory (working set is
+`chunk x H x W` float32 instead of `detections x H x W`). Must be `>= 1`.
+Default: `8`
+
+```bash
+export INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE="8"
+```
 
 ### Input Validation
 

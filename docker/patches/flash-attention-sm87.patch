@@ -1,0 +1,15 @@
+diff --git a/setup.py b/setup.py
+index f9f95fa..898c7fb 100644
+--- a/setup.py
++++ b/setup.py
+@@ -111,6 +111,9 @@ def add_cuda_gencodes(cc_flag, archs, bare_metal_version):
+     if "80" in archs:
+         cc_flag += ["-gencode", "arch=compute_80,code=sm_80"]
+-
++
++    if "87" in archs:
++        cc_flag += ["-gencode", "arch=compute_87,code=sm_87"]
++
+     # Hopper 9.0 needs >= 11.8
+     if bare_metal_version >= Version("11.8") and "90" in archs:
+         cc_flag += ["-gencode", "arch=compute_90,code=sm_90"]

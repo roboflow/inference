@@ -1,11 +1,14 @@
 import base64
 import json
 import os.path
+import warnings
 from glob import glob
 from io import BytesIO
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
+import cv2
+import numpy as np
 import pytest
 import requests
 from aiohttp import ClientConnectionError, ClientResponseError, RequestInfo
@@ -14,7 +17,13 @@ from requests import HTTPError, Request, Response
 from requests_mock.mocker import Mocker
 from yarl import URL
 
-from inference_sdk.config import RemoteProcessingTimeCollector, remote_processing_times
+from inference_sdk.config import (
+    InferenceSDKDeprecationWarning,
+    InferenceSDKGuidanceWarning,
+    RemoteProcessingTimeCollector,
+    outbound_service_secret,
+    remote_processing_times,
+)
 from inference_sdk.http import client
 from inference_sdk.http.client import (
     DEFAULT_HEADERS,
@@ -27,6 +36,7 @@ from inference_sdk.http.client import (
 )
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
+    ApiKeyTransport,
     HTTPClientMode,
     InferenceConfiguration,
     ModelDescription,
@@ -35,6 +45,7 @@ from inference_sdk.http.entities import (
 from inference_sdk.http.errors import (
     HTTPCallErrorError,
     HTTPClientError,
+    InvalidInputFormatError,
     InvalidModelIdentifier,
     InvalidParameterError,
     ModelNotSelectedError,
@@ -42,6 +53,7 @@ from inference_sdk.http.errors import (
     WrongClientModeError,
 )
 from inference_sdk.http.utils import executors
+from inference_sdk.http.utils.depth_maps import decode_png_normalized_depth
 
 
 def test_ensure_model_is_selected_when_model_is_selected() -> None:
@@ -167,6 +179,30 @@ def test_wrap_errors_when_http_error_occurs() -> None:
     assert error.value.api_message == "Not Found"
 
 
+def test_wrap_errors_when_http_error_uses_fastapi_detail() -> None:
+    @wrap_errors
+    def example() -> None:
+        response = Response()
+        response.headers = {"Content-Type": "application/json"}
+        response.status_code = 501
+        response._content = json.dumps(
+            {"detail": "Fine-tuned SAM 3 models are not supported on Serverless."}
+        ).encode("utf-8")
+        raise HTTPError(
+            request=Request(),
+            response=response,
+        )
+
+    with pytest.raises(HTTPCallErrorError) as error:
+        example()
+
+    assert error.value.status_code == 501
+    assert (
+        error.value.api_message
+        == "Fine-tuned SAM 3 models are not supported on Serverless."
+    )
+
+
 @pytest.mark.asyncio
 async def test_wrap_errors_async_when_http_error_occurs() -> None:
     # given
@@ -189,6 +225,38 @@ async def test_wrap_errors_async_when_http_error_occurs() -> None:
 
     assert error.value.status_code == 404
     assert error.value.api_message == "Not Found"
+
+
+@pytest.mark.asyncio
+async def test_wrap_errors_async_redacts_api_key_and_service_secret() -> None:
+    # given - the URL carries both the caller's api key and the server's own
+    # service secret; neither may leak into the raised error
+    @wrap_errors_async
+    async def example() -> None:
+        raise ClientResponseError(
+            request_info=RequestInfo(
+                url=URL(
+                    "https://some.com/endpoint?api_key=fake12345678"
+                    "&service_secret=super-secret&countinference=False"
+                ),
+                method="GET",
+                headers={},  # type: ignore
+            ),
+            history=(),
+            status=500,
+            message="Internal Server Error",
+        )
+
+    # when
+    with pytest.raises(HTTPCallErrorError) as error:
+        await example()
+
+    # then
+    assert "super-secret" not in str(error.value)
+    assert "fake12345678" not in str(error.value)
+    assert "service_secret=***" in str(error.value)
+    assert "api_key=fa***78" in str(error.value)
+    assert "countinference=False" in str(error.value)
 
 
 def test_wrap_errors_when_connection_error_occurs() -> None:
@@ -1894,6 +1962,84 @@ def test_infer_from_api_v1_threads_service_secret_and_countinference_as_query_pa
     assert "count_inference" not in body
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v1_sends_outbound_forwarding_authority_when_context_is_set(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - a bare client, with no billing configuration of its own
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="coco/3",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", None)]
+    requests_mock.post(
+        f"{api_url}/infer/object_detection",
+        json={"image": {"height": 480, "width": 640}, "predictions": []},
+    )
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        http_client.infer_from_api_v1(
+            inference_input="https://some/image.jpg",
+            model_id="coco/3",
+        )
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then
+    qs = requests_mock.request_history[0].qs
+    assert qs.get("service_secret") == ["ctx-secret"]
+    assert qs.get("countinference") == ["false"]
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v1_context_overrides_explicit_count_inference_true(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - explicit configuration asks to be billed, but an outbound
+    # authenticated opt-out is active for this call
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="coco/3",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", None)]
+    http_client.configure(
+        inference_configuration=InferenceConfiguration(count_inference=True)
+    )
+    requests_mock.post(
+        f"{api_url}/infer/object_detection",
+        json={"image": {"height": 480, "width": 640}, "predictions": []},
+    )
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        http_client.infer_from_api_v1(
+            inference_input="https://some/image.jpg",
+            model_id="coco/3",
+        )
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then - explicit `count_inference=True` never upgrades a suppressed context
+    qs = requests_mock.request_history[0].qs
+    assert qs.get("countinference") == ["false"]
+    assert qs.get("service_secret") == ["ctx-secret"]
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 @pytest.mark.parametrize("model_id_to_use", ["coco/3", "yolov8n-640"])
@@ -2216,6 +2362,105 @@ def test_ocr_image_when_trocr_selected_in_specific_variant(
     }, "Request must contain API key and image encoded in standard format"
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_pp_ocr_selected(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/ocr/pp-ocr",
+        json={
+            "response": "Image text 1.",
+            "time": 0.33,
+        },
+    )
+
+    # when
+    result = http_client.ocr_image(inference_input="/some/image.jpg", model="pp_ocr")
+
+    # then
+    assert result == {
+        "response": "Image text 1.",
+        "time": 0.33,
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+    }, "Request must contain API key and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_pp_ocr_selected_in_specific_variant(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/ocr/pp-ocr",
+        json={
+            "response": "Image text 1.",
+            "time": 0.33,
+        },
+    )
+
+    # when
+    result = http_client.ocr_image(
+        inference_input="/some/image.jpg", model="pp_ocr", version="medium"
+    )
+
+    # then
+    assert result == {
+        "response": "Image text 1.",
+        "time": 0.33,
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "pp_ocr_version_id": "medium",
+    }, "Request must contain API key and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_pp_ocr_selected_with_compound_version(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/ocr/pp-ocr",
+        json={
+            "response": "",
+            "time": 0.33,
+        },
+    )
+
+    # when
+    result = http_client.ocr_image(
+        inference_input="/some/image.jpg", model="pp_ocr", version="small-none"
+    )
+
+    # then
+    assert result == {
+        "response": "",
+        "time": 0.33,
+    }, "Result must match the value returned by HTTP endpoint"
+    request_json = requests_mock.request_history[0].json()
+    assert request_json == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "pp_ocr_version_id": "small-none",
+    }, "Request must carry the compound pp_ocr_version_id untouched"
+    assert "quantize" not in request_json
+    assert "language_codes" not in request_json
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 async def test_ocr_image_async_when_single_image_given_in_v1_mode(
@@ -2330,6 +2575,89 @@ async def test_ocr_image_async_when_trocr_selected_in_specific_variant(
                 "api_key": "my-api-key",
                 "image": {"type": "base64", "value": "base64_image"},
                 "trocr_version_id": "trocr-small-printed",
+            },
+            params=None,
+            data=None,
+            headers={"Content-Type": "application/json"},
+        )
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_ocr_image_async_when_pp_ocr_selected(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/ocr/pp-ocr",
+            payload={
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+        )
+        # when
+        result = await http_client.ocr_image_async(
+            inference_input="/some/image.jpg", model="pp_ocr"
+        )
+
+        # then
+        assert result == {
+            "response": "Image text 1.",
+            "time": 0.33,
+        }, "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/ocr/pp-ocr",
+            "POST",
+            json={
+                "api_key": "my-api-key",
+                "image": {"type": "base64", "value": "base64_image"},
+            },
+            params=None,
+            data=None,
+            headers={"Content-Type": "application/json"},
+        )
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_ocr_image_async_when_pp_ocr_selected_in_specific_variant(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/ocr/pp-ocr",
+            payload={
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+        )
+        # when
+        result = await http_client.ocr_image_async(
+            inference_input="/some/image.jpg",
+            model="pp_ocr",
+            version="medium",
+        )
+
+        # then
+        assert result == {
+            "response": "Image text 1.",
+            "time": 0.33,
+        }, "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/ocr/pp-ocr",
+            "POST",
+            json={
+                "api_key": "my-api-key",
+                "image": {"type": "base64", "value": "base64_image"},
+                "pp_ocr_version_id": "medium",
             },
             params=None,
             data=None,
@@ -2586,6 +2914,34 @@ def test_get_clip_image_embeddings_when_single_image_given_in_v1_mode(
         "api_key": "my-api-key",
         "image": {"type": "base64", "value": "base64_image"},
     }, "Request must contain API key and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_get_clip_image_embeddings_sends_outbound_forwarding_authority_when_context_is_set(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - get_clip_image_embeddings routes through the shared _post_images
+    # path, so this pins the seam every other _post_images caller relies on
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/clip/embed_image",
+        json={"frame_id": None, "time": 0.1, "embeddings": [[0.1]]},
+    )
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        http_client.get_clip_image_embeddings(inference_input="/some/image.jpg")
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then
+    sent_url = requests_mock.request_history[0].url
+    assert "countinference=False" in sent_url
+    assert "service_secret=ctx-secret" in sent_url
 
 
 @pytest.mark.asyncio
@@ -2882,6 +3238,7 @@ async def test_get_clip_text_embeddings_async_when_single_text_given() -> None:
             "clip_version_id": "ViT-B-32",
         },
         headers={"Content-Type": "application/json"},
+        params=None,
     )
     assert collector.drain() == [("ViT-B-32", 1.5)]
     assert collector.snapshot_model_ids() == {"clip/ViT-B-32"}
@@ -3065,6 +3422,7 @@ async def test_clip_compare_async_when_both_prompt_and_subject_are_texts() -> No
             "subject_type": "text",
             "clip_version_id": "ViT-B-32",
         },
+        params=None,
         headers={"Content-Type": "application/json"},
     )
     assert collector.drain() == [("ViT-B-32", 1.5)]
@@ -3113,6 +3471,75 @@ def test_clip_compare_when_mixed_input_is_given(
     }, "Request must contain API key, subject and prompt types as text, exact values of subject and list of prompt values"
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_clip_compare_sends_the_billing_parameters_when_configured(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - clip_compare builds its request by hand rather than through
+    # _post_images, so it has to serialize the configuration on its own
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.configure(
+        InferenceConfiguration(count_inference=False, service_secret="my-secret")
+    )
+    load_static_inference_input_mock.side_effect = [[("base64_image_1", 0.5)]]
+    requests_mock.post(f"{api_url}/clip/compare", json={"similarity": [0.5]})
+
+    # when
+    http_client.clip_compare(subject="/some/image.jpg", prompt=["dog"])
+
+    # then
+    sent_url = requests_mock.request_history[0].url
+    assert "countinference=False" in sent_url
+    assert "service_secret=my-secret" in sent_url
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_clip_compare_sends_outbound_forwarding_authority_when_context_is_set(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - a bare client, with no billing configuration of its own
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.side_effect = [[("base64_image_1", 0.5)]]
+    requests_mock.post(f"{api_url}/clip/compare", json={"similarity": [0.5]})
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        http_client.clip_compare(subject="/some/image.jpg", prompt=["dog"])
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then
+    sent_url = requests_mock.request_history[0].url
+    assert "countinference=False" in sent_url
+    assert "service_secret=ctx-secret" in sent_url
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_clip_compare_sends_no_billing_parameters_without_context_or_configuration(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - neither an outbound context nor explicit configuration is set
+    assert outbound_service_secret.get() is None
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.side_effect = [[("base64_image_1", 0.5)]]
+    requests_mock.post(f"{api_url}/clip/compare", json={"similarity": [0.5]})
+
+    # when
+    http_client.clip_compare(subject="/some/image.jpg", prompt=["dog"])
+
+    # then
+    sent_url = requests_mock.request_history[0].url.lower()
+    assert "countinference" not in sent_url
+    assert "service_secret" not in sent_url
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 async def test_clip_compare_when_mixed_input_is_given(
@@ -3155,6 +3582,7 @@ async def test_clip_compare_when_mixed_input_is_given(
                 "prompt_type": "text",
                 "subject_type": "image",
             },
+            params=None,
             headers={"Content-Type": "application/json"},
         )
 
@@ -3256,6 +3684,7 @@ async def test_clip_compare_when_both_prompt_and_subject_are_images(
                 "prompt_type": "image",
                 "subject_type": "image",
             },
+            params=None,
             headers={"Content-Type": "application/json"},
         )
 
@@ -3674,6 +4103,35 @@ def test_infer_lmm_when_generation_parameters_given(
     }
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_depth_estimation_when_model_id_in_path(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/infer/depth-estimation/depth-anything-v3/small",
+        json={"normalized_depth": [[0.0]], "image": "depth-image"},
+    )
+
+    result = http_client.depth_estimation(
+        inference_input="/some/image.jpg",
+        model_id="depth-anything-v3/small",
+        model_id_in_path=True,
+    )
+
+    assert result == {"normalized_depth": [[0.0]], "image": "depth-image"}
+    # default stays the legacy list format until the announced 2027 switch
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "model_id": "depth-anything-v3/small",
+        "depth_map_format": "json",
+    }
+
+
 @mock.patch.object(client, "load_nested_batches_of_inference_input")
 @pytest.mark.parametrize(
     "legacy_endpoints, endpoint_to_use, parameter_name",
@@ -3998,6 +4456,23 @@ def test_infer_from_workflow_when_faulty_response_given(
             workspace_name="my_workspace",
             **{parameter_name: "my_workflow"},
         )
+
+
+def test_run_workflow_can_request_sink_disabling(requests_mock: Mocker) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/workflows/run",
+        json={"outputs": [{"some": 3}]},
+    )
+
+    result = http_client.run_workflow(
+        specification={"my": "specification"},
+        disable_sinks=True,
+    )
+
+    assert result == [{"some": 3}]
+    assert requests_mock.request_history[0].json()["disable_sinks"] is True
 
 
 def test_infer_from_workflow_when_neither_workflow_name_nor_specs_given() -> None:
@@ -4472,3 +4947,797 @@ def test_start_inference_pipeline_with_workflow_when_configuration_is_valid(
             "results_buffer_size": 64,
         },
     }
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_depth_estimation_decodes_png16_payload(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    depth = np.array([[0.0, 0.5], [0.25, 1.0]], dtype=np.float32)
+    _, buffer = cv2.imencode(".png", np.round(depth * 65535).astype(np.uint16))
+    payload = base64.b64encode(buffer.tobytes()).decode("ascii")
+    requests_mock.post(
+        f"{api_url}/infer/depth-estimation/yolo26n-depth-768",
+        json={
+            "normalized_depth": payload,
+            "depth_map_format": "png16",
+            "image": "depth-image",
+        },
+    )
+
+    result = http_client.depth_estimation(
+        inference_input="/some/image.jpg",
+        model_id="yolo26n-depth-768",
+        model_id_in_path=True,
+        depth_map_format="png16",
+    )
+
+    assert isinstance(result["normalized_depth"], np.ndarray)
+    assert np.allclose(result["normalized_depth"], depth, atol=1.0 / 65535)
+    assert result["image"] == "depth-image"
+    assert requests_mock.request_history[0].json()["depth_map_format"] == "png16"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_depth_estimation_decodes_png8_payload(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    depth = np.array([[0.0, 0.5], [0.25, 1.0]], dtype=np.float32)
+    _, buffer = cv2.imencode(".png", np.round(depth * 255).astype(np.uint8))
+    payload = base64.b64encode(buffer.tobytes()).decode("ascii")
+    requests_mock.post(
+        f"{api_url}/infer/depth-estimation/yolo26n-depth-768",
+        json={
+            "normalized_depth": payload,
+            "depth_map_format": "png8",
+            "image": "depth-image",
+        },
+    )
+
+    result = http_client.depth_estimation(
+        inference_input="/some/image.jpg",
+        model_id="yolo26n-depth-768",
+        model_id_in_path=True,
+        depth_map_format="png8",
+    )
+
+    assert isinstance(result["normalized_depth"], np.ndarray)
+    assert np.allclose(result["normalized_depth"], depth, atol=1.0 / 255)
+    assert requests_mock.request_history[0].json()["depth_map_format"] == "png8"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_depth_estimation_passes_requested_depth_map_format(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/infer/depth-estimation/depth-anything-v3/small",
+        json={"normalized_depth": [[0.0]], "depth_map_format": "json", "image": "i"},
+    )
+
+    http_client.depth_estimation(
+        inference_input="/some/image.jpg",
+        model_id="depth-anything-v3/small",
+        model_id_in_path=True,
+        depth_map_format="json",
+    )
+
+    assert requests_mock.request_history[0].json()["depth_map_format"] == "json"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_depth_estimation_png_opt_in_does_not_emit_deprecation_warning(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    depth = np.array([[0.0, 1.0]], dtype=np.float32)
+    _, buffer = cv2.imencode(".png", np.round(depth * 65535).astype(np.uint16))
+    payload = base64.b64encode(buffer.tobytes()).decode("ascii")
+    requests_mock.post(
+        f"{api_url}/infer/depth-estimation/depth-anything-v3/small",
+        json={
+            "normalized_depth": payload,
+            "depth_map_format": "png16",
+            "image": "i",
+        },
+    )
+
+    # when
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        http_client.depth_estimation(
+            inference_input="/some/image.jpg",
+            model_id="depth-anything-v3/small",
+            model_id_in_path=True,
+            depth_map_format="png16",
+        )
+
+    # then
+    sdk_warnings = [
+        w for w in captured if issubclass(w.category, InferenceSDKDeprecationWarning)
+    ]
+    assert len(sdk_warnings) == 0
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_depth_estimation_async_defaults_to_json_and_warns(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    # when
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/infer/depth-estimation/depth-anything-v3/small",
+            payload={
+                "normalized_depth": [[0.0]],
+                "depth_map_format": "json",
+                "image": "i",
+            },
+        )
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            result = await http_client.depth_estimation_async(
+                inference_input="/some/image.jpg",
+                model_id="depth-anything-v3/small",
+                model_id_in_path=True,
+            )
+        sent_payloads = [
+            call.kwargs["json"] for calls in m.requests.values() for call in calls
+        ]
+
+    # then - async twin shares the json default and the deprecation warning
+    assert result["normalized_depth"] == [[0.0]]
+    assert len(sent_payloads) == 1
+    assert sent_payloads[0]["depth_map_format"] == "json"
+    sdk_warnings = [
+        w for w in captured if issubclass(w.category, InferenceSDKDeprecationWarning)
+    ]
+    assert len(sdk_warnings) == 1
+
+
+# --- api_key_transport (header-based auth) ----------------------------------
+#
+# "legacy" (default) keeps today's wire behaviour byte-for-byte (covered by
+# every other test in this module). "both" adds `Authorization: Bearer` on top
+# of the legacy channels; "header" sends the header ONLY - no api_key in URLs
+# or bodies.
+
+
+def test_configuration_rejects_invalid_api_key_transport() -> None:
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = InferenceConfiguration(api_key_transport="invalid")
+
+
+def test_list_loaded_models_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+
+    # when
+    result = http_client.list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_list_loaded_models_in_both_mode_sends_key_in_query_and_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry?api_key=my-api-key",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="both")
+    )
+
+    # when
+    result = http_client.list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert "api_key=my-api-key" in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_load_model_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/add",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+
+    # when
+    result = http_client.load_model(model_id="some/1")
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert requests_mock.request_history[0].json() == {"model_id": "some/1"}
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_run_workflow_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/workflows/run",
+        json={"outputs": [{"some": 3}]},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+
+    # when
+    result = http_client.run_workflow(specification={"my": "specification"})
+
+    # then
+    assert result == [{"some": 3}]
+    assert "api_key" not in requests_mock.request_history[0].json()
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_run_workflow_in_both_mode_sends_key_in_body_and_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/workflows/run",
+        json={"outputs": [{"some": 3}]},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="both")
+    )
+
+    # when
+    result = http_client.run_workflow(specification={"my": "specification"})
+
+    # then
+    assert result == [{"some": 3}]
+    assert requests_mock.request_history[0].json()["api_key"] == "my-api-key"
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_list_inference_pipelines_in_header_mode_sends_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/inference_pipelines/list",
+        json=[],
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+
+    # when
+    result = http_client.list_inference_pipelines()
+
+    # then
+    assert result == []
+    assert requests_mock.request_history[0].json() == {}
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_in_v0_header_mode_keeps_key_out_of_url(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given - hosted URL puts the client into v0 mode, where the key is
+    # normally spliced into the URL
+    api_url = "https://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/doctr/ocr",
+        json={"response": "Image text 1.", "time": 0.33},
+    )
+
+    # when
+    result = http_client.ocr_image(inference_input="/some/image.jpg")
+
+    # then
+    assert result == {"response": "Image text 1.", "time": 0.33}
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert "api_key" not in requests_mock.request_history[0].json()
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v0_in_header_mode_keeps_key_out_of_query_params(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "https://detect.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/some/1",
+        json={
+            "image": {"height": 480, "width": 640},
+            "predictions": [],
+        },
+    )
+
+    # when
+    result = http_client.infer_from_api_v0(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+
+    # then
+    assert result["predictions"] == []
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_legacy_transport_sends_no_authorization_header(
+    requests_mock: Mocker,
+) -> None:
+    # given - the default transport must stay byte-identical on the wire
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry?api_key=my-api-key",
+        json={"models": []},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    _ = http_client.list_loaded_models()
+
+    # then
+    assert "Authorization" not in requests_mock.request_history[0].headers
+
+
+# --- api_key_transport guidance warning + fluent selection ------------------
+
+
+def test_default_transport_emits_guidance_warning_once(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", False)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when
+    with pytest.warns(InferenceSDKGuidanceWarning, match="release 1.5.0 onward"):
+        _ = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        # then - second resolution must NOT warn again
+        resolved = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    assert resolved is ApiKeyTransport.LEGACY
+
+
+def test_explicitly_selected_legacy_transport_does_not_warn(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", False)
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url="http://some.com"
+    ).configure(InferenceConfiguration(api_key_transport="legacy"))
+
+    # when / then
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        resolved = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    assert resolved is ApiKeyTransport.LEGACY
+
+
+def test_transport_configured_via_configure_applies_on_the_wire(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(f"{api_url}/model/registry", json={"models": []})
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = http_client.configure(
+        InferenceConfiguration(api_key_transport="header")
+    ).list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+    assert "api_key" not in requests_mock.request_history[0].url
+    assert (
+        requests_mock.request_history[0].headers["Authorization"] == "Bearer my-api-key"
+    )
+
+
+def test_configure_with_fresh_config_resets_api_key_transport(monkeypatch) -> None:
+    # given - configure() swaps the WHOLE configuration object by design, so a
+    # fresh config without an explicit transport resets the client back to the
+    # unset default. Callers must carry api_key_transport in every
+    # InferenceConfiguration they build (see the workflow blocks'
+    # run_remotely) - this test documents that semantics.
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+    # when
+    http_client.configure(InferenceConfiguration(max_batch_size=2))
+
+    # then
+    resolved = http_client._InferenceHTTPClient__resolved_api_key_transport()
+    assert resolved is ApiKeyTransport.LEGACY
+
+
+def test_guidance_warning_suppressed_by_inference_warnings_disabled() -> None:
+    # given - INFERENCE_WARNINGS_DISABLED documents itself as disabling all
+    # SDK-specific warnings; the guidance warning must honour it. The flag is
+    # read at import time, hence the subprocess.
+    import subprocess
+    import sys
+
+    # NOTE: no warnings.catch_warnings(record=True) here - it would force
+    # simplefilter("always"), overriding the very ignore-filter under test.
+    # Unsuppressed warnings land on stderr via the default showwarning.
+    code = (
+        "import inference_sdk\n"
+        "from inference_sdk.http.client import InferenceHTTPClient\n"
+        "c = InferenceHTTPClient(api_key='k', api_url='http://x')\n"
+        "c._InferenceHTTPClient__resolved_api_key_transport()\n"
+        "print('DONE')\n"
+    )
+    env = dict(os.environ)
+    env["INFERENCE_WARNINGS_DISABLED"] = "true"
+
+    # when
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
+
+    # then
+    assert result.returncode == 0, result.stderr
+    assert "DONE" in result.stdout
+    assert "InferenceSDKGuidanceWarning" not in result.stderr
+
+
+# --- WebRTC transport stickiness --------------------------------------------
+#
+# client.webrtc captures the api-key transport ONCE at first access and keeps
+# it (a streaming session must not change auth mid-flight). Configuration
+# changes made afterwards warn instead of silently not applying.
+
+
+def test_transport_change_after_webrtc_access_warns_about_stickiness(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    _ = http_client.webrtc  # captures the (default legacy) transport
+
+    # when / then
+    with pytest.warns(
+        InferenceSDKGuidanceWarning, match="WebRTC namespace was already initialised"
+    ):
+        http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+    # and - the warning fires only once per client
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.configure(InferenceConfiguration(api_key_transport="both"))
+
+
+def test_transport_change_without_webrtc_access_does_not_warn(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when / then
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+
+def test_matching_transport_after_webrtc_access_does_not_warn(monkeypatch) -> None:
+    # given - webrtc created AFTER the transport was configured: no divergence
+    monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url="http://some.com"
+    ).configure(InferenceConfiguration(api_key_transport="header"))
+    _ = http_client.webrtc
+
+    # when / then
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+
+def _video_model(task_type: str = "action-recognition") -> MagicMock:
+    return MagicMock(
+        return_value=ModelDescription(model_id="some/1", task_type=task_type)
+    )
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_v1_picks_the_route_for_the_task(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description = _video_model()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+
+    call = requests_mock.post.call_args
+    assert call.args[0].startswith("http://some.com/infer/action_recognition")
+    assert call.kwargs["json"]["video"] == {
+        "type": "url",
+        "value": "https://example.com/clip.mp4",
+    }
+
+
+def test_infer_on_video_v1_refuses_an_image_model() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description = _video_model("object-detection")
+
+    with pytest.raises(ModelTaskTypeNotSupportedError, match="infer_on_stream"):
+        api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_follows_the_client_into_v0(requests_mock) -> None:
+    # Serverless serves the legacy route, so select_api_v0 has to reach it
+    # rather than silently calling v1.
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    # The filter is client configuration, as it is for the image doors.
+    api_client.configure(InferenceConfiguration(class_filter=["walk", "run"]))
+
+    api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+
+    call = requests_mock.post.call_args
+    assert call.args[0] == "http://some.com/some/1"
+    # v0 carries the options on the query string.
+    assert call.kwargs["params"]["image"] == "https://example.com/clip.mp4"
+    assert call.kwargs["params"]["class_filter"] == "walk,run"
+
+
+def test_infer_on_video_rejects_bytes_like_an_image_reference_does() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+
+    with pytest.raises(InvalidInputFormatError, match="URL or a local path"):
+        api_client.infer_on_video(b"foo", model_id="some/1")
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_reads_a_local_path_on_purpose(requests_mock, tmp_path) -> None:
+    # A path is read as bytes here, not handed to an image loader that only
+    # skips decoding while downsizing happens to be off.
+    clip = tmp_path / "clip.mov"
+    clip.write_bytes(b"foo")
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video(str(clip), model_id="some/1")
+
+    call = requests_mock.post.call_args
+    assert call.kwargs["data"] == "Zm9v"
+    assert "image" not in call.kwargs["params"]
+
+
+def test_infer_on_video_rejects_a_reference_that_resolves_to_nothing() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+
+    with pytest.raises(InvalidInputFormatError):
+        api_client.infer_on_video("Zm9v", model_id="some/1")
+
+
+def test_infer_on_video_v0_rejects_a_model_id_without_a_version() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+
+    with pytest.raises(InvalidModelIdentifier):
+        api_client.infer_on_video("https://example.com/clip.mp4", model_id="no-version")
+
+
+def test_infer_v1_refuses_a_video_model_and_names_the_clip_door() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description = _video_model()
+
+    with pytest.raises(ModelTaskTypeNotSupportedError, match="infer_on_video"):
+        api_client.infer("https://example.com/frame.jpg", model_id="some/1")
+
+
+@pytest.mark.asyncio
+async def test_infer_on_video_async_v1_picks_the_route_for_the_task() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description_async = AsyncMock(
+        return_value=ModelDescription(model_id="some/1", task_type="action-recognition")
+    )
+    with aioresponses() as mock:
+        # v1 carries the api key in the JSON body, not the query string.
+        mock.post(
+            "http://some.com/infer/action_recognition",
+            payload={"timeline": []},
+        )
+
+        result = await api_client.infer_on_video_async(
+            "https://example.com/clip.mp4", model_id="some/1"
+        )
+
+        assert result == {"timeline": []}
+        request = list(mock.requests.values())[0][0]
+        assert request.kwargs["json"]["api_key"] == "my-api-key"
+        assert request.kwargs["json"]["video"] == {
+            "type": "url",
+            "value": "https://example.com/clip.mp4",
+        }
+
+
+@pytest.mark.asyncio
+async def test_infer_on_video_async_follows_the_client_into_v0() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    with aioresponses() as mock:
+        mock.post(
+            "http://some.com/some/1?api_key=my-api-key&image=https%3A%2F%2Fexample.com%2Fclip.mp4",
+            payload={"timeline": []},
+        )
+
+        result = await api_client.infer_on_video_async(
+            "https://example.com/clip.mp4", model_id="some/1"
+        )
+
+        assert result == {"timeline": []}
+
+
+@pytest.mark.asyncio
+async def test_infer_on_video_async_v1_refuses_an_image_model() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description_async = AsyncMock(
+        return_value=ModelDescription(model_id="some/1", task_type="object-detection")
+    )
+
+    with pytest.raises(ModelTaskTypeNotSupportedError, match=r"infer_async\(\)"):
+        await api_client.infer_on_video_async(
+            "https://example.com/clip.mp4", model_id="some/1"
+        )
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_uses_the_model_selected_on_the_client(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    api_client.select_model(model_id="some/1")
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video("https://example.com/clip.mp4")
+
+    assert requests_mock.post.call_args.args[0] == "http://some.com/some/1"
+
+
+def test_infer_on_video_requires_a_model_from_somewhere() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+
+    with pytest.raises(ModelNotSelectedError):
+        api_client.infer_on_video("https://example.com/clip.mp4")
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_v1_sends_the_configured_class_filter(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description = _video_model()
+    api_client.configure(InferenceConfiguration(class_filter=["walk"]))
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+
+    assert requests_mock.post.call_args.kwargs["json"]["class_filter"] == ["walk"]
+
+
+@pytest.mark.asyncio
+async def test_infer_async_refuses_a_video_model_and_names_the_async_clip_door() -> (
+    None
+):
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description_async = AsyncMock(
+        return_value=ModelDescription(model_id="some/1", task_type="action-recognition")
+    )
+
+    with pytest.raises(
+        ModelTaskTypeNotSupportedError, match=r"infer_on_video_async\(\)"
+    ):
+        await api_client.infer_async("https://example.com/frame.jpg", model_id="some/1")

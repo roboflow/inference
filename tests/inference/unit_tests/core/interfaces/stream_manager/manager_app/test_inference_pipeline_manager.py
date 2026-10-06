@@ -52,6 +52,7 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested(
         responses_queue=responses_queue,
     )
     init_payload = assembly_valid_init_payload()
+    init_payload["processing_configuration"]["disable_sinks"] = True
 
     # when
     command_queue.put(("1", init_payload))
@@ -73,6 +74,7 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested(
     ), "Termination operation must succeed"
     actual_video_reference = pipeline_init_mock.call_args[1]["video_reference"]
     assert actual_video_reference == "rtsp://128.0.0.1"
+    assert pipeline_init_mock.call_args[1]["disable_sinks"] is True
 
 
 @pytest.mark.timeout(30)

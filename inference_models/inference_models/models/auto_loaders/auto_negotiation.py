@@ -16,6 +16,7 @@ from inference_models.errors import (
     UnknownQuantizationError,
 )
 from inference_models.logger import verbose_info
+from inference_models.models.auto_loaders.capabilities import supports_capabilities
 from inference_models.models.auto_loaders.constants import (
     NMS_CLASS_AGNOSTIC_KEY,
     NMS_CONFIDENCE_THRESHOLD_KEY,
@@ -74,6 +75,7 @@ def negotiate_model_packages(
     trt_engine_host_code_allowed: bool = True,
     nms_fusion_preferences: Optional[Union[bool, dict]] = None,
     verbose: bool = False,
+    required_capabilities: Optional[List[str]] = None,
 ) -> List[ModelPackageMetadata]:
     verbose_info(
         "The following model packages were exposed by weights provider:",
@@ -89,18 +91,51 @@ def negotiate_model_packages(
             help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     if requested_model_package_id is not None:
-        return [
-            select_model_package_by_id(
-                model_packages=model_packages,
-                requested_model_package_id=requested_model_package_id,
-                verbose=verbose,
+        selected_package = select_model_package_by_id(
+            model_packages=model_packages,
+            requested_model_package_id=requested_model_package_id,
+            verbose=verbose,
+        )
+        if not allow_untrusted_packages and not selected_package.trusted_source:
+            raise NoModelPackagesAvailableError(
+                message=f"Model package `{requested_model_package_id}` comes from an untrusted "
+                f"source and cannot be loaded while `allow_untrusted_packages=False`.",
+                help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
             )
-        ]
+        if not supports_capabilities(
+            model_architecture,
+            task_type,
+            selected_package.backend,
+            required_capabilities,
+        ):
+            raise NoModelPackagesAvailableError(
+                f"Package {selected_package.package_id} does not support {required_capabilities}. "
+                "Use an embedding-capable package for the same model version."
+            )
+        return [selected_package]
+    capability_rejections = [
+        DiscardedPackage(
+            package_id=package.package_id,
+            reason="Missing required image embedding capability",
+        )
+        for package in model_packages
+        if not supports_capabilities(
+            model_architecture, task_type, package.backend, required_capabilities
+        )
+    ]
+    model_packages = [
+        package
+        for package in model_packages
+        if supports_capabilities(
+            model_architecture, task_type, package.backend, required_capabilities
+        )
+    ]
     model_packages, discarded_packages = remove_packages_not_matching_implementation(
         model_architecture=model_architecture,
         task_type=task_type,
         model_packages=model_packages,
     )
+    discarded_packages.extend(capability_rejections)
     if not allow_untrusted_packages:
         model_packages, discarded_untrusted_packages = remove_untrusted_packages(
             model_packages=model_packages,
@@ -418,6 +453,11 @@ def filter_model_packages_by_requested_quantization(
     )
     filtered_packages, discarded_packages = [], []
     for model_package in model_packages:
+        if default_quantization_used and model_package.backend is BackendType.COREML:
+            # The default allow-list keeps FP16 torch / ONNX packages off the CPU, where they run slowly.
+            # Core ML schedules its own compute units, so an FP16 Core ML package runs on the GPU.
+            filtered_packages.append(model_package)
+            continue
         if model_package.quantization not in requested_quantization:
             verbose_info(
                 message=f"Model package with id `{model_package.package_id}` does not match requested quantization "
@@ -1182,7 +1222,30 @@ def verify_versions_up_to_major_and_minor(x: Version, y: Version) -> bool:
     return x_simplified == y_simplified
 
 
+def coreml_package_matches_runtime_environment(
+    model_package: ModelPackageMetadata,
+    runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
+    verbose: bool = False,
+) -> Tuple[bool, Optional[str]]:
+    if runtime_x_ray.coremltools_version is None:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as Core ML is not available "
+            f"in this environment (it requires macOS 13+ on Apple Silicon and the `coreml` extra of "
+            f"`inference-models`).",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            "Core ML runtime is not available (requires macOS 13+ on Apple Silicon and coremltools)",
+        )
+    return True, None
+
+
 MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS = {
+    BackendType.COREML: coreml_package_matches_runtime_environment,
     BackendType.HF: hf_transformers_package_matches_runtime_environment,
     BackendType.TRT: trt_package_matches_runtime_environment,
     BackendType.ONNX: onnx_package_matches_runtime_environment,

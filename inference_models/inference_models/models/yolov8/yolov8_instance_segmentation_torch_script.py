@@ -38,7 +38,10 @@ from inference_models.models.common.roboflow.post_processing import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.common.torch import generate_batch_chunks
+from inference_models.models.common.torch import (
+    generate_batch_chunks,
+    torchscript_global_lock,
+)
 from inference_models.models.yolov8.common import prepare_dense_masks, prepare_rle_masks
 from inference_models.weights_providers.entities import RecommendedParameters
 
@@ -55,6 +58,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        torchscript_state_global_lock: Optional[Lock] = None,
         **kwargs,
     ) -> "YOLOv8ForInstanceSegmentationTorchScript":
         model_package_content = get_model_package_contents(
@@ -98,9 +102,10 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                 message="Expected static batch size to be registered in the inference configuration.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        model = torch.jit.load(
-            model_package_content["weights.torchscript"], map_location=device
-        ).eval()
+        with torchscript_global_lock(torchscript_state_global_lock):
+            model = torch.jit.load(
+                model_package_content["weights.torchscript"], map_location=device
+            ).eval()
         return cls(
             model=model,
             class_names=class_names,

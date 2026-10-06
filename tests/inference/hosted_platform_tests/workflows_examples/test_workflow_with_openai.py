@@ -2,7 +2,11 @@ import numpy as np
 import pytest
 
 from inference_sdk import InferenceHTTPClient
-from tests.inference.hosted_platform_tests.conftest import OPENAI_KEY, ROBOFLOW_API_KEY
+from tests.inference.hosted_platform_tests.conftest import (
+    OPENAI_KEY,
+    ROBOFLOW_API_KEY,
+    apply_auth_mode,
+)
 
 DESCRIPTION_WORKFLOW = {
     "version": "1.0",
@@ -60,11 +64,13 @@ def test_image_description_workflow(
     object_detection_service_url: str,
     yolov8n_640_model_id: str,
     dogs_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -154,11 +160,13 @@ CLASSIFICATION_WORKFLOW = {
 def test_classification_workflow(
     object_detection_service_url: str,
     dogs_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -232,11 +240,13 @@ STRUCTURED_PROMPTING_WORKFLOW = {
 def test_structured_prompting_workflow(
     object_detection_service_url: str,
     dogs_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -323,11 +333,13 @@ def test_structured_prompting_workflow(
     object_detection_service_url: str,
     dogs_image: np.ndarray,
     yolov8n_640_model_id: str,
+    auth_mode: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -350,3 +362,159 @@ def test_structured_prompting_workflow(
     assert "dog" not in set(
         [e["class"] for e in result[0]["predictions"]["predictions"]]
     ), "Expected classes to be substituted"
+
+
+GPT_6_1_SOL_OBJECT_DETECTION_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/open_ai@v7",
+            "name": "gpt",
+            "images": "$inputs.image",
+            "task_type": "object-detection",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+            "model_version": "gpt-6.1-sol",
+            "reasoning_effort": "low",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.gpt.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "error_status",
+            "selector": "$steps.gpt.error_status",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(OPENAI_KEY is None, reason="No OpenAI API key provided")
+@pytest.mark.flaky(retries=4, delay=1)
+def test_gpt_6_1_sol_object_detection_workflow(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+    auth_mode: str,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+    client = apply_auth_mode(client, auth_mode)
+
+    # when
+    result = client.run_workflow(
+        specification=GPT_6_1_SOL_OBJECT_DETECTION_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": OPENAI_KEY,
+            "classes": ["cat", "dog"],
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "predictions",
+        "error_status",
+    }, "Expected all outputs to be delivered"
+    assert result[0]["error_status"] is False, "Expected the answer to decode"
+    predictions = result[0]["predictions"]["predictions"]
+    assert 1 <= len(predictions) <= 2, "Expected the two dogs, no cats"
+    assert {p["class"] for p in predictions} == {"dog"}, "Expected only dogs"
+    image_height, image_width = dogs_image.shape[:2]
+    for prediction in predictions:
+        assert 0 < prediction["width"] <= image_width
+        assert 0 < prediction["height"] <= image_height
+        assert 0 <= prediction["x"] <= image_width
+        assert 0 <= prediction["y"] <= image_height
+
+
+GPT_6_1_SOL_INSTANCE_SEGMENTATION_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/open_ai@v7",
+            "name": "gpt",
+            "images": "$inputs.image",
+            "task_type": "instance-segmentation",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+            "model_version": "gpt-6.1-sol",
+            "reasoning_effort": "low",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.gpt.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "error_status",
+            "selector": "$steps.gpt.error_status",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(OPENAI_KEY is None, reason="No OpenAI API key provided")
+@pytest.mark.flaky(retries=4, delay=1)
+def test_gpt_6_1_sol_instance_segmentation_workflow(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+    auth_mode: str,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+    client = apply_auth_mode(client, auth_mode)
+
+    # when
+    result = client.run_workflow(
+        specification=GPT_6_1_SOL_INSTANCE_SEGMENTATION_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": OPENAI_KEY,
+            "classes": ["cat", "dog"],
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "predictions",
+        "error_status",
+    }, "Expected all outputs to be delivered"
+    assert result[0]["error_status"] is False, "Expected the answer to decode"
+    predictions = result[0]["predictions"]["predictions"]
+    assert 1 <= len(predictions) <= 2, "Expected the two dogs, no cats"
+    assert {p["class"] for p in predictions} == {"dog"}, "Expected only dogs"
+    image_height, image_width = dogs_image.shape[:2]
+    for prediction in predictions:
+        rle_mask = prediction["rle_mask"]
+        assert rle_mask["size"] == [
+            image_height,
+            image_width,
+        ], "Expected the mask to be rasterised at the original resolution"
+        assert len(rle_mask["counts"]) > 0, "Expected a non-empty mask"

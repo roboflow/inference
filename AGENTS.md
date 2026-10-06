@@ -1,13 +1,13 @@
 # AGENTS.md
 
 This guide governs the entire repository. If a subfolder provides its own
-`AGENTS.md`, instructions there override this file for that subtree.
+`AGENTS.md`, its instructions supplement this file for that subtree.
 
 ## Overview
 Roboflow Inference is a set of Python packages that run computer vision models
 locally and expose them via an HTTP API and command line interface. The repo
 contains the core library, CLI, SDK, and Dockerfiles for building CPU or GPU
-images. Target Python version is 3.10 (minimum 3.8).
+images. Supported Python versions are 3.10–3.12.
 
 ## Project Structure
 - `inference/` – core library with model loading and streaming utilities.
@@ -16,6 +16,8 @@ images. Target Python version is 3.10 (minimum 3.8).
 - `docker/` – Dockerfiles used to build CPU and GPU images.
 - `tests/` – unit and integration tests for all packages.
 - `docs/` – mkdocs documentation source.
+- `stream_vision/` – standalone `streamvision` package: cameras, InferencePipeline
+  and the stream manager.
 
 ## Setup / Environment
 Create a Python environment and install the repo in editable mode:
@@ -23,10 +25,14 @@ Create a Python environment and install the repo in editable mode:
 ```bash
 conda create -n inference-development python=3.10
 conda activate inference-development
-pip install -e .
+pip install -e ./inference_models -e ./workflows -e ./stream_vision -e .
 # optional models
-pip install -e ".[sam]"
+pip install -e ./inference_models -e ./workflows -e ./stream_vision -e ".[sam]"
 ```
+
+Run development commands from the repository root so the checkout's SDK source
+takes precedence over the installed SDK dependency. The unpublished development
+umbrella includes SDK source; release wheels leave SDK ownership to `inference-sdk`.
 
 Important environment variables (see `inference/core/env.py` for all):
 | Variable           | Default            | Purpose                           |
@@ -58,12 +64,14 @@ pytest tests/inference/unit_tests/
 pytest tests/inference_cli/unit_tests/
 pytest tests/inference_sdk/unit_tests/
 pytest tests/workflows/unit_tests/
+(cd workflows && pytest tests/unit_tests/ tests/isolation/)
 ```
 
 To run the entire suite while skipping slow tests:
 
 ```bash
 pytest -m "not slow" tests/
+(cd workflows && pytest -m "not slow" tests/)
 ```
 
 ## Code Style
@@ -82,8 +90,244 @@ make check_code_quality
 The repository follows PEP 8 and uses Black (88 characters), isort and flake8.
 
 ## Contribution / PR Guidelines
-- Ensure all relevant tests pass before opening a pull request.
+- Ensure all relevant tests pass before marking a pull request ready for review.
 - Keep commit messages concise and in the present tense, e.g. "Add model loader".
 - PR descriptions should explain what changed and why, list test commands run,
   and follow the templates in `.github`.
 - Update documentation when applicable.
+
+### Internal contributions (Roboflow team only)
+
+These process requirements apply to internal contributors. External contributors
+do not need access to Roboflow's Slack or Slab; follow the general guidelines above.
+
+- Before substantial implementation of a major feature or structural change,
+  prepare an implementation plan and share it in `#discuss-inference-release`
+  for maintainer agreement on the approach. Use the
+  [repository plan template](.github/implementation-plan-template.md) to draft
+  or review a plan without Slab access. It contains the same requirements as the
+  [Slab guide](https://roboflow.slab.com/posts/inference-contributions-implementation-plan-1sb5nyqz);
+  keep both aligned when changing the process. Agents can help investigate and
+  draft a plan, but the contributor must understand and own the recommendation
+  and unresolved questions.
+- A plan is generally unnecessary for documentation corrections or examples of
+  existing functionality, added tests or regression coverage, contained fixes
+  restoring established behavior, and local refactoring that preserves behavior
+  and interfaces. New workflow blocks also qualify when they follow existing
+  patterns and introduce no new execution behavior or execution-engine changes.
+  Discuss changes to shared infrastructure, compatibility, security, or package
+  dependencies with maintainers first, even for a small diff. If unsure, share a
+  short description in the channel to establish whether a plan is needed.
+- Keep unfinished work in a draft PR. Before marking it ready, inspect the diff,
+  run relevant checks, record the commands and results (including limitations),
+  and be available to address feedback. Plan exemptions do not waive testing or
+  review. Contributors remain responsible for follow-up issues after merge.
+- Use the optional [local pre-review skill](.claude/skills/review-local/SKILL.md)
+  to check work before requesting CI review. In Claude Code, invoke
+  `/review-local`; other agents can read and follow that file directly. Local
+  findings are advisory and do not replace CI review or maintainer approval.
+- Claude provides the first CI review. Address its findings and add the
+  `claude-review` label to request another pass; the label is consumed when review
+  starts, and new commits alone do not trigger another review. An eligible agent
+  pass requests maintainer review through the Slack handoff bot. If disagreeing
+  with a finding, explain why in a PR comment beginning
+  `/maintainer-review <reason>` to escalate. The handoff requires an open,
+  non-draft, same-repository PR; escalation also requires repository write access
+  or higher. Coordinate in the linked Slack thread and record final approval in
+  GitHub. See [handoff behavior](.github/maintainer-review-slack.md) for details.
+
+## Workflows Package (roboflow-workflows)
+
+The Workflows execution engine and block library live in `workflows/` as a
+standalone Python project.
+
+### Project layout
+```
+workflows/
+  roboflow_workflows/    # importable package (distribution: roboflow-workflows)
+  tests/
+    unit_tests/          # package unit tests
+    isolation/           # isolation probe tests (WORKFLOWS_ISOLATION_WHEEL must be set)
+  scripts/
+    workflows_isolation_probe.py  # CLI tool, see below
+  build_scripts/
+    download_fonts.py    # canonical font downloader (shim at root build_scripts/)
+  pyproject.toml
+  uv.lock
+  pytest.ini
+  CHANGELOG.md
+```
+
+### Versioning
+
+`roboflow-workflows` is published to PyPI separately from `inference` and
+pinned by `requirements/requirements.workflows.txt`. Contributors: add an entry
+under `## Unreleased` in `workflows/CHANGELOG.md` for any change in
+`roboflow_workflows/`. Engine behavior changes go in its `### Execution engine`
+subsection; the same entry satisfies the package and engine changelog requirements.
+Read `.cursor/rules/execution-engine-version-changelog.mdc` for engine compatibility
+versioning and release metadata. Maintainers: at release, bump `version` in
+`workflows/pyproject.toml`, the pin in `requirements/requirements.workflows.txt`,
+the hardcoded `roboflow_workflows-<version>-py3-none-any.whl` in
+`.github/workflows/*.yml`, and run `cd workflows && uv lock`. Publishing uses
+`skip-existing`, so an unbumped version is silently not re-published.
+
+### Font provisioning
+
+Fonts are package-data in the `roboflow_workflows` wheel. Before building the
+wheel, download them:
+
+```bash
+make download_fonts        # downloads to workflows/roboflow_workflows/.../fonts/assets/
+```
+
+Or directly:
+
+```bash
+python workflows/build_scripts/download_fonts.py
+```
+
+The root `build_scripts/download_fonts.py` is a thin shim that delegates to the
+canonical script above.
+
+### Building the wheel
+
+```bash
+make create_workflows_wheel    # downloads fonts + uv build
+# wheel lands in dist/roboflow_workflows-*.whl
+```
+
+### Running package tests
+
+From the repo root (after building the wheel):
+
+```bash
+cd workflows && pip install --find-links ../dist "$(ls ../dist/roboflow_workflows-*.whl)[test]"
+cd workflows && python -m pytest tests/unit_tests tests/isolation
+```
+
+Set `ENABLE_TENSOR_DATA_REPRESENTATION=True` for tensor-native mode (matches CI knob).
+
+### Running the isolation probe
+
+```bash
+python workflows/scripts/workflows_isolation_probe.py \
+    --wheel dist/roboflow_workflows-*.whl \
+    --find-links dist/
+```
+
+The probe creates a throwaway venv outside the checkout, installs the wheel,
+blocks all `inference.*` imports, and verifies the package is standalone.
+
+### Server tests that exercise workflows (retained)
+
+```bash
+python -m pytest tests/workflows/unit_tests
+python -m pytest tests/workflows/integration_tests
+```
+
+### Generating the uv.lock (run remotely)
+
+```bash
+cd workflows && uv lock
+```
+
+## Streamvision Package (streamvision)
+
+Camera acquisition, the host-neutral `InferencePipeline` and the stream manager
+live in `stream_vision/` as a standalone Python project (import `streamvision`).
+
+### Project layout
+```
+stream_vision/
+  streamvision/          # importable package (distribution: streamvision)
+    __main__.py          # `python -m streamvision` standalone stream manager
+  tests/
+    unit_tests/          # package unit tests
+    isolation/           # isolation probe tests (STREAMVISION_ISOLATION_WHEEL must be set)
+  scripts/
+    streamvision_isolation_probe.py  # CLI tool, see below
+  pyproject.toml
+  uv.lock
+  pytest.ini
+  CHANGELOG.md
+```
+
+### Versioning
+
+`streamvision` is published to PyPI separately from `inference` and pinned by
+`requirements/requirements.streamvision.txt`. Maintainers: at release, bump
+`version` in `stream_vision/pyproject.toml` and the pin, then run
+`cd stream_vision && uv lock`. Publishing uses `skip-existing`, so an unbumped
+version is silently not re-published.
+
+### Building the wheel
+
+```bash
+make create_streamvision_wheel    # wheel lands in dist/streamvision-*.whl
+```
+
+### Running package tests
+
+```bash
+cd stream_vision && python -m pytest tests/unit_tests tests/isolation
+```
+
+### Running the isolation probe
+
+Build `make create_isolation_wheels` first; `--webrtc` adds the `[webrtc]` extra.
+
+```bash
+python stream_vision/scripts/streamvision_isolation_probe.py \
+    --wheel dist/streamvision-*.whl \
+    --find-links dist/ [--webrtc]
+```
+
+The probe installs the wheel into a throwaway venv outside the checkout, blocks
+all `inference.*` imports, and round-trips a standalone stream manager only
+when `--webrtc` is passed.
+
+### Standalone stream manager
+
+The stream manager (`python -m streamvision`) needs `streamvision[webrtc,workflows]`; the
+library parts (`streamvision.camera`, `streamvision.stream`, the TCP client and
+entities) work without both extras; workflow pipelines need `workflows`.
+
+```bash
+STREAM_MANAGER_PORT=7070 python -m streamvision \
+    --host-factory my_package.host:create_host \
+    [--host-setting KEY=VALUE ...] [--warm-pipelines N]
+```
+
+The address comes from `STREAM_MANAGER_HOST`, `STREAM_MANAGER_PORT` and
+`STREAM_MANAGER_SOCKET_TIMEOUT`. The host factory module is imported before the
+runtime and may install its own `StreamsConfiguration`.
+
+## Canonical repository rules
+
+The files under `.cursor/rules/` are the canonical detailed instructions for
+this repository. Do not copy or restate their contents in `AGENTS.md` files.
+Before acting on a task, read every applicable rule file completely and follow
+its instructions. If a task spans multiple categories, read all matching files.
+
+Always read:
+
+- `.cursor/rules/uv-package-management.mdc`
+
+Before editing or reviewing Python code, read:
+
+- `.cursor/rules/empty-lines.mdc`
+- `.cursor/rules/function-call.mdc`
+- `.cursor/rules/google-docstrings.mdc`
+- `.cursor/rules/pathlib.mdc`
+- `.cursor/rules/return-values.mdc`
+
+Also read the following rule when its condition applies:
+
+- `.cursor/rules/cli-options.mdc` for Python command-line interfaces.
+- `.cursor/rules/pydantic-field-descriptions.mdc` for Pydantic models.
+- `.cursor/rules/pr-description.mdc` when the user requests a Roboflow-format PR
+  body or explicitly names that rule.
+- `.cursor/rules/execution-engine-version-changelog.mdc` for behavior changes
+  under `workflows/roboflow_workflows/execution_engine/`; the subtree
+  `AGENTS.md` repeats this routing requirement at the point of use.

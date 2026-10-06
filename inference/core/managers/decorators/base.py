@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 
@@ -8,6 +8,7 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import API_KEY
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.model_load_collector import request_model_ids
+from inference.core.models.embeddings import model_cache_key
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import ModelEndpointType
 
@@ -51,6 +52,10 @@ class ModelManagerDecorator(ModelManager):
     def pingback(self):
         return self.model_manager.pingback
 
+    @property
+    def content_addressed_artifact_cache(self):
+        return self.model_manager.content_addressed_artifact_cache
+
     def add_model(
         self,
         model_id: str,
@@ -59,6 +64,8 @@ class ModelManagerDecorator(ModelManager):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        required_capabilities: Optional[List[str]] = None,
+        output_type: str = "feature_vector",
     ):
         """Adds a model to the manager.
 
@@ -67,15 +74,22 @@ class ModelManagerDecorator(ModelManager):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if model_id in self:
+        cache_id = (
+            model_cache_key(
+                model_id_alias or model_id, required_capabilities, output_type
+            )
+            if required_capabilities
+            else model_id
+        )
+        if cache_id in self:
             self.model_manager.record_request_metadata(
-                model_id=model_id,
+                model_id=cache_id,
                 original_model_id=model_id,
                 model_id_alias=model_id_alias,
             )
             ids_collector = request_model_ids.get(None)
             if ids_collector is not None:
-                ids_collector.add(model_id)
+                ids_collector.add(cache_id)
             return
         self.model_manager.add_model(
             model_id,
@@ -84,6 +98,21 @@ class ModelManagerDecorator(ModelManager):
             endpoint_type=endpoint_type,
             countinference=countinference,
             service_secret=service_secret,
+            **(
+                {
+                    "required_capabilities": required_capabilities,
+                    "output_type": output_type,
+                }
+                if required_capabilities
+                else {}
+            ),
+        )
+
+    def load_action_recognition_model(
+        self, model_id: str, api_key: Optional[str] = None, **kwargs
+    ):
+        return self.model_manager.load_action_recognition_model(
+            model_id=model_id, api_key=api_key, **kwargs
         )
 
     def record_request_metadata(
@@ -143,6 +172,23 @@ class ModelManagerDecorator(ModelManager):
             model_id, request, img_in, img_dims, batch_size
         )
 
+    def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        return self.model_manager.run_tensor_native_inference(model_id, **kwargs)
+
+    def run_tensor_native_embeddings(self, model_id: str, **kwargs) -> dict:
+        """Forward a tensor-embedding call to the wrapped model manager.
+
+        Args:
+            model_id: Capability-specific model registration key.
+            **kwargs: Native images and embedding options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+        """
+        result = self.model_manager.run_tensor_native_embeddings(model_id, **kwargs)
+
+        return result
+
     def preprocess(self, model_id: str, request: InferenceRequest):
         """Processes the preprocessing part of a request.
 
@@ -175,6 +221,21 @@ class ModelManagerDecorator(ModelManager):
             List of class names.
         """
         return self.model_manager.get_class_names(model_id)
+
+    def get_keypoints_classes(self, model_id: str) -> List[List[str]]:
+        return self.model_manager.get_keypoints_classes(model_id)
+
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        return self.model_manager.model_supports_stream_pipeline(model_id)
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        return self.model_manager.get_model_pipeline_depth(model_id)
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
+        return self.model_manager.flush_model_stream_pipeline(model_id)
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        return self.model_manager.shutdown_model_stream_pipeline(model_id)
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         """Removes a model from the manager.

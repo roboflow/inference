@@ -1,7 +1,7 @@
 import base64
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import rasterio
@@ -30,12 +30,13 @@ from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
 from inference_models.models.sam.cache import (
     SamImageEmbeddingsInMemoryCache,
     SamLowResolutionMasksInMemoryCache,
 )
-from inference_models.models.sam.entities import SAMImageEmbeddings
+from inference_models.models.sam.entities import SAMImageEmbeddings, SAMPrediction
 from inference_models.models.sam.sam_torch import SAMTorch, compute_image_hash
 
 MASK_THRESHOLD = 0.0
@@ -85,26 +86,42 @@ class InferenceModelsSAMAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        # Usage telemetry reads the fixed canvas from `image_size`; SAMTorch
+        # only keeps it on the wrapped encoder. Never let a telemetry lookup
+        # fail model construction.
+        encoder = getattr(getattr(self._model, "_model", None), "image_encoder", None)
+        self.image_size = getattr(encoder, "img_size", None)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         return kwargs
 
+    def run_tensor_native_inference(
+        self, action: Literal["embed", "segment"], **kwargs
+    ) -> List[Union[SAMImageEmbeddings, SAMPrediction]]:
+        kwargs = self.map_inference_kwargs(kwargs)
+        if action == "embed":
+            return self._model.embed_images(**kwargs)
+        return self._model.segment_images(**kwargs)
+
+    @usage_collector("model")
     def infer_from_request(self, request: SamInferenceRequest):
         t1 = perf_counter()
         if isinstance(request, SamEmbeddingRequest):
             embedding, _ = self.embed_image(**request.dict())
             inference_time = perf_counter() - t1
             if request.format == "json":
-                return SamEmbeddingResponse(
+                response = SamEmbeddingResponse(
                     embeddings=embedding.tolist(), time=inference_time
                 )
             else:
                 binary_vector = BytesIO()
                 np.save(binary_vector, embedding)
                 binary_vector.seek(0)
-                return SamEmbeddingResponse(
+                response = SamEmbeddingResponse(
                     embeddings=binary_vector.getvalue(), time=inference_time
                 )
+            self._attach_resolved_model_metadata(response)
+            return response
         elif isinstance(request, SamSegmentationRequest):
             masks, low_res_masks = self.segment_image(**request.dict())
             if request.format == "json":
@@ -128,6 +145,7 @@ class InferenceModelsSAMAdapter(Model):
                 low_res_masks=[m.tolist() for m in low_res_masks],
                 time=perf_counter() - t1,
             )
+            self._attach_resolved_model_metadata(response)
             return response
 
     def embed_image(self, image: Any, image_id: Optional[str] = None, **kwargs):

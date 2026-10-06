@@ -13,6 +13,11 @@ from inference.core.workflows.errors import (
     ClientCausedStepExecutionError,
     RuntimeLimitsCausedStepExecutionError,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowCompositionCycleError,
+    InnerWorkflowInliningStructureError,
+    InnerWorkflowParameterBindingsUnknownInputError,
+)
 from inference_models.errors import (
     FileHashSumMissmatch,
     ModelInputError,
@@ -25,6 +30,13 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UntrustedFileError,
 )
+
+
+class ModelRetrievalErrorWithStatus(ModelRetrievalError):
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def test_with_route_exceptions_when_usage_paused_error_raised():
@@ -100,6 +112,47 @@ async def test_with_route_exceptions_async_when_unauthorized_model_access_error_
     assert "unauthorized" in resp.body.decode().lower()
 
 
+@pytest.mark.parametrize(
+    ("error", "expected_status_code"),
+    [
+        (ModelRetrievalErrorWithStatus("payment required", 402), 402),
+        (ModelRetrievalErrorWithStatus("forbidden", 403), 403),
+        (ModelRetrievalErrorWithStatus("usage paused", 423), 423),
+    ],
+)
+def test_with_route_exceptions_when_model_access_is_denied(
+    error: Exception, expected_status_code: int
+):
+    @with_route_exceptions
+    def my_route():
+        raise error
+
+    resp = my_route()
+
+    assert resp.status_code == expected_status_code
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "expected_status_code"),
+    [
+        (ModelRetrievalErrorWithStatus("payment required", 402), 402),
+        (ModelRetrievalErrorWithStatus("forbidden", 403), 403),
+        (ModelRetrievalErrorWithStatus("usage paused", 423), 423),
+    ],
+)
+async def test_with_route_exceptions_async_when_model_access_is_denied(
+    error: Exception, expected_status_code: int
+):
+    @with_route_exceptions_async
+    async def my_route():
+        raise error
+
+    resp = await my_route()
+
+    assert resp.status_code == expected_status_code
+
+
 def test_with_route_exceptions_when_model_input_error_raised():
     @with_route_exceptions
     def my_route():
@@ -121,6 +174,85 @@ async def test_with_route_exceptions_async_when_model_input_error_raised():
 
     assert resp.status_code == 400
     assert "model input" in resp.body.decode().lower()
+
+
+def test_with_route_exceptions_when_inner_workflow_parameter_bindings_error_raised():
+    @with_route_exceptions
+    def my_route():
+        raise InnerWorkflowParameterBindingsUnknownInputError(
+            public_message="inner workflow parameter bindings reference unknown input"
+        )
+
+    resp = my_route()
+
+    assert resp.status_code == 400
+    assert "unknown input" in resp.body.decode().lower()
+
+
+@pytest.mark.asyncio
+async def test_with_route_exceptions_async_when_inner_workflow_parameter_bindings_error_raised():
+    @with_route_exceptions_async
+    async def my_route():
+        raise InnerWorkflowParameterBindingsUnknownInputError(
+            public_message="inner workflow parameter bindings reference unknown input"
+        )
+
+    resp = await my_route()
+
+    assert resp.status_code == 400
+    assert "unknown input" in resp.body.decode().lower()
+
+
+def test_with_route_exceptions_when_inner_workflow_composition_error_raised():
+    @with_route_exceptions
+    def my_route():
+        raise InnerWorkflowCompositionCycleError(
+            public_message="inner workflow composition contains a cycle"
+        )
+
+    resp = my_route()
+
+    assert resp.status_code == 400
+    assert "cycle" in resp.body.decode().lower()
+
+
+@pytest.mark.asyncio
+async def test_with_route_exceptions_async_when_inner_workflow_composition_error_raised():
+    @with_route_exceptions_async
+    async def my_route():
+        raise InnerWorkflowCompositionCycleError(
+            public_message="inner workflow composition contains a cycle"
+        )
+
+    resp = await my_route()
+
+    assert resp.status_code == 400
+    assert "cycle" in resp.body.decode().lower()
+
+
+def test_with_route_exceptions_when_inner_workflow_inlining_structure_error_raised():
+    @with_route_exceptions
+    def my_route():
+        raise InnerWorkflowInliningStructureError(
+            public_message="inner workflow inlining made no progress"
+        )
+
+    resp = my_route()
+
+    assert resp.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_with_route_exceptions_async_when_inner_workflow_inlining_structure_error_raised():
+    @with_route_exceptions_async
+    async def my_route():
+        raise InnerWorkflowInliningStructureError(
+            public_message="inner workflow inlining made no progress"
+        )
+
+    resp = await my_route()
+
+    assert resp.status_code == 500
 
 
 def test_with_route_exceptions_when_cannot_initialise_model_due_to_input_size_error_raised():

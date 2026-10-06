@@ -26,6 +26,7 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.utils.batching import create_batches
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import cosine_similarity
+from inference.usage_tracking.collector import usage_collector
 
 if DEVICE is None:
     if torch.cuda.is_available():
@@ -72,6 +73,7 @@ class PerceptionEncoder(RoboflowCoreModel):
 
         self.preprocessor = transforms.get_image_transform(self.model.image_size)
         self.tokenizer = transforms.get_text_tokenizer(self.model.context_length)
+        self.image_size = self.model.image_size
 
         self.task_type = "embedding"
 
@@ -277,6 +279,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         response = PerceptionEncoderEmbeddingResponse(embeddings=embeddings.tolist())
         return response
 
+    @usage_collector("model")
     def infer_from_request(
         self, request: PerceptionEncoderInferenceRequest
     ) -> PerceptionEncoderEmbeddingResponse:
@@ -298,6 +301,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         data = infer_func(**request.dict())
         response = make_response_func(data)
         response.time = perf_counter() - t1
+        self._attach_resolved_model_metadata(response)
         return response
 
     def make_response(self, embeddings, *args, **kwargs) -> InferenceResponse:

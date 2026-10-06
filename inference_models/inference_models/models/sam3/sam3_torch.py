@@ -1,7 +1,8 @@
 import hashlib
 import json
+import os.path
 from copy import copy, deepcopy
-from threading import RLock
+from threading import Lock, RLock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
@@ -26,12 +27,14 @@ from sam3.train.transforms.basic_for_api import (
 from inference_models.configuration import DEFAULT_DEVICE, SAM3_IMAGE_SIZE
 from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.torch import torchscript_global_lock
 from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsCache,
     Sam3ImageEmbeddingsCacheNullObject,
     Sam3LowResolutionMasksCache,
     Sam3LowResolutionMasksCacheNullObject,
 )
+from inference_models.models.sam3.chunked_postprocessing import ChunkedPostProcessImage
 from inference_models.models.sam3.entities import (
     SAM3ImageEmbeddings,
     SAM3MaskCacheEntry,
@@ -50,6 +53,20 @@ SUPPORTED_VERSIONS = {
 }
 
 
+def _eject_sam3_leaked_bf16_autocast(sam3_model) -> None:
+    inst_predictor = getattr(sam3_model, "inst_interactive_predictor", None)
+    if inst_predictor is None:
+        return
+    tracker = getattr(inst_predictor, "model", None)
+    ctx = getattr(tracker, "bf16_context", None)
+    if ctx is None:
+        return
+    try:
+        ctx.__exit__(None, None, None)
+    finally:
+        tracker.bf16_context = None
+
+
 class SAM3Torch:
     @classmethod
     def from_pretrained(
@@ -63,6 +80,7 @@ class SAM3Torch:
         compile_model: bool = False,
         enable_inst_interactivity: bool = True,
         sam3_allow_client_generated_hash_ids: bool = False,
+        torchscript_state_global_lock: Optional[Lock] = None,
         **kwargs,
     ) -> "SAM3Torch":
         if sam3_image_embeddings_cache is None:
@@ -78,14 +96,21 @@ class SAM3Torch:
             ],
         )
 
-        try:
-            config_content = get_model_package_contents(
-                model_package_dir=model_name_or_path,
-                elements=["sam_configuration.json"],
-            )
-            version = decode_sam_version(
-                config_path=config_content["sam_configuration.json"]
-            )
+        # sam_configuration.json is optional: fine-tuned packages produced by
+        # roboflow-train ship without it, only base packages carry it.
+        sam_configuration_path = os.path.join(
+            model_name_or_path, "sam_configuration.json"
+        )
+        if os.path.exists(sam_configuration_path):
+            try:
+                version = decode_sam_version(config_path=sam_configuration_path)
+            except (KeyError, ValueError) as error:
+                raise CorruptedModelPackageError(
+                    message="Could not decode sam_configuration.json in SAM3 model package. "
+                    "If you run inference locally, verify the correctness of SAM3 model package. "
+                    "If you see the error running on Roboflow platform - contact us to get help.",
+                    help_url="https://todo",
+                ) from error
             if version not in SUPPORTED_VERSIONS:
                 raise CorruptedModelPackageError(
                     message=f"Detected unsupported version of SAM3 model: {version}. Supported versions: "
@@ -94,18 +119,26 @@ class SAM3Torch:
                     "contact us to get help.",
                     help_url="https://todo",
                 )
-        except KeyError:
-            pass
 
         device_str = "cuda" if device.type == "cuda" else "cpu"
-        sam3_model = build_sam3_image_model(
-            bpe_path=model_package_content["bpe_simple_vocab_16e6.txt.gz"],
-            checkpoint_path=model_package_content["weights.pt"],
-            device=device_str,
-            load_from_HF=False,
-            compile=compile_model,
-            enable_inst_interactivity=enable_inst_interactivity,
-        )
+        # build_sam3_image_model runs torch.jit.script on torchvision transforms
+        # (SAM2Transforms: Resize + Normalize), mutating the process-global TorchScript
+        # registry; serialize against concurrent loads/scripts.
+        with torchscript_global_lock(torchscript_state_global_lock):
+            sam3_model = build_sam3_image_model(
+                bpe_path=model_package_content["bpe_simple_vocab_16e6.txt.gz"],
+                checkpoint_path=model_package_content["weights.pt"],
+                device=device_str,
+                load_from_HF=False,
+                compile=compile_model,
+                enable_inst_interactivity=enable_inst_interactivity,
+            )
+        # sam3==0.1.3 Sam3TrackerPredictor.__init__ enters a CUDA bf16
+        # torch.autocast context and never exits it, leaking bf16 globally
+        # for the rest of the process and breaking unrelated models in the
+        # same pytest session. Eject it; SAM3 inference paths in this file
+        # re-enter autocast in scoped `with` blocks where actually needed.
+        _eject_sam3_leaked_bf16_autocast(sam3_model)
 
         transform = ComposeAPI(
             transforms=[
@@ -440,10 +473,10 @@ class SAM3Torch:
                 boxes_list = boxes.cpu().tolist()
             else:
                 boxes_list = boxes
-            if len(boxes_list) > 0 and isinstance(boxes_list[0], (int, float)):
-                args["box"] = boxes_list
-            else:
-                args["box"] = boxes_list[0] if boxes_list else None
+            # Either a flat [x1, y1, x2, y2] box or a [num_prompts, 4] batch -
+            # the predictor reshapes both to (-1, 2, 2), so all boxes must be
+            # forwarded (taking only the first one silently drops prompts).
+            args["box"] = boxes_list if boxes_list else None
 
         args = pad_points(args)
         if not any(args.values()):
@@ -503,8 +536,15 @@ class SAM3Torch:
         images: Union[np.ndarray, List[np.ndarray]],
         prompts: List[Dict],
         output_prob_thresh: float = 0.5,
+        max_detections: int = -1,
+        mask_format: str = "dense",
         **kwargs,
     ) -> List[Dict]:
+        if mask_format not in ("dense", "rle"):
+            raise ModelInputError(
+                message=f"Unsupported mask_format: {mask_format}. Use 'dense' or 'rle'.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
         images_list = maybe_wrap_in_list(images)
         if images_list is None:
             raise ModelInputError(
@@ -557,12 +597,12 @@ class SAM3Torch:
 
                     output = self._model(batch)
 
-                    post = PostProcessImage(
-                        max_dets_per_img=-1,
+                    post = ChunkedPostProcessImage(
+                        max_dets_per_img=int(max_detections),
                         iou_type="segm",
                         use_original_sizes_box=True,
                         use_original_sizes_mask=True,
-                        convert_mask_to_rle=False,
+                        convert_mask_to_rle=mask_format == "rle",
                         detection_threshold=float(output_prob_thresh),
                         to_cpu=True,
                     )
@@ -570,15 +610,20 @@ class SAM3Torch:
 
             image_results = []
             for idx, coco_id in enumerate(prompt_ids):
-                masks = processed[coco_id].get("masks")
                 scores = processed[coco_id].get("scores", [])
 
-                if masks is not None:
-                    if hasattr(masks, "detach"):
-                        masks = masks.detach().cpu().numpy()
-                    masks = np.array(masks)
+                if mask_format == "rle":
+                    # COCO RLE dicts, already encoded per-mask by the
+                    # postprocessor — dense full-res masks never materialize
+                    masks = processed[coco_id].get("masks_rle") or []
                 else:
-                    masks = np.zeros((0, h, w), dtype=np.uint8)
+                    masks = processed[coco_id].get("masks")
+                    if masks is not None:
+                        if hasattr(masks, "detach"):
+                            masks = masks.detach().cpu().numpy()
+                        masks = np.array(masks)
+                    else:
+                        masks = np.zeros((0, h, w), dtype=np.uint8)
 
                 image_results.append(
                     {
@@ -766,14 +811,17 @@ def serialize_prompt(
         else:
             labels_list = point_labels
 
-        for coord, label in zip(coords_list, labels_list):
-            result["points"].append(
-                {
-                    "x": coord[0] if isinstance(coord, (list, tuple)) else coord,
-                    "y": coord[1] if isinstance(coord, (list, tuple)) else 0,
-                    "positive": bool(label),
-                }
-            )
+        # point_coordinates is shaped (num_prompts, num_points, 2); iterate prompts
+        # then points.
+        for prompt_coords, prompt_labels in zip(coords_list, labels_list):
+            for coord, label in zip(prompt_coords, prompt_labels):
+                result["points"].append(
+                    {
+                        "x": coord[0] if isinstance(coord, (list, tuple)) else coord,
+                        "y": coord[1] if isinstance(coord, (list, tuple)) else 0,
+                        "positive": bool(label),
+                    }
+                )
 
     if boxes is not None:
         if isinstance(boxes, torch.Tensor):

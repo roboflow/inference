@@ -25,8 +25,27 @@ class WorkflowInferenceRequest(BaseModel):
         "allow profiling traces to be exported to clients. Only applies for Workflows definitions saved "
         "on Roboflow platform.",
     )
+    debug: bool = Field(
+        default=False,
+        description="When True, captures stdout/stderr emitted by custom Python blocks executed "
+        "locally and returns them in the response under `python_blocks_output_streams`. Also activates "
+        "the workflow-scoped `debug_traces` variable in custom Python blocks; values appended during "
+        "execution are returned under `python_blocks_debug_traces`. On Modal / OCI sandbox executions "
+        "`debug_traces` is a no-op (entries appended remotely are not collected), but calls are safe "
+        "and will not raise.",
+    )
     workflow_id: Optional[str] = Field(
         default=None, description="Optional identifier of workflow"
+    )
+    inner_workflow_dispatch_depth: int = Field(
+        default=0,
+        ge=0,
+        strict=True,
+        description="Number of remote inner-workflow dispatch hops preceding this request.",
+    )
+    disable_sinks: bool = Field(
+        default=False,
+        description="Run the workflow with sink writes and outbound notifications/uploads disabled.",
     )
 
 
@@ -67,8 +86,11 @@ class DescribeBlocksRequest(BaseModel):
 
 
 class DescribeInterfaceRequest(BaseModel):
-    api_key: str = Field(
-        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval. "
+        "May alternatively be sent in the `Authorization: Bearer <api_key>` header - the route still requires "
+        "a key through one of the channels.",
     )
 
 
@@ -86,4 +108,31 @@ class PredefinedWorkflowDescribeInterfaceRequest(DescribeInterfaceRequest):
 
 
 class WorkflowSpecificationDescribeInterfaceRequest(DescribeInterfaceRequest):
+    specification: dict
+
+
+class DescribeWorkloadRequest(BaseModel):
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Roboflow API Key used to resolve the workflow definition and, when "
+        "model metadata enrichment is enabled, to look up model metadata. "
+        "May alternatively be sent in the `Authorization: Bearer <api_key>` header - the route "
+        "still requires a key through one of the channels.",
+    )
+
+
+class PredefinedWorkflowDescribeWorkloadRequest(DescribeWorkloadRequest):
+    use_cache: bool = Field(
+        default=True,
+        description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
+        "definition saved in Roboflow app and want to fetch the newest version for the request. "
+        "Only applies for Workflows definitions saved on Roboflow platform.",
+    )
+    workflow_version_id: Optional[str] = Field(
+        default=None,
+        description="Specific version of the workflow to fetch. If not provided, the latest version is used.",
+    )
+
+
+class WorkflowSpecificationDescribeWorkloadRequest(DescribeWorkloadRequest):
     specification: dict

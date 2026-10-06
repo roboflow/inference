@@ -9,6 +9,7 @@ class DataSource(str, Enum):
     LOCAL_DIRECTORY = "local-directory"
     REFERENCES_FILE = "references-file"
     CLOUD_STORAGE = "cloud-storage"
+    ROBOQL = "roboql"
 
 
 class ShardDetails(BaseModel):

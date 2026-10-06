@@ -1,0 +1,743 @@
+import importlib
+import sys
+import threading
+import warnings
+from contextlib import nullcontext
+from importlib.machinery import ModuleSpec
+from types import MethodType, ModuleType, SimpleNamespace
+from typing import List
+from unittest.mock import Mock
+
+import numpy as np
+import pytest
+import torch
+
+from inference_models.errors import ModelRuntimeError
+from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
+    DeviceCompatibility,
+    ExecutionContext,
+    InputCompatibility,
+    OptimizationMetadata,
+    OptimizationStage,
+)
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
+from inference_models.models.optimization.registry import ImplementationRegistry
+from inference_models.models.rfdetr.optimization.contracts import (
+    PostprocessRequest,
+    PreprocessRequest,
+    PreprocessResult,
+)
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
+)
+from inference_models.models.rfdetr.optimization.ids import (
+    RFDETR_POSTPROCESSOR_BASE,
+    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+    RFDETR_PREPROCESSOR_BASE,
+    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+)
+
+_MODEL_MODULE = "inference_models.models.rfdetr.rfdetr_object_detection_trt"
+_TRT_DEPENDENCY_MODULES = (
+    "inference_models.models.common.cuda",
+    "inference_models.models.common.trt",
+    _MODEL_MODULE,
+)
+_MISSING = object()
+
+
+@pytest.fixture
+def rfdetr_trt_model_class(monkeypatch):
+    """Import the TRT model with inert annotation-only dependency doubles.
+
+    The model eagerly imports TensorRT and PyCUDA, while these orchestration tests
+    must run in the CPU-only unit-test job. Real dependency coverage lives in the
+    ``trt_extras`` integration suite. This fixture isolates only the import boundary
+    and restores both ``sys.modules`` entries and parent-package attributes so no
+    fake dependency or model module can leak into another test.
+    """
+
+    class ILogger:
+        class Severity:
+            pass
+
+    fake_trt = ModuleType("tensorrt")
+    fake_trt.__spec__ = ModuleSpec("tensorrt", loader=None)
+    fake_trt.ILogger = ILogger
+    fake_trt.ICudaEngine = type("ICudaEngine", (), {})
+    fake_trt.IExecutionContext = type("IExecutionContext", (), {})
+
+    fake_cuda = ModuleType("pycuda.driver")
+    fake_cuda.__spec__ = ModuleSpec("pycuda.driver", loader=None)
+    fake_cuda.Context = type("Context", (), {})
+    fake_cuda.Device = type("Device", (), {})
+    fake_pycuda = ModuleType("pycuda")
+    fake_pycuda.__spec__ = ModuleSpec(
+        "pycuda",
+        loader=None,
+        is_package=True,
+    )
+    fake_pycuda.__path__ = []
+    fake_pycuda.driver = fake_cuda
+
+    previous_parent_attributes = {}
+    for name in _TRT_DEPENDENCY_MODULES:
+        parent_name, attribute = name.rsplit(".", 1)
+        parent = importlib.import_module(parent_name)
+        previous_parent_attributes[name] = (
+            parent,
+            attribute,
+            getattr(parent, attribute, _MISSING),
+        )
+    previous_modules = {
+        name: sys.modules.pop(name, None) for name in _TRT_DEPENDENCY_MODULES
+    }
+    monkeypatch.setitem(sys.modules, "tensorrt", fake_trt)
+    monkeypatch.setitem(sys.modules, "pycuda", fake_pycuda)
+    monkeypatch.setitem(sys.modules, "pycuda.driver", fake_cuda)
+
+    try:
+        module = importlib.import_module(_MODEL_MODULE)
+        yield module.RFDetrForObjectDetectionTRT
+    finally:
+        for name in _TRT_DEPENDENCY_MODULES:
+            sys.modules.pop(name, None)
+            previous = previous_modules[name]
+            if previous is not None:
+                sys.modules[name] = previous
+            parent, attribute, previous_attribute = previous_parent_attributes[name]
+            if previous_attribute is _MISSING:
+                if hasattr(parent, attribute):
+                    delattr(parent, attribute)
+            else:
+                setattr(parent, attribute, previous_attribute)
+
+
+def test_model_boundary_parses_serialized_rfdetr_execution_plan(
+    rfdetr_trt_model_class,
+) -> None:
+    execution_plan = RFDetrExecutionPlan(
+        preprocessor_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        postprocessor_id=RFDETR_POSTPROCESSOR_BASE,
+        allow_compatibility_fallback=False,
+        allow_runtime_failure_fallback=False,
+    )
+
+    resolved_plan = rfdetr_trt_model_class._resolve_requested_execution_plan(
+        execution_plan=execution_plan.to_dict(),
+    )
+
+    assert isinstance(resolved_plan, RFDetrExecutionPlan)
+    assert resolved_plan.preprocessor_id == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    assert resolved_plan.postprocessor_id == RFDETR_POSTPROCESSOR_BASE
+    assert not resolved_plan.allow_compatibility_fallback
+    assert not resolved_plan.allow_runtime_failure_fallback
+
+
+def test_model_boundary_accepts_typed_plan_and_rejects_invalid_mapping(
+    rfdetr_trt_model_class,
+) -> None:
+    execution_plan = RFDetrExecutionPlan()
+
+    resolved_plan = rfdetr_trt_model_class._resolve_requested_execution_plan(
+        execution_plan=execution_plan,
+    )
+
+    assert resolved_plan is execution_plan
+
+    with pytest.raises(ValueError, match="must contain exactly"):
+        rfdetr_trt_model_class._resolve_requested_execution_plan(
+            execution_plan={},
+        )
+
+
+@pytest.fixture
+def loader_constructor(rfdetr_trt_model_class, monkeypatch):
+    """Replace package and GPU boundaries to inspect loader constructor arguments."""
+    module = sys.modules[_MODEL_MODULE]
+    monkeypatch.setattr(
+        module,
+        "get_model_package_contents",
+        lambda **kwargs: {name: name for name in kwargs["elements"]},
+    )
+    monkeypatch.setattr(module, "parse_class_names_file", Mock(return_value=["cat"]))
+    monkeypatch.setattr(
+        module,
+        "parse_inference_config",
+        Mock(return_value=SimpleNamespace(class_names_operations=None)),
+    )
+    monkeypatch.setattr(module, "parse_trt_config", Mock())
+    monkeypatch.setattr(module.cuda, "init", Mock(), raising=False)
+    monkeypatch.setattr(module.cuda, "Device", Mock())
+    monkeypatch.setattr(
+        module, "use_primary_cuda_context", lambda **kwargs: nullcontext()
+    )
+    monkeypatch.setattr(module, "load_trt_model", Mock())
+    monkeypatch.setattr(
+        module,
+        "get_trt_engine_inputs_and_outputs",
+        Mock(return_value=(["images"], ["dets", "labels"])),
+    )
+    monkeypatch.setattr(module, "establish_trt_cuda_graph_cache", Mock())
+    constructor = Mock(return_value=None)
+    monkeypatch.setattr(rfdetr_trt_model_class, "__init__", constructor)
+
+    return constructor
+
+
+@pytest.mark.parametrize(
+    "legacy_plan", [None, RFDetrExecutionPlan(), RFDetrExecutionPlan().to_dict()]
+)
+@pytest.mark.parametrize("include_execution_plan", [False, True])
+def test_loader_warns_and_preserves_deprecated_plan_argument(
+    rfdetr_trt_model_class,
+    loader_constructor,
+    legacy_plan,
+    include_execution_plan,
+) -> None:
+    kwargs = {"rfdetr_execution_plan": legacy_plan}
+    if include_execution_plan:
+        kwargs["execution_plan"] = None
+
+    with pytest.warns(
+        FutureWarning,
+        match="'rfdetr_execution_plan' is deprecated.*October 24, 2026.*'execution_plan'",
+    ) as captured:
+        rfdetr_trt_model_class.from_pretrained(
+            "unused-model-package",
+            device=torch.device("cuda:0"),
+            **kwargs,
+        )
+
+    assert len(captured) == 1
+    assert captured[0].filename == __file__
+    assert loader_constructor.call_args.kwargs["execution_plan"] is legacy_plan
+
+
+@pytest.mark.parametrize("execution_plan", [None, RFDetrExecutionPlan()])
+def test_loader_accepts_current_plan_argument_without_warning(
+    rfdetr_trt_model_class,
+    loader_constructor,
+    execution_plan,
+) -> None:
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        rfdetr_trt_model_class.from_pretrained(
+            "unused-model-package",
+            device=torch.device("cuda:0"),
+            execution_plan=execution_plan,
+        )
+
+    assert not captured
+    assert loader_constructor.call_args.kwargs["execution_plan"] is execution_plan
+
+
+@pytest.mark.parametrize("legacy_plan", [None, RFDetrExecutionPlan()])
+def test_loader_rejects_conflicting_plan_arguments_before_loading(
+    rfdetr_trt_model_class,
+    monkeypatch,
+    legacy_plan,
+) -> None:
+    load_package = Mock(side_effect=AssertionError("Model loading must not start"))
+    monkeypatch.setattr(
+        sys.modules[_MODEL_MODULE], "get_model_package_contents", load_package
+    )
+    with pytest.raises(
+        TypeError,
+        match="Cannot pass both 'rfdetr_execution_plan' and 'execution_plan'",
+    ):
+        rfdetr_trt_model_class.from_pretrained(
+            "unused-model-package",
+            device=torch.device("cuda:0"),
+            rfdetr_execution_plan=legacy_plan,
+            execution_plan=RFDetrExecutionPlan(),
+        )
+
+    load_package.assert_not_called()
+
+
+class _RuntimeStage:
+    def __init__(
+        self,
+        implementation_id: str,
+        *,
+        stage: OptimizationStage,
+        fail_recoverably: bool = False,
+        fail_nonrecoverably: bool = False,
+        disable_after_failure: bool = True,
+    ) -> None:
+        fallback_id = (
+            RFDETR_PREPROCESSOR_BASE
+            if stage is OptimizationStage.PREPROCESS
+            else RFDETR_POSTPROCESSOR_BASE
+        )
+        self.metadata = OptimizationMetadata(
+            implementation_id=implementation_id,
+            stage=stage,
+            version="1",
+            target=DeviceCompatibility(device_kind="gpu"),
+            inputs=InputCompatibility(scenarios=("*",)),
+            dependencies=(),
+            fallback_id=fallback_id,
+            changes_numerics=False,
+            supports_concurrency=True,
+            supports_cuda_graphs=False,
+        )
+        self._runtime_supported = True
+        self._fail_recoverably = fail_recoverably
+        self._fail_nonrecoverably = fail_nonrecoverably
+        self._disable_after_failure = disable_after_failure
+        self.calls = 0
+
+    def is_compatible(self, context: ExecutionContext) -> bool:
+        del context
+        return True
+
+    def check_model_compatibility(self, **kwargs) -> CompatibilityResult:
+        return CompatibilityResult.compatible()
+
+    def check_request_compatibility(
+        self,
+        *,
+        request,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        del request, context
+        return CompatibilityResult.compatible()
+
+    def check_runtime_compatibility(
+        self,
+        *,
+        request,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        del request, context
+        if self._runtime_supported:
+            return CompatibilityResult.compatible()
+        return CompatibilityResult.incompatible(
+            f"{self.metadata.implementation_id} failed during an earlier request"
+        )
+
+    def preprocess(
+        self,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> PreprocessResult:
+        del request, context
+        self.calls += 1
+        self._raise_if_configured()
+
+        return PreprocessResult(
+            tensor=torch.full((1, 3, 2, 2), self.calls, dtype=torch.float32),
+            metadata=[],
+            implementation_id=self.metadata.implementation_id,
+        )
+
+    def postprocess(
+        self,
+        request: PostprocessRequest,
+        context: ExecutionContext,
+    ) -> List[str]:
+        del request, context
+        self.calls += 1
+        self._raise_if_configured()
+
+        return [self.metadata.implementation_id]
+
+    def _raise_if_configured(self) -> None:
+        if self._fail_nonrecoverably:
+            raise ValueError(
+                f"{self.metadata.implementation_id} non-recoverable failure"
+            )
+        if not self._fail_recoverably:
+            return
+        if self._disable_after_failure:
+            self._runtime_supported = False
+        raise RecoverableStageExecutionError(
+            message=f"{self.metadata.implementation_id} recoverable failure",
+        )
+
+
+class _Scheduler:
+    def preprocess_stream(self):
+        return object()
+
+    def finalize_preprocess(
+        self,
+        engine_input,
+        *,
+        context: ExecutionContext,
+        independent_stage_execution: bool,
+    ) -> torch.Tensor:
+        del context, independent_stage_execution
+        return engine_input.tensor
+
+    def execute_postprocess(self, model_results, *, operation):
+        del model_results
+        return operation(object())
+
+
+class _BufferStrategy:
+    def prepare_engine_input(
+        self,
+        result: PreprocessResult,
+        context: ExecutionContext,
+    ) -> PreprocessResult:
+        del context
+        return result
+
+
+def _context() -> ExecutionContext:
+    return ExecutionContext(device_kind="gpu", device="cuda:0")
+
+
+def _build_model(
+    model_class,
+    *,
+    selected_stage: _RuntimeStage,
+    base_stage: _RuntimeStage,
+    allow_runtime_failure_fallback: bool,
+    allow_compatibility_fallback: bool,
+):
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    registry.register(base_stage)
+    registry.register(selected_stage)
+    model = model_class.__new__(model_class)
+    model._implementation_registry = registry
+    model._rfdetr_execution_plan = SimpleNamespace(
+        allow_compatibility_fallback=allow_compatibility_fallback,
+        allow_runtime_failure_fallback=allow_runtime_failure_fallback,
+    )
+    model._scheduler = _Scheduler()
+    model._request_fallback_warnings = SimpleNamespace(claim=lambda **kwargs: False)
+    model._thread_local_storage = threading.local()
+    model._execution_stage_context = MethodType(
+        lambda self, *, current_stream: _context(),
+        model,
+    )
+    model._record_static_stage_execution = MethodType(
+        lambda self, *, stage: None,
+        model,
+    )
+
+    return model
+
+
+def _build_preprocess_model(
+    model_class,
+    *,
+    candidate: _RuntimeStage,
+    base: _RuntimeStage,
+    allow_runtime_failure_fallback: bool = True,
+    allow_compatibility_fallback: bool = True,
+):
+    model = _build_model(
+        model_class,
+        selected_stage=candidate,
+        base_stage=base,
+        allow_runtime_failure_fallback=allow_runtime_failure_fallback,
+        allow_compatibility_fallback=allow_compatibility_fallback,
+    )
+    model._preprocessor = candidate
+    model._buffer_strategy = _BufferStrategy()
+    model._inference_config = SimpleNamespace(
+        image_pre_processing=object(),
+        network_input=object(),
+    )
+    from inference_models.models.rfdetr.optimization.preprocessor_selection import (
+        PreprocessorSelector,
+    )
+
+    model._preprocessor_selector = PreprocessorSelector(
+        registry=model._implementation_registry,
+        context=_context(),
+        image_pre_processing=model._inference_config.image_pre_processing,
+        network_input=model._inference_config.network_input,
+    )
+
+    return model
+
+
+def _build_postprocess_model(
+    model_class,
+    *,
+    candidate: _RuntimeStage,
+    base: _RuntimeStage,
+    allow_runtime_failure_fallback: bool = True,
+    allow_compatibility_fallback: bool = True,
+):
+    model = _build_model(
+        model_class,
+        selected_stage=candidate,
+        base_stage=base,
+        allow_runtime_failure_fallback=allow_runtime_failure_fallback,
+        allow_compatibility_fallback=allow_compatibility_fallback,
+    )
+    model._postprocessor = candidate
+    model._classes_re_mapping = None
+    model._class_names = ["class"]
+    model.recommended_parameters = None
+
+    return model
+
+
+def _preprocess_stages(
+    *,
+    disable_after_failure: bool = True,
+):
+    candidate = _RuntimeStage(
+        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        stage=OptimizationStage.PREPROCESS,
+        fail_recoverably=True,
+        disable_after_failure=disable_after_failure,
+    )
+    base = _RuntimeStage(
+        RFDETR_PREPROCESSOR_BASE,
+        stage=OptimizationStage.PREPROCESS,
+    )
+
+    return candidate, base
+
+
+def _postprocess_stages():
+    candidate = _RuntimeStage(
+        RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+        stage=OptimizationStage.POSTPROCESS,
+        fail_recoverably=True,
+    )
+    base = _RuntimeStage(
+        RFDETR_POSTPROCESSOR_BASE,
+        stage=OptimizationStage.POSTPROCESS,
+    )
+
+    return candidate, base
+
+
+def test_preprocess_retries_base_then_short_circuits_recorded_failure(
+    rfdetr_trt_model_class,
+) -> None:
+    candidate, base = _preprocess_stages()
+    model = _build_preprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+    )
+
+    first_tensor, first_metadata = model.pre_process(
+        images=np.zeros((2, 2, 3), dtype=np.uint8)
+    )
+    first_selection = model._thread_local_storage.last_preprocessor_selection
+    second_tensor, second_metadata = model.pre_process(
+        images=np.zeros((2, 2, 3), dtype=np.uint8)
+    )
+
+    assert first_tensor.shape == (1, 3, 2, 2)
+    assert second_tensor.shape == (1, 3, 2, 2)
+    assert first_metadata == second_metadata == []
+    assert candidate.calls == 1
+    assert base.calls == 2
+    assert first_selection["requested_id"] == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    assert first_selection["effective_id"] == RFDETR_PREPROCESSOR_BASE
+    assert first_selection["fallback_reason"] is not None
+
+
+def test_preprocess_two_execution_failures_follow_full_chain(rfdetr_trt_model_class):
+    from dataclasses import replace
+
+    candidate, base = _preprocess_stages()
+    candidate.metadata = replace(candidate.metadata, fallback_id="middle")
+    middle = _RuntimeStage(
+        "middle",
+        stage=OptimizationStage.PREPROCESS,
+        fail_recoverably=True,
+    )
+    model = _build_preprocess_model(
+        rfdetr_trt_model_class, candidate=candidate, base=base
+    )
+    model._implementation_registry.register(middle)
+    for _ in range(2):
+        result, _ = model.pre_process(images=np.zeros((2, 2, 3), dtype=np.uint8))
+        assert result.shape == (1, 3, 2, 2)
+    assert candidate.calls == middle.calls == 1
+    assert base.calls == 2
+
+
+@pytest.mark.parametrize(
+    ("allow_compatibility_fallback", "allow_runtime_failure_fallback"),
+    [(False, True), (True, False)],
+)
+def test_preprocess_disabled_fallback_exposes_model_runtime_error(
+    rfdetr_trt_model_class,
+    allow_compatibility_fallback: bool,
+    allow_runtime_failure_fallback: bool,
+) -> None:
+    candidate, base = _preprocess_stages()
+    model = _build_preprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+        allow_compatibility_fallback=allow_compatibility_fallback,
+        allow_runtime_failure_fallback=allow_runtime_failure_fallback,
+    )
+
+    with pytest.raises(ModelRuntimeError) as error:
+        model.pre_process(images=np.zeros((2, 2, 3), dtype=np.uint8))
+
+    assert type(error.value) is ModelRuntimeError
+    assert error.value.help_url == (
+        "https://inference-models.roboflow.com/errors/models-runtime/"
+        "#modelruntimeerror"
+    )
+    assert candidate.calls == 1
+    assert base.calls == 0
+
+
+def test_preprocess_same_implementation_guard_does_not_retry(
+    rfdetr_trt_model_class,
+) -> None:
+    candidate, base = _preprocess_stages(disable_after_failure=False)
+    model = _build_preprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+    )
+
+    with pytest.raises(ModelRuntimeError) as error:
+        model.pre_process(images=np.zeros((2, 2, 3), dtype=np.uint8))
+
+    assert type(error.value) is ModelRuntimeError
+    assert candidate.calls == 1
+    assert base.calls == 0
+
+
+def test_preprocess_nonrecoverable_failure_records_attempted_selection(
+    rfdetr_trt_model_class,
+) -> None:
+    candidate = _RuntimeStage(
+        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        stage=OptimizationStage.PREPROCESS,
+        fail_nonrecoverably=True,
+    )
+    base = _RuntimeStage(
+        RFDETR_PREPROCESSOR_BASE,
+        stage=OptimizationStage.PREPROCESS,
+    )
+    model = _build_preprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+    )
+
+    with pytest.raises(ValueError, match="non-recoverable failure"):
+        model.pre_process(images=np.zeros((2, 2, 3), dtype=np.uint8))
+
+    selection = model._thread_local_storage.last_preprocessor_selection
+    assert selection["requested_id"] == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    assert selection["effective_id"] == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    assert selection["fallback_reason"] is None
+    assert candidate.calls == 1
+    assert base.calls == 0
+
+
+def test_postprocess_retries_base_then_short_circuits_recorded_failure(
+    rfdetr_trt_model_class,
+) -> None:
+    candidate, base = _postprocess_stages()
+    model = _build_postprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+    )
+    model_results = (
+        torch.zeros((1, 2, 4)),
+        torch.zeros((1, 2, 2)),
+    )
+
+    first_results = model.post_process(
+        model_results=model_results,
+        pre_processing_meta=[],
+        confidence=0.5,
+    )
+    first_selection = model._thread_local_storage.last_postprocessor_selection
+    second_results = model.post_process(
+        model_results=model_results,
+        pre_processing_meta=[],
+        confidence=0.5,
+    )
+
+    assert first_results == second_results == [RFDETR_POSTPROCESSOR_BASE]
+    assert candidate.calls == 1
+    assert base.calls == 2
+    assert first_selection["requested_id"] == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+    assert first_selection["effective_id"] == RFDETR_POSTPROCESSOR_BASE
+    assert first_selection["fallback_reason"] is not None
+
+
+@pytest.mark.parametrize(
+    ("allow_compatibility_fallback", "allow_runtime_failure_fallback"),
+    [(False, True), (True, False)],
+)
+def test_postprocess_disabled_fallback_exposes_model_runtime_error(
+    rfdetr_trt_model_class,
+    allow_compatibility_fallback: bool,
+    allow_runtime_failure_fallback: bool,
+) -> None:
+    candidate, base = _postprocess_stages()
+    model = _build_postprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+        allow_compatibility_fallback=allow_compatibility_fallback,
+        allow_runtime_failure_fallback=allow_runtime_failure_fallback,
+    )
+
+    with pytest.raises(ModelRuntimeError) as error:
+        model.post_process(
+            model_results=(
+                torch.zeros((1, 2, 4)),
+                torch.zeros((1, 2, 2)),
+            ),
+            pre_processing_meta=[],
+            confidence=0.5,
+        )
+
+    assert type(error.value) is ModelRuntimeError
+    assert candidate.calls == 1
+    assert base.calls == 0
+
+
+def test_postprocess_nonrecoverable_failure_records_attempted_selection(
+    rfdetr_trt_model_class,
+) -> None:
+    candidate = _RuntimeStage(
+        RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+        stage=OptimizationStage.POSTPROCESS,
+        fail_nonrecoverably=True,
+    )
+    base = _RuntimeStage(
+        RFDETR_POSTPROCESSOR_BASE,
+        stage=OptimizationStage.POSTPROCESS,
+    )
+    model = _build_postprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+    )
+
+    with pytest.raises(ValueError, match="non-recoverable failure"):
+        model.post_process(
+            model_results=(
+                torch.zeros((1, 2, 4)),
+                torch.zeros((1, 2, 2)),
+            ),
+            pre_processing_meta=[],
+            confidence=0.5,
+        )
+
+    selection = model._thread_local_storage.last_postprocessor_selection
+    assert selection["requested_id"] == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+    assert selection["effective_id"] == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+    assert selection["fallback_reason"] is None
+    assert candidate.calls == 1
+    assert base.calls == 0

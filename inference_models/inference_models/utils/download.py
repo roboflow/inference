@@ -1,6 +1,7 @@
 import hashlib
 import math
 import os
+import re
 import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from threading import Lock
@@ -30,6 +31,7 @@ from inference_models.configuration import (
     DISABLE_INTERACTIVE_PROGRESS_BARS,
     FILE_LOCK_ACQUIRE_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    OFFLINE_MODE,
 )
 from inference_models.errors import (
     FileHashSumMissmatch,
@@ -39,6 +41,10 @@ from inference_models.errors import (
     UntrustedFileError,
 )
 from inference_models.logger import LOGGER
+from inference_models.utils.content_addressed_artifact_cache import (
+    ContentAddressedArtifactCache,
+    NullContentAddressedArtifactCache,
+)
 from inference_models.utils.file_system import (
     ensure_parent_dir_exists,
     pre_allocate_file,
@@ -49,6 +55,13 @@ from inference_models.utils.file_system import (
 FileHandle = str
 DownloadUrl = str
 MD5Hash = Optional[str]
+
+_MD5_HASH_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def is_valid_md5_hash(value: object) -> bool:
+    return isinstance(value, str) and _MD5_HASH_PATTERN.fullmatch(value) is not None
+
 
 MIN_SIZE_FOR_THREADED_DOWNLOAD = 32 * 1024 * 1024  # 32MB
 MIN_THREAD_CHUNK_SIZE = 16 * 1024 * 1024  # 16MB
@@ -61,6 +74,14 @@ _CONNECTIVITY_ERRORS = (
     Timeout,
     requests.exceptions.ConnectionError,
 )
+
+
+def _ensure_online_download_allowed() -> None:
+    if OFFLINE_MODE:
+        raise RuntimeError(
+            "Cannot download files - OFFLINE_MODE is enabled. "
+            "All model weights must be pre-cached locally."
+        )
 
 
 class PartialDownloadError(Exception):
@@ -99,6 +120,7 @@ def download_files_to_directory(
     name_after: Literal["file_handle", "md5_hash"] = "file_handle",
     on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> Dict[str, str]:
     """Download multiple files to a directory with parallel downloads and hash verification.
 
@@ -129,7 +151,7 @@ def download_files_to_directory(
             single large file. Default: 8.
 
         file_lock_acquire_timeout: Timeout in seconds for acquiring file locks during
-            concurrent downloads. Default: 10.
+            concurrent downloads. Default: FILE_LOCK_ACQUIRE_TIMEOUT (20).
 
         verify_hash_while_download: Verify MD5 hash during download. Default: True.
 
@@ -146,6 +168,9 @@ def download_files_to_directory(
 
         on_file_renamed: Optional callback called when a file is renamed.
             Receives old and new paths as arguments.
+
+        content_addressed_artifact_cache: Optional cache used for files with
+            declared hashes. Defaults to a no-op cache.
 
     Returns:
         Dictionary mapping file handles to their absolute paths in the target directory.
@@ -216,6 +241,7 @@ def download_files_to_directory(
     )
     if not files_specs:
         return files_mapping
+    _ensure_online_download_allowed()
     if response_codes_to_retry is None:
         response_codes_to_retry = IDEMPOTENT_API_REQUEST_CODES_TO_RETRY
     if request_timeout is None:
@@ -258,6 +284,7 @@ def download_files_to_directory(
                     file_lock_acquire_timeout=file_lock_acquire_timeout,
                     on_file_created=on_file_created,
                     on_file_renamed=on_file_renamed,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
                 )
                 futures.append(future)
             done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
@@ -321,6 +348,7 @@ def safe_download_file(
     file_lock_acquire_timeout: int,
     on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> None:
     ensure_parent_dir_exists(path=target_file_path)
     target_file_dir, target_file_name = os.path.split(target_file_path)
@@ -336,6 +364,27 @@ def safe_download_file(
                     f"skipping download."
                 )
                 return
+            artifact_cache = content_addressed_artifact_cache
+            if md5_hash is None or artifact_cache is None:
+                artifact_cache = NullContentAddressedArtifactCache()
+            restored_from_blob_cache = False
+            try:
+                restored_from_blob_cache = artifact_cache.restore(
+                    content_hash=md5_hash,
+                    target_path=tmp_download_file,
+                )
+            except Exception as error:
+                LOGGER.warning(
+                    "Model blob cache lookup failed; using original model source: %s",
+                    error,
+                )
+            if restored_from_blob_cache:
+                if on_file_created:
+                    on_file_created(tmp_download_file)
+                os.replace(tmp_download_file, target_file_path)
+                if on_file_renamed:
+                    on_file_renamed(tmp_download_file, target_file_path)
+                return
             safe_execute_download(
                 download_url=download_url,
                 tmp_download_file=tmp_download_file,
@@ -350,6 +399,16 @@ def safe_download_file(
                 on_file_created=on_file_created,
                 on_file_renamed=on_file_renamed,
             )
+            if verify_hash_while_download:
+                try:
+                    artifact_cache.schedule_store(
+                        content_hash=md5_hash,
+                        source_path=target_file_path,
+                    )
+                except Exception as error:
+                    LOGGER.warning(
+                        "Could not schedule model blob cache upload: %s", error
+                    )
     finally:
         remove_file_if_exists(path=tmp_download_file)
 
@@ -462,6 +521,7 @@ def safe_check_range_download_option(
 def check_range_download_option(
     url: str, timeout: int, response_codes_to_retry: Set[int]
 ) -> Optional[int]:
+    _ensure_online_download_allowed()
     try:
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
@@ -495,6 +555,7 @@ def get_content_length(
     timeout: Optional[int] = None,
     response_codes_to_retry: Optional[Set[int]] = None,
 ) -> Optional[int]:
+    _ensure_online_download_allowed()
     if response_codes_to_retry is None:
         response_codes_to_retry = IDEMPOTENT_API_REQUEST_CODES_TO_RETRY
     if timeout is None:
@@ -657,6 +718,7 @@ def download_chunk(
         file_chunk: ``iter_content`` read size for streaming the response body.
         on_chunk_downloaded: Optional callback with bytes written per read.
     """
+    _ensure_online_download_allowed()
     current_start = start
     retryable_http_since_last_range_advance = 0
 
@@ -779,6 +841,7 @@ def stream_download(
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
     on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
+    _ensure_online_download_allowed()
     ensure_parent_dir_exists(path=target_path)
     computed_hash = (
         HashNullObject()

@@ -1,7 +1,7 @@
 import json
 import re
 import urllib.parse
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Type, Union
 from unittest.mock import patch
 
 import pytest
@@ -12,10 +12,13 @@ from requests_mock import Mocker
 from inference_models.configuration import API_CALLS_MAX_TRIES, ROBOFLOW_API_HOST
 from inference_models.errors import (
     AssumptionError,
+    ForbiddenModelAccessError,
     ModelMetadataConsistencyError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     RetryError,
     UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
 )
 from inference_models.weights_providers import roboflow as roboflow_module
 from inference_models.weights_providers.entities import (
@@ -44,7 +47,18 @@ from inference_models.weights_providers.roboflow import (
     roboflow_secure_gateway_proxy_url_builder,
 )
 
-DUMMY_PROXY_PREFIX = "http://gateway.local/proxy?url="
+DUMMY_PROXY_PREFIX = "https://gateway.local/proxy?url="
+
+
+def test_get_roboflow_model_does_not_request_metadata_in_offline_mode() -> None:
+    with patch.object(roboflow_module, "OFFLINE_MODE", True), patch.object(
+        roboflow_module,
+        "get_model_metadata",
+    ) as get_model_metadata_mock:
+        with pytest.raises(ModelRetrievalError, match="OFFLINE_MODE"):
+            get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    get_model_metadata_mock.assert_not_called()
 
 
 def test_as_version_when_valid_version_provided() -> None:
@@ -1051,6 +1065,29 @@ def test_handle_response_errors_when_status_code_is_retryable_error() -> None:
         handle_response_errors(response=response, operation_name="some")
 
 
+@pytest.mark.parametrize(
+    ("status_code", "expected_error"),
+    [
+        (402, PaymentRequiredModelAccessError),
+        (403, ForbiddenModelAccessError),
+        (423, UsagePausedModelAccessError),
+    ],
+)
+def test_handle_response_errors_when_model_access_is_denied(
+    status_code: int, expected_error: Type[Exception]
+) -> None:
+    # given
+    response = Response()
+    response.status_code = status_code
+
+    # when
+    with pytest.raises(expected_error) as error:
+        handle_response_errors(response=response, operation_name="get model weights")
+
+    assert error.value.status_code == status_code
+    assert expected_error.__name__.lower() in error.value.help_url
+
+
 def test_handle_response_errors_when_status_code_is_non_retryable_error() -> None:
     # given
     response = Response()
@@ -1161,6 +1198,55 @@ def test_get_one_page_of_model_metadata_excludes_auth_header_when_local_api_key(
 
     # then
     assert "Authorization" not in requests_mock.last_request.headers
+
+
+@pytest.mark.parametrize(
+    "coremltools_version, expected_query_value",
+    [(Version("9.0"), ["true"]), (None, None)],
+)
+def test_get_one_page_of_model_metadata_asks_for_coreml_packages_only_when_coreml_runs(
+    requests_mock: Mocker,
+    coremltools_version: Optional[Version],
+    expected_query_value: Optional[List[str]],
+) -> None:
+    # given
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "rfdetr",
+                "taskType": "object-detection",
+                "modelPackages": [],
+            }
+        },
+    )
+
+    # when
+    with patch.object(
+        roboflow_module,
+        "get_coreml_runtime_version",
+        return_value=coremltools_version,
+    ):
+        _ = get_one_page_of_model_metadata(model_id="my-model", api_key="some")
+
+    # then
+    assert (
+        requests_mock.last_request.qs.get("includecoremlpackages")
+        == expected_query_value
+    )
+
+
+def test_get_one_page_of_model_metadata_rejects_offline_mode(
+    requests_mock: Mocker,
+) -> None:
+    with patch.object(roboflow_module, "OFFLINE_MODE", True), pytest.raises(
+        ModelRetrievalError, match="OFFLINE_MODE"
+    ):
+        get_one_page_of_model_metadata(model_id="my-model")
+
+    assert not requests_mock.called
 
 
 def test_get_one_page_of_model_metadata_when_retry_not_needed_and_not_parsable_response(
@@ -1649,7 +1735,7 @@ def test_get_roboflow_model_with_proxy(requests_mock: Mocker) -> None:
     # given
     requests_mock.register_uri(
         "GET",
-        re.compile(r"http://gateway\.local/proxy"),
+        re.compile(r"https://gateway\.local/proxy"),
         [
             {
                 "status_code": 200,
@@ -1752,7 +1838,7 @@ def test_get_roboflow_model_with_proxy(requests_mock: Mocker) -> None:
     assert requests_mock.call_count == 2
     for history_entry in requests_mock.request_history:
         parsed = urllib.parse.urlparse(history_entry.url)
-        assert parsed.scheme == "http"
+        assert parsed.scheme == "https"
         assert parsed.netloc == "gateway.local"
         assert parsed.path == "/proxy"
         outer_params = urllib.parse.parse_qs(parsed.query)
@@ -1778,7 +1864,7 @@ def test_basic_url_no_query():
         query=None,
     )
     outer = _parse_proxy_result(result)
-    assert outer.scheme == "http"
+    assert outer.scheme == "https"
     assert outer.netloc == "gateway.local:8080"
     assert outer.path == "/proxy"
 
@@ -1879,20 +1965,48 @@ def test_proxy_url_structure():
         query=None,
     )
     outer = _parse_proxy_result(result)
-    assert outer.scheme == "http"
+    assert outer.scheme == "https"
     assert outer.netloc == "proxy.internal:9090"
     assert outer.path == "/proxy"
     assert "url" in urllib.parse.parse_qs(outer.query)
 
 
 @patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
-def test_proxy_uses_http_not_https():
+def test_proxy_uses_https_by_default():
     result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query=None,
     )
     outer = _parse_proxy_result(result)
-    assert outer.scheme == "http"
+    assert outer.scheme == "https"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local")
+def test_scheme_qualified_gateway_is_used_verbatim():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/models/v1/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gateway.local"
+    assert outer.path == "/proxy"
+
+    inner = urllib.parse.urlparse(_extract_proxied_url(result))
+    assert inner.netloc == "api.roboflow.com"
+    assert inner.path == "/models/v1/weights"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local:8443/")
+def test_scheme_qualified_gateway_keeps_port_and_strips_trailing_slash():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gateway.local:8443"
+    assert outer.path == "/proxy"
 
 
 @patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
@@ -1956,6 +2070,86 @@ def test_params_from_url_and_query_are_both_preserved_without_proxy():
     params = urllib.parse.parse_qs(parsed.query)
     assert params["existing"] == ["from_url"]
     assert params["modelId"] == ["my-model"]
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gw.local/edge")
+def test_scheme_qualified_gateway_preserves_base_path():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    # The "/edge" base path must not be dropped: the proxy lives under it.
+    assert (
+        result
+        == "https://gw.local/edge/proxy?url=https%3A%2F%2Fapi.roboflow.com%2Fweights"
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gw.local"
+    assert outer.path == "/edge/proxy"
+    assert _extract_proxied_url(result) == "https://api.roboflow.com/weights"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gw.local:8443/edge/")
+def test_scheme_qualified_gateway_preserves_base_path_with_port_and_trailing_slash():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gw.local:8443"
+    assert outer.path == "/edge/proxy"
+    assert "//proxy" not in result
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gw.local:8080/edge")
+def test_bare_host_gateway_preserves_base_path():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    # Bare host defaults to HTTPS and preserves the base path.
+    assert outer.scheme == "https"
+    assert outer.netloc == "gw.local:8080"
+    assert outer.path == "/edge/proxy"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local")
+def test_already_wrapped_download_url_is_not_double_proxied():
+    original_url = "https://link.com/weights.onnx"
+
+    # First pass wraps the download URL (query is None on the artefact path).
+    wrapped_once = roboflow_secure_gateway_proxy_url_builder(
+        url=original_url,
+        query=None,
+    )
+    # Second pass must be a no-op instead of proxying the proxy.
+    wrapped_twice = roboflow_secure_gateway_proxy_url_builder(
+        url=wrapped_once,
+        query=None,
+    )
+
+    assert wrapped_twice == wrapped_once
+    assert _extract_proxied_url(wrapped_twice) == original_url
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gw.local/edge")
+def test_idempotent_when_gateway_has_base_path():
+    original_url = "https://link.com/weights.onnx"
+
+    wrapped_once = roboflow_secure_gateway_proxy_url_builder(
+        url=original_url,
+        query=None,
+    )
+    wrapped_twice = roboflow_secure_gateway_proxy_url_builder(
+        url=wrapped_once,
+        query=None,
+    )
+
+    assert wrapped_twice == wrapped_once
+    assert _extract_proxied_url(wrapped_twice) == original_url
 
 
 def test_parse_ultralytics_model_package_with_proxy_builder() -> None:
@@ -2370,3 +2564,81 @@ def _dummy_proxy_url_builder(
     url: str, query: Optional[Dict[str, Union[str, List[str]]]]
 ) -> str:
     return f"{DUMMY_PROXY_PREFIX}{url}"
+
+
+def test_parse_coreml_model_package_when_valid_manifest_provided() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "coreml-model-package-v1",
+            "backendType": "coreml",
+            "quantization": "fp16",
+            "dynamicBatchSize": False,
+            "staticBatchSize": 1,
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="weights.mlpackage.zip",
+                downloadUrl="https://dummy.com",
+                md5Hash="some",
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.COREML,
+        quantization=Quantization.FP16,
+        dynamic_batch_size_supported=False,
+        static_batch_size=1,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url="https://dummy.com",
+                file_handle="weights.mlpackage.zip",
+                md5_hash="some",
+            ),
+        ],
+        trusted_source=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        {
+            "type": "coreml-model-package-v1",
+            "backendType": "onnx",
+            "quantization": "fp16",
+            "staticBatchSize": 1,
+        },
+        {
+            "type": "coreml-model-package-v1",
+            "backendType": "coreml",
+            "quantization": "fp16",
+        },
+    ],
+)
+def test_parse_coreml_model_package_when_invalid_manifest_provided(
+    manifest: dict,
+) -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest=manifest,
+        packageFiles=[],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None

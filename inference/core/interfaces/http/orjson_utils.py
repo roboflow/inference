@@ -8,9 +8,34 @@ from pydantic import BaseModel
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.utils.function import deprecated
 from inference.core.utils.image_utils import ImageType
-from inference.core.workflows.core_steps.common.serializers import (
-    serialize_wildcard_kind,
-)
+
+
+def _resolve_wildcard_serializer():
+    """Pick the wildcard serialiser at call time (not import time).
+
+    The tensor-native path yields torch (often CUDA) tensors that must be moved to
+    CPU during serialisation before results cross the stream-manager process
+    boundary via a multiprocessing queue: pickling a live CUDA tensor relies on
+    CUDA IPC, which is unsupported on Jetson/Tegra and fails with "CUDA error:
+    invalid argument". The tensor serialiser calls .detach().cpu(); the numpy one
+    passes tensor-native objects through untouched.
+
+    Resolution is deferred to call time because a load-time ``if FLAG: import`` in
+    this module binds unreliably depending on whether ``inference.core.env`` was
+    imported before this module; by the time a workflow result is serialised the
+    flag is settled, and sys.modules caches the import after the first call.
+    """
+    from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        from inference.core.workflows.core_steps.common.serializers_tensor import (
+            serialize_wildcard_kind,
+        )
+    else:
+        from inference.core.workflows.core_steps.common.serializers import (
+            serialize_wildcard_kind,
+        )
+    return serialize_wildcard_kind
 
 
 class ORJSONResponseBytes(ORJSONResponse):
@@ -88,6 +113,7 @@ def serialise_single_workflow_result_element(
     if excluded_fields is None:
         excluded_fields = []
     excluded_fields = set(excluded_fields)
+    serialize_wildcard_kind = _resolve_wildcard_serializer()
     serialised_result = {}
     for key, value in result_element.items():
         if key in excluded_fields:

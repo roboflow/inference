@@ -1,17 +1,24 @@
+import os
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
+from inference.roboflow_workflows_plugin.sinks.vision_events import v1
+from inference.roboflow_workflows_plugin.sinks.vision_events.v1 import (
     BlockManifest,
     RoboflowVisionEventsBlockV1,
     _build_event_data,
     _build_event_payload,
     _convert_classification_to_vision_events_format,
+    _convert_predictions_to_annotations,
     _convert_sv_detections_to_vision_events_format,
     _detect_prediction_type,
+    _execute_local_event,
+    _execute_vision_event,
+    _send_event,
+    _send_local_event,
     _upload_image,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -268,6 +275,42 @@ def test_convert_keypoint_detection() -> None:
     assert k["keypoints"][2] == {"id": 2, "x": 45.0, "y": 55.0}
 
 
+def test_convert_keypoint_detection_skips_padding_slots() -> None:
+    # given the padded (n, max_kps, 2) layout produced when detections carry
+    # unequal keypoint counts: detection has 2 real keypoints and 1 empty-named
+    # padding slot that must not be emitted as a phantom keypoint at (0, 0).
+    detections = sv.Detections(
+        xyxy=np.array([[10, 20, 50, 60]], dtype=float),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["person"]),
+            "detection_id": np.array(["id1"]),
+            PREDICTION_TYPE_KEY: np.array(["keypoint-detection"]),
+            KEYPOINTS_XY_KEY_IN_SV_DETECTIONS: np.array(
+                [[[15.0, 25.0], [30.0, 40.0], [0.0, 0.0]]], dtype=np.float32
+            ),
+            KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS: np.array(
+                [[0.9, 0.8, 0.0]], dtype=np.float32
+            ),
+            KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS: np.array([[0, 1, 0]], dtype=int),
+            KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS: np.array(
+                [["nose", "eye", ""]], dtype=object
+            ),
+        },
+    )
+
+    # when
+    _, _, kp = _convert_sv_detections_to_vision_events_format(detections)
+
+    # then only the 2 real keypoints are emitted
+    assert len(kp[0]["keypoints"]) == 2
+    assert kp[0]["keypoints"] == [
+        {"id": 0, "x": 15.0, "y": 25.0},
+        {"id": 1, "x": 30.0, "y": 40.0},
+    ]
+
+
 # === Classification Conversion ===
 
 
@@ -374,7 +417,7 @@ def test_build_event_payload_minimal() -> None:
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post"
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
 )
 def test_upload_image_success(mock_post: MagicMock) -> None:
     mock_response = MagicMock()
@@ -382,6 +425,7 @@ def test_upload_image_success(mock_post: MagicMock) -> None:
         "sourceId": "src-123",
         "url": "https://example.com/img.jpg",
     }
+    mock_response.status_code = 200
     mock_response.raise_for_status.return_value = None
     mock_post.return_value = mock_response
 
@@ -398,13 +442,14 @@ def test_upload_image_success(mock_post: MagicMock) -> None:
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post"
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
 )
 def test_upload_image_failure(mock_post: MagicMock) -> None:
     import requests
 
     mock_response = MagicMock()
     mock_response.status_code = 500
+    mock_response.url = "https://api.roboflow.com/vision-events/upload?api_key=test-key"
     mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
         response=mock_response
     )
@@ -455,11 +500,12 @@ def test_run_disabled() -> None:
     )
     assert isinstance(result, dict)
     assert result["error_status"] is False
+    assert result["event_id"] == ""
     assert "disabled" in result["message"].lower()
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
 )
 def test_run_fire_and_forget_background_tasks(mock_execute: MagicMock) -> None:
     background_tasks = MagicMock()
@@ -481,11 +527,12 @@ def test_run_fire_and_forget_background_tasks(mock_execute: MagicMock) -> None:
 
     background_tasks.add_task.assert_called_once()
     assert result["error_status"] is False
+    assert result["event_id"] == ""
     assert "background" in result["message"].lower()
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
 )
 def test_run_fire_and_forget_thread_pool(mock_execute: MagicMock) -> None:
     thread_pool = MagicMock()
@@ -507,14 +554,15 @@ def test_run_fire_and_forget_thread_pool(mock_execute: MagicMock) -> None:
 
     thread_pool.submit.assert_called_once()
     assert result["error_status"] is False
+    assert result["event_id"] == ""
     assert "background" in result["message"].lower()
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
 )
 def test_run_synchronous(mock_execute: MagicMock) -> None:
-    mock_execute.return_value = (False, "Vision event sent successfully")
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
     block = RoboflowVisionEventsBlockV1(
         api_key="test-key",
         background_tasks=None,
@@ -533,7 +581,357 @@ def test_run_synchronous(mock_execute: MagicMock) -> None:
 
     mock_execute.assert_called_once()
     assert result["error_status"] is False
+    assert result["event_id"] == "evt-123"
     assert result["message"] == "Vision event sent successfully"
+
+
+# === Local Event Store Mode (ENT-1192) ===
+
+
+def test_manifest_write_to_event_store_defaults() -> None:
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_vision_events@v1",
+            "name": "test_step",
+            "event_type": "quality_check",
+            "solution": "my-solution",
+        }
+    )
+    assert manifest.write_to_event_store is False
+    assert manifest.event_store_url == "http://localhost:8001"
+
+
+def test_manifest_write_to_event_store_enabled() -> None:
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_vision_events@v1",
+            "name": "test_step",
+            "event_type": "quality_check",
+            "solution": "my-solution",
+            "write_to_event_store": True,
+            "event_store_url": "http://edge.local:8001",
+        }
+    )
+    assert manifest.write_to_event_store is True
+    assert manifest.event_store_url == "http://edge.local:8001"
+
+
+def test_convert_predictions_to_annotations_object_detection() -> None:
+    detections = _make_detections(n=2)
+    annotations = _convert_predictions_to_annotations(detections)
+    assert "objectDetections" in annotations
+    assert len(annotations["objectDetections"]) == 2
+    assert "classifications" not in annotations
+
+
+def test_convert_predictions_to_annotations_classification() -> None:
+    prediction = {"predictions": [{"class_name": "cat", "confidence": 0.9}]}
+    annotations = _convert_predictions_to_annotations(prediction)
+    assert "classifications" in annotations
+    assert "objectDetections" not in annotations
+
+
+def test_convert_predictions_to_annotations_none() -> None:
+    assert _convert_predictions_to_annotations(None) == {}
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_local_event"
+)
+def test_run_write_to_event_store_does_not_require_api_key(
+    mock_execute: MagicMock,
+) -> None:
+    """In local event store mode, no Roboflow API key is required."""
+    mock_execute.return_value = (
+        False,
+        "Event written to local event store successfully",
+        "evt-local-1",
+    )
+    block = RoboflowVisionEventsBlockV1(
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    result = block.run(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+        write_to_event_store=True,
+    )
+
+    mock_execute.assert_called_once()
+    assert result["error_status"] is False
+    assert result["event_id"] == "evt-local-1"
+    assert "local event store" in result["message"].lower()
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_local_event"
+)
+def test_run_write_to_event_store_passes_url(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = (False, "ok", "")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    block.run(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+        write_to_event_store=True,
+        event_store_url="http://edge:9000",
+    )
+
+    assert mock_execute.call_args.kwargs["event_store_url"] == "http://edge:9000"
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event"
+)
+def test_execute_local_event_builds_v2_payload(mock_send: MagicMock) -> None:
+    mock_send.return_value = (False, "ok", "evt-local-42")
+    detections = _make_detections(n=1)
+
+    error_status, _, event_id = _execute_local_event(
+        event_store_url="http://localhost:8001/",
+        input_image=_make_workflow_image(),
+        output_image=_make_workflow_image(),
+        prediction=detections,
+        event_type="quality_check",
+        solution="my-solution",
+        event_data={"result": "pass"},
+        custom_metadata={"camera_id": "cam-01"},
+    )
+
+    assert error_status is False
+    # the service-assigned id from _send_local_event is propagated back
+    assert event_id == "evt-local-42"
+    mock_send.assert_called_once()
+    url, payload = mock_send.call_args.args
+    # trailing slash on the base URL is stripped before appending /v2/events
+    assert url == "http://localhost:8001/v2/events"
+    assert payload["event_schema"] == "quality_check"
+    # use case is forwarded so events are namespaced like the cloud path
+    assert payload["solution"] == "my-solution"
+    assert payload["event_data"] == {"result": "pass"}
+    assert payload["custom_metadata"] == {"camera_id": "cam-01"}
+    assert payload["displayImagePosition"] == 0
+    assert "inference_timestamp" in payload
+    assert len(payload["images"]) == 1
+
+    image = payload["images"][0]
+    assert "base64Image" in image  # output image
+    assert "inputBase64Image" in image  # input image
+    assert image["label"] == "workflow"
+    assert "objectDetections" in image
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event"
+)
+def test_execute_local_event_no_images(mock_send: MagicMock) -> None:
+    mock_send.return_value = (False, "ok", "")
+
+    _execute_local_event(
+        event_store_url="http://localhost:8001",
+        input_image=None,
+        output_image=None,
+        prediction=None,
+        event_type="custom",
+        solution="my-solution",
+        event_data={"value": "x"},
+        custom_metadata={},
+    )
+
+    _, payload = mock_send.call_args.args
+    assert payload["images"] == []
+    assert "displayImagePosition" not in payload
+    assert "custom_metadata" not in payload
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event"
+)
+def test_execute_local_event_operator_feedback(mock_send: MagicMock) -> None:
+    """operator_feedback is a valid schema in the local event store (v2 API)."""
+    mock_send.return_value = (False, "ok", "")
+
+    _execute_local_event(
+        event_store_url="http://localhost:8001",
+        input_image=None,
+        output_image=None,
+        prediction=None,
+        event_type="operator_feedback",
+        solution="my-solution",
+        event_data={"relatedEventId": "evt_abc123", "feedback": "correct"},
+        custom_metadata={},
+    )
+
+    _, payload = mock_send.call_args.args
+    assert payload["event_schema"] == "operator_feedback"
+    assert payload["event_data"] == {
+        "relatedEventId": "evt_abc123",
+        "feedback": "correct",
+    }
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_event"
+)
+def test_execute_vision_event_returns_generated_event_id(
+    mock_send: MagicMock,
+) -> None:
+    """The cloud path generates the eventId client-side and returns it on success."""
+    mock_send.return_value = (False, "Vision event sent successfully")
+
+    error_status, _, event_id = _execute_vision_event(
+        api_base_url="https://api.roboflow.com",
+        api_key="test-key",
+        input_image=None,
+        output_image=None,
+        prediction=None,
+        event_type="custom",
+        solution="my-solution",
+        event_data={"value": "x"},
+        custom_metadata={},
+    )
+
+    assert error_status is False
+    # the returned id is the client-generated UUID that was sent in the payload
+    assert event_id
+    sent_payload = mock_send.call_args.args[2]
+    assert event_id == sent_payload["eventId"]
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_event"
+)
+def test_execute_vision_event_no_event_id_on_error(mock_send: MagicMock) -> None:
+    mock_send.return_value = (True, "boom")
+
+    error_status, _, event_id = _execute_vision_event(
+        api_base_url="https://api.roboflow.com",
+        api_key="test-key",
+        input_image=None,
+        output_image=None,
+        prediction=None,
+        event_type="custom",
+        solution="my-solution",
+        event_data={},
+        custom_metadata={},
+    )
+
+    assert error_status is True
+    assert event_id == ""
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+)
+def test_send_local_event_success_no_api_key(mock_post: MagicMock) -> None:
+    mock_response = MagicMock()
+    mock_response.status_code = 201
+    mock_response.json.return_value = {"id": "evt-123"}
+    mock_post.return_value = mock_response
+
+    env = {k: v for k, v in os.environ.items() if k != "EVENT_INGESTION_API_KEY"}
+    with patch.dict(os.environ, env, clear=True):
+        error_status, message, event_id = _send_local_event(
+            "http://localhost:8001/v2/events", {"a": 1}
+        )
+
+    assert error_status is False
+    # the server-assigned id is parsed from the 201 response body
+    assert event_id == "evt-123"
+    mock_post.assert_called_once()
+    assert mock_post.call_args.args[0] == "http://localhost:8001/v2/events"
+    headers = mock_post.call_args.kwargs["headers"]
+    assert "X-API-Key" not in headers
+    assert mock_post.call_args.kwargs["json"] == {"a": 1}
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+)
+def test_send_local_event_sets_api_key_header(mock_post: MagicMock) -> None:
+    mock_response = MagicMock()
+    mock_response.status_code = 201
+    mock_response.json.return_value = {"id": "evt-123"}
+    mock_post.return_value = mock_response
+
+    with patch.dict(os.environ, {"EVENT_INGESTION_API_KEY": "secret-key"}):
+        _send_local_event("http://localhost:8001/v2/events", {})
+
+    headers = mock_post.call_args.kwargs["headers"]
+    assert headers["X-API-Key"] == "secret-key"
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+)
+def test_send_local_event_backpressure_529(mock_post: MagicMock) -> None:
+    """529 from the Event Ingestion Service is surfaced as a clear backpressure message."""
+    mock_response = MagicMock()
+    mock_response.status_code = 529
+    mock_response.json.return_value = {
+        "detail": "Device storage full. Waiting for cloud uploads to complete.",
+        "error": "capacity_blocked",
+    }
+    mock_post.return_value = mock_response
+
+    error_status, message, event_id = _send_local_event(
+        "http://localhost:8001/v2/events", {}
+    )
+    assert error_status is True
+    assert event_id == ""
+    assert "529" in message
+    assert "backpressure" in message.lower()
+    assert "Device storage full" in message
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+)
+def test_send_local_event_http_error(mock_post: MagicMock) -> None:
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.json.return_value = {"detail": "bad request"}
+    mock_post.return_value = mock_response
+
+    error_status, message, event_id = _send_local_event(
+        "http://localhost:8001/v2/events", {}
+    )
+    assert error_status is True
+    assert event_id == ""
+    assert "400" in message
+    assert "bad request" in message
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+)
+def test_send_local_event_timeout(mock_post: MagicMock) -> None:
+    import requests
+
+    mock_post.side_effect = requests.exceptions.Timeout()
+
+    error_status, message, event_id = _send_local_event(
+        "http://localhost:8001/v2/events", {}
+    )
+    assert error_status is True
+    assert event_id == ""
+    assert "timed out" in message.lower()
 
 
 # === Non-SIMD / Compilation Regression Tests (ENT-1126) ===
@@ -607,3 +1005,403 @@ def test_batch_selector_on_scalar_field_passes_compile_check() -> None:
         batch_compatibility_of_properties=batch_compat,
     )
     assert isinstance(result, set)
+
+
+# === Built-in Rate Limiter (ENT-1438) ===
+
+
+def test_manifest_cooldown_defaults_to_one_second() -> None:
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_vision_events@v1",
+            "name": "test_step",
+            "event_type": "quality_check",
+            "solution": "my-solution",
+        }
+    )
+    assert manifest.cooldown_seconds == 1
+
+
+def test_manifest_cooldown_accepts_float_and_selector() -> None:
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_vision_events@v1",
+            "name": "test_step",
+            "event_type": "quality_check",
+            "solution": "my-solution",
+            "cooldown_seconds": 0.5,
+        }
+    )
+    assert manifest.cooldown_seconds == 0.5
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_vision_events@v1",
+            "name": "test_step",
+            "event_type": "quality_check",
+            "solution": "my-solution",
+            "cooldown_seconds": "$inputs.cooldown_seconds",
+        }
+    )
+    assert manifest.cooldown_seconds == "$inputs.cooldown_seconds"
+
+
+def test_describe_outputs_includes_throttling_status() -> None:
+    output_names = {output.name for output in BlockManifest.describe_outputs()}
+    assert output_names == {"error_status", "throttling_status", "event_id", "message"}
+
+
+def test_manifest_declares_cooldown_restriction() -> None:
+    from inference.core.workflows.prototypes.block import COOLDOWN_HTTP_SOFT_RESTRICTION
+
+    assert COOLDOWN_HTTP_SOFT_RESTRICTION in BlockManifest.get_restrictions()
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+)
+def test_run_throttles_second_event_within_cooldown(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+    )
+
+    first_result = block.run(**run_kwargs)
+    second_result = block.run(**run_kwargs)
+
+    mock_execute.assert_called_once()
+    assert first_result["throttling_status"] is False
+    assert first_result["event_id"] == "evt-123"
+    assert second_result["error_status"] is False
+    assert second_result["throttling_status"] is True
+    assert second_result["event_id"] == ""
+    assert "cooldown" in second_result["message"].lower()
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+)
+def test_run_sends_again_once_cooldown_expires(mock_execute: MagicMock) -> None:
+    """The cooldown window reopens after cooldown_seconds, and throttled calls
+    must not refresh the timestamp (which would postpone reopening)."""
+    from datetime import datetime, timedelta
+
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+    )
+
+    first_result = block.run(**run_kwargs)
+    throttled_result = block.run(**run_kwargs)
+    # backdate the last dispatch beyond the cooldown instead of sleeping;
+    # the throttled call above must not have refreshed this timestamp
+    block._last_event_fired = datetime.now() - timedelta(seconds=1.5)
+    reopened_result = block.run(**run_kwargs)
+
+    assert mock_execute.call_count == 2
+    assert first_result["throttling_status"] is False
+    assert throttled_result["throttling_status"] is True
+    assert reopened_result["throttling_status"] is False
+    assert reopened_result["event_id"] == "evt-123"
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+)
+def test_run_throttled_call_does_not_refresh_cooldown_timestamp(
+    mock_execute: MagicMock,
+) -> None:
+    """A throttled call must leave _last_event_fired untouched, otherwise a
+    steady stream of over-rate calls would postpone the window forever."""
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+    )
+
+    block.run(**run_kwargs)
+    fired_at = block._last_event_fired
+    throttled_result = block.run(**run_kwargs)
+
+    assert throttled_result["throttling_status"] is True
+    assert block._last_event_fired == fired_at
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+)
+def test_run_cooldown_zero_disables_rate_limiting(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=0,
+    )
+
+    first_result = block.run(**run_kwargs)
+    second_result = block.run(**run_kwargs)
+
+    assert mock_execute.call_count == 2
+    assert first_result["throttling_status"] is False
+    assert second_result["throttling_status"] is False
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_local_event"
+)
+def test_run_cooldown_applies_to_local_event_store(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = (
+        False,
+        "Event written to local event store successfully",
+        "42",
+    )
+    block = RoboflowVisionEventsBlockV1(
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+        write_to_event_store=True,
+    )
+
+    first_result = block.run(**run_kwargs)
+    second_result = block.run(**run_kwargs)
+
+    mock_execute.assert_called_once()
+    assert first_result["throttling_status"] is False
+    assert second_result["throttling_status"] is True
+    assert second_result["error_status"] is False
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+)
+def test_run_throttled_when_disabled_does_not_start_cooldown(
+    mock_execute: MagicMock,
+) -> None:
+    """disable_sink and throttled runs must not update the cooldown timestamp."""
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+    )
+
+    disabled_result = block.run(disable_sink=True, **run_kwargs)
+    first_result = block.run(disable_sink=False, **run_kwargs)
+
+    mock_execute.assert_called_once()
+    assert disabled_result["throttling_status"] is False
+    assert first_result["throttling_status"] is False
+
+
+@pytest.mark.parametrize("cooldown_seconds", [-1, -0.5])
+def test_manifest_cooldown_rejects_negative_values(cooldown_seconds) -> None:
+    with pytest.raises(Exception):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/roboflow_vision_events@v1",
+                "name": "test_step",
+                "event_type": "quality_check",
+                "solution": "my-solution",
+                "cooldown_seconds": cooldown_seconds,
+            }
+        )
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+)
+def test_run_negative_cooldown_treated_as_disabled(mock_execute: MagicMock) -> None:
+    """Selector-resolved negative values bypass manifest validation; the block
+    must treat them as 0 (no rate limiting) rather than misbehave."""
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=-1,
+    )
+
+    first_result = block.run(**run_kwargs)
+    second_result = block.run(**run_kwargs)
+
+    assert mock_execute.call_count == 2
+    assert first_result["throttling_status"] is False
+    assert second_result["throttling_status"] is False
+
+
+# === Roboflow API authentication ===
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+)
+def test_upload_image_sends_shared_roboflow_api_headers(mock_post: MagicMock) -> None:
+    """Batch processing authenticates with a header injected by the shared builder.
+
+    Its API key is a placeholder, so the request only authenticates if the
+    block goes through `build_roboflow_api_headers()` like the rest of the
+    Roboflow API callers.
+    """
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"sourceId": "src-123", "url": ""}
+    mock_response.raise_for_status.return_value = None
+    mock_post.return_value = mock_response
+
+    with patch.object(
+        v1,
+        "build_roboflow_api_headers",
+        return_value={"x-temporary-auth-token": "batch-token"},
+    ):
+        _upload_image("https://api.roboflow.com", "test-key", _make_workflow_image())
+
+    assert mock_post.call_args[1]["headers"] == {
+        "x-temporary-auth-token": "batch-token",
+        "Authorization": "Bearer test-key",
+    }
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+)
+def test_send_event_sends_shared_roboflow_api_headers(mock_post: MagicMock) -> None:
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status.return_value = None
+    mock_post.return_value = mock_response
+
+    with patch.object(
+        v1,
+        "build_roboflow_api_headers",
+        return_value={
+            "x-temporary-auth-token": "batch-token",
+            "Content-Type": "application/json",
+        },
+    ) as build_headers_mock:
+        error_status, _ = _send_event(
+            "https://api.roboflow.com", "test-key", {"eventId": "evt-1"}
+        )
+
+    assert error_status is False
+    # Content-Type is passed through the builder rather than bolted on after,
+    # so extra headers configured for this deployment cannot be dropped.
+    assert build_headers_mock.call_args.kwargs["explicit_headers"] == {
+        "Content-Type": "application/json"
+    }
+    assert mock_post.call_args[1]["headers"]["x-temporary-auth-token"] == "batch-token"
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+)
+def test_configured_authorization_header_is_not_overridden(
+    mock_post: MagicMock,
+) -> None:
+    """Where the key is a placeholder, a configured header is the real credential."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status.return_value = None
+    mock_post.return_value = mock_response
+
+    with patch.object(
+        v1,
+        "build_roboflow_api_headers",
+        return_value={"Authorization": "Bearer configured-credential"},
+    ):
+        _send_event("https://api.roboflow.com", "dummy-workspace", {"eventId": "e"})
+
+    assert (
+        mock_post.call_args[1]["headers"]["Authorization"]
+        == "Bearer configured-credential"
+    )
+
+
+@patch(
+    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+)
+def test_api_key_is_not_placed_in_request_url(mock_post: MagicMock) -> None:
+    """Query strings reach proxy, gateway, and access logs; the key stays in a header."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status.return_value = None
+    mock_post.return_value = mock_response
+
+    _send_event("https://api.roboflow.com", "my-secret-key", {"eventId": "evt-1"})
+
+    url = mock_post.call_args[0][0]
+    assert url == "https://api.roboflow.com/vision-events"
+    assert "my-secret-key" not in url

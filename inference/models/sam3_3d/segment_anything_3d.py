@@ -32,6 +32,7 @@ from inference.core.roboflow_api import (
     stream_url_to_cache,
 )
 from inference.core.utils.image_utils import load_image_rgb
+from inference.usage_tracking.collector import usage_collector
 
 try:
     import pycocotools.mask as mask_utils
@@ -327,6 +328,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
             "slat_decoder_gs.ckpt",
             "slat_decoder_gs_4.ckpt",
             "slat_decoder_mesh.pt",
+            "dinov2_vitl14_reg4_pretrain.pth",
         ]
 
     def download_model_from_roboflow_api(self) -> None:
@@ -341,6 +343,8 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                 model_id="sam3-3d-weights-vc6vz/1",
                 endpoint_type=ModelEndpointType.ORT,
                 device_id=self.device_id,
+                countinference=self.countinference,
+                service_secret=self.service_secret,
             )["ort"]
             if "weights" not in api_data:
                 raise ModelArtefactError(
@@ -355,6 +359,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                     model_id=self.endpoint,
                 )
 
+    @usage_collector("model")
     def infer_from_request(
         self, request: Sam3_3D_Objects_InferenceRequest
     ) -> Sam3_3D_Objects_Response:

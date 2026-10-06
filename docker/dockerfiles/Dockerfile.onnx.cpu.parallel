@@ -45,9 +45,26 @@ RUN pip3 install \
     -r requirements.sdk.http.txt \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
-    "setuptools<=75.5.0" \
+    "setuptools~=83.0.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
+
+# Build & install roboflow-workflows from source (see Dockerfile.onnx.cpu.slim
+# for rationale — wheel install brings all runtime deps + fonts).
+COPY workflows workflows
+COPY stream_vision stream_vision
+RUN pip3 install uv \
+    && python3 workflows/build_scripts/download_fonts.py \
+    && cd workflows \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && cd stream_vision \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && pip3 install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+    && pip3 install --find-links /wheels "$(ls /wheels/streamvision-*.whl)[webrtc]" \
+    && rm -rf ~/.cache/pip
+
 RUN apt-get update && apt-get install -y lsb-release curl gpg
 RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
 RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
@@ -58,6 +75,7 @@ COPY --from=base / /
 
 WORKDIR /app/
 COPY inference inference
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py

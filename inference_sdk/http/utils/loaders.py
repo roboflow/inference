@@ -21,6 +21,7 @@ from inference_sdk.http.utils.pre_processing import (
     resize_opencv_image,
     resize_pillow_image,
 )
+from inference_sdk.http.utils.url_utils import fetch_url_bytes, fetch_url_bytes_async
 
 
 def load_stream_inference_input(
@@ -271,6 +272,11 @@ async def load_image_from_string_async(
             url=reference, max_height=max_height, max_width=max_width
         )
     if os.path.exists(reference):
+        if max_height is None or max_width is None:
+            with open(reference, "rb") as f:
+                img_bytes = f.read()
+            img_base64_str = encode_base_64(payload=img_bytes)
+            return img_base64_str, None
         local_image = cv2.imread(reference)
         if local_image is None:
             raise EncodingError(f"Could not load image from {reference}")
@@ -307,11 +313,10 @@ def load_image_from_url(
     Returns:
         The image and the scaling factor.
     """
-    response = requests.get(url)
-    response.raise_for_status()
+    content = fetch_url_bytes(url)
     if max_height is None or max_width is None:
-        return encode_base_64(response.content), None
-    image = bytes_to_opencv_image(payload=response.content)
+        return encode_base_64(content), None
+    image = bytes_to_opencv_image(payload=content)
     resized_image, scaling_factor = resize_opencv_image(
         image=image,
         max_height=max_height,
@@ -336,10 +341,7 @@ async def load_image_from_url_async(
     Returns:
         The image and the scaling factor.
     """
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            response.raise_for_status()
-            response_payload = await response.read()
+    response_payload = await fetch_url_bytes_async(url)
     if max_height is None or max_width is None:
         return encode_base_64(response_payload), None
     image = bytes_to_opencv_image(payload=response_payload)

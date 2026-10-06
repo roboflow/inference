@@ -11,7 +11,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.core.models.base import PreprocessReturnMetadata
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import TransformerModel
@@ -91,7 +91,10 @@ class Moondream2(TransformerModel):
         model_cls.__init__ = _patched_init
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = model_cls.from_pretrained(self.cache_dir).to(device)
+        self.model = model_cls.from_pretrained(
+            self.cache_dir,
+            local_files_only=OFFLINE_MODE,
+        ).to(device)
         # Recompute non-persistent buffers (freqs_cis and attn_mask) after
         # loading.  These are registered with persistent=False and are not
         # saved in the checkpoint.  transformers 5.x's from_pretrained/

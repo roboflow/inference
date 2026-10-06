@@ -1,7 +1,7 @@
 import time
 from contextlib import contextmanager
 from threading import Lock
-from typing import Dict, Generator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -9,6 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from inference.core.cache import model_monitoring as model_monitoring_cache_module
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
@@ -18,11 +19,13 @@ from inference.core.env import (
     METRICS_INTERVAL,
     MODEL_LOCK_ACQUIRE_TIMEOUT,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     ROBOFLOW_SERVER_UUID,
     USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     InferenceModelNotFound,
+    ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
     RoboflowAPINotAuthorizedError,
 )
@@ -35,6 +38,7 @@ from inference.core.managers.model_load_collector import (
 )
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
+from inference.core.models.embeddings import model_cache_key
 from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import (
     ModelEndpointType,
@@ -48,12 +52,25 @@ from inference.core.telemetry import (
     set_span_attribute,
     start_span,
 )
+from inference.usage_tracking.model_types import bind_usage_model_descriptor
+
+if TYPE_CHECKING:
+    from inference_models.utils.content_addressed_artifact_cache import (
+        ContentAddressedArtifactCache,
+    )
 
 
 class ModelManager:
     """Model managers keep track of a dictionary of Model objects and is responsible for passing requests to the right model using the infer method."""
 
-    def __init__(self, model_registry: ModelRegistry, models: Optional[dict] = None):
+    def __init__(
+        self,
+        model_registry: ModelRegistry,
+        models: Optional[dict] = None,
+        content_addressed_artifact_cache: Optional[
+            "ContentAddressedArtifactCache"
+        ] = None,
+    ):
         self.model_registry = model_registry
         self._models: Dict[str, Model] = models if models is not None else {}
         self._model_request_aliases: Dict[str, set] = {}
@@ -61,6 +78,16 @@ class ModelManager:
         self.pingback = None
         self._state_lock = Lock()
         self._models_state_locks: Dict[str, Lock] = {}
+        # torch.jit.load/script mutate a process-global, non-thread-safe TorchScript
+        # registry; loaders acquire this so concurrent loads cannot corrupt it.
+        self.torchscript_state_global_lock = Lock()
+        if USE_INFERENCE_MODELS and content_addressed_artifact_cache is None:
+            from inference_models.utils.model_blob_cache import (
+                get_shared_model_blob_cache,
+            )
+
+            content_addressed_artifact_cache = get_shared_model_blob_cache()
+        self.content_addressed_artifact_cache = content_addressed_artifact_cache
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -70,6 +97,32 @@ class ModelManager:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
 
+    def __workflows_bind__(
+        self,
+        init_parameters: Dict[str, Any],
+        step_error_handler: Any,
+    ) -> Any:
+        """Class-level Workflows compatibility hook for a raw ModelManager.
+
+        `ExecutionEngine.init` invokes this when its effective
+        `model_manager` is a raw `ModelManager` (or a subclass such as
+        `ModelManagerDecorator`); it wraps `self` with
+        `ModelManagerModelsProvider` and installs the historical server
+        services into the engine's private `init_parameters`, returning the
+        effective `step_error_handler`. The server helper is imported lazily
+        so `inference/core/workflows` does not gain a reverse import of this
+        module.
+        """
+        from inference.core.interfaces.workflows_models_provider import (
+            bind_model_manager_to_workflows,
+        )
+
+        return bind_model_manager_to_workflows(
+            model_manager=self,
+            init_parameters=init_parameters,
+            step_error_handler=step_error_handler,
+        )
+
     def add_model(
         self,
         model_id: str,
@@ -78,6 +131,8 @@ class ModelManager:
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        required_capabilities: Optional[List[str]] = None,
+        output_type: str = "feature_vector",
     ) -> None:
         """Adds a new model to the manager.
 
@@ -86,7 +141,7 @@ class ModelManager:
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=api_key,
                 model_id=model_id,
@@ -101,7 +156,10 @@ class ModelManager:
         logger.debug(
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
-        resolved_identifier = model_id if model_id_alias is None else model_id_alias
+        registry_identifier = model_id if model_id_alias is None else model_id_alias
+        resolved_identifier = model_cache_key(
+            registry_identifier, required_capabilities, output_type
+        )
         self.record_request_metadata(
             model_id=resolved_identifier,
             original_model_id=model_id,
@@ -128,17 +186,41 @@ class ModelManager:
                     t_load_start = time.perf_counter()
                     vram_before = _get_cuda_memory_allocated()
                     model_class = self.model_registry.get_model(
-                        resolved_identifier,
+                        registry_identifier,
                         api_key,
                         countinference=countinference,
                         service_secret=service_secret,
                     )
+                    if required_capabilities and not hasattr(
+                        model_class, "infer_embeddings_from_request"
+                    ):
+                        raise ModelDeploymentNotSupportedError(
+                            "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+                        )
 
+                    extra_init_kwargs = {}
+                    if required_capabilities:
+                        extra_init_kwargs["required_capabilities"] = (
+                            required_capabilities
+                        )
+                    if "image_embeddings" in (required_capabilities or []):
+                        extra_init_kwargs["output_type"] = output_type
+                    if USE_INFERENCE_MODELS:
+                        extra_init_kwargs["torchscript_state_global_lock"] = (
+                            self.torchscript_state_global_lock
+                        )
+                        extra_init_kwargs["content_addressed_artifact_cache"] = (
+                            self.content_addressed_artifact_cache
+                        )
                     model = model_class(
                         model_id=model_id,
                         api_key=api_key,
                         countinference=countinference,
                         service_secret=service_secret,
+                        **extra_init_kwargs,
+                    )
+                    bind_usage_model_descriptor(
+                        model, model_id, resolved_identifier, model_id_alias
                     )
                     vram_after = _get_cuda_memory_allocated()
                     if vram_before is not None and vram_after is not None:
@@ -186,6 +268,25 @@ class ModelManager:
                 record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error
+
+    def load_action_recognition_model(
+        self, model_id: str, api_key: Optional[str] = None, **kwargs
+    ):
+        """Load an action-recognition model the way every entry point loads it.
+
+        Forwarder so the Workflow block reaches the loader through the models
+        port instead of importing
+        `inference.core.models.inference_models_adapters` directly. The import
+        stays function-local for the same reason it was in the block: loading
+        the adapters module is expensive.
+        """
+        from inference.core.models.inference_models_adapters import (
+            load_action_recognition_model,
+        )
+
+        return load_action_recognition_model(
+            model_id=model_id, api_key=api_key, **kwargs
+        )
 
     def record_request_metadata(
         self,
@@ -258,7 +359,11 @@ class ModelManager:
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache"):
                         try:
                             logger.debug(
@@ -293,7 +398,11 @@ class ModelManager:
             except Exception as e:
                 record_error(e)
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache_error"):
                         try:
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
@@ -356,7 +465,11 @@ class ModelManager:
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache"):
                         try:
                             logger.debug(
@@ -391,7 +504,11 @@ class ModelManager:
             except Exception as e:
                 record_error(e)
                 finish_time = time.time()
-                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                if (
+                    not OFFLINE_MODE
+                    and not DISABLE_INFERENCE_CACHE
+                    and enable_model_monitoring
+                ):
                     with start_span("model.infer.cache_error"):
                         try:
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
@@ -421,13 +538,75 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
+        if isinstance(request, ImageEmbeddingRequest):
+            return model.infer_embeddings_from_request(request)
         return model.infer_from_request(request)
 
     def model_infer_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
+        if isinstance(request, ImageEmbeddingRequest):
+            return model.infer_embeddings_from_request(request)
         return model.infer_from_request(request)
+
+    def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        """Run native model inference with cache lookup and telemetry.
+
+        Args:
+            model_id: Registered model key.
+            **kwargs: Native images and model-specific inference options.
+
+        Returns:
+            The model's native predictions without HTTP serialization.
+
+        Raises:
+            InferenceModelNotFound: If the model is not registered.
+            NotImplementedError: If the model does not support native inference.
+        """
+        result = self._run_tensor_native_operation(
+            model_id=model_id, operation="run_tensor_native_inference", kwargs=kwargs
+        )
+
+        return result
+
+    def run_tensor_native_embeddings(self, model_id: str, **kwargs) -> dict:
+        """Generate tensor embeddings using the registered model instance.
+
+        Args:
+            model_id: Capability-specific model registration key.
+            **kwargs: Images, color format, output type and preprocessing options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+
+        Raises:
+            InferenceModelNotFound: If the model is not registered.
+            NotImplementedError: If the model does not support tensor embeddings.
+        """
+        result = self._run_tensor_native_operation(
+            model_id=model_id, operation="run_tensor_native_embeddings", kwargs=kwargs
+        )
+
+        return result
+
+    def _run_tensor_native_operation(self, *, model_id, operation, kwargs):
+        with start_span(
+            "model.infer",
+            {
+                "model.id": model_id,
+                "model.infer.caller": operation,
+            },
+        ):
+            try:
+                t_infer_start = time.perf_counter()
+                model = self._get_model_reference(model_id=model_id)
+                result = getattr(model, operation)(**kwargs)
+                record_inference(model_id, time.perf_counter() - t_infer_start)
+                return result
+            except Exception as error:
+                record_error(error)
+                raise
 
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs
@@ -509,6 +688,52 @@ class ModelManager:
         """
         model = self._get_model_reference(model_id=model_id)
         return model.class_names
+
+    def get_keypoints_classes(self, model_id: str) -> List[List[str]]:
+        """Per-object-class keypoint class names, indexed by object class id.
+
+        Only the `inference_models` adapters expose this; the workflow keypoint
+        blocks read it to label the keypoints they emit.
+        """
+        model = self._get_model_reference(model_id=model_id)
+        return model.key_points_classes
+
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        """True when the loaded model runs a depth>1 async inference pipeline."""
+        if model_id not in self:
+            return False
+        model = self._get_model_reference(model_id=model_id)
+        return (
+            callable(getattr(model, "flush", None))
+            and getattr(model, "_pipeline_depth", 1) > 1
+        )
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        """The model's async pipeline depth; 1 when it has none or is not loaded."""
+        if model_id not in self:
+            return 1
+        model = self._get_model_reference(model_id=model_id)
+        return int(getattr(model, "_pipeline_depth", 1))
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
+        """Drain the model's in-flight pipeline, or None when it has none."""
+        if model_id not in self:
+            return None
+        model = self._get_model_reference(model_id=model_id)
+        flush_fn = getattr(model, "flush", None)
+        if not callable(flush_fn):
+            return None
+        return flush_fn()
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        """Stop the model's pipeline workers. A no-op when it has none."""
+        if model_id not in self:
+            return None
+        model = self._get_model_reference(model_id=model_id)
+        shutdown_fn = getattr(model, "shutdown_pipeline", None)
+        if callable(shutdown_fn):
+            shutdown_fn()
+        return None
 
     def get_task_type(self, model_id: str, api_key: str = None) -> str:
         """Retrieves the task type for a given model.

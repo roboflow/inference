@@ -1,0 +1,140 @@
+name: Claude PR Review — PR Notice
+
+# Companion to `claude-pr-review.yml` (the actual reviewer, which excludes drafts at the
+# job-level `if:`). This workflow posts a single, state-aware orientation comment on a PR
+# and keeps it accurate as the PR moves between draft and ready. It replaces the former
+# `claude-pr-review-draft-notice.yml` and folds in a general new-PR greeting, so there is
+# exactly ONE notice per PR instead of two overlapping ones.
+#
+# What it says depends on the PR's current state, read authoritatively at run time:
+#   - draft  -> automated review is PAUSED; here is how to un-pause it.
+#   - ready  -> automated review WILL run, and it spends real credits.
+# Both flavours carry the same guidance: draft when unsure / ready when you feel strong,
+# and the credit-hygiene asks (prepare a solid PR, resolve every comment before
+# re-requesting, do not use CI review as an inner loop, ask a maintainer when unsure).
+#
+# It is idempotent and self-correcting: a hidden marker locates the one notice comment, a
+# hidden `draft=<bool>` tag records which flavour is shown, and the step creates the
+# comment if missing, edits it in place when the state flips, or no-ops when already
+# current. Wording lives in the `body=$(printf ...)` block below.
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+on:
+  pull_request:
+    branches: [main]
+    # `opened` covers every new PR (draft or ready). The remaining three keep the single
+    # comment accurate across transitions: reopened, ready -> draft, and draft -> ready.
+    types: [opened, reopened, converted_to_draft, ready_for_review]
+
+concurrency:
+  # Never cancel an in-flight post/edit (that could interrupt a comment mid-write); the
+  # marker + state-tag checks below are what keep it to one accurate comment per PR.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  notice:
+    name: Post/refresh PR notice
+    # Cheap eligibility filter; the step re-checks authoritatively. Scope matches the
+    # review workflow so we never advertise a review that would not run: same-repo only
+    # (forks are not reviewed), human authors only, and not already opted out via
+    # `skip-claude-review`. There is deliberately NO `draft` condition — the notice greets
+    # ready and draft PRs alike and adapts its wording to whichever it finds.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.type != 'Bot' &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-claude-review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post or refresh the PR notice
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          MARKER='<!-- claude-pr-review:notice -->'
+          SKIP_LABEL='skip-claude-review'
+
+          # Re-fetch authoritatively: the job-level filter reads the event payload, which
+          # can be stale by the time the runner starts (the PR may have been closed, opted
+          # out, or flipped draft<->ready in the interim). Fail closed on close/opt-out.
+          pr_json="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")"
+          state="$(echo "$pr_json" | jq -r '.state')"
+          draft="$(echo "$pr_json" | jq -r '.draft')"
+
+          skip() { echo "::notice::PR #${PR_NUMBER}: $1 — leaving the notice untouched."; exit 0; }
+
+          [ "$state" = "open" ] || skip "not open"
+
+          # Case-insensitive opt-out check (GitHub label names are case-insensitively unique).
+          if echo "$pr_json" | jq -e --arg l "$SKIP_LABEL" '.labels[]? | select((.name // "" | ascii_downcase) == ($l | ascii_downcase))' >/dev/null; then
+            skip "labeled '${SKIP_LABEL}'"
+          fi
+
+          # The one line that differs by state. Single-quoted assignments, so backticks /
+          # `$` / `*` / `_` / em dashes stay literal.
+          if [ "$draft" = "true" ]; then
+            status_line='🚧 **Right now this is a draft, so automated Claude review is paused** — nothing is being spent yet. Mark it **Ready for review** to trigger it.'
+          else
+            status_line='🚦 **This PR is marked Ready for review, so automated Claude review will run** — and every pass spends real credits.'
+          fi
+
+          # NOTE ON QUOTING: every banner line below is single-quoted, so backticks, `$`,
+          # `*`, `_` and em dashes are all literal — no shell expansion, nothing to escape.
+          # Do NOT introduce apostrophes into a single-quoted line (they would terminate the
+          # string). The two lines that must expand a variable — the hidden state tag and
+          # the label line — are double-quoted with backticks escaped.
+          body="$(printf '%s\n' \
+            "$MARKER" \
+            "<!-- claude-pr-review:draft=${draft} -->" \
+            '👋 **Thanks for the pull request!** Here is how automated Claude review works here, so you spend credits (and reviewer time) wisely.' \
+            '' \
+            "$status_line" \
+            '' \
+            '> [!WARNING]' \
+            '> ## 💸 The Claude reviewer bills in credits, not vibes' \
+            '>' \
+            '> Automated review spins up a real agent that reads real code and spends **real credits** on every pass. It is glad to help — but it is not a rubber duck, a linter you poke in a loop, or a substitute for reading the contributing guide. Treat it like an expensive senior reviewer whose time you booked, and show up prepared.' \
+            '>' \
+            '> **Draft when unsure, Ready when you mean it:**' \
+            '> - 🌱 **Not sure the PR is in good shape yet?** Keep it (or set it back) as a **draft** — drafts pause review, so you can push and iterate without burning credits on a moving target.' \
+            '> - 💪 **Feel strong about the contents?** Mark it **Ready for review** and the reviewer will take a look.' \
+            '>' \
+            '> **However you get there, arrive prepared:**' \
+            '> - 🧱 **Bring a SOLID, thorough PR.** Point your local agent at our `skills/` to tune it to our guidelines first — or, if you are one of those fabled carbon-based contributors, read them yourself. A half-baked diff costs exactly the same to review as a finished one.' \
+            '> - ✅ **Resolve _every_ comment before you re-request review.** Re-requesting with threads still open means paying twice for the same conversation.' \
+            '> - 🔁 **Do not use CI review as an inner loop for a local agent.** The reviewer is not a step-by-step debugger — do the unfolding locally and arrive with the answer, not the search.' \
+            '> - 🙋 **If something looks off, ask a human.** One question to a maintainer is cheaper and faster than three rounds of agent re-review chasing a misread.' \
+            '>' \
+            '> _Reviews are not free. A draft costs nothing to review; a Ready PR is a promise that it is worth reviewing._' \
+            '' \
+            "- Prefer to skip automated review entirely? Add the **\`${SKIP_LABEL}\`** label.")"
+
+          # Locate the single notice comment (if any) by its stable marker, and capture its
+          # id + body in one pass.
+          comments="$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" | jq -s 'add // []')"
+          match="$(echo "$comments" | jq -c --arg m "$MARKER" '[.[] | select(.body // "" | contains($m))][0] // empty')"
+          existing_id="$(echo "$match" | jq -r '.id // empty')"
+          existing_body="$(echo "$match" | jq -r '.body // empty')"
+
+          state_tag="<!-- claude-pr-review:draft=${draft} -->"
+
+          if [ -n "$existing_id" ]; then
+            # A notice already exists. If it already shows the current state, do nothing;
+            # otherwise edit it in place so it reflects the new draft/ready state.
+            if printf '%s' "$existing_body" | grep -qF "$state_tag"; then
+              skip "notice already present and current (draft=${draft})"
+            fi
+            gh api -X PATCH "repos/${REPO}/issues/comments/${existing_id}" -f body="$body" >/dev/null
+            echo "::notice::PR #${PR_NUMBER}: refreshed notice to draft=${draft}."
+          else
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
+            echo "::notice::PR #${PR_NUMBER}: posted notice (draft=${draft})."
+          fi

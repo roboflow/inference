@@ -11,8 +11,10 @@ torch.Tensor inputs (advanced caller, float CHW [0, 1]):
     tensor F.resize → F.normalize
 """
 
+from functools import lru_cache
 from typing import List, Optional, Tuple, Union
 
+import cv2
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
@@ -39,6 +41,15 @@ from inference_models.models.common.roboflow.pre_processing import (
     make_the_value_divisible,
     pre_process_numpy_image,
 )
+from inference_models.models.rfdetr.optimization.ids import RFDETR_PREPROCESSOR_BASE
+
+
+@lru_cache(maxsize=None)
+def _log_selected_preprocessor(implementation_id: str) -> None:
+    LOGGER.warning(
+        "Selected RF-DETR preprocessor implementation=%s",
+        implementation_id,
+    )
 
 
 def pre_process_network_input(
@@ -49,7 +60,46 @@ def pre_process_network_input(
     input_color_format: Optional[ColorFormat] = None,
     image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+    preprocessor_implementation_id: str = RFDETR_PREPROCESSOR_BASE,
+    image_module=None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    """Preprocess RF-DETR inputs with the selected implementation.
+
+    Args:
+        images (np.ndarray | torch.Tensor | list): Single image or image batch.
+        image_pre_processing (ImagePreProcessing): Package preprocessing settings.
+        network_input (NetworkInputDefinition): Model-package input definition.
+        target_device (torch.device): Device receiving the preprocessed batch.
+        input_color_format (ColorFormat, optional): Source color format.
+        image_size_wh (int | tuple[int, int], optional): Requested input dimensions.
+        pre_processing_overrides (PreProcessingOverrides, optional): Per-call overrides.
+        preprocessor_implementation_id (str): Explicit implementation ID.
+        image_module (ModuleType, optional): Resize module; None uses standard Pillow.
+
+    Returns:
+        Contiguous NCHW batch and per-image preprocessing metadata.
+
+    Raises:
+        ModelRuntimeError: If the selected implementation is invalid.
+        TypeError: If an input type is unsupported by the selected implementation.
+    """
+    supported_preprocessors = {
+        RFDETR_PREPROCESSOR_BASE,
+    }
+    if preprocessor_implementation_id not in supported_preprocessors:
+        raise ModelRuntimeError(
+            message=(
+                "The RF-DETR reference preprocessing adapter supports only "
+                f"{sorted(supported_preprocessors)}, received "
+                f"{preprocessor_implementation_id!r}."
+            ),
+            help_url=(
+                "https://inference-models.roboflow.com/errors/models-runtime/"
+                "#modelruntimeerror"
+            ),
+        )
+
+    _log_selected_preprocessor(implementation_id=preprocessor_implementation_id)
     input_color_mode = (
         ColorMode(input_color_format) if input_color_format is not None else None
     )
@@ -92,41 +142,66 @@ def pre_process_network_input(
     else:
         image_list = [images]
 
-    tensors: List[torch.Tensor] = []
-    metadata: List[PreProcessingMetadata] = []
-    for img in image_list:
-        if isinstance(img, torch.Tensor) and img.is_floating_point():
-            tensor, meta = _pre_process_tensor(
-                image=img,
-                image_pre_processing=image_pre_processing,
-                network_input=network_input,
-                target_size=target_size,
-                input_color_mode=input_color_mode,
-                pre_processing_overrides=pre_processing_overrides,
-            )
-        elif isinstance(img, (np.ndarray, torch.Tensor)):
-            np_img = (
-                _tensor_to_hwc_uint8(img)
-                if isinstance(img, torch.Tensor)
-                else _ensure_hwc_uint8(img)
-            )
-            tensor, meta = _pre_process_numpy(
-                image=np_img,
-                image_pre_processing=image_pre_processing,
-                network_input=network_input,
-                target_size=target_size,
-                input_color_mode=input_color_mode,
-                pre_processing_overrides=pre_processing_overrides,
-            )
-        else:
-            raise TypeError(
-                f"Unsupported image input type for RFDETR pre-processing: {type(img)}"
-            )
-        tensors.append(tensor.to(device=target_device))
-        metadata.append(meta)
+    def _preprocess_one(
+        image: Union[np.ndarray, torch.Tensor],
+    ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
+        result = _pre_process_one(
+            image=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_size=target_size,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+            image_module=image_module,
+        )
+
+        return result
+
+    processed = [_preprocess_one(image) for image in image_list]
+
+    tensors = [tensor.to(device=target_device) for tensor, _ in processed]
+    metadata = [meta for _, meta in processed]
 
     batch = torch.stack(tensors).contiguous()
     return batch, metadata
+
+
+def _pre_process_one(
+    image: Union[np.ndarray, torch.Tensor],
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
+    target_size: ImageDimensions,
+    input_color_mode: Optional[ColorMode],
+    pre_processing_overrides: Optional[PreProcessingOverrides],
+    image_module=None,
+) -> Tuple[torch.Tensor, PreProcessingMetadata]:
+    if isinstance(image, torch.Tensor) and image.is_floating_point():
+        return _pre_process_tensor(
+            image=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_size=target_size,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+    if isinstance(image, (np.ndarray, torch.Tensor)):
+        np_image = (
+            _tensor_to_hwc_uint8(image)
+            if isinstance(image, torch.Tensor)
+            else _ensure_hwc_uint8(image)
+        )
+        return _pre_process_numpy(
+            image=np_image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_size=target_size,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+            image_module=image_module,
+        )
+    raise TypeError(
+        f"Unsupported image input type for RFDETR pre-processing: {type(image)}"
+    )
 
 
 def _pre_process_numpy(
@@ -136,6 +211,7 @@ def _pre_process_numpy(
     target_size: ImageDimensions,
     input_color_mode: Optional[ColorMode],
     pre_processing_overrides: Optional[PreProcessingOverrides],
+    image_module=None,
 ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
     """numpy / uint8-tensor branch: PIL chain matching training source-of-truth.
 
@@ -145,6 +221,7 @@ def _pre_process_numpy(
     `training_input_size` (matching training's SquareResize). Otherwise we stretch
     directly in a single PIL F.resize step.
     """
+    resize_image = Image if image_module is None else image_module
     if _needs_two_step_resize(network_input):
         intermediate_image, meta = _dataset_version_resize_uint8(
             image=image,
@@ -157,7 +234,8 @@ def _pre_process_numpy(
             nonsquare_intermediate_size=meta.inference_size,
             inference_size=target_size,
         )
-        pil = Image.fromarray(np.ascontiguousarray(intermediate_image))
+        pil = resize_image.fromarray(np.ascontiguousarray(intermediate_image))
+        swap_channels = False
     else:
         original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
         image, static_crop_offset = apply_pre_processing_to_numpy_image(
@@ -170,9 +248,8 @@ def _pre_process_numpy(
         size_after_pre_processing = ImageDimensions(
             width=image.shape[1], height=image.shape[0]
         )
-        if input_color_mode != network_input.color_mode:
-            image = image[:, :, ::-1]
-        pil = Image.fromarray(np.ascontiguousarray(image))
+        pil = resize_image.fromarray(np.ascontiguousarray(image))
+        swap_channels = input_color_mode != network_input.color_mode
         meta = _build_metadata(
             original_size=original_size,
             size_after_pre_processing=size_after_pre_processing,
@@ -180,7 +257,13 @@ def _pre_process_numpy(
             static_crop_offset=static_crop_offset,
         )
 
-    resized = TF.resize(pil, (target_size.height, target_size.width), antialias=True)
+    # Resize channels independently before swapping on the smaller image (#2988).
+    # Call the image directly: PILSIMD images are not torchvision PIL instances.
+    resized = np.array(
+        pil.resize((target_size.width, target_size.height), resize_image.BILINEAR)
+    )
+    if swap_channels:
+        resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
     tensor = TF.to_tensor(resized)
     tensor = _apply_normalization(tensor, network_input)
     return tensor, meta

@@ -1,6 +1,18 @@
-from typing import Generator, Tuple
+from contextlib import nullcontext
+from threading import Lock
+from typing import ContextManager, Generator, Optional, Tuple
 
 import torch
+
+
+def torchscript_global_lock(lock: Optional[Lock]) -> ContextManager[None]:
+    """Serialize TorchScript load/script against a caller-provided lock.
+
+    `torch.jit.load`/`torch.jit.script` mutate a process-global, non-thread-safe
+    TorchScript registry; wrap them with this so concurrent model construction cannot
+    corrupt it. With `lock=None` it is a no-op (direct single-threaded library use).
+    """
+    return lock if lock is not None else nullcontext()
 
 
 def generate_batch_chunks(

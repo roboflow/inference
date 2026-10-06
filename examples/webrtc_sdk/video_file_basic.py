@@ -131,6 +131,12 @@ def main() -> None:
     # def on_predictions(predictions: dict, metadata: VideoMetadata):
     #     print(f"Frame {metadata.frame_id} predictions: {predictions}")
 
+    # Per-frame error handler — fires only for frames the server reported errors
+    # for (workflow execution failures, output serialization failures, etc).
+    @session.on_error
+    def on_frame_error(errors, metadata: VideoMetadata):
+        print(f"Frame {metadata.frame_id} errors: {errors}")
+
     # Run the session (auto-starts, blocks until close() is called or stream ends)
     # Automatically closes on exception or when stream ends
     session.run()

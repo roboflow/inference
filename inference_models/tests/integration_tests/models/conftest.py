@@ -1,4 +1,4 @@
-import os.path
+import os
 import zipfile
 
 import pytest
@@ -41,6 +41,8 @@ COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.go
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-bs-nonsquare-letterbox.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-bs-nonsquare-letterbox.zip"
+RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-kp-preview-onnx-glue-sticks.zip"
+RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV = "INFERENCE_MODELS_RFDETR_KP_TRT_PACKAGE"
 
 OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
 
@@ -166,6 +168,12 @@ YOLO26N_SEG_SNAKES_STRETCH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/ro
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-static.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-dynamic.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-torch-script.zip"
+YOLO26N_SEM_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-static.zip"
+YOLO26N_SEM_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-dynamic.zip"
+YOLO26N_SEM_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-torch-script.zip"
+YOLO26N_DEPTH_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-depth-onnx-static.zip"
+YOLO26N_DEPTH_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-depth-onnx-dynamic.zip"
+YOLO26N_DEPTH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-depth-torch-script.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-static.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-dynamic.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-torch-script.zip"
@@ -423,6 +431,27 @@ def coin_counting_rfdetr_nano_torch_cs_stretch_package() -> str:
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL,
         package_name="coin-counting-rfdetr-nano-torch-cs-stretch",
     )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_kp_preview_onnx_glue_sticks_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL,
+        package_name="rfdetr-kp-preview-onnx-glue-sticks",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_kp_preview_trt_package() -> str:
+    package_path = os.getenv(RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV)
+    if not package_path or not os.path.isdir(package_path):
+        pytest.skip(
+            "RF-DETR keypoint TRT package is not published yet. Set "
+            f"{RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV} to a local flat package directory "
+            "(class_names.txt, inference_config.json, trt_config.json, engine.plan, "
+            "keypoints_metadata.json) or wait for Core-team Surface 2 upload."
+        )
+    return package_path
 
 
 @pytest.fixture(scope="module")
@@ -1507,6 +1536,54 @@ def yolo26n_seg_snakes_letterbox_torch_script_package() -> str:
 
 
 @pytest.fixture(scope="module")
+def yolo26n_sem_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_STATIC_URL,
+        package_name="yolo26n-sem-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-sem-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_TORCH_SCRIPT_URL,
+        package_name="yolo26n-sem-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_depth_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_DEPTH_ONNX_STATIC_URL,
+        package_name="yolo26n-depth-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_depth_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_DEPTH_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-depth-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_depth_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_DEPTH_TORCH_SCRIPT_URL,
+        package_name="yolo26n-depth-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
 def yolo26n_pose_basketball_letterbox_onnx_static_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL,
@@ -1720,3 +1797,75 @@ def sam3_package() -> str:
         model_package_zip_url=SAM3_PACKAGE_URL,
         package_name="sam3",
     )
+
+
+PP_OCRV6_TINY_DET_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-det-tiny.zip"
+PP_OCRV6_TINY_REC_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-rec-tiny.zip"
+PP_OCRV6_SMALL_DET_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-det-small.zip"
+PP_OCRV6_SMALL_REC_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-rec-small.zip"
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_tiny_det_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_TINY_DET_PACKAGE_URL,
+        package_name="pp-ocrv6-det-tiny",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_tiny_rec_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_TINY_REC_PACKAGE_URL,
+        package_name="pp-ocrv6-rec-tiny",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_small_det_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_SMALL_DET_PACKAGE_URL,
+        package_name="pp-ocrv6-det-small",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_small_rec_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_SMALL_REC_PACKAGE_URL,
+        package_name="pp-ocrv6-rec-small",
+    )
+
+
+@pytest.fixture(autouse=True)
+def cuda_memory_probe(request):
+    # Per-test GPU memory telemetry for the integration suite: after each test, log
+    # this process's torch allocator state and device-wide free memory to a
+    # per-xdist-worker file (cuda_memory_probe_<worker>.log in the CWD). Kept
+    # permanently to make GPU OOMs and memory growth attributable to specific tests.
+    # Set CUDA_MEMORY_PROBE_EMPTY_CACHE=True to also flush the torch cache after
+    # each test (counterfactual run - proves/disproves cache-growth attribution).
+    yield
+    try:
+        from datetime import datetime, timezone
+
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        free, total = torch.cuda.mem_get_info()
+        line = (
+            f"{datetime.now(timezone.utc).isoformat()} | pid={os.getpid()} | "
+            f"{request.node.nodeid} | "
+            f"torch_reserved={torch.cuda.memory_reserved() >> 20}MiB | "
+            f"torch_allocated={torch.cuda.memory_allocated() >> 20}MiB | "
+            f"device_free={free >> 20}MiB | "
+            f"device_total={total >> 20}MiB"
+        )
+        if os.environ.get("CUDA_MEMORY_PROBE_EMPTY_CACHE", "False").lower() == "true":
+            torch.cuda.empty_cache()
+        worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+        with open(f"cuda_memory_probe_{worker}.log", "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass

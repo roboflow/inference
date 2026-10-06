@@ -32,6 +32,8 @@ from inference.core.models.utils.batching import create_batches
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.postprocess import cosine_similarity
+from inference.usage_tracking.collector import usage_collector
+from inference_models.errors import ModelInputError
 
 
 class Clip(OnnxRoboflowCoreModel):
@@ -81,6 +83,8 @@ class Clip(OnnxRoboflowCoreModel):
                     )
 
         self.resolution = self.visual_onnx_session.get_inputs()[0].shape[2]
+        # Usage telemetry reads the fixed canvas from `image_size`.
+        self.image_size = self.resolution
 
         self.clip_preprocess = clip.clip._transform(self.resolution)
         self.log(f"CLIP model loaded in {perf_counter() - t1:.2f} seconds")
@@ -268,7 +272,17 @@ class Clip(OnnxRoboflowCoreModel):
         for texts_batch in create_batches(
             sequence=texts, batch_size=CLIP_MAX_BATCH_SIZE
         ):
-            tokenized_batch = clip.tokenize(texts_batch).numpy().astype(np.int32)
+            try:
+                tokenized_batch = clip.tokenize(texts_batch).numpy().astype(np.int32)
+            except RuntimeError as error:
+                # Brittle but necessary: clip.tokenize() signals a text exceeding the
+                # context length only via a bare RuntimeError, so we match its message.
+                if "is too long for context length" not in str(error):
+                    raise
+                raise ModelInputError(
+                    message="Text input is too long for the model context length. "
+                    "Shorten the text and retry."
+                ) from error
             onnx_input_text = {
                 self.textual_onnx_session.get_inputs()[0].name: tokenized_batch
             }
@@ -303,6 +317,7 @@ class Clip(OnnxRoboflowCoreModel):
         """
         return ["textual.onnx", "visual.onnx"]
 
+    @usage_collector("model")
     def infer_from_request(
         self, request: ClipInferenceRequest
     ) -> ClipEmbeddingResponse:
@@ -331,6 +346,7 @@ class Clip(OnnxRoboflowCoreModel):
         data = infer_func(**request.dict())
         response = make_response_func(data)
         response.time = perf_counter() - t1
+        self._attach_resolved_model_metadata(response)
         return response
 
     def make_response(self, embeddings, *args, **kwargs) -> InferenceResponse:

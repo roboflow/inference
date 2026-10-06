@@ -5,10 +5,14 @@ for different video streaming sources (webcam, RTSP, video files, manual frames)
 """
 
 import asyncio
+import hashlib
+import os
+import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import cv2
 import numpy as np
@@ -18,6 +22,7 @@ from aiortc.mediastreams import VIDEO_CLOCK_RATE, VIDEO_PTIME, VIDEO_TIME_BASE
 from av import VideoFrame
 
 from inference_sdk.http.errors import InvalidParameterError
+from inference_sdk.http.utils.url_utils import fetch_url_to_file
 from inference_sdk.webrtc.datachannel import VideoFileUploader
 
 if TYPE_CHECKING:
@@ -27,6 +32,61 @@ if TYPE_CHECKING:
 
 # Type alias for upload progress callback
 UploadProgressCallback = Callable[[int, int], None]  # (uploaded_chunks, total_chunks)
+
+# Cache directory for videos downloaded from http(s) URLs
+VIDEO_DOWNLOAD_CACHE_DIR = os.getenv(
+    "INFERENCE_SDK_VIDEO_CACHE_DIR",
+    os.path.join(os.path.expanduser("~"), ".cache", "inference-sdk", "videos"),
+)
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = int(
+    os.getenv("INFERENCE_SDK_VIDEO_DOWNLOAD_TIMEOUT", "300")
+)
+
+
+def _download_video(url: str, use_cache: bool) -> str:
+    """Download a video from an http(s) URL to a local file.
+
+    The download goes through fetch_url_to_file, which applies the SDK's
+    URL-input policy and SSRF protections. With use_cache=True the file lands
+    in VIDEO_DOWNLOAD_CACHE_DIR keyed by a hash of the URL and is reused on
+    subsequent calls. With use_cache=False it lands in a fresh temporary file
+    which the caller is expected to delete.
+
+    Returns:
+        Path to the local video file.
+    """
+    ext = os.path.splitext(urlparse(url).path)[1] or ".mp4"
+    if use_cache:
+        os.makedirs(VIDEO_DOWNLOAD_CACHE_DIR, exist_ok=True)
+        cache_key = hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
+        target_path = os.path.join(VIDEO_DOWNLOAD_CACHE_DIR, f"{cache_key}{ext}")
+        if os.path.isfile(target_path) and os.path.getsize(target_path) > 0:
+            return target_path
+    else:
+        fd, target_path = tempfile.mkstemp(suffix=ext, prefix="inference-sdk-video-")
+        os.close(fd)
+
+    # Download to a unique sibling temp file (same filesystem, so os.replace
+    # stays atomic), then move into place. Uniqueness matters: concurrent
+    # downloads of the same URL must not interleave writes into one staging
+    # file, and a partially-downloaded file must never look like a cached video.
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(target_path), suffix=".part")
+    os.close(fd)
+    try:
+        fetch_url_to_file(
+            url=url,
+            destination_path=tmp_path,
+            request_timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS,
+        )
+        os.replace(tmp_path, target_path)
+    except Exception:
+        for stale in (tmp_path,) if use_cache else (tmp_path, target_path):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+        raise
+    return target_path
 
 
 class StreamSource(ABC):
@@ -385,11 +445,14 @@ class VideoFileSource(StreamSource):
         on_upload_progress: Optional[UploadProgressCallback] = None,
         use_datachannel_frames: bool = True,
         realtime_processing: bool = False,
+        use_cache: bool = True,
     ):
         """Initialize video file source.
 
         Args:
-            path: Path to video file (any format supported by FFmpeg)
+            path: Path to video file (any format supported by FFmpeg), or an
+                http(s) URL to a video file. URLs are downloaded before upload;
+                see use_cache.
             on_upload_progress: Optional callback called during upload with
                 (uploaded_chunks, total_chunks). Use to track upload progress.
             use_datachannel_frames: If enabled, frames are received through the
@@ -400,8 +463,15 @@ class VideoFileSource(StreamSource):
             realtime_processing: If True, process frames at original video FPS
                 (throttled playback for live preview). If False (default),
                 process all frames as fast as possible (batch mode).
+            use_cache: Only relevant when path is an http(s) URL. If True
+                (default), the downloaded video is cached on disk (keyed by
+                URL) and reused on subsequent runs. If False, it is downloaded
+                to a temporary file and deleted when the session ends.
         """
         self.path = path
+        self.use_cache = use_cache
+        self._is_url = path.startswith(("http://", "https://"))
+        self._temp_download_path: Optional[str] = None
         self.on_upload_progress = on_upload_progress
         self.use_datachannel_frames = use_datachannel_frames
         self.realtime_processing = realtime_processing
@@ -471,13 +541,26 @@ class VideoFileSource(StreamSource):
         if not self._upload_channel:
             raise RuntimeError("Upload channel not configured")
 
-        self._uploader = VideoFileUploader(self.path, self._upload_channel)
+        local_path = self.path
+        if self._is_url:
+            local_path = await asyncio.to_thread(
+                _download_video, self.path, self.use_cache
+            )
+            if not self.use_cache:
+                self._temp_download_path = local_path
+
+        self._uploader = VideoFileUploader(local_path, self._upload_channel)
         await self._uploader.upload(on_progress=self.on_upload_progress)
         # self._upload_complete.set()
 
     async def cleanup(self) -> None:
-        """No cleanup needed - upload channel is managed by peer connection."""
-        pass
+        """Remove temporary download (URL source with use_cache=False)."""
+        if self._temp_download_path:
+            try:
+                os.remove(self._temp_download_path)
+            except OSError:
+                pass
+            self._temp_download_path = None
 
 
 # Configuration constants for manual source

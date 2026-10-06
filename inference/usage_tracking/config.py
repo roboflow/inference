@@ -13,14 +13,10 @@ from inference.core.utils.url_utils import wrap_url
 class TelemetrySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="telemetry_")
 
-    api_usage_endpoint_url: str = wrap_url(
-        f"{METRICS_COLLECTOR_BASE_URL}/usage/inference"
-    )
-    api_plan_endpoint_url: str = wrap_url(f"{METRICS_COLLECTOR_BASE_URL}/usage/plan")
+    api_usage_endpoint_url: str = f"{METRICS_COLLECTOR_BASE_URL}/usage/inference"
+    api_plan_endpoint_url: str = f"{METRICS_COLLECTOR_BASE_URL}/usage/plan"
     api_plan_cache_ttl_seconds: int = Field(default=86400, ge=60, le=86400)
-    webrtc_plans_endpoint_url: str = wrap_url(
-        f"{METRICS_COLLECTOR_BASE_URL}/webrtc_plans"
-    )
+    webrtc_plans_endpoint_url: str = f"{METRICS_COLLECTOR_BASE_URL}/webrtc_plans"
     flush_interval: int = Field(default=10, ge=10, le=300)
     use_persistent_queue: Optional[bool] = True
     queue_size: int = Field(default=10, ge=10, le=10000)
@@ -29,6 +25,11 @@ class TelemetrySettings(BaseSettings):
     def check_values(cls, inst: TelemetrySettings):
         inst.flush_interval = min(max(inst.flush_interval, 10), 300)
         inst.queue_size = min(max(inst.queue_size, 10), 10000)
+        # Wrap in the validator (not in the field defaults) so that
+        # TELEMETRY_* env overrides are routed through the secure gateway too.
+        inst.api_usage_endpoint_url = wrap_url(inst.api_usage_endpoint_url)
+        inst.api_plan_endpoint_url = wrap_url(inst.api_plan_endpoint_url)
+        inst.webrtc_plans_endpoint_url = wrap_url(inst.webrtc_plans_endpoint_url)
         return inst
 
 

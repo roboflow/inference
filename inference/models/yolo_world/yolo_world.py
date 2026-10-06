@@ -27,6 +27,7 @@ from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.hash import get_text_hash
 from inference.core.utils.image_utils import load_image_rgb
 from inference.models import Clip
+from inference.usage_tracking.collector import usage_collector
 
 EMBEDDINGS_EXPIRE_TIMEOUT = 1800  # 30 min
 
@@ -81,8 +82,11 @@ class YOLOWorld(RoboflowCoreModel):
         Perform inference based on the details provided in the request, and return the associated responses.
         """
         with self._state_lock:
-            return self.infer(**request.dict())
+            response = self.infer(**request.dict())
+            self._attach_resolved_model_metadata(response)
+            return response
 
+    @usage_collector("model")
     def infer(
         self,
         image: Any = None,

@@ -20,6 +20,7 @@ from inference_models.configuration import (
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.models.base.image_embeddings import TorchClassifierEmbeddings
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -47,6 +48,12 @@ class VITClassifier(nn.Module):
         self._classifier = classifier
         self._softmax_fused = softmax_fused
 
+    def forward_embedding(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        return self._backbone(pixel_values=pixel_values).last_hidden_state[:, 0]
+
+    def forward_logits(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        return self._classifier(self.forward_embedding(pixel_values))
+
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         outputs = self._backbone(pixel_values=pixel_values)
         logits = self._classifier(outputs.last_hidden_state[:, 0])
@@ -55,13 +62,16 @@ class VITClassifier(nn.Module):
         return logits
 
 
-class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
+class VITForClassificationHF(
+    TorchClassifierEmbeddings, ClassificationModel[torch.Tensor, torch.Tensor]
+):
 
     @classmethod
     def from_pretrained(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "VITForClassificationHF":
         model_package_content = get_model_package_contents(
@@ -113,9 +123,10 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
                 message="Expected Softmax to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
-            device
-        )
+        backbone = ViTModel.from_pretrained(
+            os.path.join(model_name_or_path, "vit"),
+            local_files_only=local_files_only,
+        ).to(device)
         classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
         classifier_state_dict = torch.load(
             model_package_content["classifier_layer_weights.pth"],
@@ -200,6 +211,12 @@ class VITMultiLabelClassifier(nn.Module):
         self._classifier = classifier
         self._sigmoid_fused = sigmoid_fused
 
+    def forward_embedding(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        return self._backbone(pixel_values=pixel_values).last_hidden_state[:, 0]
+
+    def forward_logits(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        return self._classifier(self.forward_embedding(pixel_values))
+
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         outputs = self._backbone(pixel_values=pixel_values)
         logits = self._classifier(outputs.last_hidden_state[:, 0])
@@ -209,7 +226,7 @@ class VITMultiLabelClassifier(nn.Module):
 
 
 class VITForMultiLabelClassificationHF(
-    MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
+    TorchClassifierEmbeddings, MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
 ):
 
     @classmethod
@@ -219,6 +236,7 @@ class VITForMultiLabelClassificationHF(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "VITForMultiLabelClassificationHF":
         model_package_content = get_model_package_contents(
@@ -270,9 +288,10 @@ class VITForMultiLabelClassificationHF(
                 message="Expected sigmoid to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
-            device
-        )
+        backbone = ViTModel.from_pretrained(
+            os.path.join(model_name_or_path, "vit"),
+            local_files_only=local_files_only,
+        ).to(device)
         classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
         classifier_state_dict = torch.load(
             model_package_content["classifier_layer_weights.pth"],
@@ -310,6 +329,7 @@ class VITForMultiLabelClassificationHF(
         self._class_names = class_names
         self._device = device
         self.recommended_parameters = recommended_parameters
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -332,7 +352,7 @@ class VITForMultiLabelClassificationHF(
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(pre_processed_images)
 
     def post_process(

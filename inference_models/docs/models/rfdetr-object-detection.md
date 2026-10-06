@@ -37,11 +37,15 @@ All pre-trained RF-DETR object detection models are trained on the COCO dataset 
 
 ## Supported Backends
 
+For the composable five-stage Torch, ONNX and TensorRT execution-plan architecture, see
+[Current RF-DETR Inference-Path Optimization Integration](../contributors/inference-path-optimization-architectures/rfdetr.md).
+
 | Backend | Extras Required |
 |---------|----------------|
 | `torch` | `torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126` |
 | `onnx` | `onnx-cpu`, `onnx-cu12`, `onnx-cu118`, `onnx-jp6-cu126` |
 | `trt` | `trt10` |
+| `coreml` | `coreml` (macOS 13+ on Apple Silicon) |
 
 ## Roboflow Platform Compatibility
 
@@ -63,6 +67,7 @@ Install with one of the following extras depending on your backend:
 - **PyTorch**: `torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126`
 - **ONNX**: `onnx-cpu`, `onnx-cu12`
 - **TensorRT**: `trt10` (requires CUDA 12.x)
+- **Core ML**: `coreml` (macOS 13+ on Apple Silicon)
 
 ## Usage Example
 
@@ -88,6 +93,67 @@ annotated_image = bounding_box_annotator.annotate(image, detections)
 # Save or display
 cv2.imwrite("annotated.jpg", annotated_image)
 ```
+
+### Selecting preprocessing
+
+All three object-detection loaders accept `execution_plan=RFDetrExecutionPlan(...)`
+or the canonical mapping returned by `plan.to_dict()`. An explicit plan overrides
+environment selection and preserves both fallback policy flags. Torch's standalone
+`from_checkpoint_file()` loader follows the same contract. The old
+`rfdetr_execution_plan` keyword emits `FutureWarning` and remains supported until
+October 24, 2026; supplying it alongside a non-`None` `execution_plan` raises
+`TypeError`.
+
+The default `auto` selection prefers `triton-universal-v1` on compatible CUDA
+devices, then `pillow-simd-v1`, with `base` as the reference fallback. CPU and
+MPS do not construct the CUDA-only Triton preprocessor. Torch's `image_size`
+override falls back to compatible preprocessing when Triton cannot preserve it.
+
+`base` uses standard Pillow and performs BGR/RGB conversion after resizing, so
+large camera images do not require a full-resolution channel-copy operation.
+`pillow-simd-v1` is a separate implementation for Linux x86-64 SSE4.1 hosts with
+an isolated Pillow-SIMD >=12.3.0.post0 installation, selected explicitly or after
+Triton in `auto`. Bilinear downscales are not byte-identical to standard Pillow, and its metadata
+declares `changes_numerics=True`. Unsupported hosts (including Jetson ARM) or
+requests fall back observably to `base`, unless compatibility fallback is disabled.
+It accepts uint8 NumPy images; float/tensor requests retain reference behavior.
+
+To require reference preprocessing without fallback, pass
+`execution_plan=RFDetrExecutionPlan(preprocessor_id="base", postprocessor_id="base",
+allow_compatibility_fallback=False, allow_runtime_failure_fallback=False)`.
+
+Use `model.optimization_runtime_metadata` to inspect model selection, last-request
+effective IDs and fallback reasons. Torch and ONNX currently retain their existing
+backend-specific postprocessing and forward behavior behind `base` stage adapters;
+the TensorRT-only fused postprocessor is not registered for those backends.
+Instance segmentation is not migrated in this change.
+
+### Calling stages independently
+
+The CUDA object-detection paths normally keep optimized preprocessing asynchronous. Their
+`pre_process()` and `forward()` methods coordinate through readiness state owned by the
+model instance, avoiding a host synchronization in the normal `model(...)` path.
+
+If your application calls `pre_process()`, `forward()`, and `post_process()` separately,
+the default public-stage behavior is safe without additional model configuration:
+
+```python
+from inference_models import AutoModel
+
+model = AutoModel.from_pretrained(
+    "rfdetr-base",
+    backend="trt",
+)
+
+preprocessed, metadata = model.pre_process(image)
+raw_predictions = model.forward(preprocessed)
+predictions = model.post_process(raw_predictions, metadata)
+```
+
+Public `pre_process()` synchronizes its CUDA producer before returning, so its tensor can
+be passed to `forward()` independently and does not depend on readiness state retained
+by the model. Composed `model(...)` and `infer()` calls use an internal event-based
+handoff instead, avoiding this host synchronization on the optimized inference path.
 
 ## Trained RF-DETR Outside Roboflow? Use with `inference-models`
 
@@ -158,4 +224,3 @@ cv2.imwrite("annotated.jpg", annotated_image)
 - ✅ **Production-ready** - Leverage all `inference-models` features (multi-backend, caching, optimization)
 
 This seamless workflow eliminates the traditional friction between training and deployment, letting you iterate faster and deploy with confidence.
-

@@ -86,6 +86,17 @@ def run(self, matrix_a: List[List[float]], matrix_b: List[List[float]]) -> Block
     return {"result": result.tolist()}
 """
 
+# Block that uses the workflow-scoped `debug_traces` helper. Locally this name
+# is injected via block_scaffolding's IMPORTS_LINES; in the Modal sandbox it is
+# a no-op proxy injected into the execution namespace. Before that injection a
+# block calling `debug_traces.append(...)` raised `NameError` only under Modal.
+DEBUG_TRACES_BLOCK = """
+def run(self, value: float) -> BlockResult:
+    debug_traces.append({"received": value})
+    debug_traces.append(value * 2, add_timestamp=True)
+    return {"result": value * 2}
+"""
+
 
 def run_workflow_in_subprocess(
     workflow: dict, runtime_params: dict, execution_mode: str
@@ -432,6 +443,39 @@ class TestModalCustomPythonBlocks:
         np.testing.assert_array_almost_equal(
             np.array(modal_result[0]["result"]), expected
         )
+
+    def test_debug_traces_block_does_not_raise_nameerror_in_modal(self) -> None:
+        """A block that calls `debug_traces.append(...)` must run under Modal.
+
+        Regression guard: before a no-op `debug_traces` proxy was injected into
+        the Modal execution namespace, this block ran fine locally but raised
+        `NameError: name 'debug_traces' is not defined` under Modal (the Modal
+        sandbox builds its own import block and omitted the symbol). The traces
+        are not collected remotely, so we only assert the block executes and
+        returns the expected result - i.e. it does not fail with NameError.
+        """
+        workflow = create_workflow_with_custom_block(
+            block_code=DEBUG_TRACES_BLOCK,
+            block_type="DebugTracesBlock",
+            inputs={
+                "value": {
+                    "type": "DynamicInputDefinition",
+                    "selector_types": ["input_parameter"],
+                },
+            },
+            outputs={"result": {"type": "DynamicOutputDefinition", "kind": []}},
+        )
+
+        runtime_params = {"value": 21}
+
+        # Local execution (debug_traces injected via IMPORTS_LINES) as a baseline.
+        local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
+        assert local_result[0]["result"] == 42
+
+        # Modal execution must not raise NameError; a NameError would surface as
+        # a RuntimeError from run_workflow_in_subprocess.
+        modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
+        assert modal_result[0]["result"] == 42
 
     def test_error_handling_in_modal(self) -> None:
         """Test that errors in Modal execution are properly propagated."""

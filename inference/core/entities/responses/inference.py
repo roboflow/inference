@@ -1,8 +1,24 @@
 import base64
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer
+from pydantic import BaseModel, Field, ValidationError, field_serializer
+
+from inference.core.workflows.core_steps.common.inference_response_entities import (  # noqa: F401
+    CvInferenceResponse,
+    InferenceResponse,
+    InferenceResponseImage,
+    InstanceSegmentationInferenceResponse,
+    ResolvedModel,
+    WithVisualizationResponse,
+)
+from inference.core.workflows.core_steps.common.segmentation_entities import (  # noqa: F401
+    InstanceSegmentationBasePrediction,
+    InstanceSegmentationPrediction,
+    InstanceSegmentationRLEPrediction,
+    Point,
+)
 
 
 class ObjectDetectionPrediction(BaseModel):
@@ -50,18 +66,6 @@ class ObjectDetectionPrediction(BaseModel):
     )
 
 
-class Point(BaseModel):
-    """Point coordinates.
-
-    Attributes:
-        x (float): The x-axis pixel coordinate of the point.
-        y (float): The y-axis pixel coordinate of the point.
-    """
-
-    x: float = Field(description="The x-axis pixel coordinate of the point")
-    y: float = Field(description="The y-axis pixel coordinate of the point")
-
-
 class Point3D(Point):
     """3D Point coordinates.
 
@@ -72,65 +76,58 @@ class Point3D(Point):
     z: float = Field(description="The z-axis pixel coordinate of the point")
 
 
-class InstanceSegmentationBasePrediction(BaseModel):
-    x: float = Field(description="The center x-axis pixel coordinate of the prediction")
-    y: float = Field(description="The center y-axis pixel coordinate of the prediction")
-    width: float = Field(
-        description="The width of the prediction bounding box in number of pixels"
-    )
-    height: float = Field(
-        description="The height of the prediction bounding box in number of pixels"
-    )
-    confidence: float = Field(
-        description="The detection confidence as a fraction between 0 and 1"
-    )
-    class_name: str = Field(alias="class", description="The predicted class label")
-    class_id: int = Field(description="The class id of the prediction")
-    detection_id: str = Field(
-        description="Unique identifier of detection",
-        default_factory=lambda: str(uuid4()),
-    )
-    parent_id: Optional[str] = Field(
-        description="Identifier of parent image region",
-        default=None,
-    )
+def _mask_to_base64_png(mask: Any) -> str:
+    """Encodes a uint8 numpy mask exactly like the model-side eager encoding."""
+    import io
 
+    import numpy as np
+    from PIL import Image
 
-class InstanceSegmentationPrediction(InstanceSegmentationBasePrediction):
-    class_confidence: Union[float, None] = Field(
-        None, description="The class label confidence as a fraction between 0 and 1"
-    )
-    points: List[Point] = Field(
-        description="The list of points that make up the instance polygon"
-    )
-    mask_format: Literal["polygon"] = Field(
-        default="polygon",
-        description="Type of mask format",
-    )
-
-
-class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
-    rle: dict = Field(
-        description="RLE-encoded mask in COCO format: {'size': [H, W], 'counts': '...'}"
-    )
-    mask_format: Literal["rle"] = Field(
-        default="rle",
-        description="Type of mask format",
-    )
+    img = Image.fromarray(np.asarray(mask, dtype=np.uint8))
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode("ascii")
 
 
 class SemanticSegmentationPrediction(BaseModel):
     # match inference-internal/blob/main/deploy/helpers/helpers.py#L107-L128
-    segmentation_mask: str = Field(
-        description="base64-encoded PNG of predicted class label at each pixel"
+    segmentation_mask: Any = Field(
+        description=(
+            "base64-encoded PNG of predicted class label at each pixel. When "
+            "the request sets response_mask_format='numpy' (in-process fast "
+            "path), this carries the raw uint8 numpy label map instead; JSON "
+            "serialization always yields the base64 PNG string."
+        ),
+        json_schema_extra={"type": "string"},
     )
     class_map: Dict[str, str] = Field(
         description="Map of pixel intensity value to class label"
     )
     # added
-    confidence_mask: str = Field(
-        description="base64-encoded PNG of predicted class confidence at each pixel"
+    confidence_mask: Any = Field(
+        description=(
+            "base64-encoded PNG of predicted class confidence at each pixel. "
+            "When the request sets response_mask_format='numpy' (in-process "
+            "fast path), this carries the raw uint8 numpy confidence map "
+            "instead; JSON serialization always yields the base64 PNG string."
+        ),
+        json_schema_extra={"type": "string"},
     )
+    present_class_ids: Optional[List[int]] = Field(
+        default=None,
+        description=(
+            "Sorted list of pixel values present in segmentation_mask, including "
+            "background (0) when present. Optimization hint that lets consumers "
+            "skip scanning the full-resolution mask; consumers must fall back to "
+            "scanning when this field is absent."
+        ),
+    )
+
+    @field_serializer("segmentation_mask", "confidence_mask", when_used="json")
+    def _serialize_mask(self, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        return _mask_to_base64_png(value)
 
 
 class ClassificationPrediction(BaseModel):
@@ -162,72 +159,6 @@ class MultiLabelClassificationPrediction(BaseModel):
     class_id: int = Field(description="Numeric ID associated with the class label")
 
 
-class InferenceResponseImage(BaseModel):
-    """Inference response image information.
-
-    Attributes:
-        width (int): The original width of the image used in inference.
-        height (int): The original height of the image used in inference.
-    """
-
-    width: int = Field(description="The original width of the image used in inference")
-    height: int = Field(
-        description="The original height of the image used in inference"
-    )
-
-
-class InferenceResponse(BaseModel):
-    """Base inference response.
-
-    Attributes:
-        inference_id (Optional[str]): Unique identifier of inference
-        frame_id (Optional[int]): The frame id of the image used in inference if the input was a video.
-        time (Optional[float]): The time in seconds it took to produce the predictions including image preprocessing.
-    """
-
-    model_config = ConfigDict(protected_namespaces=())
-    inference_id: Optional[str] = Field(
-        description="Unique identifier of inference", default=None
-    )
-    frame_id: Optional[int] = Field(
-        default=None,
-        description="The frame id of the image used in inference if the input was a video",
-    )
-    time: Optional[float] = Field(
-        default=None,
-        description="The time in seconds it took to produce the predictions including image preprocessing",
-    )
-
-
-class CvInferenceResponse(InferenceResponse):
-    """Computer Vision inference response.
-
-    Attributes:
-        image (Union[List[inference.core.entities.responses.inference.InferenceResponseImage], inference.core.entities.responses.inference.InferenceResponseImage]): Image(s) used in inference.
-    """
-
-    image: Union[List[InferenceResponseImage], InferenceResponseImage]
-
-
-class WithVisualizationResponse(BaseModel):
-    """Response with visualization.
-
-    Attributes:
-        visualization (Optional[Any]): Base64 encoded string containing prediction visualization image data.
-    """
-
-    visualization: Optional[Any] = Field(
-        default=None,
-        description="Base64 encoded string containing prediction visualization image data",
-    )
-
-    @field_serializer("visualization", when_used="json")
-    def serialize_visualisation(self, visualization: Optional[Any]) -> Optional[str]:
-        if visualization is None:
-            return None
-        return base64.b64encode(visualization).decode("utf-8")
-
-
 class ObjectDetectionInferenceResponse(CvInferenceResponse, WithVisualizationResponse):
     """Object Detection inference response.
 
@@ -256,21 +187,107 @@ class KeypointsDetectionInferenceResponse(
     predictions: List[KeypointsPrediction]
 
 
-class InstanceSegmentationInferenceResponse(
-    CvInferenceResponse, WithVisualizationResponse
-):
-    """Instance Segmentation inference response.
+# Dataclass twins used on the workflow-local fast path in
+# `InferenceModelsInstanceSegmentationAdapter.postprocess` when
+# `kwargs["source"] == "workflow-execution"`. The workflow block consumes
+# a plain dict via `_is_response_dc_to_dict` and never needs the pydantic
+# interface. HTTP / cache / visualization paths still receive the pydantic
+# `InstanceSegmentationInferenceResponse` because they use
+# `source != "workflow-execution"`.
+@dataclass(slots=True)
+class PointDC:
+    x: float
+    y: float
 
-    Attributes:
-        predictions (List[Union[
-            inference.core.entities.responses.inference.InstanceSegmentationPrediction,
-            inference.core.entities.responses.inference.InstanceSegmentationRLEPrediction
-        ]]): List of instance segmentation predictions.
-    """
 
-    predictions: List[
-        Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
-    ]
+@dataclass(slots=True)
+class InferenceResponseImageDC:
+    width: int
+    height: int
+
+
+@dataclass(slots=True)
+class InstanceSegmentationPredictionDC:
+    x: float
+    y: float
+    width: float
+    height: float
+    confidence: float
+    class_name: str  # serialized as "class" in the dict form
+    class_id: int
+    points: list  # list[PointDC]
+    mask_format: Literal["polygon"] = "polygon"
+    detection_id: str = field(default_factory=lambda: str(uuid4()))
+    parent_id: object = None
+    class_confidence: object = None
+
+
+@dataclass(slots=True)
+class InstanceSegmentationInferenceResponseDC:
+    predictions: list  # list[InstanceSegmentationPredictionDC]
+    image: InferenceResponseImageDC
+    # `Model.infer_from_request` assigns .time and .inference_id after
+    # construction (see inference/core/models/base.py:154-157); they're
+    # declared here so the slotted dataclass permits the reassignment.
+    inference_id: object = None
+    frame_id: object = None
+    time: object = None
+    visualization: object = None
+    resolved_model: Optional[ResolvedModel] = None
+    # Internal stream-pipeline fast path: lets workflow execution carry a
+    # response future through Model.infer_from_request without blocking the
+    # inference thread. `_is_response_dc_to_dict` intentionally ignores it.
+    _async_response_future: object = None
+    _async_response_context_id: object = None
+
+    def to_dict(self) -> dict:
+        """Public form of `_is_response_dc_to_dict`.
+
+        The workflow instance-segmentation block and the workflows models
+        provider duck-type this so they do not import a private symbol across
+        the package boundary.
+        """
+        return _is_response_dc_to_dict(self)
+
+
+def _is_pred_dc_to_dict(p: InstanceSegmentationPredictionDC) -> dict:
+    """Bit-equivalent to `InstanceSegmentationPrediction(...).model_dump(by_alias=True, exclude_none=True)`."""
+    d = {
+        "x": p.x,
+        "y": p.y,
+        "width": p.width,
+        "height": p.height,
+        "confidence": p.confidence,
+        "class": p.class_name,  # alias
+        "class_id": p.class_id,
+        "detection_id": p.detection_id,
+        "points": [{"x": pt.x, "y": pt.y} for pt in p.points],
+        "mask_format": p.mask_format,
+    }
+    if p.class_confidence is not None:
+        d["class_confidence"] = p.class_confidence
+    if p.parent_id is not None:
+        d["parent_id"] = p.parent_id
+    return d
+
+
+def _is_response_dc_to_dict(r: InstanceSegmentationInferenceResponseDC) -> dict:
+    """Bit-equivalent to `InstanceSegmentationInferenceResponse(...).model_dump(by_alias=True, exclude_none=True)`."""
+    d = {
+        "image": {"width": r.image.width, "height": r.image.height},
+        "predictions": [_is_pred_dc_to_dict(p) for p in r.predictions],
+    }
+    if r.inference_id is not None:
+        d["inference_id"] = r.inference_id
+    if r.frame_id is not None:
+        d["frame_id"] = r.frame_id
+    if r.time is not None:
+        d["time"] = r.time
+    if r.visualization is not None:
+        d["visualization"] = r.visualization
+    if r.resolved_model is not None:
+        d["resolved_model"] = r.resolved_model.model_dump()
+    return d
 
 
 class SemanticSegmentationInferenceResponse(
@@ -305,6 +322,20 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     parent_id: Optional[str] = Field(
         description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
         default=None,
+    )
+
+
+class AnomalyDetectionResponse(ClassificationInferenceResponse):
+    anomaly_score: float = Field(
+        description="Raw anomaly score; larger means more anomalous"
+    )
+    anomaly_threshold: float = Field(
+        description="Decision threshold fitted on validation images"
+    )
+    is_anomalous: bool
+    anomaly_map: Optional[List[List[float]]] = Field(
+        default=None,
+        description="Raw local anomaly evidence in original image coordinates",
     )
 
 
@@ -349,18 +380,34 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
     landmarks: Union[List[Point], List[Point3D]]
 
 
-class DepthEstimationResponse(BaseModel):
+class DepthEstimationResponse(InferenceResponse):
     """Response for depth estimation inference.
 
     Attributes:
-        normalized_depth (List[List[float]]): The normalized depth map as a 2D array of floats between 0 and 1.
+        normalized_depth (Union[str, List[List[float]]]): The per-image normalized ordinal
+            depth map as a 2D array of floats between 0 and 1. Higher values
+            indicate nearer predictions.
+            serialized according to the request's `depth_map_format`: a 2D array of
+            floats between 0 and 1 (`json`, the default) or a base64 grayscale PNG
+            string (16-bit for `png16`, 8-bit for `png8`).
+        depth_map_format (Literal["json", "png16", "png8"]): The serialization
+            format used for `normalized_depth`.
         image (Optional[str]): Base64 encoded visualization of the depth map if visualize_predictions is True.
         time (float): The processing time in seconds.
         visualization (Optional[str]): Base64 encoded visualization of the depth map if visualize_predictions is True.
     """
 
-    normalized_depth: List[List[float]] = Field(
-        description="The normalized depth map as a 2D array of floats between 0 and 1"
+    normalized_depth: Union[str, List[List[float]]] = Field(
+        description="Per-image normalized ordinal depth as a 2D array of floats between "
+        "0 and 1, where 1 is nearest and 0 is farthest. Values are not "
+        "physical distances or directly comparable across images or model "
+        "families without calibration. The normalized depth map: a 2D array of floats between 0 and 1 "
+        "(`json` format, default) or a base64 grayscale PNG string (`png16`/`png8`), "
+        "per the request's `depth_map_format`"
+    )
+    depth_map_format: Literal["json", "png16", "png8"] = Field(
+        default="json",
+        description="The serialization format used for `normalized_depth`",
     )
     image: Optional[str] = Field(
         None,

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from inference_models.errors import (
@@ -16,6 +18,8 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCrop,
     TrainingInputSize,
     TRTConfig,
+    align_training_input_size_with_model,
+    ensure_input_size_within_limit,
     parse_class_names_file,
     parse_inference_config,
     parse_key_points_metadata,
@@ -525,3 +529,157 @@ def test_parse_inference_config_when_resize_mode_is_invalid(
             config_path=inference_config_valid_config,
             allowed_resize_modes={ResizeMode.LETTERBOX},
         )
+
+
+def _any_size_config(training_input_size, dynamic_spatial_size_supported: bool = True):
+    return {
+        "image_pre_processing": None,
+        "network_input": {
+            "training_input_size": training_input_size,
+            "dynamic_spatial_size_supported": dynamic_spatial_size_supported,
+            "dynamic_spatial_size_mode": {"type": "any-size"},
+            "color_mode": "rgb",
+            "resize_mode": "stretch",
+            "input_channels": 3,
+        },
+    }
+
+
+def test_parse_inference_config_accepts_no_training_input_size_for_any_size_model(
+    tmp_path,
+) -> None:
+    # what roboflow-train ships for a VLM fine-tuned on a version without a resize
+    config_path = tmp_path / "inference_config.json"
+    config_path.write_text(json.dumps(_any_size_config(None)))
+
+    result = parse_inference_config(
+        config_path=str(config_path), allowed_resize_modes={ResizeMode.STRETCH_TO}
+    )
+
+    assert result.network_input.training_input_size is None
+
+
+def test_parse_inference_config_rejects_no_training_input_size_for_fixed_size_model(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "inference_config.json"
+    config_path.write_text(
+        json.dumps(_any_size_config(None, dynamic_spatial_size_supported=False))
+    )
+
+    with pytest.raises(CorruptedModelPackageError):
+        parse_inference_config(
+            config_path=str(config_path), allowed_resize_modes={ResizeMode.STRETCH_TO}
+        )
+
+
+def test_parse_inference_config_rejects_unbounded_input_when_size_limit_is_set(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "inference_config.json"
+    config_path.write_text(json.dumps(_any_size_config(None)))
+
+    with pytest.raises(
+        ModelPackageRestrictedError,
+        match="does not declare a training input size",
+    ):
+        parse_inference_config(
+            config_path=str(config_path),
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+            max_allowed_input_size=1024,
+        )
+
+
+def _config_with_training_size(
+    height: int, width: int, dynamic_spatial_size_supported: bool = False
+) -> InferenceConfig:
+    return InferenceConfig.model_validate(
+        {
+            "network_input": {
+                "training_input_size": {"height": height, "width": width},
+                "dynamic_spatial_size_supported": dynamic_spatial_size_supported,
+                "dynamic_spatial_size_mode": (
+                    {"type": "pad-to-be-divisible", "value": 32}
+                    if dynamic_spatial_size_supported
+                    else None
+                ),
+                "color_mode": "rgb",
+                "resize_mode": "stretch",
+                "input_channels": 3,
+                "scaling_factor": 255,
+            }
+        }
+    )
+
+
+def test_align_training_input_size_with_model_uses_the_model_size() -> None:
+    config = _config_with_training_size(height=640, width=640)
+
+    aligned = align_training_input_size_with_model(
+        config, model_input_height=384, model_input_width=512
+    )
+
+    size = aligned.network_input.training_input_size
+    assert (size.height, size.width) == (384, 512)
+    assert config.network_input.training_input_size.height == 640
+
+
+def test_align_training_input_size_with_model_keeps_a_matching_config() -> None:
+    config = _config_with_training_size(height=384, width=384)
+
+    assert (
+        align_training_input_size_with_model(
+            config, model_input_height=384, model_input_width=384
+        )
+        is config
+    )
+
+
+def test_align_training_input_size_with_model_disables_spatial_overrides() -> None:
+    config = _config_with_training_size(
+        height=384, width=384, dynamic_spatial_size_supported=True
+    )
+
+    aligned = align_training_input_size_with_model(
+        config, model_input_height=384, model_input_width=384
+    )
+
+    assert aligned.network_input.dynamic_spatial_size_supported is False
+    assert aligned.network_input.dynamic_spatial_size_mode is None
+    assert config.network_input.dynamic_spatial_size_supported is True
+
+
+def test_align_training_input_size_with_model_sizes_an_any_size_config() -> None:
+    config = InferenceConfig.model_validate(
+        {
+            "network_input": {
+                "dynamic_spatial_size_supported": True,
+                "dynamic_spatial_size_mode": {"type": "any-size"},
+                "color_mode": "rgb",
+                "resize_mode": "stretch",
+                "input_channels": 3,
+            }
+        }
+    )
+
+    aligned = align_training_input_size_with_model(
+        config, model_input_height=384, model_input_width=384
+    )
+
+    size = aligned.network_input.training_input_size
+    assert (size.height, size.width) == (384, 384)
+    assert aligned.network_input.dynamic_spatial_size_supported is False
+
+
+@pytest.mark.parametrize(
+    "limit, should_raise",
+    [(None, False), (640, False), ((640, 700), False), (512, True), ((700, 600), True)],
+)
+def test_ensure_input_size_within_limit(limit, should_raise: bool) -> None:
+    config = _config_with_training_size(height=640, width=640)
+
+    if should_raise:
+        with pytest.raises(ModelPackageRestrictedError):
+            ensure_input_size_within_limit(config, max_allowed_input_size=limit)
+    else:
+        ensure_input_size_within_limit(config, max_allowed_input_size=limit)

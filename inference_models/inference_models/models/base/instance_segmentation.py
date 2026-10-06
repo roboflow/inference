@@ -1,6 +1,18 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, List, Literal, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Generic,
+    Iterator,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    Set,
+    Tuple,
+    Union,
+    runtime_checkable,
+)
 
 import numpy as np
 import supervision as sv
@@ -17,6 +29,109 @@ from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mas
 InstanceSegmentationMaskFormat = Literal["dense", "rle"]
 
 
+_MISSING = object()
+
+
+@runtime_checkable
+class InferenceFuture(Protocol):
+    """Future-like handle over an in-flight inference request.
+
+    The returned object lets a caller start a subsequent ``infer_async`` call
+    while the GPU is still executing the previous one. Calling ``result()``
+    materializes the post-processing result for that request; backends may
+    either block there or return a deferred result whose own consumers perform
+    the final CUDA synchronization. ``done()`` is a non-blocking probe of the
+    forward completion event.
+    """
+
+    def result(self) -> List["InstanceDetections"]: ...
+
+    def done(self) -> bool: ...
+
+
+class _DirectInferenceFuture:
+    """Concrete ``InferenceFuture`` backed by a single ``torch.cuda.Event``.
+
+    Holds the raw forward output plus the preprocessing metadata needed by
+    ``post_process``. The event is recorded on the stream that produced the
+    raw output. ``result()`` runs or returns the model's post-processing result;
+    optimized backends order post-processing with CUDA events and defer host
+    synchronization until CPU-visible tensors are copied. Post-process output is
+    memoised so ``result()`` may be called repeatedly.
+    """
+
+    # No __slots__: adapters attach per-request context through
+    # `models.base.async_handoff` so postprocess can rebuild the decode call
+    # for an older frame even when the original submit site had no metadata.
+    # The Future is short-lived, so the per-instance dict overhead is negligible.
+
+    def __init__(
+        self,
+        model: "InstanceSegmentationModel",
+        raw: Any,
+        meta: Any,
+        evt: Optional[torch.cuda.Event],
+        kwargs: dict,
+    ) -> None:
+        self._model = model
+        self._raw = raw
+        self._meta = meta
+        self._evt = evt
+        self._kwargs = kwargs
+        self._cached: Any = _MISSING
+
+    @property
+    def preprocess_metadata(self) -> Any:
+        """The metadata captured at ``pre_process`` time for this request."""
+        return self._meta
+
+    def done(self) -> bool:
+        if self._cached is not _MISSING:
+            return True
+        if self._evt is None:
+            return True
+        return self._evt.query()
+
+    def submit_gpu_work(self, meta: Any = None) -> None:
+        """Enqueue the ``post_process`` GPU work eagerly.
+
+        Under depth>=2 pipelining ``result()`` is intentionally delayed so the
+        source loop can prepare later frames. Without eager submission, the
+        postproc kernels are also delayed until that future is finalized,
+        leaving a bubble between the TensorRT produce event and postproc.
+
+        Calling ``submit_gpu_work`` from the adapter before it launches the
+        next frame's forward keeps the reused TRT outputs correct while moving
+        this host-side submission work out of the current frame's postprocess
+        call. The host still does not block here, and ``result()`` later
+        reuses the enqueued postproc result.
+
+        Idempotent: calling it once is enough; subsequent calls to
+        ``result()`` reuse the enqueued postproc result.
+        """
+        if self._cached is not _MISSING:
+            return
+        if meta is None:
+            meta = self._meta
+        else:
+            self._meta = meta
+        # `post_process` is expected to be non-blocking: it enqueues its
+        # CUDA kernels on a private stream and returns a handle/structure
+        # that the caller reads later. The host does NOT block here.
+        self._cached = self._model.post_process(self._raw, meta, **self._kwargs)
+
+    def result(self) -> List["InstanceDetections"]:
+        # No host sync here: post_process() enqueues its GPU work on a
+        # dedicated stream and uses stream.wait_event() internally to order
+        # itself after the forward stream. The final host sync happens where
+        # CPU-visible results are actually needed (DtoH copies in the adapter).
+        if self._cached is _MISSING:
+            self._cached = self._model.post_process(
+                self._raw, self._meta, **self._kwargs
+            )
+        return self._cached
+
+
 @dataclass
 class InstanceDetections:
     xyxy: torch.Tensor  # (n_boxes, 4)
@@ -29,6 +144,47 @@ class InstanceDetections:
     bboxes_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of bboxes
     )
+
+    def __len__(self) -> int:
+        return int(self.xyxy.shape[0])
+
+    def __iter__(self) -> Iterator[Tuple]:
+        """Iterates detections yielding 7-tuples:
+        (xyxy, mask, class_id, confidence, tracker_id, data, metadata)
+
+        - xyxy: torch.Tensor of shape (4,) - single bbox [x1, y1, x2, y2]
+        - mask: per-instance dense torch.Tensor of shape (H, W) or coco-representation
+            of RLE mask: {"size": (h, w), "counts": count}
+        - class_id: scalar tensor (0-dim)
+        - confidence: scalar tensor (0-dim)
+        - tracker_id: value of `bboxes_metadata[i]["tracker_id"]` or None
+        - data: per-detection dict (`bboxes_metadata[i]`, `{}` if not set)
+        - metadata: per-image dict (`image_metadata`, `{}` if not set)
+        """
+        bboxes_metadata = self.bboxes_metadata
+        if bboxes_metadata is None:
+            bboxes_metadata = [{} for _ in range(len(self))]
+        image_metadata = self.image_metadata or {}
+        for index in range(len(self)):
+            data = bboxes_metadata[index]
+            if self.mask is None:
+                selected_mask = None
+            elif isinstance(self.mask, InstancesRLEMasks):
+                selected_mask = {
+                    "size": list(self.mask.image_size),
+                    "counts": self.mask.masks[index],
+                }
+            else:
+                selected_mask = self.mask[index]
+            yield (
+                self.xyxy[index],
+                selected_mask,
+                self.class_id[index],
+                self.confidence[index],
+                data.get("tracker_id"),
+                data,
+                image_metadata,
+            )
 
     def to_supervision(self) -> sv.Detections:
         """Convert instance segmentation detections to Supervision Detections format.
@@ -108,14 +264,85 @@ class InstanceSegmentationModel(
     def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
         pass
 
+    @property
+    def supports_stream_pipeline(self) -> bool:
+        """Whether this model can safely use adapter-level stream pipelining.
+
+        The default async future only defers ``post_process`` to ``result()`` and
+        does not guarantee the non-blocking deferred GPU handoff that the stream
+        adapter relies on for depth>1 scheduling. Models that implement that
+        contract, such as RF-DETR TensorRT with CUDA graph output handoff, opt in
+        by overriding this property.
+        """
+        return False
+
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs,
     ) -> List[InstanceDetections]:
+        # Synchronous direct path: pre_process → forward → post_process in
+        # sequence, with no per-call output cloning. The async variant
+        # (``infer_async``) exists for pipelined callers that need to
+        # submit frame N+1 before frame N's output buffers have been read
+        # — cloning makes those callers safe. Here, ``post_process``
+        # consumes the raw forward output immediately, so no clone is
+        # needed and we avoid the ~80µs of DtoD copies on the inference
+        # stream. This keeps the ``infer()`` entry point at maximum
+        # throughput for single-thread, single-model users.
         pre_processed_images, pre_processing_meta = self.pre_process(images, **kwargs)
         model_results = self.forward(pre_processed_images, **kwargs)
         return self.post_process(model_results, pre_processing_meta, **kwargs)
+
+    def infer_async(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> InferenceFuture:
+        """Submit an inference request and return a future.
+
+        The default implementation performs ``pre_process`` and ``forward``
+        synchronously, records a CUDA event on the current stream, and defers
+        ``post_process`` until ``result()`` is called on the returned future.
+        Subclasses that run ``forward`` on a dedicated stream should override
+        this to record the event on that stream (see the TRT model).
+        """
+        pre_processed_images, pre_processing_meta = self.pre_process(images, **kwargs)
+        return self.forward_async(pre_processed_images, pre_processing_meta, **kwargs)
+
+    def forward_async(
+        self,
+        pre_processed_images: PreprocessedInputs,
+        pre_processing_meta: PreprocessingMetadata,
+        **kwargs,
+    ) -> InferenceFuture:
+        """Run ``forward`` only and return a future pinned to that launch.
+
+        Separating this from ``infer_async`` lets the adapter interleave
+        preprocessing for frame N+1 with the forward pass for frame N on a
+        dedicated stream while holding a future whose ``result()`` will
+        decode frame N once its outputs are ready.
+        """
+        model_results = self.forward(pre_processed_images, **kwargs)
+        # Prefer a produce-event already recorded on the forward stream (eg.
+        # the TRT graph stream) so `done()` reflects true GPU completion
+        # without straddling a stream boundary. Fall back to recording on
+        # the current stream for models that don't expose one.
+        evt: Optional[torch.cuda.Event] = None
+        first = (
+            model_results[0]
+            if isinstance(model_results, (tuple, list))
+            else model_results
+        )
+        existing = getattr(first, "_trt_produce_event", None)
+        if existing is not None:
+            evt = existing
+        elif torch.cuda.is_available():
+            evt = torch.cuda.Event()
+            evt.record()
+        return _DirectInferenceFuture(
+            self, model_results, pre_processing_meta, evt, kwargs
+        )
 
     @abstractmethod
     def pre_process(

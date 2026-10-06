@@ -1,7 +1,10 @@
 import importlib
 import os
 import sys
+from threading import RLock
 from typing import Any, Callable, Optional
+
+_IMPORT_FROM_FILE_LOCK = RLock()
 
 
 class LazyClass:
@@ -44,23 +47,33 @@ def import_class_from_file(
     module_dir = os.path.dirname(file_path)
     parent_dir = os.path.dirname(module_dir)
 
-    sys.path.insert(0, parent_dir)
+    # sys.path and sys.dont_write_bytecode are process-global. Serialize their
+    # temporary mutation so concurrent model loads cannot restore either value
+    # out of order. RLock keeps recursive package-local imports safe.
+    with _IMPORT_FROM_FILE_LOCK:
+        sys.path.insert(0, parent_dir)
+        # Package-local modules live inside the model cache. Writing bytecode there
+        # leaves undeclared `__pycache__` entries that fail post-init package-layout
+        # validation for models such as moondream2.
+        previous_dont_write_bytecode = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True
 
-    try:
-        spec = importlib.util.spec_from_file_location(module_name, file_path)
-        module = importlib.util.module_from_spec(spec)
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            module = importlib.util.module_from_spec(spec)
 
-        # Manually set the __package__ attribute to the parent package
-        module.__package__ = os.path.basename(module_dir)
+            # Manually set the __package__ attribute to the parent package
+            module.__package__ = os.path.basename(module_dir)
 
-        # Register in sys.modules so that transformers 5.x can look up the module
-        # (e.g. PreTrainedModel._can_set_experts_implementation uses sys.modules[cls.__module__]).
-        sys.modules[module_name] = module
+            # Register in sys.modules so that transformers 5.x can look up the module
+            # (e.g. PreTrainedModel._can_set_experts_implementation uses sys.modules[cls.__module__]).
+            sys.modules[module_name] = module
 
-        spec.loader.exec_module(module)
-        cls = getattr(module, class_name)
-        if alias_name:
-            globals()[alias_name] = cls
-        return cls
-    finally:
-        sys.path.pop(0)
+            spec.loader.exec_module(module)
+            cls = getattr(module, class_name)
+            if alias_name:
+                globals()[alias_name] = cls
+            return cls
+        finally:
+            sys.dont_write_bytecode = previous_dont_write_bytecode
+            sys.path.pop(0)

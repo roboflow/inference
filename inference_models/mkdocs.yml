@@ -25,6 +25,9 @@ extra:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
+
 nav:
   - Home: index.md
   - Getting Started:
@@ -60,11 +63,14 @@ nav:
           - ResNet: models/resnet-classification.md
           - ViT: models/vit-classification.md
           - DINOv3: models/dinov3-classification.md
+          - PatchCore: models/patchcore-anomaly-detection.md
+          - FoundAD: models/foundad-anomaly-detection.md
       - OCR:
           - DocTR: models/doctr.md
           - EasyOCR: models/easyocr.md
           - TrOCR: models/trocr.md
           - GLM-OCR: models/glm-ocr.md
+          - PP-OCRv6: models/pp-ocrv6.md
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md
@@ -73,23 +79,30 @@ nav:
           - SAM: models/sam-interactive-segmentation.md
           - SAM2: models/sam2-interactive-segmentation.md
           - SAM2 RT: models/sam2-rt-video-tracking.md
+          - SAM3 Video: models/sam3-video-concept-tracking.md
       - Vision-Language Models:
           - Florence-2: models/florence2.md
           - Gemma 4: models/gemma4.md
+          - Mage-VL: models/mage-vl.md
           - PaliGemma: models/paligemma.md
           - Qwen2.5-VL: models/qwen25vl.md
           - Qwen3-VL: models/qwen3vl.md
+          - Qwen3.5: models/qwen35.md
+          - Qwen3.8: models/qwen38.md
           - SmolVLM: models/smolvlm.md
           - Moondream2: models/moondream2.md
+          - Cosmos 3 Edge: models/cosmos3.md
       - Embeddings:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md
       - Semantic Segmentation:
+          - YOLO26: models/yolo26-semantic-segmentation.md
           - DeepLabV3+: models/deeplabv3plus.md
       - Open-Vocabulary Object Detection:
           - Grounding DINO: models/grounding-dino.md
           - OWLv2: models/owlv2.md
       - Depth Estimation:
+          - YOLO26: models/yolo26-depth-estimation.md
           - Depth Anything V2: models/depth-anything-v2.md
           - Depth Anything V3: models/depth-anything-v3.md
       - Gaze Detection:
@@ -108,6 +121,9 @@ nav:
   - Contributors:
       - Development Environment: contributors/dev-environment.md
       - Core Architecture: contributors/core-architecture.md
+      - Inference-Path Optimization Architecture:
+          - Component Overview: contributors/inference-path-optimization-architecture.md
+          - RF-DETR Integration: contributors/inference-path-optimization-architectures/rfdetr.md
       - Dependencies and Backends: contributors/dependencies-and-backends.md
       - Adding a Model: contributors/adding-model.md
       - Writing Tests: contributors/writing-tests.md
@@ -141,6 +157,7 @@ nav:
                   - use_cuda_context: api-reference/developer-tools/cuda/use-cuda-context.md
               - ONNX:
                   - set_onnx_execution_provider_defaults: api-reference/developer-tools/onnx/set-onnx-execution-provider-defaults.md
+                  - align_device_with_onnx_session: api-reference/developer-tools/onnx/align-device-with-onnx-session.md
                   - run_onnx_session_with_batch_size_limit: api-reference/developer-tools/onnx/run-onnx-session-with-batch-size-limit.md
                   - run_onnx_session_via_iobinding: api-reference/developer-tools/onnx/run-onnx-session-via-iobinding.md
               - PyTorch:
@@ -236,9 +253,12 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - toc:
       permalink: true
-

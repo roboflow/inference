@@ -3,6 +3,10 @@ from typing import Callable, Dict, Optional
 from inference_models.errors import ModelRetrievalError
 from inference_models.weights_providers.entities import ModelMetadata
 from inference_models.weights_providers.roboflow import get_roboflow_model
+from inference_models.weights_providers.roboflow_offline import (
+    ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER,
+    get_roboflow_offline_weights,
+)
 
 ModelId = str
 ApiKey = Optional[str]
@@ -10,7 +14,11 @@ WeightsProvider = Callable[[ModelId, ApiKey, ...], ModelMetadata]
 
 WEIGHTS_PROVIDERS: Dict[str, WeightsProvider] = {  # type: ignore
     "roboflow": get_roboflow_model,
+    ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER: get_roboflow_offline_weights,
 }
+_RESERVED_WEIGHTS_PROVIDER_NAMES = frozenset(
+    {"roboflow", ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER}
+)
 
 
 def get_model_from_provider(
@@ -86,7 +94,8 @@ def get_model_from_provider(
             message=f"Requested model to be retrieved using '{provider}' provider which is not implemented.",
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
         )
-    return WEIGHTS_PROVIDERS[provider](model_id, api_key, **kwargs)
+    provider_handler = WEIGHTS_PROVIDERS[provider]
+    return provider_handler(model_id, api_key, **kwargs)
 
 
 def register_model_provider(
@@ -169,7 +178,7 @@ def register_model_provider(
 
     Note:
         - Provider handlers must return a `ModelMetadata` object
-        - The provider name must be unique (will override existing providers)
+        - Built-in provider names are reserved and cannot be overridden
         - Provider handlers should handle authentication and error cases
 
     See Also:
@@ -177,4 +186,18 @@ def register_model_provider(
         - `ModelMetadata`: Structure for model metadata
         - `ModelPackageMetadata`: Structure for package metadata
     """
+    if (
+        not isinstance(provider_name, str)
+        or not provider_name.strip()
+        or provider_name.casefold()
+        in {
+            reserved_name.casefold()
+            for reserved_name in _RESERVED_WEIGHTS_PROVIDER_NAMES
+        }
+    ):
+        raise ValueError(
+            f"Weights provider name {provider_name!r} is empty or reserved."
+        )
+    if not callable(provider_handler):
+        raise TypeError("Weights provider handler must be callable.")
     WEIGHTS_PROVIDERS[provider_name] = provider_handler

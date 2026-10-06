@@ -1,7 +1,7 @@
 import gc
 from collections import deque
 from threading import Lock
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
@@ -11,6 +11,7 @@ from inference.core.env import (
     HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT,
     MEMORY_FREE_THRESHOLD,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
@@ -21,6 +22,7 @@ from inference.core.managers.base import Model, ModelManager, acquire_with_timeo
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import request_model_ids
+from inference.core.models.embeddings import model_cache_key
 from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
@@ -58,6 +60,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        required_capabilities: Optional[List[str]] = None,
+        output_type: str = "feature_vector",
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
@@ -66,7 +70,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=api_key,
                 model_id=model_id,
@@ -81,6 +85,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         queue_id = self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias
         )
+        queue_id = model_cache_key(queue_id, required_capabilities, output_type)
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
             ids_collector.add(queue_id)
@@ -164,6 +169,14 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 endpoint_type=endpoint_type,
                 countinference=countinference,
                 service_secret=service_secret,
+                **(
+                    {
+                        "required_capabilities": required_capabilities,
+                        "output_type": output_type,
+                    }
+                    if required_capabilities
+                    else {}
+                ),
             )
         except Exception as error:
             logger.debug(
@@ -224,6 +237,25 @@ class WithFixedSizeCache(ModelManagerDecorator):
         """
         self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().infer_from_request_sync(model_id, request, **kwargs)
+
+    def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        self._refresh_model_position_in_a_queue(model_id=model_id)
+        return super().run_tensor_native_inference(model_id, **kwargs)
+
+    def run_tensor_native_embeddings(self, model_id: str, **kwargs) -> dict:
+        """Generate embeddings and keep the active model in the cache.
+
+        Args:
+            model_id: Capability-specific model registration key.
+            **kwargs: Native images and embedding options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+        """
+        self._refresh_model_position_in_a_queue(model_id=model_id)
+        result = super().run_tensor_native_embeddings(model_id, **kwargs)
+
+        return result
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request and updates the cache.

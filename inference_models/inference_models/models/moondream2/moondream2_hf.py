@@ -68,6 +68,7 @@ class MoonDream2HF:
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "MoonDream2HF":
         if torch.mps.is_available():
@@ -95,7 +96,10 @@ class MoonDream2HF:
             self.post_init()
 
         model_class.__init__ = _patched_init
-        model = model_class.from_pretrained(model_name_or_path).to(device)
+        model = model_class.from_pretrained(
+            model_name_or_path,
+            local_files_only=local_files_only,
+        ).to(device)
         _recompute_non_persistent_buffers(model_name_or_path, model)
         return cls(model=model, device=device)
 

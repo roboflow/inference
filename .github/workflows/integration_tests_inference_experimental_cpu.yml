@@ -28,6 +28,14 @@ on:
           - '3.11'
           - '3.12'
 
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
 jobs:
   integration-tests-inference-models-cpu:
     name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
@@ -37,9 +45,9 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
         extras:
-          - { install: "onnx-cpu", marker: "onnx_extras", workers: "auto" }
+          - { install: "onnx-cpu,torch-cpu", marker: "onnx_extras", workers: "auto" }
           - { install: "torch-cpu", marker: "torch_models", workers: "2" }
     steps:
       - name: 🛎️ Checkout
@@ -53,6 +61,15 @@ jobs:
           key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
+      - name: 📦 Cache test assets
+        if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
+        uses: actions/cache@v5
+        with:
+          path: inference_models/tests/integration_tests/models/assets
+          # Keyed per marker (each downloads a different subset), not per Python version: assets are version-agnostic.
+          key: inference-models-test-assets-${{ matrix.extras.marker }}-${{ hashFiles('inference_models/tests/integration_tests/conftest.py', 'inference_models/tests/integration_tests/models/conftest.py') }}
+          restore-keys: |
+            inference-models-test-assets-${{ matrix.extras.marker }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         uses: actions/setup-python@v6

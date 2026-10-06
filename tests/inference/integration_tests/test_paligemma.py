@@ -3,6 +3,10 @@ import os
 import pytest
 import requests
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
 from tests.inference.integration_tests.regression_test import bool_env
 
 # Keep up to date with inference.models.aliases.PALIGEMMA_ALIASES
@@ -22,7 +26,10 @@ api_key = os.environ.get("melee_API_KEY")
 )
 @pytest.mark.parametrize("model_id", PALIGEMMA_ALIASES.keys())
 def test_paligemma_inference(
-    model_id: str, server_url: str, clean_loaded_models_every_test_fixture
+    model_id: str,
+    server_url: str,
+    auth_mode: str,
+    clean_loaded_models_every_test_fixture,
 ) -> None:
     # given
     payload = {
@@ -38,7 +45,8 @@ def test_paligemma_inference(
     # when
     response = requests.post(
         f"{server_url}/infer/lmm",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then
@@ -52,7 +60,9 @@ def test_paligemma_inference(
     or bool_env(os.getenv("SKIP_LMM_TEST", False)),
     reason="Skipping Paligemma test",
 )
-def test_paligemma_lora_inference(server_url: str, clean_loaded_models_fixture) -> None:
+def test_paligemma_lora_inference(
+    server_url: str, auth_mode: str, clean_loaded_models_fixture
+) -> None:
     # given
     payload = {
         "api_key": api_key,
@@ -67,7 +77,8 @@ def test_paligemma_lora_inference(server_url: str, clean_loaded_models_fixture) 
     # when
     response = requests.post(
         f"{server_url}/infer/lmm",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then

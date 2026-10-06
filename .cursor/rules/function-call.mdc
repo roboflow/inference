@@ -1,0 +1,36 @@
+---
+description: Python function definition and call style
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python Function And Call Style
+
+When a function has one obvious primary argument plus secondary configuration
+arguments, make the secondary arguments keyword-only with `*`.
+
+```python
+def profile_model(
+    model_path: str,
+    *,
+    device: str,
+    batch_size: int,
+) -> ProfileResult:
+    ...
+```
+
+When calling such functions, pass the primary argument positionally and pass
+keyword-only/configuration arguments with explicit names.
+
+```python
+profile_model(
+    model_path,
+    device=device,
+    batch_size=batch_size,
+)
+```
+
+For functions without a clear primary positional argument, prefer explicit
+keyword calls when passing through variables with matching names. Do not force
+this pattern when positional arguments are clearer for a small, well-known API
+or when matching an established third-party interface.

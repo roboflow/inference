@@ -8,6 +8,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
 jobs:
   unit-tests-inference-models:
     runs-on:
@@ -16,17 +24,10 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -38,10 +39,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
-          python -m uv pip install -e .[test] --python .venv
+          # Numerical embedding graph tests exercise the ONNX CPU backend.
+          python -m uv pip install -e .[torch-cpu,onnx-cpu,test,model-blob-cache] --python .venv
       - name: 🧪 Unit Tests
         timeout-minutes: 30
         working-directory: inference_models
         run: |
           source .venv/bin/activate
-          python -m pytest -n auto tests/unit_tests
+          python -m pytest -n auto -m "not gpu_only" tests/unit_tests
