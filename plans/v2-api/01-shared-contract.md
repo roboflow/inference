@@ -2,7 +2,7 @@
 
 **Author:** Damian Kosowski, with an agent-prepared draft for review.
 
-**Status:** Proposed plan. D2 records Damian's confirmed paths and permission to replace undeployed V2 behavior directly. D3 records the confirmed flat `outputs` list, a server-generated top-level `inference_id` per direct model inference batch, separate HTTP correlation through `X-Request-ID`, and optional client-provided per-image `source_id`. D2 and D3 are decided for this plan; D1 and D4–D6 remain open. This draft PR contains the plan only; it does not implement the API, schema catalogue or fixture suite.
+**Status:** Proposed plan. D2 records Damian's confirmed paths and permission to replace undeployed V2 behavior directly. D3 records the confirmed flat `outputs` list, a server-generated top-level `inference_id` per direct model inference batch, separate HTTP correlation through `X-Request-ID`, and optional client-provided per-image `source_id`. D2 and D3 are decided for this plan. D4 now records accepted defaults, conflict errors, effective-setting reporting and metadata omission, with output selection extracted to PR 15; remaining D4 request details and D1/D5/D6 remain open. This draft PR contains the plan only; it does not implement the API, schema catalogue or fixture suite.
 
 **Scope update:** PR 01 covers model and server contracts only. The new Workflows functionality is not yet included, as clarified by Damian. V2 Workflows routes, their route-specific contracts/schemas, executable fixtures and live direct-inference parity checks are offloaded to separate roadmap PRs 12 and 13 and are **on hold**. The design's shared input/result requirement still constrains the model contract; D3 reviews that requirement using illustrative examples. They do not block this plan or active model/server implementation. Resume that work only once the new functionality is included and the team explicitly agrees to resume.
 
@@ -20,7 +20,7 @@ PR 01 should establish the shared conventions, valid examples and a small offlin
 
 The integration branch was fetched while preparing this plan and still points to `3d45b8712cc428eb01b714f3609346be7c92acc4`. Design PR 2277 still points to `de634b98bac204c96caa98a15dd7559dded361d5`. This plan rechecks the model/server routers, dispatch, authentication middleware, error helper, detection response serializer and SDK version selection against that public revision. The D3 follow-up also checks the current PR 2277 preface/workflow proposal and the legacy workflow response entities, provider, execution wrapper and test expectations; it does not run a workflow.
 
-The [report][report] and [review follow-up][followup] retain their evidence snapshot at report-branch commit `6dcada6ace296522d4be9451f8764b81eb5c8411`. The [roadmap][roadmap] is pinned to `7707c3897f7a5c1b8dd5a795f29b9679a814a719`, including the Workflows hold, plain-language planning guidance and updated D2 pre-deployment compatibility decision and the D3 flat-result-list decision and shared-result design constraint. Discussion guidance remains the snapshot recorded in the follow-up: loading controls, score/decision separation, rich/compact distinction and V1 safeguard parity have support; naming, defaults, optional metadata and several policies remain open. This plan does not claim newer team agreement.
+The [report][report] and [review follow-up][followup] retain their evidence snapshot at report-branch commit `6dcada6ace296522d4be9451f8764b81eb5c8411`. The [roadmap][roadmap] is pinned to `a4be67c129e7137bd90bfa8e5219d3b5889c258f`, including the Workflows hold, plain-language planning guidance and updated D2 pre-deployment compatibility decision and the D3 flat-result-list decision and shared-result design constraint, plus the D4 decisions and separate output-selection follow-up PR 15. Discussion guidance remains the snapshot recorded in the follow-up: loading controls, score/decision separation, rich/compact distinction and V1 safeguard parity have support; naming, defaults, optional metadata and several policies remain open. This plan does not claim newer team agreement.
 
 The earlier private-runtime audit is contextual evidence only. No new private backend or deployed-client audit was performed for this shared-contract plan. The local SDK exposes V0/V1 selection, while server tests call experimental V2 paths. That search alone did not establish deployment status; Damian has now confirmed that V2 is not deployed and its existing integration tests can be adjusted. [SDK][sdk], [server integration tests][integration-tests]
 
@@ -140,7 +140,7 @@ Classification field names/threshold algorithms, exact loader options/cache iden
 
 ## 3. Decisions to make before writing the contract
 
-**D2 is decided by Damian for this plan:** use the proposed paths and replace existing V2 behavior directly because V2 is not deployed. Update affected integration tests; no old-V2 compatibility or migration layer is required. Assess loading/error-state listing in PR 02 planning, with the option to defer it further. **D3 shape and ID scope are also decided by Damian:** a flat `outputs` list without named wrappers or a `batch` key, and one `inference_id` per batch for a specific model inference, shared by that batch's results. The linked draft response example is incorrect. The direct response carries a server-generated `inference_id` at the top level; HTTP correlation uses `X-Request-ID`. A client-provided per-image `source_id` is echoed when supplied and omitted when absent; the server does not generate it. D3 is **Decided** for PR 01, including the metadata/parity boundaries below. D1 and D4–D6 remain **Open**. Review those remaining questions without reopening the chosen shape or ID scope. Record each answer and its discussion reference before turning examples into required behavior.
+**D2 is decided by Damian for this plan:** use the proposed paths and replace existing V2 behavior directly because V2 is not deployed. Update affected integration tests; no old-V2 compatibility or migration layer is required. Assess loading/error-state listing in PR 02 planning, with the option to defer it further. **D3 shape and ID scope are also decided by Damian:** a flat `outputs` list without named wrappers or a `batch` key, and one `inference_id` per batch for a specific model inference, shared by that batch's results. The linked draft response example is incorrect. The direct response carries a server-generated `inference_id` at the top level; HTTP correlation uses `X-Request-ID`. A client-provided per-image `source_id` is echoed when supplied and omitted when absent; the server does not generate it. D3 is **Decided** for PR 01, including the metadata/parity boundaries below. D4 has accepted decisions recorded below, while its remaining request details and D1/D5/D6 remain **Open**. Review those remaining questions without reopening the chosen shape or ID scope. Record each answer and its discussion reference before turning examples into required behavior.
 
 ### D1 Where should the contract live and how should we check it
 
@@ -362,9 +362,9 @@ Dashed paths are future Workflows work. Model-side schemas and illustrative inpu
 
 ### D4 Where do parameters go and which value wins
 
-**What we found:** The implementation defaults to compact, accepts a `style` alias, drops repeated values from some extra query parameters, and forwards some proposed HTTP controls to the model. The draft defaults to rich/JSON. Rich/compact support and visible effective thresholds have support; the exact rules are open. [Dispatch][dispatch], [follow-up][followup]
+**What we found:** The implementation defaults to compact, accepts a `style` alias, drops repeated values from some extra query parameters, and forwards some proposed HTTP controls to the model. The draft defaults to rich/JSON. The decisions below settle the defaults and effective-setting reporting rules; request details are identified separately. [Dispatch][dispatch], [follow-up][followup]
 
-**Recommendation:** Put model identity, optional package ID, `action`, response options in the URL query. The meaning or deferral of `requested_output` needs reassessment below. Put model inputs in the chosen input format. Use Bearer authentication in the header. Default to `response_style=rich` and `response_format=json`. Use `response_style` as the chosen control; retaining the experimental `style` alias is not required. PR 02 specifies the reserved loading controls.
+**Recommendation:** Put model identity, optional package ID, `action`, response options in the URL query. `requested_output` is extracted to follow-up PR 15 below. Put model inputs in the chosen input format. Use Bearer authentication in the header. The accepted defaults are `response_style=rich` and `response_format=json`. Use `response_style` as the chosen control; retaining the experimental `style` alias is not required. PR 02 specifies the reserved loading controls.
 
 For example, do not silently choose between these conflicting confidence values:
 
@@ -383,7 +383,7 @@ Content-Type: application/json
 }
 ```
 
-Proposed result: HTTP 400, using the existing general error code rather than defining a new code just for this example:
+Accepted conflict behavior: HTTP 400, illustrated with the existing general error code rather than a new code just for this example:
 
 ```json
 {
@@ -392,11 +392,39 @@ Proposed result: HTTP 400, using the existing general error code rather than def
 }
 ```
 
-Repeated singleton controls are errors too. **Output selection remains open:** the draft proposes repeatable `requested_output`, but the chosen model response has no named output slots. Decide whether a concrete model-side selection use case exists or defer this control. Do not interpret it as selecting batch positions or invent `predictions`/`embeddings` slots to justify it. While unsupported, it should be rejected explicitly rather than forwarded to the model or silently ignored. Declared list-valued model inputs and image batches are still allowed.
+**Confirmed D4 decisions (Damian, 2026-10-06):**
 
-The response should make agreed effective parameters visible, but their placement at envelope or result level remains open and must fit the flat result list. For example, if the caller omits a threshold and the model uses `0.5`, the reported value is `0.5`, not a copy of the absent request field. Family PRs decide which settings must be reported. Omit unavailable metadata and usage rather than inventing values or reporting unknown usage as zero. Use `null` only when the field's definition explains what it means. This applies to either response style; usage implementation remains separate.
+| Concern | Agreed behavior |
+|---|---|
+| Response defaults | Use `response_style=rich` and `response_format=json` when omitted. |
+| Conflicting values | Return an error instead of silently choosing a value, whether conflicts occur across query/body or in repeated single-value controls. |
+| Effective settings | Report the actual value used in the setting's standard response field, whether supplied by the client or resolved from a default. |
+| Unavailable metadata and usage | Omit unavailable values. Do not invent them or report unknown usage as zero. Use `null` only when the field definition gives it an explicit meaning. Apply this to rich and compact responses; usage implementation remains separate. |
+| Output selection | Extract `requested_output` to separate roadmap PR 15. Decide its contract and whether to introduce it during that PR's planning, including opportunities to avoid processing for unrequested output parts. |
 
-**Decision needed:** Accept rich/JSON defaults and errors for conflicting values? Decide the model-side need for `requested_output` and where effective settings belong without adding an output wrapper. Confirm the usage integration boundary before making those fields required.
+For singleton controls, `?response_style=rich&response_style=compact` is a conflict and must fail. Rejecting even identical duplicates such as `?response_style=rich&response_style=rich` remains a recommendation to settle with request normalization. Declared list-valued model inputs and image batches are still allowed.
+
+#### Effective settings use the same response fields
+
+Defaulting must not change where a client reads the effective setting. For a model whose default confidence threshold is `0.5`:
+
+| Request | Actual threshold used | Value in the standard effective-threshold response field |
+|---|---|---|
+| Threshold omitted | `0.5` | `0.5` |
+| Threshold explicitly set to `0.5` | `0.5` | `0.5`, at exactly the same location |
+| Threshold explicitly set to `0.3` | `0.3` | `0.3`, at exactly the same location |
+
+The field describes the configured threshold, not an individual prediction's confidence score. Family plans establish the reported settings and their standard schema locations. Do not create a separate `defaults` section, move defaulted values to another nesting level, or add an output wrapper just because the client omitted a parameter. Report resolved values, not merely an echo of the request. If an optional metadata value is unavailable, follow the omission rule above rather than fabricate it.
+
+#### Separate PR 15: output selection and avoiding work
+
+The original draft lists repeatable `requested_output` without a sufficiently concrete model-side selection contract. A flat result list does not inherently prevent selection of optional result components, but it does not define that behavior either. PR 15 will identify a concrete use case and decide what can be selected, how omitted selections behave, and which dependencies must still be computed.
+
+The value to investigate is avoiding output-specific work, not just deleting fields from an already completed response. For example, assess whether an unrequested mask representation can avoid construction/encoding while preserving requested results; do not assume this avoids shared model computation. Validate the processing reduction and measure representative benefit before deciding the final scope. The PR owns selection errors, discovery, and consistency across styles/transports, coordinated with affected family PRs. This is a separate follow-up, not a prerequisite for PR 01 or PR 05.
+
+Until supported, explicitly reject the reserved `requested_output` control rather than forward it to the model or silently ignore it. Do not interpret it as selecting batch positions or invent named `predictions`/`embeddings` wrappers. Workflow output selection remains in the held workflow work.
+
+**D4 status: Partly decided.** The defaults, conflict handling, effective-setting reporting, unavailable-metadata policy and PR 15 extraction above are accepted. Remaining request-contract details are parameter placement/normalization (including identical singleton duplicates), the exact multipart source-ID descriptor, query-format source-ID mapping and validation limits. Family plans own concrete effective-setting fields; usage remains an independent implementation workstream. Do not reopen the accepted reporting/omission rules when defining those fields.
 
 ### D5 Who can call each route and what should errors look like
 
@@ -524,13 +552,13 @@ After the decisions are recorded, author the following artifacts in this PR. The
 
 The fixture suite should cover all three input format skeletons, rich/compact response selection, singleton and multi-item model batches, typed empty model results, mixed present/absent source IDs, preserved inner detection/tensor structure, explicit unsupported-control behavior, optional metadata, common errors and discovery filters. Validate JSON inside multipart `inputs` with quoted `$part.<name>` references. Correct mask-example array lengths, but do not claim that a placeholder RLE object establishes the final mask contract.
 
-Schema validation alone is insufficient. Add focused semantic checks for a flat outer result list with no named wrappers or `batch` key, input/result-position preservation, checking that every schema reference resolves, filter behavior and parameter conflicts. Check that the direct response has one top-level `inference_id` for all image results, including empty results; a distinct executed batch has a distinct ID. Cover supplied/generated `X-Request-ID`, response-header echo, and repeated correlation values with independent inference IDs in later HTTP checks. Check exact per-image source-ID echo and omission for JSON and multipart inputs, including empty results, without server generation or `null` placeholders. Verify monitoring, dataset upload and custom metadata preserve the same batch inference identity; do not substitute `source_id` for `inference_id`. Include negative fixtures that demonstrate these checks fail for the intended reason. Validate schemas and resolve references offline; no remote schema retrieval. Maintain a route/access inventory covering the ten active model/server endpoints. Do not add old-V2 compatibility routes or claim that the planned routes exist at runtime yet. The six held Workflows routes require no route schemas or executable acceptance tests in PR 01. D3 includes an illustrative equivalent-input/result case to check the model contract against the original design principle.
+Schema validation alone is insufficient. Add focused semantic checks for a flat outer result list with no named wrappers or `batch` key, input/result-position preservation, checking that every schema reference resolves, filter behavior and parameter conflicts. Check rich/JSON defaults and that defaulted and explicitly supplied effective settings use the same response location; unavailable metadata/usage must be omitted, not replaced with zero or undefined `null` values. Check that the direct response has one top-level `inference_id` for all image results, including empty results; a distinct executed batch has a distinct ID. Cover supplied/generated `X-Request-ID`, response-header echo, and repeated correlation values with independent inference IDs in later HTTP checks. Check exact per-image source-ID echo and omission for JSON and multipart inputs, including empty results, without server generation or `null` placeholders. Verify monitoring, dataset upload and custom metadata preserve the same batch inference identity; do not substitute `source_id` for `inference_id`. Include negative fixtures that demonstrate these checks fail for the intended reason. Validate schemas and resolve references offline; no remote schema retrieval. Maintain a route/access inventory covering the ten active model/server endpoints. Do not add old-V2 compatibility routes or claim that the planned routes exist at runtime yet. The six held Workflows routes require no route schemas or executable acceptance tests in PR 01. D3 includes an illustrative equivalent-input/result case to check the model contract against the original design principle.
 
 Record the actual validation command when the tooling is implemented. Later feature PRs add live HTTP conformance tests against the same approved examples, plus real-model/backend evidence appropriate to their scope. Existing implementation tests and the earlier audit's passing checks are not substitutes for these new contract checks.
 
 ## 5. Sequencing and acceptance
 
-1. Review the recorded D2 and D3 decisions, then resolve D1 and D4–D6. Capture the contributor-owned recommendations and maintainer agreement using the [repository plan process](../../.github/implementation-plan-template.md), including the required discussion in `#discuss-inference-release` before substantial implementation. This draft does not send that message.
+1. Review the recorded D2/D3 and accepted D4 decisions, then resolve D1, the remaining D4 request details, and D5/D6. Capture the contributor-owned recommendations and maintainer agreement using the [repository plan process](../../.github/implementation-plan-template.md), including the required discussion in `#discuss-inference-release` before substantial implementation. This draft does not send that message.
 2. Reconcile the canonical documents and record agreed decisions. Check them against the roadmap so no later family decision is accidentally marked settled.
 3. Add the shared schemas, valid/invalid examples and offline checks. Review the examples as client contracts, not merely as test input.
 4. Verify reference integrity, fixture validity and semantic assertions; document the agreed V2 replacement behavior, V1 regression coverage and unresolved later-PR boundaries. Keep this PR draft until that review is complete.
@@ -538,7 +566,7 @@ Record the actual validation command when the tooling is implemented. Later feat
 
 Verification for this plan covers source/reference inspection, Markdown whitespace/link checks, parsing the illustrative JSON and Python, and checking diagrams against the described behavior. The diagrams have not been rendered in this check. No product code or runtime test was changed or executed. The plan is ready for decision review; the shared-contract deliverable itself is still pending.
 
-[roadmap]: https://github.com/roboflow/inference/blob/7707c3897f7a5c1b8dd5a795f29b9679a814a719/reports/v2-api-gap-2026-09-30/ROADMAP.md
+[roadmap]: https://github.com/roboflow/inference/blob/a4be67c129e7137bd90bfa8e5219d3b5889c258f/reports/v2-api-gap-2026-09-30/ROADMAP.md
 [report]: https://github.com/roboflow/inference/blob/6dcada6ace296522d4be9451f8764b81eb5c8411/reports/v2-api-gap-2026-09-30/REPORT.md
 [followup]: https://github.com/roboflow/inference/blob/6dcada6ace296522d4be9451f8764b81eb5c8411/reports/v2-api-gap-2026-09-30/REVIEW_COMMENT_FOLLOWUP.md
 [design-structure]: https://github.com/roboflow/inference/blob/de634b98bac204c96caa98a15dd7559dded361d5/design/00_inference_api_v2/01-general-api-structure.md
