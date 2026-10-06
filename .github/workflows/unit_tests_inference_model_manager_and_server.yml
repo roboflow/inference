@@ -10,6 +10,7 @@ on:
       - inference_model_manager/**
       - inference_server/**
       - workflows/**
+      - stream_vision/**
       - scripts/**
   push:
     branches: [main]
@@ -18,6 +19,7 @@ on:
       - inference_model_manager/**
       - inference_server/**
       - workflows/**
+      - stream_vision/**
       - scripts/**
   workflow_dispatch:
 
@@ -50,7 +52,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml', 'inference_model_manager/pyproject.toml', 'inference_server/pyproject.toml', 'workflows/pyproject.toml') }}
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml', 'inference_model_manager/pyproject.toml', 'inference_server/pyproject.toml', 'workflows/pyproject.toml', 'stream_vision/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
@@ -66,6 +68,7 @@ jobs:
           python -m uv pip install -e inference_models[test] --python .venv
           python -m uv pip install -e inference_model_manager[test] --python .venv
           python -m uv pip install -e workflows[test] --python .venv
+          python -m uv pip install -e stream_vision --python .venv
           python -m uv pip install -e inference_server[test,workflows] --python .venv
       - name: 🧪 Unit Tests of Inference Server
         timeout-minutes: 10
@@ -82,6 +85,7 @@ jobs:
           # [tool.uv.sources] does not apply and it would come from PyPI; install
           # the checkout first, as the full env above does.
           python -m uv pip install -e inference_models --python .venv-slim
+          python -m uv pip install -e stream_vision --python .venv-slim
           python -m uv pip install -e inference_server[test] --python .venv-slim
       - name: 🧪 Unit Tests of Inference Server (slim install guard)
         timeout-minutes: 10

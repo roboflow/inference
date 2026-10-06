@@ -1,9 +1,6 @@
 from typing import List, Type
 
-from roboflow_workflows._compat_names import (
-    to_historic_plugin_module,
-    to_legacy_module,
-)
+from roboflow_workflows._compat_names import to_historic_plugin_module, to_legacy_module
 from roboflow_workflows.configuration import get_configuration
 from roboflow_workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
