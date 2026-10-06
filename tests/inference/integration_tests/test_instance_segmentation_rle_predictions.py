@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+import pytest
 import requests
 import supervision as sv
 from numpy import ndarray
@@ -15,6 +16,73 @@ USE_INFERENCE_MODELS = os.getenv("USE_INFERENCE_MODELS", "false").lower() == "tr
 API_KEY = os.environ.get("API_KEY")
 PORT = os.environ.get("PORT", 9001)
 BASE_URL = os.environ.get("BASE_URL", "http://localhost")
+
+
+@pytest.mark.skipif(
+    not USE_INFERENCE_MODELS, reason="Resolution control uses inference-models"
+)
+@pytest.mark.parametrize("response_format", ["polygon", "rle"])
+@pytest.mark.parametrize(
+    "mode,factor", [("accurate", 1.0), ("tradeoff", 0.5), ("fast", 0.0)]
+)
+def test_mask_resolution_round_trip_through_server(
+    auth_mode: str, response_format: str, mode: str, factor: float
+) -> None:
+    payload = {
+        "image": {"type": "url", "value": "https://media.roboflow.com/dog.jpeg"},
+        "api_key": API_KEY,
+        "model_id": "yolov8n-seg-640",
+        "response_mask_format": response_format,
+        "mask_decode_mode": mode,
+        "tradeoff_factor": factor,
+    }
+    response = requests.post(
+        f"{BASE_URL}:{PORT}/infer/instance_segmentation",
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
+        timeout=120,
+    )
+    response.raise_for_status()
+    result = response.json()
+    detections = sv.Detections.from_inference(result)
+    height, width = result["image"]["height"], result["image"]["width"]
+    assert len(detections) > 0
+    assert all(
+        prediction["mask_format"] == response_format
+        for prediction in result["predictions"]
+    )
+    assert detections.mask.shape == (len(detections), height, width)
+    assert detections.mask.any()
+    sv.MaskAnnotator().annotate(
+        np.zeros((height, width, 3), dtype=np.uint8), detections
+    )
+
+    if response_format == "rle":
+        sizes = {
+            tuple(prediction["rle"]["size"]) for prediction in result["predictions"]
+        }
+        assert len(sizes) == 1
+        mask_height, mask_width = sizes.pop()
+        if mode == "accurate":
+            assert (mask_height, mask_width) == (height, width)
+        else:
+            assert mask_height < height and mask_width < width
+
+    reference_response = requests.post(
+        f"{BASE_URL}:{PORT}/infer/instance_segmentation",
+        json=without_api_key_in_header_mode(
+            auth_mode, {**payload, "mask_decode_mode": "accurate"}
+        ),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
+        timeout=120,
+    )
+    reference_response.raise_for_status()
+    reference = sv.Detections.from_inference(reference_response.json())
+    np.testing.assert_allclose(detections.xyxy, reference.xyxy, atol=1)
+    np.testing.assert_array_equal(detections.class_id, reference.class_id)
+    intersection = np.logical_and(detections.mask, reference.mask).sum(axis=(1, 2))
+    union = np.logical_or(detections.mask, reference.mask).sum(axis=(1, 2))
+    assert np.all(intersection / np.maximum(union, 1) > 0.8)
 
 
 def test_v1_endpoint_with_valid_payload(auth_mode: str) -> None:

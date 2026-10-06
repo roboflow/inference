@@ -69,7 +69,7 @@ def test_model_result_retains_image_dimensions(family, mask_format, offset) -> N
 
     result = results[0]
     assert result.image_size == (200, 300)
-    assert result.mask_frame_size == ((200, 300) if any(offset) else (100, 150))
+    assert result.mask_frame_size == (200, 300)
     converted = result.to_supervision()
     assert converted.mask.shape == (1, 200, 300)
     assert converted.mask[

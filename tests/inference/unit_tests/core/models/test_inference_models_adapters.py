@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+import supervision as sv
 import torch
 from pycocotools import mask as mask_utils
 
@@ -1100,43 +1101,12 @@ class TestRLEBackedPolygons:
         assert polygon[:, 1].max() <= 80
 
 
-def test_origin_anchored_crop_is_not_mistaken_for_a_reduced_grid() -> None:
-    # given
-    # a static crop at (0, 0) yields a mask smaller than the image, but its
-    # coordinates are already image-space. Inferring "reduced" from
-    # mask_size != image_size would scale them a second time.
-    adapter = _seg_adapter()
-    metadata = [
-        SimpleNamespace(
-            original_size=SimpleNamespace(width=16, height=16),
-            size_after_pre_processing=SimpleNamespace(width=8, height=8),
-        )
-    ]
-    mask = torch.zeros((1, 8, 8), dtype=torch.uint8)
-    mask[0, 2:6, 2:6] = 1
-    detections = [
-        InstanceDetections(
-            xyxy=torch.tensor([[2, 2, 6, 6]], dtype=torch.int32),
-            confidence=torch.tensor([0.9], dtype=torch.float32),
-            class_id=torch.tensor([0], dtype=torch.int32),
-            mask=mask,
-        )
-    ]
-
-    # when
-    responses = adapter._build_responses_from_detections(detections, metadata)
-
-    # then
-    # the mask already matches size_after_pre_processing, so no scaling
-    xs = [p.x for p in responses[0].predictions[0].points]
-    assert max(xs) <= 8, f"coordinates were scaled a second time: {xs}"
-
-
 @pytest.mark.parametrize("mask_format", ["dense", "rle"])
-@pytest.mark.parametrize("factor", [1.0, 0.0])
+@pytest.mark.parametrize("factor", [1.0, 0.5, 0.0])
 @pytest.mark.parametrize("offset", [(0, 0), (60, 40)])
-def test_crop_polygon_response_uses_the_frame_represented_by_mask(
-    mask_format: str, factor: float, offset: tuple
+@pytest.mark.parametrize("response_format", ["polygon", "rle"])
+def test_crop_response_uses_the_frame_represented_by_mask(
+    mask_format: str, factor: float, offset: tuple, response_format: str
 ) -> None:
     from inference_models.entities import ImageDimensions
     from inference_models.models.common.roboflow.model_packages import (
@@ -1198,15 +1168,31 @@ def test_crop_polygon_response_uses_the_frame_represented_by_mask(
     )
 
     response = _seg_adapter()._build_responses_from_detections(
-        [detections], [metadata]
+        [detections], [metadata], response_mask_format=response_format
     )[0]
+
+    if response_format == "rle":
+        converted = sv.Detections.from_inference(response.model_dump(by_alias=True))
+        expected = np.zeros((1, 200, 300), dtype=bool)
+        expected[:, 10 + offset_y : 50 + offset_y, 20 + offset_x : 80 + offset_x] = True
+        assert converted.mask.shape == expected.shape
+        np.testing.assert_allclose(
+            sv.mask_to_xyxy(converted.mask), sv.mask_to_xyxy(expected), atol=1
+        )
+        assert (
+            np.logical_and(converted.mask, expected).sum()
+            / np.logical_or(converted.mask, expected).sum()
+            > 0.95
+        )
+        sv.MaskAnnotator().annotate(np.zeros((200, 300, 3), dtype=np.uint8), converted)
+        return
 
     prediction = response.predictions[0]
     xs = [point.x for point in prediction.points]
     ys = [point.y for point in prediction.points]
     assert min(xs) == pytest.approx(20 + offset_x)
     assert min(ys) == pytest.approx(10 + offset_y)
-    pixel_size = 1 if factor == 1.0 else 5
+    pixel_size = 150 / round(30 * (1 - factor) + 150 * factor)
     assert max(xs) == pytest.approx(80 + offset_x - pixel_size)
     assert max(ys) == pytest.approx(50 + offset_y - pixel_size)
     assert prediction.x == pytest.approx(50 + offset_x)

@@ -445,14 +445,9 @@ def resolve_mask_frame_size(metadata: PreProcessingMetadata) -> ImageDimensions:
         metadata: Preprocessing transforms used to align the masks.
 
     Returns:
-        Original image dimensions for offset-crop canvases, or the crop
-        dimensions when alignment leaves masks anchored at the origin.
+        Original image dimensions, including for crops anchored at the origin.
     """
-    offset = getattr(metadata, "static_crop_offset", None)
-    if offset is not None and (offset.offset_x > 0 or offset.offset_y > 0):
-        return metadata.original_size
-
-    return metadata.size_after_pre_processing
+    return metadata.original_size
 
 
 def resolve_mask_target_size(
@@ -573,7 +568,11 @@ def align_instance_segmentation_results(
             masks_resolution_factor=masks_resolution_factor,
         )
         empty_height, empty_width = empty_target_height, empty_target_width
-        if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+        if (
+            static_crop_offset.offset_x > 0
+            or static_crop_offset.offset_y > 0
+            or size_after_pre_processing != original_size
+        ):
             height_scale = empty_target_height / size_after_pre_processing.height
             width_scale = empty_target_width / size_after_pre_processing.width
             empty_height = max(
@@ -665,7 +664,11 @@ def align_instance_segmentation_results(
             interpolation=functional.InterpolationMode.BILINEAR,
         ).gt_(binarization_threshold)
     masks = binarized_masks
-    if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+    if (
+        static_crop_offset.offset_x > 0
+        or static_crop_offset.offset_y > 0
+        or size_after_pre_processing != original_size
+    ):
         # the canvas keeps the mask grid's ratio to the image, so a reduced
         # factor shrinks the whole output rather than planting a small mask on
         # a full-size canvas; crop offsets move into the same space
@@ -763,7 +766,11 @@ def align_instance_segmentation_results_to_rle_masks(
     )
     image_bboxes[:, :4].div_(scale)
 
-    needs_canvas = static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0
+    needs_canvas = (
+        static_crop_offset.offset_x > 0
+        or static_crop_offset.offset_y > 0
+        or size_after_pre_processing != original_size
+    )
     if needs_canvas:
         static_crop_offsets = torch.as_tensor(
             [

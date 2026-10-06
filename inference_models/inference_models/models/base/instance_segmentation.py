@@ -140,8 +140,9 @@ class InstanceDetections:
     Attributes:
         image_size: Original image ``(height, width)``. Older callers may omit it.
         mask_size: Encoded mask grid ``(height, width)``.
-        mask_frame_size: Image-space extent represented by the mask grid. A crop
-            anchored at the origin may cover only the top-left of the image.
+        mask_frame_size: Image-space extent represented by the mask grid. Model
+            outputs cover the original image; manually constructed crop-local
+            masks may specify a smaller extent anchored at the origin.
     """
 
     xyxy: torch.Tensor  # (n_boxes, 4)

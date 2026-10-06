@@ -1461,7 +1461,7 @@ def test_empty_masks_match_populated_crop_canvas_after_rounding(offset: int) -> 
     )
 
     assert empty.shape[1:] == populated.shape[1:]
-    assert empty.shape[1:] == ((123, 123) if offset else (81, 81))
+    assert empty.shape[1:] == ((123, 123) if offset else (122, 122))
 
 
 @pytest.mark.parametrize(

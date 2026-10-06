@@ -9,7 +9,7 @@
   `0.0` leaves them on the model's own grid; values between interpolate the
   resize target. Threaded through all six instance-segmentation families on
   both the dense and RLE paths, and through the ONNX, TorchScript and TensorRT
-  backends, plus RF-DETR CoreML. Default output is unchanged.
+  backends, plus RF-DETR CoreML. Accurate mode remains the default.
 - `mask_size` on `InstanceDetections` and `InstancesRLEMasks`, recording the
   grid the masks live on. Each defaults to the value it effectively had before,
   so existing construction is unaffected.
@@ -36,8 +36,9 @@
 ### Fixed
 
 - Dense reduced masks now resize correctly in `to_supervision()`, including mask
-  annotation on the original image. Origin-anchored crop masks are padded to the
-  original image after resizing to the crop dimensions.
+  annotation on the original image. All static-crop masks, including crops at
+  the origin, are placed on an original-image canvas before dense or RLE output.
+  RLE consumers can therefore restore reduced masks without stretching the crop.
 - Polygon responses for static crops with non-zero offsets use the original
   image canvas as their coordinate frame, at full and reduced mask resolution.
 - RF-DETR CoreML now forwards `masks_resolution_factor` to post-processing.

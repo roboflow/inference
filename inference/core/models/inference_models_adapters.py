@@ -1035,13 +1035,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 xyxy = det.xyxy.detach().cpu().numpy()
                 confs = det.confidence.detach().cpu().numpy()
                 if isinstance(det.mask, torch.Tensor):
-                    masks = det.mask.detach().cpu().numpy()
+                    masks = det.mask.detach().cpu()
                     if return_in_rle:
                         polys_or_rles = [
                             torch_mask_to_coco_rle(mask=mask) for mask in masks
                         ]
                     else:
-                        polys_or_rles = masks2poly(masks)
+                        polys_or_rles = masks2poly(masks.numpy())
                 else:
                     if return_in_rle:
                         polys_or_rles = det.mask.to_coco_rle_masks()
@@ -1058,8 +1058,6 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             # reported; equal sizes short-circuit to a no-op. This also breaks
             # any view into the pinned scratch buffers noted above, since the
             # scaled polygons are freshly allocated.
-            # Offset crops are already on an original-image canvas; origin crops
-            # still cover only the cropped region.
             mask_size = getattr(det, "mask_size", None)
             produced_against = resolve_mask_frame_size(preproc_metadata)
             if (
