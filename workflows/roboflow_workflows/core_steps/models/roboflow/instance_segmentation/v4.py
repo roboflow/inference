@@ -355,10 +355,6 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned only where the fields were discarded. On the legacy
-            # backend they are honoured, so this version keeps passing them
-            # through and behaves exactly as it does today. @v5 forwards
-            # unconditionally.
             mask_decode_mode=("accurate" if USE_INFERENCE_MODELS else mask_decode_mode),
             tradeoff_factor=1.0 if USE_INFERENCE_MODELS else tradeoff_factor,
             response_mask_format="rle",
@@ -408,7 +404,6 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # The local backend flag does not identify the remote server.
             mask_decode_mode="accurate",
             tradeoff_factor=1.0,
             response_mask_format="rle",

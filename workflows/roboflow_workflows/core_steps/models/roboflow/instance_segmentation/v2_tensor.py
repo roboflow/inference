@@ -389,9 +389,6 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
                 class_filter=class_filter,
                 max_detections=max_detections,
                 max_candidates=max_candidates,
-                # Pinned: these fields never took effect in this version via the
-                # inference_models backend, so honouring them now would change
-                # existing workflows. @v5 forwards.
                 mask_decode_mode="accurate",
                 tradeoff_factor=1.0,
                 disable_active_learning=disable_active_learning,
@@ -467,10 +464,6 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Pinned unconditionally: the reason here is downstream, not the
-            # backend. Nothing under roboflow_workflows/ reads mask_size and
-            # the sites rebuilding InstancesRLEMasks drop it, so a reduced grid
-            # is reinterpreted as image-sized whichever backend produced it.
             mask_decode_mode="accurate",
             tradeoff_factor=1.0,
             response_mask_format="rle",

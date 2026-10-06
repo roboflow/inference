@@ -430,9 +430,6 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
                 class_filter=class_filter,
                 max_detections=max_detections,
                 max_candidates=max_candidates,
-                # Pinned: these fields never took effect in this version via the
-                # inference_models backend, so honouring them now would change
-                # existing workflows. @v5 forwards.
                 mask_decode_mode="accurate",
                 tradeoff_factor=1.0,
                 disable_active_learning=disable_active_learning,

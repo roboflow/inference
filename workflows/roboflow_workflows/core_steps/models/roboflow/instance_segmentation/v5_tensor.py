@@ -421,13 +421,6 @@ class RoboflowInstanceSegmentationModelBlockV5(WorkflowBlock):
                 class_filter=class_filter,
                 max_detections=max_detections,
                 max_candidates=max_candidates,
-                # Tensor-native mode does not support reduced mask resolution yet.
-                # Nothing under workflows/ reads InstanceDetections.mask_size, and the
-                # ~35 sites that rebuild InstancesRLEMasks drop it, so a reduced grid
-                # would be reinterpreted as image-sized downstream. Upsampling at this
-                # boundary would restore correctness but produce output identical to
-                # factor 1.0 at strictly higher cost, so the request is pinned instead.
-                # Lift this once mask_size is propagated through the tensor pipeline.
                 mask_decode_mode="accurate",
                 tradeoff_factor=1.0,
                 disable_active_learning=disable_active_learning,
@@ -499,13 +492,6 @@ class RoboflowInstanceSegmentationModelBlockV5(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            # Tensor-native mode does not support reduced mask resolution yet.
-            # Nothing under workflows/ reads InstanceDetections.mask_size, and the
-            # ~35 sites that rebuild InstancesRLEMasks drop it, so a reduced grid
-            # would be reinterpreted as image-sized downstream. Upsampling at this
-            # boundary would restore correctness but produce output identical to
-            # factor 1.0 at strictly higher cost, so the request is pinned instead.
-            # Lift this once mask_size is propagated through the tensor pipeline.
             mask_decode_mode="accurate",
             tradeoff_factor=1.0,
             response_mask_format="rle",
