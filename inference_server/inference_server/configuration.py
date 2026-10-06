@@ -144,6 +144,7 @@ DEVICE_ID = os.environ.get("DEVICE_ID")
 
 # ── Auth (auth.py) ────────────────────────────────────────────────────────
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.roboflow.com")
+API_PROXY_BASE_URL = os.environ.get("API_PROXY_BASE_URL", API_BASE_URL)
 AUTH_CACHE_TTL_S = get_integer_from_env("AUTH_CACHE_TTL_S", default=3600)
 AUTH_CACHE_FAIL_TTL_S = get_integer_from_env("AUTH_CACHE_FAIL_TTL_S", default=60)
 AUTH_CACHE_MAX_SIZE = get_integer_from_env("AUTH_CACHE_MAX_SIZE", default=10000)

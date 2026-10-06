@@ -803,3 +803,65 @@ def test_local_workflow_response_missing_file(monkeypatch, tmp_path):
     monkeypatch.setattr(configuration, "MODEL_CACHE_DIR", str(tmp_path))
     with pytest.raises(FileNotFoundError):
         host._local_workflow_response("wf")
+
+
+@pytest.mark.parametrize(
+    "endpoint", ["apiproxy/gemini", "/api-proxy/x", "apiproxy", "api-proxy/"]
+)
+def test_platform_client_post_sends_proxy_endpoints_to_the_proxy_base_url(
+    monkeypatch, endpoint
+):
+    from inference_server import configuration
+
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr(configuration, "API_BASE_URL", "https://api.example.com")
+    monkeypatch.setattr(
+        configuration, "API_PROXY_BASE_URL", "https://proxy.example.com/"
+    )
+    with rm.Mocker() as m:
+        m.post(rm.ANY, json={})
+        host.PLATFORM_CLIENT.post(endpoint, api_key="k")
+        assert m.last_request.url.startswith(
+            f"https://proxy.example.com/{endpoint.strip('/')}?"
+        )
+
+
+@pytest.mark.parametrize(
+    "endpoint", ["dataset/abc/upload", "apiproxyfoo", "x/apiproxy/y", "x/api-proxy"]
+)
+def test_platform_client_post_keeps_other_endpoints_on_the_api_base_url(
+    monkeypatch, endpoint
+):
+    from inference_server import configuration
+
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr(configuration, "API_BASE_URL", "https://api.example.com")
+    monkeypatch.setattr(
+        configuration, "API_PROXY_BASE_URL", "https://proxy.example.com"
+    )
+    with rm.Mocker() as m:
+        m.post(rm.ANY, json={})
+        host.PLATFORM_CLIENT.post(endpoint, api_key="k")
+        assert m.last_request.url.startswith(f"https://api.example.com/{endpoint}?")
+
+
+def test_api_proxy_base_url_defaults_to_the_api_base_url():
+    env = {
+        key: value for key, value in os.environ.items() if key != "API_PROXY_BASE_URL"
+    }
+    env["API_BASE_URL"] = "https://api.example.com"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from inference_server import configuration;"
+            "print(configuration.API_PROXY_BASE_URL)",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "https://api.example.com"

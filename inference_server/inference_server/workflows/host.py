@@ -47,6 +47,7 @@ from inference_server import configuration
 logger = logging.getLogger(__name__)
 
 _ALLOWED_API_KEY_TRANSPORTS = ("legacy", "both", "header")
+_API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 _API_KEY_PATTERN = re.compile(r"api_key=(.[^&]*)")
 _MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
 
@@ -700,6 +701,18 @@ def _records_api_call(function_name: str) -> Callable:
     return decorator
 
 
+def _api_base_url_for_endpoint(endpoint: str) -> str:
+    """Return the platform base URL serving ``endpoint``, proxy prefixes included."""
+    normalized_endpoint = endpoint.strip("/")
+    for prefix in _API_PROXY_ENDPOINT_PREFIXES:
+        if normalized_endpoint == prefix or normalized_endpoint.startswith(
+            f"{prefix}/"
+        ):
+            return configuration.API_PROXY_BASE_URL
+
+    return configuration.API_BASE_URL
+
+
 def _api_url(path: str) -> str:
     return f"{configuration.API_BASE_URL.rstrip('/')}/{path}"
 
@@ -740,8 +753,9 @@ class ServerRoboflowPlatformClient:
             url_params.append(("api_key", api_key))
         if params:
             url_params.extend(params)
+        base_url = _api_base_url_for_endpoint(endpoint)
         url = _add_params_to_url(
-            url=f"{configuration.API_BASE_URL.rstrip('/')}/{endpoint.strip('/')}",
+            url=f"{base_url.rstrip('/')}/{endpoint.strip('/')}",
             params=url_params,
         )
         try:
