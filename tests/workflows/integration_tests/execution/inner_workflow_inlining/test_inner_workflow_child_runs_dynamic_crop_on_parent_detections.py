@@ -146,9 +146,9 @@ def _flat_workflow() -> dict:
 
 def _assert_crop_predictions_equal(crop_preds: list) -> None:
     expected = [
-        ("mock-d0", "x", 0, 0.99, [0, 0, 60, 60]),
-        ("mock-d1", "y", 1, 0.95, [0, 0, 80, 80]),
-        ("mock-d2", "z", 2, 0.90, [0, 0, 100, 100]),
+        ("mock-d0", "x", 0, 0.99, [30, 30, 90, 90]),
+        ("mock-d1", "y", 1, 0.95, [210, 20, 290, 100]),
+        ("mock-d2", "z", 2, 0.90, [400, 10, 500, 110]),
     ]
     assert isinstance(crop_preds, list)
     assert len(crop_preds) == 3
@@ -232,9 +232,9 @@ def _assert_crop_predictions_equal_native(crop_preds: list) -> None:
     # Native parity of _assert_crop_predictions_equal: Detections has no __getitem__,
     # so detection_id reads from bboxes_metadata and class_name from image_metadata.
     expected = [
-        ("mock-d0", "x", 0, 0.99, [0, 0, 60, 60]),
-        ("mock-d1", "y", 1, 0.95, [0, 0, 80, 80]),
-        ("mock-d2", "z", 2, 0.90, [0, 0, 100, 100]),
+        ("mock-d0", "x", 0, 0.99, [30, 30, 90, 90]),
+        ("mock-d1", "y", 1, 0.95, [210, 20, 290, 100]),
+        ("mock-d2", "z", 2, 0.90, [400, 10, 500, 110]),
     ]
     assert isinstance(crop_preds, list)
     assert len(crop_preds) == 3

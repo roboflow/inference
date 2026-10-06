@@ -16,6 +16,14 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- Dynamic Crop now updates the image dimensions and parent/root coordinates of
+  its forwarded predictions in both NumPy and tensor-native modes. Returning
+  those predictions in root-image coordinates, including after nested crops,
+  preserves their original location, and Detection Offset clips them to the
+  actual crop dimensions.
+
 ## `0.2.4`
 
 Bundled execution engine: `1.16.1`.
