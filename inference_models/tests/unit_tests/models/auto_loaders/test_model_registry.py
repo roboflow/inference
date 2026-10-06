@@ -286,3 +286,24 @@ def test_model_implementation_exists_for_rfdetr_coreml_packages_with_model_featu
 
     # then
     assert result is True
+
+
+@pytest.mark.parametrize(
+    "backend, class_name",
+    [
+        (BackendType.TORCH, "RFDetrForSemanticSegmentationTorch"),
+        (BackendType.ONNX, "RFDetrForSemanticSegmentationOnnx"),
+    ],
+)
+def test_rfdetr_semantic_segmentation_resolves_per_backend(
+    backend: BackendType, class_name: str
+) -> None:
+    # when
+    cls = resolve_model_class(
+        model_architecture="rfdetr",
+        task_type="semantic-segmentation",
+        backend=backend,
+    )
+
+    # then
+    assert cls.__name__ == class_name

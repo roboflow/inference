@@ -12,6 +12,9 @@ from torch import Tensor, nn
 from inference_models.models.rfdetr.backbone_builder import build_backbone
 from inference_models.models.rfdetr.misc import NestedTensor
 from inference_models.models.rfdetr.segmentation_head import SegmentationHead
+from inference_models.models.rfdetr.semantic_segmentation_model import (
+    RFDetrSemanticSegmentationNetwork,
+)
 from inference_models.models.rfdetr.transformer import build_transformer
 
 
@@ -42,6 +45,7 @@ class ModelConfig(BaseModel):
     cls_loss_coef: float = 1.0
     segmentation_head: bool = False
     mask_downsample_ratio: int = 4
+    semantic_segmentation_head: bool = False
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -245,6 +249,36 @@ class RFDETRSeg2XLargeConfig(RFDETRBaseConfig):
     num_select: int = 300
     pretrain_weights: Optional[str] = "rf-detr-seg-xxlarge.pt"
     num_classes: int = 90
+
+
+class RFDETRSemNanoConfig(RFDETRSegNanoConfig):
+    semantic_segmentation_head: bool = True
+    segmentation_head: bool = False
+
+
+class RFDETRSemSmallConfig(RFDETRSegSmallConfig):
+    semantic_segmentation_head: bool = True
+    segmentation_head: bool = False
+
+
+class RFDETRSemMediumConfig(RFDETRSegMediumConfig):
+    semantic_segmentation_head: bool = True
+    segmentation_head: bool = False
+
+
+class RFDETRSemLargeConfig(RFDETRSegLargeConfig):
+    semantic_segmentation_head: bool = True
+    segmentation_head: bool = False
+
+
+class RFDETRSemXLargeConfig(RFDETRSegXLargeConfig):
+    semantic_segmentation_head: bool = True
+    segmentation_head: bool = False
+
+
+class RFDETRSem2XLargeConfig(RFDETRSeg2XLargeConfig):
+    semantic_segmentation_head: bool = True
+    segmentation_head: bool = False
 
 
 class LWDETR(nn.Module):
@@ -648,7 +682,9 @@ def _max_by_axis(the_list):
     return maxes
 
 
-def build_model(config: ModelConfig) -> LWDETR:
+def build_model(
+    config: ModelConfig,
+) -> Union[LWDETR, RFDetrSemanticSegmentationNetwork]:
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
     # is the maximum id for a class in your dataset. For example,
@@ -695,6 +731,15 @@ def build_model(config: ModelConfig) -> LWDETR:
         return backbone[0].encoder, None, None
     if args.backbone_only:
         return backbone, None, None
+    if args.semantic_segmentation_head:
+        # Semantic classes count background, so no extra slot is added.
+        return RFDetrSemanticSegmentationNetwork(
+            backbone,
+            hidden_dim=args.hidden_dim,
+            num_blocks=args.dec_layers,
+            num_classes=args.num_classes,
+            downsample_ratio=args.mask_downsample_ratio,
+        )
     args.num_feature_levels = len(args.projector_scale)
     transformer = build_transformer(args)
     segmentation_head = (

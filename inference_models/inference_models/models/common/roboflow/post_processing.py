@@ -753,9 +753,10 @@ def post_process_semantic_segmentation_logits(
     confidence: Confidence,
     recommended_parameters: Optional[RecommendedParameters],
     default_confidence: float,
+    class_activation: Literal["softmax", "sigmoid"] = "softmax",
 ) -> List[SemanticSegmentationResult]:
     """Shared post-processing for semantic-segmentation models that emit
-    (B, K, H, W) float logits. Used by DeepLabV3+ and YOLO26-sem.
+    (B, K, H, W) float logits. Used by DeepLabV3+, YOLO26-sem and RF-DETR-sem.
 
     Steps: crop out letterbox padding → resize back to pre-letterbox size →
     softmax over classes → argmax → place into original-image canvas if
@@ -766,6 +767,10 @@ def post_process_semantic_segmentation_logits(
     instead of softmax+argmax, the sigmoid foreground probability is used and the
     lone foreground class is read from ``class_names`` (``[background, <fg>]``).
     Sub-threshold pixels collapse to background via the same threshold step.
+
+    ``class_activation="sigmoid"`` takes the top per-class sigmoid as the pixel
+    confidence instead of the softmax maximum, for models trained with per-class
+    BCE. The class map is the same argmax either way.
     """
     confidence_filter = ConfidenceFilter(
         confidence=confidence,
@@ -838,7 +843,10 @@ def post_process_semantic_segmentation_logits(
                 num_classes=len(class_names),
             )
         else:
-            image_results = torch.nn.functional.softmax(image_results, dim=0)
+            if class_activation == "sigmoid":
+                image_results = image_results.sigmoid()
+            else:
+                image_results = torch.nn.functional.softmax(image_results, dim=0)
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
             if len(class_names) == image_results.shape[0] + 1:
                 image_class_ids = insert_background_class(

@@ -96,6 +96,7 @@ nav:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md
       - Semantic Segmentation:
+          - RF-DETR: models/rfdetr-semantic-segmentation.md
           - YOLO26: models/yolo26-semantic-segmentation.md
           - DeepLabV3+: models/deeplabv3plus.md
       - Open-Vocabulary Object Detection:

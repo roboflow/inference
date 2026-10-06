@@ -1870,6 +1870,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
+            rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
         fixed_input_hw = _fixed_input_hw_from_backend(self._model)

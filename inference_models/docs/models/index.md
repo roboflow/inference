@@ -80,6 +80,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 | Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [RF-DETR Sem](rfdetr-semantic-segmentation.md) | `torch`, `onnx` | Apache 2.0 | N/A | ❌ | ✅ |
 | [YOLO26 Sem](yolo26-semantic-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
 | [DeepLabV3+](deeplabv3plus.md) | `torch`, `onnx`, `trt` | MIT | N/A | ❌ | ✅ |
 

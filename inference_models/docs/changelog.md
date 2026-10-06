@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- RF-DETR semantic segmentation (`rfdetr-sem-*` models trained on the Roboflow platform) with
+  `torch` and `onnx` backends: `RFDetrForSemanticSegmentationTorch` and
+  `RFDetrForSemanticSegmentationOnnx`, registered for `("rfdetr", "semantic-segmentation")`.
+  Pixel confidence is the top per-class sigmoid, the score these models are trained with.
+  `INFERENCE_MODELS_RFDETR_SEMANTIC_SEGMENTATION_DEFAULT_CONFIDENCE` sets the default threshold.
+
 ---
 
 ## `0.39.1`
