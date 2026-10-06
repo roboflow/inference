@@ -19,6 +19,7 @@ from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks,
     rescale_image_detections,
+    resolve_mask_frame_size,
 )
 from inference_models.models.optimization.triton_jit import (
     is_triton_jit_failure,
@@ -239,6 +240,8 @@ def post_process_instance_segmentation_results(
             confidence=confidence,
             class_id=top_classes.int(),
             mask=aligned_masks,
+            image_size=tuple(image_meta.original_size),
+            mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
         )
         results.append(detections)
     return results
@@ -406,6 +409,8 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
         confidence=confidence,
         class_id=top_classes.int(),
         mask=instances_masks,
+        image_size=tuple(image_meta.original_size),
+        mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
     )
 
 

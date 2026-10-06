@@ -9,12 +9,15 @@
   `0.0` leaves them on the model's own grid; values between interpolate the
   resize target. Threaded through all six instance-segmentation families on
   both the dense and RLE paths, and through the ONNX, TorchScript and TensorRT
-  backends. Default output is unchanged.
+  backends, plus RF-DETR CoreML. Default output is unchanged.
 - `mask_size` on `InstanceDetections` and `InstancesRLEMasks`, recording the
   grid the masks live on. Each defaults to the value it effectively had before,
   so existing construction is unaffected.
 - `scale_polygons_to_image`, lifting contour coordinates from mask space into
   image space.
+- `InstanceDetections.image_size` and `mask_frame_size` preserve original image
+  dimensions and the image region represented by a mask, independently of its
+  encoded grid. Dense and RLE model results carry these through post-processing.
 
 ### Changed
 
@@ -32,9 +35,18 @@
 
 ### Fixed
 
+- Dense reduced masks now resize correctly in `to_supervision()`, including mask
+  annotation on the original image. Origin-anchored crop masks are padded to the
+  original image after resizing to the crop dimensions.
+- Polygon responses for static crops with non-zero offsets use the original
+  image canvas as their coordinate frame, at full and reduced mask resolution.
+- RF-DETR CoreML now forwards `masks_resolution_factor` to post-processing.
+- Mask resize-target calculation rejects non-finite and out-of-range resolution
+  factors instead of silently clamping them.
 - Zero-detection results reported a mask shape the populated path would never
   produce, because the empty branch resolved its target from the padded grid
-  while the populated path unpadded first.
+  while the populated path unpadded first. Empty crop results also follow the
+  populated path's canvas placement and rounding rules.
 - RF-DETR's Triton post-process dispatcher dropped the resolution factor, so
   the fused path silently ignored it.
 

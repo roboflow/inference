@@ -438,6 +438,23 @@ def scale_polygons_to_image(
     return scaled_polygons
 
 
+def resolve_mask_frame_size(metadata: PreProcessingMetadata) -> ImageDimensions:
+    """Resolve the image-space extent covered by aligned masks.
+
+    Args:
+        metadata: Preprocessing transforms used to align the masks.
+
+    Returns:
+        Original image dimensions for offset-crop canvases, or the crop
+        dimensions when alignment leaves masks anchored at the origin.
+    """
+    offset = getattr(metadata, "static_crop_offset", None)
+    if offset is not None and (offset.offset_x > 0 or offset.offset_y > 0):
+        return metadata.original_size
+
+    return metadata.size_after_pre_processing
+
+
 def resolve_mask_target_size(
     mask_height: int,
     mask_width: int,
@@ -470,11 +487,17 @@ def resolve_mask_target_size(
 
     Returns:
         The `(height, width)` to resize masks to.
+
+    Raises:
+        ValueError: If the resolution factor is outside the finite range [0, 1].
     """
+    if not 0.0 <= masks_resolution_factor <= 1.0:
+        raise ValueError("masks_resolution_factor must be finite and in [0.0, 1.0]")
+
     if masks_resolution_factor >= 1.0:
         return size_after_pre_processing.height, size_after_pre_processing.width
 
-    factor = max(0.0, masks_resolution_factor)
+    factor = masks_resolution_factor
     height = max(
         1, round(mask_height * (1 - factor) + size_after_pre_processing.height * factor)
     )
@@ -549,20 +572,22 @@ def align_instance_segmentation_results(
             size_after_pre_processing=size_after_pre_processing,
             masks_resolution_factor=masks_resolution_factor,
         )
+        empty_height, empty_width = empty_target_height, empty_target_width
+        if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+            height_scale = empty_target_height / size_after_pre_processing.height
+            width_scale = empty_target_width / size_after_pre_processing.width
+            empty_height = max(
+                1,
+                round(original_size.height * height_scale),
+                round(static_crop_offset.offset_y * height_scale) + empty_target_height,
+            )
+            empty_width = max(
+                1,
+                round(original_size.width * width_scale),
+                round(static_crop_offset.offset_x * width_scale) + empty_target_width,
+            )
         empty_masks = torch.empty(
-            size=(
-                0,
-                round(
-                    original_size.height
-                    * empty_target_height
-                    / size_after_pre_processing.height
-                ),
-                round(
-                    original_size.width
-                    * empty_target_width
-                    / size_after_pre_processing.width
-                ),
-            ),
+            size=(0, empty_height, empty_width),
             dtype=torch.bool,
             device=image_bboxes.device,
         )

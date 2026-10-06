@@ -254,12 +254,18 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
     mask_decode_mode: Optional[str] = Field(
         default="accurate",
         examples=["accurate"],
-        description="The mode used to decode instance segmentation masks, one of 'accurate', 'fast', 'tradeoff'",
+        description="Mask decoding mode: 'accurate' (default), 'fast', or 'tradeoff'. "
+        "On inference_models, accurate uses full-resolution masks, fast keeps the "
+        "model mask grid, and tradeoff interpolates between those grids. Lower "
+        "resolution factors do not guarantee smaller masks or lower end-to-end latency.",
     )
     tradeoff_factor: Optional[float] = Field(
         default=0.0,
         examples=[0.5],
-        description="The amount to tradeoff between 0='fast' and 1='accurate'",
+        description="Factor in [0.0, 1.0], used only with mask_decode_mode='tradeoff'; "
+        "defaults to 0.0. On inference_models, 0.0 selects the model mask grid and "
+        "1.0 selects image resolution. Intermediate values interpolate mask-grid "
+        "dimensions; the legacy backend uses a different interpolation schedule.",
     )
     response_mask_format: Literal["polygon", "rle"] = Field(
         default="polygon",
@@ -267,7 +273,9 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
         description="Requested output mask format - `polygon` is the default Roboflow format, which however is "
         "not capable representing certain shapes - RLE is compact and more standard representation, yet "
         "require special decoding on the caller side - currently supported in `opt-in` mode when server is "
-        "running with `USE_INFERENCE_MODELS=True` - otherwise it's ignored.",
+        "running with `USE_INFERENCE_MODELS=True` - otherwise it's ignored. "
+        "RLE size records the encoded mask grid, which may differ from the image "
+        "dimensions; polygon coordinates are returned in image space.",
     )
     enforce_dense_masks_in_inference_models: Optional[bool] = Field(
         default=False,

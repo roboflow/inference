@@ -21,17 +21,16 @@ for contributor and maintainer responsibilities.
 - `roboflow_core/roboflow_instance_segmentation_model@v5`. Identical to `@v4`
   except that it forwards `mask_decode_mode` and `tradeoff_factor` to the
   server, which now honours them. Versions up to `@v4` pin the outbound request
-  to `accurate` / `1.0`, so existing workflows are unaffected on the
-  `inference_models` backend.
-
-  The pin is conditional on `USE_INFERENCE_MODELS`. The legacy backend
-  honoured these fields, so `@v1`-`@v4` keep passing them through there and
-  behave exactly as they do today; the pin applies only where the fields were
-  being discarded. No existing workflow changes behaviour on either backend.
+  to `accurate` / `1.0` on the local `inference_models` backend. Local legacy
+  execution continues to honour these fields when `USE_INFERENCE_MODELS=False`.
+  Remote `@v1`–`@v4` requests always use `accurate` / `1.0`, because the local
+  backend setting does not identify the remote server. This changes remote
+  legacy workflows that previously requested reduced masks; use non-tensor
+  `@v5` to opt into adjustable mask resolution.
 
 - `ModelsConfiguration.use_inference_models`, defaulting to `True`. Hosts that
   serve instance segmentation through the legacy backend must set it to `False`
-  so block versions up to `@v4` keep forwarding `mask_decode_mode` and
+  so local block versions up to `@v4` keep forwarding `mask_decode_mode` and
   `tradeoff_factor`, which that backend honours. The server sets it from
   `inference.core.env.USE_INFERENCE_MODELS`; the value cannot be read from the
   environment here, since this package must not import `inference.*`.
@@ -41,8 +40,16 @@ for contributor and maintainer responsibilities.
   Nothing under `roboflow_workflows/` reads `InstanceDetections.mask_size`, and
   the sites that rebuild `InstancesRLEMasks` drop it, so a reduced grid would
   be reinterpreted as image-sized downstream. Reduced mask resolution is
-  therefore available in non-tensor mode only, pending propagation of
-  `mask_size` through the tensor pipeline.
+  therefore available in non-tensor mode only. **Full tensor support will come
+  in a separate PR**, including propagation of mask-grid metadata through the
+  tensor pipeline. Until then, tensor mode ignores `mask_decode_mode` and
+  `tradeoff_factor` and always requests `accurate` / `1.0`.
+
+### Fixed
+
+- Non-tensor instance segmentation `@v5` re-encodes reduced RLE masks at the
+  image grid after conversion to Supervision, so downstream blocks receive
+  consistent dense and RLE representations.
 
 ## `0.2.4`
 

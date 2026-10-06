@@ -1433,3 +1433,49 @@ class TestEmptyAgreesWithPopulated:
 
         # then
         assert empty.shape[1:] == populated.shape[1:]
+
+
+@pytest.mark.parametrize("offset", [0, 83])
+def test_empty_masks_match_populated_crop_canvas_after_rounding(offset: int) -> None:
+    kwargs = dict(
+        padding=(0, 0, 0, 0),
+        scale_width=1.0,
+        scale_height=1.0,
+        original_size=ImageDimensions(height=245, width=245),
+        size_after_pre_processing=ImageDimensions(height=162, width=162),
+        inference_size=ImageDimensions(height=162, width=162),
+        static_crop_offset=StaticCropOffset(
+            offset_x=offset, offset_y=offset, crop_width=162, crop_height=162
+        ),
+        masks_resolution_factor=0.0,
+    )
+    _, populated = align_instance_segmentation_results(
+        image_bboxes=torch.tensor([[0, 0, 162, 162]], dtype=torch.float32),
+        masks=torch.ones((1, 81, 81)),
+        **kwargs,
+    )
+    _, empty = align_instance_segmentation_results(
+        image_bboxes=torch.empty((0, 4)),
+        masks=torch.empty((0, 81, 81)),
+        **kwargs,
+    )
+
+    assert empty.shape[1:] == populated.shape[1:]
+    assert empty.shape[1:] == ((123, 123) if offset else (81, 81))
+
+
+@pytest.mark.parametrize(
+    "factor", [-0.1, 1.1, float("nan"), float("inf"), -float("inf")]
+)
+def test_mask_resolution_target_rejects_invalid_factor(factor: float) -> None:
+    from inference_models.models.common.roboflow.post_processing import (
+        resolve_mask_target_size,
+    )
+
+    with pytest.raises(ValueError, match="masks_resolution_factor"):
+        resolve_mask_target_size(
+            mask_height=20,
+            mask_width=30,
+            size_after_pre_processing=ImageDimensions(height=200, width=300),
+            masks_resolution_factor=factor,
+        )

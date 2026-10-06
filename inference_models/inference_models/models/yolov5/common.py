@@ -9,6 +9,7 @@ from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results_to_rle_masks,
     crop_masks_to_boxes,
     preprocess_segmentation_masks,
+    resolve_mask_frame_size,
 )
 
 
@@ -51,6 +52,8 @@ def prepare_dense_masks(
                 class_id=aligned_boxes[:, 5].int(),
                 confidence=aligned_boxes[:, 4],
                 mask=aligned_masks,
+                image_size=tuple(image_meta.original_size),
+                mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
             )
         )
     return final_results
@@ -108,6 +111,8 @@ def prepare_rle_masks(
                     class_id=aligned_boxes_tensor[:, 5].int(),
                     confidence=aligned_boxes_tensor[:, 4],
                     mask=instances_masks,
+                    image_size=tuple(image_meta.original_size),
+                    mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
                 )
             )
         else:
@@ -121,6 +126,8 @@ def prepare_rle_masks(
                     ),
                     confidence=torch.empty((0,), device=image_bboxes.device),
                     mask=instances_masks,
+                    image_size=tuple(image_meta.original_size),
+                    mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
                 )
             )
     return final_results

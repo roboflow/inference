@@ -1,5 +1,6 @@
 from typing import List, Literal, Optional, Type, Union
 
+import numpy as np
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.utils import (
@@ -16,7 +17,10 @@ from roboflow_workflows.environment import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from roboflow_workflows.execution_engine.constants import INFERENCE_ID_KEY
+from roboflow_workflows.execution_engine.constants import (
+    INFERENCE_ID_KEY,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -434,6 +438,27 @@ class RoboflowInstanceSegmentationModelBlockV5(WorkflowBlock):
     ) -> BlockResult:
         inference_ids = [p.get(INFERENCE_ID_KEY, None) for p in predictions]
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
+        for detections in predictions:
+            rle_masks = detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
+            if rle_masks is None or detections.mask is None:
+                continue
+
+            # Supervision restores dense masks to the image grid. Keep the RLE
+            # copy consistent for downstream blocks that decode it directly.
+            for index, rle_mask in enumerate(rle_masks):
+                if rle_mask is None or tuple(rle_mask["size"]) == tuple(
+                    detections.mask.shape[1:]
+                ):
+                    continue
+
+                from pycocotools import mask as mask_utils
+
+                normalized = mask_utils.encode(
+                    np.asfortranarray(detections.mask[index], dtype=np.uint8)
+                )
+                normalized["counts"] = normalized["counts"].decode("utf-8")
+                rle_masks[index] = normalized
+
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
             prediction_type="instance-segmentation",

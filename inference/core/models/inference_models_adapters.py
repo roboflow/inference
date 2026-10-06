@@ -134,6 +134,7 @@ from inference_models.models.base.semantic_segmentation import (
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 from inference_models.models.common.roboflow.post_processing import (
+    resolve_mask_frame_size,
     scale_polygons_to_image,
 )
 
@@ -1057,13 +1058,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             # reported; equal sizes short-circuit to a no-op. This also breaks
             # any view into the pinned scratch buffers noted above, since the
             # scaled polygons are freshly allocated.
-            # Scale from the mask grid to the frame the masks were produced
-            # against, which is size_after_pre_processing - NOT original_size.
-            # A static crop anchored at (0, 0) also yields a mask smaller than
-            # the image, but its coordinates are already image-space, so
-            # inferring the scale from `mask_size != (H, W)` would double them.
+            # Offset crops are already on an original-image canvas; origin crops
+            # still cover only the cropped region.
             mask_size = getattr(det, "mask_size", None)
-            produced_against = preproc_metadata.size_after_pre_processing
+            produced_against = resolve_mask_frame_size(preproc_metadata)
             if (
                 not return_in_rle
                 and mask_size is not None

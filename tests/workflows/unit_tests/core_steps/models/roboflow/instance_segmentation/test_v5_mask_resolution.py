@@ -103,7 +103,7 @@ def test_manifest_parity_with_tensor_sibling(version: str) -> None:
 
 
 @pytest.mark.parametrize("version", PINNED_VERSIONS)
-def test_legacy_versions_pin_only_on_the_inference_models_backend(
+def test_legacy_versions_pin_local_conditionally_and_remote_unconditionally(
     version: str,
 ) -> None:
     # given
@@ -112,9 +112,9 @@ def test_legacy_versions_pin_only_on_the_inference_models_backend(
     source = _source(version, tensor=False)
 
     # then
-    assert source.count('"accurate" if USE_INFERENCE_MODELS else mask_decode_mode') == 2
-    assert source.count("1.0 if USE_INFERENCE_MODELS else tradeoff_factor") == 2
-    assert 'mask_decode_mode="accurate",' not in source
+    assert source.count('"accurate" if USE_INFERENCE_MODELS else mask_decode_mode') == 1
+    assert source.count("1.0 if USE_INFERENCE_MODELS else tradeoff_factor") == 1
+    assert source.count('mask_decode_mode="accurate",') == 1
 
 
 @pytest.mark.parametrize("version", PINNED_VERSIONS + FORWARDING_VERSIONS)
@@ -182,3 +182,102 @@ class TestPinningIsObservedAtTheCallSite:
         # then
         assert 'mask_decode_mode="accurate",' not in source
         assert source.count("mask_decode_mode=mask_decode_mode,") == 4
+
+
+@pytest.mark.parametrize("version", PINNED_VERSIONS)
+@pytest.mark.parametrize("local_backend", [True, False])
+def test_remote_request_is_independent_of_local_backend(
+    monkeypatch, version, local_backend
+):
+    from importlib import import_module
+    from unittest.mock import MagicMock
+
+    module = import_module(
+        f"roboflow_workflows.core_steps.models.roboflow.instance_segmentation.{version}"
+    )
+    block_class = getattr(
+        module, f"RoboflowInstanceSegmentationModelBlock{version.upper()}"
+    )
+    block = object.__new__(block_class)
+    block._api_key = None
+    block._post_process_result = MagicMock(return_value=[])
+    client = MagicMock()
+    monkeypatch.setattr(module, "InferenceHTTPClient", MagicMock(return_value=client))
+    monkeypatch.setattr(module, "USE_INFERENCE_MODELS", local_backend)
+
+    block.run_remotely(
+        images=[],
+        model_id="model/1",
+        class_agnostic_nms=False,
+        class_filter=None,
+        confidence=0.5,
+        iou_threshold=0.5,
+        max_detections=10,
+        max_candidates=20,
+        mask_decode_mode="fast",
+        tradeoff_factor=0.0,
+        disable_active_learning=True,
+        active_learning_target_dataset=None,
+    )
+
+    config = client.configure.call_args.kwargs["inference_configuration"]
+    assert config.mask_decode_mode == "accurate"
+    assert config.tradeoff_factor == 1.0
+
+
+def test_v5_reduced_rle_output_can_be_decoded_on_original_image(monkeypatch):
+    import numpy as np
+    import supervision as sv
+    from pycocotools import mask as mask_utils
+    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation import v5
+    from roboflow_workflows.core_steps.visualizations.common.utils import (
+        ensure_dense_masks,
+    )
+    from roboflow_workflows.execution_engine.constants import (
+        RLE_MASK_KEY_IN_SV_DETECTIONS,
+    )
+
+    block = object.__new__(v5.RoboflowInstanceSegmentationModelBlockV5)
+    mask = np.zeros((20, 30), dtype=np.uint8)
+    mask[5:10, 8:14] = 1
+    rle = mask_utils.encode(np.asfortranarray(mask))
+    rle["counts"] = rle["counts"].decode("utf-8")
+    prediction = {
+        "image": {"height": 200, "width": 300},
+        "predictions": [
+            {
+                "x": 110,
+                "y": 75,
+                "width": 60,
+                "height": 50,
+                "confidence": 0.9,
+                "class_id": 0,
+                "class": "car",
+                "rle": rle,
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        v5,
+        "attach_parents_coordinates_to_batch_of_sv_detections",
+        lambda images, predictions: predictions,
+    )
+
+    output = block._post_process_result(
+        images=[], predictions=[prediction], class_filter=None, model_id="model/1"
+    )
+
+    detections = output[0]["predictions"]
+    encoded = detections.data[RLE_MASK_KEY_IN_SV_DETECTIONS][0]
+    decoded = mask_utils.decode(encoded).astype(bool)
+    assert decoded.shape == (200, 300)
+    np.testing.assert_array_equal(decoded, detections.mask[0])
+    assert decoded[50:100, 80:140].all()
+    assert decoded.sum() == 50 * 60
+    detections.mask = None
+    detections = ensure_dense_masks(detections)
+    annotated = sv.MaskAnnotator().annotate(
+        scene=np.zeros((200, 300, 3), dtype=np.uint8), detections=detections
+    )
+    assert annotated.any()
+    assert rle["size"] == [20, 30]

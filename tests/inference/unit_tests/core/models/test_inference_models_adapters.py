@@ -1130,3 +1130,84 @@ def test_origin_anchored_crop_is_not_mistaken_for_a_reduced_grid() -> None:
     # the mask already matches size_after_pre_processing, so no scaling
     xs = [p.x for p in responses[0].predictions[0].points]
     assert max(xs) <= 8, f"coordinates were scaled a second time: {xs}"
+
+
+@pytest.mark.parametrize("mask_format", ["dense", "rle"])
+@pytest.mark.parametrize("factor", [1.0, 0.0])
+@pytest.mark.parametrize("offset", [(0, 0), (60, 40)])
+def test_crop_polygon_response_uses_the_frame_represented_by_mask(
+    mask_format: str, factor: float, offset: tuple
+) -> None:
+    from inference_models.entities import ImageDimensions
+    from inference_models.models.common.roboflow.model_packages import (
+        PreProcessingMetadata,
+        StaticCropOffset,
+    )
+    from inference_models.models.common.roboflow.post_processing import (
+        align_instance_segmentation_results,
+        align_instance_segmentation_results_to_rle_masks,
+    )
+
+    offset_x, offset_y = offset
+    original_size = ImageDimensions(height=200, width=300)
+    crop_size = ImageDimensions(height=100, width=150)
+    crop_offset = StaticCropOffset(
+        offset_x=offset_x, offset_y=offset_y, crop_width=150, crop_height=100
+    )
+    metadata = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=original_size,
+        size_after_pre_processing=crop_size,
+        inference_size=crop_size,
+        scale_width=1.0,
+        scale_height=1.0,
+        static_crop_offset=crop_offset,
+    )
+    masks = torch.full((1, 20, 30), -1.0)
+    masks[:, 2:10, 4:16] = 1.0
+    kwargs = dict(
+        image_bboxes=torch.tensor([[20, 10, 80, 50]], dtype=torch.float32),
+        masks=masks,
+        padding=(0, 0, 0, 0),
+        scale_width=1.0,
+        scale_height=1.0,
+        original_size=original_size,
+        size_after_pre_processing=crop_size,
+        inference_size=crop_size,
+        static_crop_offset=crop_offset,
+        masks_resolution_factor=factor,
+    )
+    if mask_format == "dense":
+        boxes, aligned_masks = align_instance_segmentation_results(**kwargs)
+    else:
+        box, rle = next(align_instance_segmentation_results_to_rle_masks(**kwargs))
+        boxes = box.unsqueeze(0)
+        aligned_masks = InstancesRLEMasks(
+            image_size=original_size,
+            masks=[rle["counts"]],
+            mask_size=tuple(rle["size"]),
+        )
+    detections = InstanceDetections(
+        xyxy=boxes,
+        confidence=torch.tensor([0.9]),
+        class_id=torch.tensor([0]),
+        mask=aligned_masks,
+    )
+
+    response = _seg_adapter()._build_responses_from_detections(
+        [detections], [metadata]
+    )[0]
+
+    prediction = response.predictions[0]
+    xs = [point.x for point in prediction.points]
+    ys = [point.y for point in prediction.points]
+    assert min(xs) == pytest.approx(20 + offset_x)
+    assert min(ys) == pytest.approx(10 + offset_y)
+    pixel_size = 1 if factor == 1.0 else 5
+    assert max(xs) == pytest.approx(80 + offset_x - pixel_size)
+    assert max(ys) == pytest.approx(50 + offset_y - pixel_size)
+    assert prediction.x == pytest.approx(50 + offset_x)
+    assert prediction.y == pytest.approx(30 + offset_y)

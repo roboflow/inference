@@ -246,3 +246,54 @@ def _square_rle(height: int, width: int) -> bytes:
     dense[height // 4 : height // 2, width // 4 : width // 2] = 1
 
     return mask_utils.encode(np.asfortranarray(dense))["counts"]
+
+
+class TestDenseImageDimensions:
+    def test_reduced_dense_masks_can_annotate_original_image(self) -> None:
+        import numpy as np
+        import supervision as sv
+
+        mask = torch.zeros((1, 20, 30), dtype=torch.bool)
+        mask[:, 5:10, 8:14] = True
+        detections = InstanceDetections(
+            xyxy=torch.tensor([[80, 50, 140, 100]], dtype=torch.float32),
+            class_id=torch.tensor([0]),
+            confidence=torch.tensor([0.9]),
+            mask=mask,
+            image_size=(200, 300),
+        ).to_supervision()
+
+        scene = np.zeros((200, 300, 3), dtype=np.uint8)
+        annotated = sv.MaskAnnotator().annotate(scene=scene, detections=detections)
+
+        assert detections.mask.shape == (1, 200, 300)
+        assert detections.mask[0, 50:100, 80:140].all()
+        assert detections.mask.sum() == 50 * 60
+        assert annotated.any()
+
+    def test_origin_crop_is_resized_then_padded_not_stretched(self) -> None:
+        mask = torch.zeros((1, 20, 30), dtype=torch.bool)
+        mask[:, 2:10, 4:16] = True
+        detections = InstanceDetections(
+            xyxy=torch.tensor([[20, 10, 80, 50]], dtype=torch.float32),
+            class_id=torch.tensor([0]),
+            confidence=torch.tensor([0.9]),
+            mask=mask,
+            image_size=(200, 300),
+            mask_frame_size=(100, 150),
+        ).to_supervision()
+
+        assert detections.mask.shape == (1, 200, 300)
+        assert detections.mask[0, 10:50, 20:80].all()
+        assert detections.mask.sum() == 40 * 60
+
+    def test_empty_reduced_dense_masks_keep_original_dimensions(self) -> None:
+        detections = InstanceDetections(
+            xyxy=torch.empty((0, 4)),
+            class_id=torch.empty((0,), dtype=torch.long),
+            confidence=torch.empty((0,)),
+            mask=torch.empty((0, 20, 30), dtype=torch.bool),
+            image_size=(200, 300),
+        ).to_supervision()
+
+        assert detections.mask.shape == (0, 200, 300)

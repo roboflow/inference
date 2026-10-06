@@ -135,6 +135,15 @@ class _DirectInferenceFuture:
 
 @dataclass
 class InstanceDetections:
+    """Instance masks and boxes with independent image and mask dimensions.
+
+    Attributes:
+        image_size: Original image ``(height, width)``. Older callers may omit it.
+        mask_size: Encoded mask grid ``(height, width)``.
+        mask_frame_size: Image-space extent represented by the mask grid. A crop
+            anchored at the origin may cover only the top-left of the image.
+    """
+
     xyxy: torch.Tensor  # (n_boxes, 4)
     class_id: torch.Tensor  # (n_boxes, )
     confidence: torch.Tensor  # (n_boxes, )
@@ -148,6 +157,8 @@ class InstanceDetections:
     # (h, w) of the grid `mask` lives on. Resolved from the carrier when not
     # given, which reproduces the behaviour from before it was adjustable.
     mask_size: Optional[Tuple[int, int]] = None
+    image_size: Optional[Tuple[int, int]] = None
+    mask_frame_size: Optional[Tuple[int, int]] = None
 
     def __post_init__(self) -> None:
         if self.mask_size is not None:
@@ -161,12 +172,14 @@ class InstanceDetections:
         """Resolve the image grid these detections describe.
 
         An RLE carrier records the image size alongside the encoded grid. A
-        dense carrier does not, so its own shape is the best available answer
-        and is correct whenever no resolution factor was applied.
+        dense carrier uses explicit image dimensions when available. Its shape
+        remains the fallback for callers that omit image dimensions.
 
         Returns:
             Image ``(height, width)``.
         """
+        if self.image_size is not None:
+            return tuple(self.image_size)
         if isinstance(self.mask, InstancesRLEMasks):
             return tuple(self.mask.image_size)
         if self.mask is not None and hasattr(self.mask, "shape"):
@@ -271,27 +284,37 @@ class InstanceDetections:
         # paint the wrong region, so restore the image grid on the way out.
         if mask is not None and self.mask_size is not None:
             image_height, image_width = self._image_size()
-            if tuple(self.mask_size) != (image_height, image_width):
+            frame_height, frame_width = self.mask_frame_size or (
+                image_height,
+                image_width,
+            )
+            if tuple(mask.shape[1:]) != (frame_height, frame_width):
                 mask = (
                     np.stack(
                         [
                             cv2.resize(
                                 single.astype(np.uint8),
-                                (image_width, image_height),
+                                (frame_width, frame_height),
                                 interpolation=cv2.INTER_NEAREST,
                             ).astype(bool)
                             for single in mask
                         ]
                     )
                     if len(mask)
-                    else np.zeros((0, image_height, image_width), dtype=bool)
+                    else np.zeros((0, frame_height, frame_width), dtype=bool)
                 )
-        return sv.Detections(
+            if (frame_height, frame_width) != (image_height, image_width):
+                canvas = np.zeros((len(mask), image_height, image_width), dtype=bool)
+                canvas[:, :frame_height, :frame_width] = mask
+                mask = canvas
+        detections = sv.Detections(
             xyxy=self.xyxy.cpu().numpy(),
             class_id=self.class_id.cpu().numpy(),
             confidence=self.confidence.cpu().numpy(),
             mask=mask,
         )
+
+        return detections
 
 
 class InstanceSegmentationModel(
