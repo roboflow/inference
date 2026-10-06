@@ -43,7 +43,7 @@ These are writing guidelines for the existing scope. Workflows contracts and imp
 
 ## Recommended sequence
 
-The identifiers below are roadmap identifiers, not GitHub PR numbers. PRs 01–11 and 14 are proposed active-scope items; PRs 12 and 13 are on hold. Dependencies describe technical prerequisites; they are not instructions to start parallel work.
+The identifiers below are roadmap identifiers, not GitHub PR numbers. PRs 01–11 and 14 are proposed active-scope items; PRs 12 and 13 are on hold. PR 15 is a separate follow-up for output selection, with its contract and inclusion decided during its own planning. Dependencies describe technical prerequisites; they are not instructions to start parallel work.
 
 | PR | Scope | Depends on | Reason for this boundary |
 |---|---|---|---|
@@ -61,8 +61,9 @@ The identifiers below are roadmap identifiers, not GitHub PR numbers. PRs 01–1
 | 12 | **On hold —** Workflow metadata, interface and validation endpoints | New Workflows functionality included, explicit resumption, then 10 | Own the workflow discovery/validation contracts and implementation in a separate PR. |
 | 13 | **On hold —** Workflow execution and direct inference parity | New Workflows functionality included, explicit resumption, then 04, 11, 12 | Own workflow execution contracts and parity in a separate PR. |
 | 14 | Server metadata and Prometheus metrics | 01 | Complete operations endpoints independently of model representations. |
+| 15 | Follow-up: output selection and avoiding unrequested processing | 05, 10; affected family/transport PRs as needed | Decide `requested_output` semantics and whether selecting outputs can avoid their construction work in a separate plan. |
 
-The active serial order is 01–11, then 14; skip held PRs 12 and 13. This is not a deadline or effort estimate. PR 14 can move earlier if deployment requires it and does not wait for Workflows. The management/prediction separation follow-up below is intentionally outside the initial completion sequence pending agreement on release scope.
+The active serial order is 01–11, then 14; skip held PRs 12 and 13. PR 15 is a separate follow-up, not a prerequisite for those PRs. This is not a deadline or effort estimate. PR 14 can move earlier if deployment requires it and does not wait for Workflows. The management/prediction separation follow-up below is intentionally outside the initial completion sequence pending agreement on release scope.
 
 ## PR scope and acceptance
 
@@ -70,7 +71,7 @@ The active serial order is 01–11, then 14; skip held PRs 12 and 13. This is no
 
 Establish the model/server route/method inventory (six model and four server routes), direct replacement of undeployed experimental routes, common error and response conventions, flat result-list structure and input/result alignment, request control parameters, rich/compact defaults, inference-ID semantics, and schema/type version policy. Define the discovery schema structure and extension points now; populate concrete family definitions with later PRs. Correct invalid JSON and inconsistent mask examples before using them as fixtures. Workflow identifiers, workflow discovery/validation, skipped-output semantics, step tracing and live direct/workflow parity tests remain in the held PRs. PR 01 must nevertheless check that its proposed model input/result structure can also describe an equivalent single-step workflow; do not finalize a model-only structure that contradicts the original design.
 
-Use the proposed `/run`, `/loaded` and DELETE unload paths, following Damian's updated D2 direction. Replace the existing V2 routes directly and adjust affected integration tests; no experimental V2 migration work is needed. Loading/error-state listing is a PR 02 planning question and may be deferred further. Resolve public health/readiness, control-plane defaults, and model-metadata authorization policy. Decide the common placement of effective parameters and the treatment of absent optional metadata. Classification field naming and mask encoding remain decisions for PRs 06 and 08; PR 01 should identify any shared naming constraints they must respect.
+Use the proposed `/run`, `/loaded` and DELETE unload paths, following Damian's updated D2 direction. Replace the existing V2 routes directly and adjust affected integration tests; no experimental V2 migration work is needed. Loading/error-state listing is a PR 02 planning question and may be deferred further. Resolve public health/readiness, control-plane defaults, and model-metadata authorization policy. D4 decisions confirmed by Damian on 2026-10-06: default to rich/JSON, reject conflicting parameter values, and report actual effective settings in their standard response fields whether explicitly supplied or defaulted. Omit unavailable metadata/usage; use `null` only with defined meaning and never report unknown usage as zero. Family plans establish the actual fields. Output selection is extracted to PR 15; usage implementation remains a separate workstream. Classification field naming and mask encoding remain decisions for PRs 06 and 08; PR 01 should identify any shared naming constraints they must respect.
 
 **Done when:** the agreed common contract has valid request/response/error examples and schema checks, the documented pre-deployment V2 replacement policy, and explicit unsupported/deferred features. This is a contract/documentation PR; passing its fixture checks does not claim the server conforms yet. Usage metadata must have an agreed integration boundary with the separate usage workstream, without pulling that implementation into this PR.
 
@@ -100,11 +101,11 @@ Resolve malformed-input statuses, duplicate/missing references, parameter preced
 
 ### PR 05 Common execution responses and detection
 
-Apply the agreed execution route, envelope, output identity, batch structure and rich/compact default. Consume reserved HTTP controls instead of forwarding them to model methods. Reassess `requested_output` during planning: the flat model result list has no named output slots, so its model-side meaning or deferral needs an explicit decision; do not implement filtering based on the discarded named-output proposal. Provide the detection adapter as the first complete family, including class metadata and agreed effective-threshold metadata.
+Apply the agreed execution route, envelope, output identity, batch structure and rich/compact default. Consume reserved HTTP controls instead of forwarding them to model methods. Leave `requested_output` selection semantics and implementation to follow-up PR 15. Until supported, reject that reserved control explicitly instead of forwarding it to the model or silently ignoring it. Do not implement filtering based on the discarded named-output proposal. Provide the detection adapter as the first complete family, including class metadata and agreed effective-threshold metadata.
 
 Resolve whether model output selection is needed, inference-ID scope, available versus missing class names, optional tracker/detection IDs, and the exact effective-parameter fields. The recommendation is to emit tracking metadata only when available, with omission/null behavior settled in this plan; this does not add tracking computation. Decide explicitly whether IoU and max detections join confidence thresholds.
 
-**Done when:** valid detection requests satisfy the new contract across batch/style cases and any explicitly agreed output-selection behavior, with affected V2 integration expectations updated to the agreed behavior. Coordinate unfinished family changes explicitly as the sequence lands; there is no requirement to preserve their old V2 representation for clients. Unsupported multipart output must not be accepted and silently returned as JSON while PR 11 is pending.
+**Done when:** valid detection requests satisfy the new contract across batch/style cases, including explicit rejection of unsupported output selection, with affected V2 integration expectations updated to the agreed behavior. Coordinate unfinished family changes explicitly as the sequence lands; there is no requirement to preserve their old V2 representation for clients. Unsupported multipart output must not be accepted and silently returned as JSON while PR 11 is pending.
 
 ### PR 06 Classification semantics
 
@@ -182,11 +183,22 @@ Resolve safe build/configuration fields, metric names/types/labels and cardinali
 
 **Done when:** direct/MMP fixtures verify health/readiness transitions and safe info output, and a Prometheus parser/scrape check validates the metrics contract. Comprehensive monitoring dashboards and changes to usage accounting remain independent.
 
+### PR 15 Output selection and avoiding unrequested processing
+
+**Extracted by Damian on 2026-10-06.** Give `requested_output` its own contract review and implementation PR. Decide whether to introduce the parameter at that planning stage; it is not required for PR 01 or PR 05 completion. The motivation includes avoiding work needed to construct unrequested output components, rather than only removing fields after doing all the work.
+
+Identify a concrete model/action and output component, then trace which execution, postprocessing, materialization or serialization work can actually be skipped while preserving the requested results. Distinguish unavoidable shared model computation from avoidable output-specific processing. For example, assess whether omitting a mask representation could avoid its construction/encoding; this is an investigation example, not a commitment to expose that selector or eliminate the model's mask computation.
+
+The plan must settle selectable names/components, omission/default behavior, invalid selections, dependencies between outputs, discovery, rich/compact and JSON/multipart consistency, and the boundary at which processing is skipped. Preserve the agreed flat result list, image alignment and identifiers. Do not interpret selectors as batch indices or require named result wrappers. Workflow output selection remains with the held workflow scope.
+
+**Done when, if adopted:** contract tests verify selection and errors, execution checks show the identified unrequested work is not performed, and representative measurements establish the benefit. Returned selected results remain equivalent to the corresponding full-output results under agreed model tolerances. Update discovery with implementation. If no useful safe processing reduction is found, record that evidence and the decision to defer or narrow the feature rather than introducing an undefined parameter.
+
 ## Explicit follow-ups and exclusions
 
 | Work | Recommendation and condition for returning to it |
 |---|---|
 | Workflows routes and parity | **On hold in separate PRs 12 and 13.** Resume only when the new functionality is included and the team explicitly agrees; revisit contracts and acceptance criteria first. |
+| Model output selection | Separate PR 15; decide semantics and processing savings in its own plan. Explicitly reject `requested_output` until implemented. |
 | Management/prediction separation | Keep as a separate follow-up PR after loading behavior is stable. Before initial release, explicitly confirm whether separation can wait. Its plan must settle ports/process boundaries, credentials, automatic-loading policy and prediction behavior when a model is absent. The control-plane gate is not equivalent to manual-loading-only operation. |
 | Per-item batch parameters with shared defaults | Omit from the initial contract provisionally, reflecting the tentative guidance. Revisit with a concrete use case or comparative evidence and an explicit workflow scalar/batch design. |
 | Full C×H×W semantic scores | No implicit expansion from the H×W baseline. Require an opt-in use case, size/resource assessment and a separate contract decision. |
@@ -202,7 +214,7 @@ Resolve safe build/configuration fields, metric names/types/labels and cardinali
 | JSON URL/named-part inputs G2 and both parser defects | 04 |
 | Binary output G3 and reserved parameter forwarding | Reserved controls 05; multipart 11 |
 | Package selection G4 and full loading controls | Public 02 and required private 03 |
-| Output selection G5 | Reassess model meaning or deferral in 01/05 after the flat-list decision; no assumed named model slots. Any agreed behavior extends to 11; workflow behavior in 13 is on hold. |
+| Output selection G5 | Explicit unsupported-control behavior in 05; selection semantics and processing avoidance in separate follow-up 15, coordinated with discovery 10 and affected transports/families. Workflow behavior in 13 is on hold. |
 | Interface discovery G6 | Structure 01; family schemas 05/06/08/09; discovery 10 |
 | Compatibility stub and loaded/compatible distinction | Lifecycle 02; compatibility 07 |
 | Prediction representation gaps | Detection 05; classification 06; segmentation/dense 08; text/OCR 09; remaining-family inventory 10 |
