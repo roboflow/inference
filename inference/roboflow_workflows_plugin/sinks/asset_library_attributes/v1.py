@@ -3,6 +3,11 @@ import logging
 from typing import Any, Dict, List, Literal, NamedTuple, Optional, Protocol, Type, Union
 
 from pydantic import ConfigDict, Field
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 
 from inference.core.roboflow_api import (
     batch_update_image_metadata_at_roboflow,
@@ -24,6 +29,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -143,6 +149,21 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.10.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        # Updates Asset Library images by id inside the api key's own workspace -
+        # no Roboflow model, no Roboflow project, no third-party model.
+        return []
 
 
 class UpdateAssetLibraryAttributesOffloader(Protocol):

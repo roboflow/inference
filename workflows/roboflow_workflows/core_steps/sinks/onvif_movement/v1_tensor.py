@@ -39,12 +39,18 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
-    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.utils.text import experimental
 from simple_pid import PID
@@ -262,6 +268,21 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         return [NO_LAN_FROM_HOSTED_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[NO_LAN_FROM_HOSTED_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 # primarily used for rate limiting

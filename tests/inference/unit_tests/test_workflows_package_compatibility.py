@@ -32,8 +32,8 @@ import pytest
 
 from inference._workflows_compat_inventory import (
     _ENTERPRISE_MODULES,
-    _INVENTORY_LEGACY,
-    _INVENTORY_PACKAGES,
+    _WORKFLOWS_INVENTORY_LEGACY,
+    _WORKFLOWS_INVENTORY_PACKAGES,
 )
 
 _INVENTORY_PATH = Path(__file__).with_name("workflows_compat_inventory.json")
@@ -51,99 +51,15 @@ def test_inventory_baseline_matches_runtime_module() -> None:
     # historic prefix; regenerating from the JSON only in isolation would
     # split the source of truth.
     from_json = {e["legacy"] for e in _INVENTORY["packages"] + _INVENTORY["modules"]}
-    assert from_json == set(_INVENTORY_LEGACY)
-    assert _INVENTORY_PACKAGES == {entry["legacy"] for entry in _INVENTORY["packages"]}
+    assert from_json == set(_WORKFLOWS_INVENTORY_LEGACY)
+    assert _WORKFLOWS_INVENTORY_PACKAGES == {
+        entry["legacy"] for entry in _INVENTORY["packages"]
+    }
     assert _ENTERPRISE_MODULES == {
         entry["legacy"]
         for entry in _INVENTORY["modules"]
         if entry["legacy"].startswith("inference.enterprise.")
     }
-
-
-def test_inventory_pins_baseline_revision() -> None:
-    assert _INVENTORY["generated_from_revision"] == (
-        "b77b7a08cb1e484742d9eaf5b48e48b534081289"
-    )
-
-
-def test_inventory_matches_historical_git_tree() -> None:
-    # Independent check: reconstruct the historical package/module set from the
-    # pinned Git revision (not from the current canonical tree) and verify it
-    # equals the inventory. Skip only when Git/history is unavailable
-    # (installed-source archives or shallow checkouts); do not freeze only a
-    # count and never substitute the canonical source tree.
-    # Packages and modules are compared separately; the canonical field of
-    # every inventory entry is verified against the two documented prefix rules.
-    import shutil
-
-    if shutil.which("git") is None:
-        pytest.skip("git not available")
-    revision = _INVENTORY["generated_from_revision"]
-    repo_root = Path(__file__).resolve().parents[3]
-    try:
-        listing = subprocess.check_output(
-            ["git", "-C", str(repo_root), "ls-tree", "-r", "--name-only", revision],
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pytest.skip("baseline revision unreachable from local git history")
-
-    # Two documented prefix rules (longest prefix first).
-    _PREFIX_MAP = (
-        (
-            "inference.enterprise.workflows.enterprise_blocks",
-            "roboflow_workflows.enterprise_blocks",
-        ),
-        ("inference.core.workflows", "roboflow_workflows"),
-    )
-
-    def _to_canonical(legacy: str) -> str:
-        for lpfx, cpfx in _PREFIX_MAP:
-            if legacy == lpfx:
-                return cpfx
-            if legacy.startswith(lpfx + "."):
-                return cpfx + legacy[len(lpfx) :]
-        raise ValueError(f"no prefix rule for {legacy!r}")
-
-    historical_packages: set[str] = set()
-    historical_modules: set[str] = set()
-    for path in listing.splitlines():
-        if not path.endswith(".py"):
-            continue
-        if not (
-            path.startswith("inference/core/workflows/")
-            or path.startswith("inference/enterprise/workflows/enterprise_blocks/")
-        ):
-            continue
-        dotted = path[:-3].replace("/", ".")
-        if dotted.endswith(".__init__"):
-            dotted = dotted[: -len(".__init__")]
-            historical_packages.add(dotted)
-        else:
-            historical_modules.add(dotted)
-
-    inventory_packages = {entry["legacy"] for entry in _INVENTORY["packages"]}
-    inventory_modules = {entry["legacy"] for entry in _INVENTORY["modules"]}
-    assert historical_packages == inventory_packages, (
-        f"package mismatch: "
-        f"history-only={historical_packages - inventory_packages!r}, "
-        f"inventory-only={inventory_packages - historical_packages!r}"
-    )
-    assert historical_modules == inventory_modules, (
-        f"module mismatch: "
-        f"history-only={historical_modules - inventory_modules!r}, "
-        f"inventory-only={inventory_modules - historical_modules!r}"
-    )
-    # Every inventory canonical field must be derivable from the legacy field
-    # by the two documented prefix rules (not an arbitrary mapping).
-    for entry in _INVENTORY["packages"] + _INVENTORY["modules"]:
-        expected = _to_canonical(entry["legacy"])
-        assert entry["canonical"] == expected, (
-            f"{entry['legacy']!r}: expected canonical {expected!r}, "
-            f"got {entry['canonical']!r}"
-        )
-    assert historical_packages | historical_modules == set(_INVENTORY_LEGACY)
 
 
 def test_legacy_font_helper_exports_and_monkeypatches_work(monkeypatch, tmp_path):

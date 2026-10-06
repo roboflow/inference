@@ -3,6 +3,9 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
+)
 from roboflow_workflows.execution_engine.constants import (
     TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
 )
@@ -21,13 +24,19 @@ from roboflow_workflows.execution_engine.entities.types import (
     VIDEO_METADATA_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
-    RuntimeRestriction,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from typing_extensions import Literal, Type
 
@@ -184,6 +193,21 @@ class TimeInZoneManifest(WorkflowBlockManifest):
             STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.DETECTION_PROCESSING, WorkOperation.TEMPORAL_BUFFERING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=list(STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class TimeInZoneBlockV1(WorkflowBlock):

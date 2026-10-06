@@ -1,0 +1,329 @@
+import logging
+import os
+from unittest.mock import MagicMock
+
+import pytest
+from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
+from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
+    DEFAULT_MQTT_PORT,
+    MQTT_KEEPALIVE_SECONDS,
+    PERMANENT_CONNACK_CODES,
+    ConfigurationError,
+    configure_tls,
+    connection_refused_message,
+    normalise_broker_address,
+    normalise_client_id,
+    resolve_broker_address,
+    split_host_port,
+)
+
+ALLOW = "MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST"
+ALLOWLIST = "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS"
+
+
+@pytest.fixture
+def policy(monkeypatch):
+    def configure(allow: bool = True, allowlist=None):
+        monkeypatch.setattr(mqtt_common, ALLOW, allow)
+        monkeypatch.setattr(mqtt_common, ALLOWLIST, allowlist)
+
+    configure()
+    return configure
+
+
+@pytest.mark.parametrize(
+    "entry, expected",
+    [
+        ("broker.local", ("broker.local", None)),
+        (" Broker.LOCAL ", ("broker.local", None)),
+        ("broker.local:1883", ("broker.local", 1883)),
+        ("Broker.LOCAL:8883 ", ("broker.local", 8883)),
+        ("10.0.0.5", ("10.0.0.5", None)),
+        ("[::1]", ("::1", None)),
+        ("[::1]:8883", ("::1", 8883)),
+        ("fe80::1", ("fe80::1", None)),
+        ("broker.local:notaport", ("broker.local:notaport", None)),
+    ],
+)
+def test_split_host_port(entry, expected):
+    assert split_host_port(entry) == expected
+
+
+@pytest.mark.parametrize(
+    "host, port, expected",
+    [
+        ("Broker.LOCAL", 1883, "broker.local:1883"),
+        ("[::1]", 8883, "::1:8883"),
+        (" 10.0.0.5 ", "1883", "10.0.0.5:1883"),
+    ],
+)
+def test_normalise_broker_address(host, port, expected):
+    assert normalise_broker_address(host, port) == expected
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (None, None),
+        ("", None),
+        ("   ", None),
+        ("\t\n", None),
+        ("line1", "line1"),
+        ("  line1-camera3  ", "line1-camera3"),
+    ],
+)
+def test_normalise_client_id_treats_blank_as_unset_and_strips(value, expected):
+    assert normalise_client_id(value) == expected
+
+
+@pytest.mark.parametrize("value", [5, 1.5, True, ["line1"], {"id": "line1"}])
+def test_normalise_client_id_rejects_non_strings_naming_the_field(value):
+    with pytest.raises(ConfigurationError, match="client_id"):
+        normalise_client_id(value)
+
+
+def test_permanent_connack_codes_exclude_success_and_broker_unavailable():
+    assert PERMANENT_CONNACK_CODES == {1, 2, 4, 5}
+    assert 0 not in PERMANENT_CONNACK_CODES
+    assert 3 not in PERMANENT_CONNACK_CODES
+
+
+@pytest.mark.parametrize(
+    "code, reason",
+    [
+        (1, "unacceptable protocol version"),
+        (2, "identifier rejected"),
+        (4, "bad user name or password"),
+        (5, "not authorised"),
+    ],
+)
+def test_permanent_refusal_message_names_reason_inputs_and_no_retry(code, reason):
+    message = connection_refused_message(code, block_inputs="username and password")
+
+    assert reason in message
+    assert f"code {code}" in message
+    assert "Check username and password" in message
+    assert "does not retry" in message
+    assert "Raise 'timeout'" not in message
+
+
+def test_broker_unavailable_message_says_retrying():
+    message = connection_refused_message(3, block_inputs="username and password")
+
+    assert "broker unavailable" in message
+    assert "code 3" in message
+    assert "retrying in the background" in message
+    assert "does not retry" not in message
+
+
+def test_unknown_refusal_code_uses_permanent_wording():
+    message = connection_refused_message(7, block_inputs="username and password")
+
+    assert "unknown reason" in message
+    assert "code 7" in message
+    assert "does not retry" in message
+
+
+def test_keepalive_is_shorter_than_paho_default():
+    assert 0 < MQTT_KEEPALIVE_SECONDS < 60
+
+
+def test_default_policy_passes_user_value_through_unchanged(policy):
+    assert resolve_broker_address("Broker.LOCAL", 1883) == ("Broker.LOCAL", 1883)
+
+
+@pytest.mark.parametrize(
+    "host, port",
+    [
+        ("broker.local", 1883),
+        ("Broker.LOCAL", 1883),
+        ("[::1]", 8883),
+        ("10.0.0.5", 1883),
+        ("10.0.0.5", 8883),
+    ],
+)
+def test_allowlist_accepts_listed_host_and_port_or_portless_host(policy, host, port):
+    policy(allowlist=["broker.local:1883", "[::1]:8883", "10.0.0.5"])
+
+    assert resolve_broker_address(host, port) == (host, port)
+
+
+@pytest.mark.parametrize(
+    "host, port",
+    [
+        ("other.local", 1883),
+        ("broker.local", 8883),
+        ("[::1]", 1883),
+    ],
+)
+def test_allowlist_rejects_unlisted_address_without_revealing_the_allowlist(
+    policy, host, port
+):
+    policy(allowlist=["broker.local:1883", "[::1]:8883", "10.0.0.5"])
+
+    with pytest.raises(ConfigurationError) as error:
+        resolve_broker_address(host, port)
+
+    message = str(error.value)
+    assert "not permitted" in message
+    assert "10.0.0.5" not in message
+    assert "broker.local" not in message or host == "broker.local"
+
+
+def test_empty_allowlist_permits_nothing(policy):
+    policy(allowlist=[])
+
+    with pytest.raises(ConfigurationError):
+        resolve_broker_address("broker.local", 1883)
+
+
+def test_allowlist_ignores_blank_entries(policy):
+    policy(allowlist=["  ", "broker.local", ""])
+
+    assert resolve_broker_address("broker.local", 1883) == ("broker.local", 1883)
+
+
+def test_user_host_not_allowed_uses_first_operator_entry(policy, caplog):
+    policy(allow=False, allowlist=["Operator.Broker:8883", "other:1883"])
+
+    with caplog.at_level(logging.WARNING, logger="inference"):
+        resolved = resolve_broker_address("workflow.host", 1883)
+
+    assert resolved == ("operator.broker", 8883)
+    assert "replaced by the operator-configured broker" in caplog.text
+
+
+def test_user_host_not_allowed_defaults_port(policy):
+    policy(allow=False, allowlist=["operator.broker"])
+
+    assert resolve_broker_address("workflow.host", 1) == (
+        "operator.broker",
+        DEFAULT_MQTT_PORT,
+    )
+
+
+def test_override_warning_can_be_silenced(policy, caplog):
+    policy(allow=False, allowlist=["operator.broker"])
+
+    with caplog.at_level(logging.WARNING, logger="inference"):
+        resolve_broker_address("workflow.host", 1883, log_override=False)
+
+    assert caplog.text == ""
+
+
+def test_user_host_not_allowed_without_operator_broker_is_disabled(policy):
+    policy(allow=False, allowlist=None)
+
+    with pytest.raises(ConfigurationError, match="disabled"):
+        resolve_broker_address("workflow.host", 1883)
+
+
+class TestConfigureTLS:
+    @pytest.mark.parametrize("ca_certificate_path", [None, "", "/ca.pem"])
+    @pytest.mark.parametrize("allowed", [True, False])
+    def test_disabled_tls_touches_nothing(self, ca_certificate_path, allowed):
+        client = MagicMock()
+
+        configure_tls(
+            client,
+            use_tls=False,
+            ca_certificate_path=ca_certificate_path,
+            allow_access_to_file_system=allowed,
+        )
+
+        assert client.method_calls == []
+
+    @pytest.mark.parametrize("ca_certificate_path", [None, ""])
+    def test_tls_without_ca_path_uses_system_trust_store(self, ca_certificate_path):
+        client = MagicMock()
+
+        configure_tls(
+            client,
+            use_tls=True,
+            ca_certificate_path=ca_certificate_path,
+            allow_access_to_file_system=False,
+        )
+
+        client.tls_set.assert_called_once_with()
+        client.tls_insecure_set.assert_not_called()
+
+    def test_ca_path_used_with_file_system_access(self, tmp_path):
+        client = MagicMock()
+        ca_path = tmp_path / "factory-ca.pem"
+        ca_path.write_text("content is irrelevant: paho is faked here")
+
+        configure_tls(
+            client,
+            use_tls=True,
+            ca_certificate_path=str(ca_path),
+            allow_access_to_file_system=True,
+        )
+
+        client.tls_set.assert_called_once_with(ca_certs=str(ca_path))
+        client.tls_insecure_set.assert_not_called()
+
+    def test_ca_path_refused_without_file_system_access(self):
+        client = MagicMock()
+
+        with pytest.raises(ConfigurationError) as error:
+            configure_tls(
+                client,
+                use_tls=True,
+                ca_certificate_path="/etc/passwd",
+                allow_access_to_file_system=False,
+            )
+
+        assert "ca_certificate_path" in str(error.value)
+        assert "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE" in str(error.value)
+        assert client.method_calls == []
+
+    @pytest.mark.parametrize("kind", ["missing", "directory", "fifo"])
+    def test_ca_path_must_be_a_regular_file(self, tmp_path, kind):
+        # OpenSSL's loader blocks forever on a FIFO; the guard runs before it
+        client = MagicMock()
+        if kind == "missing":
+            path = tmp_path / "missing.pem"
+        elif kind == "directory":
+            path = tmp_path
+        else:
+            path = tmp_path / "pipe"
+            os.mkfifo(path)
+
+        with pytest.raises(ConfigurationError, match="is not a readable file"):
+            configure_tls(
+                client,
+                use_tls=True,
+                ca_certificate_path=str(path),
+                allow_access_to_file_system=True,
+            )
+
+        client.tls_set.assert_not_called()
+
+    def test_unloadable_ca_bundle_reported(self, tmp_path):
+        client = MagicMock()
+        client.tls_set.side_effect = ValueError("no certificate or crl found")
+        ca_path = tmp_path / "not-a-pem.pem"
+        ca_path.write_text("garbage")
+
+        with pytest.raises(ConfigurationError, match="could not load CA bundle") as e:
+            configure_tls(
+                client,
+                use_tls=True,
+                ca_certificate_path=str(ca_path),
+                allow_access_to_file_system=True,
+            )
+
+        assert str(ca_path) in str(e.value)
+        assert "no certificate or crl found" in str(e.value)
+
+    def test_system_store_failure_reported(self):
+        client = MagicMock()
+        client.tls_set.side_effect = ValueError("bad context")
+
+        with pytest.raises(ConfigurationError, match="TLS could not be configured"):
+            configure_tls(
+                client,
+                use_tls=True,
+                ca_certificate_path=None,
+                allow_access_to_file_system=False,
+            )

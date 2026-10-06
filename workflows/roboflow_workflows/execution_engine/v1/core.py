@@ -49,6 +49,7 @@ from roboflow_workflows.prototypes.block import (
     is_workflow_selector,
 )
 from roboflow_workflows.prototypes.image_codec import ImageCodec
+from roboflow_workflows.prototypes.model_registration import model_registration_key
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.prototypes.observer import (
     NULL_EXECUTION_OBSERVER,
@@ -58,7 +59,7 @@ from roboflow_workflows.prototypes.workspace_resolver import NULL_WORKSPACE_RESO
 
 logger = get_logger(__name__)
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.15.2")
+EXECUTION_ENGINE_V1_VERSION = Version("1.16.1")
 
 DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
     "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "legacy"
@@ -196,19 +197,23 @@ def _resolve_execution_observer(
     return observer
 
 
-def _is_locally_executed_platform_model(
+def _is_eligible_for_generic_preloading(
     dependency: DependentResource,
     step_execution_mode: StepExecutionMode,
 ) -> bool:
-    """True for declarations that will pull model weights into this process.
+    """True for declarations the generic model-manager preloader may register.
 
-    Excludes non-model resources, ACCESS-only usage, remote-only execution,
-    and `ENVIRONMENT_DEFINED` execution when the effective step execution
-    mode is not LOCAL.
+    Excludes non-model resources, declarations marked `preloadable=False`
+    (blocks that load and own their model in-process), ACCESS-only usage,
+    remote-only execution, and `ENVIRONMENT_DEFINED` execution when the
+    effective step execution mode is not LOCAL. Checked before any input is
+    resolved, so an ineligible declaration never reaches the model manager.
     """
     if dependency.resource_type is not DependentResourceType.ROBOFLOW_PLATFORM_MODEL:
         return False
     metadata = dependency.metadata
+    if not metadata.preloadable:
+        return False
     if metadata.required_action is not ModelRequiredAction.EXECUTION:
         return False
     if metadata.execution_location is ModelExecutionLocation.REMOTE:
@@ -255,12 +260,12 @@ def _pre_load_roboflow_platform_models(
     Returns dependencies whose model id is an `$inputs.<name>` selector — they
     can only be resolved on the first run, once runtime parameters are known.
     `$steps.<name>.<property>` references are dropped (never statically
-    resolvable) and so are declarations that will not pull weights locally
-    (see `_is_locally_executed_platform_model`).
+    resolvable) and so are declarations the generic preloader must not
+    register (see `_is_eligible_for_generic_preloading`).
     """
     pending, loaded_model_ids = [], set()
     for dependency in dependencies:
-        if not _is_locally_executed_platform_model(
+        if not _is_eligible_for_generic_preloading(
             dependency=dependency, step_execution_mode=step_execution_mode
         ):
             continue
@@ -269,13 +274,20 @@ def _pre_load_roboflow_platform_models(
             if is_input_selector(selector_or_value=metadata.model_id):
                 pending.append(dependency)
             continue
-        if metadata.model_id in loaded_model_ids:
+        registration_kwargs = metadata.model_registration_kwargs or {}
+        registration_key = model_registration_key(
+            metadata.model_id,
+            required_capabilities=registration_kwargs.get("required_capabilities"),
+            output_type=registration_kwargs.get("output_type", "feature_vector"),
+        )
+        if registration_key in loaded_model_ids:
             continue
-        loaded_model_ids.add(metadata.model_id)
+
+        loaded_model_ids.add(registration_key)
         model_manager.add_model(
             model_id=metadata.model_id,
             api_key=api_key,
-            **(metadata.model_registration_kwargs or {}),
+            **registration_kwargs,
         )
     if loaded_model_ids:
         _verify_pre_loaded_models_presence(
@@ -293,7 +305,7 @@ def _resolve_and_pre_load_runtime_dependencies(
 ) -> None:
     loaded_model_ids = set()
     for dependency in pending_dependencies:
-        if not _is_locally_executed_platform_model(
+        if not _is_eligible_for_generic_preloading(
             dependency=dependency, step_execution_mode=step_execution_mode
         ):
             continue
@@ -328,13 +340,20 @@ def _resolve_and_pre_load_runtime_dependencies(
                 # final id depends on more than this one input) — skip
                 # pre-loading and let execution resolve it.
                 continue
-        if resolved_value in loaded_model_ids:
+        registration_kwargs = dependency.metadata.model_registration_kwargs or {}
+        registration_key = model_registration_key(
+            resolved_value,
+            required_capabilities=registration_kwargs.get("required_capabilities"),
+            output_type=registration_kwargs.get("output_type", "feature_vector"),
+        )
+        if registration_key in loaded_model_ids:
             continue
-        loaded_model_ids.add(resolved_value)
+
+        loaded_model_ids.add(registration_key)
         model_manager.add_model(
             model_id=resolved_value,
             api_key=api_key,
-            **(dependency.metadata.model_registration_kwargs or {}),
+            **registration_kwargs,
         )
     if loaded_model_ids:
         _verify_pre_loaded_models_presence(

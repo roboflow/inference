@@ -30,8 +30,11 @@ jobs:
   build-dev-test:
     needs: call_is_mergeable
     if: ${{ (github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
+    # I/O-bound workflow integration tests. Measured on Depot over 2,360 jobs on the
+    # 16c/64GB machine: ~15% average CPU and ~12.8GB peak RAM. 8c/32GB keeps the peak
+    # at ~40% of memory; 4c/16GB would leave only ~3GB headroom.
     runs-on:
-      labels: depot-ubuntu-22.04-16
+      labels: depot-ubuntu-22.04-8
       group: public-depot
     strategy:
       matrix:
@@ -65,10 +68,10 @@ jobs:
         with:
           path: workflows/roboflow_workflows/core_steps/visualizations/common/fonts/assets
           key: workflows-fonts-${{ hashFiles('workflows/roboflow_workflows/core_steps/visualizations/common/fonts/registry.py') }}
-      - name: 🏗️ Build and install roboflow-workflows wheel (with enterprise extra)
+      - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
-          make create_workflows_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
+          make create_workflows_wheel create_streamvision_wheel
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Integration Tests of Workflows (tensor-native)
         # Tensor-native path only: ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with
         # USE_INFERENCE_MODELS, which defaults to True on Linux runners, so it is not set here.

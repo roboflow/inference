@@ -2,7 +2,9 @@ import numpy as np
 import pytest
 import supervision as sv
 from pydantic import ValidationError
+from roboflow_workflows.core_steps.common.keypoints import MAX_KEYPOINT_SLOTS
 from roboflow_workflows.core_steps.visualizations.keypoint.v1 import (
+    COCO_KEYPOINT_NAMES,
     KeypointManifest,
     KeypointVisualizationBlockV1,
 )
@@ -400,3 +402,206 @@ def test_keypoint_visualization_block_no_predictions() -> None:
         output.get("image").numpy_image.__array_interface__["data"][0]
         != start_image.__array_interface__["data"][0]
     )
+
+
+def _partial_pose_predictions(keypoint_ids: list) -> sv.Detections:
+    # One detection holding only the given COCO keypoints, stored the way
+    # `add_inference_keypoints_to_sv_detections` stores a filtered response:
+    # real keypoints first, padding after.
+    width = len(keypoint_ids)
+    xy = [[100.0 + 10 * i, 100.0 + 20 * i] for i in keypoint_ids]
+    return sv.Detections(
+        xyxy=np.array([[50, 50, 450, 450]], dtype=np.float64),
+        class_id=np.array([0]),
+        data={
+            "keypoints_xy": np.array([xy], dtype=np.float32).reshape(1, width, 2),
+            "keypoints_confidence": np.full((1, width), 0.9, dtype=np.float32),
+            "keypoints_class_name": np.array(
+                [[COCO_KEYPOINT_NAMES[i] for i in keypoint_ids]], dtype=object
+            ),
+            "keypoints_class_id": np.array([keypoint_ids], dtype=int),
+        },
+    )
+
+
+def test_keypoints_are_placed_by_class_id_when_earlier_keypoints_are_missing() -> None:
+    # given: left_eye (1) and left_ear (3) were filtered out by the model
+    predictions = _partial_pose_predictions([0, 2, 4, 5, 6])
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then
+    assert key_points.xy.shape == (1, 17, 2)
+    for keypoint_id in [0, 2, 4, 5, 6]:
+        assert tuple(key_points.xy[0, keypoint_id]) == (
+            100.0 + 10 * keypoint_id,
+            100.0 + 20 * keypoint_id,
+        )
+    for missing_id in [1, 3] + list(range(7, 17)):
+        assert tuple(key_points.xy[0, missing_id]) == (0.0, 0.0)
+    assert key_points.data["class_name"][0, 2] == "right_eye"
+    assert key_points.data["class_name"][0, 1] == ""
+
+
+def test_keypoint_visualization_block_draws_edges_for_upper_body_only() -> None:
+    # given: only the upper body (keypoints 0-10) is in frame for every person,
+    # so the stored keypoints never reach the 17 the COCO skeleton lookup needs
+    predictions = _partial_pose_predictions(list(range(11)))
+    start_image = np.zeros((500, 500, 3), dtype=np.uint8)
+
+    # when
+    output = KeypointVisualizationBlockV1().run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=start_image,
+        ),
+        predictions=predictions,
+        copy_image=True,
+        annotator_type="edge",
+        color="#A351FB",
+        text_color="black",
+        text_scale=0.5,
+        text_thickness=1,
+        text_padding=10,
+        thickness=2,
+        radius=10,
+    )
+
+    # then
+    assert output["image"].numpy_image.any(), "upper-body edges must be drawn"
+
+
+def test_keypoints_without_class_ids_are_used_as_stored() -> None:
+    # given
+    predictions = _partial_pose_predictions([0, 2, 4])
+    del predictions.data["keypoints_class_id"]
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then
+    assert np.array_equal(key_points.xy, predictions.data["keypoints_xy"])
+
+
+def test_keypoints_of_non_coco_skeleton_are_not_widened_to_coco() -> None:
+    # given
+    predictions = _partial_pose_predictions([0, 2, 4])
+    predictions.data["keypoints_class_name"] = np.array(
+        [["tip", "joint", "base"]], dtype=object
+    )
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then
+    assert key_points.xy.shape == (1, 5, 2)
+    assert tuple(key_points.xy[0, 4]) == (140.0, 180.0)
+
+
+def test_keypoints_with_coco_names_out_of_coco_order_are_not_widened() -> None:
+    # given: a custom two-point skeleton reusing COCO names at other positions
+    predictions = _partial_pose_predictions([0, 1])
+    predictions.data["keypoints_class_name"] = np.array(
+        [["left_wrist", "right_wrist"]], dtype=object
+    )
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then: COCO's first bone would otherwise join the two wrists
+    assert key_points.xy.shape == (1, 2, 2)
+
+
+def test_keypoints_with_class_id_at_the_slot_limit_are_placed() -> None:
+    # given: the highest class id a skeleton may use
+    predictions = _partial_pose_predictions([0])
+    predictions.data["keypoints_class_id"] = np.array(
+        [[MAX_KEYPOINT_SLOTS - 1]], dtype=int
+    )
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then
+    assert key_points.xy.shape == (1, MAX_KEYPOINT_SLOTS, 2)
+    assert tuple(key_points.xy[0, MAX_KEYPOINT_SLOTS - 1]) == (100.0, 100.0)
+
+
+def test_keypoints_with_class_id_beyond_the_slot_limit_are_used_as_stored() -> None:
+    # given: runtime input can carry any class id; one slot past the limit stays
+    # far below the padding cell limit, so only the slot limit stops the widening
+    predictions = _partial_pose_predictions([0])
+    predictions.data["keypoints_class_id"] = np.array([[MAX_KEYPOINT_SLOTS]], dtype=int)
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then
+    assert key_points.xy.shape == (1, 1, 2)
+
+
+def test_padding_slots_are_not_scattered_onto_the_nose() -> None:
+    # given: the first person has only nose and right_eye, padded to the batch
+    # width with the padding class name and class id 0, like
+    # `add_inference_keypoints_to_sv_detections` stores it
+    predictions = sv.Detections(
+        xyxy=np.array([[50, 50, 450, 450], [10, 10, 40, 40]], dtype=np.float64),
+        class_id=np.array([0, 0]),
+        data={
+            "keypoints_xy": np.array(
+                [
+                    [[100.0, 100.0], [120.0, 140.0], [0.0, 0.0]],
+                    [[200.0, 200.0], [210.0, 220.0], [220.0, 240.0]],
+                ],
+                dtype=np.float32,
+            ),
+            "keypoints_confidence": np.array(
+                [[0.9, 0.8, 0.0], [0.9, 0.9, 0.9]], dtype=np.float32
+            ),
+            "keypoints_class_name": np.array(
+                [["nose", "right_eye", ""], ["nose", "left_eye", "right_eye"]],
+                dtype=object,
+            ),
+            "keypoints_class_id": np.array([[0, 2, 0], [0, 1, 2]], dtype=int),
+        },
+    )
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then: the padding row (class id 0) must not overwrite the real nose
+    assert key_points.xy.shape == (2, 17, 2)
+    assert tuple(key_points.xy[0, 0]) == (100.0, 100.0)
+    assert tuple(key_points.xy[0, 2]) == (120.0, 140.0)
+    assert tuple(key_points.xy[0, 1]) == (0.0, 0.0)
+    assert key_points.data["class_name"][0, 0] == "nose"
+    assert key_points.data["class_name"][0, 1] == ""
+
+
+def test_keypoints_with_negative_class_id_are_used_as_stored() -> None:
+    # given
+    predictions = _partial_pose_predictions([0, 2])
+    predictions.data["keypoints_class_id"] = np.array([[0, -1]], dtype=int)
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then
+    assert np.array_equal(key_points.xy, predictions.data["keypoints_xy"])

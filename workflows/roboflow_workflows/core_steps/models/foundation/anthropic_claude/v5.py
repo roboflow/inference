@@ -66,6 +66,11 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
@@ -90,6 +95,12 @@ CLAUDE_MODELS = [
         "id": "claude-opus-5-5",
         "name": "Claude Opus 5.5",
         "exact_version": "claude-opus-5-5",
+        "max_output_tokens": 128000,
+    },
+    {
+        "id": "claude-sonnet-5-5",
+        "name": "Claude Sonnet 5.5",
+        "exact_version": "claude-sonnet-5-5",
         "max_output_tokens": 128000,
     },
     {
@@ -375,7 +386,12 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="claude-sonnet-4-5",
         description="Model to be used",
-        examples=["claude-opus-5-5", "claude-sonnet-4-5", "$inputs.claude_model"],
+        examples=[
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-sonnet-4-5",
+            "$inputs.claude_model",
+        ],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },
@@ -512,6 +528,20 @@ class BlockManifest(WorkflowBlockManifest):
                 ),
             )
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.IMAGE_ENCODING,
+        ]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class AnthropicClaudeBlockV5(WorkflowBlock):

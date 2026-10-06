@@ -44,12 +44,17 @@ RUN pip3 install \
 # from `requirements/*.txt`, and embeds the checksum-verified font assets so
 # no download runs at container start.
 COPY workflows workflows
+COPY stream_vision stream_vision
 RUN pip3 install uv \
     && python3 workflows/build_scripts/download_fonts.py \
     && cd workflows \
     && uv build --out-dir /wheels \
     && cd - \
+    && cd stream_vision \
+    && uv build --out-dir /wheels \
+    && cd - \
     && pip3 install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+    && pip3 install --find-links /wheels "$(ls /wheels/streamvision-*.whl)[webrtc]" \
     && rm -rf ~/.cache/pip
 
 FROM scratch

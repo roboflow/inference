@@ -5,6 +5,7 @@ cache-hit path), once after (`apply_collected_dynamic_blocks_definitions_to_work
 - so a definition with a duplicate `block_type` logged the "skipping duplicate"
 warning twice. The pre-resolution call now passes `warn_on_duplicates=False`,
 so the warning is only ever logged once, by the post-normalisation collection.
+The warning names both definitions by structural position, never by block type.
 """
 
 from unittest import mock
@@ -83,3 +84,16 @@ def test_duplicate_dynamic_block_definition_warns_exactly_once_on_cold_compile(
         )
 
     assert mocked_logger.warning.call_count == 1
+    warning_arguments = mocked_logger.warning.call_args.args
+    assert warning_arguments[1:] == (
+        "dynamic_blocks_definitions[1]",
+        "dynamic_blocks_definitions[0]",
+    )
+    rendered_message = warning_arguments[0] % warning_arguments[1:]
+    assert rendered_message == (
+        "Skipping duplicate dynamic block definition at "
+        "dynamic_blocks_definitions[1]; keeping dynamic_blocks_definitions[0]."
+    )
+    assert all(
+        duplicated_block_type not in str(argument) for argument in warning_arguments
+    )

@@ -113,7 +113,7 @@ With a Roboflow Inference Enterprise License, you can access additional Inferenc
 
 - Server cluster deployment
 - Active learning
-- YOLOv5 and YOLOv8 model sub-license
+- Commercial license for self-hosted deployment, available as an Enterprise add-on. Without that add-on, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0.
 
 To learn more, [contact the Roboflow team](https://roboflow.com/sales).
 
@@ -164,7 +164,7 @@ Visit our [documentation](https://roboflow.github.io/inference) for usage exampl
           />
       </a>
       <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
-      <a href="https://disuss.roboflow.com">
+      <a href="https://discuss.roboflow.com">
           <img
             src="https://media.roboflow.com/notebooks/template/icons/purple/forum.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949633584"
             width="3%"
