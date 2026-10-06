@@ -68,8 +68,8 @@ A threshold is the minimum confidence score to retain.
 | `"best"` | Model-eval per-class thresholds, then the global recommendation, then the package threshold |
 | Number from 0 to 1 | Explicit override for every class |
 
-Use fractions through the typed endpoint.
-The legacy model-ID route treats numeric values of 1 or more as percentages, so `1` means 1% there.
+For requests to the legacy HTTP endpoint `/{dataset_id}/{version_id}`, confidence values of 1 or more are treated as percentages, so `1` means 1%.
+The newer, recommended HTTP endpoint `/infer/action_recognition` uses fractions, so `1` means 100%.
 
 Set `include_candidates: true` to return unmerged predictions, including those below the threshold.
 The `timeline` remains filtered.
