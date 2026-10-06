@@ -212,17 +212,24 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         reference_height, reference_width = reference_image.numpy_image.shape[:2]
         resolution_wh = (reference_width, reference_height)
 
-        # Masks travel separately from the rest of the detections, as
-        # crop-scoped CompactMask (RLE of each mask's bounding box), and only
-        # the detections that survive overlap filtering are materialised at
-        # reference resolution. Moving every crop mask to a full-size dense
-        # array first costs N x H x W bytes before any filtering: a 1080p
-        # frame sliced 12 ways with ~25 masks per slice took ~3 GiB inside
-        # this block and OOM-killed an 8 GiB video worker (2026-09-28).
-        # merge / NMS / NMM run on the compact form, so peak memory is
-        # bounded by the survivors.
+        # Masks travel separately from the rest of the detections and are
+        # only materialised at reference resolution once the survivors are
+        # known. Moving every crop mask to a full-size dense array first costs
+        # N x H x W bytes before any filtering: a 1080p frame sliced 12 ways
+        # with ~25 masks per slice took ~3 GiB inside this block and
+        # OOM-killed an 8 GiB video worker (2026-09-28).
+        #
+        # With overlap filtering every crop's masks become crop-scoped
+        # CompactMask (RLE of each mask's bounding box); merge / NMS / NMM run
+        # on the compact form, so peak memory is bounded by the survivors.
+        # Without filtering every mask survives and the output is dense, so
+        # the RLE round trip is pure overhead (7x slower on fragmented
+        # masks); the crop masks are copied straight into the output stack.
+        overlap_filter = choose_overlap_filter_strategy(
+            overlap_filtering_strategy=overlap_filtering_strategy,
+        )
         re_aligned_predictions = []
-        crop_masks: List[CompactMask] = []
+        crop_masks: List[Tuple[np.ndarray, np.ndarray]] = []
         masks_seen = False
         masks_missing = False
         for detections in predictions:
@@ -243,15 +250,8 @@ class DetectionsStitchBlockV1(WorkflowBlock):
             if mask is None:
                 masks_missing = True
                 continue
-
             masks_seen = True
-            crop_masks.append(
-                compact_mask_for_crop(
-                    np.asarray(mask),
-                    offset=offset,
-                    resolution_wh=resolution_wh,
-                )
-            )
+            crop_masks.append((np.asarray(mask), offset))
         if masks_seen and masks_missing:
             raise ValueError(
                 "Detections Stitch block received a mix of predictions with and "
@@ -259,15 +259,24 @@ class DetectionsStitchBlockV1(WorkflowBlock):
                 "masks, or none may."
             )
 
-        overlap_filter = choose_overlap_filter_strategy(
-            overlap_filtering_strategy=overlap_filtering_strategy,
-        )
         merged = sv.Detections.merge(detections_list=re_aligned_predictions)
-        if crop_masks:
-            merged.mask = CompactMask.merge(crop_masks)
         if overlap_filter is OverlapFilter.NONE:
-            filtered = merged
-        elif overlap_filter is OverlapFilter.NON_MAX_SUPPRESSION:
+            if crop_masks:
+                merged.mask = stitch_masks_dense(
+                    crop_masks=crop_masks, resolution_wh=resolution_wh
+                )
+            return {"predictions": merged}
+
+        if crop_masks:
+            merged.mask = CompactMask.merge(
+                [
+                    compact_mask_for_crop(
+                        masks, offset=offset, resolution_wh=resolution_wh
+                    )
+                    for masks, offset in crop_masks
+                ]
+            )
+        if overlap_filter is OverlapFilter.NON_MAX_SUPPRESSION:
             filtered = merged.with_nms(threshold=iou_threshold)
         else:
             filtered = merged.with_nmm(threshold=iou_threshold)
@@ -282,6 +291,93 @@ def _copy_without_mask(detections: sv.Detections) -> sv.Detections:
     shallow.mask = None
     detections_copy = deepcopy(shallow)
     return detections_copy
+
+
+def visible_crop_region(
+    crop_shape: Tuple[int, int],
+    *,
+    offset: np.ndarray,
+    resolution_wh: Tuple[int, int],
+) -> Optional[Tuple[Tuple[int, int, int, int], Tuple[int, int, int, int]]]:
+    """Find the part of a crop that lands inside the reference frame.
+
+    Mirrors the clipping of ``move_masks``: a crop may start before the
+    reference origin (negative offset) or extend past its far edge.
+
+    Args:
+        crop_shape: ``(crop_h, crop_w)`` of the crop masks.
+        offset: ``(x, y)`` position of the crop in the reference image.
+        resolution_wh: ``(width, height)`` of the reference image.
+
+    Returns:
+        ``((source_y1, source_y2, source_x1, source_x2), (target_y1, target_y2,
+        target_x1, target_x2))`` - the crop slice and the reference slice it
+        maps onto - or ``None`` if the crop is entirely outside the frame.
+    """
+    reference_width, reference_height = resolution_wh
+    offset_x, offset_y = int(offset[0]), int(offset[1])
+    crop_height, crop_width = crop_shape
+    source_x1, source_y1 = max(0, -offset_x), max(0, -offset_y)
+    source_x2 = min(crop_width, reference_width - offset_x)
+    source_y2 = min(crop_height, reference_height - offset_y)
+    if source_x2 <= source_x1 or source_y2 <= source_y1:
+        return None
+    target_x1, target_y1 = offset_x + source_x1, offset_y + source_y1
+    target_x2 = target_x1 + (source_x2 - source_x1)
+    target_y2 = target_y1 + (source_y2 - source_y1)
+    return (
+        (source_y1, source_y2, source_x1, source_x2),
+        (target_y1, target_y2, target_x1, target_x2),
+    )
+
+
+def stitch_masks_dense(
+    crop_masks: List[Tuple[np.ndarray, np.ndarray]],
+    *,
+    resolution_wh: Tuple[int, int],
+) -> np.ndarray:
+    """Place every crop's masks in one dense reference-size stack.
+
+    Equivalent to ``move_masks`` per crop followed by ``np.concatenate``, but
+    the output ``(N, reference_h, reference_w)`` array is the only
+    reference-size allocation: no per-crop full-frame stacks, concatenation
+    copy or compact intermediates. Only each mask's tight bounding box is
+    written, so the rest of the (calloc-zeroed) output is never touched;
+    writing the whole crop window per mask was 2x slower and left ~50% more
+    resident memory on 300 masks from 640x640 crops.
+
+    Args:
+        crop_masks: ``(masks, offset)`` per crop, in output order; ``masks``
+            is dense ``(n_i, crop_h, crop_w)`` and ``offset`` is the crop's
+            ``(x, y)`` position in the reference image.
+        resolution_wh: ``(width, height)`` of the reference image.
+
+    Returns:
+        Boolean ``(sum(n_i), height, width)`` array.
+    """
+    reference_width, reference_height = resolution_wh
+    total = sum(masks.shape[0] for masks, _ in crop_masks)
+    stitched = np.zeros((total, reference_height, reference_width), dtype=bool)
+    row = 0
+    for masks, offset in crop_masks:
+        count = masks.shape[0]
+        region = visible_crop_region(
+            masks.shape[1:], offset=offset, resolution_wh=resolution_wh
+        )
+        if region is not None:
+            (sy1, sy2, sx1, sx2), (ty1, _, tx1, _) = region
+            visible = masks[:, sy1:sy2, sx1:sx2]
+            # half-open boxes; an empty mask comes back as all zeros and is
+            # skipped, which leaves its output rows False
+            tight = sv.mask_to_xyxy(masks=visible, coordinate_convention="exclusive")
+            for index, (x1, y1, x2, y2) in enumerate(tight.tolist()):
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                stitched[row + index, ty1 + y1 : ty1 + y2, tx1 + x1 : tx1 + x2] = (
+                    visible[index, y1:y2, x1:x2]
+                )
+        row += count
+    return stitched
 
 
 def compact_mask_for_crop(
@@ -311,27 +407,22 @@ def compact_mask_for_crop(
         raise ValueError("To move non-empty detections offset is needed, but not given")
 
     reference_width, reference_height = resolution_wh
-    offset_x, offset_y = int(offset[0]), int(offset[1])
-    _, crop_height, crop_width = masks.shape
-    # The part of the crop that lands inside the reference frame; the rest is
-    # what move_masks would clip away.
-    source_x1, source_y1 = max(0, -offset_x), max(0, -offset_y)
-    source_x2 = min(crop_width, reference_width - offset_x)
-    source_y2 = min(crop_height, reference_height - offset_y)
-    if source_x2 <= source_x1 or source_y2 <= source_y1:
+    region = visible_crop_region(
+        masks.shape[1:], offset=offset, resolution_wh=resolution_wh
+    )
+    if region is None:
         visible = np.zeros((masks.shape[0], 1, 1), dtype=bool)
-        source_x1, source_y1 = 0, 0
+        target_x1, target_y1 = 0, 0
     else:
-        visible = np.ascontiguousarray(
-            masks[:, source_y1:source_y2, source_x1:source_x2]
-        )
+        (sy1, sy2, sx1, sx2), (target_y1, _, target_x1, _) = region
+        visible = np.ascontiguousarray(masks[:, sy1:sy2, sx1:sx2])
 
     visible_shape = (visible.shape[1], visible.shape[2])
     tight_boxes = sv.mask_to_xyxy(masks=visible)
     compact = CompactMask.from_dense(visible, tight_boxes, visible_shape)
     positioned = compact.with_offset(
-        offset_x + source_x1,
-        offset_y + source_y1,
+        target_x1,
+        target_y1,
         (reference_height, reference_width),
     )
     return positioned

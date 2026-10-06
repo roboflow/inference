@@ -699,6 +699,175 @@ def test_detections_stitch_peak_memory_is_bounded_for_sliced_segmentation() -> N
     assert peak < survivors_bytes + 512 * 1024 * 1024, f"peak={peak / 2**30:.2f} GiB"
 
 
+def test_detections_stitch_without_filtering_does_not_round_trip_compact_masks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With overlap_filtering_strategy="none" every mask is returned dense, so
+    the crop masks must be copied straight into the output stack: no RLE
+    encode / decode, which costs 7x on fragmented masks for no memory gain."""
+    from supervision.detection.compact_mask import CompactMask
+
+    def _fail(*_args, **_kwargs):
+        raise AssertionError("CompactMask must not be used when filtering is off")
+
+    monkeypatch.setattr(CompactMask, "from_dense", _fail)
+    monkeypatch.setattr(CompactMask, "merge", _fail)
+    rng = np.random.default_rng(11)
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=300, height=200)
+    offsets = [(0, 0), (80, 0), (0, 80), (220, 130)]
+    predictions = [
+        _random_slice_detections(
+            rng,
+            count=5,
+            slice_shape=(100, 100),
+            parent_offset=offset,
+            parent_dims=(200, 300),
+        )
+        for offset in offsets
+    ]
+    expected = _dense_reference_stitch(
+        predictions, reference_wh=(300, 200), strategy="none", iou_threshold=0.3
+    )
+
+    # when
+    result = block.run(
+        reference_image=reference_image,
+        predictions=predictions,
+        overlap_filtering_strategy="none",
+        iou_threshold=0.3,
+    )["predictions"]
+
+    # then
+    assert np.array_equal(result.xyxy, expected.xyxy)
+    assert isinstance(result.mask, np.ndarray)
+    assert result.mask.dtype == np.bool_
+    assert np.array_equal(result.mask, expected.mask)
+
+
+@pytest.mark.parametrize(
+    "offsets",
+    [
+        # negative offsets clip the crop on the top / left edge
+        [(-30, -20), (0, 0), (250, 150)],
+        # a crop entirely outside the reference frame contributes empty masks
+        [(0, 0), (400, 400), (-150, -150)],
+        # a crop larger than the reference on both sides
+        [(-10, -10)],
+    ],
+)
+def test_detections_stitch_without_filtering_clips_like_move_masks(
+    offsets: list,
+) -> None:
+    # given
+    rng = np.random.default_rng(5)
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=300, height=200)
+    predictions = [
+        _random_slice_detections(
+            rng,
+            count=4,
+            slice_shape=(100, 100) if len(offsets) > 1 else (320, 240),
+            parent_offset=offset,
+            parent_dims=(200, 300),
+        )
+        for offset in offsets
+    ]
+    expected = _dense_reference_stitch(
+        predictions, reference_wh=(300, 200), strategy="none", iou_threshold=0.3
+    )
+
+    # when
+    result = block.run(
+        reference_image=reference_image,
+        predictions=predictions,
+        overlap_filtering_strategy="none",
+        iou_threshold=0.3,
+    )["predictions"]
+
+    # then - same order, boxes and (clipped) masks as the dense oracle
+    assert len(result) == len(expected) == 4 * len(offsets)
+    assert np.array_equal(result.xyxy, expected.xyxy)
+    assert result.mask.shape == (len(expected), 200, 300)
+    assert np.array_equal(result.mask, expected.mask)
+
+
+def test_detections_stitch_without_filtering_keeps_inputs_untouched() -> None:
+    # given
+    rng = np.random.default_rng(9)
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=300, height=200)
+    predictions = [
+        _random_slice_detections(
+            rng,
+            count=3,
+            slice_shape=(100, 100),
+            parent_offset=offset,
+            parent_dims=(200, 300),
+        )
+        for offset in [(0, 0), (150, 50)]
+    ]
+    input_masks = [p.mask.copy() for p in predictions]
+    input_boxes = [p.xyxy.copy() for p in predictions]
+
+    # when
+    result = block.run(
+        reference_image=reference_image,
+        predictions=predictions,
+        overlap_filtering_strategy="none",
+        iou_threshold=0.3,
+    )["predictions"]
+
+    # then - inputs unchanged and the output shares no memory with them
+    for prediction, mask, boxes in zip(predictions, input_masks, input_boxes):
+        assert np.array_equal(prediction.mask, mask)
+        assert np.array_equal(prediction.xyxy, boxes)
+        assert not np.shares_memory(result.mask, prediction.mask)
+    result.mask[:] = False
+    assert all(p.mask.any() for p in predictions)
+
+
+def test_detections_stitch_without_filtering_allocates_only_the_output_stack() -> None:
+    """Without filtering the N x H x W output is unavoidable, but nothing else
+    of reference size should be allocated: no per-crop full-frame stacks, no
+    concatenation copy, no compact intermediates."""
+    import tracemalloc
+
+    rng = np.random.default_rng(3)
+    block = DetectionsStitchBlockV1()
+    width, height = 1920, 1012
+    reference_image = make_test_image(width=width, height=height)
+    offsets = [(x, y) for y in (0, 372, 372) for x in (0, 427, 854, 1280)]
+    predictions = [
+        _random_slice_detections(
+            rng,
+            count=25,
+            slice_shape=(640, 640),
+            parent_offset=offset,
+            parent_dims=(height, width),
+        )
+        for offset in offsets
+    ]
+
+    tracemalloc.start()
+    try:
+        result = block.run(
+            reference_image=reference_image,
+            predictions=predictions,
+            overlap_filtering_strategy="none",
+            iou_threshold=0.3,
+        )["predictions"]
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert len(result) == 300
+    output_bytes = len(result) * height * width
+    assert result.mask.nbytes == output_bytes
+    # a single extra full-frame copy would add another output_bytes (~580 MB)
+    assert peak < output_bytes + 64 * 1024 * 1024, f"peak={peak / 2**30:.2f} GiB"
+
+
 def _two_mask_crop(mask_a: np.ndarray, mask_b: np.ndarray) -> sv.Detections:
     """One 10x10 crop at the reference origin holding two same-class
     detections with confidences 0.9 and 0.8."""

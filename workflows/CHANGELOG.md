@@ -51,6 +51,8 @@ Bundled execution engine: `1.16.1`.
   workflow HTTP requests to return 400 instead of 500. Other model input errors
   retain their existing handling.
 
+- Detections Stitch (`roboflow_core/detections_stitch@v1`) with `overlap_filtering_strategy` set to `none` no longer encodes masks as compact masks and decodes them again: every mask survives, so each crop's masks are copied straight into the single dense output array (only each mask's bounding box is written). Outputs are unchanged. Measured with `supervision` 0.30.6, median block latency against the compact-mask stitch: 300 masks from twelve 640x640 crops onto 1920x1012 19 ms -> 12 ms; 48 salt-and-pepper masks from four 256x256 crops onto 640x480 14 ms -> 0.7 ms; 24 masks from four 100x100 crops onto 300x200 0.5 ms -> 0.2 ms. Peak memory stays at the size of the output.
+
 - Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
 
 ### Execution engine
