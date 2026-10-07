@@ -3,7 +3,7 @@
 import importlib
 import warnings
 from collections.abc import Iterator, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, Optional
 
@@ -17,12 +17,14 @@ class _LazyModelClass:
     warning_message: Optional[str] = None
     warning_category: type[Warning] = Warning
     _resolved: Any = None
+    _lock: Any = field(default_factory=RLock, init=False, repr=False, compare=False)
 
     def _resolve(self) -> Any:
-        if self._resolved is None:
-            module_path, class_name = self.path.split(":", 1)
-            module = importlib.import_module(module_path)
-            self._resolved = getattr(module, class_name)
+        with self._lock:
+            if self._resolved is None:
+                module_path, class_name = self.path.split(":", 1)
+                module = importlib.import_module(module_path)
+                self._resolved = getattr(module, class_name)
 
         return self._resolved
 
