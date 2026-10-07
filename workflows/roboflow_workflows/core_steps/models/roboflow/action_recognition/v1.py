@@ -33,6 +33,7 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
@@ -119,8 +120,9 @@ model carries, or list classes to report a subset of them. When a model call
 fails, error_status carries the error text for that frame and the stream
 continues.
 
-`latest_actions` lists the actions of the latest model call and holds them
-until the next call. Connect it to Text Display to show them on the video.
+`latest_predictions` holds the actions of the latest model call until the next
+call, as multi-label classification with a fixed confidence of 1.0. Connect it
+to Classification Label Visualization to show them on the video.
 """
 
 
@@ -213,7 +215,9 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[ACTION_RECOGNITION_PREDICTION_KIND],
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
-            OutputDefinition(name="latest_actions", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(
+                name="latest_predictions", kind=[CLASSIFICATION_PREDICTION_KIND]
+            ),
         ]
 
     @classmethod
@@ -514,7 +518,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
 
         bookkeeping.last_frame_number = frame_number
-        return self._build_output(bookkeeping=bookkeeping, error_status=error_status)
+        return self._build_output(
+            image=image, bookkeeping=bookkeeping, error_status=error_status
+        )
 
     def _resolve_source_fps(
         self,
@@ -695,6 +701,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def _build_output(
         self,
+        image: WorkflowImageData,
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
     ) -> dict:
@@ -706,5 +713,25 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
-            "latest_actions": list(bookkeeping.latest_actions),
+            "latest_predictions": self._build_latest_predictions(
+                image=image, actions=bookkeeping.latest_actions
+            ),
+        }
+
+    def _build_latest_predictions(
+        self, image: WorkflowImageData, actions: List[str]
+    ) -> Any:
+        # Multi-label shape so Classification Label Visualization draws every
+        # action; ids are list positions because captions have no vocabulary id.
+        height, width = image._read_shape_without_materialization()
+        return {
+            "image": {"height": height, "width": width},
+            "predictions": {
+                action: {"confidence": 1.0, "class_id": class_id}
+                for class_id, action in enumerate(actions)
+            },
+            "predicted_classes": list(actions),
+            "prediction_type": "classification",
+            "parent_id": image.parent_metadata.parent_id,
+            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
         }
