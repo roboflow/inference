@@ -14,6 +14,7 @@ opt-out.
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from starlette.testclient import TestClient
 
 SERVICE_SECRET = "workflow-billing-contract-secret"
@@ -354,3 +355,50 @@ def test_an_unbound_observer_records_no_workflow_row(monkeypatch):
     # then
     categories = {key.split(":", 1)[0] for key in _rows_for_api_key(api_key)}
     assert "workflows" not in categories
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/workflows/run",
+        "/infer/workflows",
+        "/test-workspace/workflows/test-workflow",
+        "/infer/workflows/test-workspace/test-workflow",
+    ],
+)
+def test_source_tags_reach_workflow_model_and_python_usage(monkeypatch, path):
+    import inference.core.interfaces.http.http_api as http_api
+
+    client = _build_test_client(monkeypatch)
+    api_key = f"source-tags-{path.replace('/', '-')}"
+    specification = _specification(api_key)
+    monkeypatch.setattr(
+        http_api, "get_workflow_specification", lambda **_: specification
+    )
+
+    response = client.post(
+        path,
+        params={"source": "app", "source_info": "workflow-evals"},
+        json={
+            "api_key": api_key,
+            "specification": specification,
+            "inputs": {"value": 1},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    details_by_category = {
+        key.split(":", 1)[0]: json.loads(row["resource_details"])
+        for key, row in _rows_for_api_key(api_key).items()
+    }
+    assert set(details_by_category) == {
+        "request",
+        "workflows",
+        "model",
+        "workflow_block",
+    }
+    for category, details in details_by_category.items():
+        assert details["source_info"] == "workflow-evals", (category, details)
+        assert details["billable"] is True
+        if category != "workflows":
+            assert details["source"] == "app", (category, details)
