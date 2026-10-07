@@ -190,6 +190,7 @@ class UsageCollector:
                     ResourceCategory,
                     ResourceID,
                     bool,
+                    bool,
                     str,
                     Optional[str],
                     Optional[int],
@@ -404,6 +405,12 @@ class UsageCollector:
             usage_key = f"{usage_key}:error_type={error_type}"
             if error_status_code is not None:
                 usage_key = f"{usage_key}:error_status_code={error_status_code}"
+        source_tags = [
+            (resource_details or {}).get("source"),
+            (resource_details or {}).get("source_info"),
+        ]
+        if any(tag is not None for tag in source_tags):
+            usage_key = f"{usage_key}:source_tags={sha256_hash(json.dumps(source_tags), length=64)}"
         if stream_session_id:
             usage_key = f"{usage_key}:{stream_session_id}"
         return usage_key
@@ -441,6 +448,9 @@ class UsageCollector:
             )
             return
         resource_details = self._normalize_error_metadata(resource_details)
+        # Origins belong to the current call, not the persistent metadata cache.
+        resource_details.pop("source", None)
+        resource_details.pop("source_info", None)
 
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
@@ -560,7 +570,11 @@ class UsageCollector:
         )
         if not resource_id and provided_resource_details:
             resource_id = UsageCollector._calculate_resource_hash(
-                resource_details=provided_resource_details
+                resource_details={
+                    key: value
+                    for key, value in provided_resource_details.items()
+                    if key not in {"source", "source_info"}
+                }
             )
         resource_details_key = self._resource_details_key(
             category=category,
@@ -857,6 +871,9 @@ class UsageCollector:
             resource_id = usage_workflow_id
             workflow_resource_details["is_preview"] = usage_workflow_preview
             resource_details = {**resource_details, **workflow_resource_details}
+            source_tag = usage_source_tags.get().get("source")
+            if source_tag:
+                resource_details["source"] = source_tag
         elif category == "model":
             model_id = get_model_id_from_kwargs(func_kwargs)
             if model_id:
@@ -969,7 +986,9 @@ class UsageCollector:
                 # variable never expose it through any bound parameter.
                 usage_api_key = header_api_key.get() or ""
 
-        roboflow_service_name = func_kwargs.get("source_info") or source_info
+        # Only the explicit legacy parameter can override service identity;
+        # inherited source_info identifies the caller's feature.
+        roboflow_service_name = func_kwargs.get("source_info")
         roboflow_internal_secret = func_kwargs.get("service_secret")
 
         return {
