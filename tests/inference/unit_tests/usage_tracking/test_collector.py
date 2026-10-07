@@ -3045,3 +3045,76 @@ def test_source_tag_pairs_with_matching_short_hashes_stay_separate(
         json.loads(row["resource_details"])["source_info"]: row["processed_frames"]
         for row in rows
     } == {"feature-506": 1, "feature-1845": 2}
+
+
+USAGE = dict(
+    source="source",
+    category="model",
+    frames=1,
+    api_key="fake",
+    resource_details={},
+    resource_id="model/1",
+)
+
+
+def start_paused_enqueue(collector):
+    collector.record_usage(**USAGE)
+    detached, release = threading.Event(), threading.Event()
+    enqueue_payload = collector._enqueue_payload
+
+    def paused_enqueue_payload(payload):
+        detached.set()
+        release.wait(timeout=10)
+        enqueue_payload(payload=payload)
+
+    collector._enqueue_payload = paused_enqueue_payload
+    enqueuer = threading.Thread(target=collector._enqueue_usage_payload)
+    enqueuer.start()
+    assert detached.wait(timeout=5)
+    collector._enqueue_payload = enqueue_payload
+    return enqueuer, release
+
+
+def test_record_usage_is_not_blocked_while_payload_is_persisted(
+    usage_collector_with_mocked_threads,
+):
+    # given
+    collector = usage_collector_with_mocked_threads
+    enqueuer, release = start_paused_enqueue(collector)
+
+    # when
+    recorder = threading.Thread(target=collector.record_usage, kwargs=USAGE)
+    recorder.start()
+    recorder.join(timeout=2)
+    blocked = recorder.is_alive()
+    release.set()
+    enqueuer.join(timeout=5)
+    recorder.join(timeout=5)
+
+    # then
+    assert not blocked
+
+
+def test_push_usage_payloads_waits_for_payload_being_persisted(
+    usage_collector_with_mocked_threads,
+):
+    # given
+    collector = usage_collector_with_mocked_threads
+    collector._queue = Queue()
+    enqueuer, release = start_paused_enqueue(collector)
+
+    # when
+    with mock.patch(
+        "inference.usage_tracking.collector.OFFLINE_MODE", False
+    ), mock.patch.object(collector, "_offload_to_api") as offload_to_api:
+        pusher = threading.Thread(target=collector.push_usage_payloads)
+        pusher.start()
+        pusher.join(timeout=0.5)
+        pushed_early = not pusher.is_alive()
+        release.set()
+        enqueuer.join(timeout=5)
+        pusher.join(timeout=5)
+
+    # then
+    assert not pushed_early
+    assert "fake" in offload_to_api.call_args.kwargs["payloads"][0]

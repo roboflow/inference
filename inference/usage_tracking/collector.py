@@ -179,6 +179,7 @@ class UsageCollector:
             except Exception as exc:
                 logger.debug("Unable to create instance of SQLiteQueue, %s", exc)
         self._queue_lock = Lock()
+        self._enqueue_lock = Lock()
 
         self._system_info_lock = Lock()
         self._system_info: Dict[str, Any] = {}
@@ -742,11 +743,15 @@ class UsageCollector:
         self._enqueue_usage_payload()
 
     def _enqueue_usage_payload(self):
-        if not self._usage:
-            return
-        with UsageCollector._lock:
-            self._enqueue_payload(payload=self._usage)
-            self._usage = self.empty_usage_dict(exec_session_id=self._exec_session_id)
+        with self._enqueue_lock:
+            if not self._usage:
+                return
+            with UsageCollector._lock:
+                payload = self._usage
+                self._usage = self.empty_usage_dict(
+                    exec_session_id=self._exec_session_id
+                )
+            self._enqueue_payload(payload=payload)
 
     def _usage_sender(self):
         while True:
