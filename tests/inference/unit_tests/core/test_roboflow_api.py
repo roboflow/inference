@@ -1147,8 +1147,10 @@ def test_get_roboflow_model_data_when_wrong_api_key_used(requests_mock: Mocker) 
         assert param in requests_mock.last_request.query
 
 
+@pytest.mark.parametrize("api_key", [None, "my_api_key"])
 def test_get_model_metadata_from_inference_models_registry_when_wrong_api_key_used(
     requests_mock: Mocker,
+    api_key,
 ) -> None:
     # given
     requests_mock.get(
@@ -1159,12 +1161,17 @@ def test_get_model_metadata_from_inference_models_registry_when_wrong_api_key_us
     # when
     with pytest.raises(RoboflowAPINotAuthorizedError):
         _ = get_model_metadata_from_inference_models_registry(
-            api_key="my_api_key",
+            api_key=api_key,
             model_id="coins_detection/1",
         )
 
     assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
-    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
+    if api_key:
+        assert (
+            requests_mock.last_request.headers["Authorization"] == f"Bearer {api_key}"
+        )
+    else:
+        assert "Authorization" not in requests_mock.last_request.headers
 
 
 def test_get_roboflow_model_data_when_wrong_model_used(requests_mock: Mocker) -> None:
@@ -1366,8 +1373,11 @@ def test_get_roboflow_model_data_excludes_api_key_when_local(
     assert result == expected_response
 
 
+@pytest.mark.parametrize("api_key", [None, "", "my_api_key"])
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
 def test_get_model_metadata_from_inference_models_registry_when_valid_response_expected(
     requests_mock: Mocker,
+    api_key,
 ) -> None:
     # given
     expected_response = {
@@ -1388,13 +1398,18 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 
     # when
     result = get_model_metadata_from_inference_models_registry(
-        api_key="my_api_key",
+        api_key=api_key,
         model_id="coins_detection/1",
     )
 
     # then
     assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
-    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
+    if api_key:
+        assert (
+            requests_mock.last_request.headers["Authorization"] == f"Bearer {api_key}"
+        )
+    else:
+        assert "Authorization" not in requests_mock.last_request.headers
     assert result == {
         "modelType": "rfdetr",
         "taskType": "object-detection",

@@ -705,7 +705,7 @@ def get_model_metadata_from_inference_models_registry(
         return api_data
     query = [("modelId", model_id)]
     headers = {}
-    if api_key is not None and api_key != LOCAL_API_KEY:
+    if api_key and api_key != LOCAL_API_KEY:
         headers["Authorization"] = f"Bearer {api_key}"
     if GCP_SERVERLESS:
         headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
