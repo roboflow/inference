@@ -22,6 +22,11 @@ from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
 )
+from inference_models.models.base.image_embeddings import (
+    OnnxClassifierEmbeddings,
+    configure_onnx_embeddings,
+    load_classifier_session,
+)
 from inference_models.models.base.types import PreprocessedInputs
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
@@ -60,7 +65,9 @@ except ImportError as import_error:
     ) from import_error
 
 
-class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
+class VITForClassificationOnnx(
+    OnnxClassifierEmbeddings, ClassificationModel[torch.Tensor, torch.Tensor]
+):
 
     @classmethod
     def from_pretrained(
@@ -123,9 +130,11 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
                 message="Expected Softmax to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
+        session, embedding_info, embedding_path = load_classifier_session(
+            source_path=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
+            required_capabilities=kwargs.get("required_capabilities"),
+            output_type=kwargs.get("output_type", "feature_vector"),
         )
         device = align_device_with_onnx_session(session=session, device=device)
         input_shape = session.get_inputs()[0].shape
@@ -133,13 +142,22 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         if isinstance(input_batch_size, str):
             input_batch_size = None
         input_name = session.get_inputs()[0].name
-        return cls(
+        model = cls(
             session=session,
             input_name=input_name,
             inference_config=inference_config,
             class_names=class_names,
             device=device,
             input_batch_size=input_batch_size,
+        )
+
+        return configure_onnx_embeddings(
+            model,
+            model_package_content["weights.onnx"],
+            onnx_execution_providers,
+            embedding_info,
+            embedding_path,
+            output_type=kwargs.get("output_type", "feature_vector"),
         )
 
     def __init__(
@@ -231,7 +249,7 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
 
 
 class VITForMultiLabelClassificationOnnx(
-    MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
+    OnnxClassifierEmbeddings, MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
 ):
 
     @classmethod
@@ -296,9 +314,11 @@ class VITForMultiLabelClassificationOnnx(
                 message="Expected sigmoid to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
+        session, embedding_info, embedding_path = load_classifier_session(
+            source_path=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
+            required_capabilities=kwargs.get("required_capabilities"),
+            output_type=kwargs.get("output_type", "feature_vector"),
         )
         device = align_device_with_onnx_session(session=session, device=device)
         input_shape = session.get_inputs()[0].shape
@@ -306,7 +326,7 @@ class VITForMultiLabelClassificationOnnx(
         if isinstance(input_batch_size, str):
             input_batch_size = None
         input_name = session.get_inputs()[0].name
-        return cls(
+        model = cls(
             session=session,
             input_name=input_name,
             inference_config=inference_config,
@@ -314,6 +334,15 @@ class VITForMultiLabelClassificationOnnx(
             device=device,
             input_batch_size=input_batch_size,
             recommended_parameters=recommended_parameters,
+        )
+
+        return configure_onnx_embeddings(
+            model,
+            model_package_content["weights.onnx"],
+            onnx_execution_providers,
+            embedding_info,
+            embedding_path,
+            output_type=kwargs.get("output_type", "feature_vector"),
         )
 
     def __init__(

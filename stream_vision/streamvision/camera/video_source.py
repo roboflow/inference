@@ -17,6 +17,7 @@ from streamvision.camera.buffer_strategies import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
 )
+from streamvision.camera.capture_properties import apply_capture_properties
 from streamvision.camera.entities import (
     SourceProperties,
     StatusUpdate,
@@ -229,10 +230,10 @@ class CV2VideoFrameProducer(VideoFrameProducer):
     def retrieve(self) -> Tuple[bool, ndarray]:
         return self.stream.retrieve()
 
-    def initialize_source_properties(self, properties: Dict[str, float]) -> None:
-        for property_id, value in properties.items():
-            cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
-            self.stream.set(cv2_id, value)
+    def initialize_source_properties(
+        self, properties: Dict[str, Union[float, str]]
+    ) -> None:
+        apply_capture_properties(self.stream, properties=properties)
 
     def discover_source_properties(self) -> SourceProperties:
         width = int(self.stream.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -380,7 +381,7 @@ class VideoSource:
         adaptive_mode_reader_pace_tolerance: float = DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
         source_id: Optional[int] = None,
         desired_fps: Optional[Union[float, int]] = None,
         allow_tensor_frames: bool = False,
@@ -541,7 +542,7 @@ class VideoSource:
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
         video_consumer: "VideoConsumer",
-        video_source_properties: Optional[Dict[str, float]],
+        video_source_properties: Optional[Dict[str, Union[float, str]]],
         source_id: Optional[int],
         allow_tensor_frames: bool = False,
     ):

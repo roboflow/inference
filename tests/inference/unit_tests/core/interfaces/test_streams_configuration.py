@@ -1275,6 +1275,7 @@ def test_request_entities_do_not_import_the_decoder_webrtc_or_pipeline() -> None
     } == {
         "streamvision.camera",
         "streamvision.camera.buffer_strategies",
+        "streamvision.camera.fourcc",
         "streamvision.camera.source_reference_validation",
         "streamvision.stream.environment",
         "streamvision.stream_manager.manager_app.entities",
