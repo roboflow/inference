@@ -41,10 +41,14 @@ class _LazyModelRegistry(MutableMapping):
         self._lock = RLock()
 
     def __getitem__(self, key):
+        entry = self._entries[key]
+        if not isinstance(entry, (_LazyModelClass, _AdapterModelClass)):
+            return entry
+
+        model_class = self._resolve(entry, key=key)
         with self._lock:
-            entry = self._entries[key]
-            model_class = self._resolve(entry, key=key)
-            self._entries[key] = model_class
+            if self._entries.get(key) is entry:
+                self._entries[key] = model_class
 
         return model_class
 

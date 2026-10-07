@@ -160,6 +160,59 @@ def test_overlapping_first_requests_share_resolution(monkeypatch, copy_registry)
     importer.assert_called_once_with("example")
 
 
+@pytest.mark.parametrize("cached", [False, True])
+def test_unrelated_lookup_finishes_during_blocked_import(monkeypatch, cached):
+    """Allow unrelated lookups while another implementation import is blocked.
+
+    Args:
+        monkeypatch: Pytest patch fixture.
+        cached: Whether the unrelated class has already been resolved.
+    """
+    from inference.core.registries import lazy
+
+    model_class = type("ConcurrentModel", (), {})
+    entered = Event()
+    release = Event()
+    lookup_started = Event()
+    lookup_finished = Event()
+
+    def _import_model(module_path):
+        if module_path == "blocked":
+            entered.set()
+            assert release.wait(timeout=10)
+
+        return SimpleNamespace(Model=model_class)
+
+    monkeypatch.setattr(lazy.importlib, "import_module", _import_model)
+    registry = lazy._LazyModelRegistry(
+        {
+            "blocked": lazy._LazyModelClass("blocked:Model"),
+            "unrelated": lazy._LazyModelClass("unrelated:Model"),
+        }
+    )
+    if cached:
+        assert registry["unrelated"] is model_class
+
+    def _lookup_unrelated():
+        lookup_started.set()
+        result = registry["unrelated"]
+        lookup_finished.set()
+        return result
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        blocked = executor.submit(registry.__getitem__, "blocked")
+        try:
+            assert entered.wait(timeout=5)
+            unrelated = executor.submit(_lookup_unrelated)
+            assert lookup_started.wait(timeout=5)
+            assert lookup_finished.wait(timeout=5), "Lookup waited for unrelated import"
+            assert unrelated.result(timeout=5) is model_class
+            assert not blocked.done()
+        finally:
+            release.set()
+        assert blocked.result(timeout=5) is model_class
+
+
 @pytest.mark.parametrize("roboflow_registry", [False, True])
 @pytest.mark.parametrize("lazy_registry", [False, True])
 def test_unknown_model_error_message_is_unchanged(
