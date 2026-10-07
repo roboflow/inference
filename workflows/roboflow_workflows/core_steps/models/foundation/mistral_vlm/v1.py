@@ -82,8 +82,11 @@ RECOMMENDED_PARSERS = {
 # sibling of that format for both the prompt and the coordinate conversion.
 DETECTION_BOX_FORMAT = "xyxy_0_999"
 
-# Mistral exposes extended reasoning as on (`high`) or off only; vlm-exam
-# sent `reasoning: {enabled: false}` at low effort and `effort: high` at high.
+# Mistral Large 4 has two reasoning states. OpenRouter advertises
+# `supported_efforts: ["high", "none"]` and accepts the other effort names,
+# but a probe (18 detection calls, 3 per level) showed minimal/low/medium/
+# high/xhigh all spend the same 8k-26k reasoning tokens, so only the two
+# real states are exposed.
 REASONING_EFFORT_OPTIONS = ["none", "high"]
 ReasoningEffort = Literal[tuple(REASONING_EFFORT_OPTIONS)]
 DEFAULT_REASONING_EFFORT = "none"
@@ -92,19 +95,18 @@ REASONING_EFFORT_METADATA = {
     "none": {
         "name": "Disabled (recommended)",
         "description": (
-            "Turns extended reasoning off. This is the configuration "
-            "validated in the vlm-exam benchmarks and keeps answers fast "
-            "and inside the default token budget."
+            "Turns extended reasoning off. Detection answers take about "
+            "600 output tokens and under 15 seconds per image; this is the "
+            "configuration validated in the vlm-exam benchmarks."
         ),
     },
     "high": {
         "name": "High",
         "description": (
-            "Large reasoning budget, the only level Mistral exposes. Slow "
-            "and expensive; the thinking trace alone regularly exceeds "
-            "16k tokens on detection and OCR images, so raise `max_tokens` "
-            "substantially (the benchmarks used 65536) or the answer comes "
-            "back empty."
+            "Turns extended reasoning on. Mistral does not scale the budget "
+            "by level: expect roughly 8k-26k reasoning tokens and 1.5-6 "
+            "minutes per detection image. If you set `max_tokens`, keep it "
+            "well above that or the answer comes back empty."
         ),
     },
 }
@@ -134,7 +136,6 @@ MODEL_VERSION_METADATA = attach_reasoning_levels(
     MODEL_REASONING_LEVELS,
 )
 
-DEFAULT_MAX_TOKENS = 2048
 OPENROUTER_MAX_BASE64_BYTES = 9_500_000
 OPENROUTER_JPEG_QUALITY = 90
 
@@ -400,9 +401,10 @@ captioning, structured answering, visual question answering).
 Every request sends the image before the instruction text in a single user
 message. Mistral exposes extended reasoning as on or off only; the block
 disables it by default (the benchmarked configuration) and `reasoning_effort`
-set to `high` turns it on. `max_tokens` defaults to 2048; raise it
-substantially when reasoning is on, since the thinking trace alone can run
-past 16k tokens.
+set to `high` turns it on. `max_tokens` is unset by default: your own
+OpenRouter key gets the model's own output limit, the managed key gets the
+Roboflow proxy maximum of 16384. When you do cap it with reasoning on, leave
+room for a thinking trace of 8k-26k tokens.
 
 By default the block uses the Roboflow-managed OpenRouter key and bills
 your Roboflow credits. Paste your own `sk-or-...` key to call OpenRouter
@@ -503,21 +505,21 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     reasoning_effort: ReasoningEffort = Field(
         default=DEFAULT_REASONING_EFFORT,
         description=(
-            "Extended-reasoning budget. Mistral exposes reasoning as on or "
-            "off only: `none` (the default) disables it, matching the "
-            "configuration validated in the vlm-exam benches; `high` turns "
-            "it on and needs a much larger `max_tokens`."
+            "Extended reasoning. Mistral exposes it as on or off only: "
+            "`none` (the default) disables it, matching the configuration "
+            "validated in the vlm-exam benches; `high` turns it on."
         ),
         json_schema_extra={"values_metadata": REASONING_EFFORT_METADATA},
     )
     max_tokens: Optional[int] = Field(
-        default=DEFAULT_MAX_TOKENS,
+        default=None,
         description=(
             "Maximum number of tokens the model can generate in its response. "
-            f"Defaults to {DEFAULT_MAX_TOKENS}. Raise it explicitly "
-            "(e.g. 8192) when a task needs a longer answer, and well beyond "
-            "that when `reasoning_effort` is `high`. Billing is based on "
-            "tokens actually generated, not on this limit."
+            "If not specified, the model's own limit applies with your own "
+            "OpenRouter key and 16384 (the Roboflow proxy maximum) with the "
+            "managed key. When set with `reasoning_effort` `high`, keep it "
+            "well above the reasoning trace (8k-26k tokens) or the answer "
+            "comes back empty."
         ),
         gt=1,
     )
@@ -698,7 +700,7 @@ class MistralVlmBlockV1(OpenRouterWorkflowBlockBase):
             openrouter_api_key=api_key,
             model=variant["model_id"],
             prompts=prompts,
-            max_tokens=max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
+            max_tokens=max_tokens,
             temperature=temperature,
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,

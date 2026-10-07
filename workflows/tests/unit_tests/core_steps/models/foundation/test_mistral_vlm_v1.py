@@ -6,16 +6,20 @@ temperature, message layout), the 0-999 detection prompt actually sent, and
 in-block decoding on the 0-999 grid.
 """
 
+import itertools
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 from pydantic import ValidationError
-from roboflow_workflows.core_steps.common.openrouter import OpenRouterResult
+from roboflow_workflows.core_steps.common.openrouter import (
+    SUPPORTED_TASK_TYPES_LIST,
+    OpenRouterResult,
+)
 from roboflow_workflows.core_steps.models.foundation.mistral_vlm.v1 import (
-    DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_VERSION,
     DEFAULT_REASONING_EFFORT,
+    REASONING_EFFORT_OPTIONS,
     BlockManifest,
     MistralVlmBlockV1,
 )
@@ -60,6 +64,25 @@ EXPECTED_XYXY = [[200.0, 250.0, 1998.0, 999.0]]
 
 CLASSIFICATION_OUTPUT = '{"class_name": "cat", "confidence": 0.9}'
 
+# Effort names OpenRouter accepts for other models; Mistral Large 4 maps all
+# of them onto the same budget as `high`, so the block refuses them.
+UNEXPOSED_REASONING_LEVELS = ["minimal", "low", "medium", "xhigh"]
+
+# Minimum extra inputs each task needs to pass manifest validation and build
+# a prompt; `output_structure` / `classes` double as the decode inputs.
+TASK_INPUTS = {
+    "unconstrained": {"prompt": "describe"},
+    "visual-question-answering": {"prompt": "what is it?"},
+    "structured-answering": {"output_structure": {"animal": "name"}},
+    "classification": {"classes": ["cat", "dog"]},
+    "multi-label-classification": {"classes": ["cat", "dog"]},
+    "object-detection": {"classes": ["cat", "dog"]},
+    "ocr": {},
+    "caption": {},
+    "detailed-caption": {},
+}
+DECODING_TASKS = {"object-detection", "classification", "multi-label-classification"}
+
 
 def _stub_image() -> WorkflowImageData:
     return WorkflowImageData(
@@ -81,7 +104,7 @@ def _base_run_kwargs(**overrides):
         reasoning_effort=DEFAULT_REASONING_EFFORT,
         api_key="rf_key:account",
         privacy_level="deny",
-        max_tokens=DEFAULT_MAX_TOKENS,
+        max_tokens=None,
         temperature=None,
         max_concurrent_requests=None,
     )
@@ -117,7 +140,7 @@ def test_manifest_defaults():
 
     assert manifest.model_version == "Mistral Large 4"
     assert manifest.reasoning_effort == "none"
-    assert manifest.max_tokens == 2048
+    assert manifest.max_tokens is None
     assert manifest.temperature is None
     assert manifest.api_key == "rf_key:account"
     assert manifest.privacy_level == "deny"
@@ -132,14 +155,46 @@ def test_manifest_defaults():
     }
 
 
-def test_manifest_rejects_reasoning_levels_mistral_does_not_expose():
+@pytest.mark.parametrize("reasoning_effort", REASONING_EFFORT_OPTIONS)
+def test_manifest_accepts_every_exposed_reasoning_level(reasoning_effort):
+    assert _manifest(reasoning_effort=reasoning_effort).reasoning_effort == (
+        reasoning_effort
+    )
+
+
+@pytest.mark.parametrize("reasoning_effort", UNEXPOSED_REASONING_LEVELS)
+def test_manifest_rejects_reasoning_levels_mistral_does_not_expose(reasoning_effort):
     with pytest.raises(ValidationError):
-        _manifest(reasoning_effort="low")
+        _manifest(reasoning_effort=reasoning_effort)
+
+
+def test_manifest_accepts_selector_fed_model_version_without_level_check():
+    manifest = _manifest(model_version="$inputs.model", reasoning_effort="high")
+
+    assert manifest.model_version == "$inputs.model"
+    assert manifest.reasoning_effort == "high"
 
 
 def test_manifest_rejects_unknown_model_version():
     with pytest.raises(ValidationError):
         _manifest(model_version="Pixtral Large")
+
+
+@pytest.mark.parametrize("max_tokens", [0, 1, -5])
+def test_manifest_rejects_max_tokens_at_or_below_one(max_tokens):
+    with pytest.raises(ValidationError):
+        _manifest(max_tokens=max_tokens)
+
+
+@pytest.mark.parametrize("max_tokens", [None, 2, 4096])
+def test_manifest_accepts_unset_or_positive_max_tokens(max_tokens):
+    assert _manifest(max_tokens=max_tokens).max_tokens == max_tokens
+
+
+@pytest.mark.parametrize("temperature", [-0.1, 2.1])
+def test_manifest_rejects_temperature_outside_range(temperature):
+    with pytest.raises(ValidationError):
+        _manifest(temperature=temperature)
 
 
 def test_manifest_recommends_parser_only_for_structured_answering():
@@ -177,7 +232,7 @@ def test_run_sends_vlm_exam_request_contract(mock_or):
     kwargs = mock_or.call_args.kwargs
     assert kwargs["model"] == "mistralai/mistral-large-4-0"
     assert kwargs["reasoning"] == {"enabled": False}
-    assert kwargs["max_tokens"] == 2048
+    assert kwargs["max_tokens"] is None
     assert kwargs["temperature"] is None
     assert kwargs["privacy_level"] == "deny"
     messages = kwargs["prompts"][0]
@@ -188,22 +243,92 @@ def test_run_sends_vlm_exam_request_contract(mock_or):
     assert content[1] == {"type": "text", "text": EXPECTED_DETECTION_PROMPT}
 
 
+EXPECTED_REASONING_CONFIG = {"none": {"enabled": False}, "high": {"effort": "high"}}
+
+
+@pytest.mark.parametrize(
+    "reasoning_effort,max_tokens,temperature",
+    list(itertools.product(REASONING_EFFORT_OPTIONS, [None, 4096], [None, 0.2])),
+)
 @patch(OPENROUTER_SEAM)
-def test_run_maps_high_reasoning_effort_to_openrouter_config(mock_or):
+def test_run_forwards_every_generation_setting_combination(
+    mock_or, reasoning_effort, max_tokens, temperature
+):
     mock_or.return_value = _result("answer")
     block = MistralVlmBlockV1(model_manager=MagicMock(), api_key="rf_key")
 
-    block.run(**_base_run_kwargs(reasoning_effort="high", max_tokens=65536))
+    block.run(
+        **_base_run_kwargs(
+            reasoning_effort=reasoning_effort,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            api_key="sk-or-user-key",
+            privacy_level="allow",
+            max_concurrent_requests=3,
+        )
+    )
 
-    assert mock_or.call_args.kwargs["reasoning"] == {"effort": "high"}
-    assert mock_or.call_args.kwargs["max_tokens"] == 65536
+    kwargs = mock_or.call_args.kwargs
+    assert kwargs["reasoning"] == EXPECTED_REASONING_CONFIG[reasoning_effort]
+    assert kwargs["max_tokens"] == max_tokens
+    assert kwargs["temperature"] == temperature
+    assert kwargs["openrouter_api_key"] == "sk-or-user-key"
+    assert kwargs["privacy_level"] == "allow"
+    assert kwargs["max_concurrent_requests"] == 3
 
 
-def test_run_rejects_reasoning_levels_mistral_does_not_expose():
+@pytest.mark.parametrize(
+    "task_type,reasoning_effort",
+    list(itertools.product(SUPPORTED_TASK_TYPES_LIST, REASONING_EFFORT_OPTIONS)),
+)
+@patch(OPENROUTER_SEAM)
+def test_run_keeps_message_layout_and_decoding_per_task(
+    mock_or, task_type, reasoning_effort
+):
+    mock_or.return_value = _result(
+        {
+            "object-detection": DETECTION_OUTPUT,
+            "classification": CLASSIFICATION_OUTPUT,
+            "multi-label-classification": (
+                '{"predicted_classes": [{"class": "cat", "confidence": 0.8}]}'
+            ),
+        }.get(task_type, "free text answer")
+    )
     block = MistralVlmBlockV1(model_manager=MagicMock(), api_key="rf_key")
 
-    with pytest.raises(ValueError):
-        block.run(**_base_run_kwargs(reasoning_effort="low"))
+    result = block.run(
+        **_base_run_kwargs(
+            task_type=task_type,
+            reasoning_effort=reasoning_effort,
+            **TASK_INPUTS[task_type],
+        )
+    )
+
+    kwargs = mock_or.call_args.kwargs
+    assert kwargs["reasoning"] == EXPECTED_REASONING_CONFIG[reasoning_effort]
+    messages = kwargs["prompts"][0]
+    assert [message["role"] for message in messages] == ["user"]
+    assert [part["type"] for part in messages[0]["content"]] == ["image_url", "text"]
+    assert result[0]["error_status"] is False
+    if task_type in DECODING_TASKS:
+        assert result[0]["predictions"] is not None
+    else:
+        assert result[0]["predictions"] is None
+
+
+@pytest.mark.parametrize("task_type", SUPPORTED_TASK_TYPES_LIST)
+def test_manifest_validates_each_task_with_its_required_inputs(task_type):
+    manifest = _manifest(task_type=task_type, **TASK_INPUTS[task_type])
+
+    assert manifest.task_type == task_type
+
+
+@pytest.mark.parametrize("reasoning_effort", UNEXPOSED_REASONING_LEVELS)
+def test_run_rejects_reasoning_levels_mistral_does_not_expose(reasoning_effort):
+    block = MistralVlmBlockV1(model_manager=MagicMock(), api_key="rf_key")
+
+    with pytest.raises(ValueError, match="supports reasoning_effort values"):
+        block.run(**_base_run_kwargs(reasoning_effort=reasoning_effort))
 
 
 @pytest.mark.parametrize("raw_output", [DETECTION_OUTPUT, DETECTION_OUTPUT_BBOX_ALIAS])
