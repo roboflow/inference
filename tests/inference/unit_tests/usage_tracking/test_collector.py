@@ -3045,3 +3045,102 @@ def test_source_tag_pairs_with_matching_short_hashes_stay_separate(
         json.loads(row["resource_details"])["source_info"]: row["processed_frames"]
         for row in rows
     } == {"feature-506": 1, "feature-1845": 2}
+
+
+def test_record_usage_is_not_blocked_while_payload_is_persisted(
+    usage_collector_with_mocked_threads,
+):
+    # given
+    collector = usage_collector_with_mocked_threads
+    collector.record_usage(
+        source="source",
+        category="model",
+        frames=1,
+        api_key="fake",
+        resource_details={},
+        resource_id="model/1",
+    )
+    persisting = threading.Event()
+    release = threading.Event()
+
+    class SlowQueue(Queue):
+        def put(self, item, block=True, timeout=None):
+            persisting.set()
+            release.wait(timeout=10)
+            super().put(item, block, timeout)
+
+    collector._queue = SlowQueue()
+    enqueuer = threading.Thread(target=collector._enqueue_usage_payload)
+    enqueuer.start()
+    assert persisting.wait(timeout=5)
+
+    # when
+    recorder = threading.Thread(
+        target=collector.record_usage,
+        kwargs=dict(
+            source="source",
+            category="model",
+            frames=1,
+            api_key="fake",
+            resource_details={},
+            resource_id="model/1",
+        ),
+    )
+    recorder.start()
+    recorder.join(timeout=2)
+    recorded_while_persisting = not recorder.is_alive()
+    release.set()
+    enqueuer.join(timeout=5)
+    recorder.join(timeout=5)
+
+    # then
+    assert recorded_while_persisting
+    assert collector._queue.qsize() == 1
+    assert "fake" in collector._usage
+
+
+def test_push_usage_payloads_waits_for_payload_being_persisted(
+    usage_collector_with_mocked_threads,
+):
+    # given
+    collector = usage_collector_with_mocked_threads
+    collector.record_usage(
+        source="source",
+        category="model",
+        frames=1,
+        api_key="fake",
+        resource_details={},
+        resource_id="model/1",
+    )
+    collector._queue = Queue()
+    detached = threading.Event()
+    release = threading.Event()
+    enqueue_payload = collector._enqueue_payload
+
+    def paused_enqueue_payload(payload):
+        detached.set()
+        release.wait(timeout=10)
+        enqueue_payload(payload=payload)
+
+    collector._enqueue_payload = paused_enqueue_payload
+    enqueuer = threading.Thread(target=collector._enqueue_usage_payload)
+    enqueuer.start()
+    assert detached.wait(timeout=5)
+    collector._enqueue_payload = enqueue_payload
+
+    # when
+    with mock.patch(
+        "inference.usage_tracking.collector.OFFLINE_MODE", False
+    ), mock.patch.object(collector, "_offload_to_api") as offload_to_api:
+        pusher = threading.Thread(target=collector.push_usage_payloads)
+        pusher.start()
+        pusher.join(timeout=0.5)
+        pushed_before_persisted = not pusher.is_alive()
+        release.set()
+        enqueuer.join(timeout=5)
+        pusher.join(timeout=5)
+
+    # then
+    assert not pushed_before_persisted
+    offload_to_api.assert_called_once()
+    assert "fake" in offload_to_api.call_args.kwargs["payloads"][0]
