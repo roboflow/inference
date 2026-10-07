@@ -986,7 +986,9 @@ class UsageCollector:
                 # variable never expose it through any bound parameter.
                 usage_api_key = header_api_key.get() or ""
 
-        roboflow_service_name = func_kwargs.get("source_info") or source_info
+        # Only the explicit legacy parameter can override service identity;
+        # inherited source_info identifies the caller's feature.
+        roboflow_service_name = func_kwargs.get("source_info")
         roboflow_internal_secret = func_kwargs.get("service_secret")
 
         return {
