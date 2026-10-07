@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import gc
 import weakref
 from types import SimpleNamespace
@@ -35,6 +36,112 @@ def _fake_manager(process_return=None):
     # default executor.
     mgr.executor = None
     return mgr
+
+
+@pytest.mark.asyncio
+async def test_infer_with_duration_returns_the_manager_reported_model_time():
+    mgr = _fake_manager()
+
+    async def _process(key, **kwargs):
+        kwargs["timing"]["model_s"] = 0.25
+        return {"detections": []}
+
+    mgr.process_async = AsyncMock(side_effect=_process)
+    wrapper = ModelManagerGateway(mgr)
+
+    result, model_s = await wrapper.infer_with_duration(
+        model_id="acme/1", image=b"\xff\xd8\xff", params={"confidence": 0.5}
+    )
+
+    assert result == {"detections": []}
+    assert model_s == 0.25
+    assert mgr.process_async.await_args.kwargs["confidence"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_infer_with_duration_attaches_the_model_time_to_a_failure():
+    mgr = _fake_manager()
+
+    async def _process(key, **kwargs):
+        kwargs["timing"]["model_s"] = 0.5
+        raise RuntimeError("boom")
+
+    mgr.process_async = AsyncMock(side_effect=_process)
+
+    with pytest.raises(RuntimeError) as raised:
+        await ModelManagerGateway(mgr).infer_with_duration(model_id="acme/1")
+
+    assert raised.value.model_duration_s == 0.5
+
+
+@pytest.mark.asyncio
+async def test_infer_with_duration_propagates_errors_that_reject_annotation():
+    import dataclasses
+
+    @dataclasses.dataclass(frozen=True, slots=True)
+    class _Frozen(Exception):
+        reason: str
+
+    mgr = _fake_manager()
+
+    async def _process(key, **kwargs):
+        kwargs["timing"]["model_s"] = 0.5
+        raise _Frozen("nope")
+
+    mgr.process_async = AsyncMock(side_effect=_process)
+
+    with pytest.raises(_Frozen):
+        await ModelManagerGateway(mgr).infer_with_duration(model_id="acme/1")
+
+
+@pytest.mark.asyncio
+async def test_infer_with_duration_leaves_a_failure_without_model_time_untouched():
+    mgr = _fake_manager()
+    mgr.process_async = AsyncMock(side_effect=RuntimeError("boom"))
+
+    with pytest.raises(RuntimeError) as raised:
+        await ModelManagerGateway(mgr).infer_with_duration(model_id="acme/1")
+
+    assert not hasattr(raised.value, "model_duration_s")
+
+
+@pytest.mark.asyncio
+async def test_infer_with_duration_is_none_when_the_manager_reports_nothing():
+    wrapper = ModelManagerGateway(_fake_manager(process_return={"ok": True}))
+
+    result, model_s = await wrapper.infer_with_duration(model_id="acme/1")
+
+    assert result == {"ok": True}
+    assert model_s is None
+
+
+@pytest.mark.asyncio
+async def test_infer_does_not_pass_a_timing_sink_to_the_manager():
+    mgr = _fake_manager(process_return={})
+
+    await ModelManagerGateway(mgr).infer(model_id="acme/1", image=b"a")
+
+    assert "timing" not in mgr.process_async.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_infer_with_duration_keeps_concurrent_calls_apart():
+    mgr = _fake_manager()
+
+    async def _process(key, **kwargs):
+        await asyncio.sleep(0.01 if kwargs["images"] == b"slow" else 0)
+        kwargs["timing"]["model_s"] = float(len(kwargs["images"]))
+        return kwargs["images"]
+
+    mgr.process_async = AsyncMock(side_effect=_process)
+    wrapper = ModelManagerGateway(mgr)
+
+    outcomes = await asyncio.gather(
+        wrapper.infer_with_duration(model_id="acme/1", image=b"slow"),
+        wrapper.infer_with_duration(model_id="acme/1", image=b"fast!"),
+    )
+
+    assert outcomes == [(b"slow", 4.0), (b"fast!", 5.0)]
 
 
 @pytest.mark.asyncio

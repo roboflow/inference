@@ -458,19 +458,34 @@ class ModelManager:
         pipeline: Optional["StreamPipelinedModel"],
         action: Optional[str],
         kwargs: dict,
+        clock: Optional[List[float]] = None,
     ) -> Any:
-        if pipeline is None:
-            return invoke_action(model, action=action, **kwargs)
-        _action_name, entry = resolve_action(model, action)
-        if not entry.default:
-            return invoke_action(model, action=action, **kwargs)
-        if entry.param_aliases:
-            kwargs = {entry.param_aliases.get(k, k): v for k, v in kwargs.items()}
-        kwargs = _build_pre_processing_overrides(kwargs, entry)
+        if pipeline is not None:
+            _action_name, entry = resolve_action(model, action)
+            if entry.default:
+                if entry.param_aliases:
+                    kwargs = {
+                        entry.param_aliases.get(k, k): v for k, v in kwargs.items()
+                    }
+                kwargs = _build_pre_processing_overrides(kwargs, entry)
+                if clock is not None:
+                    kwargs["model_clock"] = clock
+                result = pipeline.infer(**kwargs)
 
-        result = pipeline.infer(**kwargs)
+                return result
+
+        started = time.perf_counter()
+        try:
+            result = invoke_action(model, action=action, **kwargs)
+        finally:
+            if clock is not None:
+                clock[0] += time.perf_counter() - started
 
         return result
+
+    @staticmethod
+    def _is_stream_pipelined(kwargs: dict) -> bool:
+        return isinstance(kwargs.get("stream_pipeline_context_id"), str)
 
     @staticmethod
     def _wire_marshal_result(
@@ -494,6 +509,7 @@ class ModelManager:
         *,
         serialize: bool = True,
         wire_marshalling: bool = False,
+        timing: Optional[dict] = None,
         **kwargs: Any,
     ) -> Any:
         """Process an action on a loaded model. Blocks until result is ready.
@@ -513,6 +529,17 @@ class ModelManager:
             model_id: Loaded model key.
             action: Action name (e.g. ``"infer"``, ``"embed_text"``, ``"caption"``).
                 None → default action for this model.
+            serialize: Return the registry-typed envelope instead of the raw
+                prediction.
+            wire_marshalling: Apply the worker-equivalent input decode and
+                result marshalling.
+            timing: Per-call sink. For an in-process model it receives
+                ``model_s``: seconds spent decoding inputs and running the model
+                with its pre/post-processing and retries, success or failure.
+                Excludes queueing, transport, output marshalling,
+                serialization and accounting. Not written for
+                ``submit_request`` backends or calls carrying a stream pipeline
+                context id.
             **kwargs: Passed to the model method (images, texts, classes, prompt, etc.).
 
         Returns:
@@ -549,19 +576,30 @@ class ModelManager:
         # Resolve action (validates it exists, raises ValueError if not)
         action_name, _entry = resolve_action(backend.model, action)
 
+        clock = [0.0]
+        measured = timing is not None and not self._is_stream_pipelined(kwargs)
         n_images = 1
-        if wire_marshalling:
-            kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
+        try:
+            if wire_marshalling:
+                decode_started = time.perf_counter()
+                try:
+                    kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
+                finally:
+                    clock[0] += time.perf_counter() - decode_started
 
-        # Validate kwargs through registry (if entry exists)
-        kwargs = _get_registry().validate(backend.model, action_name, kwargs)
+            # Validate kwargs through registry (if entry exists)
+            kwargs = _get_registry().validate(backend.model, action_name, kwargs)
+        except Exception:
+            if measured:
+                timing["model_s"] = clock[0]
+            raise
 
         t0 = time.monotonic()
         _begin = getattr(backend, "inflight_begin", None)
         if _begin is not None:
             _begin()
         try:
-            result = self._invoke(backend.model, pipeline, action, kwargs)
+            result = self._invoke(backend.model, pipeline, action, kwargs, clock)
             if wire_marshalling:
                 # Inside the inflight/accounting window: per-image retries are
                 # inference too — unload drains must wait for them and their
@@ -571,7 +609,9 @@ class ModelManager:
                 def _retry_single(index: int) -> Any:
                     single_kwargs = dict(kwargs)
                     single_kwargs["images"] = images[index]
-                    return self._invoke(backend.model, pipeline, action, single_kwargs)
+                    return self._invoke(
+                        backend.model, pipeline, action, single_kwargs, clock
+                    )
 
                 result = self._wire_marshal_result(
                     result,
@@ -585,6 +625,8 @@ class ModelManager:
                 if typed is not None:
                     result = typed
         except Exception:
+            if measured:
+                timing["model_s"] = clock[0]
             backend.record_inference(t0, error=True)
             raise
         finally:
@@ -592,6 +634,8 @@ class ModelManager:
             if _end is not None:
                 _end()
         backend.record_inference(t0, error=False)
+        if measured:
+            timing["model_s"] = clock[0]
         return result
 
     async def process_async(
@@ -601,11 +645,13 @@ class ModelManager:
         *,
         serialize: bool = True,
         wire_marshalling: bool = False,
+        timing: Optional[dict] = None,
         **kwargs: Any,
     ) -> Any:
         """Process an action asynchronously.
 
-        Same as ``process()`` but non-blocking in an async context.
+        Same as ``process()`` but non-blocking in an async context, including
+        the ``timing`` sink.
 
         Raises:
             KeyError: If model_id is not loaded.
@@ -622,6 +668,7 @@ class ModelManager:
                 action=action,
                 serialize=serialize,
                 wire_marshalling=wire_marshalling,
+                timing=timing,
                 **kwargs,
             ),
         )

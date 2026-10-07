@@ -495,7 +495,7 @@ class LegacyModelBridge:
         record: bool = True,
     ) -> list[Any]:
         try:
-            results = await self._infer(
+            results, _model_durations = await self._infer(
                 route,
                 api_key,
                 action,
@@ -519,7 +519,7 @@ class LegacyModelBridge:
         *,
         model_monitoring: bool,
         record: bool,
-    ) -> list[Any]:
+    ) -> tuple[list[Any], list[Optional[float]]]:
         await self.ensure_loaded(route, api_key)
         started = time.perf_counter()
         try:
@@ -529,17 +529,19 @@ class LegacyModelBridge:
                 monitoring=record and model_monitoring,
             ):
                 try:
-                    results = await gather_bounded(
+                    outcomes = await gather_bounded(
                         *(
-                            self.gateway.infer(
-                                model_id=route.registry_id,
-                                image=image.data if image is not None else None,
+                            self._infer_one(
+                                route.registry_id,
+                                image.data if image is not None else None,
                                 action=action,
                                 params=params,
                             )
                             for image in images
                         )
                     )
+                    results = [result for result, _ in outcomes]
+                    model_durations = [duration for _, duration in outcomes]
                 except PayloadTooLargeError:
                     raise
                 except ReloadAfterEvictionError as error:
@@ -567,7 +569,30 @@ class LegacyModelBridge:
                 requested_model_id_for(route.registry_id),
                 duration,
             )
-        return results
+
+        return results, model_durations
+
+    async def _infer_one(
+        self,
+        model_id: str,
+        image: Any,
+        *,
+        action: str,
+        params: dict,
+    ) -> tuple[Any, Optional[float]]:
+        infer_with_duration = getattr(self.gateway, "infer_with_duration", None)
+        if infer_with_duration is None:
+            result = await self.gateway.infer(
+                model_id=model_id, image=image, action=action, params=params
+            )
+
+            return result, None
+
+        outcome = await infer_with_duration(
+            model_id=model_id, image=image, action=action, params=params
+        )
+
+        return outcome
 
     async def infer_params_only(
         self,

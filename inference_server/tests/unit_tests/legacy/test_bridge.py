@@ -290,6 +290,105 @@ async def test_infer_fans_out_per_image(fake_stat):
     assert out == [("pred", b"a"), ("pred", b"b")]
 
 
+class _DurationGateway(FakeGateway):
+    async def infer_with_duration(self, **kwargs):
+        result = await self.infer(**kwargs)
+
+        return result, float(len(kwargs["image"]))
+
+
+@pytest.mark.asyncio
+async def test_infer_collects_model_duration_per_image(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = _DurationGateway(predictions={("ds/1", "infer"): lambda img, p: img})
+    bridge = LegacyModelBridge(gw)
+    route = await bridge.resolve("ds/1", None)
+
+    results, durations = await bridge._infer(
+        route,
+        None,
+        "infer",
+        [ImagePayload(b"a", 1, 1), ImagePayload(b"bbb", 1, 1)],
+        {},
+        model_monitoring=True,
+        record=False,
+    )
+
+    assert results == [b"a", b"bbb"]
+    assert durations == [1.0, 3.0]
+
+
+class _FailFastGateway(FakeGateway):
+    def __init__(self):
+        super().__init__()
+        self.slow_finished = False
+
+    async def infer_with_duration(self, **kwargs):
+        if kwargs["image"] == b"slow":
+            await asyncio.sleep(5)
+            self.slow_finished = True
+
+            return kwargs["image"], 1.0
+        if kwargs["image"] == b"bad":
+            error = RuntimeError("bad")
+            error.model_duration_s = 7.0
+            raise error
+        await asyncio.sleep(0.05)
+        raise ValueError("late")
+
+
+@pytest.mark.asyncio
+async def test_first_failure_in_time_wins_without_waiting_for_siblings(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = _FailFastGateway()
+    bridge = LegacyModelBridge(gw)
+    route = await bridge.resolve("ds/1", None)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    with pytest.raises(RuntimeError) as raised:
+        await bridge._infer(
+            route,
+            None,
+            "infer",
+            [
+                ImagePayload(b"slow", 1, 1),
+                ImagePayload(b"late", 1, 1),
+                ImagePayload(b"bad", 1, 1),
+            ],
+            {},
+            model_monitoring=True,
+            record=False,
+        )
+
+    assert loop.time() - started < 1
+    assert raised.value.model_duration_s == 7.0
+    assert gw.slow_finished is False
+
+
+@pytest.mark.asyncio
+async def test_infer_reports_no_model_duration_when_gateway_lacks_the_extension(
+    fake_stat,
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(predictions={("ds/1", "infer"): "pred"})
+    bridge = LegacyModelBridge(gw)
+    route = await bridge.resolve("ds/1", None)
+
+    results, durations = await bridge._infer(
+        route,
+        None,
+        "infer",
+        [ImagePayload(b"a", 1, 1)],
+        {},
+        model_monitoring=True,
+        record=False,
+    )
+
+    assert results == ["pred"]
+    assert durations == [None]
+
+
 def _raising(error):
     def _raise(image, params):
         raise error

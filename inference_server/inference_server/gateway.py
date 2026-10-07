@@ -504,6 +504,61 @@ class ModelManagerGateway:
             request=request,
         )
 
+    async def infer_with_duration(
+        self,
+        *,
+        model_id: str,
+        image: Any = None,
+        action: Optional[str] = None,
+        instance: str = "",
+        params: Optional[dict] = None,
+        request: Optional[Request] = None,
+    ) -> tuple[Any, Optional[float]]:
+        """Run ``infer`` and report the model-side duration of this call.
+
+        Optional extension of the gateway surface; callers fall back to their
+        own timing when a gateway does not provide it.
+
+        Args:
+            model_id: Model id to route to.
+            image: Raw image payload, or None for a params-only call.
+            action: Action name, None for the model default.
+            instance: Model instance, empty for the sole instance.
+            params: Action parameters.
+            request: Ignored in-process.
+
+        Returns:
+            The result and the seconds spent decoding inputs and running the
+            model including pre/post-processing, excluding queueing and
+            transport; None when the model ran out of process or the call was
+            pipelined.
+
+        Raises:
+            Exception: Whatever ``infer`` raises; when the model ran, the
+                exception carries the seconds spent as ``model_duration_s``.
+        """
+        timing: dict = {}
+        try:
+            result = await self._infer(
+                model_id=model_id,
+                image=image,
+                action=action,
+                instance=instance,
+                params=params,
+                request=request,
+                timing=timing,
+            )
+        except Exception as error:
+            if "model_s" in timing:
+                try:
+                    error.model_duration_s = timing["model_s"]
+                except Exception:
+                    pass
+            raise
+        model_s = timing.get("model_s")
+
+        return result, model_s
+
     async def _infer(
         self,
         *,
@@ -513,6 +568,7 @@ class ModelManagerGateway:
         instance: str = "",
         params: Optional[dict] = None,
         request: Optional[Request] = None,
+        timing: Optional[dict] = None,
     ) -> Any:
         # `request` is ignored in-process: no client-disconnect race
         # (process_async runs in executor; cancellation propagates via the
@@ -528,6 +584,8 @@ class ModelManagerGateway:
                 else image
             )
 
+        timing_kwargs = {"timing": timing} if timing is not None else {}
+
         async def _process() -> Any:
             # serialize=False: L1 output serializers expect the RAW
             # prediction — the MMP wire carries raw pickles, so the
@@ -539,6 +597,7 @@ class ModelManagerGateway:
                 action=action,
                 serialize=False,
                 wire_marshalling=True,
+                **timing_kwargs,
                 **call_kwargs,
             )
 

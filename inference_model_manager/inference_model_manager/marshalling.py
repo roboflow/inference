@@ -5,6 +5,8 @@ from typing import Any, Callable, List, Optional
 
 import numpy as np
 
+MODEL_CLOCK_KWARG = "model_clock"
+
 
 def to_bytes(raw_input: Any) -> bytes:
     """Serialise any input value to bytes.

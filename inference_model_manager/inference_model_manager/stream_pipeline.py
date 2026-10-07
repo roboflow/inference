@@ -56,6 +56,7 @@ as a secondary guard.
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from typing import Any, Deque, List, Optional, Tuple
@@ -64,7 +65,7 @@ from weakref import finalize
 import torch
 
 from inference_model_manager import configuration as cfg
-from inference_model_manager.marshalling import tensors_to_numpy
+from inference_model_manager.marshalling import MODEL_CLOCK_KWARG, tensors_to_numpy
 from inference_models.configuration import (
     MAX_RFDETR_PIPELINE_DEPTH,
     get_rfdetr_pipeline_depth,
@@ -160,7 +161,9 @@ class StreamPipelinedModel:
             images: One image, or a batch; batches bypass the pipeline.
             **kwargs: Inference kwargs; `stream_pipeline_context_id` names the
                 frame and `stream_pipeline_producer_id` its producer. Neither
-                is forwarded to the model.
+                is forwarded to the model. `model_clock`, a one-element list,
+                accumulates the seconds a synchronous model call took, lock
+                wait excluded; it is not forwarded either.
 
         Returns:
             For a pipelined frame, one empty placeholder detection carrying the
@@ -168,6 +171,7 @@ class StreamPipelinedModel:
             only the current frame's context id while no earlier frame has
             finished. Otherwise the model's synchronous result.
         """
+        model_clock = kwargs.pop(MODEL_CLOCK_KWARG, None)
         context_id = kwargs.pop(STREAM_PIPELINE_CONTEXT_ID_KWARG, None)
         producer_id = kwargs.pop(STREAM_PIPELINE_PRODUCER_ID_KWARG, None)
         with self._lock:
@@ -175,7 +179,12 @@ class StreamPipelinedModel:
                 result = self._infer_pipelined(images, kwargs, context_id, producer_id)
             else:
                 self._submit_all_pending_gpu_work()
-                result = self.model.infer(images, **kwargs)
+                model_started = time.perf_counter()
+                try:
+                    result = self.model.infer(images, **kwargs)
+                finally:
+                    if model_clock is not None:
+                        model_clock[0] += time.perf_counter() - model_started
 
         return result
 

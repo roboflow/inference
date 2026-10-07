@@ -652,6 +652,163 @@ class TestRawProcessContract:
         raw = asyncio.run(mm.process_async("model-a", serialize=False, images="img"))
         assert raw == {"prediction": "fake", "model_id": "model-a"}
 
+    def test_process_reports_model_duration_into_the_timing_sink(self):
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+        timing: dict = {}
+
+        mm.process("model-a", serialize=False, timing=timing, images="img")
+
+        assert timing["model_s"] >= 0.0
+
+    def test_process_leaves_timing_unset_when_the_action_is_unknown(self):
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+        timing: dict = {}
+
+        with pytest.raises(ValueError):
+            mm.process("model-a", action="nonexistent-action", timing=timing)
+
+        assert timing == {}
+
+    @staticmethod
+    def _synthetic_clock(monkeypatch):
+        import time as real_time
+        from types import SimpleNamespace
+
+        from inference_model_manager import model_manager as mm_mod
+
+        now = [0.0]
+        monkeypatch.setattr(
+            mm_mod,
+            "time",
+            SimpleNamespace(perf_counter=lambda: now[0], monotonic=real_time.monotonic),
+        )
+
+        return now
+
+    def test_model_duration_counts_decode_and_retries_but_not_marshalling_or_accounting(
+        self, monkeypatch
+    ):
+        from inference_model_manager import model_manager as mm_mod
+
+        now = self._synthetic_clock(monkeypatch)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("model-a", api_key="")
+        backend = backends["model-a"]
+
+        original_decode = mm._wire_marshal_inputs
+
+        def _decode(backend_, kwargs):
+            now[0] += 2
+            return original_decode(backend_, kwargs)
+
+        def _infer(images=None, **kwargs):
+            now[0] += 3
+            return {"prediction": "fake"}
+
+        def _to_numpy(result):
+            now[0] += 10
+            return result
+
+        def _record(t0, error=False):
+            now[0] += 40
+
+        real_registry = mm_mod._get_registry()
+
+        class _Registry:
+            def validate(self, *args):
+                return real_registry.validate(*args)
+
+            def serialize(self, *args):
+                now[0] += 20
+                return real_registry.serialize(*args)
+
+        monkeypatch.setattr(mm, "_wire_marshal_inputs", _decode)
+        monkeypatch.setattr(backend.model, "infer", _infer)
+        monkeypatch.setattr(mm_mod, "tensors_to_numpy", _to_numpy)
+        monkeypatch.setattr(backend, "record_inference", _record)
+        monkeypatch.setattr(mm_mod, "_get_registry", lambda: _Registry())
+        timing: dict = {}
+
+        mm.process(
+            "model-a",
+            wire_marshalling=True,
+            timing=timing,
+            images=["a", "b"],
+        )
+
+        assert timing["model_s"] == 2 + 3 + 3 + 3
+
+    def test_model_duration_is_recorded_when_validation_fails_after_decode(
+        self, monkeypatch
+    ):
+        from inference_model_manager import model_manager as mm_mod
+
+        now = self._synthetic_clock(monkeypatch)
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+        original_decode = mm._wire_marshal_inputs
+
+        def _decode(backend_, kwargs):
+            now[0] += 2
+            return original_decode(backend_, kwargs)
+
+        class _Registry:
+            def validate(self, *args):
+                raise ValueError("classes missing")
+
+        monkeypatch.setattr(mm, "_wire_marshal_inputs", _decode)
+        monkeypatch.setattr(mm_mod, "_get_registry", lambda: _Registry())
+        timing: dict = {}
+
+        with pytest.raises(ValueError):
+            mm.process("model-a", wire_marshalling=True, timing=timing, images="img")
+
+        assert timing["model_s"] == 2
+
+    def test_model_duration_is_recorded_when_the_model_fails(self, monkeypatch):
+        now = self._synthetic_clock(monkeypatch)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("model-a", api_key="")
+
+        def _infer(images=None, **kwargs):
+            now[0] += 3
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(backends["model-a"].model, "infer", _infer)
+        timing: dict = {}
+
+        with pytest.raises(RuntimeError):
+            mm.process("model-a", timing=timing, images="img")
+
+        assert timing["model_s"] == 3
+
+    def test_process_async_reports_model_duration_per_call(self):
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+        first: dict = {}
+        second: dict = {}
+
+        async def _call():
+            await asyncio.gather(
+                mm.process_async("model-a", timing=first, images="img"),
+                mm.process_async("model-a", timing=second, images="img"),
+            )
+
+        asyncio.run(_call())
+
+        assert first["model_s"] >= 0.0
+        assert second["model_s"] >= 0.0
+
 
 class TestLoadLockScope:
     def test_concurrent_load_not_blocked_by_slow_backend_construction(self):
@@ -1141,6 +1298,54 @@ class TestStreamPipeline:
             stream_pipeline_context_id=context_id,
             stream_pipeline_producer_id="producer",
         )
+
+    def test_pipelined_call_reports_no_model_duration(self, segmentation_manager):
+        mm, _, _ = segmentation_manager
+        mm.load("seg/1", api_key="")
+        timing: dict = {}
+
+        mm.process(
+            "seg/1",
+            serialize=False,
+            wire_marshalling=True,
+            timing=timing,
+            images=np.zeros((4, 6, 3), dtype=np.uint8),
+            stream_pipeline_context_id="ctx",
+            stream_pipeline_producer_id="producer",
+        )
+
+        assert timing == {}
+
+    def test_synchronous_call_through_the_pipeline_excludes_the_lock_wait(
+        self, segmentation_manager
+    ):
+        import time as real_time
+
+        mm, _, _ = segmentation_manager
+        mm.load("seg/1", api_key="")
+        pipeline = mm._stream_pipelines["seg/1"]
+        timing: dict = {}
+        holding = threading.Event()
+
+        def _hold():
+            with pipeline._lock:
+                holding.set()
+                real_time.sleep(0.3)
+
+        holder = threading.Thread(target=_hold)
+        holder.start()
+        holding.wait(timeout=5)
+
+        mm.process(
+            "seg/1",
+            serialize=False,
+            wire_marshalling=True,
+            timing=timing,
+            images=np.zeros((4, 6, 3), dtype=np.uint8),
+        )
+        holder.join()
+
+        assert timing["model_s"] < 0.15
 
     def test_load_wires_the_pipeline_for_a_supported_model(self, segmentation_manager):
         mm, _, _ = segmentation_manager
