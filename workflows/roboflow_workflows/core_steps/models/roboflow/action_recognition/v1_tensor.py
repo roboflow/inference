@@ -25,10 +25,11 @@ class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
         self, image: WorkflowImageData, actions: List[str]
     ) -> Any:
         # Tensor consumers of classification_prediction expect the native object.
-        return deserialize_native_classification_prediction_kind(
-            parameter="latest_predictions",
-            value=super()._build_latest_predictions(image=image, actions=actions),
+        predictions = super()._build_latest_predictions(image=image, actions=actions)
+        native_predictions = deserialize_native_classification_prediction_kind(
+            parameter="latest_predictions", value=predictions
         )
+        return native_predictions
 
     def _extract_frame(self, image: WorkflowImageData):
         if image.is_tensor_materialised():

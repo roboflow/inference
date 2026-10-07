@@ -721,8 +721,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
     def _build_latest_predictions(
         self, image: WorkflowImageData, actions: List[str]
     ) -> Any:
-        # Multi-label shape so Classification Label Visualization draws every
-        # action; ids are list positions because captions have no vocabulary id.
+        # Multi-label so every action gets a label. Position ids stay dense, which
+        # the tensor confidence vector needs; captions also have no vocabulary id.
         height, width = image._read_shape_without_materialization()
         return {
             "image": {"height": height, "width": width},
