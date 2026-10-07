@@ -1,3 +1,4 @@
+import cv2 as cv
 import numpy as np
 import pytest
 import supervision as sv
@@ -63,6 +64,12 @@ BOUNDNG_RECTANGLE_WORKFLOW = {
 }
 
 
+_EXPECTED_RECTANGLES = [
+    (np.array([[322, 402], [325, 224], [586, 228], [583, 406]]), 5.0),
+    (np.array([[219, 82], [352, 57], [409, 363], [276, 388]]), 6.0),
+]
+
+
 @_NUMPY_ONLY
 @add_to_workflows_gallery(
     category="Basic Workflows",
@@ -116,23 +123,15 @@ def test_rectangle_bounding_workflow(
         "angle" in result[0]["result"].data
     ), "'angle' data field must expected to be found in result"
 
-    assert np.allclose(
-        result[0]["result"]["rect"][0],
-        np.array([[322.0, 402.0], [325.0, 224.0], [586.0, 228.0], [583.0, 406.0]]),
-        atol=5.0,
-    )
-    assert np.allclose(
-        result[0]["result"]["rect"][1],
-        np.array([[219.0, 82.0], [352.0, 57.0], [409.0, 363.0], [276.0, 388.0]]),
-        atol=6.0,
-    )
-    assert np.allclose(
-        result[0]["result"]["width"], np.array([261.5, 311.25]), atol=5.0
-    )
-    assert np.allclose(
-        result[0]["result"]["height"], np.array([178.4, 135.2]), atol=6.0
-    )
-    assert np.allclose(result[0]["result"]["angle"], np.array([0.826, 79.5]), atol=0.5)
+    for i, (expected_rect, atol) in enumerate(_EXPECTED_RECTANGLES):
+        _assert_rectangle_geometry(
+            result[0]["result"]["rect"][i],
+            width=result[0]["result"]["width"][i],
+            height=result[0]["result"]["height"][i],
+            angle=result[0]["result"]["angle"][i],
+            expected_rect=expected_rect,
+            atol=atol,
+        )
 
 
 @_TENSOR_ONLY
@@ -179,40 +178,16 @@ def test_rectangle_bounding_workflow_tensor_native(
         assert "height" in meta, "'height' geometry must be found in per-box metadata"
         assert "angle" in meta, "'angle' geometry must be found in per-box metadata"
 
-    assert np.allclose(
-        np.array(detections.bboxes_metadata[0]["rect"]),
-        np.array([[322.0, 402.0], [325.0, 224.0], [586.0, 228.0], [583.0, 406.0]]),
-        atol=5.0,
-    )
-    assert np.allclose(
-        np.array(detections.bboxes_metadata[1]["rect"]),
-        np.array([[219.0, 82.0], [352.0, 57.0], [409.0, 363.0], [276.0, 388.0]]),
-        atol=6.0,
-    )
-    assert np.allclose(
-        [
-            detections.bboxes_metadata[0]["width"],
-            detections.bboxes_metadata[1]["width"],
-        ],
-        np.array([261.5, 311.25]),
-        atol=5.0,
-    )
-    assert np.allclose(
-        [
-            detections.bboxes_metadata[0]["height"],
-            detections.bboxes_metadata[1]["height"],
-        ],
-        np.array([178.4, 135.2]),
-        atol=6.0,
-    )
-    assert np.allclose(
-        [
-            detections.bboxes_metadata[0]["angle"],
-            detections.bboxes_metadata[1]["angle"],
-        ],
-        np.array([0.826, 79.5]),
-        atol=0.5,
-    )
+    for i, (expected_rect, atol) in enumerate(_EXPECTED_RECTANGLES):
+        metadata = detections.bboxes_metadata[i]
+        _assert_rectangle_geometry(
+            np.array(metadata["rect"]),
+            width=metadata["width"],
+            height=metadata["height"],
+            angle=metadata["angle"],
+            expected_rect=expected_rect,
+            atol=atol,
+        )
 
 
 @_TENSOR_ONLY
@@ -262,37 +237,46 @@ def test_rectangle_bounding_workflow_with_tensor_input(
         assert "height" in meta, "'height' geometry must be found in per-box metadata"
         assert "angle" in meta, "'angle' geometry must be found in per-box metadata"
 
-    assert np.allclose(
-        np.array(detections.bboxes_metadata[0]["rect"]),
-        np.array([[322.0, 402.0], [325.0, 224.0], [586.0, 228.0], [583.0, 406.0]]),
-        atol=5.0,
+    for i, (expected_rect, atol) in enumerate(_EXPECTED_RECTANGLES):
+        metadata = detections.bboxes_metadata[i]
+        _assert_rectangle_geometry(
+            np.array(metadata["rect"]),
+            width=metadata["width"],
+            height=metadata["height"],
+            angle=metadata["angle"],
+            expected_rect=expected_rect,
+            atol=atol,
+        )
+
+
+def _assert_rectangle_geometry(
+    rect: np.ndarray,
+    *,
+    width: float,
+    height: float,
+    angle: float,
+    expected_rect: np.ndarray,
+    atol: float,
+) -> None:
+    # OpenCV can swap axes and shift the starting corner of equivalent rectangles.
+    _assert_rectangle_corners(rect, expected_rect=expected_rect, atol=atol)
+    assert width > 0
+    assert height > 0
+
+    reconstructed = cv.boxPoints(
+        (
+            tuple(rect.astype(float).mean(axis=0)),
+            (float(width), float(height)),
+            float(angle),
+        )
     )
-    assert np.allclose(
-        np.array(detections.bboxes_metadata[1]["rect"]),
-        np.array([[219.0, 82.0], [352.0, 57.0], [409.0, 363.0], [276.0, 388.0]]),
-        atol=6.0,
-    )
-    assert np.allclose(
-        [
-            detections.bboxes_metadata[0]["width"],
-            detections.bboxes_metadata[1]["width"],
-        ],
-        np.array([261.5, 311.25]),
-        atol=5.0,
-    )
-    assert np.allclose(
-        [
-            detections.bboxes_metadata[0]["height"],
-            detections.bboxes_metadata[1]["height"],
-        ],
-        np.array([178.4, 135.2]),
-        atol=6.0,
-    )
-    assert np.allclose(
-        [
-            detections.bboxes_metadata[0]["angle"],
-            detections.bboxes_metadata[1]["angle"],
-        ],
-        np.array([0.826, 79.5]),
-        atol=0.5,
-    )
+    # The block truncates corners to integers and stores metadata as float16.
+    _assert_rectangle_corners(rect, expected_rect=reconstructed, atol=1.0)
+
+
+def _assert_rectangle_corners(
+    rect: np.ndarray, *, expected_rect: np.ndarray, atol: float
+) -> None:
+    candidates = np.stack([np.roll(rect, shift, axis=0) for shift in range(4)])
+    closest = np.argmin(np.max(np.abs(candidates - expected_rect), axis=(1, 2)))
+    np.testing.assert_allclose(candidates[closest], expected_rect, atol=atol, rtol=0)
