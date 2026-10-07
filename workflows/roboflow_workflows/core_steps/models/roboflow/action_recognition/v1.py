@@ -33,7 +33,6 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
@@ -120,15 +119,8 @@ model carries, or list classes to report a subset of them. When a model call
 fails, error_status carries the error text for that frame and the stream
 continues.
 
-Connect `frame_predictions` directly to Classification Label Visualization to
-display actions whose ranges cover the input frame. This output uses multi-label
-classification format, with one prediction per matching class. Every confidence
-is a synthetic 1.0 for compatibility, not a probability supplied by the model.
-Frames outside the classified ranges return no predicted classes; actions are
-not carried forward beyond their observed ranges. `timeline` retains the full
-temporal output.
-Class IDs follow the model vocabulary; vocabulary-free captions receive IDs
-local to each frame.
+`current_actions` lists the actions whose range covers the input frame. Connect
+it to Text Display to show them on the video.
 """
 
 
@@ -141,7 +133,6 @@ class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
-    classification_vocabulary_size: int = 0
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -221,10 +212,7 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[ACTION_RECOGNITION_PREDICTION_KIND],
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
-            OutputDefinition(
-                name="frame_predictions",
-                kind=[CLASSIFICATION_PREDICTION_KIND],
-            ),
+            OutputDefinition(name="current_actions", kind=[LIST_OF_VALUES_KIND]),
         ]
 
     @classmethod
@@ -266,7 +254,7 @@ class BlockManifest(WorkflowBlockManifest):
         generic `add_model()` registration. The declared dependency describes
         that supported execution path, so it is LOCAL and kept away from the
         generic preloader. The configured id is returned verbatim, selector
-        included. Both representations declare the same model resources.
+        included. The tensor sibling re-exports this manifest.
 
         Returns:
             The configured action recognition model.
@@ -281,11 +269,6 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
     def discover_work_operations(self) -> List[WorkOperation]:
-        """Declare model inference over buffered video frames.
-
-        Returns:
-            Model inference and temporal buffering operations.
-        """
         return [
             WorkOperation.MODEL_INFERENCE,
             WorkOperation.TEMPORAL_BUFFERING,
@@ -448,10 +431,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 and frame_number < bookkeeping.last_frame_number
             )
         ):
-            bookkeeping = _ActionRecognitionBookkeeping(
-                signature=signature,
-                classification_vocabulary_size=len(id_vocabulary or []),
-            )
+            bookkeeping = _ActionRecognitionBookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
             while len(self._video_bookkeeping) > MAX_TRACKED_VIDEOS:
                 evicted_video_id, _ = self._video_bookkeeping.popitem(last=False)
@@ -533,10 +513,11 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
 
         bookkeeping.last_frame_number = frame_number
-        result = self._build_output(
-            image=image, bookkeeping=bookkeeping, error_status=error_status
+        return self._build_output(
+            bookkeeping=bookkeeping,
+            error_status=error_status,
+            frame_number=frame_number,
         )
-        return result
 
     def _resolve_source_fps(
         self,
@@ -708,9 +689,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def _build_output(
         self,
-        image: WorkflowImageData,
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
+        frame_number: int,
     ) -> dict:
         # Copying every entry here costs one full timeline copy per frame,
         # which grows without bound and caps the frame rate the block keeps
@@ -720,39 +701,11 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
-            "frame_predictions": self._build_frame_predictions(
-                image=image, bookkeeping=bookkeeping
+            "current_actions": list(
+                dict.fromkeys(
+                    action.class_name
+                    for action in bookkeeping.timeline_snapshot
+                    if action.start_frame_idx <= frame_number <= action.end_frame_idx
+                )
             ),
         }
-
-    def _build_frame_predictions(
-        self,
-        image: WorkflowImageData,
-        bookkeeping: _ActionRecognitionBookkeeping,
-    ) -> dict:
-        frame_number = image.video_metadata.frame_number
-        predictions = {}
-        for action in bookkeeping.timeline_snapshot:
-            if not action.start_frame_idx <= frame_number <= action.end_frame_idx:
-                continue
-
-            if action.class_name in predictions:
-                continue
-
-            # Native classification requires nonnegative ids. Frame-local ids
-            # avoid accumulating an unbounded vocabulary of generated captions.
-            class_id = action.class_id
-            if class_id < 0:
-                class_id = bookkeeping.classification_vocabulary_size + len(predictions)
-            predictions[action.class_name] = {"confidence": 1.0, "class_id": class_id}
-
-        height, width = image._read_shape_without_materialization()
-        frame_predictions = {
-            "image": {"height": height, "width": width},
-            "predictions": predictions,
-            "predicted_classes": list(predictions),
-            "prediction_type": "classification",
-            "parent_id": image.parent_metadata.parent_id,
-            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
-        }
-        return frame_predictions

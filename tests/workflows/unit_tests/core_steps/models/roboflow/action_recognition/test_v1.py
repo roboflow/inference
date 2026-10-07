@@ -15,6 +15,9 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_action_recognition_prediction_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.query_language.entities.operations import (
+    SequenceJoin,
+)
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_action_recognition_prediction_kind,
 )
@@ -31,6 +34,9 @@ from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_t
 from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
     BlockManifest as TensorBlockManifest,
 )
+from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
+    format_text_with_parameters,
+)
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
@@ -40,7 +46,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
     STRING_KIND,
 )
 from inference_models import ActionRecognitionModel
@@ -274,11 +280,11 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert [output.name for output in outputs] == [
         "timeline",
         "error_status",
-        "frame_predictions",
+        "current_actions",
     ]
     assert outputs[0].kind == [ACTION_RECOGNITION_PREDICTION_KIND]
     assert outputs[1].kind == [STRING_KIND]
-    assert outputs[2].kind[0].name == CLASSIFICATION_PREDICTION_KIND.name
+    assert outputs[2].kind == [LIST_OF_VALUES_KIND]
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
@@ -1296,3 +1302,37 @@ def test_tensor_block_caps_on_device_without_leaving_the_tensor():
     assert result.dtype == torch.uint8
     assert result.device == frame.device
     assert result.shape == (3, 11, 16)
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+def test_current_actions_lists_each_action_covering_the_frame_once(tensor):
+    block, _ = _make_block(
+        responses=[
+            [
+                _model_segment("walk", 0, 1),
+                _model_segment("run", 1, 1),
+                _model_segment("walk", 1, 1),
+            ]
+        ],
+        tensor=tensor,
+    )
+    color = {"tensor_rgb_color": [1, 2, 3]} if tensor else {}
+
+    results = [_run(block, _make_frame(n, **color)) for n in range(4)]
+
+    # Frame 2 is the only frame the model ranges cover; later frames expire.
+    assert [r["current_actions"] for r in results] == [[], [], ["walk", "run"], []]
+
+
+def test_current_actions_render_as_text_display_parameter():
+    block, _ = _make_block(responses=[[_model_segment("walk", 1, 1)]])
+    for n in range(3):
+        result = _run(block, _make_frame(n))
+
+    text = format_text_with_parameters(
+        text="Action: {{ $parameters.actions }}",
+        text_parameters={"actions": result["current_actions"]},
+        text_parameters_operations={"actions": [SequenceJoin(type="SequenceJoin")]},
+    )
+
+    assert text == "Action: walk"

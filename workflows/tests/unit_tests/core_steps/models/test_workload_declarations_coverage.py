@@ -120,7 +120,6 @@ AUDITED_NON_PRELOADABLE_DEPENDENT_RESOURCE = {
     "roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1",
     "roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1_tensor",
     "roboflow_workflows.core_steps.models.roboflow.action_recognition.v1",
-    "roboflow_workflows.core_steps.models.roboflow.action_recognition.v1_tensor",
 }
 
 # Blocks whose pre-existing declaration returns None only when the field that
