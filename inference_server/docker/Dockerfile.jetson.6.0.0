@@ -33,6 +33,7 @@ COPY inference_models        /app/inference_models
 COPY inference_model_manager /app/inference_model_manager
 COPY inference_server        /app/inference_server
 COPY workflows                /app/workflows
+COPY stream_vision            /app/stream_vision
 COPY inference/landing/out    /app/landing
 
 # CWD = inference_models so its [tool.uv] index/sources apply (jp6-cu126 index).
@@ -43,7 +44,7 @@ RUN uv venv --python 3.10 --system-site-packages /opt/venv \
     && uv pip install \
         -e ".[torch-jp6-cu126,onnx-jp6-cu126]" \
         -e "../inference_model_manager" \
-        -e "../inference_server[workflows,otel,redis,enterprise]"
+        -e "../inference_server[workflows,otel,redis,enterprise,streams]"
 
 RUN python /app/workflows/build_scripts/download_fonts.py
 

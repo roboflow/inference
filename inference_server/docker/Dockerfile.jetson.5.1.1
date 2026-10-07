@@ -33,6 +33,7 @@ COPY inference_models        /app/inference_models
 COPY inference_model_manager /app/inference_model_manager
 COPY inference_server        /app/inference_server
 COPY workflows                /app/workflows
+COPY stream_vision            /app/stream_vision
 COPY inference/landing/out    /app/landing
 RUN python /app/workflows/build_scripts/download_fonts.py
 
@@ -50,7 +51,8 @@ RUN python -m pip install --no-cache-dir \
         -e ./inference_models \
         -e "./inference_model_manager" \
         -e ./workflows \
-        -e "./inference_server[workflows,otel,redis,enterprise]"
+        -e ./stream_vision \
+        -e "./inference_server[workflows,otel,redis,enterprise,streams]"
 
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh

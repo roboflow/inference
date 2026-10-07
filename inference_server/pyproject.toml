@@ -32,6 +32,7 @@ onnx-cu12 = ["inference-model-manager[onnx-cu12]"]
 onnx-jp6-cu126 = ["inference-model-manager[onnx-jp6-cu126]"]
 trt10-runtime = ["inference-model-manager[trt10-runtime]"]
 workflows = ["roboflow-workflows>=0.2.4rc3"]
+streams = ["streamvision[webrtc,workflows]>=0.1.1rc1"]
 enterprise = ["roboflow-workflows[enterprise]>=0.2.4rc3"]
 redis = ["redis~=5.0.0"]
 otel = [
@@ -54,6 +55,7 @@ test = [
 inference-model-manager = { path = "../inference_model_manager", editable = true }
 inference-models = { path = "../inference_models", editable = true }
 roboflow-workflows = { path = "../workflows", editable = true }
+streamvision = { path = "../stream_vision", editable = true }
 
 [tool.setuptools.packages.find]
 include = ["inference_server*"]
