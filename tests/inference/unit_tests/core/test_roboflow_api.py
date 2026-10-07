@@ -28,6 +28,7 @@ from inference.core.exceptions import (
     RoboflowAPIIAlreadyAnnotatedError,
     RoboflowAPIIAnnotationRejectionError,
     RoboflowAPIImageUploadRejectionError,
+    RoboflowAPIImageUploadUncertainError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
@@ -1962,6 +1963,52 @@ def test_register_image_at_roboflow_when_duplicate_response_returned(
         "image/jpeg",
     )
     assert response == {"duplicate": True, "id": "xxx"}
+
+
+@pytest.mark.parametrize(
+    "first_attempt_fails, annotation_follows, expect_error",
+    [(True, True, True), (True, False, False), (False, True, False)],
+)
+def test_register_image_at_roboflow_when_duplicate_returned_after_failed_attempt(
+    requests_mock: Mocker,
+    monkeypatch: pytest.MonkeyPatch,
+    first_attempt_fails: bool,
+    annotation_follows: bool,
+    expect_error: bool,
+) -> None:
+    # given
+    monkeypatch.setattr(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", True)
+    duplicate = {"json": {"duplicate": True, "id": "xxx"}}
+    request_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/coins_detection/upload"),
+        response_list=(
+            [{"exc": requests.exceptions.ReadTimeout}, duplicate]
+            if first_attempt_fails
+            else [duplicate]
+        ),
+    )
+
+    # when
+    with (
+        pytest.raises(
+            RoboflowAPIImageUploadUncertainError,
+            match="may already have been uploaded .* ReadTimeout",
+        )
+        if expect_error
+        else nullcontext()
+    ):
+        response = register_image_at_roboflow(
+            api_key="my_api_key",
+            dataset_id="coins_detection",
+            local_image_id="local_id",
+            image_bytes=b"SOME_IMAGE_BYTES",
+            batch_name="my-batch",
+            annotation_follows=annotation_follows,
+        )
+        assert response == {"duplicate": True, "id": "xxx"}
+
+    # then
+    assert request_mock.call_count == (2 if first_attempt_fails else 1)
 
 
 def test_register_image_at_roboflow_when_error_response_returned(

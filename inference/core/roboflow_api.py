@@ -78,6 +78,7 @@ from inference.core.exceptions import (
     RoboflowAPIIAlreadyAnnotatedError,
     RoboflowAPIIAnnotationRejectionError,
     RoboflowAPIImageUploadRejectionError,
+    RoboflowAPIImageUploadUncertainError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
@@ -811,6 +812,7 @@ def register_image_at_roboflow(
     tags: Optional[List[str]] = None,
     inference_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    annotation_follows: bool = False,
 ) -> dict:
     """Upload an image using the configured API retry policy.
 
@@ -823,9 +825,15 @@ def register_image_at_roboflow(
         tags: Tags attached to the image.
         inference_id: Associated inference result identifier, if available.
         metadata: Optional custom image metadata.
+        annotation_follows: Whether the caller will annotate the image next.
 
     Returns:
         API response containing the image ID and success or duplicate status.
+
+    Raises:
+        RoboflowAPIImageUploadUncertainError: When `annotation_follows` is set and
+            a retry reports a duplicate. The failed attempt may have saved the
+            image, and callers skip annotating duplicates.
     """
     if OFFLINE_MODE:
         # callers consume the response (e.g. `["id"]`) - raise so existing
@@ -850,11 +858,21 @@ def register_image_at_roboflow(
     }
     if metadata is not None:
         fields["metadata"] = json.dumps(metadata)
-    response = _post_to_url(url, multipart_fields=fields)
+    failed_attempts = []
+    response = _post_to_url(
+        url, multipart_fields=fields, failed_attempts=failed_attempts
+    )
     parsed_response = response.json()
     if not parsed_response.get("duplicate") and not parsed_response.get("success"):
         raise RoboflowAPIImageUploadRejectionError(
             f"Server rejected image: {parsed_response}"
+        )
+    if parsed_response.get("duplicate") and failed_attempts and annotation_follows:
+        raise RoboflowAPIImageUploadUncertainError(
+            f"Image {local_image_id} may already have been uploaded by an earlier "
+            f"attempt that failed with {type(failed_attempts[-1]).__name__}, but its "
+            f"annotation was not uploaded. Server response to the retry: "
+            f"{parsed_response}"
         )
     return parsed_response
 
@@ -1955,8 +1973,13 @@ def _post_to_url(
     *,
     data: Optional[str] = None,
     multipart_fields: Optional[dict] = None,
+    failed_attempts: Optional[List[Exception]] = None,
 ) -> Response:
-    """POST with the GET retry policy, rebuilding multipart data per attempt."""
+    """POST with the GET retry policy, rebuilding multipart data per attempt.
+
+    Errors that trigger a retry are appended to `failed_attempts`, so callers can
+    tell when a retried request may already have taken effect.
+    """
     body = (
         MultipartEncoder(fields=multipart_fields)
         if multipart_fields is not None
@@ -1977,6 +2000,8 @@ def _post_to_url(
         )
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
+            if failed_attempts is not None:
+                failed_attempts.append(error)
             raise RetryRequestError(
                 message="Connectivity error", inner_error=error
             ) from error
@@ -1986,6 +2011,8 @@ def _post_to_url(
         api_key_safe_raise_for_status(response=response)
     except requests.exceptions.HTTPError as error:
         if response.status_code in TRANSIENT_ROBOFLOW_API_ERRORS:
+            if failed_attempts is not None:
+                failed_attempts.append(error)
             raise RetryRequestError(
                 message=f"Transient HTTP error: {response.status_code}",
                 inner_error=error,
