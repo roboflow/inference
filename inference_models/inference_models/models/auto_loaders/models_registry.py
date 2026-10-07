@@ -443,6 +443,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_onnx",
         class_name="RFDetrForSemanticSegmentationOnnx",
     ),
+    ("rfdetr", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_trt",
+        class_name="RFDetrForSemanticSegmentationTRT",
+    ),
     ("rfdetr", KEYPOINT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_models.models.rfdetr.rfdetr_key_points_detection_onnx",

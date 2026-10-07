@@ -32,6 +32,7 @@ There are no public pre-trained semantic checkpoints. Train a model on the Robof
 |---------|----------------|
 | `onnx` | `onnx-cpu`, `onnx-cu12`, `onnx-cu118`, `onnx-jp6-cu126` |
 | `torch` | `torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126` |
+| `trt` | `trt10` |
 
 ## Roboflow Platform Compatibility
 
