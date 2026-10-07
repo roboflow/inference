@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Action Recognition Model: `latest_predictions` output connects to Classification Label Visualization.
+
 ## `0.2.4`
 
 Bundled execution engine: `1.16.1`.
