@@ -400,5 +400,4 @@ def test_source_tags_reach_workflow_model_and_python_usage(monkeypatch, path):
     for category, details in details_by_category.items():
         assert details["source_info"] == "workflow-evals", (category, details)
         assert details["billable"] is True
-        if category != "workflows":
-            assert details["source"] == "app", (category, details)
+        assert details["source"] == "app", (category, details)

@@ -857,6 +857,9 @@ class UsageCollector:
             resource_id = usage_workflow_id
             workflow_resource_details["is_preview"] = usage_workflow_preview
             resource_details = {**resource_details, **workflow_resource_details}
+            source_tag = usage_source_tags.get().get("source")
+            if source_tag:
+                resource_details["source"] = source_tag
         elif category == "model":
             model_id = get_model_id_from_kwargs(func_kwargs)
             if model_id:

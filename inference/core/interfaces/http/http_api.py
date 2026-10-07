@@ -2501,6 +2501,27 @@ class HttpInterface(BaseInterface):
                     description="The detailed source information of the inference request",
                 ),
             ) -> WorkflowInferenceResponse:
+                """Fetch and execute a saved workflow with request usage attribution.
+
+                Args:
+                    workspace_name (str): Workspace containing the saved workflow.
+                    workflow_id (str): Identifier of the saved workflow to execute.
+                    workflow_request (PredefinedWorkflowInferenceRequest):
+                        Workflow inputs and execution options.
+                    background_tasks (BackgroundTasks): Tasks for deferred execution
+                        outside serverless environments.
+                    countinference (Optional[bool]): Caller billing intent, read by
+                        the usage collector.
+                    service_secret (Optional[str]): Internal service credential used
+                        by the usage collector to validate billing intent.
+                    request_source (Optional[str]): Usage source from the ``source``
+                        query parameter.
+                    request_source_info (Optional[str]): Detailed usage attribution
+                        from the ``source_info`` query parameter.
+
+                Returns:
+                    WorkflowInferenceResponse: Workflow outputs and execution metadata.
+                """
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 workflow_request.api_key = api_key_override(workflow_request.api_key)
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
@@ -2570,6 +2591,25 @@ class HttpInterface(BaseInterface):
                     description="The detailed source information of the inference request",
                 ),
             ) -> WorkflowInferenceResponse:
+                """Execute an inline workflow with request usage attribution.
+
+                Args:
+                    workflow_request (WorkflowSpecificationInferenceRequest):
+                        Workflow inputs and execution options.
+                    background_tasks (BackgroundTasks): Tasks for deferred execution
+                        outside serverless environments.
+                    countinference (Optional[bool]): Caller billing intent, read by
+                        the usage collector.
+                    service_secret (Optional[str]): Internal service credential used
+                        by the usage collector to validate billing intent.
+                    request_source (Optional[str]): Usage source from the ``source``
+                        query parameter.
+                    request_source_info (Optional[str]): Detailed usage attribution
+                        from the ``source_info`` query parameter.
+
+                Returns:
+                    WorkflowInferenceResponse: Workflow outputs and execution metadata.
+                """
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
