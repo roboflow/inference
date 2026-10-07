@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
@@ -325,33 +325,15 @@ def test_require_cosmos3_transformers_names_the_floor(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
-    "device_type, expected_dtype, expected_attention",
-    [
-        ("mps", torch.bfloat16, "sdpa"),
-        ("cpu", torch.float32, "eager"),
-    ],
-)
-def test_runtime_settings_per_device(
-    device_type, expected_dtype, expected_attention
-) -> None:
-    device = torch.device(device_type)
-
-    assert reasoner_module._resolve_default_dtype(device) == expected_dtype
-    assert reasoner_module._get_cosmos3_attn_implementation(device) == (
-        expected_attention
-    )
-
-
-@pytest.mark.parametrize(
-    "device_type, expected_device_map, moved",
+    "device_type, device_map, dtype, attention, moves",
     [
         # Threaded weight loading onto MPS races in PyTorch's Metal kernel cache.
-        ("mps", "cpu", True),
-        ("cpu", torch.device("cpu"), False),
+        ("mps", "cpu", torch.bfloat16, "sdpa", [call(torch.device("mps"))]),
+        ("cpu", torch.device("cpu"), torch.float32, "eager", []),
     ],
 )
-def test_from_pretrained_stages_mps_weights_on_cpu(
-    tmp_path, monkeypatch, device_type, expected_device_map, moved
+def test_from_pretrained_loads_for_the_device(
+    tmp_path, monkeypatch, device_type, device_map, dtype, attention, moves
 ) -> None:
     loaded = _fake_loaded_model()
     load_model = MagicMock(return_value=loaded)
@@ -360,15 +342,14 @@ def test_from_pretrained_stages_mps_weights_on_cpu(
         reasoner_module.AutoModelForImageTextToText, "from_pretrained", load_model
     )
     monkeypatch.setattr(reasoner_module.AutoProcessor, "from_pretrained", MagicMock())
-    device = torch.device(device_type)
 
-    reasoner = Cosmos3EdgeReasoner.from_pretrained(str(tmp_path), device=device)
+    Cosmos3EdgeReasoner.from_pretrained(str(tmp_path), device=torch.device(device_type))
 
-    assert load_model.call_args.kwargs["device_map"] == expected_device_map
-    assert loaded.to.called is moved
-    if moved:
-        assert loaded.to.call_args.args == (device,)
-    assert reasoner._model is loaded
+    load_kwargs = load_model.call_args.kwargs
+    assert load_kwargs["device_map"] == device_map
+    assert load_kwargs["dtype"] == dtype
+    assert load_kwargs["attn_implementation"] == attention
+    assert loaded.to.call_args_list == moves
 
 
 def test_post_process_generation_returns_the_answer_as_answer_when_thinking_is_off() -> (

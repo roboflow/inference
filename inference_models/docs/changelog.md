@@ -2,17 +2,6 @@
 
 ## Unreleased
 
-### Fixed
-
-- Cosmos 3 Edge loads and runs on Apple Silicon GPUs (`DEFAULT_DEVICE=mps`). Loading used to
-  crash or hang: transformers casts weights on several threads, and concurrent casts onto MPS
-  race in PyTorch's Metal kernel cache. The weights now stage on CPU and move to MPS in one
-  step. On MPS the reasoner serves in bf16 with SDPA attention, as on CUDA, instead of float32
-  with eager attention. On an M4 Max, a 64-frame action-recognition window (4.8k tokens)
-  reaches its first token in 2.8 s on MPS (6-8 s once the GPU throttles under sustained
-  load) instead of 23.5 s on CPU, with first-token logits within 0.998 cosine of float32.
-  CUDA and CPU loading are unchanged.
-
 ---
 
 ## `0.39.1`

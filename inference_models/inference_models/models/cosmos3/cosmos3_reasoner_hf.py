@@ -131,28 +131,14 @@ def _resolve_default_dtype(device: torch.device) -> torch.dtype:
     return torch.float32
 
 
-def _load_base_model(
-    model_name_or_path: str,
-    *,
-    device: torch.device,
-    dtype: torch.dtype,
-    attn_implementation: str,
-    trust_remote_code: bool,
-    local_files_only: bool,
-    quantization_config: Any,
-):
-    # transformers materialises weights on a thread pool, and concurrent dtype
-    # casts onto MPS race in PyTorch's Metal kernel cache (hang or SIGSEGV).
-    # Staging on CPU keeps every MPS copy on this thread.
+def _load_base_model(model_name_or_path: str, *, device: torch.device, **kwargs):
+    # transformers loads weights on a thread pool, and concurrent casts onto MPS
+    # race in PyTorch's Metal kernel cache (hang or SIGSEGV), so stage on CPU.
     stage_on_cpu = device.type == "mps"
     model = AutoModelForImageTextToText.from_pretrained(
         model_name_or_path,
         device_map="cpu" if stage_on_cpu else device,
-        dtype=dtype,
-        trust_remote_code=trust_remote_code,
-        local_files_only=local_files_only,
-        quantization_config=quantization_config,
-        attn_implementation=attn_implementation,
+        **kwargs,
     )
     if stage_on_cpu:
         model = model.to(device)
