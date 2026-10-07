@@ -4,8 +4,13 @@
 same manifest.
 """
 
+from typing import Any, List
+
 import numpy as np
 import torch
+from roboflow_workflows.core_steps.common.deserializers_tensor import (
+    deserialize_native_classification_prediction_kind,
+)
 from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
     ActionRecognitionModelBlockV1 as _NumpyActionRecognitionModelBlockV1,
 )
@@ -16,6 +21,15 @@ from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 
 
 class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
+    def _build_latest_predictions(
+        self, image: WorkflowImageData, actions: List[str]
+    ) -> Any:
+        # Tensor consumers of classification_prediction expect the native object.
+        return deserialize_native_classification_prediction_kind(
+            parameter="latest_predictions",
+            value=super()._build_latest_predictions(image=image, actions=actions),
+        )
+
     def _extract_frame(self, image: WorkflowImageData):
         if image.is_tensor_materialised():
             frame = image.tensor_image

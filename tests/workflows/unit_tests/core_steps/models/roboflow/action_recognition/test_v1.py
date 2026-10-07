@@ -15,11 +15,11 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_action_recognition_prediction_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.query_language.entities.operations import (
-    SequenceJoin,
-)
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_action_recognition_prediction_kind,
+)
+from inference.core.workflows.core_steps.common.serializers_tensor import (
+    serialise_native_classification,
 )
 from inference.core.workflows.core_steps.models.roboflow.action_recognition import (
     v1 as video_classification_module,
@@ -34,8 +34,11 @@ from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_t
 from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
     BlockManifest as TensorBlockManifest,
 )
-from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
-    format_text_with_parameters,
+from inference.core.workflows.core_steps.visualizations.classification_label import (
+    v1 as classification_label_v1,
+)
+from inference.core.workflows.core_steps.visualizations.classification_label import (
+    v1_tensor as classification_label_v1_tensor,
 )
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
@@ -46,7 +49,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
-    LIST_OF_VALUES_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     STRING_KIND,
 )
 from inference_models import ActionRecognitionModel
@@ -280,11 +283,11 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert [output.name for output in outputs] == [
         "timeline",
         "error_status",
-        "latest_actions",
+        "latest_predictions",
     ]
     assert outputs[0].kind == [ACTION_RECOGNITION_PREDICTION_KIND]
     assert outputs[1].kind == [STRING_KIND]
-    assert outputs[2].kind == [LIST_OF_VALUES_KIND]
+    assert outputs[2].kind == [CLASSIFICATION_PREDICTION_KIND]
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
@@ -1304,8 +1307,15 @@ def test_tensor_block_caps_on_device_without_leaving_the_tensor():
     assert result.shape == (3, 11, 16)
 
 
+def _predicted_classes(result):
+    prediction = result["latest_predictions"]
+    if not isinstance(prediction, dict):
+        prediction = serialise_native_classification(prediction)
+    return prediction["predicted_classes"]
+
+
 @pytest.mark.parametrize("tensor", [False, True])
-def test_latest_actions_hold_until_the_next_call_and_clear_on_error(tensor):
+def test_latest_predictions_hold_until_the_next_call_and_clear_on_error(tensor):
     block, _ = _make_block(
         responses=[
             [
@@ -1323,26 +1333,49 @@ def test_latest_actions_hold_until_the_next_call_and_clear_on_error(tensor):
     results = [_run(block, _make_frame(n, **color)) for n in range(6)]
 
     # Calls fire on frames 2 and 4; "jump" is outside the class filter.
-    assert [r["latest_actions"] for r in results] == [
+    assert [sorted(_predicted_classes(r)) for r in results] == [
         [],
         [],
-        ["walk", "run"],
-        ["walk", "run"],
+        ["run", "walk"],
+        ["run", "walk"],
         [],
         [],
     ]
     assert results[4]["error_status"] == "model unavailable"
 
 
-def test_latest_actions_render_as_text_display_parameter():
-    block, _ = _make_block(responses=[[_model_segment("walk", 1, 1)]])
+@pytest.mark.parametrize(
+    "tensor, visualizer_module",
+    [(False, classification_label_v1), (True, classification_label_v1_tensor)],
+)
+@pytest.mark.parametrize("has_actions", [True, False])
+def test_latest_predictions_render_with_classification_label_visualization(
+    tensor, visualizer_module, has_actions
+):
+    block, _ = _make_block(
+        responses=[[_model_segment("walk", 1, 1)] if has_actions else []],
+        tensor=tensor,
+    )
+    color = {"tensor_rgb_color": [0, 0, 0]} if tensor else {"bgr_color": [0, 0, 0]}
     for n in range(3):
-        result = _run(block, _make_frame(n))
-
-    text = format_text_with_parameters(
-        text="Action: {{ $parameters.actions }}",
-        text_parameters={"actions": result["latest_actions"]},
-        text_parameters_operations={"actions": [SequenceJoin(type="SequenceJoin")]},
+        result = _run(block, _make_frame(n, **color))
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="canvas"),
+        numpy_image=np.zeros((120, 200, 3), dtype=np.uint8),
+    )
+    manifest = visualizer_module.ClassificationLabelManifest(
+        type="roboflow_core/classification_label_visualization@v1",
+        name="labels",
+        image="$inputs.image",
+        predictions="$steps.actions.latest_predictions",
+        text="Class",
+    )
+    configuration = manifest.model_dump(
+        exclude={"type", "name", "image", "predictions"}
     )
 
-    assert text == "Action: walk"
+    output = visualizer_module.ClassificationLabelVisualizationBlockV1().run(
+        image=image, predictions=result["latest_predictions"], **configuration
+    )
+
+    assert bool(np.any(output["image"].numpy_image)) is has_actions
