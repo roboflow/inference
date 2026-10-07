@@ -1333,7 +1333,7 @@ def test_latest_predictions_hold_until_the_next_call_and_clear_on_error(tensor):
     results = [_run(block, _make_frame(n, **color)) for n in range(6)]
 
     # Calls fire on frames 2 and 4; "jump" is outside the class filter.
-    assert [sorted(_predicted_classes(r)) for r in results] == [
+    assert [_predicted_classes(r) for r in results] == [
         [],
         [],
         ["run", "walk"],

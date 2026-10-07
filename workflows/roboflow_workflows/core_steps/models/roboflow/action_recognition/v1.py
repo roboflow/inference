@@ -598,12 +598,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             id_vocabulary=id_vocabulary,
             stride=max(1, math.ceil(sampling_stride)),
         )
-        bookkeeping.latest_actions = list(
-            dict.fromkeys(
+        # Sorted, so an action keeps its label slot while it persists across calls.
+        bookkeeping.latest_actions = sorted(
+            {
                 segment.class_name
                 for segment in segments
                 if block_filter is None or segment.class_name in block_filter
-            )
+            }
         )
         return ""
 
