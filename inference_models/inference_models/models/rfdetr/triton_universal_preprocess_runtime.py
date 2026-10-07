@@ -192,6 +192,23 @@ class UniversalFastPreprocessRuntime:
         pre_processing_overrides: Optional[PreProcessingOverrides],
         stream: torch.cuda.Stream,
     ) -> UniversalFastPreprocessResult:
+        """Validate and preprocess a standalone request.
+
+        Args:
+            images: Source image or batch.
+            input_color_format (ColorFormat, optional): Source channel order.
+            image_pre_processing (ImagePreProcessing): Model transformations.
+            network_input (NetworkInputDefinition): Model input contract.
+            pre_processing_overrides (PreProcessingOverrides, optional): Request overrides.
+            stream (torch.cuda.Stream): Stream for GPU preprocessing.
+
+        Returns:
+            UniversalFastPreprocessResult: Tensor, metadata and readiness event.
+
+        Raises:
+            ModelRuntimeError: If model or request compatibility fails.
+            RecoverableStageExecutionError: If a recognized Triton failure occurs.
+        """
         model_compatibility = self.check_model_compatibility(
             image_pre_processing=image_pre_processing,
             network_input=network_input,
@@ -202,6 +219,28 @@ class UniversalFastPreprocessRuntime:
             pre_processing_overrides=pre_processing_overrides,
         )
         self._raise_for_incompatibility(request_compatibility)
+        result = self._preprocess_validated(
+            images=images,
+            input_color_format=input_color_format,
+            network_input=network_input,
+            stream=stream,
+        )
+
+        return result
+
+    def _preprocess_validated(
+        self,
+        *,
+        images,
+        input_color_format: Optional[ColorFormat],
+        network_input: NetworkInputDefinition,
+        stream: torch.cuda.Stream,
+    ) -> UniversalFastPreprocessResult:
+        """Execute after the execution-plan selector validates model and request.
+
+        Standalone callers must use ``preprocess`` to retain validation. The
+        model-owned stage uses this entry point to avoid repeating those checks.
+        """
         batch = _canonicalize_batch(images)
         caller_mode = (
             ColorMode(input_color_format)
@@ -446,8 +485,8 @@ class UniversalFastPreprocessRuntime:
         unsupported = []
         if network_input.resize_mode is not ResizeMode.STRETCH_TO:
             unsupported.append(f"resize_mode={network_input.resize_mode!r}")
-        if network_input.dataset_version_resize_dimensions is not None:
-            unsupported.append("dataset-version resize")
+        # STRETCH_TO uses one resize to the network size in the reference path,
+        # regardless of the dataset-version dimensions.
         if network_input.input_channels != 3:
             unsupported.append(f"input_channels={network_input.input_channels}")
         if network_input.scaling_factor not in (None, 255):
@@ -471,11 +510,8 @@ class UniversalFastPreprocessRuntime:
             and image_pre_processing.grayscale.enabled
         ):
             unsupported.append("grayscale")
-        if (
-            image_pre_processing.auto_orient is not None
-            and image_pre_processing.auto_orient.enabled
-        ):
-            unsupported.append("auto orient")
+        # EXIF orientation is handled when decoding, before these arrays/tensors
+        # reach either the reference or Triton pixel preprocessor.
         if unsupported:
             result = CompatibilityResult.incompatible(*unsupported)
         else:
@@ -498,15 +534,10 @@ class UniversalFastPreprocessRuntime:
         Returns:
             Compatibility result with every unsupported request characteristic.
         """
+        # Model compatibility already requires these transforms to be inactive;
+        # request flags that only disable them cannot change the pixel operations.
+        del pre_processing_overrides
         unsupported = []
-        if pre_processing_overrides is not None and any(
-            (
-                pre_processing_overrides.disable_contrast_enhancement,
-                pre_processing_overrides.disable_grayscale,
-                pre_processing_overrides.disable_static_crop,
-            )
-        ):
-            unsupported.append("active pre-processing overrides")
 
         raw_items = _raw_batch_items(images)
         if not raw_items:

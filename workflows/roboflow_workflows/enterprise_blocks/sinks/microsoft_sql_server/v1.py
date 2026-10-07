@@ -18,6 +18,9 @@ else:
 
 PYODBC_AVAILABLE = pyodbc is not None
 
+from roboflow_workflows.core_steps.common.workload_presets import (
+    FIRE_AND_FORGET_RESTRICTION,
+)
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
@@ -27,10 +30,20 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+    incomplete_discovery,
+    unresolved_selector_problem,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
+    is_workflow_selector,
 )
 
 logger = get_logger(__name__)
@@ -206,6 +219,63 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare the fire-and-forget caveat of this step on a target deployment.
+
+        With ``fire_and_forget`` enabled, ``run()`` schedules the insert in the
+        background and reports only that it was scheduled, so insert failures
+        are not returned. The legacy editor ``get_restrictions()`` stays
+        unchanged.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            A complete discovery for a literal ``fire_and_forget``: the
+            fire-and-forget caveat when the value is True, nothing when it is
+            False. For a selector, an incomplete discovery with no items and
+            an unresolved-selector reason for ``fire_and_forget``.
+        """
+        node_id = f"$steps.{getattr(self, 'name', '')}"
+        declared: Union[List[RuntimeRestriction], Discovery[RuntimeRestriction]]
+        if is_workflow_selector(self.fire_and_forget):
+            # A runtime value decides whether inserts are awaited, so the
+            # caveat MAY apply: declare nothing complete and give the reason.
+            declared = incomplete_discovery(
+                items=[],
+                reasons=[
+                    unresolved_selector_problem(
+                        node_id=node_id,
+                        declaration="restrictions",
+                        field="fire_and_forget",
+                        selector=self.fire_and_forget,
+                    )
+                ],
+            )
+        elif self.fire_and_forget:
+            declared = [FIRE_AND_FORGET_RESTRICTION]
+        else:
+            declared = []
+
+        restrictions = actual_restrictions_of(
+            declared=declared,
+            node_id=node_id,
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+        return restrictions
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):

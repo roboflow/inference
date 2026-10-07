@@ -15,7 +15,7 @@ psutil>=7.0.0
 redis~=5.0.0
 requests>=2.33.0,<3.0.0
 rich>=13.0.0,<15.0.0
-supervision>=0.29.0,<0.30.0  # 0.30 changed __setitem__ validation, from_inference polygon skips, PolygonZone anchors, CompactMask degeneracy and NMM tie-breaks - conformance tracked separately
+supervision>=0.30.6,<0.31.0  # roboflow-workflows ports mirror 0.30 PolygonZone, CompactMask and NMM semantics - re-run their parity tests before raising the cap
 pybase64~=1.0.0
 scikit-image>=0.19.0,<=0.25.2
 requests-toolbelt~=1.0.0
@@ -26,7 +26,8 @@ pydantic>=2.8.0,<2.12.0
 pydantic-settings<2.8
 openai>=1.17.0,<2.0.0
 structlog>=24.1.0,<25.0.0
-zxing-cpp~=2.2.0
+zxing-cpp~=2.2.0; python_version < "3.13"
+zxing-cpp==2.3.0; python_version >= "3.13"
 boto3>=1.40.0,<=1.41.5
 botocore>=1.40.0,<=1.41.5
 typing_extensions>=4.8.0,<=4.15.0

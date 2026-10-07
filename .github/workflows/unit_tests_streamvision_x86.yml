@@ -1,0 +1,122 @@
+name: UNIT TESTS - streamvision
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
+jobs:
+  call_is_mergeable:
+    uses: ./.github/workflows/check_if_branch_is_mergeable.yml
+    secrets: inherit
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      relevant: ${{ steps.check.outputs.relevant }}
+    steps:
+      - name: Check for relevant file changes
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$CHANGED_FILES" =~ ^[0-9]+$ ]] || [ "$CHANGED_FILES" -ge 3000 ]; then
+            echo "pull request file list may be incomplete (changed_files=$CHANGED_FILES); running tests"
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          if grep -qE '^(stream_vision/|workflows/|\.github/workflows/unit_tests_streamvision_x86\.yml$)' <<< "$files"; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+  package-tests:
+    needs: [call_is_mergeable, changes]
+    if: ${{ needs.changes.outputs.relevant == 'true' && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
+    runs-on:
+      labels: depot-ubuntu-22.04-4
+      group: public-depot
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            stream_vision/pyproject.toml
+            stream_vision/uv.lock
+      - name: Build same-checkout wheels and check lock
+        run: make create_isolation_wheels
+      - name: Install only standalone package dependencies
+        run: |
+          pip install --find-links "${{ github.workspace }}/dist" \
+            "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[test,webrtc]" \
+            "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)" \
+            "${{ github.workspace }}"/dist/inference_models-*.whl
+          pip check
+      - name: Package unit tests
+        working-directory: stream_vision
+        run: python -m pytest tests/unit_tests
+      - name: Installed-wheel isolation tests
+        working-directory: stream_vision
+        env:
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+          PIP_CONSTRAINT: ${{ github.workspace }}/workflows/tests/isolation/constraints-cpu.txt
+          STREAMVISION_ISOLATION_FIND_LINKS: ${{ github.workspace }}/dist
+        run: |
+          STREAMVISION_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)" \
+            python -m pytest tests/isolation
+  streamvision-tests:
+    name: streamvision-tests
+    needs: [changes, package-tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          PACKAGE_TESTS_RESULT: ${{ needs.package-tests.result }}
+          RELEVANT: ${{ needs.changes.outputs.relevant }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "changes job did not succeed: $CHANGES_RESULT"
+            exit 1
+          fi
+          if [ "$RELEVANT" = "false" ]; then
+            echo "Passed without running: no changes under stream_vision/ or workflows/" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$PACKAGE_TESTS_RESULT" = "success" ]; then
+            echo "Package tests passed" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$PACKAGE_TESTS_RESULT" = "skipped" ]; then
+            echo "Package tests did not run. The branch is probably not up to date with main: update it and the tests run again." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Package tests did not pass: $PACKAGE_TESTS_RESULT" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          exit 1

@@ -8,6 +8,7 @@ from roboflow_workflows.prototypes.block import Runtime, RuntimeRestriction, Sev
 # narrowed to a step execution mode or an input mode: a still-image request
 # degrades the same way a video frame does.
 IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
+    code="in_process_cache_not_shared_across_workers",
     severity=Severity.SOFT,
     note=(
         "Cache entries live in this worker's process memory, namespaced by "

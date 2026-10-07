@@ -1,4 +1,4 @@
-from copy import deepcopy
+from copy import copy, deepcopy
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -27,13 +27,20 @@ from roboflow_workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
 from supervision import OverlapFilter, move_boxes, move_masks
 from supervision.config import ORIENTED_BOX_COORDINATES
+from supervision.detection.compact_mask import CompactMask
 
 LONG_DESCRIPTION = """
 Merge detections from multiple image slices or crops back into a single unified detection result by converting coordinates from slice/crop space to original image coordinates, combining all detections, and optionally filtering overlapping detections to enable SAHI workflows, multi-stage detection pipelines, and coordinate-space merging workflows where detections from sub-images need to be reconstructed as if they were detected on the original image.
@@ -174,6 +181,19 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.DETECTION_PROCESSING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
+
 
 class DetectionsStitchBlockV1(WorkflowBlock):
 
@@ -192,9 +212,22 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         reference_height, reference_width = reference_image.numpy_image.shape[:2]
         resolution_wh = (reference_width, reference_height)
 
+        # Masks travel separately from the rest of the detections, as
+        # crop-scoped CompactMask (RLE of each mask's bounding box), and only
+        # the detections that survive overlap filtering are materialised at
+        # reference resolution. Moving every crop mask to a full-size dense
+        # array first costs N x H x W bytes before any filtering: a 1080p
+        # frame sliced 12 ways with ~25 masks per slice took ~3 GiB inside
+        # this block and OOM-killed an 8 GiB video worker (2026-09-28).
+        # merge / NMS / NMM run on the compact form, so peak memory is
+        # bounded by the survivors.
         re_aligned_predictions = []
+        crop_masks: List[CompactMask] = []
+        masks_seen = False
+        masks_missing = False
         for detections in predictions:
-            detections_copy = deepcopy(detections)
+            mask = detections.mask
+            detections_copy = _copy_without_mask(detections=detections)
             offset = retrieve_crop_offset(detections=detections_copy)
             detections_copy = manage_crops_metadata(
                 detections=detections_copy, image=reference_image
@@ -205,15 +238,112 @@ class DetectionsStitchBlockV1(WorkflowBlock):
                 resolution_wh=resolution_wh,
             )
             re_aligned_predictions.append(re_aligned_detections)
+            if len(detections_copy) == 0:
+                continue
+            if mask is None:
+                masks_missing = True
+                continue
+
+            masks_seen = True
+            crop_masks.append(
+                compact_mask_for_crop(
+                    np.asarray(mask),
+                    offset=offset,
+                    resolution_wh=resolution_wh,
+                )
+            )
+        if masks_seen and masks_missing:
+            raise ValueError(
+                "Detections Stitch block received a mix of predictions with and "
+                "without segmentation masks; every non-empty crop must carry "
+                "masks, or none may."
+            )
+
         overlap_filter = choose_overlap_filter_strategy(
             overlap_filtering_strategy=overlap_filtering_strategy,
         )
         merged = sv.Detections.merge(detections_list=re_aligned_predictions)
+        if crop_masks:
+            merged.mask = CompactMask.merge(crop_masks)
         if overlap_filter is OverlapFilter.NONE:
-            return {"predictions": merged}
-        if overlap_filter is OverlapFilter.NON_MAX_SUPPRESSION:
-            return {"predictions": merged.with_nms(threshold=iou_threshold)}
-        return {"predictions": merged.with_nmm(threshold=iou_threshold)}
+            filtered = merged
+        elif overlap_filter is OverlapFilter.NON_MAX_SUPPRESSION:
+            filtered = merged.with_nms(threshold=iou_threshold)
+        else:
+            filtered = merged.with_nmm(threshold=iou_threshold)
+        result = _with_dense_masks(detections=filtered)
+        return {"predictions": result}
+
+
+def _copy_without_mask(detections: sv.Detections) -> sv.Detections:
+    # Deep copy sharing nothing with the input, minus the mask: crop masks are
+    # carried separately as CompactMask, so the dense crop stack is not copied.
+    shallow = copy(detections)
+    shallow.mask = None
+    detections_copy = deepcopy(shallow)
+    return detections_copy
+
+
+def compact_mask_for_crop(
+    masks: np.ndarray,
+    *,
+    offset: Optional[np.ndarray],
+    resolution_wh: Tuple[int, int],
+) -> CompactMask:
+    """Position crop masks in the reference image as compact masks.
+
+    Decodes to the same dense array as ``move_masks(masks, offset,
+    resolution_wh)``, including the clipping of a crop that extends past the
+    reference frame, without allocating anything of reference size.
+
+    Args:
+        masks: Dense ``(N, crop_h, crop_w)`` boolean masks in crop coordinates.
+        offset: ``(x, y)`` position of the crop in the reference image.
+        resolution_wh: ``(width, height)`` of the reference image.
+
+    Returns:
+        ``CompactMask`` of ``N`` masks whose image shape is the reference image.
+
+    Raises:
+        ValueError: If ``offset`` is missing for a non-empty crop.
+    """
+    if offset is None:
+        raise ValueError("To move non-empty detections offset is needed, but not given")
+
+    reference_width, reference_height = resolution_wh
+    offset_x, offset_y = int(offset[0]), int(offset[1])
+    _, crop_height, crop_width = masks.shape
+    # The part of the crop that lands inside the reference frame; the rest is
+    # what move_masks would clip away.
+    source_x1, source_y1 = max(0, -offset_x), max(0, -offset_y)
+    source_x2 = min(crop_width, reference_width - offset_x)
+    source_y2 = min(crop_height, reference_height - offset_y)
+    if source_x2 <= source_x1 or source_y2 <= source_y1:
+        visible = np.zeros((masks.shape[0], 1, 1), dtype=bool)
+        source_x1, source_y1 = 0, 0
+    else:
+        visible = np.ascontiguousarray(
+            masks[:, source_y1:source_y2, source_x1:source_x2]
+        )
+
+    visible_shape = (visible.shape[1], visible.shape[2])
+    tight_boxes = sv.mask_to_xyxy(masks=visible)
+    compact = CompactMask.from_dense(visible, tight_boxes, visible_shape)
+    positioned = compact.with_offset(
+        offset_x + source_x1,
+        offset_y + source_y1,
+        (reference_height, reference_width),
+    )
+    return positioned
+
+
+def _with_dense_masks(detections: sv.Detections) -> sv.Detections:
+    # supervision <0.30 does not carry CompactMask through Detections.merge or
+    # the annotators, so the block's output stays dense. Only the survivors of
+    # overlap filtering are decoded, which is what bounds this block's memory.
+    if isinstance(detections.mask, CompactMask):
+        detections.mask = detections.mask.to_dense()
+    return detections
 
 
 def retrieve_crop_offset(detections: sv.Detections) -> Optional[np.ndarray]:

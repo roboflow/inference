@@ -1,4 +1,4 @@
-.PHONY: style check_code_quality download_fonts create_workflows_wheel create_models_wheel create_isolation_wheels
+.PHONY: style check_code_quality download_fonts create_workflows_wheel create_streamvision_wheel create_models_wheel create_isolation_wheels
 
 serve:
 	SKIP_CODEGEN=1 python -m zensical serve
@@ -8,19 +8,19 @@ serve-full:
 
 PYTHON=python
 export PYTHONPATH = .
-check_dirs := inference inference_sdk workflows
+check_dirs := inference inference_sdk workflows stream_vision
 
 style:
-	python3 -m black $(check_dirs) --exclude '__init__\.py|node_modules|perception_encoder/vision_encoder/'
-	python3 -m isort $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**'
+	python3 -m black $(check_dirs) --extend-exclude '__init__\.py|node_modules|perception_encoder/vision_encoder/'
+	python3 -m isort $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**' --skip-glob '**/.venv/**'
 
 check_code_quality:
-	python3 -m black --check $(check_dirs) --exclude '__init__\.py|node_modules|perception_encoder/vision_encoder/'
-	python3 -m isort --check-only $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**'
+	python3 -m black --check $(check_dirs) --extend-exclude '__init__\.py|node_modules|perception_encoder/vision_encoder/'
+	python3 -m isort --check-only $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**' --skip-glob '**/.venv/**'
 	# stop the build if there are Python syntax errors or undefined names
-	flake8 $(check_dirs) --count --select=E9,F63,F7,F82 --show-source --statistics --exclude __init__.py,inference/inference/landing/node_modules
+	flake8 $(check_dirs) --count --select=E9,F63,F7,F82 --show-source --statistics --exclude __init__.py,inference/inference/landing/node_modules,.venv
 	# exit-zero treats all errors as warnings. E203 for black, E501 for docstring, W503 for line breaks before logical operators 
-	flake8 $(check_dirs) --count --max-line-length=88 --exit-zero  --ignore=D --extend-ignore=E203,E501,W503  --statistics --exclude __init__.py,inference/inference/landing/node_modules
+	flake8 $(check_dirs) --count --max-line-length=88 --exit-zero  --ignore=D --extend-ignore=E203,E501,W503  --statistics --exclude __init__.py,inference/inference/landing/node_modules,.venv
 
 
 download_fonts:
@@ -47,19 +47,24 @@ create_workflows_wheel: download_fonts
 	cd workflows && uv lock --check
 	cd workflows && uv build --out-dir ../dist
 
+create_streamvision_wheel:
+	which uv || pip install uv
+	cd stream_vision && uv lock --check
+	cd stream_vision && uv build --wheel --out-dir ../dist
+
 create_models_wheel:
 	which uv || pip install uv
 	cd inference_models && uv build --wheel --out-dir ../dist
 
 # Build checkout artifacts; transitive dependencies still resolve from PyPI.
-create_isolation_wheels: create_workflows_wheel create_models_wheel
+create_isolation_wheels: create_workflows_wheel create_models_wheel create_streamvision_wheel
 	python -m pip install --upgrade pip
 	python -m pip install setuptools wheel requests
 	rm -rf build/*
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
 	rm -rf build/*
 
-create_wheels: create_workflows_wheel create_models_wheel
+create_wheels: create_workflows_wheel create_models_wheel create_streamvision_wheel
 	python -m pip install --upgrade pip
 	python -m pip install setuptools wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
 	rm -rf build/*
@@ -75,7 +80,7 @@ create_wheels: create_workflows_wheel create_models_wheel
 	rm -rf build/*
 	python .release/pypi/inference.cli.setup.py bdist_wheel
 
-create_wheels_for_gpu_notebook: create_workflows_wheel
+create_wheels_for_gpu_notebook: create_workflows_wheel create_streamvision_wheel
 	python -m pip install --upgrade pip
 	python -m pip install setuptools wheel twine requests
 	rm -rf build/*
@@ -98,4 +103,4 @@ create_inference_cli_whl:
 
 
 upload_wheels:
-	twine upload $(filter-out $(wildcard dist/roboflow_workflows-*.whl dist/inference_models-*.whl),$(wildcard dist/*.whl))
+	twine upload $(filter-out $(wildcard dist/roboflow_workflows-*.whl dist/inference_models-*.whl dist/streamvision-*.whl),$(wildcard dist/*.whl))

@@ -2,6 +2,10 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -21,14 +25,19 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     roboflow_platform_model,
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
@@ -120,8 +129,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
         restrictions = [
             RuntimeRestriction(
+                code="requires_gpu_for_local_execution",
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
@@ -131,6 +146,7 @@ class BlockManifest(WorkflowBlockManifest):
         if not QWEN_3_5_ENABLED:
             restrictions.append(
                 RuntimeRestriction(
+                    code="hosted_endpoint_disabled_by_flag",
                     severity=Severity.HARD,
                     note=(
                         "QWEN_3_5_ENABLED=False on Roboflow Hosted Serverless: "
@@ -145,6 +161,21 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         return [roboflow_platform_model(model_id=self.model_version)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                hosted_endpoint_disabled_by_flag("QWEN_3_5_ENABLED"),
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 ##########################################################################
