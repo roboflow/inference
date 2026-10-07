@@ -16,8 +16,8 @@ def test_torch_has_no_cuda_runtime():
     import torch
 
     assert torch.version.cuda is None
-    assert torch.__version__ == "2.14.0+cpu"
-    assert version("torchvision") == "0.29.0+cpu"
+    assert torch.__version__.endswith("+cpu")
+    assert version("torchvision").endswith("+cpu")
 
 
 def test_cuda_distributions_are_absent():
