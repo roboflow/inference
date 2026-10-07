@@ -843,14 +843,14 @@ def register_image_at_roboflow(
     tags = tags if tags is not None else []
     for tag in tags:
         params.append(("tag", tag))
-    wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
+    url = _add_params_to_url(url=url, params=params)
     fields = {
         "name": f"{local_image_id}.jpg",
         "file": ("imageToUpload", image_bytes, "image/jpeg"),
     }
     if metadata is not None:
         fields["metadata"] = json.dumps(metadata)
-    response = _post_to_url(wrapped_url, multipart_fields=fields)
+    response = _post_to_url(url, multipart_fields=fields)
     parsed_response = response.json()
     if not parsed_response.get("duplicate") and not parsed_response.get("success"):
         raise RoboflowAPIImageUploadRejectionError(
@@ -901,8 +901,8 @@ def annotate_image_at_roboflow(
         ("name", f"{local_image_id}.{annotation_file_type}"),
         ("prediction", str(is_prediction).lower()),
     ]
-    wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
-    response = _post_to_url(wrapped_url, data=annotation_content)
+    url = _add_params_to_url(url=url, params=params)
+    response = _post_to_url(url, data=annotation_content)
     parsed_response = response.json()
     if "error" in parsed_response or not parsed_response.get("success"):
         raise RoboflowAPIIAnnotationRejectionError(
