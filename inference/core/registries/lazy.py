@@ -21,6 +21,17 @@ class _LazyModelClass:
     _warned: bool = field(default=False, init=False, repr=False)
     _lock: Any = field(default_factory=RLock, init=False, repr=False, compare=False)
 
+    def __getstate__(self):
+        with self._lock:
+            state = self.__dict__.copy()
+            del state["_lock"]
+
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._lock = RLock()
+
     def _resolve(self) -> Any:
         with self._lock:
             if self._failure is not None:
@@ -53,6 +64,16 @@ class _AdapterModelClass:
 class _LazyModelRegistry(MutableMapping):
     def __init__(self, entries=None):
         self._entries = dict(entries or {})
+        self._lock = RLock()
+
+    def __getstate__(self):
+        with self._lock:
+            state = {"_entries": self._entries.copy()}
+
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
         self._lock = RLock()
 
     def __getitem__(self, key):
