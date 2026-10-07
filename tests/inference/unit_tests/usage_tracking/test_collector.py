@@ -45,12 +45,16 @@ def usage_key(
     error_type: Optional[str] = None,
     error_status_code: Optional[int] = None,
     stream_session_id: Optional[str] = None,
+    source: Optional[str] = None,
+    source_info: Optional[str] = None,
 ) -> str:
     key = f"{category}:{resource_id}:billable={str(billable).lower()}:outcome={outcome}"
     if outcome == "error":
         key = f"{key}:error_type={error_type or 'unknown'}"
         if error_status_code is not None:
             key = f"{key}:error_status_code={error_status_code}"
+    if source is not None or source_info is not None:
+        key = f"{key}:source_tags={sha256_hash(json.dumps([source, source_info]), length=64)}"
     if stream_session_id:
         key = f"{key}:{stream_session_id}"
     return key
@@ -1170,7 +1174,9 @@ def test_update_usage_payload_preserves_billable_on_cache_miss(
 
     # then — billable must still be in the serialized resource_details
     api_key_hash = collector._calculate_api_key_hash(api_key=api_key)
-    recorded = collector._usage[api_key_hash][usage_key("model", resource_id)]
+    recorded = collector._usage[api_key_hash][
+        usage_key("model", resource_id, source="workflow-execution")
+    ]
     parsed = json.loads(recorded["resource_details"])
     assert parsed.get("billable") is True
     assert parsed.get("source") == "workflow-execution"
@@ -1431,7 +1437,7 @@ def test_resource_details_cache_separates_billing_partitions(
     )
 
     assert len(collector._resource_details[api_key]) == 2
-    key = usage_key("request", resource_id, billable=False)
+    key = usage_key("request", resource_id, billable=False, source_info="non-billable")
     details = json.loads(collector._usage[api_key][key]["resource_details"])
     assert details == {"billable": False, "source_info": "non-billable"}
 
@@ -1458,7 +1464,7 @@ def test_current_request_details_override_cached_values(
         resource_id=resource_id,
     )
 
-    key = usage_key("request", resource_id)
+    key = usage_key("request", resource_id, source_info="current")
     details = json.loads(collector._usage[api_key][key]["resource_details"])
     assert details["source_info"] == "current"
 
@@ -2208,7 +2214,9 @@ def test_source_info_from_request_object_persisted_into_resource_details(
     infer_from_request(FakeRequest())
 
     # then
-    row = usage_collector._usage["test_key"][usage_key("model", "unknown")]
+    row = usage_collector._usage["test_key"][
+        usage_key("model", "unknown", source="app", source_info="smartpolySegmentImage")
+    ]
     resource_details = json.loads(row["resource_details"])
     assert resource_details.get("source_info") == "smartpolySegmentImage"
     # source_info on the request object must NOT leak into roboflow_service_name
@@ -2243,7 +2251,9 @@ def test_env_service_name_preserved_alongside_source_info(
         infer_from_request(FakeRequest())
 
     # then
-    row = usage_collector._usage["test_key"][usage_key("model", "unknown")]
+    row = usage_collector._usage["test_key"][
+        usage_key("model", "unknown", source="app", source_info="smartpolySegmentImage")
+    ]
     assert row["roboflow_service_name"] == "async-serverless-gpu"
     assert (
         json.loads(row["resource_details"]).get("source_info")
@@ -2267,9 +2277,9 @@ def test_source_info_nested_in_kwargs_persisted_into_resource_details(
 
     # then
     resource_details = json.loads(
-        usage_collector._usage["test_key"][usage_key("model", "unknown")][
-            "resource_details"
-        ]
+        usage_collector._usage["test_key"][
+            usage_key("model", "unknown", source_info="autolabelPreview")
+        ]["resource_details"]
     )
     assert resource_details.get("source_info") == "autolabelPreview"
 
@@ -2863,10 +2873,18 @@ def test_source_tags_reach_nested_model_rows(usage_collector_with_mocked_threads
 
     rows = usage_collector._usage["test_key"]
     request_details = json.loads(
-        rows[usage_key("request", "yolov11n-640")]["resource_details"]
+        rows[
+            usage_key(
+                "request", "yolov11n-640", source="app", source_info="smart-polygon"
+            )
+        ]["resource_details"]
     )
     model_details = json.loads(
-        rows[usage_key("model", "yolov11n-640")]["resource_details"]
+        rows[
+            usage_key(
+                "model", "yolov11n-640", source="app", source_info="smart-polygon"
+            )
+        ]["resource_details"]
     )
     assert request_details["source"] == "app"
     assert request_details["source_info"] == "smart-polygon"
@@ -2901,3 +2919,129 @@ def test_request_usage_falls_back_to_header_api_key(
     api_key_hash = usage_collector._calculate_api_key_hash("header-key")
     assert api_key_hash in usage_collector._usage
     assert usage_key("request", "project/1") in usage_collector._usage[api_key_hash]
+
+
+@pytest.mark.parametrize(
+    "category", ["request", "workflows", "model", "workflow_block"]
+)
+@pytest.mark.parametrize(
+    "tags",
+    [
+        ({"source": "app"}, {"source": "external"}),
+        (
+            {"source": "app", "source_info": "workflow-evals"},
+            {"source": "app", "source_info": "labelAssist"},
+        ),
+        ({"source": "app", "source_info": "workflow-evals"}, {}),
+    ],
+)
+def test_usage_keeps_source_attribution_separate_before_flush(
+    usage_collector_with_mocked_threads, category, tags
+):
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake-key"
+    resource_id = "same-resource"
+
+    # Seed the metadata cache as real decorated calls do. Untagged usage must
+    # not inherit the origin of an earlier request for the same resource.
+    collector.record_resource_details(
+        category=category,
+        api_key=api_key,
+        resource_id=resource_id,
+        resource_details={"billable": True, **tags[0]},
+    )
+    for tag, frames, duration in [
+        (tags[0], 1, 0.5),
+        (tags[1], 2, 1.0),
+        (tags[0], 3, 1.5),
+    ]:
+        collector.record_usage(
+            source="",
+            category=category,
+            api_key=api_key,
+            resource_id=resource_id,
+            resource_details={"billable": True, **tag},
+            frames=frames,
+            execution_duration=duration,
+        )
+
+    payloads = []
+    with mock.patch.object(
+        collector,
+        "_enqueue_payload",
+        side_effect=lambda payload: payloads.append(payload),
+    ):
+        collector._enqueue_usage_payload()
+    merged = zip_usage_payloads(payloads)
+    rows = [row for payload in merged for row in payload[api_key].values()]
+    assert len(rows) == 2
+    rows_by_tags = {
+        (details.get("source"), details.get("source_info")): row
+        for row in rows
+        for details in [json.loads(row["resource_details"])]
+    }
+    for tag, frames, duration in [(tags[0], 4, 2.0), (tags[1], 2, 1.0)]:
+        row = rows_by_tags[(tag.get("source"), tag.get("source_info"))]
+        assert row["processed_frames"] == frames
+        assert row["execution_duration"] == duration
+        assert json.loads(row["resource_details"]) == {"billable": True, **tag}
+
+
+@pytest.mark.parametrize("resource_id", ["same-resource", ""])
+def test_source_tags_do_not_accumulate_in_resource_details_cache(
+    usage_collector_with_mocked_threads, resource_id
+):
+    collector = usage_collector_with_mocked_threads
+    for i in range(25):
+        collector.record_usage(
+            source="",
+            category="model",
+            api_key="fake-key",
+            resource_id=resource_id,
+            resource_details={
+                "billable": True,
+                "model_architecture": "rfdetr",
+                "source": f"source-{i}",
+                "source_info": f"feature-{i}",
+            },
+        )
+
+    cached = collector._resource_details["fake-key"]
+    assert len(cached) == 1
+    assert list(cached.values()) == [{"billable": True, "model_architecture": "rfdetr"}]
+    rows = list(collector._usage["fake-key"].values())
+    assert len(rows) == 25
+    assert all(
+        json.loads(row["resource_details"])["model_architecture"] == "rfdetr"
+        for row in rows
+    )
+    assert {json.loads(row["resource_details"])["source_info"] for row in rows} == {
+        f"feature-{i}" for i in range(25)
+    }
+
+
+def test_source_tag_pairs_with_matching_short_hashes_stay_separate(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+    tags = [("app", "feature-506"), ("app", "feature-1845")]
+    assert sha256_hash(json.dumps(tags[0])) == sha256_hash(json.dumps(tags[1]))
+    for frames, (source, source_info) in enumerate(tags, start=1):
+        collector.record_usage(
+            source="",
+            category="workflows",
+            api_key="fake-key",
+            resource_id="same-resource",
+            frames=frames,
+            resource_details={
+                "billable": True,
+                "source": source,
+                "source_info": source_info,
+            },
+        )
+    rows = list(collector._usage["fake-key"].values())
+    assert len(rows) == 2
+    assert {
+        json.loads(row["resource_details"])["source_info"]: row["processed_frames"]
+        for row in rows
+    } == {"feature-506": 1, "feature-1845": 2}
