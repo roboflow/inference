@@ -2151,10 +2151,6 @@ class InferenceModelsActionRecognitionAdapter(Model):
     ) -> ActionRecognitionInferenceResponse:
         sampling = self._model.video_sampling
         default_confidence = getattr(self._model, "confidence_threshold", None)
-        if default_confidence is None and request.confidence not in (None, "default"):
-            raise ValueError(
-                "This action-recognition model does not produce confidence scores"
-            )
         class_filter = request.class_filter or None
         # Only a model that carries its own class list has ids to report. A
         # request filter is not a vocabulary: a zero-shot model ignores it and

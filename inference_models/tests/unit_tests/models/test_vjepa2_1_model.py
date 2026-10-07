@@ -7,6 +7,7 @@ import torch
 from PIL import Image
 from torchvision.transforms import v2
 
+from inference_models.errors import ModelInputError
 from inference_models.models.vjepa2_1.model import (
     VJepaActionRecognition,
     validate_config,
@@ -117,6 +118,24 @@ def test_contract_rejects_causal_or_different_head_artifacts():
     metadata["head"].update(queries=162, offset_scale_frames=162)
     with pytest.raises(ValueError, match="81920 vision tokens"):
         validate_config(metadata)
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"class_names": ["not-a-class"]}, "Unknown V-JEPA class filter"),
+        ({"fps": 30.0}, "input FPS"),
+        ({"confidence": 2.0}, "Confidence"),
+        ({"duration_seconds": 2.0}, "window duration"),
+        ({"frames": [np.zeros((8, 8, 3), dtype=np.float32)]}, "RGB uint8"),
+        ({"frames": [torch.zeros((8, 8), dtype=torch.uint8)]}, "RGB uint8"),
+    ],
+)
+def test_request_validation_raises_model_input_errors(kwargs, message):
+    model = VJepaActionRecognition(None, config(), ["a", "b"], torch.device("cpu"))
+
+    with pytest.raises(ModelInputError, match=message):
+        model.infer(**{"frames": [np.zeros((384, 384, 3), dtype=np.uint8)], **kwargs})
 
 
 @pytest.mark.parametrize("side", [256, 384, 512])

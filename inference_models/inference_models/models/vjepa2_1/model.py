@@ -16,6 +16,7 @@ from torchvision.transforms import v2
 
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import Confidence
+from inference_models.errors import ModelInputError
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     ActionRecognitionPrediction,
@@ -276,12 +277,14 @@ class VJepaActionRecognition(ActionRecognitionModel):
             A prepared array is returned unchanged.
 
         Raises:
-            ValueError: If the frame is not RGB uint8.
+            ModelInputError: If the frame is not RGB uint8.
         """
         if isinstance(frame, torch.Tensor):
+            if frame.dtype != torch.uint8 or frame.ndim != 3 or frame.shape[0] != 3:
+                raise ModelInputError("V-JEPA expects RGB uint8 frames")
             frame = frame.detach().cpu().permute(1, 2, 0).numpy()
         if frame.dtype != np.uint8 or frame.ndim != 3 or frame.shape[-1] != 3:
-            raise ValueError("V-JEPA expects RGB uint8 frames")
+            raise ModelInputError("V-JEPA expects RGB uint8 frames")
 
         if frame.shape[:2] == self._frame_size:
             prepared = frame
@@ -334,24 +337,31 @@ class VJepaActionRecognition(ActionRecognitionModel):
 
         Returns:
             Scored spans in sampled-frame coordinates.
+
+        Raises:
+            ModelInputError: If the frames or request parameters violate the input contract.
         """
         sampling = self.video_sampling
         if not frames or len(frames) > sampling.max_frames:
-            raise ValueError(
+            raise ModelInputError(
                 "V-JEPA needs between one frame and its recorded window length"
             )
         if fps is not None and not math.isclose(fps, sampling.sample_fps):
-            raise ValueError("V-JEPA input FPS must match its recorded sampling rate")
+            raise ModelInputError(
+                "V-JEPA input FPS must match its recorded sampling rate"
+            )
         if class_names is not None and not set(class_names) <= set(self._classes):
-            raise ValueError("Unknown V-JEPA class filter")
+            raise ModelInputError("Unknown V-JEPA class filter")
         if confidence is None:
             confidence = "default"
         elif isinstance(confidence, (int, float)):
             if not 0 <= confidence <= 1:
-                raise ValueError("Confidence must be a number between zero and one")
+                raise ModelInputError(
+                    "Confidence must be a number between zero and one"
+                )
             confidence = float(confidence)
         elif confidence not in ("best", "default"):
-            raise ValueError('Confidence must be a number, "best", or "default"')
+            raise ModelInputError('Confidence must be a number, "best", or "default"')
 
         threshold = ConfidenceFilter(
             confidence=confidence,
@@ -372,7 +382,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
             not math.isfinite(end_limit)
             or not 0 < end_limit <= sampling.max_frames + 1e-6
         ):
-            raise ValueError("Invalid V-JEPA window duration")
+            raise ModelInputError("Invalid V-JEPA window duration")
         images.extend([images[-1]] * (sampling.max_frames - count))
         inputs = torch.stack(images, dim=1)[None].to(self._device)
         autocast = (

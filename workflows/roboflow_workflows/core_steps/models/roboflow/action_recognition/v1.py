@@ -388,13 +388,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
-        if (
-            confidence not in (None, "default")
-            and getattr(model, "confidence_threshold", None) is None
-        ):
-            raise ValueError(
-                "This action-recognition model does not produce confidence scores"
-            )
         block_filter = normalise_class_names(class_filter) or None
         # A filter is not a vocabulary; only the model's own class list
         # carries ids. See the adapter for the zero-shot case this avoids.
@@ -602,7 +595,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         try:
             infer_kwargs = (
                 {"confidence": confidence}
-                if confidence not in (None, "default")
+                if getattr(model, "confidence_threshold", None) is not None
+                and confidence not in (None, "default")
                 else {}
             )
             if (

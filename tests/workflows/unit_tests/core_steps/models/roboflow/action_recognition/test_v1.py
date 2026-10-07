@@ -95,6 +95,7 @@ class _FakeActionRecognitionModel(ActionRecognitionModel):
                 "class_names": (list(class_names) if class_names is not None else None),
                 "fps": fps,
                 "duration_seconds": kwargs.get("duration_seconds"),
+                "confidence": kwargs.get("confidence"),
             }
         )
         if not self.responses:
@@ -1183,6 +1184,24 @@ def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
     assert any(len(call["frames"]) == 16 for call in model.calls)
     assert all(1 <= len(call["frames"]) <= 16 for call in model.calls)
     assert all(0 < call["duration_seconds"] <= 4.0 for call in model.calls)
+
+
+def test_unscored_streaming_model_ignores_confidence() -> None:
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=1.0, sample_fps=2.0, min_frames=1
+    )
+
+    for frame_number in range(3):
+        result = block.run(
+            images=[_make_frame(frame_number, fps=2.0)],
+            model_id="cosmos-3-edge",
+            confidence=0.4,
+        )
+        assert not result[0]["error_status"]
+
+    assert model.calls
+    assert all(call["confidence"] is None for call in model.calls)
 
 
 def _timeline_entry(
