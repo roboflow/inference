@@ -6,7 +6,7 @@ The block loads its model in-process through
 ``model_manager.load_action_recognition_model()``, whatever the generic step
 execution mode is, so it declares that model as LOCAL EXECUTION and keeps it
 away from the generic ``add_model()`` preloader (``preloadable=False``). The
-tensor manifest inherits the same model-resource discovery.
+tensor manifest declares the same model-resource discovery.
 """
 
 import pytest
