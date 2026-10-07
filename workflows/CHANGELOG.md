@@ -16,14 +16,6 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
-### Added
-
-- Action Recognition Model: `frame_predictions` provides multi-label
-  classification predictions for actions covering the input frame, compatible
-  with Classification Label Visualization in NumPy and tensor modes. Confidence
-  is always a synthetic `1.0`, not a model probability. The existing timeline and
-  inference cadence are unchanged.
-
 ## `0.2.4`
 
 Bundled execution engine: `1.16.1`.
