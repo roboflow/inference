@@ -4,7 +4,7 @@ import logging
 import math
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
+from typing import Any, List, Literal, Optional, Set, Tuple, Type, Union
 
 import cv2
 import numpy as np
@@ -63,9 +63,7 @@ from roboflow_workflows.prototypes.block import (
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.utils.action_recognition import merge_window_segments
 
-from inference_models.models.base.action_recognition import (
-    WHOLE_VIDEO_MODE,
-)
+from inference_models.models.base.action_recognition import WHOLE_VIDEO_MODE
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
@@ -129,6 +127,8 @@ is a synthetic 1.0 for compatibility, not a probability supplied by the model.
 Frames outside the classified ranges return no predicted classes; actions are
 not carried forward beyond their observed ranges. `timeline` retains the full
 temporal output.
+Class IDs follow the model vocabulary; vocabulary-free captions receive IDs
+local to each frame.
 """
 
 
@@ -141,7 +141,7 @@ class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
-    classification_class_ids: Dict[str, int] = field(default_factory=dict)
+    classification_vocabulary_size: int = 0
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -445,9 +445,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         ):
             bookkeeping = _ActionRecognitionBookkeeping(
                 signature=signature,
-                classification_class_ids={
-                    name: index for index, name in enumerate(id_vocabulary or [])
-                },
+                classification_vocabulary_size=len(id_vocabulary or []),
             )
             self._video_bookkeeping[video_id] = bookkeeping
             while len(self._video_bookkeeping) > MAX_TRACKED_VIDEOS:
@@ -733,11 +731,14 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             if not action.start_frame_idx <= frame_number <= action.end_frame_idx:
                 continue
 
-            # Classification tensors require nonnegative class ids. Preserve
-            # model ids and give vocabulary-free labels stable ids per stream.
-            class_id = bookkeeping.classification_class_ids.setdefault(
-                action.class_name, len(bookkeeping.classification_class_ids)
-            )
+            if action.class_name in predictions:
+                continue
+
+            # Native classification requires nonnegative ids. Frame-local ids
+            # avoid accumulating an unbounded vocabulary of generated captions.
+            class_id = action.class_id
+            if class_id < 0:
+                class_id = bookkeeping.classification_vocabulary_size + len(predictions)
             predictions[action.class_name] = {"confidence": 1.0, "class_id": class_id}
 
         height, width = image._read_shape_without_materialization()

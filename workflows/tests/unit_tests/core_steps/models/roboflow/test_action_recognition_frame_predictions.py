@@ -116,7 +116,10 @@ def test_frame_predictions_declare_the_visualizers_classification_kind(variant):
     )
 
 
-def test_overlapping_actions_use_model_ids_and_synthetic_confidence(variant):
+@pytest.mark.parametrize("class_names", [("idle", "walk", "run"), None])
+def test_overlapping_actions_use_classification_ids_and_synthetic_confidence(
+    variant, class_names
+):
     module, _ = variant
     block, model = _block(
         module,
@@ -127,14 +130,15 @@ def test_overlapping_actions_use_model_ids_and_synthetic_confidence(variant):
                 ActionRecognitionPrediction(1, 2, "walk"),
             ]
         ],
+        class_names=class_names,
     )
     _, result = _observe(block, tensor=module.__name__.endswith("_tensor"))
 
     assert _serialized(result) == {
         "image": {"height": 192, "width": 256},
         "predictions": {
-            "walk": {"class_id": 1, "confidence": 1.0},
-            "run": {"class_id": 2, "confidence": 1.0},
+            "walk": {"class_id": 1 if class_names else 0, "confidence": 1.0},
+            "run": {"class_id": 2 if class_names else 1, "confidence": 1.0},
         },
         "predicted_classes": ["walk", "run"],
         "prediction_type": "classification",
@@ -182,7 +186,7 @@ def test_warmup_empty_results_and_failures_produce_empty_classifications(
     )
 
 
-def test_vocabulary_free_classes_get_stable_classification_ids(variant):
+def test_vocabulary_free_classes_get_frame_local_classification_ids(variant):
     module, _ = variant
     block, _ = _block(
         module,
@@ -201,7 +205,7 @@ def test_vocabulary_free_classes_get_stable_classification_ids(variant):
 
     assert predictions == [
         {"walk": {"class_id": 0, "confidence": 1.0}},
-        {"run": {"class_id": 1, "confidence": 1.0}},
+        {"run": {"class_id": 0, "confidence": 1.0}},
         {"walk": {"class_id": 0, "confidence": 1.0}},
     ]
     assert all(action.class_id == -1 for action in result["timeline"])
@@ -237,7 +241,7 @@ def test_frame_predictions_render_with_the_unchanged_visualizer(
     assert not np.any(image.numpy_image)
 
 
-def test_classification_ids_are_independent_per_stream_and_reset_on_rewind(variant):
+def test_frame_predictions_are_independent_per_stream_and_reset_on_rewind(variant):
     module, _ = variant
     block, _ = _block(
         module,
@@ -266,6 +270,36 @@ def test_classification_ids_are_independent_per_stream_and_reset_on_rewind(varia
     assert _serialized(restarted)["predictions"] == {
         "jump": {"class_id": 0, "confidence": 1.0}
     }
+
+
+def test_new_captions_do_not_grow_classification_outputs_over_time(
+    variant, monkeypatch
+):
+    module, _ = variant
+    monkeypatch.setattr(
+        "roboflow_workflows.core_steps.models.roboflow.action_recognition.v1.MAX_TIMELINE_ACTIONS",
+        2,
+    )
+    block, _ = _block(
+        module,
+        [
+            [ActionRecognitionPrediction(index, index, f"caption {index}")]
+            for index in range(2, 13, 2)
+        ],
+        class_names=None,
+    )
+
+    for number in range(13):
+        result = _run(block, _frame(number))
+        if number and number % 2 == 0:
+            assert _serialized(result)["predictions"] == {
+                f"caption {number}": {"class_id": 0, "confidence": 1.0}
+            }
+            native_prediction = result["frame_predictions"]
+            if isinstance(native_prediction, MultiLabelClassificationPrediction):
+                assert native_prediction.confidence.shape == (1,)
+
+    assert len(result["timeline"]) == 2
 
 
 def test_tensor_frame_prediction_metadata_does_not_materialize_the_image():

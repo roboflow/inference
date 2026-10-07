@@ -43,9 +43,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     STRING_KIND,
 )
-from inference_models import (
-    ActionRecognitionModel,
-)
+from inference_models import ActionRecognitionModel
 from inference_models import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
