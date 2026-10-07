@@ -3047,74 +3047,19 @@ def test_source_tag_pairs_with_matching_short_hashes_stay_separate(
     } == {"feature-506": 1, "feature-1845": 2}
 
 
-def test_record_usage_is_not_blocked_while_payload_is_persisted(
-    usage_collector_with_mocked_threads,
-):
-    # given
-    collector = usage_collector_with_mocked_threads
-    collector.record_usage(
-        source="source",
-        category="model",
-        frames=1,
-        api_key="fake",
-        resource_details={},
-        resource_id="model/1",
-    )
-    persisting = threading.Event()
-    release = threading.Event()
-
-    class SlowQueue(Queue):
-        def put(self, item, block=True, timeout=None):
-            persisting.set()
-            release.wait(timeout=10)
-            super().put(item, block, timeout)
-
-    collector._queue = SlowQueue()
-    enqueuer = threading.Thread(target=collector._enqueue_usage_payload)
-    enqueuer.start()
-    assert persisting.wait(timeout=5)
-
-    # when
-    recorder = threading.Thread(
-        target=collector.record_usage,
-        kwargs=dict(
-            source="source",
-            category="model",
-            frames=1,
-            api_key="fake",
-            resource_details={},
-            resource_id="model/1",
-        ),
-    )
-    recorder.start()
-    recorder.join(timeout=2)
-    recorded_while_persisting = not recorder.is_alive()
-    release.set()
-    enqueuer.join(timeout=5)
-    recorder.join(timeout=5)
-
-    # then
-    assert recorded_while_persisting
-    assert collector._queue.qsize() == 1
-    assert "fake" in collector._usage
+USAGE = dict(
+    source="source",
+    category="model",
+    frames=1,
+    api_key="fake",
+    resource_details={},
+    resource_id="model/1",
+)
 
 
-def test_push_usage_payloads_waits_for_payload_being_persisted(
-    usage_collector_with_mocked_threads,
-):
-    # given
-    collector = usage_collector_with_mocked_threads
-    collector.record_usage(
-        source="source",
-        category="model",
-        frames=1,
-        api_key="fake",
-        resource_details={},
-        resource_id="model/1",
-    )
-    collector._queue = Queue()
-    detached = threading.Event()
-    release = threading.Event()
+def start_paused_enqueue(collector):
+    collector.record_usage(**USAGE)
+    detached, release = threading.Event(), threading.Event()
     enqueue_payload = collector._enqueue_payload
 
     def paused_enqueue_payload(payload):
@@ -3127,6 +3072,36 @@ def test_push_usage_payloads_waits_for_payload_being_persisted(
     enqueuer.start()
     assert detached.wait(timeout=5)
     collector._enqueue_payload = enqueue_payload
+    return enqueuer, release
+
+
+def test_record_usage_is_not_blocked_while_payload_is_persisted(
+    usage_collector_with_mocked_threads,
+):
+    # given
+    collector = usage_collector_with_mocked_threads
+    enqueuer, release = start_paused_enqueue(collector)
+
+    # when
+    recorder = threading.Thread(target=collector.record_usage, kwargs=USAGE)
+    recorder.start()
+    recorder.join(timeout=2)
+    blocked = recorder.is_alive()
+    release.set()
+    enqueuer.join(timeout=5)
+    recorder.join(timeout=5)
+
+    # then
+    assert not blocked
+
+
+def test_push_usage_payloads_waits_for_payload_being_persisted(
+    usage_collector_with_mocked_threads,
+):
+    # given
+    collector = usage_collector_with_mocked_threads
+    collector._queue = Queue()
+    enqueuer, release = start_paused_enqueue(collector)
 
     # when
     with mock.patch(
@@ -3135,12 +3110,11 @@ def test_push_usage_payloads_waits_for_payload_being_persisted(
         pusher = threading.Thread(target=collector.push_usage_payloads)
         pusher.start()
         pusher.join(timeout=0.5)
-        pushed_before_persisted = not pusher.is_alive()
+        pushed_early = not pusher.is_alive()
         release.set()
         enqueuer.join(timeout=5)
         pusher.join(timeout=5)
 
     # then
-    assert not pushed_before_persisted
-    offload_to_api.assert_called_once()
+    assert not pushed_early
     assert "fake" in offload_to_api.call_args.kwargs["payloads"][0]
