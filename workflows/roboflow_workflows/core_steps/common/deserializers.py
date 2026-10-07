@@ -265,7 +265,10 @@ def deserialize_detections_kind(
             f"detections, but dictionary misses required keys.",
             context="workflow_execution | runtime_input_validation",
         )
-    parsed_detections = sv.Detections.from_inference(detections)
+    raw_predictions = filter_out_invalid_polygons(predictions=detections["predictions"])
+    parsed_detections = sv.Detections.from_inference(
+        {**detections, "predictions": raw_predictions}
+    )
     height, width = detections["image"]["height"], detections["image"]["width"]
     if len(parsed_detections) == 0:
         # Image dimensions describe the input image, not the rows: keep them on
@@ -280,9 +283,6 @@ def deserialize_detections_kind(
         return parsed_detections
     image_metadata = np.array([[height, width]] * len(parsed_detections))
     parsed_detections.data[IMAGE_DIMENSIONS_KEY] = image_metadata
-    raw_predictions = detections["predictions"]
-    if len(parsed_detections) != len(raw_predictions):
-        raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
     detection_ids = [
         detection.get(DETECTION_ID_KEY, str(uuid4())) for detection in raw_predictions
     ]

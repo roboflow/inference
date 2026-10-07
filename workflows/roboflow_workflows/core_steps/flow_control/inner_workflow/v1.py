@@ -9,7 +9,6 @@ from urllib.parse import urlsplit
 
 import numpy as np
 import requests
-from fastapi import BackgroundTasks
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.environment import (
@@ -29,6 +28,13 @@ else:
 
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import WILDCARD_KIND, Selector
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+    incomplete_discovery,
+    opaque_remote_workflow_problem,
+)
 from roboflow_workflows.execution_engine.v1.inner_workflow.constants import (
     INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED,
     INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
@@ -36,10 +42,12 @@ from roboflow_workflows.execution_engine.v1.inner_workflow.constants import (
 from roboflow_workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowRunNotSupportedError,
 )
+from roboflow_workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 logger = get_logger(__name__)
@@ -196,6 +204,33 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    def discover_work_operations(self) -> Discovery[WorkOperation]:
+        return incomplete_discovery(
+            items=[WorkOperation.EXTERNAL_REQUEST],
+            reasons=[
+                opaque_remote_workflow_problem(
+                    node_id=f"$steps.{self.name}", declaration="operations"
+                )
+            ],
+        )
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=incomplete_discovery(
+                items=[],
+                reasons=[
+                    opaque_remote_workflow_problem(
+                        node_id=f"$steps.{getattr(self, 'name', '')}",
+                        declaration="restrictions",
+                    )
+                ],
+            ),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
 
 class InnerWorkflowBlockV1(WorkflowBlock):
     """Dispatch block; embedded inner workflows are still removed during compilation."""
@@ -203,7 +238,7 @@ class InnerWorkflowBlockV1(WorkflowBlock):
     def __init__(
         self,
         api_key: Optional[str],
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         inner_workflow_remote_target: str,
         disable_sinks: bool = False,

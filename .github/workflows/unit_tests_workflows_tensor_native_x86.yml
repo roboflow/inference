@@ -56,7 +56,7 @@ jobs:
       - name: 🏗️ Build roboflow-workflows + SDK + inference-models wheels
         run: make create_isolation_wheels
       - name: 📦 Install roboflow-workflows (test + enterprise extras) from local wheel
-        run: pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[test,enterprise]" "${{ github.workspace }}"/dist/inference_sdk-*.whl "${{ github.workspace }}"/dist/inference_models-*.whl
+        run: pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[test,enterprise]" "${{ github.workspace }}"/dist/inference_sdk-*.whl "${{ github.workspace }}"/dist/inference_models-*.whl "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Server unit tests (tensor-native)
         # ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with USE_INFERENCE_MODELS,
         # which defaults to True on Linux runners, so the tensor-native code path is exercised.

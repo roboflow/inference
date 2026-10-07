@@ -7,6 +7,7 @@ import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from roboflow_workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
+    empty_detections_with_image_metadata,
 )
 from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -28,8 +29,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -164,6 +171,19 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
             ),
         ]
 
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.IMAGE_ANALYSIS]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
+
 
 class TemplateMatchingBlockV1(WorkflowBlock):
 
@@ -210,7 +230,7 @@ def apply_template_matching(
         class_id.append(0)
         class_name.append("template_match")
     if len(xyxy) == 0:
-        return sv.Detections.empty()
+        return empty_detections_with_image_metadata(image=image)
     detections = sv.Detections(
         xyxy=np.array(xyxy).astype(np.int32),
         confidence=np.array(confidence),

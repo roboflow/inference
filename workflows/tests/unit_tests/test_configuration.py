@@ -22,6 +22,7 @@ import pytest
 import roboflow_workflows.environment as workflows_environment
 from roboflow_workflows import configuration as configuration_module
 from roboflow_workflows.configuration import (
+    EngineConfiguration,
     WorkflowsConfiguration,
     configure_process,
     default_configuration,
@@ -66,7 +67,7 @@ def test_configuration_is_frozen_in_every_group() -> None:
         total_fields += len(dataclasses.fields(value))
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(value, dataclasses.fields(value)[0].name, "mutated")
-    assert total_fields == 78, total_fields
+    assert total_fields == 80, total_fields
 
 
 def test_default_configuration_matches_env_pys_empty_environment_defaults() -> None:
@@ -90,6 +91,8 @@ def test_default_configuration_matches_env_pys_empty_environment_defaults() -> N
         configuration.engine.allow_kafka_sinks_user_provided_bootstrap_servers is True
     )
     assert configuration.engine.kafka_sinks_whitelisted_bootstrap_servers is None
+    assert configuration.engine.allow_mqtt_blocks_user_provided_host is True
+    assert configuration.engine.mqtt_blocks_whitelisted_hosts is None
     assert configuration.models.vlm_segmentation_max_polygon_vertices == 500
     assert configuration.tensor.representation_enabled is False
     assert configuration.tensor.image_tensor_device is None
@@ -164,6 +167,51 @@ def test_secrets_are_kept_out_of_the_repr() -> None:
     assert "SECRET-API-KEY" not in rendered
     assert "SECRET-SERVICE-SECRET" not in rendered
     assert "SECRET-MODAL-TOKEN" not in rendered
+
+
+# --------------------------------------------------------------------------
+# Custom Python execution mode - validated, never normalised
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "mode", ["", "remote", "moda", "Modal", "LOCAL", " local", "modal\n", None]
+)
+def test_engine_configuration_rejects_an_unknown_custom_python_mode(mode) -> None:
+    with pytest.raises(WorkflowEnvironmentConfigurationError) as raised:
+        EngineConfiguration(custom_python_execution_mode=mode)
+    assert "engine.custom_python_execution_mode" in raised.value.public_message
+    assert repr(mode) in raised.value.public_message
+
+
+def test_replacing_the_custom_python_mode_is_validated_too() -> None:
+    base = default_configuration()
+    with pytest.raises(WorkflowEnvironmentConfigurationError):
+        dataclasses.replace(base.engine, custom_python_execution_mode="Modal")
+
+
+@pytest.mark.parametrize("mode", ["local", "modal"])
+@pytest.mark.parametrize("allow_custom_python_execution", [True, False])
+def test_engine_configuration_accepts_every_custom_python_mode(
+    mode: str, allow_custom_python_execution: bool
+) -> None:
+    # `allow_custom_python_execution=False` with Modal is a valid deployment:
+    # Modal mode is exempt from the local-execution switch
+    engine = EngineConfiguration(
+        allow_custom_python_execution=allow_custom_python_execution,
+        custom_python_execution_mode=mode,
+    )
+    configuration = WorkflowsConfiguration(engine=engine)
+
+    configure_process(configuration)
+
+    assert get_configuration().engine.custom_python_execution_mode == mode
+    assert (
+        get_configuration().engine.allow_custom_python_execution
+        is allow_custom_python_execution
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        engine.custom_python_execution_mode = "local"
 
 
 # --------------------------------------------------------------------------
@@ -412,7 +460,7 @@ def test_environment_facade_exports_every_owned_symbol() -> None:
         for name in vars(workflows_environment)
         if name.isupper() and not name.startswith("_")
     }
-    assert len(exported) == 78, sorted(exported)
+    assert len(exported) == 80, sorted(exported)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_TYPES, list)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_PATTERNS, list)
     assert isinstance(workflows_environment.ENABLE_TENSOR_DATA_REPRESENTATION, bool)

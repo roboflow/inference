@@ -38,6 +38,9 @@ class StreamConfig:
     Provide this configuration when your network requires a TURN server for WebRTC connectivity.
     TURN is automatically skipped for localhost connections. If not provided, the connection
     will attempt to establish directly without TURN relay.
+
+    When several TURN URLs are given (as with the auto-fetched Roboflow config), the SDK
+    uses the first one that answers, so networks that block UDP fall back to TCP or TLS.
     """
 
     # Workflow parameters

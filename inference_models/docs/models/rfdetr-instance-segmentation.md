@@ -36,6 +36,7 @@ RF-DETR Segmentation preview model is trained on the COCO dataset (80 classes) a
 | Backend | Extras Required |
 |---------|----------------|
 | `torch` | `torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126` |
+| `coreml` | `coreml` (macOS 13+ on Apple Silicon) |
 
 ## Roboflow Platform Compatibility
 

@@ -31,6 +31,12 @@ from inference_models.models.common.rle_utils import (
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 
+DEVICES = (
+    ["cpu"]
+    + (["mps"] if torch.backends.mps.is_available() else [])
+    + (["cuda"] if torch.cuda.is_available() else [])
+)
+
 
 def _oracle_with_nmm(
     detections: TensorNativeDetections,
@@ -94,14 +100,15 @@ def _make_instance_detections(
     confidence: np.ndarray,
     class_id: np.ndarray,
     xyxy: Optional[np.ndarray] = None,
+    device: str = "cpu",
 ) -> InstanceDetections:
     if xyxy is None:
         xyxy = _boxes_from_masks(masks)
     return InstanceDetections(
-        xyxy=torch.as_tensor(xyxy, dtype=torch.float32),
-        class_id=torch.as_tensor(class_id, dtype=torch.long),
-        confidence=torch.as_tensor(confidence, dtype=torch.float32),
-        mask=torch.as_tensor(masks, dtype=torch.bool),
+        xyxy=torch.as_tensor(xyxy, dtype=torch.float32).to(device),
+        class_id=torch.as_tensor(class_id, dtype=torch.long).to(device),
+        confidence=torch.as_tensor(confidence, dtype=torch.float32).to(device),
+        mask=torch.as_tensor(masks, dtype=torch.bool).to(device),
         image_metadata=None,
         bboxes_metadata=None,
     )
@@ -175,6 +182,37 @@ def _random_case(
     return masks, confidence, class_id
 
 
+def _random_sparse_case(
+    seed: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Large frame with small objects, each detected a few times at jittered
+    positions (what overlapping slices produce), some cut by the frame border."""
+    rng = random.Random(seed)
+    height, width = rng.choice([(360, 640), (480, 854), (720, 1280)])
+    yy, xx = np.mgrid[0:height, 0:width]
+    masks = []
+    for _ in range(rng.randrange(2, 7)):
+        cy, cx = rng.uniform(0, height), rng.uniform(0, width)
+        ry = rng.uniform(3, 0.08 * height)
+        rx = rng.uniform(3, 0.08 * width)
+        for _ in range(rng.randrange(1, 5)):
+            y = cy + rng.uniform(-1.5, 1.5) * ry
+            x = cx + rng.uniform(-1.5, 1.5) * rx
+            if rng.random() < 0.5:
+                mask = (abs(yy - y) <= ry) & (abs(xx - x) <= rx)
+            else:
+                mask = ((yy - y) / ry) ** 2 + ((xx - x) / rx) ** 2 <= 1
+            masks.append(mask)
+    if rng.random() < 0.3:
+        masks.append(np.zeros((height, width), dtype=bool))
+    rng.shuffle(masks)
+    n = len(masks)
+    confidence = np.array([rng.uniform(0.05, 0.999) for _ in range(n)])
+    number_of_classes = rng.choice([1, 1, 2])
+    class_id = np.array([rng.randrange(0, number_of_classes) for _ in range(n)])
+    return np.stack(masks), confidence, class_id
+
+
 def _assert_same_result(
     result: InstanceDetections, expected: InstanceDetections
 ) -> None:
@@ -224,6 +262,27 @@ def test_nmm_torch_port_fuzz_varied_thresholds(
     masks, confidence, class_id = _random_case(seed=seed)
     detections = _make_instance_detections(
         masks=masks, confidence=confidence, class_id=class_id
+    )
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=threshold)
+    _forbid_sv_fallback(monkeypatch)
+
+    # when
+    result = with_nmm(detections=deepcopy(detections), threshold=threshold)
+
+    # then
+    _assert_same_result(result=result, expected=expected)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("seed", list(range(90, 115)))
+@pytest.mark.parametrize("threshold", [0.05, 0.3, 0.6])
+def test_nmm_torch_port_fuzz_sparse_large_frames(
+    seed: int, threshold: float, device: str, monkeypatch
+) -> None:
+    # given
+    masks, confidence, class_id = _random_sparse_case(seed=seed)
+    detections = _make_instance_detections(
+        masks=masks, confidence=confidence, class_id=class_id, device=device
     )
     expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=threshold)
     _forbid_sv_fallback(monkeypatch)
@@ -437,19 +496,269 @@ def test_nms_branch_smoke() -> None:
     assert torch.equal(result.mask[1], torch.as_tensor(masks[2], dtype=torch.bool))
 
 
-def test_nmm_chunked_pairwise_intersection_matches_unchunked(monkeypatch) -> None:
-    # given: force the tiled matmul path of the pairwise-intersection helper and
-    # confirm decisions stay identical (counts are exact either way).
-    masks, confidence, class_id = _random_case(seed=4321)
+def test_nmm_torch_port_fractional_boxes_use_float64_areas(monkeypatch) -> None:
+    # given: overlapping masks with fractional boxes, where the area-weighted
+    # confidence differs between float32 and float64 box areas.
+    rng = np.random.default_rng(7)
+    masks = np.zeros((4, 64, 64), dtype=bool)
+    masks[:, 8:40, 8:40] = True
+    masks[3, 8:40, 8:20] = False
+    xyxy = rng.uniform(0, 3000, size=(4, 4)).astype(np.float32)
     detections = _make_instance_detections(
-        masks=masks, confidence=confidence, class_id=class_id
+        masks=masks,
+        confidence=np.array([0.91, 0.62, 0.77, 0.5]),
+        class_id=np.zeros(4, dtype=int),
+        xyxy=xyxy,
     )
-    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=0.25)
-    monkeypatch.setattr(stitch_module, "_NMM_PAIRWISE_FLOAT_BUDGET_BYTES", 512 * 1024)
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=0.3)
     _forbid_sv_fallback(monkeypatch)
 
     # when
-    result = with_nmm(detections=deepcopy(detections), threshold=0.25)
+    result = with_nmm(detections=deepcopy(detections), threshold=0.3)
 
     # then
     _assert_same_result(result=result, expected=expected)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("threshold", [0.0, 0.3])
+def test_nmm_torch_port_empty_masks_among_overlapping_masks(
+    threshold: float, device: str, monkeypatch
+) -> None:
+    # given: empty masks have no box; they sit between masks that merge over
+    # two rounds (3 is absorbed by the union of 0 and 1), one of them is a seed.
+    masks = np.zeros((6, 80, 80), dtype=bool)
+    masks[0, 10:40, 10:40] = True
+    masks[1, 15:45, 15:45] = True
+    masks[3, 20:50, 20:50] = True
+    detections = _make_instance_detections(
+        masks=masks,
+        confidence=np.array([0.9, 0.8, 0.95, 0.7, 0.6, 0.5]),
+        class_id=np.array([0, 0, 0, 0, 0, 1]),
+        xyxy=np.array(
+            [
+                [10, 10, 40, 40],
+                [15, 15, 45, 45],
+                [0, 0, 10, 10],
+                [20, 20, 50, 50],
+                [30, 30, 60, 60],
+                [5, 5, 9, 9],
+            ],
+            dtype=np.float32,
+        ),
+        device=device,
+    )
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=threshold)
+    _forbid_sv_fallback(monkeypatch)
+
+    # when
+    result = with_nmm(detections=deepcopy(detections), threshold=threshold)
+
+    # then
+    _assert_same_result(result=result, expected=expected)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_nmm_torch_port_mask_content_outside_detection_box(
+    device: str, monkeypatch
+) -> None:
+    # given: the masks overlap heavily, while the detection boxes neither
+    # enclose them nor overlap each other.
+    masks = np.zeros((3, 200, 200), dtype=bool)
+    masks[0, 100:140, 100:140] = True
+    masks[1, 105:145, 105:145] = True
+    masks[2, 150:190, 20:60] = True
+    detections = _make_instance_detections(
+        masks=masks,
+        confidence=np.array([0.9, 0.8, 0.7]),
+        class_id=np.zeros(3, dtype=int),
+        xyxy=np.array(
+            [[0, 0, 10, 10], [50, 50, 60, 60], [100, 100, 145, 145]],
+            dtype=np.float32,
+        ),
+        device=device,
+    )
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=0.3)
+    _forbid_sv_fallback(monkeypatch)
+
+    # when
+    result = with_nmm(detections=deepcopy(detections), threshold=0.3)
+
+    # then
+    _assert_same_result(result=result, expected=expected)
+    assert len(result) == 2
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("threshold", [0.0, 1e-6])
+def test_nmm_torch_port_overlapping_mask_boxes_without_shared_pixels(
+    threshold: float, device: str, monkeypatch
+) -> None:
+    # given: interleaved rows - the mask boxes overlap almost entirely, the
+    # masks share no pixel.
+    masks = np.zeros((2, 40, 40), dtype=bool)
+    masks[0, 10:30:2, 10:30] = True
+    masks[1, 11:30:2, 10:30] = True
+    detections = _make_instance_detections(
+        masks=masks,
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.zeros(2, dtype=int),
+        device=device,
+    )
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=threshold)
+    _forbid_sv_fallback(monkeypatch)
+
+    # when
+    result = with_nmm(detections=deepcopy(detections), threshold=threshold)
+
+    # then
+    _assert_same_result(result=result, expected=expected)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("threshold", [1e-6, 0.25, 0.3])
+def test_nmm_torch_port_adjacent_mask_boxes(
+    threshold: float, device: str, monkeypatch
+) -> None:
+    # given: the boxes of masks 0 and 1 share an edge and no pixel. Mask 2
+    # overlaps both, so once it is absorbed by 0 the candidate reaches into 1
+    # (IoU exactly 0.25), although the box of the seed does not.
+    masks = np.zeros((3, 30, 40), dtype=bool)
+    masks[0, 5:15, 0:10] = True
+    masks[1, 5:15, 10:20] = True
+    masks[2, 5:15, 5:15] = True
+    detections = _make_instance_detections(
+        masks=masks,
+        confidence=np.array([0.9, 0.7, 0.8]),
+        class_id=np.zeros(3, dtype=int),
+        device=device,
+    )
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=threshold)
+    _forbid_sv_fallback(monkeypatch)
+
+    # when
+    result = with_nmm(detections=deepcopy(detections), threshold=threshold)
+
+    # then
+    _assert_same_result(result=result, expected=expected)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("shared_axis", ["column", "row"])
+def test_nmm_torch_port_masks_sharing_only_the_last_line_of_a_box(
+    shared_axis: str, device: str, monkeypatch
+) -> None:
+    # given: the masks share exactly the last column (row) of the first mask's
+    # box; the threshold is their IoU, so losing one pixel flips the decision.
+    masks = np.zeros((2, 40, 40), dtype=bool)
+    masks[0, 0:10, 0:10] = True
+    masks[1, 0:10, 9:19] = True
+    if shared_axis == "row":
+        masks = masks.transpose(0, 2, 1).copy()
+    threshold = float(np.float32(10) / np.float32(190))
+    detections = _make_instance_detections(
+        masks=masks,
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.zeros(2, dtype=int),
+        device=device,
+    )
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=threshold)
+    _forbid_sv_fallback(monkeypatch)
+
+    # when
+    result = with_nmm(detections=deepcopy(detections), threshold=threshold)
+
+    # then
+    _assert_same_result(result=result, expected=expected)
+    assert len(result) == 1
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("counting_budget_bytes", [None, 2 * 9 * 48 * 64])
+@pytest.mark.parametrize("threshold", [0.3, 1.0])
+def test_nmm_torch_port_all_masks_full_frame(
+    threshold: float,
+    counting_budget_bytes: Optional[int],
+    device: str,
+    monkeypatch,
+) -> None:
+    # given: every mask box is the whole frame, every pair overlaps; the
+    # reduced budget splits each gather into copies of two masks.
+    masks = np.ones((9, 48, 64), dtype=bool)
+    detections = _make_instance_detections(
+        masks=masks,
+        confidence=np.linspace(0.9, 0.1, 9),
+        class_id=np.array([0, 1, 0, 1, 0, 1, 0, 1, 0]),
+        device=device,
+    )
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=threshold)
+    if counting_budget_bytes is not None:
+        monkeypatch.setattr(
+            stitch_module, "_NMM_COUNTING_BUDGET_BYTES", counting_budget_bytes
+        )
+    _forbid_sv_fallback(monkeypatch)
+
+    # when
+    result = with_nmm(detections=deepcopy(detections), threshold=threshold)
+
+    # then
+    _assert_same_result(result=result, expected=expected)
+    assert len(result) == 2
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_nmm_torch_port_counts_rounded_like_sv_at_2_pow_24_pixels(
+    device: str, monkeypatch
+) -> None:
+    # given: exactly 2**24 pixels, the largest frame supervision counts in
+    # float32. The areas add up to 2**25 - 3, which float32 rounds to
+    # 2**25 - 4, so supervision's IoU is (2**24 - 3) / (2**24 - 1) while the
+    # exact one is (2**24 - 3) / 2**24; the threshold lies between the two.
+    masks = np.ones((2, 4096, 4096), dtype=bool)
+    masks[0, 0, 0] = False
+    masks[1, 1, 1:3] = False
+    threshold = 1 - 2.5 * 2.0**-24
+    detections = _make_instance_detections(
+        masks=masks,
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.zeros(2, dtype=int),
+        xyxy=np.array([[0, 0, 4096, 4096]] * 2, dtype=np.float32),
+        device=device,
+    )
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=threshold)
+    _forbid_sv_fallback(monkeypatch)
+
+    # when
+    result = with_nmm(detections=deepcopy(detections), threshold=threshold)
+
+    # then
+    _assert_same_result(result=result, expected=expected)
+    assert len(result) == 1
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_nmm_torch_port_masks_beyond_float32_exact_range_match_sv_oracle(
+    device: str, monkeypatch
+) -> None:
+    # given: more than 2**24 pixels per mask, where supervision switches its
+    # pixel counting from float32 to float64. The first mask has an odd area
+    # above 2**24, which float32 would round up to the full frame, turning
+    # an IoU just below 1 into exactly 1.
+    masks = np.ones((2, 4200, 4200), dtype=bool)
+    masks[0, 0, 0] = False
+    detections = _make_instance_detections(
+        masks=masks,
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.zeros(2, dtype=int),
+        xyxy=np.array([[0, 0, 4200, 4200]] * 2, dtype=np.float32),
+        device=device,
+    )
+    expected = _oracle_with_nmm(detections=deepcopy(detections), threshold=1.0)
+    _forbid_sv_fallback(monkeypatch)
+
+    # when
+    result = with_nmm(detections=deepcopy(detections), threshold=1.0)
+
+    # then
+    _assert_same_result(result=result, expected=expected)
+    assert len(result) == 2

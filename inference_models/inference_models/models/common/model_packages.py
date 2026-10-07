@@ -1,7 +1,28 @@
+import hashlib
 import os.path
 from typing import Dict, List
 
 from inference_models.errors import CorruptedModelPackageError
+
+# Directory inside a model package that holds compiled / extracted Core ML artefacts (ONNX Runtime's CoreML
+# compiled-model cache and native .mlpackage bundles). The inference cache watchdog purges it as one unit.
+COREML_CACHE_DIR_NAME = "coreml_cache"
+# The inference cache watchdog takes `<package>/.<entry>.lock` before purging a package entry, so compiling,
+# extracting and loading under the same lock keeps it from deleting a cache that is being written or read.
+COREML_CACHE_LOCK_NAME = f".{COREML_CACHE_DIR_NAME}.lock"
+
+
+def get_file_identity(path: str) -> str:
+    """Short key of a file's size and modification time, for caches derived from it.
+
+    A heuristic, not content validation: model package files are downloaded once and never rewritten in
+    place, so a new file arrives with a new mtime. An in-place replacement that keeps both size and mtime,
+    or a change to an ONNX model's external-data files, reuses the stale derived cache.
+    """
+    stat = os.stat(path)
+    return hashlib.sha256(f"{stat.st_size}-{stat.st_mtime_ns}".encode()).hexdigest()[
+        :12
+    ]
 
 
 def get_model_package_contents(

@@ -36,6 +36,7 @@ nav:
   - "Get Started": "https://docs.roboflow.com/deployment/self-hosted/self-hosted"
   - "Models": "https://docs.roboflow.com/models/supported-models"
   - "Workflows": "https://docs.roboflow.com/workflows"
+  - "Classifier Embeddings": workflows/classifier_embeddings.md
   - "Reference": "https://docs.roboflow.com/reference/inference/choosing-the-right-tool"
   - "Changelog": "https://github.com/roboflow/inference/releases"
 
@@ -121,6 +122,7 @@ extra_javascript:
   - 'https://unpkg.com/@rive-app/canvas'
   - 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'
   - 'assets/home.js'
+  - "https://app.roboflow.com/scripts/utm.js"
   - 'js/segment.js'
 
 hooks:

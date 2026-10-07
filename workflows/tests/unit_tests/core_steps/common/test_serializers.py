@@ -741,10 +741,7 @@ def test_serialise_sv_detections_when_mask_with_single_point_detected_present() 
         tracker_id=np.array([1, 2]),
         mask=np.array(
             [
-                sv.polygon_to_mask(
-                    np.array([[1, 1]]),
-                    resolution_wh=(15, 15),
-                ),
+                np.pad(np.array([[True]], dtype=bool), ((1, 13), (1, 13))),
                 sv.polygon_to_mask(
                     np.array([[1, 1], [1, 10], [10, 10], [10, 1]]),
                     resolution_wh=(15, 15),

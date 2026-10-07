@@ -9,6 +9,10 @@ from __future__ import annotations
 import copy
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from roboflow_workflows.environment import (
+    WORKFLOWS_MAX_INNER_WORKFLOW_COUNT,
+    WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH,
+)
 from roboflow_workflows.errors import (
     WorkflowDefinitionError,
     WorkflowEnvironmentConfigurationError,
@@ -16,6 +20,11 @@ from roboflow_workflows.errors import (
 from roboflow_workflows.execution_engine.v1.inner_workflow.constants import (
     INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
     USE_INNER_WORKFLOW_BLOCK_TYPE,
+)
+from roboflow_workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowCompositionCycleError,
+    InnerWorkflowNestingDepthError,
+    InnerWorkflowTotalCountError,
 )
 
 WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER = (
@@ -127,10 +136,14 @@ def _strip_reference_fields_from_step(step: Dict[str, Any]) -> None:
 
 def _normalize_inner_workflow_refs_in_workflow_dict(
     workflow_dict: Dict[str, Any],
+    *,
     init_parameters: Dict[str, Any],
     resolver: InnerWorkflowSpecResolver,
     fetch_memo: Dict[Tuple[str, str, Optional[str]], Dict[str, Any]],
-) -> None:
+    active_references: Tuple[Tuple[str, str, Optional[str]], ...],
+    depth: int,
+    total_count: int,
+) -> int:
     for step in workflow_dict.get("steps", []) or []:
         if not isinstance(step, dict):
             continue
@@ -166,6 +179,8 @@ def _normalize_inner_workflow_refs_in_workflow_dict(
             # and nested workflow definitions to be installed in the caller runtime.
             continue
 
+        child_references = active_references
+        cache_key = None
         if has_ref:
             workspace_id = _strip_optional_str(step["workflow_workspace_id"])
             saved_workflow_id = _strip_optional_str(step["workflow_id"])
@@ -178,6 +193,31 @@ def _normalize_inner_workflow_refs_in_workflow_dict(
             cache_key = _reference_cache_key(
                 workspace_id, saved_workflow_id, workflow_version_id
             )
+            if cache_key in active_references:
+                cycle_start = active_references.index(cache_key)
+                cycle = active_references[cycle_start:] + (cache_key,)
+                raise InnerWorkflowCompositionCycleError(
+                    "Inner workflow references contain a cycle "
+                    f"(workspace, workflow, version): {cycle!r}."
+                )
+
+            child_references = active_references + (cache_key,)
+
+        child_depth = depth + 1
+        if child_depth > WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH:
+            raise InnerWorkflowNestingDepthError(
+                f"Inner workflow nesting depth is {child_depth}, which exceeds "
+                f"the limit of {WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH}."
+            )
+
+        total_count += 1
+        if total_count > WORKFLOWS_MAX_INNER_WORKFLOW_COUNT:
+            raise InnerWorkflowTotalCountError(
+                f"Inner workflow step count is {total_count}, which exceeds "
+                f"the limit of {WORKFLOWS_MAX_INNER_WORKFLOW_COUNT}."
+            )
+
+        if cache_key is not None:
             if cache_key not in fetch_memo:
                 fetch_memo[cache_key] = resolver(
                     workspace_id,
@@ -199,19 +239,43 @@ def _normalize_inner_workflow_refs_in_workflow_dict(
 
         child_wf = step.get("workflow_definition")
         if isinstance(child_wf, dict):
-            _normalize_inner_workflow_refs_in_workflow_dict(
-                child_wf, init_parameters, resolver, fetch_memo
+            total_count = _normalize_inner_workflow_refs_in_workflow_dict(
+                child_wf,
+                init_parameters=init_parameters,
+                resolver=resolver,
+                fetch_memo=fetch_memo,
+                active_references=child_references,
+                depth=child_depth,
+                total_count=total_count,
             )
+
+    return total_count
 
 
 def normalize_inner_workflow_references_in_definition(
     workflow_definition: Dict[str, Any],
     init_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Return a workflow definition suitable for parsing: embedded ``inner_workflow``
-    references are resolved to inline ``workflow_definition`` recursively. Dispatched
-    workflows remain opaque. The input dict is never mutated.
+    """Resolve embedded workflow references while bounding their expansion.
+
+    Dispatched workflows remain opaque. Definitions without embedded references
+    are returned unchanged; their composition is validated later by the compiler.
+
+    Args:
+        workflow_definition (Dict[str, Any]): Workflow definition to normalize.
+        init_parameters (Dict[str, Any]): Initialization parameters, including the
+            optional saved-workflow resolver.
+
+    Returns:
+        Dict[str, Any]: Definition with embedded references resolved to inline
+        definitions. Neither the input nor resolver-owned definitions are mutated.
+
+    Raises:
+        InnerWorkflowCompositionCycleError: A reference repeats on an ancestor path.
+        InnerWorkflowNestingDepthError: Expansion exceeds the configured depth.
+        InnerWorkflowTotalCountError: Expansion exceeds the configured step count.
+        WorkflowDefinitionError: An inner step has conflicting or missing sources.
+        WorkflowEnvironmentConfigurationError: No saved-workflow resolver is available.
     """
     if not workflow_definition_contains_unresolved_inner_workflow_reference(
         workflow_definition
@@ -222,6 +286,12 @@ def normalize_inner_workflow_references_in_definition(
     resolver = get_inner_workflow_spec_resolver(init_parameters)
     fetch_memo: Dict[Tuple[str, str, Optional[str]], Dict[str, Any]] = {}
     _normalize_inner_workflow_refs_in_workflow_dict(
-        result, init_parameters, resolver, fetch_memo
+        result,
+        init_parameters=init_parameters,
+        resolver=resolver,
+        fetch_memo=fetch_memo,
+        active_references=(),
+        depth=0,
+        total_count=0,
     )
     return result

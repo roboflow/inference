@@ -3,6 +3,12 @@ import copy
 from typing import Any, Dict, List, Optional, Set, Union
 
 from packaging.specifiers import SpecifierSet
+from roboflow_workflows.execution_engine.introspection.workload import (
+    describe_workflow_workload,
+)
+from roboflow_workflows.execution_engine.introspection.workload_entities import (
+    WorkflowIntrospection,
+)
 
 from inference.core.cache.air_gapped import has_cached_model_variant
 from inference.core.entities.responses.workflows import (
@@ -13,7 +19,13 @@ from inference.core.entities.responses.workflows import (
     WorkflowsBlocksDescription,
 )
 from inference.core.env import ENABLE_BUILDER
-from inference.core.interfaces.roboflow_platform_client import SERVER_WORKSPACE_RESOLVER
+from inference.core.interfaces.roboflow_platform_client import (
+    SERVER_WORKSPACE_RESOLVER,
+    install_workflows_platform_bindings,
+)
+from inference.core.interfaces.workflows_workload_metadata import (
+    ServerModelMetadataProvider,
+)
 from inference.core.workflows.core_steps.common.query_language.introspection.core import (
     prepare_operations_descriptions,
     prepare_operators_descriptions,
@@ -123,12 +135,14 @@ def enrich_with_air_gapped_info(
     for block in result.blocks:
         manifest_cls = block.manifest_class
         air_gapped_info = _get_air_gapped_info_for_block(manifest_cls)
+        model_requirements = air_gapped_info.to_dict()
+        for key in ("required_model_capabilities", "compatible_model_architectures"):
+            if key in block.block_schema:
+                model_requirements[key] = copy.deepcopy(block.block_schema[key])
         enriched_schema = copy.deepcopy(block.block_schema)
         if "json_schema_extra" not in enriched_schema:
             enriched_schema["json_schema_extra"] = {}
-        enriched_schema["json_schema_extra"][
-            "air_gapped_info"
-        ] = air_gapped_info.to_dict()
+        enriched_schema["json_schema_extra"]["air_gapped_info"] = model_requirements
         enriched_blocks.append(
             block.model_copy(update={"block_schema": enriched_schema})
         )
@@ -206,6 +220,36 @@ def handle_describe_workflows_interface(
         outputs=outputs,
         typing_hints=typing_hints,
         kinds_schemas=kinds_schemas,
+    )
+
+
+def handle_describe_workflow_workload(
+    definition: dict,
+    api_key: Optional[str] = None,
+) -> WorkflowIntrospection:
+    """Compile-time workload facts for a workflow definition.
+
+    Structural inspection only: `describe_workflow_workload()` builds the graph
+    without initialising blocks, loading models or running custom Python. The
+    api key is used for two things and nothing else - the `workflows_core.*`
+    platform bindings the compiler needs to inline saved inner workflows, and
+    the optional model metadata lookup performed by
+    `ServerModelMetadataProvider`.
+
+    The requested Execution Engine version is checked by
+    `describe_workflow_workload()` with the same selection workflow execution
+    uses, so an unsupported version raises `NotSupportedExecutionEngineError`
+    before any inner workflow fetch or model metadata lookup.
+    """
+    init_parameters = install_workflows_platform_bindings(
+        {
+            "workflows_core.api_key": api_key,
+        }
+    )
+    return describe_workflow_workload(
+        definition,
+        init_parameters=init_parameters,
+        model_metadata_provider=ServerModelMetadataProvider(api_key=api_key),
     )
 
 

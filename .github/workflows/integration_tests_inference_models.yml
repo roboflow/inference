@@ -43,6 +43,13 @@ jobs:
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
+      - name: 📦 Cache test model packages
+        uses: actions/cache@v5
+        with:
+          path: tests/inference/models_predictions_tests/assets/*.zip
+          key: models-predictions-test-assets-${{ hashFiles('tests/inference/models_predictions_tests/conftest.py') }}
+          restore-keys: |
+            models-predictions-test-assets-
       - name: 🚧 Install GDAL OS library
         run: sudo apt-get update && sudo apt-get install libgdal-dev
       - name: 📦 Install dependencies
@@ -50,10 +57,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.sam.txt -r requirements/requirements.transformers.txt
-      - name: 🏗️ Build and install roboflow-workflows wheel
+      - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
-          make create_workflows_wheel
+          make create_workflows_wheel create_streamvision_wheel
           pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}"/dist/roboflow_workflows-*.whl
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Integration Tests of Inference models
         timeout-minutes: 45
         run: USE_INFERENCE_MODELS=False MAX_BATCH_SIZE=6 python -m pytest tests/inference/models_predictions_tests

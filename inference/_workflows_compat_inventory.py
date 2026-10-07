@@ -1,4 +1,4 @@
-"""Baseline inventory of legacy Workflows module names.
+"""Baseline inventories of legacy Workflows and stream module names.
 
 Frozen at rev b77b7a08cb1e484742d9eaf5b48e48b534081289 (merge-base with
 origin/main for the extraction branch). Do NOT regenerate from the canonical
@@ -6,9 +6,17 @@ origin/main for the extraction branch). Do NOT regenerate from the canonical
 `inference.*` would leak new APIs under historic dotted names.
 Mirror of `tests/inference/unit_tests/workflows_compat_inventory.json`; the
 test suite pins both to the same set.
+
+The `_STREAM_*` sets mirror `tests/inference/unit_tests/streamvision_move_inventory.json`
+(rev 8e14506749160290049e5c7e02c5ddb3ae1addc5): every `legacy` name of its
+`packages`, `modules` and `retained_legacy` entries. `_STREAM_INVENTORY_LEGACY`
+also carries the four canonical-prefixed spellings of the retained names (e.g.
+`streamvision.stream.inference_pipeline`); they exist only so
+`from <legacy package> import <retained module>` keeps working when
+`inference` is installed.
 """
 
-_INVENTORY_LEGACY = frozenset(
+_WORKFLOWS_INVENTORY_LEGACY = frozenset(
     (
         "inference.core.workflows",
         "inference.core.workflows.configuration",
@@ -801,12 +809,107 @@ _INVENTORY_LEGACY = frozenset(
     )
 )
 
-_INVENTORY_PACKAGES = (
-    frozenset(name.rpartition(".")[0] for name in _INVENTORY_LEGACY) & _INVENTORY_LEGACY
+_WORKFLOWS_INVENTORY_PACKAGES = (
+    frozenset(name.rpartition(".")[0] for name in _WORKFLOWS_INVENTORY_LEGACY)
+    & _WORKFLOWS_INVENTORY_LEGACY
 ) | {
     # The only empty leaf package in the frozen baseline.
     "inference.core.workflows.core_steps.models.foundation.flex.inpainting",
 }
+
+_STREAM_INVENTORY_LEGACY = frozenset(
+    (
+        "inference.core.interfaces.camera",
+        "inference.core.interfaces.camera.buffer_strategies",
+        "inference.core.interfaces.camera.camera",
+        "inference.core.interfaces.camera.collection_policy",
+        "inference.core.interfaces.camera.dgpu_producer",
+        "inference.core.interfaces.camera.discoverability",
+        "inference.core.interfaces.camera.entities",
+        "inference.core.interfaces.camera.exceptions",
+        "inference.core.interfaces.camera.gstreamer_cuda_producer",
+        "inference.core.interfaces.camera.gstreamer_cuda_tensor_bridge",
+        "inference.core.interfaces.camera.gstreamer_rtsp_pipeline",
+        "inference.core.interfaces.camera.gstreamer_rtsp_producer",
+        "inference.core.interfaces.camera.jetson_producer",
+        "inference.core.interfaces.camera.jetson_tensor_bridge",
+        "inference.core.interfaces.camera.rtsp_opencv_tls",
+        "inference.core.interfaces.camera.rtsp_tls",
+        "inference.core.interfaces.camera.source_reference_sanitizer",
+        "inference.core.interfaces.camera.source_reference_validation",
+        "inference.core.interfaces.camera.stream_error_classifier",
+        "inference.core.interfaces.camera.stream_error_codes",
+        "inference.core.interfaces.camera.test_pattern_producer",
+        "inference.core.interfaces.camera.utils",
+        "inference.core.interfaces.camera.video_source",
+        "inference.core.interfaces.stream",
+        "inference.core.interfaces.stream.configuration",
+        "inference.core.interfaces.stream.entities",
+        "inference.core.interfaces.stream.environment",
+        "inference.core.interfaces.stream.exceptions",
+        "inference.core.interfaces.stream.inference_pipeline",
+        "inference.core.interfaces.stream.model_handlers",
+        "inference.core.interfaces.stream.model_handlers.roboflow_models",
+        "inference.core.interfaces.stream.model_handlers.workflows",
+        "inference.core.interfaces.stream.model_handlers.yolo_world",
+        "inference.core.interfaces.stream.pipeline",
+        "inference.core.interfaces.stream.session",
+        "inference.core.interfaces.stream.sinks",
+        "inference.core.interfaces.stream.stream",
+        "inference.core.interfaces.stream.support",
+        "inference.core.interfaces.stream.support.async_queue",
+        "inference.core.interfaces.stream.support.decorators",
+        "inference.core.interfaces.stream.support.environment",
+        "inference.core.interfaces.stream.support.images",
+        "inference.core.interfaces.stream.utils",
+        "inference.core.interfaces.stream.warnings",
+        "inference.core.interfaces.stream.watchdog",
+        "inference.core.interfaces.stream_manager",
+        "inference.core.interfaces.stream_manager.api",
+        "inference.core.interfaces.stream_manager.api.entities",
+        "inference.core.interfaces.stream_manager.api.errors",
+        "inference.core.interfaces.stream_manager.api.stream_manager_client",
+        "inference.core.interfaces.stream_manager.manager_app",
+        "inference.core.interfaces.stream_manager.manager_app.app",
+        "inference.core.interfaces.stream_manager.manager_app.bootstrap",
+        "inference.core.interfaces.stream_manager.manager_app.communication",
+        "inference.core.interfaces.stream_manager.manager_app.entities",
+        "inference.core.interfaces.stream_manager.manager_app.errors",
+        "inference.core.interfaces.stream_manager.manager_app.host",
+        "inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager",
+        "inference.core.interfaces.stream_manager.manager_app.result_serialization",
+        "inference.core.interfaces.stream_manager.manager_app.serialisation",
+        "inference.core.interfaces.stream_manager.manager_app.tcp_server",
+        "inference.core.interfaces.stream_manager.manager_app.webrtc",
+        "inference.core.interfaces.webrtc_worker.entities",
+        "inference.core.interfaces.webrtc_worker.serializers",
+        "inference.core.interfaces.webrtc_worker.sources",
+        "inference.core.interfaces.webrtc_worker.sources.file",
+        "inference.core.interfaces.webrtc_worker.sources.rtsp",
+        "inference.core.interfaces.webrtc_worker.watchdog",
+        "inference.core.interfaces.webrtc_worker.webrtc",
+        "streamvision.stream.model_handlers.roboflow_models",
+        "streamvision.stream.model_handlers.yolo_world",
+        "streamvision.stream.inference_pipeline",
+        "streamvision.stream.stream",
+    )
+)
+
+_STREAM_INVENTORY_PACKAGES = frozenset(
+    (
+        "inference.core.interfaces.camera",
+        "inference.core.interfaces.stream",
+        "inference.core.interfaces.stream.model_handlers",
+        "inference.core.interfaces.stream.support",
+        "inference.core.interfaces.stream_manager",
+        "inference.core.interfaces.stream_manager.api",
+        "inference.core.interfaces.stream_manager.manager_app",
+        "inference.core.interfaces.webrtc_worker.sources",
+    )
+)
+
+_INVENTORY_LEGACY = _WORKFLOWS_INVENTORY_LEGACY | _STREAM_INVENTORY_LEGACY
+_INVENTORY_PACKAGES = _WORKFLOWS_INVENTORY_PACKAGES | _STREAM_INVENTORY_PACKAGES
 
 # Empty enterprise packages were lightweight imports before the extraction.
 # Only these implementation modules historically triggered server bootstrap.

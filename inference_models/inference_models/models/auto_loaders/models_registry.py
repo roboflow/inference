@@ -385,6 +385,20 @@ REGISTERED_MODELS: Dict[
             "num_select",
         },
     ),
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.COREML): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_object_detection_coreml",
+            class_name="RFDetrForObjectDetectionCoreML",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    ),
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
         class_name="RFDetrForInstanceSegmentationTorch",
@@ -393,6 +407,20 @@ REGISTERED_MODELS: Dict[
         model_class=LazyClass(
             module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx",
             class_name="RFDetrForInstanceSegmentationOnnx",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    ),
+    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.COREML): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_coreml",
+            class_name="RFDetrForInstanceSegmentationCoreML",
         ),
         supported_model_features={
             "resolution",
@@ -553,6 +581,14 @@ REGISTERED_MODELS: Dict[
     ("pp-ocrv6-det", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx",
         class_name="PPOCRv6DetectionOnnx",
+    ),
+    ("rfdetr-keypoint-stage2", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.rfdetr_two_stage.rfdetr_key_points_stage2_onnx",
+        class_name="RFDetrKeyPointsStage2ONNX",
+    ),
+    ("rfdetr-keypoint-two-stage", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.rfdetr_two_stage.rfdetr_two_stage_key_points_onnx",
+        class_name="RFDetrTwoStageKeyPointsONNX",
     ),
     ("l2cs-net", GAZE_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.l2cs.l2cs_onnx",

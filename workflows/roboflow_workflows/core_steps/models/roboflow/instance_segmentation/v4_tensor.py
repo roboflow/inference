@@ -90,6 +90,11 @@ from roboflow_workflows.execution_engine.entities.types import (
     RoboflowModelField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
@@ -293,6 +298,16 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
@@ -578,8 +593,8 @@ def _extract_polygon_points(prediction: dict) -> Optional[List[dict]]:
     """Pull the polygon ``points`` ([{"x": .., "y": ..}, ...]) from a standard
     inference instance-seg prediction dict that carries a polygon mask instead of
     RLE. Returns ``None`` when the key is absent or the polygon is degenerate
-    (< 3 points) - mirroring supervision's ``Detections.from_inference`` / the numpy
-    ``filter_out_invalid_polygons``, which drop such instances entirely."""
+    (< 3 points) - mirroring the numpy ``filter_out_invalid_polygons``, which drops
+    such instances entirely."""
     points = prediction.get(POLYGON_KEY)
     if points is not None and len(points) >= 3:
         return points
@@ -627,7 +642,7 @@ def _native_instance_detections_from_inference_predictions(
     ``detection_id`` are built here too.
 
     Degenerate (< 3-point) polygons are dropped exactly like the numpy path
-    (``filter_out_invalid_polygons`` / supervision's ``from_inference``). When a
+    (``filter_out_invalid_polygons``). When a
     prediction omits its ``class`` key, the class name is backfilled from
     ``model_class_names`` (the model's ``get_class_names`` map) so the tensor
     serialiser does not hard-raise on an unmapped ``class_id``.
