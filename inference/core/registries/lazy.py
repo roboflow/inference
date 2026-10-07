@@ -17,16 +17,31 @@ class _LazyModelClass:
     warning_message: Optional[str] = None
     warning_category: type[Warning] = Warning
     _resolved: Any = None
+    _failure: Optional[Exception] = field(default=None, init=False, repr=False)
+    _warned: bool = field(default=False, init=False, repr=False)
     _lock: Any = field(default_factory=RLock, init=False, repr=False, compare=False)
 
     def _resolve(self) -> Any:
         with self._lock:
+            if self._failure is not None:
+                raise self._failure
+
             if self._resolved is None:
-                module_path, class_name = self.path.split(":", 1)
-                module = importlib.import_module(module_path)
-                self._resolved = getattr(module, class_name)
+                try:
+                    module_path, class_name = self.path.split(":", 1)
+                    module = importlib.import_module(module_path)
+                    self._resolved = getattr(module, class_name)
+                except Exception as error:
+                    self._failure = error
+                    raise
 
         return self._resolved
+
+    def _warn_once(self, message, *, category, stacklevel):
+        with self._lock:
+            if not self._warned:
+                self._warned = True
+                warnings.warn(message, category=category, stacklevel=stacklevel + 1)
 
 
 @dataclass
@@ -58,7 +73,7 @@ class _LazyModelRegistry(MutableMapping):
                 model_class = entry.adapter._resolve()
             except Exception as error:
                 task, variant = key
-                warnings.warn(
+                entry.adapter._warn_once(
                     f"`inference-models` stack is unavailable for model: {variant} "
                     f"and task: {task}, falling back to regular `inference` "
                     f"stack - error: {error}",
@@ -82,7 +97,7 @@ class _LazyModelRegistry(MutableMapping):
                 raise
 
             if entry.warning_message:
-                warnings.warn(
+                entry._warn_once(
                     entry.warning_message,
                     category=entry.warning_category,
                     stacklevel=3,
