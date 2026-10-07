@@ -16,6 +16,11 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Mistral AI block (`roboflow_core/mistral_vlm@v1`): runs Mistral Large 4 (`mistralai/mistral-large-4-0`) via OpenRouter with the vlm-exam request contract (image-first user message, reasoning off by default with a `high` option, `max_tokens` 2048) and in-block decoding of detections and classifications.
+- VLM detection box format `xyxy_0_999`: `box_2d` integers normalized to 0-999, Mistral's documented grounding convention. Used by the Mistral AI block and selectable as `detection_format` on the OpenRouter block (`openrouter@v3`).
+
 ## `0.2.4`
 
 Bundled execution engine: `1.16.1`.
