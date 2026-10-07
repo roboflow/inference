@@ -200,3 +200,23 @@ def test_unknown_model_error_message_is_unchanged(
         else:
             registry.get_model(key, "example/1")
     assert str(caught.value) == expected
+
+
+def test_sam3_visual_segmentation_fixture_in_fresh_process():
+    """Exercise fixture cleanup without preceding imports masking native state."""
+    process = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(Path(__file__).with_name("test_sam3_visual_segmentation.py")),
+            "-q",
+            "--tb=short",
+            "--disable-warnings",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "DISABLE_VERSION_CHECK": "True"},
+    )
+    assert process.returncode == 0, process.stdout + process.stderr
