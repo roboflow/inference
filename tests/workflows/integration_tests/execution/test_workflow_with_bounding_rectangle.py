@@ -55,8 +55,13 @@ _EXPECTED_RECTS = [
 
 
 def _canonical_rect_size(width: float, height: float, angle: float) -> tuple:
-    # cv2.minAreaRect reports the same rectangle as (w, h, a) or (h, w, a - 90)
-    return (height, width, angle - 90) if angle > 45 else (width, height, angle)
+    # cv2.minAreaRect reports the same rectangle as (w, h, a), (h, w, a - 90)
+    # or (h, w, a + 90)
+    if angle > 45:
+        return height, width, angle - 90
+    if angle < -45:
+        return height, width, angle + 90
+    return width, height, angle
 
 
 def _assert_rect_matches(rect, width, height, angle, expected) -> None:
@@ -75,6 +80,11 @@ def _assert_rect_matches(rect, width, height, angle, expected) -> None:
     assert np.allclose([w, h], [ew, eh], atol=atol), f"size {(w, h)} != {(ew, eh)}"
     # 1 deg matches the corner tolerance: 5 px over a ~260 px side is ~1.1 deg.
     assert abs(a - ea) <= 1.0, f"angle {a} != {ea}"
+
+
+def test_assert_rect_matches_accepts_negative_near_minus_90_angle() -> None:
+    expected = _EXPECTED_RECTS[0]
+    _assert_rect_matches(expected[0], 178.4, 261.5, -89.174, expected)
 
 
 BOUNDNG_RECTANGLE_WORKFLOW = {
