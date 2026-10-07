@@ -18,7 +18,7 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
-- Action Recognition Model: `latest_predictions` output connects to Classification Label Visualization.
+- Action Recognition Model: `recent_predictions` output connects to Classification Label Visualization.
 
 ## `0.2.4`
 
