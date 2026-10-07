@@ -82,6 +82,26 @@ Lifecycle:
 * A later ``start()`` on the same session constructs new source and
   operator instances and reuses the session's block instances and their
   state. Nothing an operator retained survives its run.
+* Event handlers (``reactions.runtime``) belong to the run. Asynchronous
+  handler workers start at their first event; a stopped or completed run
+  lets their queues drain, a failed or cancelled one discards queued events
+  and wakes emitters waiting under ``synchronous`` overflow. Either way the
+  run is done only once every accepted reaction call returned (also a
+  ``signal()`` on its caller's thread) and every handler worker ended; a
+  handler still running keeps ``wait(timeout)`` returning ``False``. Handler
+  threads are threads of the run: ``wait()`` there raises.
+* Reactions also cover external signals and state machines::
+
+      start()     ... driver starts -> $system.events.started -> readers start
+      signal()    on the caller's thread (owned meanwhile); rejected after stop()
+      stop()      signals rejected, then pulse admission closes
+      EOF/stop    pulses finish -> $system.events.ended -> drain -> done
+      cancel      no ended; queued events discarded; running code finishes
+                  -> done
+
+  ``ended`` means the main flow ended, not that every reaction finished;
+  the drain after it waits for accepted signals and every cascade they or
+  the pulses caused. A failure of ``started`` or ``ended`` fails the run.
 
 Serially, block calls and handlers run on the processor thread only, so
 ordinary stateful blocks are never reentered. Pipelined, one step (or one
@@ -97,6 +117,7 @@ import uuid
 import weakref
 from dataclasses import dataclass, field
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -105,6 +126,7 @@ from typing import (
     Optional,
     Protocol,
     Sequence,
+    Tuple,
     Union,
 )
 
@@ -121,10 +143,15 @@ from roboflow_workflows.execution_engine.v2.context import (
     ExecutionContext,
     use_execution_context,
 )
-from roboflow_workflows.execution_engine.v2.data import Timestamp
+from roboflow_workflows.execution_engine.v2.data import (
+    SampleContext,
+    TemporalContext,
+    Timestamp,
+)
 from roboflow_workflows.execution_engine.v2.errors import (
     ActiveRunError,
     ContractError,
+    EventEmissionError,
     WorkflowInputError,
 )
 from roboflow_workflows.execution_engine.v2.execution.arguments import (
@@ -154,7 +181,15 @@ from roboflow_workflows.execution_engine.v2.plan import (
     PlannedSource,
     PulseKey,
 )
+from roboflow_workflows.execution_engine.v2.reactions.runtime import (
+    HandlerCounters,
+    ReactionOutcome,
+    ReactionRuntime,
+)
 from roboflow_workflows.execution_engine.v2.sources import Emission
+
+if TYPE_CHECKING:
+    from roboflow_workflows.execution_engine.v2.recording.compilation import Capture
 
 __all__ = [
     "ActiveRun",
@@ -169,6 +204,9 @@ __all__ = [
 
 PIPELINE_MODULE = "roboflow_workflows.execution_engine.v2.active.pipeline"
 """Pipelined driver, imported only by runs that pass ``PipelineOptions``."""
+
+RECORDING_MODULE = "roboflow_workflows.execution_engine.v2.recording.compilation"
+"""Capture of recorded groups, imported only by plans that declare ``recording``."""
 
 GroupHandler = Callable[[GroupResult], None]
 """Synchronous callback receiving one ``GroupResult`` per delivered pulse."""
@@ -297,23 +335,33 @@ def start_session(
     handlers: Optional[Mapping[str, GroupHandler]] = None,
     admission_bound: int = 2,
     pipeline: Optional[PipelineOptions] = None,
+    finalize: Optional[Callable[[], None]] = None,
 ) -> "ActiveRun":
     """Validate, construct the sources and start reading.
 
     Handlers, static inputs, pipeline options and every source's resolved
     parameters are checked and every source instance is constructed before
-    any reader opens anything.
+    any reader opens anything. A plan that declares ``recording`` creates
+    its recording last, still before any reader opens; the engine records
+    every recorded group, with or without a handler, and finalizes the
+    recording before the run is done.
 
     Args:
         session: Session of an active plan (one with declared sources).
         inputs: Static input values by name; the plan's ungrouped inputs.
         handlers: Synchronous callback per output group name. Groups without
             a handler are neither built nor retained; their steps still run.
+            A handler output group (``$handlers.<h>.<output>``) receives one
+            result per completed run of its event handler, on the handler's
+            thread, serialized with other reaction callbacks only.
         admission_bound: Pulses one source may have admitted but not yet
             processed; at least 1.
         pipeline: ``None`` runs serially (the reference). Options run the
             pulses on ``max_in_flight`` workers with per-stage order and the
             sources' overload policies.
+        finalize: Engine-internal release of what the caller created for
+            this run alone (a replay's session state); called once, before
+            the run is done.
 
     Returns:
         The running active run.
@@ -328,6 +376,7 @@ def start_session(
         ActiveRunError: When a source's resolved parameters violate its
             declaration, a source or operator constructor fails or the
             observer rejects the run (stage ``start``).
+        RecordingError: When the recording destination cannot be created.
     """
     plan = session.plan
     if not plan.is_active:
@@ -371,6 +420,9 @@ def start_session(
             for planned in plan.sources.values()
         }
         operators = _prepare_operators(plan.operators.values())
+        capture = _start_capture(plan, entries=entries, operators=operators)
+        if capture is not None:
+            registered = _with_recorders(plan, registered, recorders=capture.recorders)
         run = ActiveRun(
             session,
             run_id=run_id,
@@ -381,6 +433,9 @@ def start_session(
             stop_event=stop_event,
             admission_bound=admission_bound,
             pipeline=pipeline,
+            handlers=handlers or {},
+            capture=capture,
+            finalize=finalize,
         )
         _ACTIVE_RUNS[session] = run
     run._launch()
@@ -439,11 +494,12 @@ def _register_handlers(
     plan: Any, handlers: Mapping[str, GroupHandler]
 ) -> List[Registered]:
     declared = {group.name: group for group in plan.output_groups}
-    unknown = sorted(set(handlers) - set(declared))
+    reacting = {group.name for group in plan.reactions.groups}
+    unknown = sorted(set(handlers) - set(declared) - reacting)
     if unknown:
         raise ContractError(
             f"Handlers are registered for unknown output groups {unknown}; "
-            f"declared groups: {list(declared)}"
+            f"declared groups: {list(declared) + sorted(reacting)}"
         )
     for name, handler in handlers.items():
         if not callable(handler):
@@ -468,6 +524,49 @@ def _register_handlers(
     ]
 
     return registered
+
+
+def _start_capture(
+    plan: Any, *, entries: Mapping[str, Entry], operators: Mapping[str, OperatorSlot]
+) -> Optional["Capture"]:
+    """Create the plan's recording; close the constructed operators if that fails."""
+    if plan.recording is None:
+        return None
+
+    capture_module = importlib.import_module(RECORDING_MODULE)
+    try:
+        capture = capture_module.start_capture(plan, inputs=entries)
+    except BaseException:
+        for slot in operators.values():
+            close_operator(slot)
+        raise
+
+    return capture
+
+
+def _with_recorders(
+    plan: Any, registered: List[Registered], *, recorders: Mapping[str, GroupHandler]
+) -> List[Registered]:
+    """Add the engine's recorders; a recorded group needs no host handler."""
+    by_group = {item.group.name: item for item in registered}
+    combined = []
+    for group in plan.output_groups:
+        item = by_group.get(group.name)
+        recorder = recorders.get(group.name)
+        if recorder is None:
+            if item is not None:
+                combined.append(item)
+            continue
+        combined.append(
+            Registered(
+                group=group,
+                handler=item.handler if item is not None else None,
+                prerequisites=frozenset(group.dependencies),
+                recorder=recorder,
+            )
+        )
+
+    return combined
 
 
 def _prepare_source(
@@ -583,6 +682,11 @@ class ActiveRun:
             and by failure.
         admission_bound: Pulses one source may have admitted at once.
         pipeline: Pipeline options; ``None`` processes serially.
+        handlers: Every registered callback by group name; those of handler
+            output groups (``$handlers.<h>.<output>``) receive one result per
+            completed handler run.
+        capture: The plan's open recording; ``None`` when it records nothing.
+        finalize: Called once before the run is done; see ``start_session``.
     """
 
     def __init__(
@@ -597,8 +701,16 @@ class ActiveRun:
         stop_event: threading.Event,
         admission_bound: int = 2,
         pipeline: Optional[PipelineOptions] = None,
+        handlers: Optional[Mapping[str, GroupHandler]] = None,
+        capture: Optional["Capture"] = None,
+        finalize: Optional[Callable[[], None]] = None,
     ):
         self.session = session
+        self._capture = capture
+        self._finalize = finalize
+        self._finished_capture = False
+        self._stop_requested = False
+        self._stopped_early = False
         self.run_id = run_id
         self.stop_event = stop_event
         self._slots = slots
@@ -613,6 +725,7 @@ class ActiveRun:
             else SERIAL
         )
         self._observer = self._coordination.observer(session)
+        self._reactions = self._reaction_runtime(handlers or {})
         self._executor = PulseExecutor(
             session,
             run_id=run_id,
@@ -624,6 +737,7 @@ class ActiveRun:
             fail=self._fail,
             aborting=lambda: self.aborting,
             schedule_end=self._end_domain_later,
+            reactions=self._reactions,
         )
         self._driver: _Driver = (
             _SerialDriver(self)
@@ -661,6 +775,44 @@ class ActiveRun:
         return None
 
     @property
+    def recording_counters(self) -> Mapping[str, Mapping[str, int]]:
+        """Chunks and bytes written per recorded group; empty without ``recording``."""
+        if self._capture is None:
+            return {}
+
+        counters = self._capture.counters
+
+        return counters
+
+    @property
+    def reaction_counters(self) -> Mapping[str, HandlerCounters]:
+        """Per-handler event counters by handler selector; empty without handlers."""
+        if self._reactions is None:
+            return {}
+
+        counters = self._reactions.counters
+
+        return counters
+
+    def reaction_outcomes(
+        self, limit: Optional[int] = None
+    ) -> Tuple[ReactionOutcome, ...]:
+        """Recent handler outcomes, oldest first (a bounded log, metadata only).
+
+        Args:
+            limit: At most this many; every kept one when ``None``.
+
+        Returns:
+            Completed, failed, dropped and discarded events per handler.
+        """
+        if self._reactions is None:
+            return ()
+
+        outcomes = self._reactions.outcomes(limit)
+
+        return outcomes
+
+    @property
     def done(self) -> bool:
         """Whether every source is closed and every admitted pulse handled."""
         return self._done.is_set()
@@ -687,12 +839,113 @@ class ActiveRun:
 
         return "running"
 
+    def machine_state(
+        self, machine: str, *, source_id: Optional[str] = None
+    ) -> Tuple[str, int]:
+        """Read one state machine instance of the session.
+
+        Args:
+            machine: Scoped machine name, e.g. ``"gate"`` or ``"child/gate"``.
+            source_id: Source of a per-source machine; ``None`` for a global one.
+
+        Returns:
+            ``(state, version)``; version 0 before the first transition.
+
+        Raises:
+            ContractError: For an unknown machine or a plan without machines.
+            StateScopeError: For a missing or unexpected ``source_id``.
+        """
+        if self._reactions is None:
+            raise ContractError(
+                f"Unknown state machine {machine!r}: the workflow declares none"
+            )
+
+        current = self._reactions.machine_state(machine, source_id=source_id)
+
+        return current
+
+    def machine_counters(self) -> Mapping[str, Any]:
+        """Applied, ignored and stale attempts per ``<machine>.<transition>``.
+
+        Returns:
+            ``TransitionCounters`` by label, an independent snapshot; empty
+            without state machines.
+        """
+        if self._reactions is None:
+            return {}
+
+        counters = self._reactions.machine_counters()
+
+        return counters
+
+    def signal(
+        self,
+        name: str,
+        *,
+        source_id: Optional[str] = None,
+        sample: Optional[SampleContext] = None,
+        temporal: Optional[TemporalContext] = None,
+        **fields: Any,
+    ) -> None:
+        """Deliver one declared external signal to the run.
+
+        Fixed transitions and synchronous handlers run on the calling thread
+        before this returns; asynchronous handlers are admitted (and may make
+        this wait under ``synchronous`` overflow). While it runs, the calling
+        thread counts as a thread of the run. Accepted signals finish even if
+        ``stop()`` follows; the run is done only after their work drained.
+
+        Args:
+            name: Signal name declared in the workflow's ``signals``.
+            source_id: Source the signal belongs to; never inferred.
+            sample: Full source context; its ``source_id`` must equal
+                ``source_id`` when both are given.
+            temporal: Temporal context the handlers see.
+            **fields: Every declared field of the signal.
+
+        Raises:
+            EventEmissionError: For an undeclared signal, a per-source
+                machine subscription without a source, or a run that is
+                stopping, cancelled, failed or done.
+            EventPayloadError: For missing, unknown or ill-kinded fields.
+            ContractError: When ``sample`` and ``source_id`` disagree.
+            ReactionError: When a synchronous handler failed; the run
+                continues.
+        """
+        if sample is not None and source_id is not None:
+            if sample.source_id != source_id:
+                raise ContractError(
+                    f"signal({name!r}) got source_id={source_id!r} and a sample "
+                    f"of source {sample.source_id!r}; pass one, or equal ones"
+                )
+        elif source_id is not None:
+            sample = SampleContext(source_id=source_id)
+        if self._reactions is None:
+            raise EventEmissionError(
+                f"Signal {name!r} is not declared; the workflow declares no signals"
+            )
+
+        with self._owned.borrow():
+            self._reactions.signal(name, fields, sample=sample, temporal=temporal)
+
     def stop(self) -> None:
         """Close admission and ask the sources to stop; never blocks.
 
-        Admitted pulses are still processed and delivered. Calling it again,
-        or from inside a handler, has no further effect.
+        ``signal()`` is rejected from now on. Admitted pulses, accepted
+        signals and the handler work they cause are still processed and
+        delivered. Calling it again, or from inside a handler, has no
+        further effect.
         """
+        with self._lock:
+            if not self._stop_requested:
+                self._stop_requested = True
+                # A source that returns None once asked to stop also ends;
+                # only sources that ended before this request ended naturally.
+                self._stopped_early = not all(
+                    slot.counters.ended for slot in self._slots.values()
+                )
+        if self._reactions is not None:
+            self._reactions.stop_ingress()
         self._close_admission()
 
     def cancel(self) -> None:
@@ -701,9 +954,10 @@ class ActiveRun:
         Admission closes, admitted pulses that have not started are
         cancelled, running pulses stop at their next step, delivery or
         operator boundary, and operators are closed without finishing.
-        Calls already running are not interrupted. ``wait()`` then returns
-        ``True`` with state ``cancelled``. No effect once the run failed or
-        is done.
+        Calls already running are not interrupted. ``wait()`` returns
+        ``True`` with state ``cancelled`` once they returned, accepted
+        ``signal()`` calls included. No effect once the run failed or is
+        done.
         """
         with self._lock:
             if self._failure is not None or self._done.is_set():
@@ -746,16 +1000,56 @@ class ActiveRun:
         else:
             self._done.wait()
 
+    def _reaction_runtime(
+        self, handlers: Mapping[str, GroupHandler]
+    ) -> Optional[ReactionRuntime]:
+        """The run's reactions, or ``None``: no locks or threads without them."""
+        reactions = self.session.plan.reactions
+        if not (reactions.handlers or reactions.machines or reactions.signals):
+            return None
+
+        callbacks = {
+            group.name: handlers[group.name]
+            for group in reactions.groups
+            if group.name in handlers
+        }
+
+        def deliver(group: str, result: GroupResult) -> None:
+            callbacks[group](result)
+
+        def fail(raised: BaseException, group: Optional[str]) -> None:
+            stage = "handler" if group is not None else "observer"
+            failure = ActiveRunError(
+                f"{type(raised).__name__}: {raised}", stage=stage, group=group
+            )
+            failure.__cause__ = raised
+            self._fail(failure)
+
+        runtime = ReactionRuntime(
+            self.session.plan,
+            sessions=self.session.handler_sessions,
+            session_id=self.session.session_id,
+            managed_state=getattr(self.session, "managed_state", None),
+            observer=getattr(self.session, "reaction_observer", None),
+            owned=self._owned,
+            active_run_id=self.run_id,
+            deliver=deliver if callbacks else None,
+            fail=fail,
+        )
+
+        return runtime
+
     def _launch(self) -> None:
-        """Notify the observer and start the processing, then every reader.
+        """Notify the observer, start the processing and ``started``, then readers.
 
         Before processing starts, sources are constructed but not opened,
         so a failure only closes the constructed operators and releases the
-        registration. Once readers are launching, a failure to start one of
-        them is a failure of the run: the readers that never started are
-        marked done so processing does not wait for them, the started
-        readers stop cooperatively and close their sources, and the run is
-        drained before the attributed failure is raised.
+        registration. Once processing runs, a failure of the ``started``
+        reactions or of starting a reader is a failure of the run: the
+        readers that never started are marked done so processing does not
+        wait for them, the started readers stop cooperatively and close
+        their sources, and the run is drained before the attributed failure
+        is raised.
         """
         try:
             self._observer.on_run_started(
@@ -769,9 +1063,22 @@ class ActiveRun:
                 close_error = close_operator(slot)
                 if close_error is not None:
                     failure.suppressed += (close_error,)
+            self._failure = failure
+            self._settle_resources()
             raise failure from raised
 
         names = list(self._readers)
+        if self._reactions is not None:
+            try:
+                with self._owned.borrow():
+                    self._reactions.system("started")
+            except Exception as raised:
+                self._fail(attributed(raised, stage="start"))
+                for name in names:
+                    self._driver.reader_finished(name)
+                self._done.wait()
+                raise self._failure from raised
+
         for position, name in enumerate(names):
             try:
                 self._readers[name].start()
@@ -925,9 +1232,26 @@ class ActiveRun:
         self._driver.end_domain_later(domain, reason)
 
     def _conclude(self) -> None:
-        """Close every operator, notify ``on_run_finished``, release the session."""
+        """Settle reactions, close every operator, notify, release the session.
+
+        After a completed or stopped run, ``ended`` is published and the
+        reactions drain, cascades included. After a failure or cancellation
+        queued events are discarded. Either way the run waits for every
+        accepted reaction call still running (signal callers' threads
+        included) and joins the workers before it is done and releases the
+        session, so no handler outlives it.
+        """
         try:
+            if self._reactions is not None:
+                if self.aborting:
+                    # Idempotent; the aborting thread may not have reached it yet.
+                    self._reactions.cancel()
+                else:
+                    self._end_reactions()
+                self._reactions.settle()
+                self._reactions.join()
             self._executor.close_operators()
+            self._finish_capture()
             self._observer.on_run_finished(
                 run_id=self.run_id, result=None, error=self._failure
             )
@@ -935,8 +1259,58 @@ class ActiveRun:
             self._fail(attributed(raised, stage="observer"))
         finally:
             self._executor.close_operators()
+            self._settle_resources()
             self._unregister()
             self._done.set()
+
+    def _settle_resources(self) -> None:
+        """Finalize the recording, then release what the caller made for the run."""
+        try:
+            self._finish_capture()
+        finally:
+            if self._finalize is not None:
+                finalize, self._finalize = self._finalize, None
+                finalize()
+
+    def _finish_capture(self) -> None:
+        """Finalize the recording once, with the status the run ended in.
+
+        ``failed`` and ``cancelled`` follow the run; otherwise it is
+        ``stopped`` when ``stop()`` was requested before every source had
+        reached its end, and ``complete`` when they all ended on their own.
+        """
+        if self._capture is None or self._finished_capture:
+            return
+
+        self._finished_capture = True
+        error = None
+        if self._failure is not None:
+            status, error = "failed", str(self._failure)
+        elif self._cancelled:
+            status = "cancelled"
+        elif self._stopped_early:
+            status = "stopped"
+        else:
+            status = "complete"
+        try:
+            self._capture.finish(status, error=error)
+        except Exception as raised:
+            failure = ActiveRunError(
+                f"finishing the recording raised {type(raised).__name__}: {raised}",
+                stage="recording",
+            )
+            failure.__cause__ = raised
+            self._fail(failure)
+
+    def _end_reactions(self) -> None:
+        """Publish ``ended``, then drain; a failure of ``ended`` fails the run."""
+        try:
+            self._reactions.system("ended")
+        except Exception as raised:
+            self._fail(attributed(raised, stage="handler"))
+            return
+
+        self._reactions.drain()
 
     # Shared ---------------------------------------------------------------
 
@@ -955,6 +1329,8 @@ class ActiveRun:
         ``cause`` is the run's failure; ``None`` for a cancellation.
         """
         self._close_admission()
+        if self._reactions is not None:
+            self._reactions.cancel()
         self._coordination.abort(cause)
         self._driver.wake()
 

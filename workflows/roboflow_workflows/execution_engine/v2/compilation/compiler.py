@@ -59,13 +59,24 @@ Implementations: every step records the implementation selected for
 ``CompileOptions.target`` (``targets.select_implementation``; children use the
 same target) and whether it runs ``run`` or its phase graph
 (``plan.step_execution``). Step parameters never take part in the selection,
-and mutation analysis keeps reading the logical block's ``mutates``.
+and mutation analysis keeps reading the logical block's ``mutates``. The root
+``execution`` section (``step_quality`` per step selector, ``quality`` for the
+workflow) and ``CompileOptions.quality`` form each step's ``QualityRequest``;
+handler workflows take the deployment label only.
+
+Demand (which steps the plan keeps for the requested outputs) is applied to
+the finished plan by ``compilation.demand``, after this module returns.
+
+Reactions (``compilation.reactions``) are planned after the steps: every
+handler workflow compiles here to its own passive plan. Root and handler
+plans share one catalogue object, so the kinds of every configured output,
+also inside handler workflows, are added before anything is planned.
 
 Nothing here constructs a block, a source, or executes submitted code.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue, CatalogueEntry
 from roboflow_workflows.execution_engine.v2.compilation.composition import (
@@ -79,11 +90,19 @@ from roboflow_workflows.execution_engine.v2.compilation.definition import (
     WorkflowInputDeclaration,
     WorkflowOutputDeclaration,
 )
+from roboflow_workflows.execution_engine.v2.compilation.machines import (
+    reject_main_flow_setters,
+)
 from roboflow_workflows.execution_engine.v2.compilation.operators import (
     OperatorSite,
     check_operator_kinds,
     plan_operator,
     prepare_operator_sites,
+)
+from roboflow_workflows.execution_engine.v2.compilation.reactions import (
+    collect_handlers,
+    in_handler,
+    plan_reactions,
 )
 from roboflow_workflows.execution_engine.v2.compilation.sources import (
     check_active_definition,
@@ -149,7 +168,10 @@ from roboflow_workflows.execution_engine.v2.plan import (
     operator_step_path,
     step_execution,
 )
-from roboflow_workflows.execution_engine.v2.targets import select_implementation
+from roboflow_workflows.execution_engine.v2.targets import (
+    QualitySettings,
+    select_implementation,
+)
 
 Site = Union["_Site", OperatorSite]
 """A node of the compile graph: a block step or an operator."""
@@ -203,6 +225,7 @@ def compile_composition(
     *,
     catalogue: Catalogue,
     options: CompileOptions,
+    handler_workflow: bool = False,
 ) -> CompiledWorkflow:
     """Plan every block step of a composed workflow.
 
@@ -211,6 +234,8 @@ def compile_composition(
         catalogue: Catalogue with every block the steps name, including
             assembled dynamic blocks.
         options: Compile options, including the mutation conflict policy.
+        handler_workflow: Whether this is a handler workflow, whose
+            ``state_machine_set`` steps the enclosing plan checks.
 
     Returns:
         The validated plan.
@@ -220,7 +245,14 @@ def compile_composition(
     """
     check_active_definition(composition.root)
     sites = _prepare_sites(composition.root, catalogue=catalogue)
-    catalogue = _with_output_kinds(catalogue, sites=sites)
+    handler_sites: List[_Site] = []
+    for handler in collect_handlers(composition.root):
+        try:
+            prepared = _prepare_sites(handler.workflow, catalogue=catalogue)
+        except WorkflowCompileError as error:
+            raise in_handler(error, path=handler.path) from error
+        handler_sites.extend(prepared.values())
+    catalogue = _with_output_kinds(catalogue, sites=[*sites.values(), *handler_sites])
     _check_input_kinds(composition.root, catalogue=catalogue)
     inputs = {
         name: PlannedInput(
@@ -241,6 +273,11 @@ def compile_composition(
     _add_operator_dependencies(nodes)
     _add_child_output_dependencies(nodes, child_gates=child_gates)
     order = _order(nodes)
+    quality = (
+        QualitySettings()
+        if handler_workflow
+        else _quality_settings(composition.root, sites=sites)
+    )
 
     planned: Dict[StepPath, PlannedStep] = {}
     operators: Dict[str, PlannedOperator] = {}
@@ -266,9 +303,12 @@ def compile_composition(
             order=order,
             catalogue=catalogue,
             options=options,
+            quality=quality,
         )
     check_operator_kinds(operators, catalogue=catalogue)
     steps = tuple(planned.values())
+    if not handler_workflow:
+        reject_main_flow_setters(steps)
     _check_child_inputs(composition.root, boundaries=boundaries, catalogue=catalogue)
     outputs = _plan_workflow_outputs(
         composition.root, planned=planned, boundaries=boundaries
@@ -282,6 +322,18 @@ def compile_composition(
         ancestors=_ancestor_closure(nodes, order=order),
         boundaries=boundaries.records,
         options=options,
+        active=bool(sources),
+    )
+    reactions = plan_reactions(
+        composition.root,
+        steps=planned,
+        catalogue=catalogue,
+        compile_handler=lambda scope: compile_composition(
+            Composition(root=scope, dynamic_definitions=(), warnings=()),
+            catalogue=catalogue,
+            options=options,
+            handler_workflow=True,
+        ),
         active=bool(sources),
     )
 
@@ -298,6 +350,8 @@ def compile_composition(
             sources=sources,
             output_groups=output_groups,
             operators=operators,
+            reactions=reactions,
+            quality=quality,
         )
     except ContractError as error:
         raise WorkflowCompileError(f"Compiled plan is inconsistent: {error}") from error
@@ -305,9 +359,32 @@ def compile_composition(
     return plan
 
 
-def _with_output_kinds(
-    catalogue: Catalogue, *, sites: Mapping[StepPath, _Site]
-) -> Catalogue:
+def _quality_settings(
+    root: Scope, *, sites: Mapping[StepPath, _Site]
+) -> QualitySettings:
+    """Resolve the root ``execution`` section's step selectors to block steps."""
+    declared = root.workflow.execution
+    if declared is None:
+        return QualitySettings()
+
+    steps: Dict[StepPath, str] = {}
+    for selector, label in declared.step_quality.items():
+        path = tuple(selector[len("$steps.") :].split("/"))
+        if path not in sites:
+            known = [format_step_path(known_path) for known_path in sites]
+            raise SelectorError(
+                f"execution.step_quality names {selector!r}, which is not a block "
+                f"step of the workflow (nested workflow steps set quality per "
+                f"block step inside them); block steps: {known}",
+                field_path=("execution", "step_quality", selector),
+            )
+        steps[path] = label
+    settings = QualitySettings(workflow=declared.quality, steps=steps)
+
+    return settings
+
+
+def _with_output_kinds(catalogue: Catalogue, *, sites: Iterable[_Site]) -> Catalogue:
     """Add the kinds of configured outputs to a fresh catalogue for the plan.
 
     ``describe_outputs`` may return ``Kind`` objects the catalogue never saw.
@@ -324,7 +401,7 @@ def _with_output_kinds(
         KindMismatchError: When two different kinds share a name.
     """
     added: Dict[str, Tuple[Kind, _Site]] = {}
-    for site in sites.values():
+    for site in sites:
         for output in site.outputs.values():
             for kind in output.kinds:
                 previous = added.get(kind.name)
@@ -504,9 +581,13 @@ def _plan_step(
     order: Tuple[StepPath, ...],
     catalogue: Catalogue,
     options: CompileOptions,
+    quality: QualitySettings,
 ) -> PlannedStep:
     implementation = select_implementation(
-        site.entry.spec, target=options.target, step_path=site.path
+        site.entry.spec,
+        target=options.target,
+        step_path=site.path,
+        quality=quality.request_for(site.path, deployment=options.quality),
     )
     bound = [
         _bind(

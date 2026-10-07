@@ -33,11 +33,12 @@ pipelined run passes its ``coordination``; each pulse then carries the ticket
 
 import time
 from fractions import Fraction
-from typing import Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from roboflow_workflows.execution_engine.v2.data import (
     EntryLayout,
     EntryMetadata,
+    Index,
     InputValue,
     SampleContext,
     TemporalContext,
@@ -77,7 +78,12 @@ from roboflow_workflows.execution_engine.v2.plan import (
     PulseKey,
     SourcePort,
 )
-from roboflow_workflows.execution_engine.v2.sources import Emission
+from roboflow_workflows.execution_engine.v2.reactions.dispatch import Reactions
+from roboflow_workflows.execution_engine.v2.sources import (
+    Emission,
+    _ReplaySource,
+    _RestoredPort,
+)
 
 ENGINE_CLOCK_ID = "engine.monotonic"
 """Clock of the observation timestamps the runtime stamps itself."""
@@ -107,6 +113,7 @@ def begin_pulse(
     inputs: Mapping[str, Entry],
     observed: Optional[Timestamp] = None,
     coordination: Coordination = SERIAL,
+    reactions: Optional[Reactions] = None,
 ) -> RunState:
     """Create the run state of one pulse from an emission.
 
@@ -118,6 +125,7 @@ def begin_pulse(
         observed: When the runtime received the emission; the engine clock
             now when omitted.
         coordination: The run's coordination; ``SERIAL`` gates nothing.
+        reactions: The active run's reaction runtime; ``None`` without handlers.
 
     Returns:
         A fresh run state holding the static inputs and the emitted ports;
@@ -142,6 +150,7 @@ def begin_pulse(
         ports=ports,
         coordination=coordination,
         ticket=pulse_ticket(pulse),
+        reactions=reactions,
     )
     run.record(
         "pulse_started",
@@ -201,6 +210,10 @@ def port_entries(
             f"{sorted(planned.outputs)}"
         )
 
+    if issubclass(planned.spec.source_class, _ReplaySource):
+        restored = _restored_entries(plan, planned, emission=emission)
+        return restored
+
     context = _pulse_metadata(planned, emission=emission, observed=observed)
     entries: Dict[SourcePort, Entry] = {}
     for name, port in planned.outputs.items():
@@ -236,6 +249,96 @@ def port_entries(
     return entries
 
 
+def _restored_entries(
+    plan: CompiledWorkflow, planned: PlannedSource, *, emission: Emission
+) -> Dict[SourcePort, Entry]:
+    """Entries of a replay pulse: each port exactly as it was recorded.
+
+    The recorded context replaces the pulse context, and recorded filtered
+    positions stay filtered under their original indices. Ports of one
+    recorded group need not share structure along shared axes: they came
+    from different steps.
+    """
+    entries: Dict[SourcePort, Entry] = {}
+    for name, port in planned.outputs.items():
+        key = SourcePort(source=planned.name, output=name)
+        if name not in emission.data:
+            entries[key] = absent_entry(port.layout)
+            continue
+
+        location = f"Replayed port {key.describe()}"
+        supplied = emission.data[name]
+        if not isinstance(supplied, _RestoredPort):
+            raise ContractError(
+                f"{location}: a replay source emits restored ports, got "
+                f"{type(supplied).__name__}"
+            )
+        try:
+            entry = restored_entry(supplied, layout=port.layout)
+        except ContractError as error:
+            raise ContractError(f"{location}: {error}") from error
+        kinds = kinds_named(plan, port.kinds)
+        for index in sorted(entry.values):
+            where = f"{location} at index {list(index)}" if index else location
+            check_payload(entry.values[index], kinds=kinds, location=where)
+        entries[key] = entry
+
+    return entries
+
+
+def restored_entry(restored: _RestoredPort, *, layout: EntryLayout) -> Entry:
+    """Rebuild a delivered entry from its surviving tree and filtered paths.
+
+    A delivered tree keeps only unfiltered nodes under their original
+    indices; the minimal filtered paths name the rest. Every filtered node
+    and its ancestors become known children again, in index order, so the
+    entry answers ``is_filtered`` as the original did.
+
+    Args:
+        restored: Recorded tree, filtered paths and context of one port.
+        layout: Planned layout of the port.
+
+    Returns:
+        The entry.
+
+    Raises:
+        ContractError: When the tree does not match the layout, the metadata
+            addresses a missing position or a filtered path is deeper than
+            the layout.
+    """
+    children: Dict[Index, Tuple[Index, ...]] = {}
+    values: Dict[Index, Any] = {}
+    if restored.data is not None or not restored.filtered:
+        validate_entry(restored.data, layout=layout, metadata=restored.metadata)
+        entry = entry_from_tree(
+            restored.data, layout=layout, metadata=restored.metadata
+        )
+        children.update(entry.children)
+        values.update(entry.values)
+
+    known = {node: set(indices) for node, indices in children.items()}
+    for path in restored.filtered:
+        if len(path) > layout.depth:
+            raise ContractError(
+                f"filtered path {list(path)} is deeper than axes "
+                f"{list(layout.axis_ids)}"
+            )
+        for length in range(len(path)):
+            known.setdefault(path[:length], set()).add(path[: length + 1])
+    restored_children = {
+        node: tuple(sorted(indices)) for node, indices in known.items()
+    }
+    entry = Entry(
+        layout=layout,
+        metadata=restored.metadata,
+        children=restored_children,
+        values=values,
+        filtered=frozenset(restored.filtered),
+    )
+
+    return entry
+
+
 def begin_operator_pulse(
     session: ExecutionSession,
     *,
@@ -243,6 +346,7 @@ def begin_operator_pulse(
     emission: OperatorPulse,
     inputs: Mapping[str, Entry],
     coordination: Coordination = SERIAL,
+    reactions: Optional[Reactions] = None,
 ) -> RunState:
     """Create the run state of one pulse an operator emitted.
 
@@ -252,6 +356,7 @@ def begin_operator_pulse(
         emission: What the operator emitted.
         inputs: Static input entries prepared once per active run.
         coordination: The run's coordination; ``SERIAL`` gates nothing.
+        reactions: The active run's reaction runtime; ``None`` without handlers.
 
     Returns:
         A fresh run state holding the static inputs and the operator's
@@ -272,6 +377,7 @@ def begin_operator_pulse(
         causes=emission.causes,
         coordination=coordination,
         ticket=pulse_ticket(pulse),
+        reactions=reactions,
     )
     run.record(
         "pulse_started",

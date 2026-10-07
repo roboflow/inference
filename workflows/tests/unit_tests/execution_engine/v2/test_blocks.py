@@ -648,6 +648,11 @@ class TestCatalogue:
             "v2/continue_if",
             "v2/best_frame",
             "v2/top_k_brightest",
+            "v2/state_get",
+            "v2/state_set",
+            "v2/state_increment",
+            "v2/state_compare_and_set",
+            "v2/state_machine_set",
         )
         assert catalogue.entry("v2/crop").spec is spec_of(CropBlock)
         assert catalogue.entry("v2/static_crop").spec is spec_of(StaticCropBlock)

@@ -23,6 +23,7 @@ asynchronous device they would only time the host side of each call.
 """
 
 from collections import OrderedDict
+from functools import lru_cache
 from time import perf_counter
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
@@ -78,6 +79,11 @@ LABEL_POSITION = sv.Position.TOP_LEFT
 # Sprites are keyed by label text, color and clip window. A stream keeps a
 # small vocabulary (class x two-digit confidence), so this bound is rarely hit.
 SPRITE_CACHE_SIZE = 256
+
+# Label size is pure in (text, scale, thickness, padding) and only read after,
+# so a repeated label skips its cv2.getTextSize calls (one per line plus "Tg").
+MEASUREMENT_CACHE_SIZE = 4096
+_cached_measure_label = lru_cache(maxsize=MEASUREMENT_CACHE_SIZE)(_measure_label)
 
 
 class _NetworkInput(NamedTuple):
@@ -370,7 +376,9 @@ class LabelVisualization(Block):
         # crosses the frame edge, a variant whose canvas ends at that edge
         # (cv2 anti-aliases clipped strokes differently). None: fully outside.
         frame_h, frame_w = frame_hw
-        measurement = _measure_label(label, TEXT_SCALE, TEXT_THICKNESS, TEXT_PADDING)
+        measurement = _cached_measure_label(
+            label, TEXT_SCALE, TEXT_THICKNESS, TEXT_PADDING
+        )
         background_xyxy = resolve_text_background_xyxy(
             center_coordinates=anchor,
             text_wh=(measurement.width_padded, measurement.height_padded),

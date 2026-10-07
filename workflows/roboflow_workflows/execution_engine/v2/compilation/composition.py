@@ -22,6 +22,17 @@ copied for each use, so neither the caller's nor the resolver's data is
 mutated. A reference repeating on its ancestor path is a cycle; two uses of
 one child (a diamond) are valid. The cycle, depth and count checks run before
 a fetch, as in V1.
+
+Every handler's workflow is composed here too, as the root scope of its own
+passive plan (paths start at ``()``)::
+
+    scope ("child",)  handlers["notify"] ──▶ ComposedHandler
+                                               path     ("child", "notify")
+                                               workflow Scope (), own steps
+
+A handler workflow declares no sources, operators, output groups, handlers,
+signals, state machines or state, also in its nested workflows. Only the root
+declares signals; any scope declares handlers, state machines and state.
 """
 
 import copy
@@ -41,7 +52,9 @@ from typing import (
 )
 
 from roboflow_workflows.execution_engine.v2.compilation.definition import (
+    SUPPORTED_VERSION,
     BlockStepDeclaration,
+    HandlerDeclaration,
     NestedStepDeclaration,
     WorkflowDeclaration,
     WorkflowInputDeclaration,
@@ -143,6 +156,7 @@ class Scope:
         bindings: For a child: child input name to the parent's raw binding,
             a selector string or a literal.
         children: Nested step name to its child scope.
+        handlers: Handler name to its composed handler.
     """
 
     path: StepPath
@@ -150,6 +164,7 @@ class Scope:
     parent: Optional["Scope"] = None
     bindings: Mapping[str, Any] = field(default_factory=dict)
     children: Dict[str, "Scope"] = field(default_factory=dict)
+    handlers: Dict[str, "ComposedHandler"] = field(default_factory=dict)
     _constants: Dict[str, Constant] = field(default_factory=dict, repr=False)
 
     def step_path(self, name: str) -> StepPath:
@@ -174,6 +189,17 @@ class Scope:
                 yield from self.children[step.name].block_steps()
                 continue
             yield self, step
+
+    def scopes(self) -> Iterator["Scope"]:
+        """Yield this scope, then every child scope where it is declared.
+
+        Yields:
+            The scopes of this subtree, without handler workflows.
+        """
+        yield self
+        for step in self.workflow.steps:
+            if isinstance(step, NestedStepDeclaration):
+                yield from self.children[step.name].scopes()
 
     def resolve_data(
         self,
@@ -430,6 +456,21 @@ class Scope:
 
 
 @dataclass(frozen=True)
+class ComposedHandler:
+    """A handler with its composed workflow.
+
+    Args:
+        declaration: The parsed handler.
+        path: Declaring scope path plus the handler name.
+        workflow: Root scope of the handler's own workflow.
+    """
+
+    declaration: HandlerDeclaration
+    path: StepPath
+    workflow: Scope
+
+
+@dataclass(frozen=True)
 class DynamicDefinition:
     """One collected ``dynamic_blocks_definitions`` entry.
 
@@ -464,6 +505,7 @@ def compose_workflow(
     *,
     options: CompileOptions,
     reference_resolver: Optional[ReferenceResolver],
+    location: str = "",
 ) -> Composition:
     """Parse a definition and compose its nested workflows into scopes.
 
@@ -478,6 +520,10 @@ def compose_workflow(
         options: Nesting depth and count limits.
         reference_resolver: Returns saved workflow definitions; needed only
             when the definition references saved workflows.
+        location: Definition path prefix of the root for messages; ``""``
+            for a root definition, ``"retrospective.workflow."`` for the
+            workflow a recording is replayed into. Root-only sections are
+            rejected under a prefix.
 
     Returns:
         The scope tree, dynamic definitions and warnings.
@@ -489,7 +535,10 @@ def compose_workflow(
         CycleError: When saved references form a cycle.
     """
     composer = _Composer(options=options, resolver=reference_resolver)
-    root_declaration = parse_workflow(_detached(definition, what="definition"))
+    root_declaration = parse_workflow(
+        _detached(definition, what=location.rstrip(".") or "definition"),
+        location=location,
+    )
     root = composer.compose(root_declaration, path=(), ancestors=(), depth=0)
     dynamic_definitions, warnings = _apply_duplicate_policy(
         composer.dynamic_definitions
@@ -515,6 +564,8 @@ class _Composer:
         self._resolver = resolver
         self._fetched: Dict[WorkflowReference, Mapping[str, Any]] = {}
         self._nested_count = 0
+        # (location, path) of the handler whose workflow is being composed.
+        self._handlers: List[Tuple[str, StepPath]] = []
         self.dynamic_definitions: List[DynamicDefinition] = []
 
     def compose(
@@ -527,6 +578,10 @@ class _Composer:
         parent: Optional[Scope] = None,
         bindings: Optional[Mapping[str, Any]] = None,
     ) -> Scope:
+        if self._handlers:
+            _reject_handler_reactions(
+                declaration, path=path, handler=self._handlers[-1]
+            )
         scope = Scope(
             path=path, workflow=declaration, parent=parent, bindings=bindings or {}
         )
@@ -542,8 +597,59 @@ class _Composer:
                 scope.children[step.name] = self._compose_child(
                     step, parent=scope, ancestors=ancestors, depth=depth
                 )
+        for handler in declaration.handlers:
+            scope.handlers[handler.name] = self._compose_handler(
+                handler, scope=scope, ancestors=ancestors, depth=depth
+            )
 
         return scope
+
+    def _compose_handler(
+        self,
+        handler: HandlerDeclaration,
+        *,
+        scope: Scope,
+        ancestors: Tuple[WorkflowReference, ...],
+        depth: int,
+    ) -> ComposedHandler:
+        path = scope.step_path(handler.name)
+        where = f"{handler.location} ($handlers.{'/'.join(path)})"
+        raw = dict(_detached(handler.workflow, what=f"{where} workflow"))
+        # The draft omits the version of a handler workflow: it is always V2.
+        raw.setdefault("version", SUPPORTED_VERSION)
+        declaration = parse_workflow(raw, location=f"{handler.location}.workflow.")
+        if not declaration.steps:
+            raise NestedWorkflowError(
+                f"{where}: handler workflow has no steps", step_path=path
+            )
+        declared = [
+            section
+            for section, present in (
+                ("sources", declaration.sources),
+                ("operators", declaration.operators),
+                ("output groups", declaration.output_groups),
+                ("handler output groups", declaration.handler_groups),
+            )
+            if present
+        ]
+        if declared:
+            raise NestedWorkflowError(
+                f"{where}: a handler workflow is passive and returns flat JsonField "
+                f"outputs per event; it declares {declared}",
+                step_path=path,
+            )
+
+        self._handlers.append((where, path))
+        try:
+            workflow = self.compose(
+                declaration, path=(), ancestors=ancestors, depth=depth
+            )
+        finally:
+            self._handlers.pop()
+
+        composed = ComposedHandler(declaration=handler, path=path, workflow=workflow)
+
+        return composed
 
     def _compose_child(
         self,
@@ -609,10 +715,20 @@ class _Composer:
                 "parameter_bindings",
                 step_path=path,
             )
-        if declaration.output_groups:
+        if declaration.output_groups or declaration.handler_groups:
             raise NestedWorkflowError(
                 f"{where}: nested workflow declares output groups; a nested "
-                "workflow exposes flat JsonField outputs to its parent",
+                "workflow exposes flat JsonField outputs to its parent. The root "
+                "can anchor a group at a child's handler as "
+                "$handlers.<child>/<handler>",
+                step_path=path,
+            )
+        if declaration.signals:
+            raise NestedWorkflowError(
+                f"{where}: nested workflow declares signals "
+                f"{[signal.name for signal in declaration.signals]}; only the root "
+                "workflow declares signals, and handlers of every scope can "
+                "subscribe to them as $signals.<name>",
                 step_path=path,
             )
         _check_bindings(step, declaration=declaration, path=path)
@@ -654,6 +770,36 @@ class _Composer:
         definition = _detached(self._fetched[reference], what=what)
 
         return definition
+
+
+def _reject_handler_reactions(
+    declaration: WorkflowDeclaration,
+    *,
+    path: StepPath,
+    handler: Tuple[str, StepPath],
+) -> None:
+    reactions = [
+        section
+        for section, present in (
+            ("handlers", declaration.handlers),
+            ("signals", declaration.signals),
+            ("state_machines", declaration.machines),
+            ("state", declaration.state),
+        )
+        if present
+    ]
+    if not reactions:
+        return
+
+    where, handler_path = handler
+    inside = f" (in $steps.{'/'.join(path)})" if path else ""
+    raise NestedWorkflowError(
+        f"{where}: handler workflow declares {reactions}{inside}; handler workflows "
+        "cannot react to events in this version. Declare handlers, signals, "
+        "state machines and state in the workflow that declares "
+        f"$handlers.{handler_path[-1]}",
+        step_path=handler_path,
+    )
 
 
 def _check_bindings(

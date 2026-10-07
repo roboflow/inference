@@ -47,12 +47,15 @@ def run_nms_for_object_detection(
             mask = class_conf > conf_thresh.to(output.device)[class_ids]
         else:
             mask = class_conf > conf_thresh
-        if not torch.any(mask):
+        # One compaction (one host sync on CUDA) shared by all three gathers;
+        # nonzero keeps ascending order, as boolean-mask indexing does.
+        passing = mask.nonzero().squeeze(1)
+        if passing.numel() == 0:
             results.append(torch.zeros((0, 6), device=output.device))
             continue
-        bboxes = boxes[b][:, mask].T  # (num, 4) -- selects and then transposes
-        class_conf = class_conf[mask]
-        class_ids = class_ids[mask]
+        bboxes = boxes[b].index_select(1, passing).T  # (num, 4)
+        class_conf = class_conf.index_select(0, passing)
+        class_ids = class_ids.index_select(0, passing)
         if box_format == "xywh":
             # Vectorized [x, y, w, h] -> [x1, y1, x2, y2]
             xy = bboxes[:, :2]

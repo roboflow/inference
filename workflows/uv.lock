@@ -3799,6 +3799,18 @@ wheels = [
 ]
 
 [[package]]
+name = "redis"
+version = "5.0.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "async-timeout", marker = "python_full_version < '3.11.3'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/48/10/defc227d65ea9c2ff5244645870859865cba34da7373477c8376629746ec/redis-5.0.8.tar.gz", hash = "sha256:0c5b10d387568dfe0698c6fad6615750c24170e548ca2deac10c649d463e9870", size = 4595651, upload-time = "2024-07-30T14:11:52.137Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c5/d1/19a9c76811757684a0f74adc25765c8a901d67f9f6472ac9d57c844a23c8/redis-5.0.8-py3-none-any.whl", hash = "sha256:56134ee08ea909106090934adc36f65c9bcbbaecea5b21ba704ba6fb561f8eb4", size = 255608, upload-time = "2024-07-30T14:11:49.541Z" },
+]
+
+[[package]]
 name = "regex"
 version = "2026.9.10"
 source = { registry = "https://pypi.org/simple" }
@@ -4059,6 +4071,9 @@ enterprise = [
     { name = "pylogix" },
     { name = "pymodbus" },
 ]
+redis = [
+    { name = "redis" },
+]
 test = [
     { name = "pytest" },
     { name = "requests-mock" },
@@ -4096,6 +4111,7 @@ requires-dist = [
     { name = "pymodbus", marker = "extra == 'enterprise'", specifier = ">=3.6.9,<=3.8.3" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3,<10.0.0" },
     { name = "qrcode", specifier = "~=8.0.0" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0.8,<6" },
     { name = "requests", specifier = ">=2.33.0,<3.0.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
     { name = "scikit-image", specifier = ">=0.19.0,<=0.25.2" },
@@ -4114,7 +4130,7 @@ requires-dist = [
     { name = "zxing-cpp", marker = "python_full_version < '3.13'", specifier = "~=2.2.0" },
     { name = "zxing-cpp", marker = "python_full_version >= '3.13'", specifier = "==2.3.0" },
 ]
-provides-extras = ["enterprise", "test"]
+provides-extras = ["redis", "enterprise", "test"]
 
 [[package]]
 name = "s3transfer"

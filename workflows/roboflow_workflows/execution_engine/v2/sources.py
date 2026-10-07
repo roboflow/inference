@@ -51,6 +51,12 @@ a partial open. Interrupting a blocked native read is not promised.
 
 Emitted payloads are handed over to the engine: a source must not mutate or
 reuse them after ``read`` returns.
+
+Replay of a recording is the one exception to these port rules, and it is
+private to the engine (``_ReplaySource``): the replay source of a
+retrospective workflow restores recorded ports exactly as they were
+delivered, time axes and filtered positions included. No other source can
+declare a time axis or emit filtered positions.
 """
 
 import inspect
@@ -63,6 +69,8 @@ from roboflow_workflows.execution_engine.v2._validation import ParamsValidator
 from roboflow_workflows.execution_engine.v2.data import (
     Axis,
     EntryLayout,
+    EntryMetadata,
+    Index,
     InputValue,
     TimeCoverage,
     TimeSpan,
@@ -154,6 +162,30 @@ class SourceOutput:
         layout: EntryLayout = EntryLayout(),
         description: str = "",
     ):
+        self._declare(kinds, layout=layout, description=description, restored=False)
+
+    @classmethod
+    def _restored(cls, *kinds: Kind, layout: EntryLayout) -> "SourceOutput":
+        """Engine-private: a ``_ReplaySource`` port restoring a recorded layout.
+
+        Unlike ``SourceOutput(...)``, the layout may keep a recorded time axis.
+        """
+        output = cls.__new__(cls)
+        output._declare(
+            kinds, layout=layout, description="Restored from a recording", restored=True
+        )
+
+        return output
+
+    def _declare(
+        self,
+        kinds: Tuple[Kind, ...],
+        *,
+        layout: EntryLayout,
+        description: str,
+        restored: bool,
+    ) -> None:
+        """Validate and set the declaration; only a restored layout keeps time."""
         try:
             normalized_kinds = normalize_kinds(kinds, context="SourceOutput")
         except ContractError as error:
@@ -162,7 +194,7 @@ class SourceOutput:
             raise SourceDeclarationError(
                 f"SourceOutput layout must be an EntryLayout, got {layout!r}"
             )
-        if layout.has_time:
+        if layout.has_time and not restored:
             raise SourceDeclarationError(
                 "SourceOutput layout cannot contain a time axis; a source emits "
                 "individual samples and temporal grouping is not supported here"
@@ -606,6 +638,38 @@ def _validate_source_outputs(declared: Any, *, fail) -> Mapping[str, SourceOutpu
     frozen_outputs = MappingProxyType(outputs)
 
     return frozen_outputs
+
+
+class _ReplaySource(Source):
+    """Engine-private base of the replay source of a retrospective workflow.
+
+    A new source creates new samples, so it can neither declare a time axis
+    nor emit filtered positions. A replay source creates nothing: it restores
+    ports that a run already delivered, time axes and filtered positions
+    included. Its ports are declared with ``SourceOutput._restored`` and it
+    emits ``_RestoredPort`` values; the engine builds their entries as
+    recorded. Only ``recording.replay`` subclasses it.
+    """
+
+
+@dataclass(frozen=True)
+class _RestoredPort:
+    """One recorded port value, restored with its known structure.
+
+    Only a ``_ReplaySource`` emits it; an ordinary source's payload is never
+    read as one.
+
+    Args:
+        data: Surviving payload tree as delivered; ``None`` when nothing
+            survived (``filtered`` then holds every known filtered node, or
+            ``((),)`` for a port filtered as a whole).
+        filtered: Minimal filtered index paths as delivered.
+        metadata: Indexed context as delivered, explicit ``None`` included.
+    """
+
+    data: Any
+    filtered: Tuple[Index, ...]
+    metadata: EntryMetadata
 
 
 def _validate_lifecycle(

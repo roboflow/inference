@@ -15,6 +15,14 @@ workers. The algorithm is the same; the run's ``Coordination`` and ``Ticket``
 make its steps take their turn at shared stages, so different runs may be at
 different steps at once. Serially, ``SERIAL`` gates nothing.
 
+A plan with event handlers or state machines runs them through the
+session's reaction runtime (``reactions.runtime``): passive runs support
+synchronous handlers only. A handler's own plan runs with ``run_handler``,
+serially on the calling thread, carrying the handled event as the run's cause
+and origin, its handler identity (for ``state_machine_set`` steps) and the
+parent's reaction runtime. Events of the handler plan's own steps reach no
+subscriber.
+
 The session owns the block instances, so state persists across runs of one
 session; every run starts with fresh entries. Futures are resolved before any
 dependent step and before the result is returned (ready boundary); no
@@ -25,6 +33,7 @@ import uuid
 from typing import Any, Callable, Dict, Mapping, Optional
 
 from roboflow_workflows.execution_engine.v2.context import use_pulse_run_id
+from roboflow_workflows.execution_engine.v2.errors import StepPath
 from roboflow_workflows.execution_engine.v2.execution.entries import Entry
 from roboflow_workflows.execution_engine.v2.execution.inputs import prepare_inputs
 from roboflow_workflows.execution_engine.v2.execution.outputs import (
@@ -42,8 +51,15 @@ from roboflow_workflows.execution_engine.v2.pipelining.stages import (
     Ticket,
 )
 from roboflow_workflows.execution_engine.v2.plan import ExecutionSession, RunResult
+from roboflow_workflows.execution_engine.v2.reactions.dispatch import (
+    EventCause,
+    Reactions,
+)
+from roboflow_workflows.execution_engine.v2.reactions.runtime import (
+    session_reactions,
+)
 
-__all__ = ["build_rows", "run_prepared", "run_session"]
+__all__ = ["build_rows", "run_handler", "run_prepared", "run_session"]
 
 
 def run_session(session: ExecutionSession, *, inputs: Mapping[str, Any]) -> RunResult:
@@ -112,6 +128,48 @@ def run_prepared(
     return result
 
 
+def run_handler(
+    session: ExecutionSession,
+    *,
+    inputs: Mapping[str, Any],
+    cause: EventCause,
+    handler: StepPath,
+    reactions: Reactions,
+) -> RunResult:
+    """Execute a handler plan once for one event (reaction runtime only).
+
+    The caller guarantees that one event at a time runs on the session.
+
+    Args:
+        session: Persistent session of the handler plan.
+        inputs: Handler inputs, each an ``InputValue`` carrying the event's
+            source and temporal context.
+        cause: The handled event; calls read it as ``execution_context.cause``
+            and fall back to its contexts when their arguments carry none.
+        handler: Path of the handler in the parent plan.
+        reactions: The parent's reaction runtime, used by machine setters.
+
+    Returns:
+        The handler run's result.
+
+    Raises:
+        WorkflowInputError: When inputs are invalid.
+        StepExecutionError: When a handler step fails.
+    """
+    result = _run(
+        session,
+        entries=lambda: prepare_inputs(session.plan, inputs),
+        coordination=SERIAL,
+        ticket=None,
+        aborted=None,
+        cause=cause,
+        handler=handler,
+        reactions=reactions,
+    )
+
+    return result
+
+
 def _run(
     session: ExecutionSession,
     *,
@@ -119,7 +177,12 @@ def _run(
     coordination: Coordination,
     ticket: Optional[Ticket],
     aborted: Optional[Callable[[], Exception]],
+    cause: Optional[EventCause] = None,
+    handler: Optional[StepPath] = None,
+    reactions: Optional[Reactions] = None,
 ) -> RunResult:
+    if handler is None:
+        reactions = session_reactions(session)
     run_id = uuid.uuid4().hex
     observer = coordination.observer(session)
     with use_pulse_run_id(run_id):
@@ -131,6 +194,10 @@ def _run(
                 inputs=entries(),
                 coordination=coordination,
                 ticket=ticket,
+                reactions=reactions,
+                cause=cause,
+                handler=handler,
+                origin=None if cause is None else (cause.sample, cause.temporal),
             )
             run.record("run_started", run_id=run_id, session_id=session.session_id)
             for step in session.plan.steps:

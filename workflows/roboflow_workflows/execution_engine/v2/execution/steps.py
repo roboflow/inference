@@ -27,6 +27,12 @@
               skipped and denied indices as filtered positions; a
               ``selected`` output resolves Selected/Selection to the chosen
               members' payloads, and member policies take their contexts
+    demand    every call learns the step's wanted outputs (plan.demand) in
+              its ExecutionContext; ``self.wants(name)`` answers from them
+              and records the question. A result may leave out exactly the
+              outputs the call asked about and was told nobody wants; such
+              an output gets no entry (nobody reads it) and is traced as
+              omitted. Any other missing key is still an error
 
 Skipped invocations, denied ones included, run zero times and produce no
 placeholder values: their positions are filtered in every output.
@@ -53,7 +59,13 @@ from roboflow_workflows.execution_engine.v2.context import (
     ExecutionContext,
     use_execution_context,
 )
-from roboflow_workflows.execution_engine.v2.data import Batch, EntryMetadata, Index
+from roboflow_workflows.execution_engine.v2.data import (
+    Batch,
+    EntryMetadata,
+    Index,
+    SampleContext,
+    TemporalContext,
+)
 from roboflow_workflows.execution_engine.v2.declaration import (
     MEMBER_POLICIES,
     SAME_PAYLOAD,
@@ -112,6 +124,12 @@ from roboflow_workflows.execution_engine.v2.plan import (
     Source,
     SourcePort,
 )
+from roboflow_workflows.execution_engine.v2.reactions.dispatch import (
+    EventCause,
+    Reactions,
+    emit_event,
+    has_subscribers,
+)
 from roboflow_workflows.execution_engine.v2.readiness import resolve_futures
 
 
@@ -136,6 +154,16 @@ class RunState:
             runs; ``SERIAL`` unless the run is pipelined.
         ticket: The run's place in the per-domain stage order; required
             by a pipelined coordination, ``None`` serially.
+        reactions: Reaction runtime receiving the run's emitted events;
+            ``None`` when the plan has no handlers or transitions. In a
+            handler run, the parent run's runtime (machine setters only).
+        cause: The event a handler run handles; ``None`` otherwise.
+        handler: Path of the handler whose plan this run executes; ``None``
+            in the main flow. Its steps' own events reach no subscriber, so
+            a handler step never matches a main-flow step of the same name.
+        origin: Source and temporal context of the run's origin (the source
+            pulse, or the handled event), used by a call whose arguments
+            carry none; ``None`` when the run has no single origin.
     """
 
     session: ExecutionSession
@@ -146,6 +174,10 @@ class RunState:
     causes: Tuple[PulseKey, ...] = ()
     coordination: Coordination = SERIAL
     ticket: Optional[Ticket] = None
+    reactions: Optional[Reactions] = None
+    cause: Optional[EventCause] = None
+    handler: Optional[StepPath] = None
+    origin: Optional[Tuple[Optional[SampleContext], Optional[TemporalContext]]] = None
     outputs: Dict[Tuple[StepPath, str], Entry] = field(default_factory=dict)
     decisions: Dict[StepPath, Entry] = field(default_factory=dict)
     constants: Dict[int, Tuple[Constant, Entry]] = field(default_factory=dict)
@@ -331,6 +363,24 @@ class RunState:
         """
         self.trace.append({"event": event, **details})
 
+    def wanted_outputs(self, step: PlannedStep) -> FrozenSet[str]:
+        """Return the outputs of ``step`` some reader of this run demands.
+
+        This is the per-run seam for live controls: a control snapshot
+        narrows the plan's compile-time demand here, never on block
+        instances. Today it is the plan's demand record (every output for a
+        hand-built plan without one).
+
+        Args:
+            step: The step about to be called.
+
+        Returns:
+            The demanded output names.
+        """
+        wanted = self.plan.wanted_outputs(step.path)
+
+        return wanted
+
 
 @dataclass(frozen=True)
 class _Structure:
@@ -407,9 +457,16 @@ def _execute_step(run: RunState, step: PlannedStep) -> None:
     _validate_invocations(run, step, leaves=leaves)
     calls = _prepare_calls(step, admitted=admitted, leaves=leaves, entries=entries)
     stages = run.coordination.step_stages(run, step, calls=len(calls))
+    scope = _StepScope(run, step, leaves=leaves, entries=entries)
+    wanted = run.wanted_outputs(step)
     results: Dict[Index, Any] = {}
+    queried: Dict[Index, FrozenSet[str]] = {}
     for call in calls:
-        results.update(_invoke(run, step, call, stages=stages))
+        split, asked = _invoke(
+            run, step, call, stages=stages, scope=scope, wanted=wanted
+        )
+        results.update(split)
+        queried.update(dict.fromkeys(split, asked))
     stages.finish()
 
     _record_outputs(
@@ -420,6 +477,8 @@ def _execute_step(run: RunState, step: PlannedStep) -> None:
         skipped=skipped,
         leaves=leaves,
         entries=entries,
+        wanted=wanted,
+        queried=queried,
     )
     observer.on_step_finished(
         step=step.path, invocations=len(calls), skipped=len(skipped)
@@ -596,10 +655,159 @@ class _BlockFailure(Exception):
         self.phase = phase
 
 
+class _StepScope:
+    """Source/time lookup and event emission for the calls of one step.
+
+    Nothing is resolved until a block asks: a call's context at an index is
+    ``common_or_none`` of its varying bindings' contexts there (the rule of
+    step outputs), else the run's origin when no binding carries one.
+    """
+
+    __slots__ = ("_run", "_step", "_leaves", "_entries", "_resolved")
+
+    def __init__(
+        self,
+        run: RunState,
+        step: PlannedStep,
+        *,
+        leaves: Mapping[Index, Sequence[Leaf]],
+        entries: Sequence[Entry],
+    ):
+        self._run = run
+        self._step = step
+        self._leaves = leaves
+        self._entries = entries
+        self._resolved: Optional[Dict[Index, Tuple[Any, Any]]] = None
+
+    @property
+    def cause(self) -> Optional[EventCause]:
+        return self._run.cause
+
+    def sample_at(self, index: Index) -> Optional[SampleContext]:
+        return self._contexts_at(index)[0]
+
+    def temporal_at(self, index: Index) -> Optional[TemporalContext]:
+        return self._contexts_at(index)[1]
+
+    def has_subscribers(self, event: str) -> bool:
+        subscribed = has_subscribers(
+            self._step_reactions(),
+            events=self._step.spec.events,
+            path=self._step.path,
+            event=event,
+        )
+
+        return subscribed
+
+    def wants(self, context: ExecutionContext, output: str) -> bool:
+        outputs = self._step.outputs
+        if output not in outputs:
+            raise ContractError(
+                f"{format_step_path(self._step.path)} ({self._step.block_type}) "
+                f"asked wants({output!r}), but declares no such output; its outputs "
+                f"are {sorted(outputs)}"
+            )
+        context.queried_outputs.add(output)
+        wanted = context.wanted_outputs is None or output in context.wanted_outputs
+
+        return wanted
+
+    def emit(
+        self,
+        context: ExecutionContext,
+        event: str,
+        fields: Mapping[str, Any],
+        *,
+        at: Optional[Index],
+    ) -> None:
+        emit_event(
+            self._step_reactions(),
+            context=context,
+            events=self._step.spec.events,
+            event=event,
+            fields=fields,
+            at=at,
+            pulse=self._run.pulse,
+            parent=self._run.cause,
+        )
+
+    def set_machine_state(self, machine: str, transition: str, next_state: str) -> Any:
+        run = self._run
+        if run.handler is None or run.reactions is None:
+            raise ContractError(
+                f"{format_step_path(self._step.path)}: set_machine_state works "
+                "only in a step of an event handler"
+            )
+
+        result = run.reactions.set_machine_state(
+            handler=run.handler,
+            cause=run.cause,
+            machine=machine,
+            transition=transition,
+            next_state=next_state,
+        )
+
+        return result
+
+    def _step_reactions(self) -> Optional[Reactions]:
+        """Where this step's own events go: nowhere inside a handler run."""
+        return self._run.reactions if self._run.handler is None else None
+
+    def _contexts_at(self, index: Index) -> Tuple[Any, Any]:
+        if self._resolved is None:
+            self._resolved = {}
+        if index in self._resolved:
+            return self._resolved[index]
+
+        bindings = self._step.bindings
+        positions = [
+            position for position, binding in enumerate(bindings) if binding.is_varying
+        ] or list(range(len(bindings)))
+        origin = self._run.origin or _pulse_origin(self._run)
+        resolved = []
+        for kind, fallback in zip(("sample", "temporal"), origin):
+            contexts = _binding_contexts(
+                index,
+                self._leaves[index],
+                self._entries,
+                positions=positions,
+                kind=kind,
+            )
+            resolved.append(common_or_none(contexts) if contexts else fallback)
+        self._resolved[index] = (resolved[0], resolved[1])
+
+        return self._resolved[index]
+
+
+def _pulse_origin(run: RunState) -> Tuple[Any, Any]:
+    """A source pulse's own context, which its present ports carry at ``()``."""
+    if run.pulse is None or run.causes:
+        return None, None
+
+    carried = [
+        entry.metadata for entry in run.ports.values() if not entry.metadata.is_empty
+    ]
+    origin = (
+        common_or_none(metadata.sample_at(()) for metadata in carried),
+        common_or_none(metadata.temporal_at(()) for metadata in carried),
+    )
+
+    return origin
+
+
 def _invoke(
-    run: RunState, step: PlannedStep, call: _Call, *, stages: StepStages
-) -> Dict[Index, Any]:
-    """Call the block once, wait for its futures and split the result per index."""
+    run: RunState,
+    step: PlannedStep,
+    call: _Call,
+    *,
+    stages: StepStages,
+    scope: _StepScope,
+    wanted: FrozenSet[str],
+) -> Tuple[Dict[Index, Any], FrozenSet[str]]:
+    """Call the block once, wait for its futures and split the result per index.
+
+    Returns the results by index and the outputs the call asked ``wants`` about.
+    """
     index = None if call.batched else call.indices[0]
     run.record(
         "invocation",
@@ -607,12 +815,17 @@ def _invoke(
         index=list(index) if index is not None else None,
         indices=[list(item) for item in call.indices],
     )
+    choice = step.implementation
     context = ExecutionContext(
         step_path=step.path,
         block_type=step.block_type,
         session_id=run.session.session_id,
         run_id=run.run_id,
         indices=call.indices,
+        batched=call.batched,
+        call_scope=scope,
+        wanted_outputs=wanted,
+        quality=choice.quality_label if choice is not None else None,
     )
     try:
         if gates_each_phase(step):
@@ -634,9 +847,10 @@ def _invoke(
     run.observer.on_invocation(
         step=step.path, index=index, arguments=call.arguments, result=result
     )
+    asked = frozenset(context.queried_outputs)
 
     if not call.batched:
-        return {index: result}
+        return {index: result}, asked
 
     if not isinstance(result, (list, tuple)) or len(result) != len(call.indices):
         _fail(
@@ -648,7 +862,7 @@ def _invoke(
         )
     split = dict(zip(call.indices, result))
 
-    return split
+    return split, asked
 
 
 def _ready_result(
@@ -724,6 +938,8 @@ def _record_outputs(
     skipped: Mapping[Index, str],
     leaves: Mapping[Index, Sequence[Leaf]],
     entries: Sequence[Entry],
+    wanted: FrozenSet[str],
+    queried: Mapping[Index, FrozenSet[str]],
 ) -> None:
     filtered = structure.filtered | frozenset(skipped)
     if step.spec.is_control:
@@ -741,9 +957,26 @@ def _record_outputs(
         return
 
     produced = {
-        index: _output_values(run, step, index=index, result=result)
+        index: _output_values(
+            run,
+            step,
+            index=index,
+            result=result,
+            wanted=wanted,
+            queried=queried.get(index, frozenset()),
+        )
         for index, result in results.items()
     }
+    # An output left out of any result has no entry: nobody reads it, and a
+    # placeholder would turn "not computed" into a payload.
+    omitted = {
+        name
+        for name in step.outputs
+        for values in produced.values()
+        if name not in values
+    }
+    if omitted:
+        run.record("outputs_omitted", step=list(step.path), outputs=sorted(omitted))
     built = {
         output.name: _output_entry(
             run,
@@ -756,6 +989,7 @@ def _record_outputs(
             entries=entries,
         )
         for output in step.outputs.values()
+        if output.name not in omitted
     }
     _check_shared_expand_axes(run, step, built=built, invoked=list(produced))
     for name, entry in built.items():
@@ -787,7 +1021,13 @@ def _decision(
 
 
 def _output_values(
-    run: RunState, step: PlannedStep, *, index: Index, result: Any
+    run: RunState,
+    step: PlannedStep,
+    *,
+    index: Index,
+    result: Any,
+    wanted: FrozenSet[str],
+    queried: FrozenSet[str],
 ) -> Mapping[str, Any]:
     if result is None and not step.outputs:
         return {}
@@ -800,15 +1040,32 @@ def _output_values(
             index=index,
         )
 
-    omitted = sorted(set(step.outputs) - set(result))
+    missing = set(step.outputs) - set(result)
+    allowed = {name for name in missing if name in queried and name not in wanted}
+    omitted = sorted(missing - allowed)
     unknown = sorted(set(result) - set(step.outputs))
     if omitted or unknown:
+        reasons = []
+        for name in omitted:
+            if name in wanted:
+                reasons.append(
+                    f"{name!r} is wanted by a reader of this run"
+                    + (
+                        " and the call asked wants() about it"
+                        if name in queried
+                        else ""
+                    )
+                )
+            else:
+                reasons.append(f"{name!r} was never asked about with wants({name!r})")
         _fail(
             run,
             step,
             f"result keys do not match the declared outputs. Omitted: {omitted}; "
             f"unknown: {unknown}; declared: {sorted(step.outputs)}. Return None "
-            "as the value of an output that has no payload",
+            "as the value of an output that has no payload; a key may be left "
+            "out only after self.wants(name) returned False in this call"
+            + (f" ({'; '.join(reasons)})" if reasons else ""),
             index=index,
         )
 
@@ -1120,7 +1377,7 @@ def _check_shared_expand_axes(
     """Expand outputs sharing one axis must produce corresponding children."""
     by_axis: Dict[str, List[str]] = {}
     for output in step.outputs.values():
-        if output.transform == "expand":
+        if output.transform == "expand" and output.name in built:
             by_axis.setdefault(output.layout.axis_ids[-1], []).append(output.name)
 
     for axis_id, names in by_axis.items():

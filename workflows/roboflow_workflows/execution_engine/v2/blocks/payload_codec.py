@@ -256,7 +256,12 @@ def _encode_tensor(tensor: torch.Tensor, *, path: str) -> Dict[str, Any]:
         raise ContractError(f"{path}: {problem}")
 
     host = tensor.detach().cpu().contiguous()
-    raw = host.reshape(-1).view(torch.uint8).numpy().tobytes()
+    flat = host.reshape(-1)
+    # Singleton and empty views can be contiguous with a non-unit stride.
+    if flat.stride(0) != 1:
+        flat = flat.clone(memory_format=torch.contiguous_format)
+
+    raw = flat.view(torch.uint8).numpy().tobytes()
     encoded = _array_node(
         dtype=_TENSOR_DTYPE_NAMES[tensor.dtype], shape=host.shape, raw=raw
     )

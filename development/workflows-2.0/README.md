@@ -5,6 +5,11 @@ Runnable examples for the explicitly selected V2 engine in
 
 | Examples | What you can try |
 | --- | --- |
+| [Capture and replay](20-capture-replay/README.md) | Record frames and native detections once, then replay them with other thresholds, windows and two aligned sources, run whole-recording and per-chunk Python analysis, and see explicit errors, without running the detector again; run `python -B run_demo.py` and open the HTML gallery |
+| [Reactive workflows](17-reactive-workflows/README.md) | Two cameras, per-source and global state, sync/async event handlers, bounded overflow, errors and payload lifetime; run `python -B run_demo.py --case all` in the example directory |
+| [State machines](18-state-machines/README.md) | Fixed and handler-selected transitions, outdated-decision rejection, external acknowledgement/reset and graceful cascade drain; run `python -B run_demo.py --case all` or `--interactive` |
+| [Redis state](19-redis-state/README.md) | Switch the same workflow to an owned local Redis server; verify isolation, multi-process atomic operations and visible server failures; run `python -B run_demo.py --case all` |
+| [Throughput gap](12-throughput-gap/README.md) | Same held frames through the model alone, the detection and drawing blocks called directly, and V2 serial/pipeline; exact parity first, then throughput, latency and post-processing choice per arm |
 | [Structural performance](11-structural-performance/README.md) | Compare shared detection preparation and batch delivery to separate box/label painters; check parity, held/live performance, and payload lifetime |
 | [Thor physical batching](10-thor-batching/README.md) | Compare V1 and V2 batches with native Jetson decoding, check per-image parity, and measure the model-to-workflow performance gap |
 | [Live object detection](08-live-detection/README.md) | Mac camera with platform YOLOv8n, separate tensor-native box and label blocks, serial/pipelined execution, and on-screen speed statistics |

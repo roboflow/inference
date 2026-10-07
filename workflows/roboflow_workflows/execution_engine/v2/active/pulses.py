@@ -9,7 +9,8 @@ operator pushes), in sequence order per domain::
         state = begin_pulse(..., ticket=(domain, sequence))
         unactivated groups of the domain: retire their turn now
         for step in route(domain):                 execute_step takes its turns
-            execute_step; deliver every group now ready (turn + callbacks lock)
+            execute_step; deliver every group now ready: in its turn,
+                record it if recorded, then its handler (callbacks lock)
         for operator in consumers_of(domain):      after the whole route
             turn at "$operators.<o>#push": push, number the returned pulses,
                 count them outstanding             (one operator call at a time)
@@ -117,11 +118,21 @@ class SourcePulse:
 
 @dataclass(frozen=True)
 class Registered:
-    """An output group with a handler and the steps its fields wait for."""
+    """An output group with its consumers and the steps its fields wait for.
+
+    Args:
+        group: The output group.
+        handler: The host's callback; ``None`` for a group only recorded.
+        prerequisites: Steps the group's fields need.
+        recorder: Engine-owned capture of the group; it receives each result
+            in the group's delivery turn, before the handler and outside the
+            run-wide callbacks lock. ``None`` when the group is not recorded.
+    """
 
     group: PlannedOutputGroup
-    handler: GroupHandler
+    handler: Optional[GroupHandler]
     prerequisites: FrozenSet[StepPath]
+    recorder: Optional[GroupHandler] = None
 
     @property
     def stage(self) -> str:
@@ -303,6 +314,7 @@ class PulseExecutor:
         aborting: Whether the run failed or was cancelled.
         schedule_end: Ends a sealed, drained domain: inline when serial,
             as worker work when pipelined.
+        reactions: The run's reaction runtime; ``None`` without handlers.
     """
 
     def __init__(
@@ -318,8 +330,10 @@ class PulseExecutor:
         fail: Callable[[ActiveRunError], None],
         aborting: Callable[[], bool],
         schedule_end: Callable[[str, TerminationReason], None],
+        reactions: Optional[Any] = None,
     ):
         self.session = session
+        self.reactions = reactions
         self.run_id = run_id
         self.coordination = coordination
         self.observer = coordination.observer(session)
@@ -433,6 +447,7 @@ class PulseExecutor:
                 inputs=self._inputs,
                 observed=pulse.observed,
                 coordination=self.coordination,
+                reactions=self.reactions,
             ),
             begin_stage="emission",
             present=frozenset(pulse.emission.data),
@@ -452,6 +467,7 @@ class PulseExecutor:
                 emission=emission,
                 inputs=self._inputs,
                 coordination=self.coordination,
+                reactions=self.reactions,
             ),
             begin_stage="operator",
             present=frozenset(emission.ports),
@@ -729,26 +745,12 @@ class PulseExecutor:
         result = group_result(run, item.group, filtered=delivery.filtered)
         where = self._where(run.pulse)
         with turn.call("deliver"):
-            with self.coordination.callbacks():
-                self.coordination.checkpoint()
+            if item.recorder is not None:
+                self._record(item, result, where=where)
+            if item.handler is not None:
+                called_ns = self._call_handler(item, result, where=where)
+            else:
                 called_ns = time.monotonic_ns()
-                try:
-                    returned = item.handler(result)
-                except Exception as error:
-                    raise ActiveRunError(
-                        f"handler raised {type(error).__name__}: {error}",
-                        stage="handler",
-                        group=item.group.name,
-                        **where,
-                    ) from error
-            if _closed_awaitable(returned):
-                raise ActiveRunError(
-                    "handler returned an awaitable; active runs call synchronous "
-                    "handlers only and never await their results",
-                    stage="handler",
-                    group=item.group.name,
-                    **where,
-                )
             self.count(delivery.counters, "delivered")
             self._record_age(item, observed=delivery.observed, called_ns=called_ns)
             try:
@@ -765,6 +767,53 @@ class PulseExecutor:
                     group=item.group.name,
                     **where,
                 ) from error
+
+    def _record(
+        self, item: Registered, result: GroupResult, *, where: Dict[str, Any]
+    ) -> None:
+        """Persist the result before any handler or later step can change it.
+
+        Runs in the group's delivery turn, so a group's records keep pulse
+        order, but outside the callbacks lock: other groups record, and
+        handlers run, meanwhile.
+        """
+        self.coordination.checkpoint()
+        try:
+            item.recorder(result)
+        except Exception as error:
+            raise ActiveRunError(
+                f"recording raised {type(error).__name__}: {error}",
+                stage="recording",
+                group=item.group.name,
+                **where,
+            ) from error
+
+    def _call_handler(
+        self, item: Registered, result: GroupResult, *, where: Dict[str, Any]
+    ) -> int:
+        """Call the host's handler under the callbacks lock; return the call time."""
+        with self.coordination.callbacks():
+            self.coordination.checkpoint()
+            called_ns = time.monotonic_ns()
+            try:
+                returned = item.handler(result)
+            except Exception as error:
+                raise ActiveRunError(
+                    f"handler raised {type(error).__name__}: {error}",
+                    stage="handler",
+                    group=item.group.name,
+                    **where,
+                ) from error
+        if _closed_awaitable(returned):
+            raise ActiveRunError(
+                "handler returned an awaitable; active runs call synchronous "
+                "handlers only and never await their results",
+                stage="handler",
+                group=item.group.name,
+                **where,
+            )
+
+        return called_ns
 
     def _record_age(
         self, item: Registered, *, observed: Optional[Timestamp], called_ns: int

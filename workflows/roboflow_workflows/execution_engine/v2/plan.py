@@ -82,6 +82,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    FrozenSet,
     Iterable,
     List,
     Literal,
@@ -123,10 +124,17 @@ from roboflow_workflows.execution_engine.v2.errors import (
     WorkflowInputError,
     format_step_path,
 )
+from roboflow_workflows.execution_engine.v2.events import Event
 from roboflow_workflows.execution_engine.v2.kinds import Kind, kinds_compatible
 from roboflow_workflows.execution_engine.v2.pipelining.options import PipelineOptions
 
 # Re-exported: callers import the shared readiness helper from here as before.
+from roboflow_workflows.execution_engine.v2.reactions.plan import (
+    STATE_MACHINE_SET_TYPE,
+    EventOrigin,
+    ReactionPlan,
+    scoped_name,
+)
 from roboflow_workflows.execution_engine.v2.readiness import (  # noqa: F401
     resolve_futures,
 )
@@ -141,19 +149,33 @@ from roboflow_workflows.execution_engine.v2.sources import (
 )
 from roboflow_workflows.execution_engine.v2.targets import (
     ImplementationChoice,
+    QualitySettings,
     Target,
     check_choice,
     default_implementation,
 )
 
 if TYPE_CHECKING:
+    from roboflow_workflows.execution_engine.v2.compilation.demand import (
+        DemandPlan,
+    )
     from roboflow_workflows.execution_engine.v2.implementations import (
         ImplementationSpec,
+    )
+    from roboflow_workflows.execution_engine.v2.recording.compilation import (
+        RecordingPlan,
+    )
+    from roboflow_workflows.execution_engine.v2.recording.retrospective import (
+        CompiledRetrospective,
     )
 
 EXECUTION_MODULE = "roboflow_workflows.execution_engine.v2.execution"
 ACTIVE_RUNTIME_MODULE = "roboflow_workflows.execution_engine.v2.active.runtime"
 PASSIVE_PIPELINE_MODULE = "roboflow_workflows.execution_engine.v2.pipelining.passive"
+STATE_SESSION_MODULE = "roboflow_workflows.execution_engine.v2.state.session"
+# Reserved constructor resource name of managed state
+# (``state.MANAGED_STATE_RESOURCE``).
+MANAGED_STATE_RESOURCE = "managed_state"
 
 BlockExecution = Literal["run", "phases"]
 BLOCK_EXECUTIONS: Tuple[str, ...] = ("run", "phases")
@@ -1456,10 +1478,21 @@ class CompileOptions:
         block_execution: ``run`` calls each step's ``run``; ``phases``
             executes the phase graph of every selected implementation that has
             one and calls ``run`` of the others.
+        requested_outputs: Names of the workflow outputs the caller wants:
+            flat output names of a passive definition, or output group names
+            and ``<group>.<field>`` entries of an active one. ``None``
+            (default) requests every declared output. Unrequested outputs
+            are absent from results, and steps that only serve them are
+            dropped when their blocks are ``prunable``
+            (``compilation.demand``). Recorded groups are always demanded.
+        quality: Deployment-level quality label, the lowest precedence after
+            a definition's step and workflow settings (``targets``). ``None``
+            asks for none.
 
     Raises:
-        ContractError: On an unknown policy or mode, a negative limit or a
-            target that is not a ``Target``.
+        ContractError: On an unknown policy or mode, a negative limit, a
+            target that is not a ``Target``, a malformed output request or a
+            quality that is not a non-empty label.
     """
 
     mutation_conflicts: Literal["warn", "error"] = "warn"
@@ -1468,6 +1501,8 @@ class CompileOptions:
     allow_local_code: bool = False
     target: Target = field(default_factory=Target.cpu)
     block_execution: BlockExecution = "run"
+    requested_outputs: Optional[Tuple[str, ...]] = None
+    quality: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.mutation_conflicts not in ("warn", "error"):
@@ -1478,6 +1513,28 @@ class CompileOptions:
         if not isinstance(self.target, Target):
             raise ContractError(
                 f"target must be a Target, got {type(self.target).__name__}"
+            )
+        if self.requested_outputs is not None:
+            requested = self.requested_outputs
+            if isinstance(requested, str) or not isinstance(requested, Iterable):
+                raise ContractError(
+                    "requested_outputs must be a collection of output names or "
+                    f"None, got {requested!r}"
+                )
+            names = tuple(requested)
+            invalid = [name for name in names if not isinstance(name, str) or not name]
+            if invalid:
+                raise ContractError(
+                    f"requested_outputs must be non-empty names, got {invalid!r}"
+                )
+            if len(set(names)) != len(names):
+                raise ContractError(f"requested_outputs repeats a name: {list(names)}")
+            object.__setattr__(self, "requested_outputs", names)
+        if self.quality is not None and (
+            not isinstance(self.quality, str) or not self.quality
+        ):
+            raise ContractError(
+                f"quality must be a non-empty label or None, got {self.quality!r}"
             )
         if self.block_execution not in BLOCK_EXECUTIONS:
             raise ContractError(
@@ -1512,6 +1569,21 @@ class CompiledWorkflow:
         operators: Declared operators by name, in a topological order of
             their domains: every input comes from a source or an earlier
             operator. Operators need sources.
+        reactions: Compiled handlers, signals, handler groups and declared
+            state; ``ReactionPlan.EMPTY`` for workflows without reactions.
+        recording: The root ``recording`` declaration (``RecordingPlan``):
+            every ``start`` records the named output groups into a new
+            recording. ``None`` records nothing.
+        retrospective: The root ``retrospective`` stage
+            (``CompiledRetrospective``) that analyses a recording of this
+            plan; ``None`` when not declared.
+        quality: The root ``execution`` quality settings of the definition
+            (workflow label and step labels); empty when not declared.
+        demand: What the compiled plan computes and why
+            (``compilation.demand.DemandPlan``): the requested outputs, the
+            retained steps with their reasons, the pruned steps and the
+            outputs each retained step must produce. ``None`` for a plan
+            built by hand, which then wants every output of every step.
 
     Raises:
         ContractError: On duplicate step paths or child inputs, references to
@@ -1544,6 +1616,11 @@ class CompiledWorkflow:
     operators: Mapping[str, PlannedOperator] = field(
         default_factory=lambda: MappingProxyType({})
     )
+    reactions: ReactionPlan = field(default_factory=lambda: ReactionPlan.EMPTY)
+    recording: Optional["RecordingPlan"] = None
+    retrospective: Optional["CompiledRetrospective"] = None
+    quality: QualitySettings = field(default_factory=QualitySettings)
+    demand: Optional["DemandPlan"] = None
     _axis_origins: Mapping[str, AxisOrigin] = field(
         init=False, repr=False, compare=False
     )
@@ -1568,6 +1645,8 @@ class CompiledWorkflow:
         _check_active_shape(self)
         _check_operators(self)
         _check_selections(self)
+        _check_reactions(self)
+        _check_demand(self)
         object.__setattr__(self, "_axis_origins", _collect_axis_origins(self))
 
     @property
@@ -1678,7 +1757,8 @@ class CompiledWorkflow:
 
         These are the steps whose domain is the source or operator plus every
         static step (domain ``None``), which runs once per pulse of every
-        domain. Nothing is pruned for output groups.
+        domain. Steps the compiler pruned for the requested outputs are not
+        in the plan at all (``demand``); nothing is pruned here.
 
         Args:
             domain: Declared source or operator name.
@@ -1859,8 +1939,36 @@ class CompiledWorkflow:
             },
             "warnings": list(self.warnings),
         }
+        if not self.reactions.is_empty:
+            description["reactions"] = self.reactions.describe()
+        if self.recording is not None:
+            description["recording"] = self.recording.describe()
+        if self.retrospective is not None:
+            description["retrospective"] = self.retrospective.describe()
+        if not self.quality.is_empty:
+            description["quality"] = self.quality.describe()
+        if self.demand is not None:
+            description["demand"] = self.demand.describe()
 
         return description
+
+    def wanted_outputs(self, path: StepPath) -> FrozenSet[str]:
+        """Return the outputs a step must produce for this plan.
+
+        Args:
+            path: Step path.
+
+        Returns:
+            The demanded output names; every output when the plan carries no
+            demand record.
+        """
+        step = self.step(path)
+        if self.demand is None:
+            return frozenset(step.outputs)
+
+        wanted = self.demand.wanted_outputs(step.path)
+
+        return wanted
 
     def create_session(
         self,
@@ -1868,6 +1976,7 @@ class CompiledWorkflow:
         *,
         observer: Optional["ExecutionObserver"] = None,
         error_handler: Optional["ErrorHandler"] = None,
+        reaction_observer: Any = None,
     ) -> "ExecutionSession":
         """Resolve resources and construct every step once.
 
@@ -1877,6 +1986,8 @@ class CompiledWorkflow:
             observer: Receives workflow and step notifications.
             error_handler: Called with each ``StepExecutionError`` before it
                 is raised.
+            reaction_observer: ``observer.ReactionObserver`` receiving handler
+                outcomes; ``None`` reports none.
 
         Returns:
             A session whose runs share these block instances.
@@ -1889,6 +2000,7 @@ class CompiledWorkflow:
             resources=resources,
             observer=observer,
             error_handler=error_handler,
+            reaction_observer=reaction_observer,
         )
 
         return session
@@ -1964,9 +2076,98 @@ def _check_plan_references(plan: CompiledWorkflow) -> None:
             )
 
 
+def _check_reactions(plan: CompiledWorkflow) -> None:
+    """Check that reactions refer to this plan's steps, events and groups."""
+    reactions = plan.reactions
+    if not isinstance(reactions, ReactionPlan):
+        raise ContractError(
+            f"CompiledWorkflow reactions must be a ReactionPlan, got "
+            f"{type(reactions).__name__}"
+        )
+    if reactions.is_empty:
+        return
+
+    steps = {step.path: step for step in plan.steps}
+    for step in plan.steps:
+        if step.spec.type == STATE_MACHINE_SET_TYPE:
+            raise ContractError(
+                f"Step '{format_step_path(step.path)}' is a {STATE_MACHINE_SET_TYPE} "
+                "step of the main flow; it runs only in a handler workflow"
+            )
+    for handler in reactions.handlers:
+        where = f"Handler '{scoped_name(handler.path)}'"
+        if handler.path in steps:
+            raise ContractError(f"{where} has the same path as a step")
+        if handler.mode == "async" and not plan.is_active:
+            raise ContractError(
+                f"{where} is async, but the workflow declares no sources; async "
+                "handlers need an active run that owns their workers. Use mode "
+                "'sync' in a passive workflow"
+            )
+        if handler.plan.catalogue is not plan.catalogue:
+            raise ContractError(f"{where} was compiled against another catalogue")
+        _check_origin(plan, steps, handler.origin, handler.event, where=where)
+    for machine in reactions.machines:
+        for transition in machine.transitions:
+            if transition.trigger is not None:
+                _check_origin(
+                    plan,
+                    steps,
+                    transition.trigger,
+                    None,
+                    where=f"Transition '{transition.label}'",
+                )
+
+    if reactions.groups and not plan.is_active:
+        raise ContractError(
+            "Handler output groups need sources; a passive workflow has flat "
+            "outputs only"
+        )
+    taken = {group.name for group in plan.output_groups}
+    for group in reactions.groups:
+        if group.name in taken:
+            raise ContractError(
+                f"Handler group '{group.name}' repeats an output group name"
+            )
+
+
+def _check_origin(
+    plan: CompiledWorkflow,
+    steps: Mapping[StepPath, PlannedStep],
+    origin: EventOrigin,
+    event: Optional[Event],
+    *,
+    where: str,
+) -> None:
+    if origin.kind == "system" and not plan.is_active:
+        raise ContractError(
+            f"{where} subscribes to {origin.selector}, but the workflow declares no "
+            "sources; system events belong to an active run"
+        )
+    if origin.kind != "step":
+        return
+    emitter = steps.get(origin.path)
+    if emitter is None:
+        raise ContractError(
+            f"{where} subscribes to {origin.selector}, but the plan has no "
+            f"step '{format_step_path(origin.path)}'"
+        )
+    declared = emitter.spec.events.get(origin.event)
+    if declared is None or (event is not None and declared != event):
+        raise ContractError(
+            f"{where} subscribes to {origin.selector}, but block "
+            f"'{emitter.block_type}' declares events {sorted(emitter.spec.events)}"
+        )
+
+
 def _check_selections(plan: CompiledWorkflow) -> None:
-    """Every step's selection and mode must follow the plan's options."""
+    """Every step's selection and mode must follow the plan's options and settings."""
     options = plan.options
+    if not isinstance(plan.quality, QualitySettings):
+        raise ContractError(
+            f"CompiledWorkflow quality must be QualitySettings, got "
+            f"{type(plan.quality).__name__}"
+        )
     for step in plan.steps:
         location = format_step_path(step.path)
         choice = step.implementation
@@ -1976,12 +2177,56 @@ def _check_selections(plan: CompiledWorkflow) -> None:
                 f"{choice.target.describe()}, but the plan targets "
                 f"{options.target.describe()}"
             )
+        expected_request = plan.quality.request_for(
+            step.path, deployment=options.quality
+        )
+        if choice is not None and choice.request != expected_request:
+            raise ContractError(
+                f"{location} selected {choice.name!r} for quality request "
+                f"{choice.request.describe()}, but the plan's settings and options "
+                f"give {expected_request.describe()}"
+            )
         expected = step_execution(step.selected, options=options)
         if step.execution != expected:
             raise ContractError(
                 f"{location} records execution {step.execution!r}, but "
                 f"block_execution={options.block_execution!r} with implementation "
                 f"{step.selected.name!r} gives {expected!r}"
+            )
+
+
+def _check_demand(plan: CompiledWorkflow) -> None:
+    """The demand record, when present, must speak about this plan's steps."""
+    demand = plan.demand
+    if demand is None:
+        return
+
+    paths = {step.path for step in plan.steps}
+    unknown = sorted(set(demand.wanted) - paths, key=format_step_path)
+    if unknown:
+        raise ContractError(
+            "demand records wanted outputs of steps the plan does not contain: "
+            f"{[format_step_path(path) for path in unknown]}"
+        )
+    missing = sorted(paths - set(demand.wanted), key=format_step_path)
+    if missing:
+        raise ContractError(
+            "demand records no wanted outputs for steps "
+            f"{[format_step_path(path) for path in missing]}"
+        )
+    pruned = sorted(set(demand.pruned) & paths, key=format_step_path)
+    if pruned:
+        raise ContractError(
+            "demand records steps as pruned that the plan still contains: "
+            f"{[format_step_path(path) for path in pruned]}"
+        )
+    for step in plan.steps:
+        unknown_outputs = sorted(demand.wanted[step.path] - set(step.outputs))
+        if unknown_outputs:
+            raise ContractError(
+                f"demand wants outputs {unknown_outputs} of "
+                f"{format_step_path(step.path)}, which declares "
+                f"{sorted(step.outputs)}"
             )
 
 
@@ -2850,6 +3095,16 @@ class ExecutionSession:
         source_resources: Constructor resources chosen per declared source.
             Source instances are not held here: every ``start`` constructs
             fresh ones from these values.
+        managed_state: Managed state shared by the steps and handlers of the
+            session; ``None`` when the plan neither declares ``state`` nor
+            requests the ``managed_state`` resource.
+        owned_state: State object the engine created for this session and
+            closes in ``close``; ``None`` for caller-provided state. It may
+            differ from ``managed_state``, which can be a view with defaults.
+        handler_sessions: Persistent session of every handler plan, by handler
+            path. Handler runs reuse these block instances at event rate.
+        reaction_observer: ``observer.ReactionObserver`` the reaction runtime
+            reports handler outcomes to; ``None`` reports none.
     """
 
     def __init__(
@@ -2862,7 +3117,17 @@ class ExecutionSession:
         error_handler: Optional[ErrorHandler] = None,
         session_id: Optional[str] = None,
         source_resources: Optional[Mapping[str, Mapping[str, ResolvedResource]]] = None,
+        managed_state: Any = None,
+        owned_state: Any = None,
+        handler_sessions: Optional[Mapping[StepPath, "ExecutionSession"]] = None,
+        reaction_observer: Any = None,
     ):
+        handler_paths = {handler.path for handler in plan.reactions.handlers}
+        if set(handler_sessions or {}) != handler_paths:
+            raise ContractError(
+                f"Session handler sessions {sorted(handler_sessions or {})} must "
+                f"cover exactly the plan handlers {sorted(handler_paths)}"
+            )
         self.plan = plan
         self.instances = MappingProxyType(dict(instances))
         self.resources = MappingProxyType(dict(resources))
@@ -2870,6 +3135,10 @@ class ExecutionSession:
         self.error_handler = error_handler
         self.session_id = session_id if session_id is not None else uuid.uuid4().hex
         self.source_resources = MappingProxyType(dict(source_resources or {}))
+        self.managed_state = managed_state
+        self.owned_state = owned_state
+        self.handler_sessions = MappingProxyType(dict(handler_sessions or {}))
+        self.reaction_observer = reaction_observer
         # Passive use of the instances: direct runs or one open pipeline.
         self._use_lock = threading.Lock()
         self._direct_runs = 0
@@ -3031,6 +3300,15 @@ class ExecutionSession:
 
         return run
 
+    def close(self) -> None:
+        """Release session-owned services; safe to call more than once.
+
+        Closes ``managed_state`` only when the engine created it. Block
+        instances are not torn down; they live as long as the session object.
+        """
+        if self.owned_state is not None:
+            self.owned_state.close()
+
     def stop(self) -> None:
         """Request a graceful stop of this session's current active run.
 
@@ -3076,6 +3354,7 @@ def create_session(
     resources: Optional[Mapping[str, Any]] = None,
     observer: Optional[ExecutionObserver] = None,
     error_handler: Optional[ErrorHandler] = None,
+    reaction_observer: Any = None,
 ) -> ExecutionSession:
     """Resolve resources and construct every step of ``plan`` once.
 
@@ -3084,6 +3363,8 @@ def create_session(
         resources: Caller resources keyed by ``name`` or ``namespace.name``.
         observer: Receives run notifications; defaults to a no-op observer.
         error_handler: Called with each ``StepExecutionError`` before raising.
+        reaction_observer: ``observer.ReactionObserver`` receiving handler
+            outcomes; ``None`` reports none.
 
     Each constructor runs inside an ``ExecutionContext`` with the session id
     the session keeps and ``run_id=None``, so a block reading
@@ -3098,10 +3379,45 @@ def create_session(
         The execution session.
 
     Raises:
-        ResourceError: When a resource is missing, a factory fails or a
-            constructor raises.
+        ResourceError: When a resource is missing, a factory fails, a
+            constructor raises or ``managed_state`` resolves to different
+            services for the session and its handlers.
     """
     session_id = uuid.uuid4().hex
+    managed_state, owned_state, resources = _session_state(
+        plan, resources=resources, session_id=session_id
+    )
+    # State the engine created is closed when the session cannot be built.
+    try:
+        session = _build_session(
+            plan,
+            resources=resources,
+            session_id=session_id,
+            managed_state=managed_state,
+            owned_state=owned_state,
+            observer=observer,
+            error_handler=error_handler,
+            reaction_observer=reaction_observer,
+        )
+    except BaseException:
+        if owned_state is not None:
+            owned_state.close()
+        raise
+
+    return session
+
+
+def _build_session(
+    plan: CompiledWorkflow,
+    *,
+    resources: Optional[Mapping[str, Any]],
+    session_id: str,
+    managed_state: Any,
+    owned_state: Any,
+    observer: Optional[ExecutionObserver],
+    error_handler: Optional[ErrorHandler],
+    reaction_observer: Any,
+) -> ExecutionSession:
     resolver = ResourceResolver(provided=resources, providers=plan.catalogue.providers)
     source_resources: Dict[str, Mapping[str, ResolvedResource]] = {}
     for planned_source in plan.sources.values():
@@ -3143,6 +3459,14 @@ def create_session(
         instances[step.path] = instance
         chosen[step.path] = MappingProxyType(resolved)
 
+    # Handler plans get the same resources, so they share this session's
+    # managed state; each handler keeps its own instances for every event.
+    # Handlers run on reaction threads: the parent observer and error handler
+    # are not theirs. The reaction runtime reports through reaction_observer.
+    handler_sessions = {
+        handler.path: create_session(handler.plan, resources=resources)
+        for handler in plan.reactions.handlers
+    }
     session = ExecutionSession(
         plan=plan,
         instances=instances,
@@ -3151,9 +3475,59 @@ def create_session(
         error_handler=error_handler,
         session_id=session_id,
         source_resources=source_resources,
+        managed_state=managed_state,
+        owned_state=owned_state,
+        handler_sessions=handler_sessions,
+        reaction_observer=reaction_observer,
     )
 
     return session
+
+
+def requests_managed_state(plan: CompiledWorkflow) -> bool:
+    """Return whether a session of ``plan`` needs managed state.
+
+    True when the plan declares ``state`` defaults or state machines, or a
+    selected step implementation, a source or a handler plan asks for the
+    ``managed_state`` constructor resource.
+
+    Args:
+        plan: Compiled plan.
+
+    Returns:
+        Whether ``create_session`` provides managed state.
+    """
+    if not plan.reactions.state.is_empty or plan.reactions.machines:
+        return True
+    specs = [
+        *(spec for step in plan.steps for spec in step.selected.resources),
+        *(spec for source in plan.sources.values() for spec in source.spec.resources),
+    ]
+    if any(spec.name == MANAGED_STATE_RESOURCE for spec in specs):
+        return True
+    requested = any(
+        requests_managed_state(handler.plan) for handler in plan.reactions.handlers
+    )
+
+    return requested
+
+
+def _session_state(
+    plan: CompiledWorkflow,
+    *,
+    resources: Optional[Mapping[str, Any]],
+    session_id: str,
+) -> Tuple[Any, Any, Optional[Mapping[str, Any]]]:
+    if not requests_managed_state(plan):
+        return None, None, resources
+
+    # Imported lazily: plans without state never load the state package.
+    session_module = importlib.import_module(STATE_SESSION_MODULE)
+    session_state = session_module.configure_session_state(
+        plan, resources=resources, session_id=session_id
+    )
+
+    return session_state.service, session_state.owned, session_state.resources
 
 
 @dataclass(frozen=True)

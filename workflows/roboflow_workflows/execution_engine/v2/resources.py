@@ -36,6 +36,9 @@ from roboflow_workflows.execution_engine.v2.errors import (
 
 FactoryScope = Literal["session", "step"]
 
+MANAGED_STATE_RESOURCE = "managed_state"
+"""Reserved constructor resource name of managed state (``state.api`` owns it)."""
+
 _NO_DEFAULT = inspect.Parameter.empty
 
 

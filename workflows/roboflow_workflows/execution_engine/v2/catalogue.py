@@ -27,6 +27,10 @@ different kind objects with one name, two blocks claiming one identity, and a
 block whose ``engine_compatibility`` excludes this engine are rejected. The
 built-in wildcard is a neutral placeholder: an explicit wildcard policy replaces
 it and survives later registration of the placeholder.
+
+Recording codecs (``PayloadCodec``) are registered like kinds. Two different
+codecs with one name, two codecs for one payload type, and a codec replacing a
+generic built-in codec are rejected.
 """
 
 import importlib
@@ -39,6 +43,10 @@ from packaging.version import Version
 from roboflow_workflows.execution_engine.v2.declaration import BlockSpec, spec_of
 from roboflow_workflows.execution_engine.v2.errors import CatalogueError, ContractError
 from roboflow_workflows.execution_engine.v2.kinds import WILDCARD_KIND, Kind
+from roboflow_workflows.execution_engine.v2.recording.codecs import (
+    PayloadCodec,
+    codec_conflict,
+)
 from roboflow_workflows.execution_engine.v2.sources import SourceSpec, spec_of_source
 
 if TYPE_CHECKING:
@@ -117,11 +125,12 @@ class Catalogue:
         providers: Resource providers for blocks and sources of this
             namespace, by constructor parameter name. Wrap lazily created
             values in ``Factory``.
+        codecs: Recording codecs of payload types these classes produce.
 
     Raises:
         CatalogueError: On a class that is not a concrete class of its
-            registry, duplicate identities, conflicting kinds or an
-            incompatible declaration.
+            registry, duplicate identities, conflicting kinds or codecs, or
+            an incompatible declaration.
     """
 
     def __init__(
@@ -133,6 +142,7 @@ class Catalogue:
         kinds: Iterable[Kind] = (),
         namespace: str = "",
         providers: Optional[Mapping[str, Any]] = None,
+        codecs: Iterable[PayloadCodec] = (),
     ):
         self._entries: Dict[str, CatalogueEntry] = {}
         self._identities: Dict[str, str] = {}
@@ -142,6 +152,8 @@ class Catalogue:
         self._operator_identities: Dict[str, str] = {}
         self._kinds: Dict[str, Kind] = {}
         self._providers: Dict[str, Dict[str, Any]] = {}
+        self._codecs: Dict[str, PayloadCodec] = {}
+        self._codec_types: Dict[str, PayloadCodec] = {}
 
         if not isinstance(namespace, str):
             raise CatalogueError(
@@ -172,6 +184,8 @@ class Catalogue:
             self._add_operator(OperatorEntry(spec=operator_spec, namespace=namespace))
         for name, value in (providers or {}).items():
             self._add_provider(namespace, name=name, value=value)
+        for codec in codecs:
+            self._add_codec(codec)
 
     @classmethod
     def merge(cls, *catalogues: "Catalogue") -> "Catalogue":
@@ -184,11 +198,12 @@ class Catalogue:
             *catalogues: Catalogues to combine.
 
         Returns:
-            A new catalogue containing every block, source, operator, kind and
-            provider.
+            A new catalogue containing every block, source, operator, kind,
+            provider and recording codec.
 
         Raises:
-            CatalogueError: On conflicting identities, kinds or providers.
+            CatalogueError: On conflicting identities, kinds, providers or
+                codecs.
         """
         merged = cls()
         for catalogue in catalogues:
@@ -207,6 +222,8 @@ class Catalogue:
             for namespace, values in catalogue._providers.items():
                 for name, value in values.items():
                     merged._add_provider(namespace, name=name, value=value)
+            for codec in catalogue._codecs.values():
+                merged._add_codec(codec)
 
         return merged
 
@@ -299,6 +316,11 @@ class Catalogue:
                 for namespace, values in self._providers.items()
             }
         )
+
+    @property
+    def codecs(self) -> Mapping[str, PayloadCodec]:
+        """Recording codecs by codec name, in registration order."""
+        return MappingProxyType(self._codecs)
 
     def find(self, identity: str) -> Optional[CatalogueEntry]:
         """Look up a block by canonical type or alias.
@@ -553,6 +575,14 @@ class Catalogue:
                 f"Two different kinds are named {kind.name!r}; blocks must share "
                 "one Kind object per name"
             )
+
+    def _add_codec(self, codec: PayloadCodec) -> None:
+        problem = codec_conflict(codec, by_name=self._codecs, by_type=self._codec_types)
+        if problem is not None:
+            raise CatalogueError(problem)
+
+        self._codecs[codec.name] = codec
+        self._codec_types[codec.type_name] = codec
 
     def _add_provider(self, namespace: str, *, name: str, value: Any) -> None:
         values = self._providers.setdefault(namespace, {})

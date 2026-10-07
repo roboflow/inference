@@ -47,6 +47,23 @@ from roboflow_workflows.execution_engine.v2.blocks.predictions import (
     SEMANTIC_SEGMENTATION_PREDICTION_KIND,
     TENSOR_KIND,
 )
+from roboflow_workflows.execution_engine.v2.blocks.recording_codecs import (
+    NATIVE_RECORDING_CODECS,
+)
+from roboflow_workflows.execution_engine.v2.blocks.segmentation_views import (
+    INSTANCE_SEGMENTATION_VIEW_KIND,
+    MaskGridGeometry,
+    SegmentationView,
+)
+from roboflow_workflows.execution_engine.v2.blocks.state import (
+    StateCompareAndSetBlock,
+    StateGetBlock,
+    StateIncrementBlock,
+    StateSetBlock,
+)
+from roboflow_workflows.execution_engine.v2.blocks.state_machine import (
+    StateMachineSetBlock,
+)
 from roboflow_workflows.execution_engine.v2.blocks.temporal import (
     BestFrameBlock,
     TopKBrightestBlock,
@@ -62,11 +79,18 @@ def create_catalogue() -> Catalogue:
     Returns:
         Immutable catalogue with ``v2/crop``, ``v2/static_crop``,
         ``v2/invert``, ``v2/mosaic``, ``v2/resize``, ``v2/has_brightness``,
-        ``v2/continue_if``, ``v2/best_frame`` and ``v2/top_k_brightest``; the
+        ``v2/continue_if``, ``v2/best_frame``, ``v2/top_k_brightest`` and the
+        managed state blocks ``v2/state_get``, ``v2/state_set``,
+        ``v2/state_increment`` and ``v2/state_compare_and_set``; the
         ``v2/align@v1`` and ``v2/window@v1`` operators; the ``image`` and
-        ``crop_summary`` kinds, all eleven native prediction/tensor kinds, and
-        the built-in kinds these blocks use. Wildcard media outputs and the
+        ``crop_summary`` kinds, all eleven native prediction/tensor kinds, the
+        ``instance_segmentation_view`` kind, and the built-in kinds these
+        blocks use. Wildcard media outputs and the
         legacy ``numpy_array`` tensor label use explicit boundary policies.
+        Recording codecs store tensors, ``ImageData`` and the native
+        prediction carriers as raw binary data. A live ``SegmentationView``
+        has no codec: ``full_res()`` is its explicit dense boundary for
+        recording and the wire.
     """
     catalogue = Catalogue(
         [
@@ -79,15 +103,22 @@ def create_catalogue() -> Catalogue:
             ContinueIfBlock,
             BestFrameBlock,
             TopKBrightestBlock,
+            StateGetBlock,
+            StateSetBlock,
+            StateIncrementBlock,
+            StateCompareAndSetBlock,
+            StateMachineSetBlock,
         ],
         operators=[Align, Window],
         kinds=[
             IMAGE_KIND,
             CROP_SUMMARY_KIND,
             *NATIVE_KINDS,
+            INSTANCE_SEGMENTATION_VIEW_KIND,
             MEDIA_WILDCARD_KIND,
             NUMPY_ARRAY_KIND,
         ],
+        codecs=NATIVE_RECORDING_CODECS,
     )
 
     return catalogue
@@ -101,8 +132,10 @@ __all__ = [
     "DETECTION_KIND",
     "EMBEDDING_KIND",
     "INSTANCE_SEGMENTATION_PREDICTION_KIND",
+    "INSTANCE_SEGMENTATION_VIEW_KIND",
     "KEYPOINT_DETECTION_PREDICTION_KIND",
     "NATIVE_KINDS",
+    "NATIVE_RECORDING_CODECS",
     "MEDIA_WILDCARD_KIND",
     "NUMPY_ARRAY_KIND",
     "OBJECT_DETECTION_PREDICTION_KIND",
@@ -119,9 +152,16 @@ __all__ = [
     "IMAGE_KIND",
     "ImageData",
     "InvertBlock",
+    "MaskGridGeometry",
     "ResizeBlock",
+    "SegmentationView",
     "select_predictions",
     "MosaicBlock",
+    "StateCompareAndSetBlock",
+    "StateGetBlock",
+    "StateIncrementBlock",
+    "StateMachineSetBlock",
+    "StateSetBlock",
     "StaticCropBlock",
     "TopKBrightestBlock",
     "Window",

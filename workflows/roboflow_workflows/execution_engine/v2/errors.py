@@ -196,6 +196,10 @@ class MutationConflictError(WorkflowCompileError):
     """Declared in-place mutations conflict under strict mutation handling."""
 
 
+class DemandError(WorkflowCompileError):
+    """Requested outputs name nothing the definition declares, or a recorded group partially."""
+
+
 class WorkflowExecutionError(RuntimeError):
     """A compiled V2 workflow failed during execution."""
 
@@ -266,6 +270,7 @@ ActiveRunStage = Literal[
     "observer",
     "operator",
     "close",
+    "recording",
 ]
 
 
@@ -284,7 +289,8 @@ class ActiveRunError(WorkflowExecutionError):
             emission violating the source's declaration), ``step``,
             ``handler``, ``observer`` (a session observer callback raised),
             ``operator`` (an operator rejected its arrivals, exceeded a bound
-            or failed to finish or close) or ``close``.
+            or failed to finish or close), ``close`` or ``recording`` (the
+            engine could not record a group or finalize its recording).
         source: Declared name of the source involved, when any.
         pulse: Sequence number of the pulse involved, when any: a pulse of
             ``source`` when it is set, otherwise of ``operator``.
@@ -330,3 +336,57 @@ class ActiveRunError(WorkflowExecutionError):
         self.operator = operator
         self.phase = phase
         self.suppressed: Tuple[BaseException, ...] = ()
+
+
+class EventEmissionError(ContractError):
+    """A block emitted an event the engine cannot accept.
+
+    Raised for an undeclared event, a missing or foreign ``at`` index, an
+    emission outside an engine call, a field value without a supported
+    ownership snapshot, or an emission after the run's reactions closed or
+    were cancelled. Missing, unknown or ill-kinded fields raise
+    ``events.EventPayloadError`` instead.
+    """
+
+
+class ReactionError(WorkflowExecutionError):
+    """A synchronous event handler failed while handling an emitted event.
+
+    Raised out of ``emit()`` on the emitting thread. Effects the handler
+    already performed are not rolled back. Unless the block catches it, the
+    emitting step fails with this error as its cause.
+
+    Args:
+        message: Human-readable explanation.
+        emitter: Step path of the emitting step.
+        event: Name of the emitted event.
+        handler: Selector of the failing handler, e.g. ``$handlers.notify``.
+        step_path: Failing step inside the handler workflow, when a step failed.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        emitter: StepPath,
+        event: str,
+        handler: str,
+        step_path: Optional[StepPath] = None,
+    ):
+        where = f"{format_step_path(emitter)} event {event!r} -> {handler}"
+        if step_path is not None:
+            where = f"{where} at {format_step_path(step_path)}"
+        super().__init__(f"{where}: {message}")
+        self.emitter = emitter
+        self.event = event
+        self.handler = handler
+        self.step_path = step_path
+
+
+class ReactionCycleError(ReactionError):
+    """A handler was re-entered on the thread already running it.
+
+    Compilation rejects declared event cycles; this guards the runtime
+    against an emission chain that would otherwise deadlock or reenter the
+    handler's block instances.
+    """

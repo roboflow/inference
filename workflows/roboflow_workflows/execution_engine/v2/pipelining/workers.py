@@ -20,7 +20,8 @@ instead of deadlocking.
 """
 
 import threading
-from typing import Callable, List, Optional
+from contextlib import contextmanager
+from typing import Callable, Iterator, List, Optional
 
 from roboflow_workflows.execution_engine.v2.errors import ContractError
 from roboflow_workflows.execution_engine.v2.pipelining.stages import PipelineCounters
@@ -39,6 +40,19 @@ class OwnedThreads:
     def mark(self) -> None:
         """Mark the calling thread as owned; call it first in every owned thread."""
         self._local.owned = True
+
+    @contextmanager
+    def borrow(self) -> Iterator[None]:
+        """Own the calling thread while it runs work of the run, then restore.
+
+        For a host thread that runs handlers inline, e.g. ``signal()``.
+        """
+        previous = getattr(self._local, "owned", False)
+        self._local.owned = True
+        try:
+            yield
+        finally:
+            self._local.owned = previous
 
     def owns_current(self) -> bool:
         """Whether the calling thread is owned."""

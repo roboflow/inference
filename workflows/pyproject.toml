@@ -46,6 +46,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+redis = ["redis>=5.0.8,<6"]
 enterprise = [
   "asyncua~=1.1.5",
   "paho-mqtt~=1.6.1",

@@ -132,14 +132,17 @@ from roboflow_workflows.execution_engine.v2.errors import (
     StepPath,
     format_step_path,
 )
+from roboflow_workflows.execution_engine.v2.events import Event, validate_events
 from roboflow_workflows.execution_engine.v2.implementations import (
     DEFAULT_IMPLEMENTATION,
     PHASE_OVERLAP_ATTRIBUTE,
+    QUALITY_ATTRIBUTE,
     RESERVED_PHASE_NAMES,
     ImplementationSpec,
     check_keyword_signature,
     read_implementation_specs,
     read_phase_overlap,
+    read_quality_labels,
 )
 from roboflow_workflows.execution_engine.v2.kinds import Kind, normalize_kinds
 from roboflow_workflows.execution_engine.v2.phases import (
@@ -148,6 +151,7 @@ from roboflow_workflows.execution_engine.v2.phases import (
 )
 from roboflow_workflows.execution_engine.v2.readiness import ResultWrapper
 from roboflow_workflows.execution_engine.v2.resources import (
+    MANAGED_STATE_RESOURCE,
     ResourceSpec,
     read_resource_specs,
 )
@@ -754,6 +758,10 @@ class BlockSpec:
         description: Block documentation.
         metadata: Free-form UI and catalogue metadata.
         kinds: Every kind referenced by fields and static outputs.
+        events: Events the block may emit, by name.
+        prunable: Capability: a call none of whose outputs is demanded may be
+            left out entirely without changing observable behaviour
+            (``Block.prunable``). ``False`` (default) retains every call.
     """
 
     type: str
@@ -774,6 +782,8 @@ class BlockSpec:
     metadata: Mapping[str, Any]
     kinds: Tuple[Kind, ...]
     _validator: ParamsValidator = field(repr=False, compare=False)
+    events: Mapping[str, Event] = field(default_factory=lambda: MappingProxyType({}))
+    prunable: bool = False
 
     @property
     def resources(self) -> Optional[Tuple[ResourceSpec, ...]]:
@@ -1034,11 +1044,16 @@ class BlockSpec:
             "accepts_batches": self.accepts_batches,
             "accepts_empty": self.accepts_empty,
             "mutates": list(self.mutates),
+            "prunable": self.prunable,
             "engine_compatibility": self.engine_compatibility,
             "metadata": dict(self.metadata),
         }
         if resources is None:
             del description["resources"]
+        if self.events:
+            description["events"] = {
+                name: event.describe() for name, event in self.events.items()
+            }
 
         return description
 
@@ -1207,16 +1222,27 @@ class Block(ExecutionContextReader):
             none. Genuinely empty groups reach the block under both settings.
         mutates: Fields whose bound payloads ``run`` (or any phase of any
             implementation) may modify in place.
+        prunable: ``True`` promises that a call none of whose outputs is
+            demanded can be left out entirely without changing observable
+            behaviour: no events, no managed or instance state anyone relies
+            on, no in-place mutation, no external effect. Compilation then
+            drops undemanded steps of the block (``compilation.demand``).
+            ``False`` (default) keeps every call, which is always safe. A
+            block declaring events, requesting ``managed_state``, declaring
+            ``mutates`` or (outside control blocks) no outputs cannot be
+            prunable.
         engine_compatibility: PEP 440 specifier, e.g. ``">=2.0,<3"``.
         metadata: Free-form UI and catalogue metadata.
         implementations: ``Implementation`` classes in preference order. A
             block listing them is only the logical contract: it declares no
-            ``run``, phases, ``__init__`` or ``phase_overlap``; compilation
-            selects one per step.
+            ``run``, phases, ``__init__``, ``phase_overlap`` or ``quality``;
+            compilation selects one per step.
         phase_overlap: Whether a pipelined run may execute different phases
             of this block's one instance at once, for different pulses
             (default ``True``); see ``Implementation``. ``False`` holds the
             whole call, every phase and its futures, per pulse.
+        quality: Quality labels an ordinary block (its own single
+            implementation) serves; see ``Implementation.quality``.
 
     Resources are the keyword parameters of ``__init__``. The engine creates
     one instance per step per execution session and keeps it across runs.
@@ -1228,7 +1254,9 @@ class Block(ExecutionContextReader):
     step that actually receives batches (see ``PlannedStep.delivers_batches``)
     is called once and returns a list with one such result per invocation.
     Values may be ``concurrent.futures.Future`` objects; the engine waits for
-    them before dependent work and before returning results.
+    them before dependent work and before returning results. A call may leave
+    out an output only after ``self.wants(name)`` returned ``False`` for it
+    in that call (``ExecutionContextReader.wants``).
     """
 
     type: ClassVar[str]
@@ -1238,10 +1266,13 @@ class Block(ExecutionContextReader):
     output_fields: ClassVar[Tuple[str, ...]] = ()
     accepts_empty: ClassVar[bool] = False
     mutates: ClassVar[Tuple[str, ...]] = ()
+    prunable: ClassVar[bool] = False
     engine_compatibility: ClassVar[Optional[str]] = None
     metadata: ClassVar[Mapping[str, Any]] = MappingProxyType({})
+    events: ClassVar[Mapping[str, Event]] = MappingProxyType({})
     implementations: ClassVar[Tuple[type, ...]] = ()
     phase_overlap: ClassVar[bool] = True
+    quality: ClassVar[Tuple[str, ...]] = ()
 
     __block_spec__: ClassVar[Optional[BlockSpec]] = None
 
@@ -1407,6 +1438,16 @@ def _build_spec(block_class: type) -> BlockSpec:
     metadata = block_class.metadata
     if not isinstance(metadata, Mapping):
         raise fail(f"metadata must be a mapping, got {type(metadata).__name__}")
+    events = validate_events(block_class.events, owner="Block", fail=fail)
+    prunable = _validate_prunable(
+        block_class.prunable,
+        is_control=is_control,
+        has_outputs=bool(static_outputs) or configured_outputs,
+        events=events,
+        mutates=mutates,
+        implementations=implementations,
+        fail=fail,
+    )
 
     spec = BlockSpec(
         type=block_type,
@@ -1425,11 +1466,63 @@ def _build_spec(block_class: type) -> BlockSpec:
         engine_compatibility=engine_compatibility,
         description=inspect.cleandoc(block_class.__doc__ or ""),
         metadata=MappingProxyType(dict(metadata)),
-        kinds=_collect_kinds(fields=fields, outputs=static_outputs, fail=fail),
+        kinds=_collect_kinds(
+            fields=fields, outputs=static_outputs, events=events, fail=fail
+        ),
         _validator=validator,
+        events=events,
+        prunable=prunable,
     )
 
     return spec
+
+
+def _validate_prunable(
+    prunable: Any,
+    *,
+    is_control: bool,
+    has_outputs: bool,
+    events: Mapping[str, Event],
+    mutates: Tuple[str, ...],
+    implementations: Tuple[ImplementationSpec, ...],
+    fail,
+) -> bool:
+    """Reject ``prunable = True`` on a block whose declaration contradicts it."""
+    if not isinstance(prunable, bool):
+        raise fail(f"prunable must be True or False, got {prunable!r}")
+    if not prunable:
+        return False
+
+    contradictions = []
+    if events:
+        contradictions.append(f"declares events {sorted(events)}, which are effects")
+    if mutates:
+        contradictions.append(
+            f"declares mutates {list(mutates)}, an in-place effect on shared payloads"
+        )
+    if not has_outputs and not is_control:
+        contradictions.append("declares no outputs, so it exists only for its effects")
+    stateful = sorted(
+        implementation.name
+        for implementation in implementations
+        if any(
+            resource.name == MANAGED_STATE_RESOURCE
+            for resource in implementation.resources
+        )
+    )
+    if stateful:
+        contradictions.append(
+            f"implementation(s) {stateful} request managed_state, which other steps "
+            "and handlers read"
+        )
+    if contradictions:
+        raise fail(
+            "cannot be prunable: " + "; ".join(contradictions) + ". A prunable "
+            "block promises that leaving out an undemanded call changes nothing "
+            "observable"
+        )
+
+    return True
 
 
 def _validate_aliases(aliases: Any, *, block_type: str, fail) -> Tuple[str, ...]:
@@ -1690,6 +1783,15 @@ def _read_implementations(
                 "lists implementations, so phase_overlap belongs to each "
                 "Implementation class that has phases, not to the block"
             )
+        if any(
+            QUALITY_ATTRIBUTE in vars(klass)
+            for klass in block_class.__mro__
+            if klass is not Block and issubclass(klass, Block)
+        ):
+            raise fail(
+                "lists implementations, so quality belongs to each Implementation "
+                "class that serves a label, not to the block"
+            )
         specs = read_implementation_specs(declared, fields=fields, fail=fail)
         return specs
 
@@ -1708,6 +1810,7 @@ def _read_implementations(
         resources=resources,
         phases=own_phases,
         phase_overlap=read_phase_overlap(block_class, fail=fail),
+        quality=read_quality_labels(block_class, fail=fail),
     )
 
     return (default,)
@@ -1718,11 +1821,18 @@ _validate_keyword_signature = check_keyword_signature
 
 
 def _collect_kinds(
-    *, fields: Mapping[str, FieldSpec], outputs: Mapping[str, Output], fail
+    *,
+    fields: Mapping[str, FieldSpec],
+    outputs: Mapping[str, Output],
+    events: Mapping[str, Event] = MappingProxyType({}),
+    fail,
 ) -> Tuple[Kind, ...]:
     kind_groups = [output.kinds for output in outputs.values()]
     kind_groups.extend(
         marker.kinds for field_spec in fields.values() for marker in field_spec.markers
+    )
+    kind_groups.extend(
+        kinds for event in events.values() for kinds in event.fields.values()
     )
     collected: Dict[str, Kind] = {}
     for kinds in kind_groups:

@@ -30,6 +30,13 @@ graph or none, and may share phases through a common base class. Its
 of its one instance for different pulses at the same time. A block
 without ``implementations`` is its own single ``default`` implementation.
 Reading the declarations constructs nothing and loads no model.
+
+Quality: an implementation may list the quality labels it serves
+(``quality = ("fast",)``). A definition's root ``execution`` section, or
+``CompileOptions.quality``, then asks for a label at compile time and the
+selection prefers an implementation serving it (``targets``). Implementations
+without labels never take part in quality selection, so legacy blocks behave
+exactly as before.
 """
 
 import inspect
@@ -56,12 +63,14 @@ __all__ = [
     "CONTRACT_ATTRIBUTES",
     "DEFAULT_IMPLEMENTATION",
     "PHASE_OVERLAP_ATTRIBUTE",
+    "QUALITY_ATTRIBUTE",
     "RESERVED_PHASE_NAMES",
     "Implementation",
     "ImplementationSpec",
     "check_keyword_signature",
     "read_implementation_specs",
     "read_phase_overlap",
+    "read_quality_labels",
 ]
 
 DEFAULT_IMPLEMENTATION = "default"
@@ -76,6 +85,7 @@ CONTRACT_ATTRIBUTES: Tuple[str, ...] = (
     "describe_outputs",
     "accepts_empty",
     "mutates",
+    "prunable",
     "engine_compatibility",
     "metadata",
     "implementations",
@@ -85,11 +95,16 @@ CONTRACT_ATTRIBUTES: Tuple[str, ...] = (
 PHASE_OVERLAP_ATTRIBUTE = "phase_overlap"
 """Class attribute allowing concurrent phases of one instance (see ``Implementation``)."""
 
+QUALITY_ATTRIBUTE = "quality"
+"""Class attribute listing the quality labels an implementation serves."""
+
 RESERVED_PHASE_NAMES: Tuple[str, ...] = CONTRACT_ATTRIBUTES + (
     "name",
     "requires",
     PHASE_OVERLAP_ATTRIBUTE,
+    QUALITY_ATTRIBUTE,
     "run",
+    "wants",
     "execution_context",
     "discover_dependent_resources",
     "discover_work_operations",
@@ -98,6 +113,7 @@ RESERVED_PHASE_NAMES: Tuple[str, ...] = CONTRACT_ATTRIBUTES + (
 """Attributes of ``Block`` and ``Implementation`` that a phase cannot shadow."""
 
 _NAME = re.compile(r"[A-Za-z0-9_\-.]+")
+_QUALITY_LABEL = re.compile(r"[A-Za-z0-9_\-]+")
 
 
 class Implementation(ExecutionContextReader):
@@ -108,6 +124,12 @@ class Implementation(ExecutionContextReader):
             digits, ``_``, ``-`` and ``.``.
         requires: Capabilities the compile target must have, e.g.
             ``("cpu", "torch")``.
+        quality: Quality labels this implementation serves, e.g.
+            ``("fast",)`` or ``("balanced", "accurate")``; letters, digits,
+            ``_`` and ``-``. Empty (default) opts out of quality selection.
+            A step-level request for a label no fitting implementation of
+            the block serves is a compile error; a workflow or deployment
+            level request that nothing serves is recorded and ignored.
         phase_overlap: ``True`` (default) lets a pipelined run execute
             different phases of this one instance at the same time, for
             different pulses: pulse 1 may run ``tensor`` while pulse 0 runs
@@ -131,6 +153,7 @@ class Implementation(ExecutionContextReader):
 
     name: ClassVar[str]
     requires: ClassVar[Tuple[str, ...]] = ()
+    quality: ClassVar[Tuple[str, ...]] = ()
     phase_overlap: ClassVar[bool] = True
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -161,6 +184,8 @@ class ImplementationSpec:
         phases: Phase graph, or ``None`` without phases.
         phase_overlap: Whether a pipelined run may overlap different phases
             of one instance; meaningful only with ``phases``.
+        quality: Quality labels this implementation serves; empty when it
+            takes no part in quality selection.
     """
 
     name: str
@@ -169,6 +194,11 @@ class ImplementationSpec:
     resources: Tuple[ResourceSpec, ...]
     phases: Optional[PhaseGraph]
     phase_overlap: bool = True
+    quality: FrozenSet[str] = frozenset()
+
+    def serves(self, label: str) -> bool:
+        """Whether this implementation declares the quality ``label``."""
+        return label in self.quality
 
     def describe(self) -> Dict[str, Any]:
         """Return a JSON-friendly description without constructing anything."""
@@ -181,8 +211,46 @@ class ImplementationSpec:
             "phases": self.phases.describe() if self.phases is not None else None,
             "phase_overlap": self.phase_overlap,
         }
+        if self.quality:
+            description["quality"] = sorted(self.quality)
 
         return description
+
+
+def read_quality_labels(
+    owner: type, *, fail: Callable[[str], Exception]
+) -> FrozenSet[str]:
+    """Read and validate the ``quality`` class attribute.
+
+    Args:
+        owner: ``Implementation`` subclass or block class.
+        fail: Builds the exception to raise from a message.
+
+    Returns:
+        The declared labels; empty when the owner declares none.
+
+    Raises:
+        Exception: ``fail(message)`` when the value is not a tuple of labels
+            made of letters, digits, ``_`` and ``-``, or repeats a label.
+    """
+    declared = getattr(owner, QUALITY_ATTRIBUTE, ())
+    if isinstance(declared, str) or not isinstance(declared, (tuple, list)):
+        raise fail(
+            f"quality must be a tuple of labels such as ('fast',), got {declared!r}"
+        )
+
+    labels = tuple(declared)
+    invalid = [
+        label
+        for label in labels
+        if not isinstance(label, str) or not _QUALITY_LABEL.fullmatch(label)
+    ]
+    if invalid:
+        raise fail(f"quality labels must be letters, digits, _ or -, got {invalid!r}")
+    if len(set(labels)) != len(labels):
+        raise fail(f"quality repeats a label: {list(labels)}")
+
+    return frozenset(labels)
 
 
 def read_phase_overlap(owner: type, *, fail: Callable[[str], Exception]) -> bool:
@@ -305,6 +373,7 @@ def _read_implementation(
         resources=resources,
         phases=read_phase_graph(implementation, external=fields, fail=fail_here),
         phase_overlap=read_phase_overlap(implementation, fail=fail_here),
+        quality=read_quality_labels(implementation, fail=fail_here),
     )
 
     return spec

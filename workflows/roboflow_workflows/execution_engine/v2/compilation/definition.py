@@ -64,10 +64,47 @@ Their ports are addressed as ``$operators.<operator>.<port>``, also as an
 
 Flat ``JsonField`` outputs and ``OutputGroup`` outputs do not mix in one list.
 
+Reactions add ``state``, ``signals`` and ``handlers``. A handler subscribes to
+an event of a step in its own scope (``$steps.<step>.events.<event>``; a step
+of a nested workflow as ``$steps.<child>/<step>.events.<event>``) or to a root
+signal (``$signals.<name>``), and runs its own passive workflow::
+
+      "state": {"global": {"entries": 0}, "source": {"enabled": true}},
+      "signals": [{"name": "ack", "fields": {"zone": ["string"]}}],
+      "handlers": [{"name": "notify", "on": "$steps.zone.events.entered",
+                    "execution": {"mode": "async",
+                                  "queue": {"max_depth": 16, "overflow": "leaky"}},
+                    "bindings": {"zone": "$event.zone_id", "channel": "ops"},
+                    "workflow": {"inputs": [{"name": "zone", "kind": ["string"]}],
+                                 "steps": [...], "outputs": [...]}}]
+
+A root ``OutputGroup`` anchored at ``$handlers.<handler>`` (or one of its
+outputs, ``$handlers.<handler>.<output>``) delivers that handler's results.
+
+``state_machines`` move between declared states. A fixed transition fires on
+an event (``on``); a handler-selected one names the handler whose
+``v2/state_machine_set`` step picks one of its ``to`` states. A transition may
+emit a machine event (``$state_machines.<machine>.events.<name>``) built from
+``$event.<field>``, ``$transition.from|to|name`` and literals::
+
+      "state_machines": [{"name": "gate", "scope": "source",
+                          "initial_state": "idle", "states": ["idle", "open"],
+                          "transitions": [
+                              {"name": "open", "from": ["idle"], "to": "open",
+                               "on": "$steps.zone.events.entered",
+                               "emit": {"name": "opened",
+                                        "fields": {"zone": "$event.zone_id"}}},
+                              {"name": "close", "from": ["open"], "to": ["idle"],
+                               "handler": "review"}]}]
+
+Handlers and transitions may also subscribe to ``$system.events.started`` and
+``$system.events.ended`` of an active run.
+
 This module only checks structure. Composition and compilation resolve
 selectors.
 """
 
+import re
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
@@ -81,6 +118,7 @@ from roboflow_workflows.execution_engine.v2.data import (
     EntryLayout,
 )
 from roboflow_workflows.execution_engine.v2.declaration import (
+    SELECTOR_SEGMENT,
     is_selector_segment,
     parse_selector,
 )
@@ -91,8 +129,17 @@ from roboflow_workflows.execution_engine.v2.errors import (
     StepPath,
     WorkflowCompileError,
 )
+from roboflow_workflows.execution_engine.v2.events import EVENT_NAME
 from roboflow_workflows.execution_engine.v2.kinds import WILDCARD_KIND_NAME
 from roboflow_workflows.execution_engine.v2.operators.contract import INPUT_MAP_ROLES
+from roboflow_workflows.execution_engine.v2.reactions.plan import (
+    HANDLER_MODES,
+    MACHINE_SCOPES,
+    SYSTEM_EVENTS,
+    TRANSITION_VALUES,
+    QueuePolicy,
+    StateDefaults,
+)
 
 SUPPORTED_VERSION = "2.0"
 NESTED_WORKFLOW_TYPES: Tuple[str, ...] = (
@@ -132,8 +179,18 @@ _DEFINITION_KEYS = frozenset(
         "steps",
         "outputs",
         "dynamic_blocks_definitions",
+        "state",
+        "signals",
+        "handlers",
+        "state_machines",
+        "recording",
+        "retrospective",
+        "execution",
     }
 )
+_ROOT_ONLY_KEYS = ("recording", "retrospective", "execution")
+_EXECUTION_SETTINGS_KEYS = frozenset({"quality", "step_quality"})
+_QUALITY_LABEL = re.compile(r"[A-Za-z0-9_\-]+")
 _NESTED_STEP_KEYS = frozenset(
     {
         "type",
@@ -149,6 +206,27 @@ _NESTED_STEP_KEYS = frozenset(
 _OUTPUT_KEYS = frozenset({"type", "name", "selector", "coordinates_system"})
 _OUTPUT_GROUP_KEYS = frozenset({"type", "name", "anchor", "outputs"})
 _OUTPUT_OPTION_KEYS = ("coordinates_system",)
+_HANDLER_KEYS = frozenset({"name", "on", "execution", "bindings", "workflow"})
+_EXECUTION_KEYS = frozenset({"mode", "queue"})
+_QUEUE_KEYS = frozenset({"max_depth", "overflow"})
+_SIGNAL_KEYS = frozenset({"name", "fields", "description"})
+_STATE_KEYS = frozenset({"global", "source"})
+_MACHINE_KEYS = frozenset(
+    {"name", "scope", "initial_state", "states", "transitions", "description"}
+)
+_TRANSITION_KEYS = frozenset({"name", "from", "to", "on", "handler", "emit"})
+_EMIT_KEYS = frozenset({"name", "fields"})
+_SEGMENTS = rf"{SELECTOR_SEGMENT}(?:/{SELECTOR_SEGMENT})*"
+_STEP_EVENT = re.compile(rf"\$steps\.({_SEGMENTS})\.events\.({EVENT_NAME.pattern})")
+_SIGNAL_EVENT = re.compile(rf"\$signals\.({EVENT_NAME.pattern})")
+_SYSTEM_EVENT = re.compile(rf"\$system\.events\.({EVENT_NAME.pattern})")
+_MACHINE_EVENT = re.compile(
+    rf"\$state_machines\.({_SEGMENTS})\.events\.({EVENT_NAME.pattern})"
+)
+_TRANSITION_VALUE = re.compile(rf"\$transition\.({SELECTOR_SEGMENT})")
+_HANDLER_SELECTOR = re.compile(rf"\$handlers\.({_SEGMENTS})(?:\.({SELECTOR_SEGMENT}))?")
+_EVENT_FIELD = re.compile(rf"\$event\.({SELECTOR_SEGMENT})")
+HANDLERS_PREFIX = "$handlers."
 
 
 @dataclass(frozen=True)
@@ -331,6 +409,151 @@ class OperatorDeclaration:
 
 
 @dataclass(frozen=True)
+class EventSelector:
+    """A parsed ``on`` selector of a handler.
+
+    Args:
+        kind: ``"step"`` for ``$steps.<path>.events.<event>``, ``"signal"``
+            for ``$signals.<event>``, ``"system"`` for
+            ``$system.events.<event>``, ``"machine"`` for
+            ``$state_machines.<path>.events.<event>``.
+        event: Event or signal name.
+        path: Step or machine names from the declaring scope,
+            ``("child", "zone")`` for ``$steps.child/zone``; ``()`` for a
+            signal or a system event.
+        text: The selector as written.
+    """
+
+    kind: str
+    event: str
+    path: StepPath
+    text: str
+
+
+@dataclass(frozen=True)
+class HandlerDeclaration:
+    """A declared event handler.
+
+    Args:
+        name: Handler name, unique in its workflow.
+        on: Subscribed event.
+        mode: ``"sync"`` or ``"async"``.
+        queue: Queue policy of an async handler; ``None`` for sync.
+        bindings: Handler workflow input to the event field it receives.
+        constants: Handler workflow input to a literal value.
+        workflow: The raw handler workflow definition; composed later.
+        location: Definition path of the handler.
+    """
+
+    name: str
+    on: EventSelector
+    mode: str
+    queue: Optional[QueuePolicy]
+    bindings: Mapping[str, str]
+    constants: Mapping[str, Any]
+    workflow: Mapping[str, Any]
+    location: str
+
+
+@dataclass(frozen=True)
+class TransitionDeclaration:
+    """A declared state machine transition.
+
+    Args:
+        name: Transition name, unique in its machine.
+        sources: ``from`` states.
+        targets: ``to`` states; one for a fixed transition.
+        on: Triggering event of a fixed transition, else ``None``.
+        handler: Name of the selecting handler, else ``None``.
+        emit: Name of the emitted machine event, or ``None``.
+        fields: Emitted field to ``("event", field)``,
+            ``("transition", "from" | "to" | "name")`` or ``("literal", value)``.
+        location: Definition path of the transition.
+    """
+
+    name: str
+    sources: Tuple[str, ...]
+    targets: Tuple[str, ...]
+    on: Optional[EventSelector]
+    handler: Optional[str]
+    emit: Optional[str]
+    fields: Mapping[str, Tuple[str, Any]]
+    location: str
+
+
+@dataclass(frozen=True)
+class MachineDeclaration:
+    """A declared state machine.
+
+    Args:
+        name: Machine name, unique in its workflow.
+        scope: ``"source"`` or ``"global"``.
+        initial: Initial state.
+        states: Declared states.
+        transitions: Transitions in declaration order.
+        location: Definition path of the machine.
+    """
+
+    name: str
+    scope: str
+    initial: str
+    states: Tuple[str, ...]
+    transitions: Tuple[TransitionDeclaration, ...]
+    location: str
+
+
+@dataclass(frozen=True)
+class SignalDeclaration:
+    """A declared external signal of the root workflow.
+
+    Args:
+        name: Signal name, used as ``$signals.<name>``.
+        fields: Field name to accepted kind names.
+        description: Human-readable meaning.
+        location: Definition path of the signal.
+    """
+
+    name: str
+    fields: Mapping[str, Tuple[str, ...]]
+    description: str
+    location: str
+
+
+@dataclass(frozen=True)
+class StateDeclaration:
+    """Initial managed-state values declared by one workflow.
+
+    Args:
+        defaults: Validated global and per-source initial values.
+        location: Definition path of the ``state`` key.
+    """
+
+    defaults: StateDefaults
+    location: str
+
+
+@dataclass(frozen=True)
+class HandlerGroupDeclaration:
+    """A root output group anchored at a handler.
+
+    Args:
+        name: Group name.
+        handler: Handler path from the root, ``("child", "notify")`` for
+            ``$handlers.child/notify``.
+        anchor_output: Output named by the anchor, or ``None`` when the
+            anchor names the handler only.
+        fields: Group field name to the handler output it carries.
+        location: Definition path of the group.
+    """
+
+    name: str
+    handler: StepPath
+    anchor_output: Optional[str]
+    fields: Mapping[str, str]
+    location: str
+
+
+@dataclass(frozen=True)
 class WorkflowDeclaration:
     """One parsed workflow definition, root or child.
 
@@ -345,6 +568,17 @@ class WorkflowDeclaration:
         output_groups: Output groups in declaration order; empty when the
             outputs are flat.
         operators: Operators in declaration order.
+        handlers: Event handlers in declaration order.
+        signals: External signals in declaration order.
+        state: Initial managed-state values; ``None`` when not declared.
+        handler_groups: Output groups anchored at handlers.
+        machines: State machines in declaration order.
+        recording: Raw root ``recording`` declaration; ``None`` when absent.
+            Compiled by ``recording.compilation`` against the plan.
+        retrospective: Raw root ``retrospective`` declaration; ``None`` when
+            absent.
+        execution: Root ``execution`` settings (quality labels); ``None``
+            when absent.
     """
 
     inputs: Mapping[str, WorkflowInputDeclaration]
@@ -355,6 +589,14 @@ class WorkflowDeclaration:
     sources: Tuple[SourceDeclaration, ...] = ()
     output_groups: Tuple[OutputGroupDeclaration, ...] = ()
     operators: Tuple[OperatorDeclaration, ...] = ()
+    handlers: Tuple[HandlerDeclaration, ...] = ()
+    signals: Tuple[SignalDeclaration, ...] = ()
+    state: Optional[StateDeclaration] = None
+    handler_groups: Tuple[HandlerGroupDeclaration, ...] = ()
+    machines: Tuple[MachineDeclaration, ...] = ()
+    recording: Optional[Mapping[str, Any]] = None
+    retrospective: Optional[Mapping[str, Any]] = None
+    execution: Optional["ExecutionSettingsDeclaration"] = None
 
     def step(self, name: str) -> Optional[StepDeclaration]:
         """Return the step named ``name``.
@@ -395,8 +637,14 @@ def parse_workflow(definition: Any, *, location: str = "") -> WorkflowDeclaratio
         raise WorkflowCompileError(
             f"{where} must be a mapping, got {type(definition).__name__}"
         )
-
     _reject_unknown_keys(definition, allowed=_DEFINITION_KEYS, location=where)
+    misplaced = [key for key in _ROOT_ONLY_KEYS if key in definition]
+    if location and misplaced:
+        raise WorkflowCompileError(
+            f"{location}{misplaced[0]} is root-only: declare recording, "
+            "retrospective processing and execution settings in the root "
+            "definition"
+        )
     version = definition.get("version")
     if version != SUPPORTED_VERSION:
         raise WorkflowCompileError(
@@ -412,6 +660,9 @@ def parse_workflow(definition: Any, *, location: str = "") -> WorkflowDeclaratio
         "steps",
         "outputs",
         "dynamic_blocks_definitions",
+        "signals",
+        "handlers",
+        "state_machines",
     ):
         value = definition.get(section)
         value = [] if value is None else value
@@ -421,7 +672,9 @@ def parse_workflow(definition: Any, *, location: str = "") -> WorkflowDeclaratio
             )
         sections[section] = value
 
-    outputs, output_groups = _parse_outputs(sections["outputs"], location=location)
+    outputs, output_groups, handler_groups = _parse_outputs(
+        sections["outputs"], location=location
+    )
     sources = _parse_sources(sections["sources"], location=location)
     operators = _parse_operators(sections["operators"], location=location)
     clashing = sorted(
@@ -441,9 +694,108 @@ def parse_workflow(definition: Any, *, location: str = "") -> WorkflowDeclaratio
         sources=sources,
         output_groups=output_groups,
         operators=operators,
+        handlers=_parse_handlers(sections["handlers"], location=location),
+        signals=_parse_signals(sections["signals"], location=location),
+        state=_parse_state(definition.get("state"), location=location),
+        handler_groups=handler_groups,
+        machines=_parse_machines(sections["state_machines"], location=location),
+        recording=_optional_section(definition, "recording"),
+        retrospective=_optional_section(definition, "retrospective"),
+        execution=_parse_execution_settings(_optional_section(definition, "execution")),
     )
 
     return declaration
+
+
+@dataclass(frozen=True)
+class ExecutionSettingsDeclaration:
+    """The root ``execution`` section: compile-time quality labels.
+
+    ::
+
+        "execution": {
+            "quality": "fast",
+            "step_quality": {"$steps.segment": "accurate", "$steps.child/overlay": "fast"}
+        }
+
+    Labels are literals; a ``$inputs`` selector is rejected because a quality
+    selects a compiled implementation and cannot change at run time.
+
+    Args:
+        quality: Workflow-level label, or ``None``.
+        step_quality: Step-level labels by step selector, as written.
+    """
+
+    quality: Optional[str] = None
+    step_quality: Mapping[str, str] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "step_quality", MappingProxyType(dict(self.step_quality or {}))
+        )
+
+
+def _parse_execution_settings(
+    raw: Optional[Mapping[str, Any]],
+) -> Optional[ExecutionSettingsDeclaration]:
+    if raw is None:
+        return None
+
+    _reject_unknown_keys(raw, allowed=_EXECUTION_SETTINGS_KEYS, location="execution")
+    quality = raw.get("quality")
+    if quality is not None:
+        quality = _quality_label(quality, location="execution.quality")
+    step_quality: Dict[str, str] = {}
+    raw_steps = raw.get("step_quality")
+    if raw_steps is not None:
+        if not isinstance(raw_steps, Mapping):
+            raise WorkflowCompileError(
+                "execution.step_quality must map step selectors ($steps.<name>) to "
+                f"quality labels, got {type(raw_steps).__name__}"
+            )
+        for selector, label in raw_steps.items():
+            if not isinstance(selector, str) or not selector.startswith("$steps."):
+                raise WorkflowCompileError(
+                    f"execution.step_quality keys must be step selectors such as "
+                    f"'$steps.model' or '$steps.child/model', got {selector!r}"
+                )
+            step_quality[selector] = _quality_label(
+                label, location=f"execution.step_quality[{selector!r}]"
+            )
+    declaration = ExecutionSettingsDeclaration(
+        quality=quality, step_quality=step_quality
+    )
+
+    return declaration
+
+
+def _quality_label(value: Any, *, location: str) -> str:
+    if isinstance(value, str) and value.startswith("$"):
+        raise WorkflowCompileError(
+            f"{location} is the selector {value!r}; a quality label selects a "
+            "compiled implementation, so it must be a literal, never a runtime "
+            "value"
+        )
+    if not isinstance(value, str) or not _QUALITY_LABEL.fullmatch(value):
+        raise WorkflowCompileError(
+            f"{location} must be a quality label of letters, digits, _ or -, got "
+            f"{value!r}"
+        )
+
+    return value
+
+
+def _optional_section(definition: Mapping[str, Any], key: str) -> Optional[Any]:
+    """A root section kept raw for its own compiler; ``None`` when absent."""
+    value = definition.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise WorkflowCompileError(
+            f"{key} must be a mapping, got {type(value).__name__}"
+        )
+
+    return MappingProxyType(dict(value))
 
 
 def is_selector_text(value: Any) -> bool:
@@ -895,26 +1247,36 @@ def _parse_operator_inputs(
     return inputs
 
 
-def _parse_outputs(
-    raw_outputs: List[Any], *, location: str
-) -> Tuple[Tuple[WorkflowOutputDeclaration, ...], Tuple[OutputGroupDeclaration, ...]]:
-    """Parse flat ``JsonField`` outputs or ``OutputGroup`` outputs, never both."""
+def _parse_outputs(raw_outputs: List[Any], *, location: str) -> Tuple[
+    Tuple[WorkflowOutputDeclaration, ...],
+    Tuple[OutputGroupDeclaration, ...],
+    Tuple[HandlerGroupDeclaration, ...],
+]:
+    """Parse flat ``JsonField`` outputs or ``OutputGroup`` outputs, never both.
+
+    Groups anchored at ``$handlers.`` become handler groups.
+    """
     types = {
         raw.get("type", JSON_FIELD_TYPE) if isinstance(raw, Mapping) else None
         for raw in raw_outputs
     }
     if types == {OUTPUT_GROUP_TYPE}:
-        groups = tuple(
-            _parse_output_group(raw, location=f"{location}outputs[{position}]")
-            for position, raw in enumerate(raw_outputs)
-        )
-        names = [group.name for group in groups]
+        groups: List[OutputGroupDeclaration] = []
+        handler_groups: List[HandlerGroupDeclaration] = []
+        for position, raw in enumerate(raw_outputs):
+            where = f"{location}outputs[{position}]"
+            anchor = raw.get("anchor")
+            if isinstance(anchor, str) and anchor.startswith(HANDLERS_PREFIX):
+                handler_groups.append(_parse_handler_group(raw, location=where))
+                continue
+            groups.append(_parse_output_group(raw, location=where))
+        names = [group.name for group in [*groups, *handler_groups]]
         duplicates = sorted({name for name in names if names.count(name) > 1})
         if duplicates:
             raise WorkflowCompileError(
                 f"{location}outputs: duplicate output group names {duplicates}"
             )
-        return (), groups
+        return (), tuple(groups), tuple(handler_groups)
     if OUTPUT_GROUP_TYPE in types:
         raise WorkflowCompileError(
             f"{location}outputs mixes {OUTPUT_GROUP_TYPE} and {JSON_FIELD_TYPE} "
@@ -923,7 +1285,7 @@ def _parse_outputs(
 
     outputs = _parse_json_fields(raw_outputs, location=f"{location}outputs")
 
-    return outputs, ()
+    return outputs, (), ()
 
 
 def _parse_output_group(raw: Any, *, location: str) -> OutputGroupDeclaration:
@@ -946,6 +1308,14 @@ def _parse_output_group(raw: Any, *, location: str) -> OutputGroupDeclaration:
                 f"{location}.outputs[{position}] must be a {JSON_FIELD_TYPE}; groups "
                 "do not nest"
             )
+        selector = field.get("selector")
+        if isinstance(selector, str) and selector.startswith(HANDLERS_PREFIX):
+            raise WorkflowCompileError(
+                f"{location}.outputs[{position}] selects {selector!r} in a group "
+                f"anchored at {raw.get('anchor')!r}; handler results arrive per "
+                "handler run, so put them in a group anchored at the handler, "
+                "e.g. $handlers.<handler>"
+            )
 
     group = OutputGroupDeclaration(
         name=name,
@@ -955,6 +1325,456 @@ def _parse_output_group(raw: Any, *, location: str) -> OutputGroupDeclaration:
     )
 
     return group
+
+
+def _parse_handler_group(raw: Any, *, location: str) -> HandlerGroupDeclaration:
+    _reject_unknown_keys(raw, allowed=_OUTPUT_GROUP_KEYS, location=location)
+    name = _require_name(raw.get("name"), location=f"{location}.name")
+    anchor = raw["anchor"]
+    handler, anchor_output = _parse_handler_selector(
+        anchor, location=f"{location}.anchor"
+    )
+    fields = raw.get("outputs")
+    if not isinstance(fields, list) or not fields:
+        raise WorkflowCompileError(
+            f"{location}.outputs must be a non-empty list of {JSON_FIELD_TYPE} "
+            f"selections of {HANDLERS_PREFIX}{'/'.join(handler)}.<output>"
+        )
+
+    selected: Dict[str, str] = {}
+    for position, item in enumerate(fields):
+        where = f"{location}.outputs[{position}]"
+        if not isinstance(item, Mapping):
+            raise WorkflowCompileError(f"{where} must be a mapping")
+        _reject_unknown_keys(item, allowed=_OUTPUT_KEYS, location=where)
+        if item.get("type", JSON_FIELD_TYPE) != JSON_FIELD_TYPE:
+            raise WorkflowCompileError(
+                f"{where} must be a {JSON_FIELD_TYPE}; groups do not nest"
+            )
+        options = sorted(key for key in _OUTPUT_OPTION_KEYS if key in item)
+        if options:
+            raise WorkflowCompileError(
+                f"{where} sets {options}; handler group fields carry handler "
+                "outputs as the handler returns them"
+            )
+        field_name = _require_name(item.get("name"), location=f"{where}.name")
+        if field_name in selected:
+            raise WorkflowCompileError(f"{where}: duplicate group field {field_name!r}")
+        selector = item.get("selector")
+        path, output = _parse_handler_selector(selector, location=f"{where}.selector")
+        if path != handler or output is None:
+            raise WorkflowCompileError(
+                f"{where}.selector is {selector!r}; a group anchored at {anchor!r} "
+                f"carries outputs of that handler only, as "
+                f"{HANDLERS_PREFIX}{'/'.join(handler)}.<output>"
+            )
+        selected[field_name] = output
+
+    group = HandlerGroupDeclaration(
+        name=name,
+        handler=handler,
+        anchor_output=anchor_output,
+        fields=MappingProxyType(selected),
+        location=location,
+    )
+
+    return group
+
+
+def _parse_handler_selector(
+    value: Any, *, location: str
+) -> Tuple[StepPath, Optional[str]]:
+    matched = _HANDLER_SELECTOR.fullmatch(value) if isinstance(value, str) else None
+    if matched is None:
+        raise SelectorError(
+            f"{location} must be $handlers.<handler> or "
+            f"$handlers.<handler>.<output> (a nested workflow's handler as "
+            f"$handlers.<child>/<handler>), got {value!r}"
+        )
+
+    path = tuple(matched.group(1).split("/"))
+
+    return path, matched.group(2)
+
+
+def _parse_handlers(
+    raw_handlers: List[Any], *, location: str
+) -> Tuple[HandlerDeclaration, ...]:
+    handlers: List[HandlerDeclaration] = []
+    names = set()
+    for position, raw in enumerate(raw_handlers):
+        where = f"{location}handlers[{position}]"
+        if not isinstance(raw, Mapping):
+            raise WorkflowCompileError(f"{where} must be a mapping")
+
+        _reject_unknown_keys(raw, allowed=_HANDLER_KEYS, location=where)
+        name = _require_name(raw.get("name"), location=f"{where}.name")
+        if name in names:
+            raise WorkflowCompileError(f"{where}: duplicate handler name {name!r}")
+        names.add(name)
+        mode, queue = _parse_execution(raw.get("execution"), location=where)
+        bindings, constants = _parse_handler_bindings(
+            raw.get("bindings"), location=f"{where}.bindings"
+        )
+        workflow = raw.get("workflow")
+        if not isinstance(workflow, Mapping) or not workflow:
+            raise WorkflowCompileError(
+                f"{where} ($handlers.{name}) needs a non-empty workflow definition"
+            )
+        handlers.append(
+            HandlerDeclaration(
+                name=name,
+                on=_parse_event_selector(raw.get("on"), location=f"{where}.on"),
+                mode=mode,
+                queue=queue,
+                bindings=MappingProxyType(bindings),
+                constants=MappingProxyType(constants),
+                workflow=workflow,
+                location=where,
+            )
+        )
+
+    return tuple(handlers)
+
+
+def _parse_event_selector(value: Any, *, location: str) -> EventSelector:
+    text = value if isinstance(value, str) else ""
+    for kind, pattern in (("step", _STEP_EVENT), ("machine", _MACHINE_EVENT)):
+        matched = pattern.fullmatch(text)
+        if matched is not None:
+            selector = EventSelector(
+                kind=kind,
+                event=matched.group(2),
+                path=tuple(matched.group(1).split("/")),
+                text=text,
+            )
+            return selector
+    for kind, pattern in (("signal", _SIGNAL_EVENT), ("system", _SYSTEM_EVENT)):
+        matched = pattern.fullmatch(text)
+        if matched is not None:
+            break
+    else:
+        raise SelectorError(
+            f"{location} must be $steps.<step>.events.<event> (a nested workflow's "
+            "step as $steps.<child>/<step>.events.<event>), $signals.<signal>, "
+            "$state_machines.<machine>.events.<event> or "
+            f"$system.events.<event>, got {value!r}"
+        )
+    if kind == "system" and matched.group(1) not in SYSTEM_EVENTS:
+        raise SelectorError(
+            f"{location} names unknown system event {matched.group(1)!r}; system "
+            f"events are {sorted(SYSTEM_EVENTS)}"
+        )
+
+    selector = EventSelector(kind=kind, event=matched.group(1), path=(), text=text)
+
+    return selector
+
+
+def _parse_execution(raw: Any, *, location: str) -> Tuple[str, Optional[QueuePolicy]]:
+    where = f"{location}.execution"
+    if raw is None:
+        return "sync", None
+    if not isinstance(raw, Mapping):
+        raise WorkflowCompileError(f"{where} must be a mapping")
+
+    _reject_unknown_keys(raw, allowed=_EXECUTION_KEYS, location=where)
+    mode = raw.get("mode", "sync")
+    if mode not in HANDLER_MODES:
+        raise WorkflowCompileError(
+            f"{where}.mode must be one of {list(HANDLER_MODES)}, got {mode!r}"
+        )
+    raw_queue = raw.get("queue")
+    if mode == "sync":
+        if raw_queue is not None:
+            raise WorkflowCompileError(
+                f"{where} declares a queue for a sync handler; a sync handler "
+                "runs before emit returns and queues nothing"
+            )
+        return mode, None
+
+    raw_queue = {} if raw_queue is None else raw_queue
+    if not isinstance(raw_queue, Mapping):
+        raise WorkflowCompileError(f"{where}.queue must be a mapping")
+    _reject_unknown_keys(raw_queue, allowed=_QUEUE_KEYS, location=f"{where}.queue")
+    try:
+        queue = QueuePolicy(**raw_queue)
+    except ContractError as error:
+        raise WorkflowCompileError(f"{where}.queue is invalid: {error}") from error
+
+    return mode, queue
+
+
+def _parse_handler_bindings(
+    raw: Any, *, location: str
+) -> Tuple[Dict[str, str], Dict[str, Any]]:
+    raw = {} if raw is None else raw
+    if not isinstance(raw, Mapping):
+        raise WorkflowCompileError(
+            f"{location} must map handler workflow inputs to $event.<field> or "
+            "literals"
+        )
+
+    bindings: Dict[str, str] = {}
+    constants: Dict[str, Any] = {}
+    for input_name, value in raw.items():
+        where = f"{location}.{input_name}"
+        _require_name(input_name, location=f"{location} key {input_name!r}")
+        if not is_selector_text(value):
+            constants[input_name] = value
+            continue
+        matched = _EVENT_FIELD.fullmatch(value)
+        if matched is None:
+            raise SelectorError(
+                f"{where} is {value!r}; a handler binds only $event.<field> or a "
+                "literal. Workflow inputs and step outputs are not available to "
+                "handlers; emit the value as an event field instead"
+            )
+        bindings[input_name] = matched.group(1)
+
+    return bindings, constants
+
+
+def _parse_signals(
+    raw_signals: List[Any], *, location: str
+) -> Tuple[SignalDeclaration, ...]:
+    signals: List[SignalDeclaration] = []
+    names = set()
+    for position, raw in enumerate(raw_signals):
+        where = f"{location}signals[{position}]"
+        if not isinstance(raw, Mapping):
+            raise WorkflowCompileError(f"{where} must be a mapping")
+
+        _reject_unknown_keys(raw, allowed=_SIGNAL_KEYS, location=where)
+        name = raw.get("name")
+        if not isinstance(name, str) or EVENT_NAME.fullmatch(name) is None:
+            raise WorkflowCompileError(
+                f"{where}.name must start with a letter or '_' and contain letters, "
+                f"digits, '_' and '-', got {name!r}"
+            )
+        if name in names:
+            raise WorkflowCompileError(f"{where}: duplicate signal name {name!r}")
+        names.add(name)
+        raw_fields = raw.get("fields", {})
+        if not isinstance(raw_fields, Mapping):
+            raise WorkflowCompileError(
+                f"{where}.fields must map field names to kind names"
+            )
+        fields = {
+            _require_name(field_name, location=f"{where}.fields key {field_name!r}"): (
+                _kind_names(kinds or None, location=f"{where}.fields.{field_name}")
+            )
+            for field_name, kinds in raw_fields.items()
+        }
+        description = raw.get("description", "")
+        if not isinstance(description, str):
+            raise WorkflowCompileError(f"{where}.description must be text")
+        signals.append(
+            SignalDeclaration(
+                name=name,
+                fields=MappingProxyType(fields),
+                description=description,
+                location=where,
+            )
+        )
+
+    return tuple(signals)
+
+
+def _parse_machines(
+    raw_machines: List[Any], *, location: str
+) -> Tuple[MachineDeclaration, ...]:
+    machines: List[MachineDeclaration] = []
+    names = set()
+    for position, raw in enumerate(raw_machines):
+        where = f"{location}state_machines[{position}]"
+        if not isinstance(raw, Mapping):
+            raise WorkflowCompileError(f"{where} must be a mapping")
+
+        _reject_unknown_keys(raw, allowed=_MACHINE_KEYS, location=where)
+        name = _require_name(raw.get("name"), location=f"{where}.name")
+        if name in names:
+            raise WorkflowCompileError(f"{where}: duplicate state machine {name!r}")
+        names.add(name)
+        scope = raw.get("scope")
+        if scope not in MACHINE_SCOPES:
+            raise WorkflowCompileError(
+                f"{where}.scope must be one of {list(MACHINE_SCOPES)}, got {scope!r}"
+            )
+        states = _state_names(raw.get("states"), location=f"{where}.states")
+        initial = raw.get("initial_state")
+        if initial not in states:
+            raise WorkflowCompileError(
+                f"{where}.initial_state {initial!r} is not one of the states {states}"
+            )
+        raw_transitions = raw.get("transitions")
+        if not isinstance(raw_transitions, list):
+            raise WorkflowCompileError(f"{where}.transitions must be a list")
+        transitions = tuple(
+            _parse_transition(item, states=states, location=f"{where}.transitions[{i}]")
+            for i, item in enumerate(raw_transitions)
+        )
+        names_seen = [item.name for item in transitions]
+        repeated = sorted({item for item in names_seen if names_seen.count(item) > 1})
+        if repeated:
+            raise WorkflowCompileError(f"{where}: duplicate transitions {repeated}")
+        machines.append(
+            MachineDeclaration(
+                name=name,
+                scope=scope,
+                initial=initial,
+                states=states,
+                transitions=transitions,
+                location=where,
+            )
+        )
+
+    return tuple(machines)
+
+
+def _parse_transition(
+    raw: Any, *, states: Tuple[str, ...], location: str
+) -> TransitionDeclaration:
+    if not isinstance(raw, Mapping):
+        raise WorkflowCompileError(f"{location} must be a mapping")
+
+    _reject_unknown_keys(raw, allowed=_TRANSITION_KEYS, location=location)
+    name = _require_name(raw.get("name"), location=f"{location}.name")
+    where = f"{location} ({name})"
+    if ("on" in raw) == ("handler" in raw):
+        raise WorkflowCompileError(
+            f"{where} needs exactly one of 'on' (an event fires it) or 'handler' "
+            "(that handler's v2/state_machine_set step picks the target)"
+        )
+    sources = _state_names(raw.get("from"), location=f"{where}.from", states=states)
+    raw_targets = raw.get("to")
+    on = handler = None
+    if "on" in raw:
+        on = _parse_event_selector(raw["on"], location=f"{where}.on")
+        if not isinstance(raw_targets, str):
+            raise WorkflowCompileError(
+                f"{where}.to must be one state for a transition fired by an event, "
+                f"got {raw_targets!r}; list several states only for a "
+                "handler-selected transition"
+            )
+    else:
+        handler = _require_name(raw["handler"], location=f"{where}.handler")
+    targets = _state_names(raw_targets, location=f"{where}.to", states=states)
+    emit, fields = _parse_emit(raw.get("emit"), fixed=on is not None, location=where)
+
+    transition = TransitionDeclaration(
+        name=name,
+        sources=sources,
+        targets=targets,
+        on=on,
+        handler=handler,
+        emit=emit,
+        fields=MappingProxyType(fields),
+        location=where,
+    )
+
+    return transition
+
+
+def _state_names(
+    raw: Any, *, location: str, states: Optional[Tuple[str, ...]] = None
+) -> Tuple[str, ...]:
+    names = [raw] if isinstance(raw, str) else raw
+    if not isinstance(names, list) or not names:
+        raise WorkflowCompileError(
+            f"{location} must be a state name or a non-empty list of them, got {raw!r}"
+        )
+    for name in names:
+        _require_name(name, location=f"{location} state {name!r}")
+    if len(set(names)) != len(names):
+        raise WorkflowCompileError(f"{location} repeats a state: {names}")
+    unknown = [name for name in names if states is not None and name not in states]
+    if unknown:
+        raise WorkflowCompileError(
+            f"{location} names unknown states {unknown}; states are {list(states)}"
+        )
+
+    return tuple(names)
+
+
+def _parse_emit(
+    raw: Any, *, fixed: bool, location: str
+) -> Tuple[Optional[str], Dict[str, Tuple[str, Any]]]:
+    where = f"{location}.emit"
+    if raw is None:
+        return None, {}
+    if not isinstance(raw, Mapping):
+        raise WorkflowCompileError(f"{where} must be a mapping with 'name', 'fields'")
+
+    _reject_unknown_keys(raw, allowed=_EMIT_KEYS, location=where)
+    name = raw.get("name")
+    if not isinstance(name, str) or EVENT_NAME.fullmatch(name) is None:
+        raise WorkflowCompileError(
+            f"{where}.name must start with a letter or '_' and contain letters, "
+            f"digits, '_' and '-', got {name!r}"
+        )
+    raw_fields = raw.get("fields", {})
+    if not isinstance(raw_fields, Mapping):
+        raise WorkflowCompileError(f"{where}.fields must map field names to values")
+
+    fields: Dict[str, Tuple[str, Any]] = {}
+    for field_name, value in raw_fields.items():
+        field_where = f"{where}.fields.{field_name}"
+        _require_name(field_name, location=f"{where}.fields key {field_name!r}")
+        if not is_selector_text(value):
+            fields[field_name] = ("literal", value)
+            continue
+        event_field = _EVENT_FIELD.fullmatch(value)
+        transition_value = _TRANSITION_VALUE.fullmatch(value)
+        if event_field is not None and fixed:
+            fields[field_name] = ("event", event_field.group(1))
+        elif event_field is not None:
+            raise SelectorError(
+                f"{field_where} is {value!r}, but a handler-selected transition does "
+                "not keep the payload of the event that started its handler. Use "
+                "$transition.from|to|name or a literal, or return the value from "
+                "the handler workflow"
+            )
+        elif transition_value is not None:
+            if transition_value.group(1) not in TRANSITION_VALUES:
+                raise SelectorError(
+                    f"{field_where} is {value!r}; a transition provides "
+                    f"{[f'$transition.{item}' for item in TRANSITION_VALUES]}"
+                )
+            fields[field_name] = ("transition", transition_value.group(1))
+        else:
+            raise SelectorError(
+                f"{field_where} is {value!r}; an emitted field is $event.<field>, "
+                "$transition.from|to|name or a literal"
+            )
+
+    return name, fields
+
+
+def _parse_state(raw: Any, *, location: str) -> Optional[StateDeclaration]:
+    where = f"{location}state"
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise WorkflowCompileError(
+            f"{where} must be a mapping with 'global' and/or 'source' initial values"
+        )
+
+    _reject_unknown_keys(raw, allowed=_STATE_KEYS, location=where)
+    scopes = {}
+    for scope in ("global", "source"):
+        values = raw.get(scope, {})
+        if not isinstance(values, Mapping):
+            raise WorkflowCompileError(f"{where}.{scope} must map keys to values")
+        scopes[scope] = values
+    try:
+        defaults = StateDefaults(global_=scopes["global"], source=scopes["source"])
+    except ContractError as error:
+        raise WorkflowCompileError(f"{where} is invalid: {error}") from error
+
+    declaration = StateDeclaration(defaults=defaults, location=where)
+
+    return declaration
 
 
 def _parse_json_fields(

@@ -116,6 +116,27 @@ def test_every_supported_tensor_dtype_round_trips() -> None:
         _assert_same(_round_trip(tensor), tensor, name)
 
 
+@pytest.mark.parametrize("dtype", list(SUPPORTED_TENSOR_DTYPES.values()))
+@pytest.mark.parametrize(
+    "shape,strides",
+    [((1,), (38,)), ((0,), (38,)), ((1, 1), (76, 38)), ((1,), (0,))],
+    ids=["singleton-column", "empty-column", "singleton-matrix", "zero-stride"],
+)
+def test_contiguous_views_with_nonunit_strides_round_trip(dtype, shape, strides):
+    storage = torch.arange(76).to(dtype)
+    tensor = storage.as_strided(shape, strides, storage_offset=3)
+    original = storage.clone()
+    assert tensor.is_contiguous()
+    assert tensor.stride(-1) != 1
+
+    decoded = _round_trip(tensor)
+
+    assert decoded.dtype == dtype
+    assert decoded.shape == tensor.shape
+    assert torch.equal(decoded, tensor)
+    assert torch.equal(storage, original)
+
+
 def test_tensor_wire_is_compact_base64_not_number_lists() -> None:
     # when
     wire = encode_native(torch.arange(4, dtype=torch.int16).reshape(2, 2))

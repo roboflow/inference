@@ -13,7 +13,11 @@ resource providers or executes submitted Python::
                                                  scoped port layouts
                ──▶ compiler.compile_composition  bindings, order, layouts, gates,
                                                  causal domains, groups,
-                                                 mutation analysis
+                                                 mutation analysis, quality
+               ──▶ demand.apply_demand           requested outputs, recorded
+                                                 groups, prunable steps
+               ──▶ recording.compilation         root recording/retrospective
+                                                 declarations (only when set)
                ──▶ CompiledWorkflow
 
 Example::
@@ -23,12 +27,17 @@ Example::
     result = session.run({"image": frame})
 """
 
+import dataclasses
 import importlib
 from typing import Any, Mapping, Optional
 
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.compilation.compiler import (
     compile_composition,
+)
+from roboflow_workflows.execution_engine.v2.compilation.demand import (
+    DemandPlan,
+    apply_demand,
 )
 from roboflow_workflows.execution_engine.v2.compilation.composition import (
     Composition,
@@ -48,13 +57,18 @@ from roboflow_workflows.execution_engine.v2.errors import (
 from roboflow_workflows.execution_engine.v2.plan import CompiledWorkflow, CompileOptions
 
 DYNAMIC_BLOCKS_MODULE = "roboflow_workflows.execution_engine.v2.dynamic_blocks"
+RECORDING_COMPILATION_MODULE = (
+    "roboflow_workflows.execution_engine.v2.recording.compilation"
+)
 
 __all__ = [
     "NESTED_WORKFLOW_TYPES",
     "ROOT_AXIS",
     "SUPPORTED_VERSION",
+    "DemandPlan",
     "ReferenceResolver",
     "WorkflowReference",
+    "apply_demand",
     "compile_workflow",
 ]
 
@@ -80,14 +94,50 @@ def compile_workflow(
 
     Returns:
         The validated plan. Its warnings list mutation conflicts (under the
-        default ``warn`` policy) and dropped dynamic duplicates.
+        default ``warn`` policy) and dropped dynamic duplicates. A root
+        ``recording`` declaration sets ``plan.recording``; a root
+        ``retrospective`` declaration is compiled beside the plan into
+        ``plan.retrospective``. ``plan.demand`` records which steps the
+        requested outputs (``options.requested_outputs``) kept and dropped.
 
     Raises:
         WorkflowCompileError: A subclass naming the step path, field path and
             reason: ``SelectorError``, ``UnknownBlockError``,
             ``ParamsValidationError``, ``KindMismatchError``, ``LineageError``,
-            ``CycleError``, ``NestedWorkflowError`` or
-            ``MutationConflictError``.
+            ``CycleError``, ``NestedWorkflowError``,
+            ``MutationConflictError``, ``DemandError``,
+            ``UnsupportedQualityError`` or ``RecordingDefinitionError``.
+    """
+    plan = compile_definition(
+        definition,
+        catalogue=catalogue,
+        options=options,
+        reference_resolver=reference_resolver,
+    )
+
+    return plan
+
+
+def compile_definition(
+    definition: Mapping[str, Any],
+    *,
+    catalogue: Catalogue,
+    options: CompileOptions,
+    reference_resolver: Optional[ReferenceResolver],
+    location: str = "",
+) -> CompiledWorkflow:
+    """``compile_workflow`` with a definition path prefix for messages.
+
+    Args:
+        definition: Workflow definition with ``"version": "2.0"``.
+        catalogue: Blocks and kinds the definition may use.
+        options: Compile options.
+        reference_resolver: Resolver of saved child workflows.
+        location: Path prefix of the definition, ``""`` for a root; a
+            prefixed definition cannot declare root-only sections.
+
+    Returns:
+        The validated plan.
     """
     if not isinstance(catalogue, Catalogue):
         raise WorkflowCompileError(
@@ -102,13 +152,44 @@ def compile_workflow(
         definition,
         options=options,
         reference_resolver=reference_resolver,
+        location=location,
     )
     full_catalogue = _with_dynamic_blocks(
         catalogue, composition=composition, options=options
     )
     plan = compile_composition(composition, catalogue=full_catalogue, options=options)
+    root = composition.root.workflow
+    recording_compilation = None
+    recorded_groups = ()
+    if root.recording is not None or root.retrospective is not None:
+        # Imported only for definitions that record or analyse a recording, so
+        # ordinary compilation skips the stage compilers (retrospective, replay,
+        # results). The recording package itself is already loaded: the
+        # catalogue imports its codecs.
+        recording_compilation = importlib.import_module(RECORDING_COMPILATION_MODULE)
+    if root.recording is not None:
+        recorded_groups = recording_compilation.recorded_group_names(
+            root.recording, plan=plan
+        )
+    plan = apply_demand(
+        plan, requested=options.requested_outputs, recorded_groups=recorded_groups
+    )
+    if recording_compilation is None:
+        return plan
 
-    return plan
+    # The retrospective workflow has its own outputs; the request applies to
+    # the primary plan only.
+    staged = recording_compilation.compile_stages(
+        plan,
+        definition=definition,
+        recording=root.recording,
+        retrospective=root.retrospective,
+        catalogue=catalogue,
+        options=dataclasses.replace(options, requested_outputs=None),
+        reference_resolver=reference_resolver,
+    )
+
+    return staged
 
 
 def _with_dynamic_blocks(
