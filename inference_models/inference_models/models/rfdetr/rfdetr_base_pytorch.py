@@ -378,7 +378,7 @@ class RFDETRSem2XLargeConfig(ModelConfig):
     out_feature_indexes: List[int] = [3, 6, 9, 12]
     num_classes: int = 151
     positional_encoding_size: int = 880 // 20
-    pretrain_weights: Optional[str] = "rf-detr-sem-2xlarge-ade20k.pth"
+    pretrain_weights: Optional[str] = "rf-detr-sem-xxlarge-ade20k.pth"
     resolution: int = 880
     semantic_segmentation_head: bool = True
 
