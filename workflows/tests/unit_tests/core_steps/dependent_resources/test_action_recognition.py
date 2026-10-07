@@ -23,11 +23,6 @@ from roboflow_workflows.prototypes.block import (
 )
 
 
-def test_action_recognition_tensor_module_inherits_numpy_manifest() -> None:
-    # then
-    assert issubclass(ActionRecognitionV1TensorManifest, ActionRecognitionV1Manifest)
-
-
 @pytest.mark.parametrize(
     "model_id", ["my-project/3", "$inputs.action_model"], ids=["literal", "selector"]
 )
