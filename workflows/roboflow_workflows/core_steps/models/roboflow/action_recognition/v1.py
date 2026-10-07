@@ -710,12 +710,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         # up with. The entries come from the snapshot the last fire built.
         # The list is still fresh per frame, so a consumer that appends to
         # one frame's output leaves the next frame alone.
+        latest_predictions = self._build_latest_predictions(
+            image=image, actions=bookkeeping.latest_actions
+        )
         return {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
-            "latest_predictions": self._build_latest_predictions(
-                image=image, actions=bookkeeping.latest_actions
-            ),
+            "latest_predictions": latest_predictions,
         }
 
     def _build_latest_predictions(
