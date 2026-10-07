@@ -280,7 +280,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert [output.name for output in outputs] == [
         "timeline",
         "error_status",
-        "current_actions",
+        "latest_actions",
     ]
     assert outputs[0].kind == [ACTION_RECOGNITION_PREDICTION_KIND]
     assert outputs[1].kind == [STRING_KIND]
@@ -1305,33 +1305,43 @@ def test_tensor_block_caps_on_device_without_leaving_the_tensor():
 
 
 @pytest.mark.parametrize("tensor", [False, True])
-def test_current_actions_lists_each_action_covering_the_frame_once(tensor):
+def test_latest_actions_hold_until_the_next_call_and_clear_on_error(tensor):
     block, _ = _make_block(
         responses=[
             [
-                _model_segment("walk", 0, 1),
+                _model_segment("walk", 0, 0),
                 _model_segment("run", 1, 1),
                 _model_segment("walk", 1, 1),
-            ]
+                _model_segment("jump", 1, 1),
+            ],
+            RuntimeError("model unavailable"),
         ],
         tensor=tensor,
     )
     color = {"tensor_rgb_color": [1, 2, 3]} if tensor else {}
 
-    results = [_run(block, _make_frame(n, **color)) for n in range(4)]
+    results = [_run(block, _make_frame(n, **color)) for n in range(6)]
 
-    # Frame 2 is the only frame the model ranges cover; later frames expire.
-    assert [r["current_actions"] for r in results] == [[], [], ["walk", "run"], []]
+    # Calls fire on frames 2 and 4; "jump" is outside the class filter.
+    assert [r["latest_actions"] for r in results] == [
+        [],
+        [],
+        ["walk", "run"],
+        ["walk", "run"],
+        [],
+        [],
+    ]
+    assert results[4]["error_status"] == "model unavailable"
 
 
-def test_current_actions_render_as_text_display_parameter():
+def test_latest_actions_render_as_text_display_parameter():
     block, _ = _make_block(responses=[[_model_segment("walk", 1, 1)]])
     for n in range(3):
         result = _run(block, _make_frame(n))
 
     text = format_text_with_parameters(
         text="Action: {{ $parameters.actions }}",
-        text_parameters={"actions": result["current_actions"]},
+        text_parameters={"actions": result["latest_actions"]},
         text_parameters_operations={"actions": [SequenceJoin(type="SequenceJoin")]},
     )
 
