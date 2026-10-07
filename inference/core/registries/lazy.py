@@ -154,7 +154,9 @@ class _LazyModelRegistry(MutableMapping):
         # Only optional entries need resolution to establish membership. Required
         # implementations and adapters with required fallbacks remain deferred.
         if isinstance(entry, _AdapterModelClass):
-            entry = entry.fallback
+            while isinstance(entry, _AdapterModelClass):
+                entry = entry.fallback
+
             if entry is not None and not (
                 isinstance(entry, _LazyModelClass) and entry.optional
             ):
