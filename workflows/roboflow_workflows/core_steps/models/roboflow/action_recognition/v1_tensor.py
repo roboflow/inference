@@ -3,10 +3,15 @@
 The manifest and frame predictions use the tensor-native classification kind.
 """
 
+from typing import List, Optional
+
 import numpy as np
 import torch
 from roboflow_workflows.core_steps.common.deserializers_tensor import (
     deserialize_native_classification_prediction_kind,
+)
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_ACTUAL_RESTRICTION,
 )
 from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
     ActionRecognitionModelBlockV1 as _NumpyActionRecognitionModelBlockV1,
@@ -14,12 +19,29 @@ from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import 
 from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
     BlockManifest as _NumpyBlockManifest,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
 from roboflow_workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    DependentResource,
+    ModelExecutionLocation,
+    ModelRequiredAction,
+    actual_restrictions_of,
+    roboflow_platform_model,
 )
 
 
@@ -38,6 +60,66 @@ class BlockManifest(_NumpyBlockManifest):
             if output.name == "frame_predictions":
                 output.kind = [TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND]
         return outputs
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        """Declare the action recognition model of the block's local run path.
+
+        The block supports LOCAL step execution only (its run path rejects any
+        other mode) and owns its model loading: it asks the model provider for
+        the model through `load_action_recognition_model()`, not through the
+        generic `add_model()` registration. The declared dependency describes
+        that supported execution path, so it is LOCAL and kept away from the
+        generic preloader. The configured id is returned verbatim, selector
+        included. Both representations declare the same model resources.
+
+        Returns:
+            The configured action recognition model.
+        """
+        return [
+            roboflow_platform_model(
+                self.model_id,
+                required_action=ModelRequiredAction.EXECUTION,
+                execution_location=ModelExecutionLocation.LOCAL,
+                preloadable=False,
+            )
+        ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        """Declare model inference over buffered video frames.
+
+        Returns:
+            Model inference and temporal buffering operations.
+        """
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.TEMPORAL_BUFFERING,
+        ]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare the REMOTE, GPU, cross-frame state-loss and still-image caveats.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
+        return actual_restrictions_of(
+            declared=[
+                STATEFUL_VIDEO_ACTUAL_RESTRICTION,
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+                REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):

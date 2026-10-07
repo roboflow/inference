@@ -266,7 +266,7 @@ class BlockManifest(WorkflowBlockManifest):
         generic `add_model()` registration. The declared dependency describes
         that supported execution path, so it is LOCAL and kept away from the
         generic preloader. The configured id is returned verbatim, selector
-        included. The tensor sibling inherits this resource declaration.
+        included. Both representations declare the same model resources.
 
         Returns:
             The configured action recognition model.
@@ -281,6 +281,11 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
     def discover_work_operations(self) -> List[WorkOperation]:
+        """Declare model inference over buffered video frames.
+
+        Returns:
+            Model inference and temporal buffering operations.
+        """
         return [
             WorkOperation.MODEL_INFERENCE,
             WorkOperation.TEMPORAL_BUFFERING,
