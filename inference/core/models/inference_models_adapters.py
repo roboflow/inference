@@ -59,9 +59,14 @@ from inference.core.env import (
     MAX_VIDEO_DURATION_SECONDS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
+    VJEPA2_1_ENABLED,
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
-from inference.core.exceptions import PayloadTooLargeError, PostProcessingError
+from inference.core.exceptions import (
+    ModelDeploymentNotSupportedError,
+    PayloadTooLargeError,
+    PostProcessingError,
+)
 from inference.core.models.action_recognition import merge_window_segments
 from inference.core.models.base import Model
 from inference.core.models.embeddings import make_embedding_info
@@ -2329,8 +2334,33 @@ def load_action_recognition_model(
     The HTTP adapter and the workflow block both come through here, so one
     model id cannot resolve to different weights, or load under different
     trust settings, depending on which surface asked for it.
+
+    Args:
+        model_id: Roboflow model ID or local package directory.
+        api_key: Key with access to the model.
+        **kwargs: Additional model-loading options.
+
+    Returns:
+        A loaded action-recognition model.
+
+    Raises:
+        ModelDeploymentNotSupportedError: V-JEPA is disabled on this server.
     """
     model_id = resolve_roboflow_model_alias(model_id=model_id)
+    if not VJEPA2_1_ENABLED:
+        from inference.core.registries.roboflow import get_model_type
+
+        _, model_type = get_model_type(
+            model_id=model_id,
+            api_key=api_key,
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        if model_type in {"vjepa2-1-vitb-384", "vjepa2_1"}:
+            raise ModelDeploymentNotSupportedError(
+                "V-JEPA 2.1 is disabled on this server. Set VJEPA2_1_ENABLED=True "
+                "and restart the server to enable it."
+            )
     loaded_model = AutoModel.from_pretrained(
         model_id_or_path=model_id,
         api_key=api_key,

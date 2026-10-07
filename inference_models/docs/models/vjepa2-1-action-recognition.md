@@ -15,7 +15,8 @@ Only the Torch backend is supported.
 HTTP clips use `/infer/action_recognition`.
 Streaming uses the Action Recognition Model workflow block.
 
-For this example, run a compatible server at `http://localhost:9001` with `USE_INFERENCE_MODELS=True` and `ACTION_RECOGNITION_ENABLED=True`.
+For this example, run a compatible server at `http://localhost:9001` with `USE_INFERENCE_MODELS=True`, `ACTION_RECOGNITION_ENABLED=True`, and `VJEPA2_1_ENABLED=True`.
+`VJEPA2_1_ENABLED` defaults to `True`. Set it to `False` and restart the server to block V-JEPA model loading through HTTP and Workflows, without disabling Cosmos.
 Install `requests` in your Python environment.
 Set `ROBOFLOW_API_KEY`.
 Replace the model ID and video URL.

@@ -28,6 +28,7 @@ from inference.core.env import (
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
     USE_INFERENCE_MODELS,
+    VJEPA2_1_ENABLED,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -499,7 +500,7 @@ except:
     )
 
 try:
-    if USE_INFERENCE_MODELS:
+    if VJEPA2_1_ENABLED and USE_INFERENCE_MODELS:
         from inference.core.models.inference_models_adapters import (
             InferenceModelsActionRecognitionAdapter,
         )

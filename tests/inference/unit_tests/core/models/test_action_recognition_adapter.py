@@ -353,8 +353,12 @@ def test_a_trained_model_without_a_declared_side_is_read_whole() -> None:
     assert _side_handed_to_the_reader(model) is None
 
 
-def test_load_action_recognition_model_passes_the_zero_shot_id_through() -> None:
+def test_load_action_recognition_model_passes_the_zero_shot_id_through(
+    monkeypatch,
+) -> None:
     from inference.core.models import inference_models_adapters as adapters
+
+    monkeypatch.setattr(adapters, "VJEPA2_1_ENABLED", True)
 
     with patch.object(adapters, "AutoModel") as auto_model, patch.object(
         adapters,
@@ -369,3 +373,46 @@ def test_load_action_recognition_model_passes_the_zero_shot_id_through() -> None
         auto_model.from_pretrained.call_args.kwargs["model_id_or_path"]
         == "nvidia/cosmos-3-edge-action-recognition"
     )
+
+
+@pytest.mark.parametrize(
+    "enabled, model_type, blocked",
+    [
+        (True, "vjepa2-1-vitb-384", False),
+        (True, "vjepa2_1", False),
+        (False, "vjepa2-1-vitb-384", True),
+        (False, "vjepa2_1", True),
+        (False, "cosmos-3-edge", False),
+    ],
+)
+def test_shared_loader_honors_vjepa_enablement(
+    monkeypatch, enabled, model_type, blocked
+) -> None:
+    from inference.core.exceptions import ModelDeploymentNotSupportedError
+    from inference.core.models import inference_models_adapters as adapters
+    from inference.core.registries import roboflow
+
+    monkeypatch.setattr(adapters, "VJEPA2_1_ENABLED", enabled)
+    with patch.object(
+        roboflow, "get_model_type", return_value=("action-recognition", model_type)
+    ) as metadata, patch.object(adapters, "AutoModel") as auto_model, patch.object(
+        adapters,
+        "_as_action_recognition_model",
+        side_effect=lambda model, model_id: model,
+    ):
+        if blocked:
+            with pytest.raises(ModelDeploymentNotSupportedError, match="disabled"):
+                adapters.load_action_recognition_model("project/2", api_key="key")
+            auto_model.from_pretrained.assert_not_called()
+        else:
+            adapters.load_action_recognition_model("project/2", api_key="key")
+            auto_model.from_pretrained.assert_called_once()
+        if enabled:
+            metadata.assert_not_called()
+        else:
+            metadata.assert_called_once_with(
+                model_id="project/2",
+                api_key="key",
+                countinference=None,
+                service_secret=None,
+            )

@@ -372,6 +372,8 @@ LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 COSMOS3_ENABLED = str2bool(os.getenv("COSMOS3_ENABLED", True))
 
+VJEPA2_1_ENABLED = str2bool(os.getenv("VJEPA2_1_ENABLED", True))
+
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
 QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
