@@ -18,6 +18,7 @@ CLASSIFICATION_WORKFLOW = {
     "steps": [
         {
             "type": "roboflow_core/kimi_openrouter@v3",
+            "max_tokens": 2048,
             "name": "kimi",
             "images": "$inputs.image",
             "task_type": "classification",
@@ -100,6 +101,7 @@ STRUCTURED_PROMPTING_WORKFLOW = {
     "steps": [
         {
             "type": "roboflow_core/kimi_openrouter@v3",
+            "max_tokens": 2048,
             "name": "kimi",
             "images": "$inputs.image",
             "task_type": "structured-answering",
@@ -193,6 +195,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
         },
         {
             "type": "roboflow_core/kimi_openrouter@v3",
+            "max_tokens": 2048,
             "name": "kimi",
             "images": "$steps.cropping.crops",
             "task_type": "classification",
