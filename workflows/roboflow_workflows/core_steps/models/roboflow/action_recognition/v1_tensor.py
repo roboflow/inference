@@ -1,21 +1,67 @@
 """Tensor-input sibling of the action recognition workflow block.
 
-``BlockManifest`` is re-exported so a caller loading either module finds the
-same manifest.
+The manifest and frame predictions use the tensor-native classification kind.
 """
 
 import numpy as np
 import torch
+from roboflow_workflows.core_steps.common.deserializers_tensor import (
+    deserialize_native_classification_prediction_kind,
+)
 from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
     ActionRecognitionModelBlockV1 as _NumpyActionRecognitionModelBlockV1,
 )
-from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (  # noqa: F401
-    BlockManifest,
+from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
+    BlockManifest as _NumpyBlockManifest,
 )
-from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
+from roboflow_workflows.execution_engine.entities.base import (
+    OutputDefinition,
+    WorkflowImageData,
+)
+from roboflow_workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
+)
+
+
+class BlockManifest(_NumpyBlockManifest):
+    """Declare tensor-native current-frame classification predictions."""
+
+    @classmethod
+    def describe_outputs(cls) -> list[OutputDefinition]:
+        """Describe the timeline, error status and tensor classification output.
+
+        Returns:
+            Output definitions using the native kind for frame predictions.
+        """
+        outputs = super().describe_outputs()
+        for output in outputs:
+            if output.name == "frame_predictions":
+                output.kind = [TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND]
+        return outputs
 
 
 class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
+    @classmethod
+    def get_manifest(cls) -> type[BlockManifest]:
+        """Return the manifest for tensor-native action recognition.
+
+        Returns:
+            The tensor-native block manifest.
+        """
+        return BlockManifest
+
+    def _build_frame_predictions(self, image, bookkeeping):
+        predictions = super()._build_frame_predictions(
+            image=image, bookkeeping=bookkeeping
+        )
+        native_prediction = deserialize_native_classification_prediction_kind(
+            parameter="frame_predictions", value=predictions
+        )
+        # Sparse model ids leave zero-filled gaps in the native confidence
+        # vector. Omit those gaps from the serialized classification response.
+        native_prediction.image_metadata["classification_confidence_threshold"] = 1.0
+        return native_prediction
+
     def _extract_frame(self, image: WorkflowImageData):
         if image.is_tensor_materialised():
             frame = image.tensor_image

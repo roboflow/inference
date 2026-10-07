@@ -6,7 +6,7 @@ The block loads its model in-process through
 ``model_manager.load_action_recognition_model()``, whatever the generic step
 execution mode is, so it declares that model as LOCAL EXECUTION and keeps it
 away from the generic ``add_model()`` preloader (``preloadable=False``). The
-tensor module re-exports the same manifest class.
+tensor manifest inherits the same model-resource discovery.
 """
 
 import pytest
@@ -23,19 +23,23 @@ from roboflow_workflows.prototypes.block import (
 )
 
 
-def test_action_recognition_tensor_module_reuses_numpy_manifest() -> None:
+def test_action_recognition_tensor_module_inherits_numpy_manifest() -> None:
     # then
-    assert ActionRecognitionV1TensorManifest is ActionRecognitionV1Manifest
+    assert issubclass(ActionRecognitionV1TensorManifest, ActionRecognitionV1Manifest)
 
 
 @pytest.mark.parametrize(
     "model_id", ["my-project/3", "$inputs.action_model"], ids=["literal", "selector"]
 )
+@pytest.mark.parametrize(
+    "manifest_type", [ActionRecognitionV1Manifest, ActionRecognitionV1TensorManifest]
+)
 def test_action_recognition_declares_its_model_as_local_non_preloadable(
     model_id: str,
+    manifest_type,
 ) -> None:
     # given
-    manifest = ActionRecognitionV1Manifest.model_validate(
+    manifest = manifest_type.model_validate(
         {
             "type": "roboflow_core/roboflow_action_recognition_model@v1",
             "name": "actions",
