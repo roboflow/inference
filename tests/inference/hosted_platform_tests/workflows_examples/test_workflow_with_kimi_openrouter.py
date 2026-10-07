@@ -251,6 +251,9 @@ def test_workflow_with_secondary_classifier(
     assert set(result[0].keys()) == {
         "predictions",
     }, "Expected all outputs to be delivered"
+    assert (
+        len(result[0]["predictions"]["predictions"]) > 0
+    ), "Expected at least one classified detection"
     assert "dog" not in set(
         [e["class"] for e in result[0]["predictions"]["predictions"]]
     ), "Expected classes to be substituted"
