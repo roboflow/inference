@@ -119,8 +119,8 @@ model carries, or list classes to report a subset of them. When a model call
 fails, error_status carries the error text for that frame and the stream
 continues.
 
-`current_actions` lists the actions whose range covers the input frame. Connect
-it to Text Display to show them on the video.
+`latest_actions` lists the actions of the latest model call and holds them
+until the next call. Connect it to Text Display to show them on the video.
 """
 
 
@@ -133,6 +133,7 @@ class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
+    latest_actions: List[str] = field(default_factory=list)
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -212,7 +213,7 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[ACTION_RECOGNITION_PREDICTION_KIND],
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
-            OutputDefinition(name="current_actions", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(name="latest_actions", kind=[LIST_OF_VALUES_KIND]),
         ]
 
     @classmethod
@@ -513,11 +514,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
 
         bookkeeping.last_frame_number = frame_number
-        return self._build_output(
-            bookkeeping=bookkeeping,
-            error_status=error_status,
-            frame_number=frame_number,
-        )
+        return self._build_output(bookkeeping=bookkeeping, error_status=error_status)
 
     def _resolve_source_fps(
         self,
@@ -569,6 +566,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 error,
                 exc_info=True,
             )
+            # Stale labels would look like a fresh result on screen.
+            bookkeeping.latest_actions = []
             return str(error)
         # Separates "the model output one range" from "the block merged
         # several".
@@ -592,6 +591,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
             stride=max(1, math.ceil(sampling_stride)),
+        )
+        bookkeeping.latest_actions = list(
+            dict.fromkeys(
+                segment.class_name
+                for segment in segments
+                if block_filter is None or segment.class_name in block_filter
+            )
         )
         return ""
 
@@ -691,7 +697,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         self,
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
-        frame_number: int,
     ) -> dict:
         # Copying every entry here costs one full timeline copy per frame,
         # which grows without bound and caps the frame rate the block keeps
@@ -701,11 +706,5 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
-            "current_actions": list(
-                dict.fromkeys(
-                    action.class_name
-                    for action in bookkeeping.timeline_snapshot
-                    if action.start_frame_idx <= frame_number <= action.end_frame_idx
-                )
-            ),
+            "latest_actions": list(bookkeeping.latest_actions),
         }
