@@ -21,13 +21,13 @@ from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 
 
 class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
-    def _build_recent_predictions(
+    def _build_latest_predictions(
         self, image: WorkflowImageData, actions: List[str]
     ) -> Any:
         # Tensor consumers of classification_prediction expect the native object.
-        predictions = super()._build_recent_predictions(image=image, actions=actions)
+        predictions = super()._build_latest_predictions(image=image, actions=actions)
         native_predictions = deserialize_native_classification_prediction_kind(
-            parameter="recent_predictions", value=predictions
+            parameter="latest_predictions", value=predictions
         )
         return native_predictions
 
