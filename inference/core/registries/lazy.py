@@ -136,13 +136,38 @@ class _LazyModelRegistry(MutableMapping):
             del self._entries[key]
 
     def __iter__(self) -> Iterator:
-        return iter(self._entries)
+        with self._lock:
+            keys = tuple(self._entries)
+
+        return (key for key in keys if key in self)
 
     def __len__(self) -> int:
-        return len(self._entries)
+        size = sum(1 for _ in self)
+        return size
 
     def __contains__(self, key) -> bool:
-        return key in self._entries
+        try:
+            entry = self._entries[key]
+        except KeyError:
+            return False
+
+        # Only optional entries need resolution to establish membership. Required
+        # implementations and adapters with required fallbacks remain deferred.
+        if isinstance(entry, _AdapterModelClass):
+            entry = entry.fallback
+            if entry is not None and not (
+                isinstance(entry, _LazyModelClass) and entry.optional
+            ):
+                return True
+        elif not isinstance(entry, _LazyModelClass) or not entry.optional:
+            return True
+
+        try:
+            self[key]
+        except KeyError:
+            return False
+
+        return True
 
     def clear(self) -> None:
         """Remove entries without importing their implementations."""

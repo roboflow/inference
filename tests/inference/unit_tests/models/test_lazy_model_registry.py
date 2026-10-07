@@ -103,12 +103,13 @@ def test_optional_dependency_warning_is_deferred(monkeypatch):
         warning_category=ModelDependencyMissing,
     )
     registry = lazy._LazyModelRegistry({"optional": reference})
-    assert "optional" in registry
     importer.assert_not_called()
-
     with pytest.warns(ModelDependencyMissing) as caught:
-        with pytest.raises(KeyError):
-            registry["optional"]
+        assert "optional" not in registry
+
+    with pytest.raises(KeyError):
+        registry["optional"]
+    importer.assert_called_once_with("example")
 
     assert str(caught[0].message) == (
         "Your `inference` configuration does not support PaliGemma model. "
@@ -323,9 +324,7 @@ def test_fresh_import_does_not_load_optional_model_stacks():
 import json
 import sys
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-keys = list(ROBOFLOW_MODEL_TYPES.keys())
-for key in keys:
-    assert key in ROBOFLOW_MODEL_TYPES
+assert ('object-detection', 'yolov8n') in ROBOFLOW_MODEL_TYPES
 prefixes = ('transformers', 'peft', 'flash_attn',
             'inference.models.paligemma', 'inference.models.florence2',
             'inference.models.yolov8', 'inference.models.resnet',

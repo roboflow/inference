@@ -21,7 +21,7 @@ def test_registry_import_defers_model_implementations():
 import json
 import sys
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-assert len(ROBOFLOW_MODEL_TYPES) > 0
+assert ('object-detection', 'yolov8n') in ROBOFLOW_MODEL_TYPES
 prefixes = ('transformers', 'peft', 'inference.models.yolov8',
             'inference.core.models.inference_models_adapters')
 print(json.dumps([name for name in sys.modules

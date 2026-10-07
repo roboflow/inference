@@ -941,7 +941,9 @@ if USE_INFERENCE_MODELS:
         "InferenceModelsSemanticSegmentationAdapter"
     )
 
-    tasks_and_variants = list(ROBOFLOW_MODEL_TYPES.keys())
+    # Inspect registration metadata while constructing the registry; public key
+    # iteration checks optional availability and is reserved for callers.
+    tasks_and_variants = list(ROBOFLOW_MODEL_TYPES._entries)
     for task, variant in tasks_and_variants:
         if task == "object-detection" and variant.startswith("rfdetr"):
             ROBOFLOW_MODEL_TYPES.set_adapter(
