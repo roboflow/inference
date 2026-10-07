@@ -38,7 +38,15 @@ class ActionRecognitionPrediction(BaseModel):
     )
 
     @model_serializer(mode="wrap")
-    def serialize_prediction(self, handler: SerializerFunctionWrapHandler) -> dict:
+    def serialize_prediction(self, handler: SerializerFunctionWrapHandler):
+        """Serialize optional scores without replacing the prediction schema.
+
+        Args:
+            handler (SerializerFunctionWrapHandler): Pydantic's field serializer.
+
+        Returns:
+            The prediction mapping, with confidence only when a score exists.
+        """
         result = handler(self)
         # Unscored models retain their existing response shape.
         if self.confidence is None:

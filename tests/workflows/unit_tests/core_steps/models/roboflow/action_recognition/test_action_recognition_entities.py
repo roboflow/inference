@@ -83,14 +83,22 @@ def test_isinstance_holds_for_objects_the_server_helper_builds() -> None:
     }
 
 
-def test_schema_description_survives_the_move() -> None:
+@pytest.mark.parametrize("mode", ["validation", "serialization"])
+def test_schema_description_survives_the_move(mode) -> None:
     from inference.core.workflows.core_steps.models.roboflow.action_recognition.entities import (
         ActionRecognitionPrediction,
     )
 
-    schema = ActionRecognitionPrediction.model_json_schema()
+    schema = ActionRecognitionPrediction.model_json_schema(mode=mode)
     assert "One classified frame range of a video." in schema["description"]
     assert schema["properties"]["class"]["title"] == "Class"
+    assert set(schema["properties"]) == {
+        "start_frame_idx",
+        "end_frame_idx",
+        "class",
+        "class_id",
+        "confidence",
+    }
 
 
 @pytest.mark.parametrize("confidence", [None, 0.0, 0.8, 1.0])
