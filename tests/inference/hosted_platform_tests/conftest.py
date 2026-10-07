@@ -221,6 +221,7 @@ OPENAI_KEY = os.getenv("OPENAI_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 GOOGLE_VISION_API_KEY = os.getenv("GOOGLE_VISION_API_KEY")
+ROBOFLOW_MANAGED_API_KEY = "rf_key:account"
 
 
 @pytest.fixture(scope="session")
