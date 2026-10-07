@@ -56,12 +56,18 @@ _CONTROLLED_VARIABLES = (
     "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION",
     "WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES",
     "WEBRTC_MODAL_FUNCTION_TIME_LIMIT",
+    "WEBRTC_MODAL_MIN_CPU_CORES",
+    "WEBRTC_MODAL_MIN_RAM_MB",
     "WEBRTC_MODAL_PUBLIC_STUN_SERVERS",
     "WEBRTC_MODAL_RTSP_PLACEHOLDER",
     "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL",
     "WEBRTC_MODAL_SHUTDOWN_RESERVE",
+    "WEBRTC_MODAL_USAGE_QUOTA_ENABLED",
+    "WEBRTC_MODAL_WATCHDOG_TIMEMOUT",
     "WEBRTC_PREVIEW_FRAME_JPEG_QUALITY",
     "WEBRTC_REALTIME_PROCESSING",
+    "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS",
+    "WEBRTC_SESSION_HEARTBEAT_URL",
     "WORKFLOWS_PROFILER_BUFFER_SIZE",
     # inference_models latches OFFLINE_MODE; a child would ignore its own value.
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START",
@@ -517,6 +523,50 @@ def test_webrtc_worker_modules_bind_the_environment_through_the_cpu_target() -> 
     }
 
 
+_SESSION_RUNNER_SETTINGS_SCRIPT = """
+import json
+
+from inference.core import env
+from streamvision.stream import environment
+
+NAMES = [
+    "WEBRTC_MODAL_MIN_CPU_CORES",
+    "WEBRTC_MODAL_MIN_RAM_MB",
+    "WEBRTC_MODAL_USAGE_QUOTA_ENABLED",
+    "WEBRTC_MODAL_WATCHDOG_TIMEMOUT",
+    "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS",
+    "WEBRTC_SESSION_HEARTBEAT_URL",
+]
+print(json.dumps({
+    "env": [getattr(env, name) for name in NAMES],
+    "facade": [getattr(environment, name) for name in NAMES],
+}))
+"""
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({}, [None, None, False, 60, 30, None]),
+        (
+            {
+                "WEBRTC_MODAL_MIN_CPU_CORES": "4",
+                "WEBRTC_MODAL_MIN_RAM_MB": "2048",
+                "WEBRTC_MODAL_USAGE_QUOTA_ENABLED": "True",
+                "WEBRTC_MODAL_WATCHDOG_TIMEMOUT": "15",
+                "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS": "5",
+                "WEBRTC_SESSION_HEARTBEAT_URL": "https://heartbeat.example",
+            },
+            [4, 2048, True, 15, 5, "https://heartbeat.example"],
+        ),
+    ],
+)
+def test_session_runner_settings_reach_the_facade(overrides, expected) -> None:
+    result = _run_child(_SESSION_RUNNER_SETTINGS_SCRIPT, overrides)
+
+    assert result == {"env": expected, "facade": expected}
+
+
 # Section 2 - the configuration, its facade and the legacy installation
 
 # (facade name, inference.core.env name or None when env.py has no counterpart)
@@ -583,6 +633,15 @@ FIELDS = [
     ("WEBRTC_MODAL_RTSP_PLACEHOLDER_URL", "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL"),
     ("WEBRTC_MODAL_SHUTDOWN_RESERVE", "WEBRTC_MODAL_SHUTDOWN_RESERVE"),
     ("WEBRTC_PREVIEW_FRAME_JPEG_QUALITY", "WEBRTC_PREVIEW_FRAME_JPEG_QUALITY"),
+    ("WEBRTC_MODAL_MIN_CPU_CORES", "WEBRTC_MODAL_MIN_CPU_CORES"),
+    ("WEBRTC_MODAL_MIN_RAM_MB", "WEBRTC_MODAL_MIN_RAM_MB"),
+    ("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "WEBRTC_MODAL_USAGE_QUOTA_ENABLED"),
+    ("WEBRTC_MODAL_WATCHDOG_TIMEMOUT", "WEBRTC_MODAL_WATCHDOG_TIMEMOUT"),
+    (
+        "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS",
+        "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS",
+    ),
+    ("WEBRTC_SESSION_HEARTBEAT_URL", "WEBRTC_SESSION_HEARTBEAT_URL"),
     ("CLASS_AGNOSTIC_NMS_ENV", "CLASS_AGNOSTIC_NMS_ENV"),
     ("CONFIDENCE_ENV", "CONFIDENCE_ENV"),
     ("IOU_THRESHOLD_ENV", "IOU_THRESHOLD_ENV"),
@@ -638,7 +697,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
     tabled = {name for name, _ in FIELDS}
 
     assert tabled == _facade_exports()
-    assert len(FIELDS) == 48
+    assert len(FIELDS) == 54
 
 
 def test_host_only_settings_are_not_package_configuration() -> None:
@@ -1215,6 +1274,7 @@ def test_request_entities_do_not_import_the_decoder_webrtc_or_pipeline() -> None
     } == {
         "streamvision.camera",
         "streamvision.camera.buffer_strategies",
+        "streamvision.camera.fourcc",
         "streamvision.camera.source_reference_validation",
         "streamvision.stream.environment",
         "streamvision.stream_manager.manager_app.entities",

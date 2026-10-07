@@ -1,7 +1,7 @@
 import threading
 import time
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -195,7 +195,9 @@ class TestPatternStreamProducer(VideoFrameProducer):
             is_reconnectable=True,
         )
 
-    def initialize_source_properties(self, properties: Dict[str, float]) -> None:
+    def initialize_source_properties(
+        self, properties: Dict[str, Union[float, str]]
+    ) -> None:
         pass
 
 

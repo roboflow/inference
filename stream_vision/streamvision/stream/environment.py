@@ -77,6 +77,14 @@ WEBRTC_MODAL_RTSP_PLACEHOLDER = _CONFIGURATION.webrtc_modal_rtsp_placeholder
 WEBRTC_MODAL_RTSP_PLACEHOLDER_URL = _CONFIGURATION.webrtc_modal_rtsp_placeholder_url
 WEBRTC_MODAL_SHUTDOWN_RESERVE = _CONFIGURATION.webrtc_modal_shutdown_reserve
 WEBRTC_PREVIEW_FRAME_JPEG_QUALITY = _CONFIGURATION.webrtc_preview_frame_jpeg_quality
+WEBRTC_MODAL_MIN_CPU_CORES = _CONFIGURATION.webrtc_modal_min_cpu_cores
+WEBRTC_MODAL_MIN_RAM_MB = _CONFIGURATION.webrtc_modal_min_ram_mb
+WEBRTC_MODAL_USAGE_QUOTA_ENABLED = _CONFIGURATION.webrtc_modal_usage_quota_enabled
+WEBRTC_MODAL_WATCHDOG_TIMEMOUT = _CONFIGURATION.webrtc_modal_watchdog_timemout
+WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS = (
+    _CONFIGURATION.webrtc_session_heartbeat_interval_seconds
+)
+WEBRTC_SESSION_HEARTBEAT_URL = _CONFIGURATION.webrtc_session_heartbeat_url
 
 # --- ModelConfig compatibility defaults and env-variable names ---
 CLASS_AGNOSTIC_NMS_ENV = _CONFIGURATION.model_config_defaults.class_agnostic_nms_env

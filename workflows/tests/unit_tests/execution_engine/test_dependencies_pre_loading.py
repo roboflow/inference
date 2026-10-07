@@ -55,7 +55,71 @@ from roboflow_workflows.prototypes.block import (
     roboflow_platform_project,
     third_party_model,
 )
+from roboflow_workflows.prototypes.model_registration import model_registration_key
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
+
+
+@pytest.mark.parametrize("runtime_selected", [False, True])
+@pytest.mark.parametrize("include_classification", [False, True])
+@pytest.mark.parametrize("evict_features", [False, True])
+def test_preloading_keeps_embedding_registration_variants_separate(
+    caplog, runtime_selected, include_classification, evict_features
+):
+    registrations = [
+        {"required_capabilities": ["image_embeddings"], "output_type": output_type}
+        for output_type in ("feature_vector", "logits")
+    ]
+    if include_classification:
+        registrations.insert(0, {})
+    # A repeated feature registration is deduplicated, not a distinct model load.
+    declarations = registrations + [registrations[-2]]
+    dependencies = [
+        roboflow_platform_model(
+            model_id="$inputs.model" if runtime_selected else "project/1",
+            model_registration_kwargs=kwargs,
+        )
+        for kwargs in declarations
+    ]
+    present = set()
+    manager = MagicMock()
+
+    def register(model_id, api_key, **kwargs):
+        key = model_registration_key(
+            model_id,
+            required_capabilities=kwargs.get("required_capabilities"),
+            output_type=kwargs.get("output_type", "feature_vector"),
+        )
+        present.add(key)
+        if evict_features and kwargs.get("output_type") == "logits":
+            present.discard("project/1:capabilities=image_embeddings")
+
+    manager.add_model.side_effect = register
+    manager.__contains__.side_effect = lambda key: key in present
+    with caplog.at_level("WARNING"):
+        pending = _pre_load_roboflow_platform_models(
+            dependencies=dependencies,
+            model_manager=manager,
+            api_key="key",
+            step_execution_mode=StepExecutionMode.LOCAL,
+        )
+        if runtime_selected:
+            _resolve_and_pre_load_runtime_dependencies(
+                pending_dependencies=pending,
+                runtime_parameters={"model": "project/1"},
+                model_manager=manager,
+                api_key="key",
+                step_execution_mode=StepExecutionMode.LOCAL,
+            )
+
+    assert [call.kwargs for call in manager.add_model.call_args_list] == [
+        {"model_id": "project/1", "api_key": "key", **kwargs}
+        for kwargs in registrations
+    ]
+    checked_keys = {call.args[0] for call in manager.__contains__.call_args_list}
+    assert "project/1:capabilities=image_embeddings" in checked_keys
+    assert "project/1:capabilities=image_embeddings:output_type=logits" in checked_keys
+    assert ("project/1" in checked_keys) is include_classification
+    assert ("no longer present" in caplog.text) is evict_features
 
 
 def _object_detection_manifest(name: str, model_id: str) -> ObjectDetectionV3Manifest:

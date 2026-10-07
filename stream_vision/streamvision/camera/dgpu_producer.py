@@ -6,7 +6,7 @@ consumer independent storage. ``SimpleDecoder`` accepts file sources. Its runtim
 closure includes ``libnvidia-encode`` and requires the NVIDIA ``video`` driver capability.
 """
 
-from typing import TYPE_CHECKING, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
 
 from streamvision.camera.entities import (
     FrameImage,
@@ -82,7 +82,9 @@ class PyNvVideoCodecFrameProducer(VideoFrameProducer):
         tensor = torch.from_dlpack(frame)
         return True, tensor.clone()
 
-    def initialize_source_properties(self, properties: Dict[str, float]) -> None:
+    def initialize_source_properties(
+        self, properties: Dict[str, Union[float, str]]
+    ) -> None:
         return None
 
     def discover_source_properties(self) -> SourceProperties:

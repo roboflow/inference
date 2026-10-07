@@ -331,7 +331,7 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
             is_reconnectable=False,
         )
 
-    def initialize_source_properties(self, properties: Dict[str, float]):
+    def initialize_source_properties(self, properties: Dict[str, Union[float, str]]):
         pass
 
 

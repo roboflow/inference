@@ -500,7 +500,9 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
             return True, rgb_tensor
         return True, _rgb_tensor_to_bgr_numpy(rgb_tensor)
 
-    def initialize_source_properties(self, properties: Dict[str, float]) -> None:
+    def initialize_source_properties(
+        self, properties: Dict[str, Union[float, str]]
+    ) -> None:
         return None
 
     def discover_source_properties(self) -> SourceProperties:
