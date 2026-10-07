@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- V-JEPA 2.1 action recognition for Roboflow-trained PyTorch packages. The loader
+  validates the saved input settings and uses the trained labels, normalization,
+  and sampling policy. Predictions include frame ranges and confidence scores.
+- `safetensors` as a runtime dependency for loading V-JEPA weights.
+
+### Changed
+
+- Action-recognition models can prepare frames before HTTP or Workflows stores
+  them. V-JEPA resizes full frames to the saved square size without cropping.
+  Cosmos keeps its existing aspect-ratio-preserving resize.
+- V-JEPA supports overlapping windows, an end-aligned final HTTP window, and
+  package or model-eval confidence thresholds. Same-class spans merge after
+  filtering. Invalid frame inputs and request options raise `ModelInputError`.
+
 ---
 
 ## `0.39.1`

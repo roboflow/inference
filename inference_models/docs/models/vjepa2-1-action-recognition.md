@@ -51,7 +51,7 @@ Prefer URLs over base64 for full clips to avoid large request payloads.
 | Behavior | V-JEPA | Cosmos |
 |----------|--------|--------|
 | Labels | Trained vocabulary only. `class_filter` selects a subset | Fine-tuned vocabulary or free-form zero-shot labels |
-| Confidence | Scored spans and threshold controls | Unscored spans. Only omitted or `"default"` confidence |
+| Confidence | Scored spans and threshold controls | Unscored spans. Confidence overrides are ignored |
 | Span meaning | Same-class spans combine as `class_union`, not separate action instances | `instances` |
 | Frame preparation | Direct square resize without cropping | Aspect-ratio-preserving resize |
 | HTTP windows | Recorded overlap and an end-aligned final window | Default nonoverlapping fine-tuned windows, or a whole clip in zero-shot mode |
