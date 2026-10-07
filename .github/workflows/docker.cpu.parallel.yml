@@ -44,14 +44,16 @@ jobs:
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
-      - name: Build and Push
+      # Load a single platform for the native amd64 runner before publishing.
+      - name: Build and load CPU image
         uses: depot/build-push-action@v1
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
+          push: false
           project: grl7ffzxd7
+          context: .
           load: true
           tags: roboflow/roboflow-inference-server-cpu-parallel:latest,roboflow/roboflow-inference-server-cpu-parallel:${{env.VERSION}}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel
       - name: Test CPU PyTorch runtime
         env:
@@ -62,3 +64,14 @@ jobs:
             -e CPU_IMAGE_TEST=true \
             -v "${{ github.workspace }}/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
             "$image" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'
+      # Reuse Depot's project cache for amd64; arm64 is built but not runtime-tested.
+      - name: Build and Push
+        if: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
+        uses: depot/build-push-action@v1
+        with:
+          push: true
+          project: grl7ffzxd7
+          context: .
+          tags: roboflow/roboflow-inference-server-cpu-parallel:latest,roboflow/roboflow-inference-server-cpu-parallel:${{env.VERSION}}
+          platforms: linux/amd64,linux/arm64
+          file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel

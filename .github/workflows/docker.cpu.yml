@@ -128,14 +128,16 @@ jobs:
           echo "all_tags=${DH_TAGS},${GCP_TAGS}" >> "$GITHUB_OUTPUT"
           echo "Single build will push to Docker Hub and Artifact Registry:"
           echo "${DH_TAGS},${GCP_TAGS}"
-      - name: Build and push (Docker Hub and GCP from one build)
+      # Load a single platform for the native amd64 runner before publishing.
+      - name: Build and load CPU image
         uses: depot/build-push-action@v1
         with:
-          push: ${{ github.event_name == 'release' || inputs.force_push == true }}
+          push: false
           project: grl7ffzxd7
+          context: .
           load: true
           tags: ${{ steps.all_tags.outputs.all_tags }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           file: ${{ env.DOCKERFILE }}
       - name: Test CPU PyTorch runtime
         env:
@@ -146,3 +148,14 @@ jobs:
             -e CPU_IMAGE_TEST=true \
             -v "${{ github.workspace }}/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
             "$image" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'
+      # Reuse Depot's project cache for amd64; arm64 is built but not runtime-tested.
+      - name: Build and push (Docker Hub and GCP from one build)
+        if: ${{ github.event_name == 'release' || inputs.force_push == true }}
+        uses: depot/build-push-action@v1
+        with:
+          push: true
+          project: grl7ffzxd7
+          context: .
+          tags: ${{ steps.all_tags.outputs.all_tags }}
+          platforms: linux/amd64,linux/arm64
+          file: ${{ env.DOCKERFILE }}
