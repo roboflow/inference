@@ -60,6 +60,7 @@ from inference_sdk.http.utils.aliases import (
     resolve_ocr_path,
     resolve_roboflow_model_alias,
 )
+from inference_sdk.http.utils.anomaly_maps import decode_anomaly_detection_result
 from inference_sdk.http.utils.depth_maps import (
     decode_depth_estimation_result,
     warn_depth_map_json_format_deprecated,
@@ -595,6 +596,7 @@ class InferenceHTTPClient:
                         visualisation=parsed_response["visualization"],
                         expected_format=self.__inference_configuration.output_visualisation_format,
                     )
+                parsed_response = decode_anomaly_detection_result(parsed_response)
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
@@ -733,6 +735,7 @@ class InferenceHTTPClient:
                         visualisation=parsed_response["visualization"],
                         expected_format=self.__inference_configuration.output_visualisation_format,
                     )
+                parsed_response = decode_anomaly_detection_result(parsed_response)
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
@@ -767,6 +770,9 @@ class InferenceHTTPClient:
                             expected_format=self.__inference_configuration.output_visualisation_format,
                         )
                     )
+                parsed_response_element = decode_anomaly_detection_result(
+                    parsed_response_element
+                )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
@@ -883,6 +889,9 @@ class InferenceHTTPClient:
                             expected_format=self.__inference_configuration.output_visualisation_format,
                         )
                     )
+                parsed_response_element = decode_anomaly_detection_result(
+                    parsed_response_element
+                )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,

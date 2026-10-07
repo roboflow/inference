@@ -235,20 +235,17 @@ def post_process_anomaly_scores(
     )
     is_anomalous = scores >= calibration.threshold
     images_metadata = []
-    for index, size_hw in enumerate(model_results.original_sizes_hw):
+    for index in range(len(model_results.original_sizes_hw)):
         metadata = {
             "anomaly_score": scores[index].item(),
             "anomaly_threshold": calibration.threshold,
             "is_anomalous": bool(is_anomalous[index].item()),
         }
         if include_anomaly_map:
-            # Pillow resize keeps the map identical to the one produced in training.
-            network_map = model_results.maps[index].float().cpu().numpy()
-            metadata["anomaly_map"] = np.asarray(
-                Image.fromarray(network_map).resize(
-                    (size_hw[1], size_hw[0]), Image.Resampling.BILINEAR
-                )
-            )
+            # Network coordinates: the map covers the whole (square-resized) input, so
+            # resizing it to the image is a plain stretch left to the consumer. The
+            # patch grid is the map's real resolution; anything finer is interpolation.
+            metadata["anomaly_map"] = model_results.maps[index].float().cpu().numpy()
         images_metadata.append(metadata)
     return ClassificationPrediction(
         class_id=is_anomalous.long(),

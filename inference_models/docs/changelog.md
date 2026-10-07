@@ -131,8 +131,8 @@
   (`patchcore` and `foundad` architectures, `classification` task, `torch`
   backend). Predictions are `ClassificationPrediction` over `normal` and
   `anomalous`; the raw score, the saved threshold, the decision and an
-  optional heatmap (`include_anomaly_map=True`) are returned in
-  `images_metadata`. Both models run on the base dependencies: PatchCore
+  optional heatmap (`include_anomaly_map=True`, a float32 array at the
+  network input resolution) are returned in `images_metadata`. Both models run on the base dependencies: PatchCore
   nearest-neighbour search is done in PyTorch, so FAISS is not needed.
 
 ---
