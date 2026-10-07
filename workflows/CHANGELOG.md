@@ -16,6 +16,7 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- Action Recognition Model keeps streaming sample counts and span durations within the model's recorded window at fractional source frame rates.
 - Action Recognition Model applies an optional model-owned frame transform before buffering. V-JEPA retains resized RGB uint8 frames; Cosmos keeps its existing resize behavior.
 - Action Recognition Model accepts `confidence="best"` for model-eval thresholds and `"default"` for the package default, like detection blocks. Numeric overrides and unscored Cosmos behavior stay unchanged.
 

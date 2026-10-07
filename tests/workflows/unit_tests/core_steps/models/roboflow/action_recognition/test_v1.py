@@ -94,6 +94,7 @@ class _FakeActionRecognitionModel(ActionRecognitionModel):
                 "frames": recorded_frames,
                 "class_names": (list(class_names) if class_names is not None else None),
                 "fps": fps,
+                "duration_seconds": kwargs.get("duration_seconds"),
             }
         )
         if not self.responses:
@@ -1160,6 +1161,28 @@ def test_an_untrained_model_still_caps_at_the_source_rate() -> None:
 
     assert model.calls[-1]["fps"] == 2.0
     assert len(model.calls[-1]["frames"]) == 4
+
+
+@pytest.mark.parametrize("source_fps", [29.97, 59.94, 1.2])
+def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=4.0, sample_fps=4.0, min_frames=1, max_frames=16
+    )
+    model.span_semantics = "class_union"
+    source_window_frames = round(4.0 * source_fps)
+
+    for frame_number in range(3 * source_window_frames + 1):
+        result = block.run(
+            images=[_make_frame(frame_number, fps=source_fps)],
+            model_id="cosmos-3-edge",
+            stride_seconds=(source_window_frames - 1) / source_fps,
+        )
+        assert not result[0]["error_status"]
+
+    assert any(len(call["frames"]) == 16 for call in model.calls)
+    assert all(1 <= len(call["frames"]) <= 16 for call in model.calls)
+    assert all(0 < call["duration_seconds"] <= 4.0 for call in model.calls)
 
 
 def _timeline_entry(

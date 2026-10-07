@@ -526,6 +526,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         cutoff_frame_number = frame_number - window_frames
         while bookkeeping.sampled and bookkeeping.sampled[0][0] <= cutoff_frame_number:
             bookkeeping.sampled.pop(0)
+        if video_sampling.max_frames is not None:
+            # Rounded source-frame windows can contain one extra sampling timestamp.
+            while len(bookkeeping.sampled) > video_sampling.max_frames:
+                bookkeeping.sampled.pop(0)
 
         error_status = ""
         if bookkeeping.last_fire_frame_number is None:
@@ -605,9 +609,12 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 getattr(model, "span_semantics", None) == "class_union"
                 and frame_limit is not None
             ):
-                infer_kwargs["duration_seconds"] = (
-                    frame_limit - bookkeeping.sampled[0][0]
-                ) / (sampling_stride * effective_sample_fps)
+                duration_seconds = (frame_limit - bookkeeping.sampled[0][0]) / (
+                    sampling_stride * effective_sample_fps
+                )
+                infer_kwargs["duration_seconds"] = min(
+                    duration_seconds, model.video_sampling.window_seconds
+                )
             segments = model.infer(
                 frames=frames,
                 class_names=block_filter,
