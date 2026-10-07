@@ -50,6 +50,16 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: grl7ffzxd7
+          load: true
           tags: roboflow/roboflow-inference-server-cpu-slim:latest,roboflow/roboflow-inference-server-cpu-slim:${{env.VERSION}}
           platforms: linux/amd64,linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel
+      - name: Test CPU PyTorch runtime
+        env:
+          IMAGE_TAGS: roboflow/roboflow-inference-server-cpu-slim:latest,roboflow/roboflow-inference-server-cpu-slim:${{env.VERSION}}
+        run: |
+          image="${IMAGE_TAGS%%,*}"
+          docker run --rm --pull=never --entrypoint /bin/sh \
+            -e CPU_IMAGE_TEST=true \
+            -v "${{ github.workspace }}/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
+            "$image" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'

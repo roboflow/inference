@@ -133,6 +133,16 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || inputs.force_push == true }}
           project: grl7ffzxd7
+          load: true
           tags: ${{ steps.all_tags.outputs.all_tags }}
           platforms: linux/amd64,linux/arm64
           file: ${{ env.DOCKERFILE }}
+      - name: Test CPU PyTorch runtime
+        env:
+          IMAGE_TAGS: ${{ steps.all_tags.outputs.all_tags }}
+        run: |
+          image="${IMAGE_TAGS%%,*}"
+          docker run --rm --pull=never --entrypoint /bin/sh \
+            -e CPU_IMAGE_TEST=true \
+            -v "${{ github.workspace }}/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
+            "$image" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'
