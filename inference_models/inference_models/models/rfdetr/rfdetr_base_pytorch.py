@@ -251,34 +251,136 @@ class RFDETRSeg2XLargeConfig(RFDETRBaseConfig):
     num_classes: int = 90
 
 
-class RFDETRSemNanoConfig(RFDETRSegNanoConfig):
+class RFDETRSemNanoConfig(ModelConfig):
+    """Semantic segmentation subnet of the RF-DETR NAS Edge supernet (DINOv2-small)."""
+
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_small"
+    )
+    hidden_dim: int = 256
+    dec_layers: int = 1
+    sa_nheads: int = 8
+    ca_nheads: int = 16
+    dec_n_points: int = 2
+    num_windows: int = 2
+    patch_size: int = 12
+    projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_classes: int = 151
+    positional_encoding_size: int = 312 // 12
+    pretrain_weights: Optional[str] = "rf-detr-sem-nano-ade20k.pth"
+    resolution: int = 312
     semantic_segmentation_head: bool = True
-    segmentation_head: bool = False
 
 
-class RFDETRSemSmallConfig(RFDETRSegSmallConfig):
+class RFDETRSemSmallConfig(ModelConfig):
+    """Semantic segmentation subnet of the RF-DETR NAS Edge supernet (DINOv2-small)."""
+
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_small"
+    )
+    hidden_dim: int = 256
+    dec_layers: int = 1
+    sa_nheads: int = 8
+    ca_nheads: int = 16
+    dec_n_points: int = 2
+    num_windows: int = 2
+    patch_size: int = 12
+    projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_classes: int = 151
+    positional_encoding_size: int = 384 // 12
+    pretrain_weights: Optional[str] = "rf-detr-sem-small-ade20k.pth"
+    resolution: int = 384
     semantic_segmentation_head: bool = True
-    segmentation_head: bool = False
 
 
-class RFDETRSemMediumConfig(RFDETRSegMediumConfig):
+class RFDETRSemMediumConfig(ModelConfig):
+    """Semantic segmentation subnet of the RF-DETR NAS Cloud supernet (DINOv2-base)."""
+
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_base"
+    )
+    hidden_dim: int = 512
+    dec_layers: int = 1
+    sa_nheads: int = 16
+    ca_nheads: int = 32
+    dec_n_points: int = 4
+    num_windows: int = 2
+    patch_size: int = 20
+    projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_classes: int = 151
+    positional_encoding_size: int = 440 // 20
+    pretrain_weights: Optional[str] = "rf-detr-sem-medium-ade20k.pth"
+    resolution: int = 440
     semantic_segmentation_head: bool = True
-    segmentation_head: bool = False
 
 
-class RFDETRSemLargeConfig(RFDETRSegLargeConfig):
+class RFDETRSemLargeConfig(ModelConfig):
+    """Semantic segmentation subnet of the RF-DETR NAS Cloud supernet (DINOv2-base)."""
+
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_base"
+    )
+    hidden_dim: int = 512
+    dec_layers: int = 1
+    sa_nheads: int = 16
+    ca_nheads: int = 32
+    dec_n_points: int = 4
+    num_windows: int = 1
+    patch_size: int = 20
+    projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_classes: int = 151
+    positional_encoding_size: int = 500 // 20
+    pretrain_weights: Optional[str] = "rf-detr-sem-large-ade20k.pth"
+    resolution: int = 500
     semantic_segmentation_head: bool = True
-    segmentation_head: bool = False
 
 
-class RFDETRSemXLargeConfig(RFDETRSegXLargeConfig):
+class RFDETRSemXLargeConfig(ModelConfig):
+    """Semantic segmentation subnet of the RF-DETR NAS Cloud supernet (DINOv2-base)."""
+
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_base"
+    )
+    hidden_dim: int = 512
+    dec_layers: int = 2
+    sa_nheads: int = 16
+    ca_nheads: int = 32
+    dec_n_points: int = 4
+    num_windows: int = 1
+    patch_size: int = 20
+    projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_classes: int = 151
+    positional_encoding_size: int = 560 // 20
+    pretrain_weights: Optional[str] = "rf-detr-sem-xlarge-ade20k.pth"
+    resolution: int = 560
     semantic_segmentation_head: bool = True
-    segmentation_head: bool = False
 
 
-class RFDETRSem2XLargeConfig(RFDETRSeg2XLargeConfig):
+class RFDETRSem2XLargeConfig(ModelConfig):
+    """Semantic segmentation subnet of the RF-DETR NAS Cloud supernet (DINOv2-base)."""
+
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_base"
+    )
+    hidden_dim: int = 512
+    dec_layers: int = 2
+    sa_nheads: int = 16
+    ca_nheads: int = 32
+    dec_n_points: int = 4
+    num_windows: int = 1
+    patch_size: int = 20
+    projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_classes: int = 151
+    positional_encoding_size: int = 880 // 20
+    pretrain_weights: Optional[str] = "rf-detr-sem-2xlarge-ade20k.pth"
+    resolution: int = 880
     semantic_segmentation_head: bool = True
-    segmentation_head: bool = False
 
 
 class LWDETR(nn.Module):

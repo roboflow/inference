@@ -9,7 +9,7 @@ The model keeps the RF-DETR encoder and the spatial mask features of the RF-DETR
 - **Per-pixel classification** - Every pixel is assigned a single class label.
 - **Background is a class** - Class `0` is the dataset's `background` class, trained like every other class.
 - **Sigmoid confidence** - Pixel confidence is the top per-class sigmoid, the score the model is trained and evaluated with, so recommended thresholds keep their meaning.
-- **Multiple model sizes** - Nano, Small, Medium, Large, XLarge and 2XLarge, with the geometry of the matching RF-DETR instance segmentation size.
+- **Multiple model sizes** - Nano, Small, Medium, Large, XLarge and 2XLarge, picked from the ADE20K Pareto frontier of the RF-DETR NAS Edge (Nano, Small) and NAS Cloud (Medium to 2XLarge) supernets.
 
 ## License
 
