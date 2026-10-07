@@ -651,6 +651,7 @@ def register_datapoint(
         if len(detections) > 0:
             image_metadata = detections.image_metadata or {}
             inference_id = image_metadata.get(INFERENCE_ID_KEY)
+    annotation_follows = not is_prediction_registration_forbidden(prediction=prediction)
     roboflow_image_id = safe_register_image_at_roboflow(
         target_project=target_project,
         encoded_image=encoded_image,
@@ -660,10 +661,11 @@ def register_datapoint(
         tags=tags,
         inference_id=inference_id,
         metadata=metadata,
+        annotation_follows=annotation_follows,
     )
     if roboflow_image_id is None:
         return DUPLICATED_STATUS
-    if is_prediction_registration_forbidden(prediction=prediction):
+    if not annotation_follows:
         return "Successfully registered image"
     encoded_prediction, prediction_format = encode_prediction(prediction=prediction)
     _ = annotate_image_at_roboflow(
@@ -687,6 +689,7 @@ def safe_register_image_at_roboflow(
     tags: List[str],
     inference_id: Optional[str],
     metadata: Optional[Dict[str, Any]] = None,
+    annotation_follows: bool = False,
 ) -> Optional[str]:
     registration_response = register_image_at_roboflow(
         api_key=api_key,
@@ -697,6 +700,7 @@ def safe_register_image_at_roboflow(
         tags=tags,
         inference_id=inference_id,
         metadata=metadata,
+        annotation_follows=annotation_follows,
     )
     image_duplicated = registration_response.get("duplicate", False)
     if image_duplicated:

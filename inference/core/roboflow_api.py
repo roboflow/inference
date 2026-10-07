@@ -78,6 +78,7 @@ from inference.core.exceptions import (
     RoboflowAPIIAlreadyAnnotatedError,
     RoboflowAPIIAnnotationRejectionError,
     RoboflowAPIImageUploadRejectionError,
+    RoboflowAPIImageUploadUncertainError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
@@ -811,7 +812,29 @@ def register_image_at_roboflow(
     tags: Optional[List[str]] = None,
     inference_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    annotation_follows: bool = False,
 ) -> dict:
+    """Upload an image using the configured API retry policy.
+
+    Args:
+        api_key: Roboflow API key.
+        dataset_id: Target dataset URL identifier.
+        local_image_id: Filename stem for the uploaded image.
+        image_bytes: Encoded JPEG image.
+        batch_name: Labeling batch receiving the image.
+        tags: Tags attached to the image.
+        inference_id: Associated inference result identifier, if available.
+        metadata: Optional custom image metadata.
+        annotation_follows: Whether the caller will annotate the image next.
+
+    Returns:
+        API response containing the image ID and success or duplicate status.
+
+    Raises:
+        RoboflowAPIImageUploadUncertainError: When `annotation_follows` is set and
+            a retry reports a duplicate. The failed attempt may have saved the
+            image, and callers skip annotating duplicates.
+    """
     if OFFLINE_MODE:
         # callers consume the response (e.g. `["id"]`) - raise so existing
         # error handling reports a clear cause instead of a KeyError
@@ -828,29 +851,28 @@ def register_image_at_roboflow(
     tags = tags if tags is not None else []
     for tag in tags:
         params.append(("tag", tag))
-    wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
+    url = _add_params_to_url(url=url, params=params)
     fields = {
         "name": f"{local_image_id}.jpg",
         "file": ("imageToUpload", image_bytes, "image/jpeg"),
     }
     if metadata is not None:
         fields["metadata"] = json.dumps(metadata)
-    m = MultipartEncoder(fields=fields)
-    headers = build_roboflow_api_headers(
-        explicit_headers={"Content-Type": m.content_type},
+    failed_attempts = []
+    response = _post_to_url(
+        url, multipart_fields=fields, failed_attempts=failed_attempts
     )
-    response = requests.post(
-        url=wrapped_url,
-        data=m,
-        headers=headers,
-        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
-        verify=ROBOFLOW_API_VERIFY_SSL,
-    )
-    api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
     if not parsed_response.get("duplicate") and not parsed_response.get("success"):
         raise RoboflowAPIImageUploadRejectionError(
             f"Server rejected image: {parsed_response}"
+        )
+    if parsed_response.get("duplicate") and failed_attempts and annotation_follows:
+        raise RoboflowAPIImageUploadUncertainError(
+            f"Image {local_image_id} may already have been uploaded by an earlier "
+            f"attempt that failed with {type(failed_attempts[-1]).__name__}, but its "
+            f"annotation was not uploaded. Server response to the retry: "
+            f"{parsed_response}"
         )
     return parsed_response
 
@@ -873,6 +895,20 @@ def annotate_image_at_roboflow(
     annotation_file_type: str,
     is_prediction: bool = True,
 ) -> dict:
+    """Upload an annotation using the configured API retry policy.
+
+    Args:
+        api_key: Roboflow API key.
+        dataset_id: Target dataset URL identifier.
+        local_image_id: Filename stem for the annotation.
+        roboflow_image_id: Existing image ID receiving the annotation.
+        annotation_content: Serialized annotation body.
+        annotation_file_type: Annotation filename extension.
+        is_prediction: Whether the annotation contains model predictions.
+
+    Returns:
+        Successful annotation API response.
+    """
     if OFFLINE_MODE:
         raise RoboflowAPIConnectionError(
             "Cannot annotate image at Roboflow - OFFLINE_MODE is enabled."
@@ -883,18 +919,8 @@ def annotate_image_at_roboflow(
         ("name", f"{local_image_id}.{annotation_file_type}"),
         ("prediction", str(is_prediction).lower()),
     ]
-    wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
-    headers = build_roboflow_api_headers(
-        explicit_headers={"Content-Type": "text/plain"},
-    )
-    response = requests.post(
-        wrapped_url,
-        data=annotation_content,
-        headers=headers,
-        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
-        verify=ROBOFLOW_API_VERIFY_SSL,
-    )
-    api_key_safe_raise_for_status(response=response)
+    url = _add_params_to_url(url=url, params=params)
+    response = _post_to_url(url, data=annotation_content)
     parsed_response = response.json()
     if "error" in parsed_response or not parsed_response.get("success"):
         raise RoboflowAPIIAnnotationRejectionError(
@@ -1933,6 +1959,66 @@ def _get_from_url(
 
     if json_response:
         return response.json()
+    return response
+
+
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryRequestError,
+    max_tries=TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
+    interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
+)
+def _post_to_url(
+    url: str,
+    *,
+    data: Optional[str] = None,
+    multipart_fields: Optional[dict] = None,
+    failed_attempts: Optional[List[Exception]] = None,
+) -> Response:
+    """POST with the GET retry policy, rebuilding multipart data per attempt.
+
+    Errors that trigger a retry are appended to `failed_attempts`, so callers can
+    tell when a retried request may already have taken effect.
+    """
+    body = (
+        MultipartEncoder(fields=multipart_fields)
+        if multipart_fields is not None
+        else data
+    )
+    content_type = (
+        body.content_type if isinstance(body, MultipartEncoder) else "text/plain"
+    )
+    try:
+        response = requests.post(
+            wrap_url(url),
+            data=body,
+            headers=build_roboflow_api_headers(
+                explicit_headers={"Content-Type": content_type},
+            ),
+            timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+            verify=ROBOFLOW_API_VERIFY_SSL,
+        )
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+        if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
+            if failed_attempts is not None:
+                failed_attempts.append(error)
+            raise RetryRequestError(
+                message="Connectivity error", inner_error=error
+            ) from error
+        raise error
+
+    try:
+        api_key_safe_raise_for_status(response=response)
+    except requests.exceptions.HTTPError as error:
+        if response.status_code in TRANSIENT_ROBOFLOW_API_ERRORS:
+            if failed_attempts is not None:
+                failed_attempts.append(error)
+            raise RetryRequestError(
+                message=f"Transient HTTP error: {response.status_code}",
+                inner_error=error,
+            ) from error
+        raise error
+
     return response
 
 
