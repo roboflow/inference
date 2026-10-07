@@ -58,8 +58,8 @@ docker run --gpus all -it roboflow/inference-exp:cu128-latest python3
 ```bash
 docker run -it \
   --runtime nvidia \
-  roboflow/roboflow-inference-server-jetson-7.2.0:latest \
-  python3
+  --entrypoint python3 \
+  roboflow/roboflow-inference-server-jetson-7.2.0:latest
 ```
 
 JetPack 7.2 supports both Orin and Thor. For JetPack 6.2 use
