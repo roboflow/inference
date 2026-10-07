@@ -40,9 +40,12 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     STRING_KIND,
 )
-from inference_models import ActionRecognitionModel
+from inference_models import (
+    ActionRecognitionModel,
+)
 from inference_models import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
@@ -270,9 +273,14 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert manifest.stride_seconds is None
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
     outputs = manifest_type.describe_outputs()
-    assert [output.name for output in outputs] == ["timeline", "error_status"]
+    assert [output.name for output in outputs] == [
+        "timeline",
+        "error_status",
+        "frame_predictions",
+    ]
     assert outputs[0].kind == [ACTION_RECOGNITION_PREDICTION_KIND]
     assert outputs[1].kind == [STRING_KIND]
+    assert outputs[2].kind[0].name == CLASSIFICATION_PREDICTION_KIND.name
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])

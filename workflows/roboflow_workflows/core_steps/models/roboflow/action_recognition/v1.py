@@ -4,7 +4,7 @@ import logging
 import math
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, List, Literal, Optional, Set, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 
 import cv2
 import numpy as np
@@ -33,6 +33,7 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
@@ -62,7 +63,9 @@ from roboflow_workflows.prototypes.block import (
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.utils.action_recognition import merge_window_segments
 
-from inference_models.models.base.action_recognition import WHOLE_VIDEO_MODE
+from inference_models.models.base.action_recognition import (
+    WHOLE_VIDEO_MODE,
+)
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
@@ -118,6 +121,14 @@ The class vocabulary is optional. Leave it empty to report every class the
 model carries, or list classes to report a subset of them. When a model call
 fails, error_status carries the error text for that frame and the stream
 continues.
+
+Connect `frame_predictions` directly to Classification Label Visualization to
+display actions whose ranges cover the input frame. This output uses multi-label
+classification format, with one prediction per matching class. Every confidence
+is a synthetic 1.0 for compatibility, not a probability supplied by the model.
+Frames outside the classified ranges return no predicted classes; actions are
+not carried forward beyond their observed ranges. `timeline` retains the full
+temporal output.
 """
 
 
@@ -130,6 +141,7 @@ class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
+    classification_class_ids: Dict[str, int] = field(default_factory=dict)
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -209,6 +221,10 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[ACTION_RECOGNITION_PREDICTION_KIND],
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
+            OutputDefinition(
+                name="frame_predictions",
+                kind=[CLASSIFICATION_PREDICTION_KIND],
+            ),
         ]
 
     @classmethod
@@ -250,7 +266,7 @@ class BlockManifest(WorkflowBlockManifest):
         generic `add_model()` registration. The declared dependency describes
         that supported execution path, so it is LOCAL and kept away from the
         generic preloader. The configured id is returned verbatim, selector
-        included. The tensor sibling re-exports this manifest.
+        included. The tensor sibling inherits this resource declaration.
 
         Returns:
             The configured action recognition model.
@@ -427,7 +443,12 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 and frame_number < bookkeeping.last_frame_number
             )
         ):
-            bookkeeping = _ActionRecognitionBookkeeping(signature=signature)
+            bookkeeping = _ActionRecognitionBookkeeping(
+                signature=signature,
+                classification_class_ids={
+                    name: index for index, name in enumerate(id_vocabulary or [])
+                },
+            )
             self._video_bookkeeping[video_id] = bookkeeping
             while len(self._video_bookkeeping) > MAX_TRACKED_VIDEOS:
                 evicted_video_id, _ = self._video_bookkeeping.popitem(last=False)
@@ -509,7 +530,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
 
         bookkeeping.last_frame_number = frame_number
-        return self._build_output(bookkeeping=bookkeeping, error_status=error_status)
+        result = self._build_output(
+            image=image, bookkeeping=bookkeeping, error_status=error_status
+        )
+        return result
 
     def _resolve_source_fps(
         self,
@@ -681,6 +705,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def _build_output(
         self,
+        image: WorkflowImageData,
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
     ) -> dict:
@@ -692,4 +717,36 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
+            "frame_predictions": self._build_frame_predictions(
+                image=image, bookkeeping=bookkeeping
+            ),
         }
+
+    def _build_frame_predictions(
+        self,
+        image: WorkflowImageData,
+        bookkeeping: _ActionRecognitionBookkeeping,
+    ) -> dict:
+        frame_number = image.video_metadata.frame_number
+        predictions = {}
+        for action in bookkeeping.timeline_snapshot:
+            if not action.start_frame_idx <= frame_number <= action.end_frame_idx:
+                continue
+
+            # Classification tensors require nonnegative class ids. Preserve
+            # model ids and give vocabulary-free labels stable ids per stream.
+            class_id = bookkeeping.classification_class_ids.setdefault(
+                action.class_name, len(bookkeeping.classification_class_ids)
+            )
+            predictions[action.class_name] = {"confidence": 1.0, "class_id": class_id}
+
+        height, width = image._read_shape_without_materialization()
+        frame_predictions = {
+            "image": {"height": height, "width": width},
+            "predictions": predictions,
+            "predicted_classes": list(predictions),
+            "prediction_type": "classification",
+            "parent_id": image.parent_metadata.parent_id,
+            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
+        }
+        return frame_predictions
