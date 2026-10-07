@@ -43,7 +43,7 @@ RUN uv venv --python 3.10 --system-site-packages /opt/venv \
     && uv pip install \
         -e ".[torch-jp6-cu126,onnx-jp6-cu126]" \
         -e "../inference_model_manager" \
-        -e "../inference_server[workflows,otel]"
+        -e "../inference_server[workflows,otel,redis]"
 
 RUN python /app/workflows/build_scripts/download_fonts.py
 
