@@ -5,14 +5,14 @@ From inference_models/, with CUDA available for the prediction cases:
     VJEPA_ACTION_RECOGNITION_PACKAGE_DIR=/path/to/flat/package \
     python -m pytest tests/integration_tests/models/test_vjepa2_1_action_recognition_predictions.py -m slow
 
-Without the override, the fixture downloads the synthetic-dataset t7 package.
-GPU prediction cases need more memory than the standard CI runner supplies.
-They stay outside CI's backend-marker groups, like the Cosmos real-weight tests.
+Without the override, the fixture downloads the synthetic-dataset t23 package.
+Its four-frame, 256-pixel window uses 512 tokens to keep GPU CI memory needs low.
 """
 
 import json
 import math
 from hashlib import sha256
+from itertools import islice
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +22,7 @@ import torch
 
 from inference_models.models.vjepa2_1.model import VJepaActionRecognition
 
-pytestmark = pytest.mark.slow
+pytestmark = [pytest.mark.slow, pytest.mark.torch_models]
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +43,6 @@ def loaded_model(vjepa_action_recognition_package):
     return model
 
 
-@pytest.mark.torch_models
 def test_real_package_loads_from_export(
     loaded_model, vjepa_action_recognition_package: Path
 ) -> None:
@@ -118,19 +117,23 @@ def test_real_weights_predict_scored_spans_and_filter_them(
 @pytest.mark.skipif(
     not torch.cuda.is_available(), reason="CUDA is required for predictions"
 )
-def test_t7_predictions_match_pinned_reference(
+def test_t23_predictions_match_pinned_reference(
     loaded_model, vjepa_action_recognition_package, vjepa_prediction_video
 ) -> None:
     expected = json.loads(
         (
-            Path(__file__).parent / "fixtures" / "vjepa2_1_t7_predictions.json"
+            Path(__file__).parent / "fixtures" / "vjepa2_1_t23_predictions.json"
         ).read_text()
     )
     video_info = sv.VideoInfo.from_video_path(str(vjepa_prediction_video))
     assert video_info.fps == pytest.approx(expected["sample_fps"])
+    assert loaded_model.video_sampling.max_frames == expected["frame_count"]
     frames = [
         np.ascontiguousarray(frame[:, :, ::-1])
-        for frame in sv.get_video_frames_generator(str(vjepa_prediction_video))
+        for frame in islice(
+            sv.get_video_frames_generator(str(vjepa_prediction_video)),
+            expected["frame_count"],
+        )
     ]
     assert len(frames) == expected["frame_count"]
     weights_hash = sha256()

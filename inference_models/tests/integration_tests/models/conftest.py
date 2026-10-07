@@ -31,7 +31,7 @@ MOONDREAM2_BASE_FT_URL = (
 GLM_OCR_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/glm-ocr/glm-ocr.zip"
 )
-VJEPA_ACTION_RECOGNITION_T7_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/action-recognition-vitb-384-t7.zip"
+VJEPA_ACTION_RECOGNITION_T23_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/action-recognition-vitb-384-t23.zip"
 VJEPA_PREDICTION_VIDEO_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/synthetic-086-first-window-h264-v1.mp4"
 COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-nano-torch-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-cs-stretch-640.zip"
@@ -430,7 +430,7 @@ def download_model_package(
 
 @pytest.fixture(scope="module")
 def vjepa_action_recognition_package() -> Path:
-    """Locate the trained t7 package, or download the published test fixture.
+    """Locate the trained t23 package, or download the published test fixture.
 
     Returns:
         Directory containing the flat V-JEPA export.
@@ -441,8 +441,8 @@ def vjepa_action_recognition_package() -> Path:
     else:
         package_dir = Path(
             download_model_package(
-                model_package_zip_url=VJEPA_ACTION_RECOGNITION_T7_URL,
-                package_name="vjepa2-1-action-recognition-t7",
+                model_package_zip_url=VJEPA_ACTION_RECOGNITION_T23_URL,
+                package_name="vjepa2-1-action-recognition-t23",
             )
         ).resolve()
 
