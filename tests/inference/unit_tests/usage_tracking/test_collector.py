@@ -54,7 +54,7 @@ def usage_key(
         if error_status_code is not None:
             key = f"{key}:error_status_code={error_status_code}"
     if source is not None or source_info is not None:
-        key = f"{key}:source_tags={sha256_hash(json.dumps([source, source_info]))}"
+        key = f"{key}:source_tags={sha256_hash(json.dumps([source, source_info]), length=64)}"
     if stream_session_id:
         key = f"{key}:{stream_session_id}"
     return key
@@ -2985,3 +2985,63 @@ def test_usage_keeps_source_attribution_separate_before_flush(
         assert row["processed_frames"] == frames
         assert row["execution_duration"] == duration
         assert json.loads(row["resource_details"]) == {"billable": True, **tag}
+
+
+@pytest.mark.parametrize("resource_id", ["same-resource", ""])
+def test_source_tags_do_not_accumulate_in_resource_details_cache(
+    usage_collector_with_mocked_threads, resource_id
+):
+    collector = usage_collector_with_mocked_threads
+    for i in range(25):
+        collector.record_usage(
+            source="",
+            category="model",
+            api_key="fake-key",
+            resource_id=resource_id,
+            resource_details={
+                "billable": True,
+                "model_architecture": "rfdetr",
+                "source": f"source-{i}",
+                "source_info": f"feature-{i}",
+            },
+        )
+
+    cached = collector._resource_details["fake-key"]
+    assert len(cached) == 1
+    assert list(cached.values()) == [{"billable": True, "model_architecture": "rfdetr"}]
+    rows = list(collector._usage["fake-key"].values())
+    assert len(rows) == 25
+    assert all(
+        json.loads(row["resource_details"])["model_architecture"] == "rfdetr"
+        for row in rows
+    )
+    assert {json.loads(row["resource_details"])["source_info"] for row in rows} == {
+        f"feature-{i}" for i in range(25)
+    }
+
+
+def test_source_tag_pairs_with_matching_short_hashes_stay_separate(
+    usage_collector_with_mocked_threads,
+):
+    collector = usage_collector_with_mocked_threads
+    tags = [("app", "feature-506"), ("app", "feature-1845")]
+    assert sha256_hash(json.dumps(tags[0])) == sha256_hash(json.dumps(tags[1]))
+    for frames, (source, source_info) in enumerate(tags, start=1):
+        collector.record_usage(
+            source="",
+            category="workflows",
+            api_key="fake-key",
+            resource_id="same-resource",
+            frames=frames,
+            resource_details={
+                "billable": True,
+                "source": source,
+                "source_info": source_info,
+            },
+        )
+    rows = list(collector._usage["fake-key"].values())
+    assert len(rows) == 2
+    assert {
+        json.loads(row["resource_details"])["source_info"]: row["processed_frames"]
+        for row in rows
+    } == {"feature-506": 1, "feature-1845": 2}

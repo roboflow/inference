@@ -194,8 +194,6 @@ class UsageCollector:
                     str,
                     Optional[str],
                     Optional[int],
-                    Optional[str],
-                    Optional[str],
                 ],
                 Dict[str, Any],
             ],
@@ -378,8 +376,6 @@ class UsageCollector:
         str,
         Optional[str],
         Optional[int],
-        Optional[str],
-        Optional[str],
     ]:
         outcome, error_type, error_status_code = cls._usage_outcome(resource_details)
         return (
@@ -390,8 +386,6 @@ class UsageCollector:
             outcome,
             error_type,
             error_status_code,
-            (resource_details or {}).get("source"),
-            (resource_details or {}).get("source_info"),
         )
 
     @classmethod
@@ -416,9 +410,7 @@ class UsageCollector:
             (resource_details or {}).get("source_info"),
         ]
         if any(tag is not None for tag in source_tags):
-            usage_key = (
-                f"{usage_key}:source_tags={sha256_hash(json.dumps(source_tags))}"
-            )
+            usage_key = f"{usage_key}:source_tags={sha256_hash(json.dumps(source_tags), length=64)}"
         if stream_session_id:
             usage_key = f"{usage_key}:{stream_session_id}"
         return usage_key
@@ -456,6 +448,9 @@ class UsageCollector:
             )
             return
         resource_details = self._normalize_error_metadata(resource_details)
+        # Origins belong to the current call, not the persistent metadata cache.
+        resource_details.pop("source", None)
+        resource_details.pop("source_info", None)
 
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
@@ -575,7 +570,11 @@ class UsageCollector:
         )
         if not resource_id and provided_resource_details:
             resource_id = UsageCollector._calculate_resource_hash(
-                resource_details=provided_resource_details
+                resource_details={
+                    key: value
+                    for key, value in provided_resource_details.items()
+                    if key not in {"source", "source_info"}
+                }
             )
         resource_details_key = self._resource_details_key(
             category=category,
