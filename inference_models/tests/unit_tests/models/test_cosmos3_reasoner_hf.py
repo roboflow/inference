@@ -324,6 +324,53 @@ def test_require_cosmos3_transformers_names_the_floor(monkeypatch) -> None:
         reasoner_module._require_cosmos3_transformers()
 
 
+@pytest.mark.parametrize(
+    "device_type, expected_dtype, expected_attention",
+    [
+        ("mps", torch.bfloat16, "sdpa"),
+        ("cpu", torch.float32, "eager"),
+    ],
+)
+def test_runtime_settings_per_device(
+    device_type, expected_dtype, expected_attention
+) -> None:
+    device = torch.device(device_type)
+
+    assert reasoner_module._resolve_default_dtype(device) == expected_dtype
+    assert reasoner_module._get_cosmos3_attn_implementation(device) == (
+        expected_attention
+    )
+
+
+@pytest.mark.parametrize(
+    "device_type, expected_device_map, moved",
+    [
+        # Threaded weight loading onto MPS races in PyTorch's Metal kernel cache.
+        ("mps", "cpu", True),
+        ("cpu", torch.device("cpu"), False),
+    ],
+)
+def test_from_pretrained_stages_mps_weights_on_cpu(
+    tmp_path, monkeypatch, device_type, expected_device_map, moved
+) -> None:
+    loaded = _fake_loaded_model()
+    load_model = MagicMock(return_value=loaded)
+    monkeypatch.setattr(reasoner_module, "_require_cosmos3_transformers", lambda: None)
+    monkeypatch.setattr(
+        reasoner_module.AutoModelForImageTextToText, "from_pretrained", load_model
+    )
+    monkeypatch.setattr(reasoner_module.AutoProcessor, "from_pretrained", MagicMock())
+    device = torch.device(device_type)
+
+    reasoner = Cosmos3EdgeReasoner.from_pretrained(str(tmp_path), device=device)
+
+    assert load_model.call_args.kwargs["device_map"] == expected_device_map
+    assert loaded.to.called is moved
+    if moved:
+        assert loaded.to.call_args.args == (device,)
+    assert reasoner._model is loaded
+
+
 def test_post_process_generation_returns_the_answer_as_answer_when_thinking_is_off() -> (
     None
 ):
