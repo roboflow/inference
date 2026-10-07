@@ -283,7 +283,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert [output.name for output in outputs] == [
         "timeline",
         "error_status",
-        "recent_predictions",
+        "latest_predictions",
     ]
     assert outputs[0].kind == [ACTION_RECOGNITION_PREDICTION_KIND]
     assert outputs[1].kind == [STRING_KIND]
@@ -1308,41 +1308,40 @@ def test_tensor_block_caps_on_device_without_leaving_the_tensor():
 
 
 def _predicted_classes(result):
-    prediction = result["recent_predictions"]
+    prediction = result["latest_predictions"]
     if not isinstance(prediction, dict):
         prediction = serialise_native_classification(prediction)
     return prediction["predicted_classes"]
 
 
 @pytest.mark.parametrize("tensor", [False, True])
-def test_recent_predictions_last_until_the_next_call_then_expire(tensor):
+def test_latest_predictions_hold_until_the_next_call_and_clear_on_error(tensor):
     block, _ = _make_block(
         responses=[
             [
-                _model_segment("walk", 0, 1),
+                _model_segment("walk", 0, 0),
                 _model_segment("run", 1, 1),
+                _model_segment("walk", 1, 1),
                 _model_segment("jump", 1, 1),
             ],
-            [_model_segment("run", 1, 1)],
-            [],
+            RuntimeError("model unavailable"),
         ],
         tensor=tensor,
     )
     color = {"tensor_rgb_color": [1, 2, 3]} if tensor else {}
 
-    results = [_run(block, _make_frame(n, **color)) for n in range(8)]
+    results = [_run(block, _make_frame(n, **color)) for n in range(6)]
 
-    # Calls fire on frames 2, 4 and 6; "jump" is outside the class filter.
+    # Calls fire on frames 2 and 4; "jump" is outside the class filter.
     assert [_predicted_classes(r) for r in results] == [
         [],
         [],
         ["run", "walk"],
         ["run", "walk"],
-        ["run"],
-        ["run"],
         [],
         [],
     ]
+    assert results[4]["error_status"] == "model unavailable"
 
 
 @pytest.mark.parametrize(
@@ -1350,7 +1349,7 @@ def test_recent_predictions_last_until_the_next_call_then_expire(tensor):
     [(False, classification_label_v1), (True, classification_label_v1_tensor)],
 )
 @pytest.mark.parametrize("has_actions", [True, False])
-def test_recent_predictions_render_with_classification_label_visualization(
+def test_latest_predictions_render_with_classification_label_visualization(
     tensor, visualizer_module, has_actions
 ):
     block, _ = _make_block(
@@ -1368,7 +1367,7 @@ def test_recent_predictions_render_with_classification_label_visualization(
         type="roboflow_core/classification_label_visualization@v1",
         name="labels",
         image="$inputs.image",
-        predictions="$steps.actions.recent_predictions",
+        predictions="$steps.actions.latest_predictions",
         text="Class",
     )
     configuration = manifest.model_dump(
@@ -1376,7 +1375,7 @@ def test_recent_predictions_render_with_classification_label_visualization(
     )
 
     output = visualizer_module.ClassificationLabelVisualizationBlockV1().run(
-        image=image, predictions=result["recent_predictions"], **configuration
+        image=image, predictions=result["latest_predictions"], **configuration
     )
 
     assert bool(np.any(output["image"].numpy_image)) is has_actions

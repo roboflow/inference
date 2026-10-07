@@ -120,9 +120,9 @@ model carries, or list classes to report a subset of them. When a model call
 fails, error_status carries the error text for that frame and the stream
 continues.
 
-`recent_predictions` lists the actions whose range ended within the last stride,
-as multi-label classification with a fixed confidence of 1.0. Connect it to
-Classification Label Visualization to show them on the video.
+`latest_predictions` holds the actions of the latest model call until the next
+call, as multi-label classification with a fixed confidence of 1.0. Connect it
+to Classification Label Visualization to show them on the video.
 """
 
 
@@ -135,6 +135,7 @@ class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
+    latest_actions: List[str] = field(default_factory=list)
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -215,7 +216,7 @@ class BlockManifest(WorkflowBlockManifest):
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
             OutputDefinition(
-                name="recent_predictions", kind=[CLASSIFICATION_PREDICTION_KIND]
+                name="latest_predictions", kind=[CLASSIFICATION_PREDICTION_KIND]
             ),
         ]
 
@@ -518,10 +519,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
         bookkeeping.last_frame_number = frame_number
         return self._build_output(
-            image=image,
-            bookkeeping=bookkeeping,
-            error_status=error_status,
-            expired_frame_number=frame_number - stride_frames,
+            image=image, bookkeeping=bookkeeping, error_status=error_status
         )
 
     def _resolve_source_fps(
@@ -574,6 +572,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 error,
                 exc_info=True,
             )
+            # Stale labels would look like a fresh result on screen.
+            bookkeeping.latest_actions = []
             return str(error)
         # Separates "the model output one range" from "the block merged
         # several".
@@ -597,6 +597,14 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
             stride=max(1, math.ceil(sampling_stride)),
+        )
+        # Sorted, so an action keeps its label slot while it persists across calls.
+        bookkeeping.latest_actions = sorted(
+            {
+                segment.class_name
+                for segment in segments
+                if block_filter is None or segment.class_name in block_filter
+            }
         )
         return ""
 
@@ -697,33 +705,22 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         image: WorkflowImageData,
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
-        expired_frame_number: int,
     ) -> dict:
-        # Ranges end where the model last ran, so one stride of grace keeps a
-        # label up until the next call; older ranges have expired.
-        recent_actions = sorted(
-            {
-                action.class_name
-                for action in bookkeeping.timeline_snapshot
-                if action.end_frame_idx > expired_frame_number
-            }
-        )
-        recent_predictions = self._build_recent_predictions(
-            image=image, actions=recent_actions
-        )
-
         # Copying every entry here costs one full timeline copy per frame,
         # which grows without bound and caps the frame rate the block keeps
         # up with. The entries come from the snapshot the last fire built.
         # The list is still fresh per frame, so a consumer that appends to
         # one frame's output leaves the next frame alone.
+        latest_predictions = self._build_latest_predictions(
+            image=image, actions=bookkeeping.latest_actions
+        )
         return {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
-            "recent_predictions": recent_predictions,
+            "latest_predictions": latest_predictions,
         }
 
-    def _build_recent_predictions(
+    def _build_latest_predictions(
         self, image: WorkflowImageData, actions: List[str]
     ) -> Any:
         # Multi-label so every action gets a label. Position ids stay dense, which
