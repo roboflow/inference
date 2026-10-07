@@ -75,7 +75,7 @@ The `privacy_level` field controls which OpenRouter providers may serve the requ
 
 !!! warning "Model license"
 
-    Check the [Llama 3.2 license](https://www.llama.com/llama3_2/license/) before use.
+    Check the [Llama 3.2 license](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/LICENSE) before use.
 """
 
 
