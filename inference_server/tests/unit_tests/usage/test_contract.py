@@ -62,14 +62,13 @@ COMPONENT_VERSION_KEYS = (
     "roboflow_workflows_version",
     "streamvision_version",
 )
-MODEL_ENTRY_KEYS = {
+MODEL_DETAILS_KEYS = {
+    "billable",
     "model_architecture",
     "model_variant",
     "task_type",
     "model_input_height",
     "model_input_width",
-    "execution_duration",
-    "frames",
 }
 
 
@@ -89,12 +88,24 @@ class PostRecorder:
         raise AssertionError("usage post attempted after the collector was stopped")
 
     def only_row(self):
+        (row,) = self.rows()
+
+        return row
+
+    def rows(self):
         assert len(self.calls) == 1
         body = self.calls[0].json
         assert isinstance(body, list)
-        assert len(body) == 1
 
-        return body[0]
+        return body
+
+    def rows_by_category(self):
+        rows = {}
+        for row in self.rows():
+            assert row["category"] not in rows
+            rows[row["category"]] = row
+
+        return rows
 
 
 @pytest.fixture
@@ -212,7 +223,36 @@ def _flush_and_stop(collector):
     assert collector.stop(timeout=5) is True
 
 
-def test_object_detection_request_posts_the_row_the_platform_expects(
+def _assert_common_row_shape(row, *, before, after):
+    assert set(row) == ROW_KEYS
+    assert row["api_key"] == "key-1"
+    assert type(row["processed_frames"]) is int
+    for key in ("timestamp_start", "timestamp_stop"):
+        assert type(row[key]) is int
+        assert before <= row[key] <= after
+    assert row["timestamp_start"] <= row["timestamp_stop"]
+    assert type(row["execution_duration"]) is float
+    assert row["execution_duration"] > 0
+    assert type(row["fps"]) is float
+    assert row["fps"] == 0.0
+    assert type(row["source_duration"]) is int
+    assert row["source_duration"] == 0
+    assert row["hosted"] is False
+    assert row["enterprise"] is False
+    assert row["is_gpu_available"] is False
+    assert type(row["python_version"]) is str
+    assert row["hostname"] == SYSTEM_INFO["hostname"]
+    assert row["ip_address_hash"] == SYSTEM_INFO["ip_address_hash"]
+    assert row["inference_version"] == configuration.SERVER_VERSION
+    for key in COMPONENT_VERSION_KEYS:
+        assert row[key] is None or (type(row[key]) is str and row[key] != "")
+    assert re.match(r"^\d+_[0-9a-f]{4}$", row["exec_session_id"])
+    assert row["resource_id"] == "ds/1"
+    assert "api_key_hash" not in row
+    assert isinstance(row["resource_details"], str)
+
+
+def test_object_detection_request_posts_the_rows_the_platform_expects(
     contract_client, real_collector, posts, detection_gateway
 ):
     client = contract_client(detection_gateway)
@@ -231,53 +271,68 @@ def test_object_detection_request_posts_the_row_the_platform_expects(
         "X-Allow-Chunked": "true",
     }
     assert call.timeout == 1
-    row = posts.only_row()
-    assert set(row) == ROW_KEYS
-    assert row["api_key"] == "key-1"
-    assert row["category"] == "request"
-    assert type(row["processed_frames"]) is int
-    assert row["processed_frames"] == 1
-    for key in ("timestamp_start", "timestamp_stop"):
-        assert type(row[key]) is int
-        assert before <= row[key] <= after
-    assert row["timestamp_start"] <= row["timestamp_stop"]
-    assert type(row["execution_duration"]) is float
-    assert row["execution_duration"] > 0
-    assert type(row["fps"]) is float
-    assert row["fps"] == 0.0
-    assert type(row["source_duration"]) is int
-    assert row["source_duration"] == 0
-    assert row["megapixel_buckets"] == {}
-    assert row["hosted"] is False
-    assert row["enterprise"] is False
-    assert row["is_gpu_available"] is False
-    assert type(row["python_version"]) is str
-    assert row["hostname"] == SYSTEM_INFO["hostname"]
-    assert row["ip_address_hash"] == SYSTEM_INFO["ip_address_hash"]
-    assert row["inference_version"] == configuration.SERVER_VERSION
-    for key in COMPONENT_VERSION_KEYS:
-        assert row[key] is None or (type(row[key]) is str and row[key] != "")
-    assert re.match(r"^\d+_[0-9a-f]{4}$", row["exec_session_id"])
-    assert row["resource_id"] == "ds/1"
-    assert "api_key_hash" not in row
-    assert isinstance(row["resource_details"], str)
-    details = json.loads(row["resource_details"])
-    assert isinstance(details, dict)
+    rows = posts.rows_by_category()
+    assert set(rows) == {"request", "model"}
+    for row in rows.values():
+        _assert_common_row_shape(row, before=before, after=after)
+    request = rows["request"]
+    assert request["processed_frames"] == 1
+    assert request["megapixel_buckets"] == {}
+    assert json.loads(request["resource_details"]) == {"billable": True}
+    model = rows["model"]
+    assert model["processed_frames"] == 1
+    assert model["execution_duration"] <= request["execution_duration"]
+    assert model["exec_session_id"] == request["exec_session_id"]
+    details = json.loads(model["resource_details"])
+    assert set(details) == MODEL_DETAILS_KEYS
     assert details["billable"] is True
-    assert len(details["models"]) == 1
-    entry = details["models"][0]
-    assert set(entry) == MODEL_ENTRY_KEYS | {"model_id"}
-    assert entry["model_id"] == "ds/1"
-    assert "model_latency_ms" not in entry
-    assert entry["model_architecture"] == "yolov8"
-    assert entry["model_variant"] == "yolov8-n"
-    assert entry["task_type"] == "object-detection"
-    assert entry["model_input_height"] == 640
-    assert entry["model_input_width"] == 640
-    assert type(entry["frames"]) is int
-    assert entry["frames"] == 1
-    assert type(entry["execution_duration"]) is float
-    assert entry["execution_duration"] > 0
+    assert details["model_architecture"] == "yolov8"
+    assert details["model_variant"] == "yolov8-n"
+    assert details["task_type"] == "object-detection"
+    assert details["model_input_height"] == 640
+    assert details["model_input_width"] == 640
+    assert model["megapixel_buckets"] == {
+        "0.25-0.5": {
+            "processed_frames": 1,
+            "execution_duration": model["execution_duration"],
+        }
+    }
+
+
+def test_requests_of_one_model_merge_into_one_model_row_with_summed_counters(
+    contract_client, real_collector, posts, detection_gateway
+):
+    client = contract_client(detection_gateway)
+
+    first = _infer(client)
+    second = client.post(
+        "/infer/object_detection",
+        json={"model_id": "ds/1", "api_key": "key-1", "image": [_image()] * 2},
+    )
+    recorded = {key: dict(row) for key, row in real_collector._usage["key-1"].items()}
+    _flush_and_stop(real_collector)
+
+    assert first.status_code == second.status_code == 200
+    assert set(recorded) == {
+        "model:ds/1:billable=true:outcome=success",
+        "request:ds/1:billable=true:outcome=success",
+    }
+    rows = posts.rows_by_category()
+    assert set(rows) == {"request", "model"}
+    assert rows["request"]["processed_frames"] == 2
+    model = rows["model"]
+    assert model["processed_frames"] == 3
+    assert (
+        model["execution_duration"]
+        == recorded["model:ds/1:billable=true:outcome=success"]["execution_duration"]
+    )
+    assert model["megapixel_buckets"] == {
+        "0.25-0.5": {
+            "processed_frames": 3,
+            "execution_duration": model["execution_duration"],
+        }
+    }
+    assert json.loads(model["resource_details"])["model_architecture"] == "yolov8"
 
 
 def test_endpoint_is_routed_through_the_secure_gateway_when_configured(
@@ -297,7 +352,7 @@ def test_endpoint_is_routed_through_the_secure_gateway_when_configured(
         "https://gateway.local/proxy"
     )
     assert parse_qs(parsed.query)["url"] == [f"{COLLECTOR_BASE_URL}/usage/inference"]
-    posts.only_row()
+    assert len(posts.rows()) == 2
 
 
 def test_row_carries_the_execution_id_of_the_request_under_gcp_serverless(
@@ -310,7 +365,8 @@ def test_row_carries_the_execution_id_of_the_request_under_gcp_serverless(
 
     assert response.status_code == 200, response.text
     assert response.headers["execution_id"] == "exec-77"
-    assert posts.only_row()["exec_session_id"] == "exec-77"
+    assert {row["exec_session_id"] for row in posts.rows()} == {"exec-77"}
+    assert sorted(row["category"] for row in posts.rows()) == ["model", "request"]
 
 
 def test_row_carries_a_generated_execution_id_when_the_request_has_none(
@@ -323,7 +379,7 @@ def test_row_carries_a_generated_execution_id_when_the_request_has_none(
 
     generated = response.headers["execution_id"]
     assert re.match(r"^\d+_[0-9a-f]{4}$", generated)
-    assert posts.only_row()["exec_session_id"] == generated
+    assert {row["exec_session_id"] for row in posts.rows()} == {generated}
 
 
 def test_verified_internal_request_is_not_floored_and_a_plain_one_is(
@@ -341,12 +397,26 @@ def test_verified_internal_request_is_not_floored_and_a_plain_one_is(
     _flush_and_stop(real_collector)
 
     assert internal.status_code == plain.status_code == 200
-    rows = {row["exec_session_id"]: row for call in posts.calls for row in call.json}
-    assert rows["exec-internal"]["execution_duration"] < 0.1
-    assert rows["exec-plain"]["execution_duration"] >= 0.1
+    rows = {
+        (row["exec_session_id"], row["category"]): row
+        for call in posts.calls
+        for row in call.json
+    }
+    assert set(rows) == {
+        ("exec-internal", "request"),
+        ("exec-internal", "model"),
+        ("exec-plain", "request"),
+        ("exec-plain", "model"),
+    }
+    for category in ("request", "model"):
+        assert rows[("exec-internal", category)]["execution_duration"] < 0.1
+        assert rows[("exec-plain", category)]["execution_duration"] >= 0.1
+    for key in (("exec-internal", "model"), ("exec-plain", "model")):
+        (bucket,) = rows[key]["megapixel_buckets"].values()
+        assert bucket["execution_duration"] == rows[key]["execution_duration"]
 
 
-def test_workflow_run_posts_one_row_for_the_workflow_with_its_model(
+def test_workflow_run_posts_a_request_a_workflows_and_a_model_row(
     contract_client, real_collector, posts, fake_stat
 ):
     client = contract_client(_detection_gateway(fake_stat, "ds/1"))
@@ -363,13 +433,23 @@ def test_workflow_run_posts_one_row_for_the_workflow_with_its_model(
     _flush_and_stop(real_collector)
 
     assert response.status_code == 200, response.text
-    row = posts.only_row()
-    assert row["resource_id"] == "wf-1"
-    assert row["category"] == "request"
-    assert row["processed_frames"] == 1
-    details = json.loads(row["resource_details"])
-    assert len(details["models"]) == 1
-    assert details["models"][0]["model_architecture"] == "yolov8"
+    rows = posts.rows_by_category()
+    assert set(rows) == {"request", "workflows", "model"}
+    assert rows["request"]["resource_id"] == "wf-1"
+    assert rows["workflows"]["resource_id"] == "wf-1"
+    assert rows["model"]["resource_id"] == "ds/1"
+    for row in rows.values():
+        assert row["processed_frames"] == 1
+        assert row["api_key"] == "key-1"
+        assert "models" not in json.loads(row["resource_details"])
+    assert json.loads(rows["workflows"]["resource_details"]) == {
+        "billable": True,
+        "steps": ["roboflow_core/roboflow_object_detection_model@v2:det0"],
+        "is_preview": False,
+    }
+    assert json.loads(rows["model"]["resource_details"])["model_architecture"] == (
+        "yolov8"
+    )
 
 
 def _echo_block():
@@ -413,7 +493,7 @@ def test_custom_python_duration_is_floored_for_a_plain_caller_only(
 ):
     monkeypatch.setattr(
         "inference_server.usage.observer.consume_block_duration",
-        lambda: SimpleNamespace(duration=0.02),
+        lambda: SimpleNamespace(duration=0.02, source="local_runtime"),
     )
     client = serverless_contract_client(_detection_gateway(fake_stat, "ds/1"))
 
@@ -441,17 +521,25 @@ def test_custom_python_duration_is_floored_for_a_plain_caller_only(
 
     assert internal.status_code == plain.status_code == 200, plain.text
     assert len(posts.calls) == 2
-    rows = {row["exec_session_id"]: row for call in posts.calls for row in call.json}
-    assert set(rows) == {"exec-internal", "exec-plain"}
-    custom_python = {
-        key: json.loads(row["resource_details"])["custom_python"]
-        for key, row in rows.items()
+    rows = {
+        (row["exec_session_id"], row["category"]): row
+        for call in posts.calls
+        for row in call.json
     }
-    assert [
-        entry["execution_duration"] for entry in custom_python["exec-internal"]
-    ] == [0.02]
-    assert [entry["execution_duration"] for entry in custom_python["exec-plain"]] == [
-        0.1
-    ]
-    assert rows["exec-internal"]["execution_duration"] < 0.1
-    assert rows["exec-plain"]["execution_duration"] >= 0.1
+    assert {key[1] for key in rows} == {
+        "request",
+        "workflows",
+        "model",
+        "workflow_block",
+    }
+    assert rows[("exec-internal", "workflow_block")]["execution_duration"] == 0.02
+    assert rows[("exec-plain", "workflow_block")]["execution_duration"] == 0.1
+    for category in ("request", "workflows", "model"):
+        assert rows[("exec-internal", category)]["execution_duration"] < 0.1
+        assert rows[("exec-plain", category)]["execution_duration"] >= 0.1
+    block = json.loads(rows[("exec-plain", "workflow_block")]["resource_details"])
+    assert block["block_kind"] == "custom_python"
+    assert block["block_type"] == "Echo"
+    assert block["step_name"] == "echo"
+    assert block["duration_source"] == "local_runtime"
+    assert block["execution_mode"] == "local"

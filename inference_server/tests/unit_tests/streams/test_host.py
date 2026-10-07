@@ -23,7 +23,7 @@ from inference_server.streams.host import (
     ServerPipelineHost,
 )
 from inference_server.usage.observer import StreamUsageExecutionObserver
-from inference_server.usage.request_hook import MODEL_INVOCATIONS
+from inference_server.usage.rows import USAGE_SCOPE
 from inference_server.workflows import host as workflows_host
 from tests.unit_tests.legacy.conftest import FakeGateway
 
@@ -467,11 +467,14 @@ def test_collector_starts_with_the_gateway_and_is_bound_to_the_run(gateway, coll
     assert collector.calls == ["start"]
     observer = init_parameters["workflows_core.execution_observer"]
     assert isinstance(observer, StreamUsageExecutionObserver)
-    with observer.holders_scope():
-        models = MODEL_INVOCATIONS.get()
+    with observer.scope_binding():
+        scope = USAGE_SCOPE.get()
+    assert scope is observer.scope
+    assert scope.collector is collector
+    assert scope.api_key == "key-1"
     provider = init_parameters["workflows_core.model_manager"]
-    assert provider._bridge._model_invocations is models
-    assert MODEL_INVOCATIONS.get() is None
+    assert provider._bridge._usage_scope is scope
+    assert USAGE_SCOPE.get() is None
     observer.observe_workflow_run(
         workflow=None,
         runtime_parameters={},
@@ -634,10 +637,11 @@ def test_observer_receives_the_attribution_inputs(gateway, collectors, monkeypat
     named = prepare(None)
     host.close()
 
-    assert inline._workflow_id is None
-    assert inline._specification is INLINE_SPECIFICATION
-    assert named._workflow_id == "requested"
-    assert named._specification is fetched
+    collector = _only_collector(collectors)
+    for observer in (inline, named):
+        assert observer.scope.collector is collector
+        assert observer.scope.api_key == "key-1"
+        assert observer.scope.billable is True
 
 
 def test_failed_codec_binding_tears_the_collector_down(

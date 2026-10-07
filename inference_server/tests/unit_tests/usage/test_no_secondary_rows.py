@@ -123,10 +123,12 @@ def _python_workflow(blocks):
     }
 
 
-def _only_request_row(usage_collector):
-    assert [row["category"] for row in usage_collector.rows] == ["request"]
+def _keys(usage_collector):
+    return [(row["category"], row["resource_id"]) for row in usage_collector.rows]
 
-    return usage_collector.rows[0]
+
+def _rows_of(usage_collector, category):
+    return [row for row in usage_collector.rows if row["category"] == category]
 
 
 def _run_workflow(client, specification, inputs):
@@ -139,7 +141,7 @@ def _run_workflow(client, specification, inputs):
     return response
 
 
-def test_object_detection_route_records_only_a_request_row(
+def test_object_detection_route_records_a_model_row_and_a_request_row(
     usage_client, usage_collector, fake_stat
 ):
     client = usage_client(_detection_gateway(fake_stat, "ds/1"))
@@ -154,13 +156,13 @@ def test_object_detection_route_records_only_a_request_row(
     )
 
     assert response.status_code == 200, response.text
-    row = _only_request_row(usage_collector)
-    assert [entry["model_id"] for entry in row["resource_details"]["models"]] == [
-        "ds/1"
-    ]
+    assert _keys(usage_collector) == [("model", "ds/1"), ("request", "ds/1")]
+    for row in usage_collector.rows:
+        assert "models" not in row["resource_details"]
+        assert "custom_python" not in row["resource_details"]
 
 
-def test_two_model_steps_give_one_row_with_two_models_entries(
+def test_two_model_steps_give_a_model_row_each_plus_the_workflow_rows(
     usage_client, usage_collector, fake_stat
 ):
     client = usage_client(_detection_gateway(fake_stat, "ds/1", "ds/2"))
@@ -171,34 +173,49 @@ def test_two_model_steps_give_one_row_with_two_models_entries(
         {"image": [{"type": "base64", "value": _jpeg_b64()}] * 3},
     )
 
-    row = _only_request_row(usage_collector)
-    entries = sorted(row["resource_details"]["models"], key=lambda e: e["model_id"])
-    assert entries == [
+    keys = _keys(usage_collector)
+    assert sorted(keys[:2]) == [("model", "ds/1"), ("model", "ds/2")]
+    assert keys[2][0] == "workflows"
+    assert keys[3][0] == "request"
+    assert len(keys) == 4
+    models = sorted(_rows_of(usage_collector, "model"), key=lambda r: r["resource_id"])
+    assert models == [
         {
-            "model_id": "ds/1",
-            "model_architecture": "yolov8",
-            "model_variant": "yolov8-n",
-            "task_type": "object-detection",
-            "model_input_height": 640,
-            "model_input_width": 640,
-            "execution_duration": entries[0]["execution_duration"],
+            "api_key": "k",
+            "category": "model",
+            "resource_id": model_id,
+            "resource_details": {
+                "model_architecture": "yolov8",
+                "model_variant": "yolov8-n",
+                "task_type": "object-detection",
+                "model_input_height": 640,
+                "model_input_width": 640,
+            },
             "frames": 3,
-        },
-        {
-            "model_id": "ds/2",
-            "model_architecture": "yolov8",
-            "model_variant": "yolov8-n",
-            "task_type": "object-detection",
-            "model_input_height": 640,
-            "model_input_width": 640,
-            "execution_duration": entries[1]["execution_duration"],
-            "frames": 3,
-        },
+            "execution_duration": model["execution_duration"],
+            "fps": 0.0,
+            "source_duration": 0.0,
+            "billable": True,
+            "is_preview": False,
+            "error_type": None,
+            "error_status_code": None,
+            "roboflow_service_name": None,
+            "roboflow_internal_secret": None,
+            "megapixel_buckets": {
+                "0.25-0.5": {
+                    "processed_frames": 3,
+                    "execution_duration": model["execution_duration"],
+                }
+            },
+        }
+        for model, model_id in zip(models, ["ds/1", "ds/2"])
     ]
-    assert row["resource_details"]["custom_python"] == []
+    for row in usage_collector.rows:
+        assert "models" not in row["resource_details"]
+        assert "custom_python" not in row["resource_details"]
 
 
-def test_two_steps_running_one_model_merge_into_one_entry(
+def test_two_steps_running_one_model_record_one_model_row_increment_each(
     usage_client, usage_collector, fake_stat
 ):
     client = usage_client(_detection_gateway(fake_stat, "ds/1"))
@@ -209,14 +226,13 @@ def test_two_steps_running_one_model_merge_into_one_entry(
         {"image": {"type": "base64", "value": _jpeg_b64()}},
     )
 
-    row = _only_request_row(usage_collector)
-    assert [
-        (entry["model_id"], entry["frames"])
-        for entry in row["resource_details"]["models"]
-    ] == [("ds/1", 2)]
+    keys = _keys(usage_collector)
+    assert keys[:2] == [("model", "ds/1"), ("model", "ds/1")]
+    assert [key[0] for key in keys[2:]] == ["workflows", "request"]
+    assert [row["frames"] for row in _rows_of(usage_collector, "model")] == [1, 1]
 
 
-def test_parallel_custom_python_blocks_give_one_row_with_their_own_durations(
+def test_parallel_custom_python_blocks_give_a_workflow_block_row_each(
     usage_client, usage_collector
 ):
     client = usage_client(FakeGateway())
@@ -227,22 +243,35 @@ def test_parallel_custom_python_blocks_give_one_row_with_their_own_durations(
     response = _run_workflow(client, specification, {"x": 3})
 
     assert response.json()["outputs"] == [{"slow": 3, "quick": 3}]
-    row = _only_request_row(usage_collector)
-    entries = {
-        entry["step_name"]: entry for entry in row["resource_details"]["custom_python"]
+    keys = _keys(usage_collector)
+    assert [key[0] for key in keys] == [
+        "workflow_block",
+        "workflow_block",
+        "workflows",
+        "request",
+    ]
+    blocks = {
+        row["resource_details"]["step_name"]: row
+        for row in _rows_of(usage_collector, "workflow_block")
     }
-    assert set(entries) == {"slow", "quick"}
-    assert entries["slow"]["block_type"] == "Slow"
-    assert entries["quick"]["block_type"] == "Quick"
-    assert entries["slow"]["execution_duration"] >= SLOW_SLEEP_S
-    assert entries["quick"]["execution_duration"] >= QUICK_SLEEP_S
-    assert (
-        entries["quick"]["execution_duration"] < entries["slow"]["execution_duration"]
-    )
-    assert row["resource_details"]["models"] == []
+    assert set(blocks) == {"slow", "quick"}
+    assert blocks["slow"]["resource_details"]["block_type"] == "Slow"
+    assert blocks["quick"]["resource_details"]["block_type"] == "Quick"
+    assert blocks["slow"]["execution_duration"] >= SLOW_SLEEP_S
+    assert blocks["quick"]["execution_duration"] >= QUICK_SLEEP_S
+    assert blocks["quick"]["execution_duration"] < blocks["slow"]["execution_duration"]
+    for row in blocks.values():
+        assert row["resource_id"].startswith("custom_python/")
+        assert row["api_key"] == "k"
+        assert row["frames"] == 1
+        assert row["resource_details"]["block_kind"] == "custom_python"
+        assert row["resource_details"]["duration_source"] == "local_runtime"
+        assert row["resource_details"]["execution_mode"] == "local"
+        assert row["resource_details"]["is_preview"] is False
+    assert blocks["slow"]["resource_id"] != blocks["quick"]["resource_id"]
 
 
-def test_block_owned_model_run_gives_a_models_entry(usage_client, usage_collector):
+def test_block_owned_model_run_gives_a_model_row(usage_client, usage_collector):
     client = usage_client(FakeGateway())
     code = (
         "def run(self, value):\n"
@@ -258,16 +287,17 @@ def test_block_owned_model_run_gives_a_models_entry(usage_client, usage_collecto
     response = _run_workflow(client, specification, {"x": 3})
 
     assert response.json()["outputs"] == [{"video": 3}]
-    row = _only_request_row(usage_collector)
-    assert row["resource_details"]["models"] == [
-        {
-            "model_id": "sam2/hiera_small",
-            "frames": 2,
-            "execution_duration": row["resource_details"]["models"][0][
-                "execution_duration"
-            ],
+    keys = _keys(usage_collector)
+    assert keys[0] == ("model", "sam2/hiera_small")
+    assert keys[1][0] == "workflow_block"
+    assert [key[0] for key in keys[2:]] == ["workflows", "request"]
+    (model,) = _rows_of(usage_collector, "model")
+    assert model["frames"] == 2
+    assert model["api_key"] == "k"
+    assert model["resource_details"] == {}
+    assert model["megapixel_buckets"] == {
+        "unknown": {
+            "processed_frames": 2,
+            "execution_duration": model["execution_duration"],
         }
-    ]
-    assert [
-        entry["step_name"] for entry in row["resource_details"]["custom_python"]
-    ] == ["video"]
+    }

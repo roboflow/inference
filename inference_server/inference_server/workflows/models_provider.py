@@ -1199,7 +1199,9 @@ class GatewayModelsProvider:
         self._bridge.ensure_loaded(route, key)
         started = time.perf_counter()
         results = []
-        with measure_inference(route.registry_id, responses=1):
+        with measure_inference(route.registry_id, responses=1), self._bridge.usage_call(
+            route, key, images=payloads
+        ):
             for position, call in enumerate(calls):
                 payload = payload_by_position.get(position)
                 if payload is None:

@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import threading
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import numpy as np
@@ -59,6 +60,9 @@ class FakeSyncBridge:
         self.calls.append((route.model_id, action, params, None))
         self.records.append(record)
         return self.predictions[(route.model_id, action)]
+
+    def usage_call(self, route, api_key, *, images=None):
+        return nullcontext()
 
     def fetch_image(self, url):
         raise AssertionError("not used")

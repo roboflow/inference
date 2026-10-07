@@ -14,18 +14,13 @@ import pytest
 from inference_server import configuration
 from inference_server.usage import collector as collector_module
 from inference_server.usage import delivery as delivery_module
-from inference_server.usage import payload_helpers, queues
+from inference_server.usage import queues
 from inference_server.usage.collector import UsageCollector
 from inference_server.usage.payload_helpers import sha256_hash
 from tests.unit_tests.usage.conftest import SYSTEM_INFO
-from tests.unit_tests.usage.test_collector import (
-    POST,
-    record,
-    usage_key,
-)
+from tests.unit_tests.usage.test_collector import POST, record, usage_key
 from tests.unit_tests.usage.test_collector_delivery import (
     WAIT_S,
-    custom_python_entry,
     sent_rows,
     usage_threads,
 )
@@ -442,38 +437,6 @@ def test_drops_are_reported_by_one_fixed_line_per_flush_interval(
     assert len(lines) == 2
     assert collector.dropped_rows == 7
     assert "planted" not in caplog.text
-
-
-def test_an_oversized_call_after_a_row_respects_the_pending_bound(
-    collector, monkeypatch
-):
-    monkeypatch.setattr(delivery_module, "MAX_PENDING_ROWS", 3)
-    monkeypatch.setattr(payload_helpers, "MAX_BILLABLE_ENTRIES_PER_ROW", 2)
-    queue = FlakyQueue(0)
-    set_queue(collector, queue)
-    lock = SamplingLock(lambda: pending_rows(collector))
-    swap_pending_lock(collector, lock)
-    entries = [custom_python_entry(f"step-{index}") for index in range(10)]
-
-    record(collector, frames=1, resource_details={"custom_python": entries[:2]})
-    record(collector, frames=7, resource_details={"custom_python": entries})
-
-    assert lock.peak <= 3
-    assert collector.dropped_rows == 0
-    collector._write_current_usage_to_queue()
-    rows = [
-        row
-        for payload in queue.stored
-        for resource_rows in payload.values()
-        for row in resource_rows.values()
-    ]
-    assert sorted(row["processed_frames"] for row in rows) == [1, 7]
-    assert sorted(
-        entry["step_name"]
-        for row in rows
-        if row["processed_frames"] == 7
-        for entry in json.loads(row["resource_details"])["custom_python"]
-    ) == sorted(entry["step_name"] for entry in entries)
 
 
 def test_recording_below_the_bound_never_takes_the_queue_lock_or_resolves_the_host(

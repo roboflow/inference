@@ -15,11 +15,10 @@ from inference_server.usage.observer import (
     StreamUsageExecutionObserver,
     UsageExecutionObserver,
 )
-from inference_server.usage.request_hook import (
-    CUSTOM_PYTHON_RUNS,
-    MODEL_INVOCATIONS,
-    _specification_resource_id,
-    record_model_invocation,
+from inference_server.usage.rows import (
+    USAGE_SCOPE,
+    record_model_usage,
+    steps_resource_id,
 )
 from tests.unit_tests.usage import test_contract
 from tests.unit_tests.usage.test_contract import ROW_KEYS, SYSTEM_INFO, _flush_and_stop
@@ -36,6 +35,7 @@ SPECIFICATION = {
     ],
     "outputs": [],
 }
+STEPS = ["ObjectDetectionModel:det", "Echo:echo"]
 RUN_KEYS = {
     "api_key",
     "category",
@@ -49,7 +49,9 @@ RUN_KEYS = {
     "is_preview",
     "error_type",
     "error_status_code",
-    "exec_session_id",
+    "roboflow_service_name",
+    "roboflow_internal_secret",
+    "megapixel_buckets",
 }
 BATCH = [object(), object(), object()]
 
@@ -65,6 +67,7 @@ def _custom_python_block(step_name):
     return SimpleNamespace(
         _usage_block_kind="custom_python",
         _usage_block_type="Snippet",
+        _usage_resource_id="custom_python/abc123",
         _workflow_step_type="Echo",
         _workflow_step_name=step_name,
     )
@@ -91,6 +94,26 @@ def _run(observer, run=lambda: "result", **overrides):
     return observer.observe_workflow_run(**arguments)
 
 
+def _gateway_row(scope):
+    record_model_usage(
+        scope,
+        model_id="ds/1",
+        api_key="key-1",
+        frames=1,
+        duration=0.01,
+        details={
+            "model_architecture": "yolov8",
+            "model_variant": "yolov8-n",
+            "task_type": "object-detection",
+            "model_input_height": 640,
+            "model_input_width": 640,
+        },
+        megapixel_buckets={
+            "0.25-0.5": {"processed_frames": 1, "execution_duration": 0.01}
+        },
+    )
+
+
 def test_stream_observer_implements_the_execution_observer_protocol(usage_collector):
     observer = StreamUsageExecutionObserver(usage_collector)
 
@@ -98,8 +121,8 @@ def test_stream_observer_implements_the_execution_observer_protocol(usage_collec
     assert isinstance(observer, UsageExecutionObserver)
 
 
-def test_run_records_one_request_row(usage_collector, session):
-    observer = StreamUsageExecutionObserver(usage_collector, workflow_id="wf-1")
+def test_run_records_one_workflows_row(usage_collector, session):
+    observer = StreamUsageExecutionObserver(usage_collector, api_key="pipeline-key")
 
     def _slow():
         time.sleep(0.01)
@@ -112,14 +135,9 @@ def test_run_records_one_request_row(usage_collector, session):
     row = usage_collector.rows[0]
     assert set(row) == RUN_KEYS
     assert row["api_key"] == "key-1"
-    assert row["category"] == "request"
+    assert row["category"] == "workflows"
     assert row["resource_id"] == "wf-1"
-    assert row["resource_details"] == {
-        "steps": ["ObjectDetectionModel:det", "Echo:echo"],
-        "is_preview": False,
-        "models": [],
-        "custom_python": [],
-    }
+    assert row["resource_details"] == {"steps": STEPS, "is_preview": False}
     assert row["frames"] == 1
     assert row["fps"] == 25.0
     assert row["source_duration"] == 1 / 25.0
@@ -128,7 +146,8 @@ def test_run_records_one_request_row(usage_collector, session):
     assert row["is_preview"] is False
     assert row["error_type"] is None
     assert row["error_status_code"] is None
-    assert row["exec_session_id"] == session
+    assert row["megapixel_buckets"] is None
+    assert observer.scope.stream_session_id == session
 
 
 def test_frames_stay_one_per_run_regardless_of_the_batch(usage_collector):
@@ -163,14 +182,6 @@ def test_negative_fps_is_stored_as_zero_by_the_real_collector(real_collector, po
     assert row["fps"] == 0
 
 
-def test_exec_session_id_is_unset_outside_a_stream_session(usage_collector):
-    observer = StreamUsageExecutionObserver(usage_collector)
-
-    _run(observer)
-
-    assert usage_collector.rows[0]["exec_session_id"] is None
-
-
 def test_preview_runs_are_flagged(usage_collector):
     observer = StreamUsageExecutionObserver(usage_collector)
 
@@ -181,49 +192,20 @@ def test_preview_runs_are_flagged(usage_collector):
     assert row["resource_details"]["is_preview"] is True
 
 
-def test_resource_id_falls_back_to_the_specification_hash_the_http_row_uses(
-    usage_collector,
-):
+def test_resource_id_falls_back_to_the_hash_of_the_step_list(usage_collector):
     observer = StreamUsageExecutionObserver(usage_collector)
 
     _run(observer, workflow_id=None)
 
-    assert usage_collector.rows[0]["resource_id"] == _specification_resource_id(
-        SPECIFICATION
-    )
-    assert usage_collector.rows[0]["resource_id"].startswith("sha:")
+    assert usage_collector.rows[0]["resource_id"] == steps_resource_id(STEPS)
 
 
-def test_inline_specification_is_hashed_whatever_its_own_id(usage_collector):
-    specification = dict(SPECIFICATION, id="internal-123")
-    observer = StreamUsageExecutionObserver(
-        usage_collector, specification=specification
-    )
+def test_engine_workflow_id_attributes_the_row(usage_collector):
+    observer = StreamUsageExecutionObserver(usage_collector)
 
-    _run(
-        observer,
-        workflow_id="internal-123",
-        workflow=_workflow(specification=specification),
-    )
+    _run(observer, workflow_id="internal-123")
 
-    resource_id = usage_collector.rows[0]["resource_id"]
-    assert resource_id == _specification_resource_id(specification)
-    assert resource_id.startswith("sha:")
-
-
-def test_named_workflow_is_attributed_by_the_requested_name(usage_collector):
-    specification = dict(SPECIFICATION, id="other-id")
-    observer = StreamUsageExecutionObserver(
-        usage_collector, workflow_id="my-workflow", specification=specification
-    )
-
-    _run(
-        observer,
-        workflow_id="other-id",
-        workflow=_workflow(specification=specification),
-    )
-
-    assert usage_collector.rows[0]["resource_id"] == "my-workflow"
+    assert usage_collector.rows[0]["resource_id"] == "internal-123"
 
 
 def test_resource_id_is_unknown_without_a_specification(usage_collector):
@@ -236,13 +218,21 @@ def test_resource_id_is_unknown_without_a_specification(usage_collector):
     assert "steps" not in row["resource_details"]
 
 
-def test_api_key_comes_from_the_workflow_init_parameters(usage_collector):
-    observer = StreamUsageExecutionObserver(usage_collector)
+def test_api_key_falls_back_to_the_pipeline_key(usage_collector):
+    observer = StreamUsageExecutionObserver(usage_collector, api_key="pipeline-key")
 
     _run(observer, workflow=_workflow(api_key=None))
     _run(observer, workflow=SimpleNamespace(workflow_json=SPECIFICATION))
 
-    assert [row["api_key"] for row in usage_collector.rows] == ["", ""]
+    assert [row["api_key"] for row in usage_collector.rows] == ["pipeline-key"] * 2
+
+
+def test_api_key_is_empty_without_any_key(usage_collector):
+    observer = StreamUsageExecutionObserver(usage_collector)
+
+    _run(observer, workflow=_workflow(api_key=None))
+
+    assert usage_collector.rows[0]["api_key"] == ""
 
 
 def test_failed_run_records_an_error_row_and_reraises(usage_collector, session):
@@ -260,7 +250,30 @@ def test_failed_run_records_an_error_row_and_reraises(usage_collector, session):
     assert row["error_status_code"] is None
     assert row["resource_details"]["error"] == "ValueError: boom"
     assert row["resource_details"]["error_type"] == "ValueError"
-    assert row["exec_session_id"] == session
+
+
+def test_wrapped_error_reports_the_inner_error_type_and_status(usage_collector):
+    observer = StreamUsageExecutionObserver(usage_collector)
+
+    class _NotFound(Exception):
+        status_code = 404
+
+    class _Wrapped(Exception):
+        def __init__(self, inner):
+            super().__init__("wrapped")
+            self.inner_error = inner
+            self.inner_error_type = type(inner).__name__
+
+    def _failing():
+        raise _Wrapped(_NotFound("gone"))
+
+    with pytest.raises(_Wrapped):
+        _run(observer, run=_failing)
+
+    row = usage_collector.rows[0]
+    assert row["error_type"] == "_NotFound"
+    assert row["error_status_code"] == 404
+    assert row["resource_details"]["error"] == "_NotFound: wrapped"
 
 
 def test_error_status_code_is_taken_from_the_error(usage_collector):
@@ -294,8 +307,8 @@ def test_error_message_is_redacted_of_the_api_key(usage_collector):
     assert error == "RuntimeError: *** leaked"
 
 
-def test_model_and_custom_python_runs_land_in_the_row(usage_collector):
-    observer = StreamUsageExecutionObserver(usage_collector)
+def test_model_and_custom_python_runs_record_rows_of_their_own(usage_collector):
+    observer = StreamUsageExecutionObserver(usage_collector, api_key="pipeline-key")
 
     def _workflow_body():
         observer.observe_model_run(
@@ -314,95 +327,65 @@ def test_model_and_custom_python_runs_land_in_the_row(usage_collector):
 
     assert _run(observer, run=_workflow_body) == "done"
 
-    details = usage_collector.rows[0]["resource_details"]
-    assert [entry["model_id"] for entry in details["models"]] == ["sam2/hiera_small"]
-    assert details["models"][0]["frames"] == 2
-    assert details["custom_python"] == [
-        {"block_type": "Echo", "step_name": "echo", "execution_duration": 0.25}
+    assert [(row["category"], row["resource_id"]) for row in usage_collector.rows] == [
+        ("model", "sam2/hiera_small"),
+        ("workflow_block", "custom_python/abc123"),
+        ("workflows", "wf-1"),
+    ]
+    model, block, _ = usage_collector.rows
+    assert model["frames"] == 2
+    assert model["api_key"] == "pipeline-key"
+    assert block["execution_duration"] == 0.25
+    assert block["resource_details"]["step_name"] == "echo"
+    assert block["api_key"] == "pipeline-key"
+
+
+def test_rows_recorded_through_the_scope_land_on_the_collector(usage_collector):
+    observer = StreamUsageExecutionObserver(usage_collector)
+
+    _run(observer, run=lambda: _gateway_row(USAGE_SCOPE.get()))
+
+    assert [row["category"] for row in usage_collector.rows] == [
+        "model",
+        "workflows",
+    ]
+    assert USAGE_SCOPE.get() is None
+
+
+def test_scope_binding_binds_the_scope_a_bridge_captures(usage_collector):
+    observer = StreamUsageExecutionObserver(usage_collector)
+
+    with observer.scope_binding():
+        captured = USAGE_SCOPE.get()
+    assert captured is observer.scope
+    assert USAGE_SCOPE.get() is None
+
+    _run(observer, run=lambda: _gateway_row(captured))
+
+    assert [row["category"] for row in usage_collector.rows] == [
+        "model",
+        "workflows",
     ]
 
 
-def test_each_run_starts_with_empty_lists(usage_collector):
-    observer = StreamUsageExecutionObserver(usage_collector)
-
-    def _with_model():
-        observer.observe_model_run(
-            block=None, model_id="m1", images=[object()], run=lambda: None
-        )
-
-    _run(observer, run=_with_model)
-    _run(observer)
-
-    models = [row["resource_details"]["models"] for row in usage_collector.rows]
-    assert [len(entries) for entries in models] == [1, 0]
-    assert models[0] is not models[1]
-
-
-def test_invocations_recorded_through_the_holder_land_in_the_row(usage_collector):
-    observer = StreamUsageExecutionObserver(usage_collector)
-    entry = {"model_id": "ds/1", "frames": 1, "execution_duration": 0.5}
-
-    _run(observer, run=lambda: record_model_invocation(dict(entry)))
-
-    assert usage_collector.rows[0]["resource_details"]["models"] == [entry]
-    assert MODEL_INVOCATIONS.get() is None
-    assert CUSTOM_PYTHON_RUNS.get() is None
-
-
-def test_holders_scope_binds_the_lists_a_bridge_captures(usage_collector):
-    observer = StreamUsageExecutionObserver(usage_collector)
-    entry = {"model_id": "ds/1", "frames": 1, "execution_duration": 0.5}
-
-    with observer.holders_scope():
-        captured = MODEL_INVOCATIONS.get()
-        assert CUSTOM_PYTHON_RUNS.get() is not None
-    assert MODEL_INVOCATIONS.get() is None
-
-    def _bridge_call():
-        token = MODEL_INVOCATIONS.set(captured)
-        try:
-            record_model_invocation(dict(entry))
-        finally:
-            MODEL_INVOCATIONS.reset(token)
-
-    _run(observer, run=_bridge_call)
-
-    assert usage_collector.rows[0]["resource_details"]["models"] == [entry]
-
-
-def test_step_context_carries_the_session_and_holders_into_a_worker_thread(
+def test_step_context_carries_the_session_and_scope_into_a_worker_thread(
     usage_collector,
 ):
     observer = StreamUsageExecutionObserver(usage_collector)
     seen = {}
 
     def _worker(context):
-        seen["before"] = (
-            stream_session_id.get(),
-            MODEL_INVOCATIONS.get(),
-            CUSTOM_PYTHON_RUNS.get(),
-        )
+        seen["before"] = (stream_session_id.get(), USAGE_SCOPE.get())
         with observer.step_scope(context=context, step_name="det"):
-            seen["inside"] = (
-                stream_session_id.get(),
-                MODEL_INVOCATIONS.get(),
-                CUSTOM_PYTHON_RUNS.get(),
-            )
-            record_model_invocation(
-                {"model_id": "ds/1", "frames": 1, "execution_duration": 0.1}
-            )
-        seen["after"] = (
-            stream_session_id.get(),
-            MODEL_INVOCATIONS.get(),
-            CUSTOM_PYTHON_RUNS.get(),
-        )
+            seen["inside"] = (stream_session_id.get(), USAGE_SCOPE.get())
+            _gateway_row(USAGE_SCOPE.get())
+        seen["after"] = (stream_session_id.get(), USAGE_SCOPE.get())
 
     def _workflow_body():
         context = observer.capture_step_context()
         thread = threading.Thread(target=_worker, args=(context,))
         thread.start()
         thread.join()
-        seen["holders"] = (MODEL_INVOCATIONS.get(), CUSTOM_PYTHON_RUNS.get())
 
     token = stream_session_id.set("sess-7")
     try:
@@ -410,16 +393,13 @@ def test_step_context_carries_the_session_and_holders_into_a_worker_thread(
     finally:
         stream_session_id.reset(token)
 
-    models, custom_python = seen["holders"]
-    assert seen["before"] == (None, None, None)
-    assert seen["inside"] == ("sess-7", models, custom_python)
-    assert seen["inside"][1] is models
-    assert seen["inside"][2] is custom_python
-    assert seen["after"] == (None, None, None)
-    assert [
-        entry["model_id"]
-        for entry in usage_collector.rows[0]["resource_details"]["models"]
-    ] == ["ds/1"]
+    assert seen["before"] == (None, None)
+    assert seen["inside"] == ("sess-7", observer.scope)
+    assert seen["after"] == (None, None)
+    assert [row["category"] for row in usage_collector.rows] == [
+        "model",
+        "workflows",
+    ]
 
 
 def test_step_scope_without_a_context_binds_nothing():
@@ -427,7 +407,7 @@ def test_step_scope_without_a_context_binds_nothing():
 
     with observer.step_scope(context=None, step_name="det"):
         assert stream_session_id.get() is None
-        assert MODEL_INVOCATIONS.get() is None
+        assert USAGE_SCOPE.get() is None
 
 
 def test_recording_failure_never_reaches_the_run(usage_collector, caplog):
@@ -442,50 +422,74 @@ def test_recording_failure_never_reaches_the_run(usage_collector, caplog):
     assert "RuntimeError" in caplog.text
 
 
-def test_pipeline_row_passes_the_http_row_contract(real_collector, posts, session):
-    observer = StreamUsageExecutionObserver(real_collector, workflow_id="wf-1")
+class _SessionRecordingCollector:
+    def __init__(self):
+        self.sessions = []
+
+    def record_usage(self, **row):
+        self.sessions.append((row["category"], stream_session_id.get()))
+
+
+def test_rows_recorded_outside_the_session_thread_are_bound_to_the_run_session(
+    session,
+):
+    collector = _SessionRecordingCollector()
+    observer = StreamUsageExecutionObserver(collector)
+    seen = []
+
+    def _loop_thread():
+        with observer.scope_binding():
+            _gateway_row(USAGE_SCOPE.get())
+        seen.append(stream_session_id.get())
+
+    _run(observer)
+    thread = threading.Thread(target=_loop_thread)
+    thread.start()
+    thread.join()
+
+    assert collector.sessions == [("workflows", session), ("model", session)]
+    assert seen == [None]
+
+
+def test_pipeline_rows_pass_the_http_row_contract(real_collector, posts, session):
+    observer = StreamUsageExecutionObserver(real_collector)
 
     before = time.time_ns()
-    _run(observer, run=lambda: record_model_invocation(_gateway_entry()))
+    _run(observer, run=lambda: _gateway_row(USAGE_SCOPE.get()))
     after = time.time_ns()
     _flush_and_stop(real_collector)
 
-    row = posts.only_row()
-    assert set(row) == ROW_KEYS
-    assert row["api_key"] == "key-1"
-    assert row["category"] == "request"
-    assert type(row["processed_frames"]) is int
-    assert row["processed_frames"] == 1
-    for key in ("timestamp_start", "timestamp_stop"):
-        assert type(row[key]) is int
-        assert before <= row[key] <= after
-    assert type(row["execution_duration"]) is float
-    assert row["fps"] == 25.0
-    assert row["source_duration"] == 1 / 25.0
-    assert row["megapixel_buckets"] == {}
-    assert row["hostname"] == SYSTEM_INFO["hostname"]
-    assert row["ip_address_hash"] == SYSTEM_INFO["ip_address_hash"]
-    assert row["exec_session_id"] == session
-    assert row["resource_id"] == "wf-1"
-    assert "api_key_hash" not in row
-    assert "stream_session_id" not in row
-    details = json.loads(row["resource_details"])
-    assert details["billable"] is True
+    assert len(posts.calls) == 2
+    rows = {row["category"]: row for call in posts.calls for row in call.json}
+    assert set(rows) == {"workflows", "model"}
+    assert [len(call.json) for call in posts.calls] == [1, 1]
+    for row in rows.values():
+        assert set(row) == ROW_KEYS
+        assert row["api_key"] == "key-1"
+        assert type(row["processed_frames"]) is int
+        assert row["processed_frames"] == 1
+        for key in ("timestamp_start", "timestamp_stop"):
+            assert type(row[key]) is int
+            assert before <= row[key] <= after
+        assert type(row["execution_duration"]) is float
+        assert row["hostname"] == SYSTEM_INFO["hostname"]
+        assert row["ip_address_hash"] == SYSTEM_INFO["ip_address_hash"]
+        assert row["exec_session_id"] == session
+        assert "api_key_hash" not in row
+        assert "stream_session_id" not in row
+        assert json.loads(row["resource_details"])["billable"] is True
+    workflow = rows["workflows"]
+    assert workflow["fps"] == 25.0
+    assert workflow["source_duration"] == 1 / 25.0
+    assert workflow["megapixel_buckets"] == {}
+    assert workflow["resource_id"] == "wf-1"
+    details = json.loads(workflow["resource_details"])
     assert details["is_preview"] is False
-    assert details["steps"] == ["ObjectDetectionModel:det", "Echo:echo"]
-    assert details["custom_python"] == []
-    assert len(details["models"]) == 1
-    assert details["models"][0]["model_id"] == "ds/1"
-
-
-def _gateway_entry():
-    return {
-        "model_id": "ds/1",
-        "model_architecture": "yolov8",
-        "model_variant": "yolov8-n",
-        "task_type": "object-detection",
-        "model_input_height": 640,
-        "model_input_width": 640,
-        "execution_duration": 0.01,
-        "frames": 1,
+    assert details["steps"] == STEPS
+    model = rows["model"]
+    assert model["resource_id"] == "ds/1"
+    assert model["fps"] == 0.0
+    assert model["megapixel_buckets"] == {
+        "0.25-0.5": {"processed_frames": 1, "execution_duration": 0.01}
     }
+    assert json.loads(model["resource_details"])["model_architecture"] == "yolov8"

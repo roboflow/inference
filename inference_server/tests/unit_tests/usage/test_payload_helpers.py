@@ -8,7 +8,6 @@ from inference_server import configuration
 from inference_server.usage.delivery import send_usage_payload, ssl_verify_for_endpoint
 from inference_server.usage.payload_helpers import (
     get_api_key_usage_containing_resource,
-    merge_resource_details,
     merge_usage_dicts,
     zip_usage_payloads,
 )
@@ -87,35 +86,46 @@ def test_merge_usage_dicts():
     }
 
 
-def test_merge_resource_details_keeps_later_models_on_unhashable_identity():
-    left = {
-        "models": [{"model_id": [], "frames": 1}],
-        "custom_python": [
-            {"block_type": "b", "step_name": "s", "execution_duration": 1}
-        ],
-    }
-    right = {
-        "models": [{"model_id": "a/1", "frames": 2}],
-        "custom_python": [
-            {"block_type": "b", "step_name": "s", "execution_duration": 2}
-        ],
+def _row(details, *, frames=1, execution_duration=1.0):
+    usage_row = {
+        "resource_id": "workflow-1",
+        "api_key_hash": "hash",
+        "timestamp_start": 1,
+        "timestamp_stop": 2,
+        "processed_frames": frames,
+        "source_duration": 0,
+        "execution_duration": execution_duration,
+        "resource_details": json.dumps(details),
     }
 
-    result = merge_resource_details(left, right)
+    return usage_row
 
-    assert result["models"] == [{"model_id": "a/1", "frames": 2}]
-    assert result["custom_python"] == [
-        {"block_type": "b", "step_name": "s", "execution_duration": 3}
+
+def test_merge_usage_dicts_keeps_the_later_resource_details_as_legacy():
+    first = _row({"billable": True, "source_info": "first", "only_first": 1})
+    second = _row({"billable": True, "source_info": "second"})
+
+    merged = merge_usage_dicts(first, second)
+
+    assert merged["resource_details"] is second["resource_details"]
+    assert merged["processed_frames"] == 2
+    assert merged["execution_duration"] == 2.0
+
+
+def test_zip_usage_payloads_sums_the_counters_of_one_resource_and_session():
+    payloads = [
+        {"hash": {"model:ds/1": _row({"billable": True}, frames=2)}},
+        {"hash": {"model:ds/1": _row({"billable": True}, frames=3)}},
+        {"hash": {"model:ds/2": _row({"billable": True}, frames=1)}},
     ]
 
+    zipped = zip_usage_payloads(usage_payloads=payloads)
 
-def test_merge_resource_details_keeps_later_models_on_non_numeric_amount():
-    left = {"models": [{"model_id": "a/1", "frames": 1}]}
-    right = {"models": [{"model_id": "a/1", "frames": "2"}]}
-
-    result = merge_resource_details(left, right)
-
-    assert result["models"] == [{"model_id": "a/1", "frames": "2"}]
+    assert len(zipped) == 1
+    rows = zipped[0]["hash"]
+    assert rows["model:ds/1"]["processed_frames"] == 5
+    assert rows["model:ds/1"]["execution_duration"] == 2.0
+    assert rows["model:ds/2"]["processed_frames"] == 1
 
 
 def test_get_api_key_usage_containing_resource_with_no_payload_containing_api_key():

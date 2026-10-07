@@ -31,9 +31,7 @@ from inference_server.usage.payload_helpers import (
     ResourceID,
     SystemDetails,
     UsagePayload,
-    billable_lists_exceed_bound,
     merge_megapixel_buckets,
-    merge_resource_details,
     sha256_hash,
 )
 from inference_server.usage.queues import MemoryQueue, RedisQueue, SQLiteQueue
@@ -519,9 +517,8 @@ class UsageCollector:
             category: Row category, such as ``request`` or ``model``.
             resource_id: Resource the usage belongs to; derived from the
                 resource details when empty.
-            resource_details: Details stored with the row. ``models`` and
-                ``custom_python`` lists accumulate over the requests of a row,
-                every other key is taken from the latest request.
+            resource_details: Details stored with the row; the latest
+                request's details replace the earlier ones.
             frames: Number of processed frames.
             execution_duration: Seconds spent executing.
             source_duration: Seconds of source material; derived from ``frames``
@@ -582,8 +579,8 @@ class UsageCollector:
                     self._count_ignored()
                     return
 
-                blocked_rows, source_usage, details = (
-                    self._get_or_open_row_usage_locked(api_key_hash, usage_key, details)
+                blocked_rows, source_usage = self._get_or_open_row_usage_locked(
+                    api_key_hash, usage_key
                 )
                 if blocked_rows is None:
                     self._accumulate_usage_locked(
@@ -611,31 +608,18 @@ class UsageCollector:
             self._ignored_after_stop += 1
 
     def _get_or_open_row_usage_locked(
-        self, api_key_hash: APIKeyHash, usage_key: str, details: Dict[str, Any]
-    ) -> Tuple[Optional[int], Optional[Dict[str, Any]], Dict[str, Any]]:
+        self, api_key_hash: APIKeyHash, usage_key: str
+    ) -> Tuple[Optional[int], Optional[Dict[str, Any]]]:
         source_usage = self._usage.get(api_key_hash, {}).get(usage_key)
         if source_usage is None and self._rows_count >= MAX_AGGREGATED_ROWS:
             blocked_rows = self._try_detach_window_usage_locked()
             if blocked_rows is not None:
-                return blocked_rows, None, details
-        if source_usage is not None:
-            merged_details = merge_resource_details(
-                source_usage["resource_details"], details
-            )
-            if billable_lists_exceed_bound(merged_details):
-                closed_row = pending_item({api_key_hash: {usage_key: source_usage}})
-                if not self._delivery.try_add(closed_row):
-                    return 1, None, details
-                del self._usage[api_key_hash][usage_key]
-                self._rows_count -= 1
-                source_usage = None
-            else:
-                details = merged_details
+                return blocked_rows, None
         if source_usage is None:
             source_usage = self._usage[api_key_hash][usage_key]
             self._rows_count += 1
 
-        return None, source_usage, details
+        return None, source_usage
 
     @staticmethod
     def _accumulate_usage_locked(

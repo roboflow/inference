@@ -5,8 +5,9 @@ import contextvars
 import logging
 import re
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 
@@ -64,9 +65,14 @@ from inference_server.routing import (
     plain_model_id,
     routing_key,
 )
-from inference_server.usage.request_hook import (
-    MODEL_INVOCATIONS,
-    record_model_invocation,
+from inference_server.usage.rows import (
+    MEGAPIXEL_BUCKET_UNKNOWN,
+    USAGE_SCOPE,
+    add_megapixel_bucket,
+    bound_scope,
+    execution_duration,
+    megapixel_bucket,
+    record_model_usage,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,6 +81,9 @@ _ERR_NOT_LOADED = 6
 _CURRENT_REQUEST: contextvars.ContextVar[
     Optional[dict[tuple[str, str], tuple[Route, str, str, Optional[str]]]]
 ] = contextvars.ContextVar("legacy_current_request", default=None)
+_USAGE_CALL: contextvars.ContextVar[Optional["_UsageCall"]] = contextvars.ContextVar(
+    "legacy_usage_call", default=None
+)
 _SYNC_TIMEOUT_MARGIN_S = 30
 _MAX_PENDING_REQUEST_KEYS = 256
 _MAX_PENDING_VALUES_PER_KEY = 64
@@ -110,6 +119,106 @@ def _remember_request(
         alias,
     )
     _CURRENT_REQUEST.set(requests)
+
+
+@dataclass
+class _UsageCall:
+    route: "Route"
+    api_key: Optional[str]
+    expected_images: Optional[list[Optional[ImagePayload]]]
+    fragment_images: list[ImagePayload] = field(default_factory=list)
+    image_durations: list[Optional[float]] = field(default_factory=list)
+    text_durations: list[Optional[float]] = field(default_factory=list)
+
+    def add(
+        self,
+        images: list[Optional[ImagePayload]],
+        model_durations: Optional[list[Optional[float]]],
+    ) -> None:
+        if model_durations is None:
+            model_durations = [None] * len(images)
+        for image, duration in zip(images, model_durations):
+            if image is None:
+                self.text_durations.append(duration)
+                continue
+            self.fragment_images.append(image)
+            self.image_durations.append(duration)
+
+    def images(self) -> list[Optional[ImagePayload]]:
+        images = self.expected_images
+        if images is None:
+            images = self.fragment_images
+        combined = [*images, *([None] * len(self.text_durations))]
+
+        return combined
+
+    def model_durations(self) -> Optional[list[Optional[float]]]:
+        images = self.expected_images
+        if images is None:
+            images = self.fragment_images
+        present = [image for image in images if image is not None]
+        if len(self.image_durations) != len(present):
+            return None
+        durations = [*self.image_durations, *self.text_durations]
+        if any(duration is None for duration in durations):
+            return None
+
+        return durations
+
+
+@contextmanager
+def usage_call(
+    route: "Route",
+    api_key: Optional[str],
+    *,
+    images: Optional[list[Optional[ImagePayload]]] = None,
+) -> Iterator[None]:
+    """Record the bridge calls made inside as one ``model`` row increment.
+
+    Calls made with ``record=False`` inside the block are fragments of one
+    legacy model call: their model-side durations are combined and recorded
+    once when the block exits, with the serverless floor applied to the
+    combined duration. A block that raises or is cancelled is recorded with
+    the error and the time elapsed until then, and the frames of the whole
+    call.
+
+    Args:
+        route: Route of the model the fragments call.
+        api_key: Key the model is called with.
+        images: Images of the whole call, counted whatever fragments ran;
+            when None the frames are the images the fragments called with.
+
+    Yields:
+        Nothing.
+    """
+    call = _UsageCall(route=route, api_key=api_key, expected_images=images)
+    token = _USAGE_CALL.set(call)
+    started = time.perf_counter()
+    try:
+        yield
+    except BaseException as error:
+        record_telemetry(
+            _record_model_invocation,
+            route,
+            call.images(),
+            api_key,
+            time.perf_counter() - started,
+            None,
+            error,
+        )
+        raise
+    else:
+        record_telemetry(
+            _record_model_invocation,
+            route,
+            call.images(),
+            api_key,
+            time.perf_counter() - started,
+            call.model_durations(),
+            None,
+        )
+    finally:
+        _USAGE_CALL.reset(token)
 
 
 @dataclass
@@ -553,16 +662,33 @@ class LegacyModelBridge:
                     if isinstance(error.__cause__, ModelInputError):
                         raise error.__cause__ from error
                     raise ModelInputError(str(error)) from error
-        except Exception:
+        except BaseException as error:
+            if record:
+                record_telemetry(
+                    _record_model_invocation,
+                    route,
+                    images,
+                    api_key,
+                    time.perf_counter() - started,
+                    None,
+                    error,
+                )
+            else:
+                _add_to_usage_call(images, None)
+            raise
+        duration = time.perf_counter() - started
+        if record:
             record_telemetry(
                 _record_model_invocation,
                 route,
                 images,
-                time.perf_counter() - started,
+                api_key,
+                duration,
+                model_durations,
+                None,
             )
-            raise
-        duration = time.perf_counter() - started
-        record_telemetry(_record_model_invocation, route, images, duration)
+        else:
+            _add_to_usage_call(images, model_durations)
         if record:
             record_telemetry(
                 telemetry.record_inference,
@@ -593,6 +719,25 @@ class LegacyModelBridge:
         )
 
         return outcome
+
+    def usage_call(
+        self,
+        route: Route,
+        api_key: Optional[str],
+        *,
+        images: Optional[list[Optional[ImagePayload]]] = None,
+    ) -> Any:
+        """Group the ``record=False`` calls made inside into one ``model`` row.
+
+        Args:
+            route: Route of the model the calls go to.
+            api_key: Key the model is called with.
+            images: Images of the whole call; see ``usage_call``.
+
+        Returns:
+            The context manager recording the combined call on exit.
+        """
+        return usage_call(route, api_key, images=images)
 
     async def infer_params_only(
         self,
@@ -975,20 +1120,121 @@ def _apply_stat(route: Route, stat: Optional[ModelStat]) -> None:
 
 
 def _record_model_invocation(
-    route: Route, images: list[Optional[ImagePayload]], duration: float
+    route: Route,
+    images: list[Optional[ImagePayload]],
+    api_key: Optional[str],
+    duration: float,
+    model_durations: Optional[list[Optional[float]]],
+    error: Optional[BaseException],
 ) -> None:
-    entry: dict[str, Any] = {"model_id": requested_model_id_for(route.registry_id)}
+    scope = USAGE_SCOPE.get()
+    if scope is None:
+        return
+
+    details: dict[str, Any] = {}
     if route.model_architecture:
-        entry["model_architecture"] = route.model_architecture
+        details["model_architecture"] = route.model_architecture
     if route.model_variant:
-        entry["model_variant"] = route.model_variant
-    entry["task_type"] = route.task_type
+        details["model_variant"] = route.model_variant
+    details["task_type"] = route.task_type
     if route.input_height is not None and route.input_width is not None:
-        entry["model_input_height"] = route.input_height
-        entry["model_input_width"] = route.input_width
-    entry["execution_duration"] = duration
-    entry["frames"] = max(1, sum(1 for image in images if image is not None))
-    record_model_invocation(entry)
+        details["model_input_height"] = route.input_height
+        details["model_input_width"] = route.input_width
+    present = [image for image in images if image is not None]
+    frames = max(1, len(present))
+    model_duration = execution_duration(
+        _model_duration(duration, model_durations, error)
+    )
+    record_model_usage(
+        scope,
+        model_id=resolve_roboflow_model_alias(
+            requested_model_id_for(route.registry_id)
+        ),
+        api_key=api_key,
+        frames=frames,
+        duration=model_duration,
+        details=details,
+        megapixel_buckets=_megapixel_buckets(
+            route, images, frames, model_duration, model_durations
+        ),
+        error=error,
+    )
+
+
+def _add_to_usage_call(
+    images: list[Optional[ImagePayload]],
+    model_durations: Optional[list[Optional[float]]],
+) -> None:
+    call = _USAGE_CALL.get()
+    if call is None:
+        return
+
+    call.add(images, model_durations)
+
+
+def _model_duration(
+    round_trip: float,
+    model_durations: Optional[list[Optional[float]]],
+    error: Optional[BaseException],
+) -> float:
+    if error is not None:
+        return round_trip
+    if not model_durations or any(value is None for value in model_durations):
+        return round_trip
+
+    total = float(sum(model_durations))
+
+    return total
+
+
+def _megapixel_buckets(
+    route: Route,
+    images: list[Optional[ImagePayload]],
+    frames: int,
+    duration: float,
+    model_durations: Optional[list[Optional[float]]],
+) -> dict[str, dict[str, Any]]:
+    buckets: dict[str, dict[str, Any]] = {}
+    present = [index for index, image in enumerate(images) if image is not None]
+    if not present:
+        add_megapixel_bucket(
+            buckets, MEGAPIXEL_BUCKET_UNKNOWN, frames=frames, duration=duration
+        )
+        return buckets
+    fixed = megapixel_bucket(route.input_height, route.input_width)
+    if fixed != MEGAPIXEL_BUCKET_UNKNOWN:
+        add_megapixel_bucket(buckets, fixed, frames=frames, duration=duration)
+        return buckets
+
+    weights = _duration_weights(present, model_durations)
+    for index, weight in zip(present, weights):
+        image = images[index]
+        add_megapixel_bucket(
+            buckets,
+            megapixel_bucket(image.height, image.width),
+            frames=1,
+            duration=duration * weight,
+        )
+
+    return buckets
+
+
+def _duration_weights(
+    present: list[int], model_durations: Optional[list[Optional[float]]]
+) -> list[float]:
+    even = [1.0 / len(present)] * len(present)
+    if not model_durations or len(model_durations) < len(present):
+        return even
+    measured = [model_durations[index] for index in present]
+    if any(value is None for value in measured):
+        return even
+    total = float(sum(measured))
+    if total <= 0:
+        return even
+
+    weights = [value / total for value in measured]
+
+    return weights
 
 
 def _apply_metadata(route: Route, entry: dict) -> None:
@@ -1040,7 +1286,7 @@ class SyncLegacyBridge:
     def __init__(self, bridge: LegacyModelBridge, loop_bridge: LoopBridge) -> None:
         self._bridge = bridge
         self._loop_bridge = loop_bridge
-        self._model_invocations = MODEL_INVOCATIONS.get()
+        self._usage_scope = USAGE_SCOPE.get()
         self.accepts_ndarray = bridge.accepts_ndarray
 
     def resolve(
@@ -1092,18 +1338,27 @@ class SyncLegacyBridge:
     async def _record_request(self, route, model_id_as_requested, path, alias) -> None:
         self._bridge.record_request(route, model_id_as_requested, path, alias=alias)
 
+    @contextmanager
+    def usage_call(self, route, api_key, *, images=None) -> Iterator[None]:
+        with bound_scope(self._usage_scope):
+            with usage_call(route, api_key, images=images):
+                yield
+
     def __contains__(self, model_id) -> bool:
         return model_id in self._bridge
 
     def _run(self, coro) -> Any:
-        return self._loop_bridge.run(self._with_holder(coro), _sync_timeout())
+        return self._loop_bridge.run(
+            self._with_scope(coro, _USAGE_CALL.get()), _sync_timeout()
+        )
 
-    async def _with_holder(self, coro) -> Any:
-        token = MODEL_INVOCATIONS.set(self._model_invocations)
+    async def _with_scope(self, coro, call) -> Any:
+        token = _USAGE_CALL.set(call)
         try:
-            return await coro
+            with bound_scope(self._usage_scope):
+                return await coro
         finally:
-            MODEL_INVOCATIONS.reset(token)
+            _USAGE_CALL.reset(token)
 
 
 def _sync_timeout() -> float:

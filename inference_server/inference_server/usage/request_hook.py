@@ -1,114 +1,51 @@
-"""One usage row per request of a legacy-compatible model or workflow route."""
+"""One ``request`` usage row per request of a legacy-compatible route.
 
-import contextvars
+The hook also binds the request's ``UsageScope`` for the duration of the
+handler, so the model calls and workflow runs made inside it record their own
+``model``, ``workflows`` and ``workflow_block`` rows attributed to the request.
+"""
+
 import functools
 import hashlib
 import json
 import logging
-import numbers
-import threading
 import time
+from contextlib import contextmanager
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, Iterator, Optional
 
 from fastapi import Request
 
-from inference_sdk.config import apply_duration_minimum
+from inference_sdk.config import execution_id, outbound_service_secret
 from inference_server import configuration
 from inference_server.hosted.common import (
     _coerce_optional_bool,
     service_secret_is_valid,
 )
 from inference_server.legacy.common import resolve_api_key
-from inference_server.legacy.errors import add_redaction_values, redact_text
-from inference_server.legacy.telemetry_recording import _recorded_error_type
+from inference_server.legacy.errors import add_redaction_values
 from inference_server.middlewares.model_load import REQUESTED_MODEL_ID
-from inference_server.usage.payload_helpers import (
-    _custom_python_identity,
-    _merge_entries,
-    _model_identity,
+from inference_server.usage.rows import (
+    UNKNOWN_RESOURCE_ID,
+    UsageScope,
+    bound_scope,
+    error_status_code,
+    exception_error_details,
+    execution_duration,
+    workflow_steps,
 )
 
 logger = logging.getLogger(__name__)
 
 REQUEST_CATEGORY = "request"
 EXTERNAL_SOURCE = "external"
-UNKNOWN_RESOURCE_ID = "unknown"
 SPECIFICATION_RESOURCE_ID_PREFIX = "sha:"
-MAX_ERROR_MESSAGE_LENGTH = 512
-SERVERLESS_MINIMUM_DURATION_S = 0.1
 RESPONSE_ERROR_TYPE = "HTTPResponseError"
-MODEL_SUMMED_FIELDS = ("frames", "execution_duration")
-CUSTOM_PYTHON_SUMMED_FIELDS = ("execution_duration",)
 BODY_FIELDS = ("api_key", "model_id", "source", "source_info")
 WORKFLOW_REQUEST_ARGUMENT = "workflow_request"
 
-MODEL_INVOCATIONS: contextvars.ContextVar[Optional[List[Dict[str, Any]]]] = (
-    contextvars.ContextVar("usage_model_invocations", default=None)
-)
-CUSTOM_PYTHON_RUNS: contextvars.ContextVar[Optional[List[Dict[str, Any]]]] = (
-    contextvars.ContextVar("usage_custom_python_runs", default=None)
-)
-_HOLDERS_LOCK = threading.Lock()
 
-
-def record_model_invocation(entry: Dict[str, Any]) -> None:
-    """Add one model invocation to the row of the request being served.
-
-    An invocation of a model the request already invoked is combined with the
-    earlier entry the way rows combine their ``models`` lists: ``frames`` and
-    ``execution_duration`` are summed, every other field is the latest one.
-
-    Args:
-        entry: ``models`` entry of the row: model id and labels, input size,
-            latency, duration and frames of the invocation.
-    """
-    invocations = MODEL_INVOCATIONS.get()
-    if invocations is None:
-        return
-
-    add_model_invocation(invocations, entry)
-
-
-def add_model_invocation(
-    invocations: List[Dict[str, Any]], entry: Dict[str, Any]
-) -> None:
-    """Combine one model invocation into the ``models`` list of a request.
-
-    Safe to call from several threads of one request at once.
-
-    Args:
-        invocations: ``models`` list captured when the request started.
-        entry: ``models`` entry of the invocation.
-    """
-    with _HOLDERS_LOCK:
-        invocations[:] = _merge_entries(
-            [*invocations, entry],
-            identity=_model_identity,
-            summed_fields=MODEL_SUMMED_FIELDS,
-        )
-
-
-def add_custom_python_run(runs: List[Dict[str, Any]], entry: Dict[str, Any]) -> None:
-    """Combine one custom Python block run into the ``custom_python`` list.
-
-    Runs of one step (same ``block_type`` and ``step_name``) sum their
-    ``execution_duration``. Safe to call from several threads of one request
-    at once.
-
-    Args:
-        runs: ``custom_python`` list captured when the request started.
-        entry: ``custom_python`` entry of the run.
-    """
-    with _HOLDERS_LOCK:
-        runs[:] = _merge_entries(
-            [*runs, entry],
-            identity=_custom_python_identity,
-            summed_fields=CUSTOM_PYTHON_SUMMED_FIELDS,
-        )
-
-
-def report_request_usage(fn: Callable) -> Callable:
+def report_request_usage(fn: Any) -> Any:
     """Record one ``request`` usage row for every call of a route handler.
 
     The row is recorded through the collector on ``request.app.state`` when
@@ -120,8 +57,11 @@ def report_request_usage(fn: Callable) -> Callable:
     except the catch-all route, which reads its image from the body. A
     workflow run handler (``workflow_request`` argument) is attributed to the
     workflow: the path's or the body's ``workflow_id``, else the hash of the
-    specification; its row also carries the workflow steps, the preview flag,
-    the workspace and the custom Python blocks the run executed.
+    specification; its row also carries the workflow steps, the preview flag
+    and the workspace. While the handler runs, the request's usage scope is
+    bound so nested rows inherit its key, billing intent and source tags; a
+    request that opted out of billing with a valid service secret forwards
+    the opt-out to the remote steps it runs.
 
     Args:
         fn: Route handler called with the request as ``request``.
@@ -137,33 +77,34 @@ def report_request_usage(fn: Callable) -> Callable:
         if collector is None:
             return await fn(*args, **kwargs)
 
-        invocations: List[Dict[str, Any]] = []
-        custom_python: List[Dict[str, Any]] = []
-        invocations_token = MODEL_INVOCATIONS.set(invocations)
-        custom_python_token = CUSTOM_PYTHON_RUNS.set(custom_python)
-        started = time.perf_counter()
         try:
-            response = await fn(*args, **kwargs)
-        except Exception as error:
-            await _record(
-                collector,
-                request,
-                kwargs,
-                invocations=invocations,
-                custom_python=custom_python,
-                duration=time.perf_counter() - started,
-                error=error,
+            subject = await _subject_of(request, kwargs)
+            scope = _scope_of(collector, request, kwargs, subject)
+        except Exception as failure:
+            logger.debug(
+                "Usage of the request was not recorded: %s", type(failure).__name__
             )
-            raise
-        finally:
-            CUSTOM_PYTHON_RUNS.reset(custom_python_token)
-            MODEL_INVOCATIONS.reset(invocations_token)
-        await _record(
-            collector,
+            return await fn(*args, **kwargs)
+
+        started = time.perf_counter()
+        with bound_scope(scope), _forwarded_opt_out(scope):
+            try:
+                response = await fn(*args, **kwargs)
+            except Exception as error:
+                _record(
+                    request,
+                    kwargs,
+                    subject=subject,
+                    scope=scope,
+                    duration=time.perf_counter() - started,
+                    error=error,
+                )
+                raise
+        _record(
             request,
             kwargs,
-            invocations=invocations,
-            custom_python=custom_python,
+            subject=subject,
+            scope=scope,
             duration=time.perf_counter() - started,
             response=response,
         )
@@ -190,42 +131,71 @@ def _collector_of(request: Optional[Request]) -> Optional[Any]:
         return None
 
 
-async def _record(
-    collector: Any,
+@contextmanager
+def _forwarded_opt_out(scope: UsageScope) -> Iterator[None]:
+    if scope.billable:
+        yield
+        return
+
+    token = outbound_service_secret.set(configuration.ROBOFLOW_SERVICE_SECRET)
+    try:
+        yield
+    finally:
+        outbound_service_secret.reset(token)
+
+
+def _scope_of(
+    collector: Any, request: Request, kwargs: Dict[str, Any], subject: Any
+) -> UsageScope:
+    query = request.query_params
+    api_key = resolve_api_key(
+        request, query.get("api_key"), getattr(subject, "api_key", None)
+    )
+    service_secret = query.get("service_secret")
+    if "countinference" in kwargs:
+        countinference = kwargs["countinference"]
+    else:
+        countinference = query.get("countinference")
+    scope = UsageScope(
+        collector=collector,
+        api_key=api_key,
+        billable=not _non_billable_intent(countinference, service_secret),
+        source=_source_tag(query, subject, "source"),
+        source_info=_source_tag(query, subject, "source_info"),
+        service_secret=service_secret,
+        exec_session_id=execution_id.get(),
+    )
+
+    return scope
+
+
+def _record(
     request: Request,
     kwargs: Dict[str, Any],
     *,
-    invocations: List[Dict[str, Any]],
-    custom_python: List[Dict[str, Any]],
+    subject: Any,
+    scope: UsageScope,
     duration: float,
     error: Optional[Exception] = None,
     response: Any = None,
 ) -> None:
     try:
-        subject = await _subject_of(request, kwargs)
-        api_key = resolve_api_key(
-            request,
-            request.query_params.get("api_key"),
-            getattr(subject, "api_key", None),
-        )
-        service_secret = request.query_params.get("service_secret")
         if error is not None:
-            add_redaction_values(api_key, service_secret)
-            error_details = _exception_error_details(error, (api_key, service_secret))
+            add_redaction_values(scope.api_key, scope.service_secret)
+            error_details = exception_error_details(
+                error, (scope.api_key, scope.service_secret)
+            )
         else:
             error_details = _response_error_details(response)
         row = _row(
             request,
             kwargs,
             subject=subject,
-            api_key=api_key,
-            service_secret=service_secret,
-            invocations=invocations,
-            custom_python=custom_python,
+            scope=scope,
             duration=duration,
             error_details=error_details,
         )
-        collector.record_usage(**row)
+        scope.collector.record_usage(**row)
     except Exception as failure:
         logger.debug(
             "Usage of the request was not recorded: %s", type(failure).__name__
@@ -258,20 +228,10 @@ def _row(
     kwargs: Dict[str, Any],
     *,
     subject: Any,
-    api_key: Optional[str],
-    service_secret: Optional[str],
-    invocations: List[Dict[str, Any]],
-    custom_python: List[Dict[str, Any]],
+    scope: UsageScope,
     duration: float,
     error_details: Dict[str, Any],
 ) -> Dict[str, Any]:
-    query = request.query_params
-    if "countinference" in kwargs:
-        countinference = kwargs["countinference"]
-    else:
-        countinference = query.get("countinference")
-    billable = not _non_billable_intent(countinference, service_secret)
-    source_info = _source_tag(query, subject, "source_info")
     workflow = WORKFLOW_REQUEST_ARGUMENT in kwargs
     specification = _workflow_specification(request, subject) if workflow else None
 
@@ -281,36 +241,32 @@ def _row(
     if configuration.DEVICE_ID:
         details["device_id"] = configuration.DEVICE_ID
     if specification is not None:
-        details["steps"] = _workflow_steps(specification)
+        details["steps"] = workflow_steps(specification)
     if workflow:
         details["is_preview"] = _is_preview(subject)
         if kwargs.get("workspace_name"):
             details["workspace_id"] = kwargs["workspace_name"]
-    source = _source_tag(query, subject, "source")
-    if source is not None:
-        details["source"] = source
+    if scope.source is not None:
+        details["source"] = scope.source
     model_id = getattr(subject, "model_id", None)
     if isinstance(model_id, str) and model_id.startswith("sam3/"):
         details["execution_mode"] = configuration.SAM3_EXEC_MODE
-    if source_info is not None:
-        details["source_info"] = source_info
-    details["models"] = invocations
-    if workflow:
-        details["custom_python"] = custom_python
+    if scope.source_info is not None:
+        details["source_info"] = scope.source_info
     details.update(error_details)
 
     row = {
-        "api_key": api_key or "",
+        "api_key": scope.api_key or "",
         "category": REQUEST_CATEGORY,
         "resource_id": _resource_id(kwargs, subject, specification),
         "resource_details": details,
         "frames": 1,
-        "execution_duration": _execution_duration(duration),
-        "billable": billable,
+        "execution_duration": execution_duration(duration),
+        "billable": scope.billable,
         "error_type": error_details.get("error_type"),
         "error_status_code": error_details.get("error_status_code"),
-        "roboflow_service_name": source_info,
-        "roboflow_internal_secret": service_secret,
+        "roboflow_service_name": scope.source_info,
+        "roboflow_internal_secret": scope.service_secret,
     }
     if workflow:
         row["is_preview"] = details["is_preview"]
@@ -327,19 +283,6 @@ def _workflow_specification(request: Request, subject: Any) -> Optional[dict]:
         return specification
 
     return None
-
-
-def _workflow_steps(specification: dict) -> List[str]:
-    entries = specification.get("steps")
-    if not isinstance(entries, list):
-        return []
-    steps = [
-        f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
-        for step in entries
-        if isinstance(step, dict)
-    ]
-
-    return steps
 
 
 def _is_preview(subject: Any) -> bool:
@@ -401,43 +344,8 @@ def _resource_id(
     return UNKNOWN_RESOURCE_ID
 
 
-def _execution_duration(raw: float) -> float:
-    if not configuration.GCP_SERVERLESS:
-        return raw
-    if apply_duration_minimum.get(None) is False:
-        return raw
-
-    floored = max(raw, SERVERLESS_MINIMUM_DURATION_S)
-
-    return floored
-
-
-def _error_status_code(error: BaseException) -> Optional[int]:
-    for candidate in (error, getattr(error, "inner_error", None)):
-        status_code = getattr(candidate, "status_code", None)
-        if (
-            isinstance(status_code, numbers.Integral)
-            and not isinstance(status_code, bool)
-            and 400 <= status_code <= 599
-        ):
-            return int(status_code)
-
-    return None
-
-
-def _exception_error_details(error: Exception, secrets: tuple) -> Dict[str, Any]:
-    error_type = _recorded_error_type(error)
-    message = redact_text(str(error), secrets)[:MAX_ERROR_MESSAGE_LENGTH]
-    details = {"error": f"{error_type}: {message}", "error_type": error_type}
-    status_code = _error_status_code(error)
-    if status_code is not None:
-        details["error_status_code"] = status_code
-
-    return details
-
-
 def _response_error_details(response: Any) -> Dict[str, Any]:
-    status_code = _error_status_code(response)
+    status_code = error_status_code(response)
     if status_code is None:
         return {}
 

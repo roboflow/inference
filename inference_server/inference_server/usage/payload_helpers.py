@@ -1,8 +1,7 @@
 """Usage rows: merging and grouping into request payloads."""
 
 import hashlib
-import json
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
+from typing import Any, DefaultDict, Dict, List, Optional, Tuple, Union
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -14,157 +13,6 @@ ResourceCategory = str
 ResourceDetails = Dict[str, Any]
 SystemDetails = Dict[str, Any]
 UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
-
-MAX_BILLABLE_ENTRIES_PER_ROW = 256
-RESOURCE_DETAILS_KEY = "resource_details"
-MODELS_KEY = "models"
-CUSTOM_PYTHON_KEY = "custom_python"
-
-
-def _model_identity(entry: Dict[str, Any]) -> Any:
-    return entry.get("model_id")
-
-
-def _custom_python_identity(entry: Dict[str, Any]) -> Tuple[Any, Any]:
-    return entry.get("block_type"), entry.get("step_name")
-
-
-_BILLABLE_LISTS: Tuple[
-    Tuple[str, Callable[[Dict[str, Any]], Any], Tuple[str, ...]], ...
-] = (
-    (MODELS_KEY, _model_identity, ("frames", "execution_duration")),
-    (CUSTOM_PYTHON_KEY, _custom_python_identity, ("execution_duration",)),
-)
-
-
-def _decoded_details(resource_details: Any) -> Optional[Dict[str, Any]]:
-    if isinstance(resource_details, str):
-        try:
-            resource_details = json.loads(resource_details)
-        except ValueError:
-            return None
-    if not isinstance(resource_details, dict):
-        return None
-
-    return resource_details
-
-
-def _is_entry_list(value: Any) -> bool:
-    return isinstance(value, list) and all(isinstance(entry, dict) for entry in value)
-
-
-def _merge_entries(
-    entries: List[Dict[str, Any]],
-    *,
-    identity: Callable[[Dict[str, Any]], Any],
-    summed_fields: Tuple[str, ...],
-) -> List[Dict[str, Any]]:
-    merged: Dict[Any, Dict[str, Any]] = {}
-    for entry in entries:
-        key = identity(entry)
-        existing = merged.get(key)
-        if existing is None:
-            merged[key] = dict(entry)
-            continue
-
-        combined = {**existing, **entry}
-        for field in summed_fields:
-            if existing.get(field) is None and entry.get(field) is None:
-                continue
-            combined[field] = (existing.get(field) or 0) + (entry.get(field) or 0)
-        merged[key] = combined
-    merged_entries = list(merged.values())
-
-    return merged_entries
-
-
-def merge_resource_details(left: Any, right: Any) -> Any:
-    """Combine the billable lists of two resource details values.
-
-    The later value wins for every key except ``models`` and ``custom_python``.
-    Entries of those lists are kept from both sides; entries with the same
-    identity (``model_id``, or ``block_type`` with ``step_name``) are combined
-    by summing their amounts (``frames`` and ``execution_duration``, or
-    ``execution_duration`` alone for ``custom_python``) and keeping the other
-    fields, including ``model_variant``, of the later entry.
-
-    Args:
-        left: Earlier resource details, a dict or its JSON text.
-        right: Later resource details, a dict or its JSON text.
-
-    Returns:
-        ``right`` itself when neither side carries a billable list or a side
-        cannot be decoded, otherwise the merged details in the form of ``right``
-        (dict or JSON text).
-    """
-    left_details = _decoded_details(left)
-    right_details = _decoded_details(right)
-    if left_details is None or right_details is None:
-        return right
-
-    merged = dict(right_details)
-    changed = False
-    for key, identity, summed_fields in _BILLABLE_LISTS:
-        left_entries = left_details.get(key)
-        right_entries = right_details.get(key)
-        if not _is_entry_list(left_entries):
-            continue
-        if right_entries is None:
-            right_entries = []
-        if not _is_entry_list(right_entries):
-            continue
-        try:
-            merged[key] = _merge_entries(
-                [*left_entries, *right_entries],
-                identity=identity,
-                summed_fields=summed_fields,
-            )
-        except TypeError:
-            continue
-        changed = True
-    if not changed:
-        return right
-    if isinstance(right, str):
-        serialized = json.dumps(merged)
-
-        return serialized
-
-    return merged
-
-
-def billable_lists_exceed_bound(resource_details: Any) -> bool:
-    """Tell whether a billable list is longer than a row may carry.
-
-    Args:
-        resource_details: Resource details, a dict or its JSON text.
-
-    Returns:
-        True when ``models`` or ``custom_python`` holds more than
-        ``MAX_BILLABLE_ENTRIES_PER_ROW`` entries.
-    """
-    details = _decoded_details(resource_details)
-    if details is None:
-        return False
-
-    exceeds = any(
-        isinstance(details.get(key), list)
-        and len(details[key]) > MAX_BILLABLE_ENTRIES_PER_ROW
-        for key, _, _ in _BILLABLE_LISTS
-    )
-
-    return exceeds
-
-
-def _merge_exceeds_bound(d1: UsagePayload, d2: UsagePayload) -> bool:
-    if RESOURCE_DETAILS_KEY not in d1 or RESOURCE_DETAILS_KEY not in d2:
-        return False
-
-    merged_details = merge_resource_details(
-        d1[RESOURCE_DETAILS_KEY], d2[RESOURCE_DETAILS_KEY]
-    )
-    exceeds = billable_lists_exceed_bound(merged_details)
-
-    return exceeds
 
 
 def merge_megapixel_buckets(
@@ -214,7 +62,8 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload) -> UsagePayload:
 
     Args:
         d1: Earlier row.
-        d2: Later row; wins for every field that is not accumulated.
+        d2: Later row; wins for every field that is not accumulated,
+            ``resource_details`` included.
 
     Returns:
         The merged row.
@@ -240,10 +89,6 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload) -> UsagePayload:
         merged["megapixel_buckets"] = merge_megapixel_buckets(
             d1.get("megapixel_buckets"),
             d2.get("megapixel_buckets"),
-        )
-    if RESOURCE_DETAILS_KEY in d1 and RESOURCE_DETAILS_KEY in d2:
-        merged[RESOURCE_DETAILS_KEY] = merge_resource_details(
-            d1[RESOURCE_DETAILS_KEY], d2[RESOURCE_DETAILS_KEY]
         )
     return {**d1, **d2, **merged}
 
@@ -329,10 +174,9 @@ def _merge_grouped_rows(
     usage_by_exec_session_id: Dict[
         APIKeyHash, Dict[ResourceID, Dict[str, List[ResourceUsage]]]
     ],
-) -> Tuple[Dict[str, APIKeyUsage], Dict[str, APIKeyUsage], List[APIKeyUsage]]:
+) -> Tuple[Dict[str, APIKeyUsage], Dict[str, APIKeyUsage]]:
     streams_by_exec_session_id: Dict[str, APIKeyUsage] = {}
     images_by_exec_session_id: Dict[str, APIKeyUsage] = {}
-    closed_usage_payloads: List[APIKeyUsage] = []
     for (
         api_key_hash,
         api_key_usage_by_exec_session_id,
@@ -359,50 +203,33 @@ def _merge_grouped_rows(
                     merged_resource_payload = merged_api_key_payload.setdefault(
                         resource_usage_key, {}
                     )
-                    if _merge_exceeds_bound(
-                        merged_resource_payload, resource_usage_payload
-                    ):
-                        closed_usage_payloads.append(
-                            {
-                                api_key_hash: {
-                                    resource_usage_key: merged_resource_payload
-                                }
-                            }
-                        )
-                        merged_resource_payload = {}
                     merged_api_key_payload[resource_usage_key] = merge_usage_dicts(
                         merged_resource_payload,
                         resource_usage_payload,
                     )
 
-    return streams_by_exec_session_id, images_by_exec_session_id, closed_usage_payloads
+    return streams_by_exec_session_id, images_by_exec_session_id
 
 
 def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
     """Merge queued payloads into payloads of one execution session each.
 
     Rows of the same API key hash, usage key and execution session are merged,
-    streams (rows with fps) apart from images. A row whose billable lists would
-    grow past ``MAX_BILLABLE_ENTRIES_PER_ROW`` is closed and emitted in a
-    payload of its own, so one session can yield more than one payload.
+    streams (rows with fps) apart from images.
 
     Args:
         usage_payloads: Payloads taken from the queue.
 
     Returns:
-        Stream payloads, then image payloads, then rows closed by the list
-        bound, then a payload holding only system information, when there is one.
+        Stream payloads, then image payloads, then a payload holding only
+        system information, when there is one.
     """
     usage_by_exec_session_id, system_info_payload = _group_rows_by_key_and_session(
         usage_payloads
     )
-    streams, images, closed_usage_payloads = _merge_grouped_rows(
-        usage_by_exec_session_id
-    )
+    streams, images = _merge_grouped_rows(usage_by_exec_session_id)
 
-    zipped_payloads = (
-        list(streams.values()) + list(images.values()) + closed_usage_payloads
-    )
+    zipped_payloads = list(streams.values()) + list(images.values())
     if system_info_payload:
         system_info_api_key_hash = next(iter(system_info_payload.values()))[
             "api_key_hash"

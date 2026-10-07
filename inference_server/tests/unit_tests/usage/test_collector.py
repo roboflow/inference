@@ -14,7 +14,6 @@ import pytest
 from inference_sdk.config import execution_id
 from inference_server import configuration
 from inference_server.usage import collector as collector_module
-from inference_server.usage import payload_helpers
 from inference_server.usage.collector import UsageCollector
 from inference_server.usage.payload_helpers import sha256_hash
 from inference_server.usage.queues import RedisQueue, SQLiteQueue
@@ -59,22 +58,6 @@ def record(usage_collector, **overrides):
         **overrides,
     }
     usage_collector.record_usage(**arguments)
-
-
-def model_entry(model_id, *, frames=1, execution_duration=0.5, latency=10.0):
-    entry = {
-        "model_id": model_id,
-        "model_architecture": "yolov8",
-        "model_variant": "n",
-        "task_type": "object-detection",
-        "model_input_height": 640,
-        "model_input_width": 640,
-        "model_latency_ms": latency,
-        "execution_duration": execution_duration,
-        "frames": frames,
-    }
-
-    return entry
 
 
 def queued_payloads(usage_collector):
@@ -911,78 +894,57 @@ def test_internal_service_fields_of_the_request(collector, name, secret, stored)
         assert row["roboflow_internal_secret"] == secret
 
 
-def test_record_usage_keeps_models_of_both_requests(collector):
-    record(collector, resource_details={"models": [model_entry("coco/3")]})
-    record(collector, resource_details={"models": [model_entry("other/1")]})
-
-    row = collector._usage["fake-key"][usage_key("request", "workspace/model")]
-    details = json.loads(row["resource_details"])
-    assert [entry["model_id"] for entry in details["models"]] == ["coco/3", "other/1"]
-    assert isinstance(row["resource_details"], str)
-
-
-def test_record_usage_sums_amounts_and_keeps_latest_latency_of_the_same_model(
+def test_record_usage_merges_model_rows_of_one_model_by_summing_the_counters(
     collector,
 ):
+    details = {"model_architecture": "yolov8", "task_type": "object-detection"}
     record(
         collector,
-        resource_details={
-            "models": [
-                model_entry("coco/3", frames=2, execution_duration=0.5, latency=10.0)
-            ]
+        category="model",
+        resource_id="coco/3",
+        resource_details=details,
+        frames=2,
+        execution_duration=0.5,
+        megapixel_buckets={
+            "0.25-0.5": {"processed_frames": 2, "execution_duration": 0.5}
         },
     )
     record(
         collector,
-        resource_details={
-            "models": [
-                model_entry("coco/3", frames=3, execution_duration=0.25, latency=5.0)
-            ]
+        category="model",
+        resource_id="coco/3",
+        resource_details={**details, "model_variant": "n"},
+        frames=3,
+        execution_duration=0.25,
+        megapixel_buckets={
+            "0.25-0.5": {"processed_frames": 3, "execution_duration": 0.25}
         },
     )
-
-    row = collector._usage["fake-key"][usage_key("request", "workspace/model")]
-    details = json.loads(row["resource_details"])
-    assert details["models"] == [
-        model_entry("coco/3", frames=5, execution_duration=0.75, latency=5.0)
-    ]
-
-
-def test_record_usage_does_not_sum_model_latency(collector):
     record(
         collector,
-        resource_details={"models": [model_entry("coco/3", latency=10.0)]},
+        category="model",
+        resource_id="other/1",
+        resource_details=details,
+        frames=1,
+        execution_duration=1.0,
     )
-    record(
-        collector,
-        resource_details={"models": [model_entry("coco/3", latency=5.0)]},
-    )
 
-    row = collector._usage["fake-key"][usage_key("request", "workspace/model")]
-    (entry,) = json.loads(row["resource_details"])["models"]
-    assert entry["frames"] == 2
-    assert entry["execution_duration"] == 1.0
-    assert entry["model_latency_ms"] == 5.0
-
-
-def test_record_usage_merges_custom_python_entries(collector):
-    first = {"block_type": "block_a", "step_name": "step_1", "execution_duration": 0.5}
-    second = {
-        "block_type": "block_a",
-        "step_name": "step_1",
-        "execution_duration": 0.25,
+    rows = collector._usage["fake-key"]
+    assert set(rows) == {
+        usage_key("model", "coco/3"),
+        usage_key("model", "other/1"),
     }
-    other = {"block_type": "block_a", "step_name": "step_2", "execution_duration": 1.0}
-
-    record(collector, resource_details={"custom_python": [first]})
-    record(collector, resource_details={"custom_python": [second, other]})
-
-    row = collector._usage["fake-key"][usage_key("request", "workspace/model")]
-    details = json.loads(row["resource_details"])
-    assert details["custom_python"] == [
-        {"block_type": "block_a", "step_name": "step_1", "execution_duration": 0.75},
-        other,
-    ]
+    merged = rows[usage_key("model", "coco/3")]
+    assert merged["processed_frames"] == 5
+    assert merged["execution_duration"] == 0.75
+    assert merged["megapixel_buckets"] == {
+        "0.25-0.5": {"processed_frames": 5, "execution_duration": 0.75}
+    }
+    assert json.loads(merged["resource_details"]) == {
+        **details,
+        "model_variant": "n",
+        "billable": True,
+    }
 
 
 def test_record_usage_without_lists_keeps_the_later_details_as_legacy(collector):
@@ -1024,36 +986,6 @@ def test_row_bound_counts_rows_of_every_api_key(collector, monkeypatch):
     assert collector._delivery.queue.qsize() == 0
     collector._write_current_usage_to_queue()
     assert total_frames(queued_payloads(collector)) == 5
-
-
-def test_list_bound_enqueues_the_row_and_starts_a_fresh_one(collector, monkeypatch):
-    monkeypatch.setattr(payload_helpers, "MAX_BILLABLE_ENTRIES_PER_ROW", 2)
-    collector._delivery.queue = Queue()
-
-    for index in range(5):
-        record(
-            collector,
-            resource_details={"models": [model_entry(f"model/{index}")]},
-        )
-
-    key = usage_key("request", "workspace/model")
-    current = json.loads(collector._usage["fake-key"][key]["resource_details"])
-    assert [entry["model_id"] for entry in current["models"]] == ["model/4"]
-    assert len(collector._delivery.pending) == 2
-    assert collector._delivery.queue.qsize() == 0
-    collector._write_current_usage_to_queue()
-    payloads = []
-    while not collector._delivery.queue.empty():
-        payloads.append(collector._delivery.queue.get_nowait())
-    assert total_frames(payloads) == 5
-    model_ids = sorted(
-        entry["model_id"]
-        for payload in payloads
-        for rows in payload.values()
-        for row in rows.values()
-        for entry in json.loads(row["resource_details"])["models"]
-    )
-    assert model_ids == [f"model/{index}" for index in range(5)]
 
 
 def test_queue_is_redis_on_serverless_with_a_redis_host(monkeypatch):

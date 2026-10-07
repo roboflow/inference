@@ -6,8 +6,9 @@ gateway stack: a gateway resolved in the pipeline process and driven on a
 private event loop, the legacy model bridge over it and the gateway-backed
 models provider the Workflow routes use. The loop thread, the gateway, the
 usage collector of the process and the image codec binding start on first use
-and live until `close()`. Every workflow run of a pipeline records one usage
-row through the collector, the way a request does on the HTTP server.
+and live until `close()`. Every workflow run of a pipeline records its
+`workflows` row and the `model` and `workflow_block` rows of its steps through
+the collector, the way a request does on the HTTP server.
 """
 
 import asyncio
@@ -109,7 +110,6 @@ class ServerPipelineHost:
         if not named_workflow_specified and not workflow_specification:
             raise ValueError(MISSING_WORKFLOW_MESSAGE)
 
-        named_from_registry = workflow_specification is None
         if workflow_specification is None:
             if api_key is None:
                 raise MissingApiKeyError(MISSING_API_KEY_MESSAGE)
@@ -126,15 +126,11 @@ class ServerPipelineHost:
                 )
 
         bridge, loop_bridge, collector = self._ensure_started()
-        observer, holders_scope = NULL_EXECUTION_OBSERVER, nullcontext()
+        observer, scope_binding = NULL_EXECUTION_OBSERVER, nullcontext()
         if collector is not None:
-            observer = StreamUsageExecutionObserver(
-                collector,
-                workflow_id=workflow_id if named_from_registry else None,
-                specification=workflow_specification,
-            )
-            holders_scope = observer.holders_scope()
-        with holders_scope:
+            observer = StreamUsageExecutionObserver(collector, api_key=api_key)
+            scope_binding = observer.scope_binding()
+        with scope_binding:
             sync_bridge = SyncLegacyBridge(bridge, loop_bridge)
         provider = GatewayModelsProvider(sync_bridge, api_key)
         init_parameters = execution.build_init_parameters(

@@ -33,7 +33,8 @@ from inference_server.legacy.load_failures import (
     ModelLoadFailedError,
     load_failure_error,
 )
-from inference_server.usage.request_hook import MODEL_INVOCATIONS
+from inference_server.usage.rows import UsageScope, bound_scope
+from tests.unit_tests.usage.conftest import FakeUsageCollector
 from tests.unit_tests.legacy.conftest import FakeGateway
 
 
@@ -1575,8 +1576,32 @@ async def test_core_model_fallback_reports_the_legacy_architecture_and_variant(
     assert (route.model_architecture, route.model_variant) == (architecture, variant)
 
 
+def _scope():
+    collector = FakeUsageCollector()
+    scope = UsageScope(collector=collector, api_key="scope-key")
+
+    return scope, collector
+
+
+class _TimedGateway(FakeGateway):
+    def __init__(self, durations, **kwargs):
+        super().__init__(**kwargs)
+        self.durations = list(durations)
+
+    async def infer_with_duration(self, **kwargs):
+        duration = self.durations.pop(0)
+        try:
+            result = await self.infer(**kwargs)
+        except Exception as error:
+            if duration is not None:
+                error.model_duration_s = duration
+            raise
+
+        return result, duration
+
+
 @pytest.mark.asyncio
-async def test_infer_appends_one_model_invocation_to_the_request_holder(
+async def test_infer_records_one_model_row_on_the_scope_collector(
     fake_stat, monkeypatch
 ):
     fake_stat["coco/3"] = ("object-detection", "infer", "yolov8", "yolov8-n")
@@ -1587,9 +1612,8 @@ async def test_infer_appends_one_model_invocation_to_the_request_holder(
     bridge = LegacyModelBridge(gw)
     ticks = iter([10.0, 10.25])
     monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: next(ticks))
-    holder = []
-    token = MODEL_INVOCATIONS.set(holder)
-    try:
+    scope, collector = _scope()
+    with bound_scope(scope):
         route = await bridge.resolve("yolov8n-640", "k")
         await bridge.infer(
             route,
@@ -1598,56 +1622,141 @@ async def test_infer_appends_one_model_invocation_to_the_request_holder(
             [ImagePayload(b"a", 1, 1), ImagePayload(b"b", 1, 1)],
             {},
         )
-    finally:
-        MODEL_INVOCATIONS.reset(token)
 
-    assert holder == [
+    assert collector.rows == [
         {
-            "model_id": "yolov8n-640",
-            "model_architecture": "yolov8",
-            "model_variant": "yolov8-n",
-            "task_type": "object-detection",
-            "model_input_height": 640,
-            "model_input_width": 480,
-            "execution_duration": 0.25,
+            "api_key": "k",
+            "category": "model",
+            "resource_id": "coco/3",
+            "resource_details": {
+                "model_architecture": "yolov8",
+                "model_variant": "yolov8-n",
+                "task_type": "object-detection",
+                "model_input_height": 640,
+                "model_input_width": 480,
+            },
             "frames": 2,
+            "execution_duration": 0.25,
+            "fps": 0.0,
+            "source_duration": 0.0,
+            "billable": True,
+            "is_preview": False,
+            "error_type": None,
+            "error_status_code": None,
+            "roboflow_service_name": None,
+            "roboflow_internal_secret": None,
+            "megapixel_buckets": {
+                "0.25-0.5": {"processed_frames": 2, "execution_duration": 0.25}
+            },
         }
     ]
 
 
 @pytest.mark.asyncio
-async def test_text_only_call_counts_one_frame_and_omits_unknown_labels(fake_stat):
-    gw = FakeGateway(predictions={("clip/ViT-B-16", "embed_text"): [[1.0]]})
+async def test_infer_sums_the_model_side_durations_of_the_fanned_out_calls(
+    fake_stat, monkeypatch
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = _TimedGateway(
+        [0.1, 0.3], predictions={("ds/1", "infer"): lambda img, p: ("pred", img)}
+    )
     bridge = LegacyModelBridge(gw)
-    holder = []
-    token = MODEL_INVOCATIONS.set(holder)
-    try:
-        route = await bridge.resolve("clip/ViT-B-16", "k")
-        await bridge.infer_params_only(route, "k", "embed_text", {"texts": ["a"]})
-    finally:
-        MODEL_INVOCATIONS.reset(token)
+    ticks = iter([10.0, 12.0])
+    monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: next(ticks))
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("ds/1", "k")
+        await bridge.infer(
+            route,
+            "k",
+            "infer",
+            [ImagePayload(b"a", 100, 100), ImagePayload(b"b", 2000, 3000)],
+            {},
+        )
 
-    assert len(holder) == 1
-    assert holder[0]["frames"] == 1
-    assert holder[0]["model_id"] == "clip/ViT-B-16"
-    assert "model_input_height" not in holder[0]
-    assert "model_input_width" not in holder[0]
+    (row,) = collector.rows
+    assert row["frames"] == 2
+    assert row["execution_duration"] == pytest.approx(0.4)
+    assert row["megapixel_buckets"] == {
+        "0-0.25": {"processed_frames": 1, "execution_duration": pytest.approx(0.1)},
+        "4-8": {"processed_frames": 1, "execution_duration": pytest.approx(0.3)},
+    }
 
 
 @pytest.mark.asyncio
-async def test_infer_without_a_request_holder_appends_nothing(fake_stat):
+async def test_infer_falls_back_to_the_round_trip_when_a_call_has_no_duration(
+    fake_stat, monkeypatch
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = _TimedGateway(
+        [0.1, None], predictions={("ds/1", "infer"): lambda img, p: ("pred", img)}
+    )
+    bridge = LegacyModelBridge(gw)
+    ticks = iter([10.0, 12.0])
+    monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: next(ticks))
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("ds/1", "k")
+        await bridge.infer(
+            route,
+            "k",
+            "infer",
+            [ImagePayload(b"a", 100, 100), ImagePayload(b"b", 100, 100)],
+            {},
+        )
+
+    (row,) = collector.rows
+    assert row["execution_duration"] == 2.0
+    assert row["megapixel_buckets"] == {
+        "0-0.25": {"processed_frames": 2, "execution_duration": 2.0}
+    }
+
+
+@pytest.mark.asyncio
+async def test_text_only_call_counts_one_frame_in_the_unknown_bucket(fake_stat):
+    gw = FakeGateway(predictions={("clip/ViT-B-16", "embed_text"): [[1.0]]})
+    bridge = LegacyModelBridge(gw)
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("clip/ViT-B-16", "k")
+        await bridge.infer_params_only(route, "k", "embed_text", {"texts": ["a"]})
+
+    (row,) = collector.rows
+    assert row["frames"] == 1
+    assert row["resource_id"] == "clip/ViT-B-16"
+    assert "model_input_height" not in row["resource_details"]
+    assert "model_input_width" not in row["resource_details"]
+    assert list(row["megapixel_buckets"]) == ["unknown"]
+    assert row["megapixel_buckets"]["unknown"]["processed_frames"] == 1
+
+
+@pytest.mark.asyncio
+async def test_infer_without_a_key_attributes_the_row_to_the_scope_key(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(predictions={("ds/1", "infer"): lambda img, p: ("pred", img)})
+    bridge = LegacyModelBridge(gw)
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("ds/1", "k")
+        await bridge.infer(route, None, "infer", [ImagePayload(b"a", 1, 1)], {})
+
+    assert collector.rows[0]["api_key"] == "scope-key"
+
+
+@pytest.mark.asyncio
+async def test_infer_without_a_scope_records_nothing(fake_stat):
     fake_stat["ds/1"] = ("object-detection", "infer")
     gw = FakeGateway(predictions={("ds/1", "infer"): lambda img, p: ("pred", img)})
     bridge = LegacyModelBridge(gw)
     route = await bridge.resolve("ds/1", "k")
 
-    assert MODEL_INVOCATIONS.get() is None
+    assert bridge_mod.USAGE_SCOPE.get() is None
     await bridge.infer(route, "k", "infer", [ImagePayload(b"a", 1, 1)], {})
-    assert MODEL_INVOCATIONS.get() is None
+    assert bridge_mod.USAGE_SCOPE.get() is None
 
 
 @pytest.mark.asyncio
-async def test_failed_infer_appends_the_attempted_invocation_and_reraises(
+async def test_failed_infer_records_the_attempted_call_with_its_error_and_reraises(
     fake_stat, monkeypatch
 ):
     fake_stat["ds/1"] = ("object-detection", "infer")
@@ -1655,9 +1764,8 @@ async def test_failed_infer_appends_the_attempted_invocation_and_reraises(
     bridge = LegacyModelBridge(gw)
     ticks = iter([10.0, 10.5])
     monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: next(ticks))
-    holder = []
-    token = MODEL_INVOCATIONS.set(holder)
-    try:
+    scope, collector = _scope()
+    with bound_scope(scope):
         route = await bridge.resolve("ds/1", "k")
         with pytest.raises(ModelInputError):
             await bridge.infer(
@@ -1667,17 +1775,261 @@ async def test_failed_infer_appends_the_attempted_invocation_and_reraises(
                 [ImagePayload(b"a", 1, 1), ImagePayload(b"b", 1, 1)],
                 {},
             )
-    finally:
-        MODEL_INVOCATIONS.reset(token)
 
-    assert holder == [
-        {
-            "model_id": "ds/1",
-            "task_type": "object-detection",
-            "execution_duration": 0.5,
-            "frames": 2,
-        }
-    ]
+    (row,) = collector.rows
+    assert row["resource_id"] == "ds/1"
+    assert row["resource_details"] == {
+        "task_type": "object-detection",
+        "error": "ModelInputError: bad shape",
+        "error_type": "ModelInputError",
+    }
+    assert row["error_type"] == "ModelInputError"
+    assert row["frames"] == 2
+    assert row["execution_duration"] == 0.5
+    assert row["megapixel_buckets"] == {
+        "0-0.25": {"processed_frames": 2, "execution_duration": 0.5}
+    }
+
+
+@pytest.mark.asyncio
+async def test_failed_infer_records_the_round_trip_of_the_whole_call(
+    fake_stat, monkeypatch
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    outcomes = iter([("pred", None), RuntimeError("broke")])
+
+    def _second_fails(image, params):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    gw = _TimedGateway([0.2, 0.1], predictions={("ds/1", "infer"): _second_fails})
+    bridge = LegacyModelBridge(gw)
+    ticks = iter([10.0, 10.5])
+    monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: next(ticks))
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("ds/1", "k")
+        with pytest.raises(RuntimeError):
+            await bridge.infer(
+                route,
+                "k",
+                "infer",
+                [ImagePayload(b"a", 1, 1), ImagePayload(b"b", 1, 1)],
+                {},
+            )
+
+    (row,) = collector.rows
+    assert row["frames"] == 2
+    assert row["execution_duration"] == 0.5
+    assert row["error_type"] == "RuntimeError"
+    assert row["megapixel_buckets"] == {
+        "0-0.25": {"processed_frames": 2, "execution_duration": 0.5}
+    }
+
+
+@pytest.mark.asyncio
+async def test_unrecorded_infer_records_nothing_outside_a_usage_call(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(predictions={("ds/1", "infer"): lambda img, p: ("pred", img)})
+    bridge = LegacyModelBridge(gw)
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("ds/1", "k")
+        await bridge.infer(
+            route, "k", "infer", [ImagePayload(b"a", 1, 1)], {}, record=False
+        )
+
+    assert collector.rows == []
+
+
+@pytest.mark.asyncio
+async def test_usage_call_records_one_row_for_its_unrecorded_fragments(
+    fake_stat, monkeypatch
+):
+    gw = _TimedGateway(
+        [0.1, 0.2, 0.3],
+        predictions={
+            ("clip/ViT-B-16", "embed_images"): lambda img, p: [[1.0]],
+            ("clip/ViT-B-16", "embed_text"): lambda img, p: [[1.0]],
+        },
+    )
+    bridge = LegacyModelBridge(gw)
+    monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: 10.0)
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("clip/ViT-B-16", "k")
+        with bridge.usage_call(route, "k"):
+            await bridge.infer_params_only(
+                route, "k", "embed_text", {"texts": ["a"]}, record=False
+            )
+            await bridge.infer(
+                route,
+                "k",
+                "embed_images",
+                [ImagePayload(b"a", 100, 100)],
+                {},
+                record=False,
+            )
+            await bridge.infer(
+                route,
+                "k",
+                "embed_images",
+                [ImagePayload(b"b", 2000, 3000)],
+                {},
+                record=False,
+            )
+
+    (row,) = collector.rows
+    assert row["resource_id"] == "clip/ViT-B-16"
+    assert row["frames"] == 2
+    assert row["execution_duration"] == pytest.approx(0.6)
+    assert row["error_type"] is None
+    assert row["megapixel_buckets"] == {
+        "0-0.25": {"processed_frames": 1, "execution_duration": pytest.approx(0.24)},
+        "4-8": {"processed_frames": 1, "execution_duration": pytest.approx(0.36)},
+    }
+
+
+@pytest.mark.asyncio
+async def test_usage_call_records_a_failing_fragment_with_the_round_trip(
+    fake_stat, monkeypatch
+):
+    gw = FakeGateway(
+        predictions={("clip/ViT-B-16", "embed_text"): _raising(RuntimeError("down"))}
+    )
+    bridge = LegacyModelBridge(gw)
+    ticks = iter([10.0, 10.1, 10.25])
+    monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: next(ticks))
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("clip/ViT-B-16", "k")
+        with pytest.raises(RuntimeError):
+            with bridge.usage_call(route, "k"):
+                await bridge.infer_params_only(
+                    route, "k", "embed_text", {"texts": ["a"]}, record=False
+                )
+
+    (row,) = collector.rows
+    assert row["frames"] == 1
+    assert row["execution_duration"] == 0.25
+    assert row["error_type"] == "RuntimeError"
+    assert row["megapixel_buckets"] == {
+        "unknown": {"processed_frames": 1, "execution_duration": 0.25}
+    }
+
+
+class _BlockingGateway(FakeGateway):
+    def __init__(self, blocked_image, **kwargs):
+        super().__init__(**kwargs)
+        self.blocked_image = blocked_image
+        self.blocked = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def infer(self, *, model_id, image=None, action=None, **kwargs):
+        if image == self.blocked_image:
+            self.blocked.set()
+            await self.release.wait()
+        result = await super().infer(
+            model_id=model_id, image=image, action=action, **kwargs
+        )
+
+        return result
+
+
+@pytest.mark.asyncio
+async def test_cancelled_usage_call_records_the_completed_work(fake_stat):
+    gw = _BlockingGateway(
+        b"b", predictions={("clip/ViT-B-16", "embed_images"): lambda img, p: [[1.0]]}
+    )
+    bridge = LegacyModelBridge(gw)
+    scope, collector = _scope()
+    payloads = [ImagePayload(data, 100, 100) for data in (b"a", b"b", b"c")]
+
+    async def _call():
+        with bound_scope(scope):
+            route = await bridge.resolve("clip/ViT-B-16", "k")
+            with bridge.usage_call(route, "k", images=payloads):
+                for payload in payloads:
+                    await bridge.infer(
+                        route, "k", "embed_images", [payload], {}, record=False
+                    )
+
+    task = asyncio.create_task(_call())
+    await gw.blocked.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    (row,) = collector.rows
+    assert row["resource_id"] == "clip/ViT-B-16"
+    assert row["frames"] == 3
+    assert row["error_type"] == "CancelledError"
+    assert row["execution_duration"] >= 0
+    assert row["megapixel_buckets"]["0-0.25"]["processed_frames"] == 3
+
+
+@pytest.mark.asyncio
+async def test_cancelled_infer_records_the_attempted_call(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = _BlockingGateway(
+        b"b", predictions={("ds/1", "infer"): lambda img, p: ("pred", img)}
+    )
+    bridge = LegacyModelBridge(gw)
+    scope, collector = _scope()
+
+    async def _call():
+        with bound_scope(scope):
+            route = await bridge.resolve("ds/1", "k")
+            await bridge.infer(
+                route,
+                "k",
+                "infer",
+                [ImagePayload(b"a", 1, 1), ImagePayload(b"b", 1, 1)],
+                {},
+            )
+
+    task = asyncio.create_task(_call())
+    await gw.blocked.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    (row,) = collector.rows
+    assert row["resource_id"] == "ds/1"
+    assert row["frames"] == 2
+    assert row["error_type"] == "CancelledError"
+
+
+@pytest.mark.asyncio
+async def test_usage_call_counts_every_image_of_the_call_when_a_fragment_fails(
+    fake_stat, monkeypatch
+):
+    gw = FakeGateway(
+        predictions={("clip/ViT-B-16", "embed_images"): _raising(RuntimeError("down"))}
+    )
+    bridge = LegacyModelBridge(gw)
+    ticks = iter([10.0, 10.1, 10.5])
+    monkeypatch.setattr(bridge_mod.time, "perf_counter", lambda: next(ticks))
+    scope, collector = _scope()
+    payloads = [ImagePayload(data, 100, 100) for data in (b"a", b"b", b"c")]
+    with bound_scope(scope):
+        route = await bridge.resolve("clip/ViT-B-16", "k")
+        with pytest.raises(RuntimeError):
+            with bridge.usage_call(route, "k", images=payloads):
+                for payload in payloads:
+                    await bridge.infer(
+                        route, "k", "embed_images", [payload], {}, record=False
+                    )
+
+    (row,) = collector.rows
+    assert row["frames"] == 3
+    assert row["execution_duration"] == 0.5
+    assert row["error_type"] == "RuntimeError"
+    assert row["megapixel_buckets"] == {
+        "0-0.25": {"processed_frames": 3, "execution_duration": pytest.approx(0.5)}
+    }
 
 
 def test_task_type_from_mro_covers_registry():

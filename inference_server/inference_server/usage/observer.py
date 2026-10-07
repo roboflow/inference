@@ -1,17 +1,16 @@
-"""Observers of a workflow run feeding a usage row.
+"""Observers of a workflow run recording its usage rows.
 
-``UsageExecutionObserver`` feeds the row of the HTTP request being served;
-``StreamUsageExecutionObserver`` records a row of its own for every run of a
-stream pipeline.
+``UsageExecutionObserver`` records the ``workflows``, ``workflow_block`` and
+``model`` rows of a run on the scope bound by the request being served;
+``StreamUsageExecutionObserver`` owns the scope of a stream pipeline and binds
+it around every run.
 """
 
 import logging
-import math
-import numbers
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, TypeVar
+from typing import Any, Callable, Dict, Iterator, Optional, Tuple, TypeVar
 
 from roboflow_workflows.execution_engine.entities.base import Batch
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import (
@@ -19,75 +18,49 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import
 )
 from roboflow_workflows.prototypes.observer import NULL_EXECUTION_OBSERVER
 
-from inference_server import configuration
-from inference_server.usage.request_hook import (
-    CUSTOM_PYTHON_RUNS,
-    MODEL_INVOCATIONS,
-    REQUEST_CATEGORY,
-    UNKNOWN_RESOURCE_ID,
-    _exception_error_details,
-    _execution_duration,
-    _specification_resource_id,
-    _workflow_steps,
-    add_custom_python_run,
-    add_model_invocation,
+from inference_server.usage.rows import (
+    USAGE_SCOPE,
+    UsageScope,
+    bound_scope,
+    bound_stream_session,
+    bound_workflow_preview,
+    current_stream_session_id,
+    record_block_usage,
+    record_model_usage,
+    record_workflow_usage,
 )
-
-try:
-    from streamvision.stream.session import stream_session_id
-except ImportError:
-    stream_session_id = None
 
 logger = logging.getLogger(__name__)
 
 CUSTOM_PYTHON_BLOCK_KIND = "custom_python"
-WORKFLOW_API_KEY_PARAMETER = "workflows_core.api_key"
 
 T = TypeVar("T")
 
 
 def request_observer() -> Any:
-    """Observer bound to the usage row of the request being served.
+    """Observer of the workflow runs of the request being served.
 
     Returns:
-        A ``UsageExecutionObserver`` over the ``models`` and ``custom_python``
-        lists of the request, or the null observer when no usage row is being
-        recorded for the request.
+        A ``UsageExecutionObserver`` when the request binds a usage scope, or
+        the null observer when no usage row is being recorded for it.
     """
-    models = MODEL_INVOCATIONS.get()
-    custom_python = CUSTOM_PYTHON_RUNS.get()
-    if models is None or custom_python is None:
+    if USAGE_SCOPE.get() is None:
         return NULL_EXECUTION_OBSERVER
 
-    observer = UsageExecutionObserver(models=models, custom_python=custom_python)
+    observer = UsageExecutionObserver()
 
     return observer
 
 
 class UsageExecutionObserver:
-    """Feed the usage row of a request with what its workflow run executes.
+    """Record the rows of a workflow run on the scope of the current context.
 
-    Both lists are the objects captured when the request started, so every
-    thread the engine runs steps on appends to the same row; model runs of
-    providers reach the ``models`` list through the request's bridge, which
-    carries it. Nothing here records a row of its own, and a bookkeeping
-    failure never reaches the run.
+    Every hook reads the ``UsageScope`` bound where it runs: the request's
+    handler binds it, and the engine re-enters the submitting thread's
+    context in every step worker. Model runs of providers reach the scope
+    through the request's bridge, which carries it. A bookkeeping failure
+    never reaches the run.
     """
-
-    def __init__(
-        self,
-        *,
-        models: List[Dict[str, Any]],
-        custom_python: List[Dict[str, Any]],
-    ) -> None:
-        """Bind the observer to the lists of one request.
-
-        Args:
-            models: ``models`` list of the request's row.
-            custom_python: ``custom_python`` list of the request's row.
-        """
-        self._models = models
-        self._custom_python = custom_python
 
     def observe_workflow_run(
         self,
@@ -99,20 +72,53 @@ class UsageExecutionObserver:
         is_preview: bool,
         run: Callable[[], T],
     ) -> T:
-        """Run the workflow unchanged.
+        """Run the workflow and record its ``workflows`` row.
+
+        The preview flag is published to the custom Python block rows of the
+        run. A run that raises is recorded with its error and re-raised.
 
         Args:
-            workflow: Compiled workflow, unused.
+            workflow: Compiled workflow; its definition and API key attribute
+                the row.
             runtime_parameters: Inputs of the run, unused.
-            workflow_id: Identifier of the workflow, unused.
-            fps: Frames per second of the source, unused.
-            is_preview: Whether the run is a preview, unused.
+            workflow_id: Identifier the engine derived; the hash of the step
+                list attributes the row when None.
+            fps: Frames per second of the source the run processes.
+            is_preview: Whether the run is a preview.
             run: The engine's continuation.
 
         Returns:
             Whatever ``run`` returns.
         """
-        return run()
+        scope = USAGE_SCOPE.get()
+        if scope is None:
+            return run()
+        started = time.perf_counter()
+        with bound_workflow_preview(is_preview):
+            try:
+                result = run()
+            except Exception as error:
+                self._record_workflow_run(
+                    scope,
+                    workflow,
+                    workflow_id=workflow_id,
+                    fps=fps,
+                    is_preview=is_preview,
+                    duration=time.perf_counter() - started,
+                    error=error,
+                )
+                raise
+        self._record_workflow_run(
+            scope,
+            workflow,
+            workflow_id=workflow_id,
+            fps=fps,
+            is_preview=is_preview,
+            duration=time.perf_counter() - started,
+            error=None,
+        )
+
+        return result
 
     def capture_step_context(self) -> None:
         """Hand nothing to the step worker threads."""
@@ -136,7 +142,7 @@ class UsageExecutionObserver:
         block_kwargs: Dict[str, Any],
         run: Callable[[], T],
     ) -> T:
-        """Run a block and, for a custom Python block, record its duration.
+        """Run a block and, for a custom Python block, record its row.
 
         The duration is the one the engine measured for this invocation, else
         the wall time of ``run``. A block that raises is still recorded.
@@ -144,7 +150,8 @@ class UsageExecutionObserver:
         Args:
             block: The block instance.
             block_args: Positional inputs of the block, unused.
-            block_kwargs: Keyword inputs of the block, unused.
+            block_kwargs: Keyword inputs of the block; the largest batch among
+                them is the frame count of the row.
             run: The engine's continuation.
 
         Returns:
@@ -154,9 +161,15 @@ class UsageExecutionObserver:
             return run()
         started = time.perf_counter()
         try:
-            return run()
-        finally:
-            self._record_block_run(block, time.perf_counter() - started)
+            result = run()
+        except Exception as error:
+            self._record_block_run(
+                block, block_kwargs, time.perf_counter() - started, error
+            )
+            raise
+        self._record_block_run(block, block_kwargs, time.perf_counter() - started, None)
+
+        return result
 
     def observe_model_run(
         self,
@@ -166,12 +179,12 @@ class UsageExecutionObserver:
         images: Any,
         run: Callable[[], T],
     ) -> T:
-        """Run a block's own model call and record it as a model invocation.
+        """Run a block's own model call and record its ``model`` row.
 
         Args:
-            block: The block instance, unused.
+            block: The block instance; its API key attributes the row.
             model_id: Identifier of the model the block runs.
-            images: Images handed to the model; one entry per element.
+            images: Images handed to the model; one frame per element.
             run: The engine's continuation.
 
         Returns:
@@ -179,35 +192,92 @@ class UsageExecutionObserver:
         """
         started = time.perf_counter()
         try:
-            return run()
-        finally:
-            self._record_model_run(model_id, images, time.perf_counter() - started)
+            result = run()
+        except Exception as error:
+            self._record_model_run(
+                block, model_id, images, time.perf_counter() - started, error
+            )
+            raise
+        self._record_model_run(
+            block, model_id, images, time.perf_counter() - started, None
+        )
 
-    def _record_block_run(self, block: Any, wall_duration: float) -> None:
+        return result
+
+    def _record_workflow_run(
+        self,
+        scope: UsageScope,
+        workflow: Any,
+        *,
+        workflow_id: Optional[str],
+        fps: float,
+        is_preview: bool,
+        duration: float,
+        error: Optional[Exception],
+    ) -> None:
+        try:
+            record_workflow_usage(
+                scope,
+                workflow=workflow,
+                workflow_id=workflow_id,
+                fps=fps,
+                is_preview=is_preview,
+                duration=duration,
+                error=error,
+            )
+        except Exception as failure:
+            logger.debug(
+                "Usage of the workflow run was not recorded: %s",
+                type(failure).__name__,
+            )
+
+    def _record_block_run(
+        self,
+        block: Any,
+        block_kwargs: Dict[str, Any],
+        wall_duration: float,
+        error: Optional[Exception],
+    ) -> None:
         try:
             measured = consume_block_duration()
-            duration = measured.duration if measured is not None else wall_duration
-            entry: Dict[str, Any] = {"block_type": _block_type(block)}
-            step_name = getattr(block, "_workflow_step_name", None)
-            if step_name:
-                entry["step_name"] = str(step_name)
-            entry["execution_duration"] = _execution_duration(duration)
-            add_custom_python_run(self._custom_python, entry)
+            scope = USAGE_SCOPE.get()
+            if scope is None:
+                return
+            record_block_usage(
+                scope,
+                block=block,
+                frames=_block_frames(block_kwargs),
+                duration=wall_duration,
+                measured=measured,
+                error=error,
+            )
         except Exception as failure:
             logger.debug(
                 "Custom Python run was not recorded: %s", type(failure).__name__
             )
 
     def _record_model_run(
-        self, model_id: Optional[str], images: Any, duration: float
+        self,
+        block: Any,
+        model_id: Optional[str],
+        images: Any,
+        duration: float,
+        error: Optional[Exception],
     ) -> None:
         try:
-            entry = {
-                "model_id": _model_id(model_id),
-                "frames": _frames(images),
-                "execution_duration": duration,
-            }
-            add_model_invocation(self._models, entry)
+            scope = USAGE_SCOPE.get()
+            if scope is None:
+                return
+            record_model_usage(
+                scope,
+                model_id=model_id,
+                api_key=getattr(block, "_api_key", None),
+                frames=_frames(images),
+                duration=duration,
+                details={},
+                megapixel_buckets=None,
+                error=error,
+            )
         except Exception as failure:
             logger.debug("Model run was not recorded: %s", type(failure).__name__)
 
@@ -217,60 +287,47 @@ class StreamStepContext:
     """What a step worker thread of a pipeline run needs from the run's thread.
 
     Args:
-        models: ``models`` list of the run.
-        custom_python: ``custom_python`` list of the run.
+        scope: Usage scope of the pipeline.
         stream_session_id: Session of the pipeline the run belongs to.
     """
 
-    models: List[Dict[str, Any]]
-    custom_python: List[Dict[str, Any]]
+    scope: UsageScope
     stream_session_id: Optional[str]
 
 
 class StreamUsageExecutionObserver(UsageExecutionObserver):
-    """Record one ``request`` row per workflow run of a stream pipeline.
+    """Record the rows of every workflow run of a stream pipeline.
 
-    The pipeline process serves no request, so the observer owns the row: it
-    times every run, collects the model invocations and custom Python runs the
-    run makes into lists it holds for the pipeline's lifetime, and records the
-    row on the pipeline process's collector when the run returns or raises.
-    The lists are bound to the holders the HTTP row uses for the duration of
-    every run and under ``holders_scope`` so the bridge built for the
-    pipeline captures them; the bridge, the step worker threads and this
-    observer all append to the same lists. A bookkeeping failure never reaches
-    the run.
+    The pipeline process serves no request, so the observer owns the usage
+    scope: it binds it around every run and inside the step worker threads,
+    and the pipeline host binds it under ``scope_binding`` so the bridge built
+    for the pipeline captures it. The stream session of the run is kept on
+    the scope so rows recorded from the bridge's loop thread carry it too.
     """
 
-    def __init__(
-        self,
-        collector: Any,
-        workflow_id: Optional[str] = None,
-        specification: Optional[dict] = None,
-    ) -> None:
+    def __init__(self, collector: Any, *, api_key: Optional[str] = None) -> None:
         """Bind the observer to the collector of the pipeline process.
 
         Args:
             collector: ``UsageCollector`` the rows are recorded on.
-            workflow_id: Identifier the client requested for a named workflow,
-                ``None`` for an inline specification; every row is attributed
-                to it, the way the HTTP rule does.
-            specification: Definition hashed into the attribution when no
-                ``workflow_id`` is given; the compiled workflow's definition
-                applies when ``None``.
+            api_key: Key of the pipeline; a row without a key of its own is
+                attributed to it.
         """
-        super().__init__(models=[], custom_python=[])
-        self._collector = collector
-        self._workflow_id = workflow_id
-        self._specification = specification
+        self._scope = UsageScope(collector=collector, api_key=api_key)
+
+    @property
+    def scope(self) -> UsageScope:
+        """Usage scope of the pipeline."""
+        return self._scope
 
     @contextmanager
-    def holders_scope(self) -> Iterator[None]:
-        """Bind the observer's lists to the holders of the current thread.
+    def scope_binding(self) -> Iterator[None]:
+        """Bind the pipeline's scope in the current context.
 
         Yields:
-            Nothing; the holders are unbound again on exit.
+            Nothing; the scope is unbound again on exit.
         """
-        with _bound_holders(self._models, self._custom_python):
+        with bound_scope(self._scope):
             yield
 
     def observe_workflow_run(
@@ -283,14 +340,13 @@ class StreamUsageExecutionObserver(UsageExecutionObserver):
         is_preview: bool,
         run: Callable[[], T],
     ) -> T:
-        """Run the workflow and record its ``request`` row.
+        """Run the workflow under the pipeline's scope and record its row.
 
         Args:
             workflow: Compiled workflow; its definition and API key attribute
                 the row.
             runtime_parameters: Inputs of the run, unused.
-            workflow_id: Identifier the engine derived; ignored, the row is
-                attributed by the inputs the observer was built with.
+            workflow_id: Identifier the engine derived.
             fps: Frames per second of the source the run processes.
             is_preview: Whether the run is a preview.
             run: The engine's continuation.
@@ -298,50 +354,35 @@ class StreamUsageExecutionObserver(UsageExecutionObserver):
         Returns:
             Whatever ``run`` returns.
         """
-        self._models.clear()
-        self._custom_python.clear()
-        started = time.perf_counter()
-        with _bound_holders(self._models, self._custom_python):
-            try:
-                result = run()
-            except Exception as error:
-                self._record_run(
-                    workflow,
-                    workflow_id=workflow_id,
-                    fps=fps,
-                    is_preview=is_preview,
-                    duration=time.perf_counter() - started,
-                    error=error,
-                )
-                raise
-        self._record_run(
-            workflow,
-            workflow_id=workflow_id,
-            fps=fps,
-            is_preview=is_preview,
-            duration=time.perf_counter() - started,
-            error=None,
-        )
+        self._scope.stream_session_id = current_stream_session_id()
+        with bound_scope(self._scope):
+            result = super().observe_workflow_run(
+                workflow=workflow,
+                runtime_parameters=runtime_parameters,
+                workflow_id=workflow_id,
+                fps=fps,
+                is_preview=is_preview,
+                run=run,
+            )
 
         return result
 
     def capture_step_context(self) -> StreamStepContext:
-        """Snapshot the run's lists and stream session for a worker thread.
+        """Snapshot the scope and stream session for a worker thread.
 
         Returns:
             The context ``step_scope`` re-binds in the worker.
         """
         context = StreamStepContext(
-            models=self._models,
-            custom_python=self._custom_python,
-            stream_session_id=_current_stream_session_id(),
+            scope=self._scope,
+            stream_session_id=current_stream_session_id(),
         )
 
         return context
 
     @contextmanager
     def step_scope(self, *, context: Any, step_name: str) -> Iterator[None]:
-        """Bind the run's lists and stream session inside a worker thread.
+        """Bind the scope and stream session inside a worker thread.
 
         Args:
             context: Value ``capture_step_context`` returned; nothing is bound
@@ -352,165 +393,9 @@ class StreamUsageExecutionObserver(UsageExecutionObserver):
             yield
             return
 
-        with _bound_holders(context.models, context.custom_python):
-            with _bound_stream_session(context.stream_session_id):
+        with bound_scope(context.scope):
+            with bound_stream_session(context.stream_session_id):
                 yield
-
-    def _record_run(
-        self,
-        workflow: Any,
-        *,
-        workflow_id: Optional[str],
-        fps: float,
-        is_preview: bool,
-        duration: float,
-        error: Optional[Exception],
-    ) -> None:
-        try:
-            row = self._row(
-                workflow,
-                workflow_id=workflow_id,
-                fps=fps,
-                is_preview=is_preview,
-                duration=duration,
-                error=error,
-            )
-            self._collector.record_usage(**row)
-        except Exception as failure:
-            logger.debug(
-                "Usage of the workflow run was not recorded: %s",
-                type(failure).__name__,
-            )
-
-    def _row(
-        self,
-        workflow: Any,
-        *,
-        workflow_id: Optional[str],
-        fps: float,
-        is_preview: bool,
-        duration: float,
-        error: Optional[Exception],
-    ) -> Dict[str, Any]:
-        api_key = _workflow_api_key(workflow)
-        specification = _workflow_json(workflow)
-        details: Dict[str, Any] = {}
-        if configuration.DEDICATED_DEPLOYMENT_ID:
-            details["dedicated_deployment_id"] = configuration.DEDICATED_DEPLOYMENT_ID
-        if configuration.DEVICE_ID:
-            details["device_id"] = configuration.DEVICE_ID
-        if specification is not None:
-            details["steps"] = _workflow_steps(specification)
-        details["is_preview"] = is_preview
-        details["models"] = list(self._models)
-        details["custom_python"] = list(self._custom_python)
-        error_details: Dict[str, Any] = {}
-        if error is not None:
-            error_details = _exception_error_details(error, (api_key,))
-        details.update(error_details)
-        frames = 1
-        if not _is_positive_fps(fps):
-            fps = 0.0
-
-        row = {
-            "api_key": api_key or "",
-            "category": REQUEST_CATEGORY,
-            "resource_id": _run_resource_id(
-                self._workflow_id,
-                (
-                    self._specification
-                    if self._specification is not None
-                    else specification
-                ),
-            ),
-            "resource_details": details,
-            "frames": frames,
-            "execution_duration": _execution_duration(duration),
-            "fps": fps,
-            "source_duration": _source_duration(frames, fps),
-            "billable": True,
-            "is_preview": is_preview,
-            "error_type": error_details.get("error_type"),
-            "error_status_code": error_details.get("error_status_code"),
-            "exec_session_id": _current_stream_session_id(),
-        }
-
-        return row
-
-
-@contextmanager
-def _bound_holders(
-    models: List[Dict[str, Any]], custom_python: List[Dict[str, Any]]
-) -> Iterator[None]:
-    models_token = MODEL_INVOCATIONS.set(models)
-    custom_python_token = CUSTOM_PYTHON_RUNS.set(custom_python)
-    try:
-        yield
-    finally:
-        CUSTOM_PYTHON_RUNS.reset(custom_python_token)
-        MODEL_INVOCATIONS.reset(models_token)
-
-
-@contextmanager
-def _bound_stream_session(session_id: Optional[str]) -> Iterator[None]:
-    if stream_session_id is None:
-        yield
-        return
-
-    token = stream_session_id.set(session_id)
-    try:
-        yield
-    finally:
-        stream_session_id.reset(token)
-
-
-def _current_stream_session_id() -> Optional[str]:
-    if stream_session_id is None:
-        return None
-
-    session_id = stream_session_id.get()
-
-    return session_id
-
-
-def _workflow_api_key(workflow: Any) -> Optional[str]:
-    init_parameters = getattr(workflow, "init_parameters", None)
-    if not isinstance(init_parameters, dict):
-        return None
-
-    api_key = init_parameters.get(WORKFLOW_API_KEY_PARAMETER)
-
-    return api_key
-
-
-def _workflow_json(workflow: Any) -> Optional[dict]:
-    workflow_json = getattr(workflow, "workflow_json", None)
-    if not isinstance(workflow_json, dict):
-        return None
-
-    return workflow_json
-
-
-def _run_resource_id(workflow_id: Optional[str], specification: Optional[dict]) -> str:
-    if workflow_id:
-        return str(workflow_id)
-    if specification is not None:
-        return _specification_resource_id(specification)
-
-    return UNKNOWN_RESOURCE_ID
-
-
-def _is_positive_fps(fps: Any) -> bool:
-    return isinstance(fps, numbers.Real) and math.isfinite(fps) and fps > 0
-
-
-def _source_duration(frames: int, fps: Any) -> float:
-    if not _is_positive_fps(fps):
-        return 0.0
-
-    source_duration = frames / fps
-
-    return source_duration
 
 
 def _is_custom_python_block(block: Any) -> bool:
@@ -522,23 +407,33 @@ def _is_custom_python_block(block: Any) -> bool:
     return kind == CUSTOM_PYTHON_BLOCK_KIND
 
 
-def _block_type(block: Any) -> str:
-    block_type = getattr(block, "_workflow_step_type", None) or getattr(
-        block, "_usage_block_type", None
-    )
-
-    return str(block_type)
-
-
-def _model_id(model_id: Optional[str]) -> str:
-    if model_id is None or not str(model_id).strip():
-        return UNKNOWN_RESOURCE_ID
-
-    return str(model_id).strip()
-
-
 def _frames(images: Any) -> int:
     if isinstance(images, (list, tuple, Batch)):
         return max(1, len(images))
 
     return 1
+
+
+def _batch_elements(value: Any) -> int:
+    if not isinstance(value, Batch):
+        return 1
+
+    elements = sum(_batch_elements(element) for element in value)
+
+    return elements
+
+
+def _block_frames(block_kwargs: Any) -> int:
+    if not isinstance(block_kwargs, dict):
+        return 1
+    batch_sizes = [
+        _batch_elements(value)
+        for value in block_kwargs.values()
+        if isinstance(value, Batch)
+    ]
+    if not batch_sizes:
+        return 1
+
+    frames = max(max(batch_sizes), 1)
+
+    return frames
