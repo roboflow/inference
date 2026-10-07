@@ -1,4 +1,3 @@
-import cv2 as cv
 import numpy as np
 import pytest
 import supervision as sv
@@ -36,6 +35,58 @@ _TENSOR_ONLY = pytest.mark.skipif(
     reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
+# (corners, width, height, angle, corner/size tolerance) per dog.
+_EXPECTED_RECTS = [
+    (
+        [[322.0, 402.0], [325.0, 224.0], [586.0, 228.0], [583.0, 406.0]],
+        261.5,
+        178.4,
+        0.826,
+        5.0,
+    ),
+    (
+        [[219.0, 82.0], [352.0, 57.0], [409.0, 363.0], [276.0, 388.0]],
+        311.25,
+        135.2,
+        79.5,
+        6.0,
+    ),
+]
+
+
+def _canonical_rect_size(width: float, height: float, angle: float) -> tuple:
+    # cv2.minAreaRect reports the same rectangle as (w, h, a), (h, w, a - 90)
+    # or (h, w, a + 90)
+    if angle > 45:
+        return height, width, angle - 90
+    if angle < -45:
+        return height, width, angle + 90
+    return width, height, angle
+
+
+def _assert_rect_matches(rect, width, height, angle, expected) -> None:
+    # The first dog's mask is nearly axis-aligned, so minAreaRect has two
+    # near-equal candidates (tilted ~0.8 deg, or axis-aligned reported at 90 deg)
+    # and a one-pixel mask change picks the other one; cv2.boxPoints then starts
+    # from a different corner and width/height swap. Compare geometry instead.
+    expected_rect, expected_width, expected_height, expected_angle, atol = expected
+    rect = np.asarray(rect, dtype=float)
+    assert any(
+        np.allclose(np.roll(rect, shift, axis=0), expected_rect, atol=atol)
+        for shift in range(4)
+    ), f"{rect.tolist()} does not match {expected_rect} up to the starting corner"
+    w, h, a = _canonical_rect_size(float(width), float(height), float(angle))
+    ew, eh, ea = _canonical_rect_size(expected_width, expected_height, expected_angle)
+    assert np.allclose([w, h], [ew, eh], atol=atol), f"size {(w, h)} != {(ew, eh)}"
+    # 1 deg matches the corner tolerance: 5 px over a ~260 px side is ~1.1 deg.
+    assert abs(a - ea) <= 1.0, f"angle {a} != {ea}"
+
+
+def test_assert_rect_matches_accepts_negative_near_minus_90_angle() -> None:
+    expected = _EXPECTED_RECTS[0]
+    _assert_rect_matches(expected[0], 178.4, 261.5, -89.174, expected)
+
+
 BOUNDNG_RECTANGLE_WORKFLOW = {
     "version": "1.0",
     "inputs": [
@@ -62,12 +113,6 @@ BOUNDNG_RECTANGLE_WORKFLOW = {
         }
     ],
 }
-
-
-_EXPECTED_RECTANGLES = [
-    (np.array([[322, 402], [325, 224], [586, 228], [583, 406]]), 5.0),
-    (np.array([[219, 82], [352, 57], [409, 363], [276, 388]]), 6.0),
-]
 
 
 @_NUMPY_ONLY
@@ -123,14 +168,13 @@ def test_rectangle_bounding_workflow(
         "angle" in result[0]["result"].data
     ), "'angle' data field must expected to be found in result"
 
-    for i, (expected_rect, atol) in enumerate(_EXPECTED_RECTANGLES):
-        _assert_rectangle_geometry(
+    for i, expected in enumerate(_EXPECTED_RECTS):
+        _assert_rect_matches(
             result[0]["result"]["rect"][i],
-            width=result[0]["result"]["width"][i],
-            height=result[0]["result"]["height"][i],
-            angle=result[0]["result"]["angle"][i],
-            expected_rect=expected_rect,
-            atol=atol,
+            result[0]["result"]["width"][i],
+            result[0]["result"]["height"][i],
+            result[0]["result"]["angle"][i],
+            expected,
         )
 
 
@@ -178,15 +222,10 @@ def test_rectangle_bounding_workflow_tensor_native(
         assert "height" in meta, "'height' geometry must be found in per-box metadata"
         assert "angle" in meta, "'angle' geometry must be found in per-box metadata"
 
-    for i, (expected_rect, atol) in enumerate(_EXPECTED_RECTANGLES):
-        metadata = detections.bboxes_metadata[i]
-        _assert_rectangle_geometry(
-            np.array(metadata["rect"]),
-            width=metadata["width"],
-            height=metadata["height"],
-            angle=metadata["angle"],
-            expected_rect=expected_rect,
-            atol=atol,
+    for i, expected in enumerate(_EXPECTED_RECTS):
+        meta = detections.bboxes_metadata[i]
+        _assert_rect_matches(
+            meta["rect"], meta["width"], meta["height"], meta["angle"], expected
         )
 
 
@@ -237,46 +276,8 @@ def test_rectangle_bounding_workflow_with_tensor_input(
         assert "height" in meta, "'height' geometry must be found in per-box metadata"
         assert "angle" in meta, "'angle' geometry must be found in per-box metadata"
 
-    for i, (expected_rect, atol) in enumerate(_EXPECTED_RECTANGLES):
-        metadata = detections.bboxes_metadata[i]
-        _assert_rectangle_geometry(
-            np.array(metadata["rect"]),
-            width=metadata["width"],
-            height=metadata["height"],
-            angle=metadata["angle"],
-            expected_rect=expected_rect,
-            atol=atol,
+    for i, expected in enumerate(_EXPECTED_RECTS):
+        meta = detections.bboxes_metadata[i]
+        _assert_rect_matches(
+            meta["rect"], meta["width"], meta["height"], meta["angle"], expected
         )
-
-
-def _assert_rectangle_geometry(
-    rect: np.ndarray,
-    *,
-    width: float,
-    height: float,
-    angle: float,
-    expected_rect: np.ndarray,
-    atol: float,
-) -> None:
-    # OpenCV can swap axes and shift the starting corner of equivalent rectangles.
-    _assert_rectangle_corners(rect, expected_rect=expected_rect, atol=atol)
-    assert width > 0
-    assert height > 0
-
-    reconstructed = cv.boxPoints(
-        (
-            tuple(rect.astype(float).mean(axis=0)),
-            (float(width), float(height)),
-            float(angle),
-        )
-    )
-    # The block truncates corners to integers and stores metadata as float16.
-    _assert_rectangle_corners(rect, expected_rect=reconstructed, atol=1.0)
-
-
-def _assert_rectangle_corners(
-    rect: np.ndarray, *, expected_rect: np.ndarray, atol: float
-) -> None:
-    candidates = np.stack([np.roll(rect, shift, axis=0) for shift in range(4)])
-    closest = np.argmin(np.max(np.abs(candidates - expected_rect), axis=(1, 2)))
-    np.testing.assert_allclose(candidates[closest], expected_rect, atol=atol, rtol=0)
