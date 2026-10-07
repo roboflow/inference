@@ -248,18 +248,69 @@ def test_complete_registry_matches_original_inventory(
         assert registry[key].registry_path == expected[key]
 
 
-def test_disabled_optional_flags_do_not_register_keys(monkeypatch):
-    """Keep disabled optional families out of the registry.
+@pytest.mark.parametrize(
+    "flag",
+    sorted(
+        json.loads(Path(__file__).with_name("registry_inventory.json").read_text())[
+            "flags"
+        ]
+    ),
+)
+@pytest.mark.parametrize("use_adapters", [False, True])
+@pytest.mark.parametrize("use_proxy", [False, True])
+def test_disabled_optional_flags_do_not_register_keys(
+    monkeypatch, flag, use_adapters, use_proxy
+):
+    """Exclude the historical keys controlled by each disabled flag.
 
     Args:
         monkeypatch: Pytest patch fixture.
+        flag: Inventory feature flag to disable independently.
+        use_adapters: Whether to select inference-models adapters.
+        use_proxy: Whether to select vLLM proxies.
     """
-    for flag in ("PALIGEMMA_ENABLED", "FLORENCE2_ENABLED", "QWEN_3_5_ENABLED"):
-        monkeypatch.setattr(env, flag, False)
+    from inference.models import vllm_proxy
+    from tests.inference.unit_tests.models.generate_registry_inventory import (
+        _original_registry,
+    )
+
+    inventory = json.loads(
+        Path(__file__).with_name("registry_inventory.json").read_text()
+    )
+    flags = dict.fromkeys(inventory["flags"], True)
+    enabled = _original_registry(
+        flags=flags, use_adapters=use_adapters, use_proxy=use_proxy
+    )
+    flags[flag] = False
+    disabled = _original_registry(
+        flags=flags, use_adapters=use_adapters, use_proxy=use_proxy
+    )
+    excluded = set(enabled) - set(disabled)
+    # Some families exist only with inference-models enabled.
+    if not excluded:
+        assert not use_adapters and flag in {
+            "COSMOS3_ENABLED",
+            "QWEN_3_5_ENABLED",
+            "QWEN_3_8_ENABLED",
+            "GLM_OCR_ENABLED",
+        }
+        return
+
+    for name, value in flags.items():
+        monkeypatch.setattr(env, name, value)
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", use_adapters)
+    monkeypatch.setattr(vllm_proxy, "VLLM_PROXY_ENABLED", use_proxy)
+
+    class _Module:
+        def __init__(self, name):
+            self.name = name
+
+        def __getattr__(self, name):
+            return type(name, (), {})
+
+    monkeypatch.setattr(lazy.importlib, "import_module", _Module)
     registry = runpy.run_path(utils.__file__)["ROBOFLOW_MODEL_TYPES"]
-    assert not any("paligemma" in variant for _, variant in registry)
-    assert not any("florence" in variant for _, variant in registry)
-    assert not any("qwen3_5" in variant for _, variant in registry)
+    assert not excluded.intersection(registry)
 
 
 def test_global_core_flag_still_disables_core_models(monkeypatch):
@@ -340,3 +391,23 @@ print(json.dumps([name for name in sys.modules
         env={**os.environ, "DISABLE_VERSION_CHECK": "True"},
     )
     assert json.loads(process.stdout.strip()) == []
+
+
+def test_registry_inventory_has_reproducible_provenance():
+    """Require a real source commit for the historical registry snapshot."""
+    inventory = json.loads(
+        Path(__file__).with_name("registry_inventory.json").read_text()
+    )
+    assert len(inventory["source_revision"]) == 40
+    process = subprocess.run(
+        ["git", "cat-file", "-t", inventory["source_revision"]],
+        capture_output=True,
+        text=True,
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stdout.strip() == "commit"
+    from tests.inference.unit_tests.models.generate_registry_inventory import (
+        _generate_inventory,
+    )
+
+    assert _generate_inventory(inventory["flags"]) == inventory

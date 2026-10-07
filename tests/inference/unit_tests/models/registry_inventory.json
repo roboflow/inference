@@ -1,5 +1,5 @@
 {
-  "source_revision": "c004776",
+  "source_revision": "fdd13b32c6f55f91d0a800277564bb40067c533b",
   "cases": {
     "adapters=False,proxy=False": {
       "inference.models:DinoV3Classification": [
