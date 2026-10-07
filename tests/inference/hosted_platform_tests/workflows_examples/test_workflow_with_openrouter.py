@@ -1,0 +1,260 @@
+import numpy as np
+import pytest
+
+from inference_sdk import InferenceHTTPClient
+from tests.inference.hosted_platform_tests.conftest import (
+    ROBOFLOW_API_KEY,
+    ROBOFLOW_MANAGED_API_KEY,
+    apply_auth_mode,
+)
+
+CLASSIFICATION_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/openrouter@v3",
+            "name": "openrouter",
+            "images": "$inputs.image",
+            "model_id": "openai/gpt-4o-mini",
+            "task_type": "classification",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "top_class",
+            "operations": [
+                {"type": "ClassificationPropertyExtract", "property_name": "top_class"}
+            ],
+            "data": "$steps.openrouter.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "openrouter_result",
+            "selector": "$steps.openrouter.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "top_class",
+            "selector": "$steps.top_class.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "error_status",
+            "selector": "$steps.openrouter.error_status",
+        },
+    ],
+}
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_classification_workflow(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+    auth_mode: str,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+    client = apply_auth_mode(client, auth_mode)
+
+    # when
+    result = client.run_workflow(
+        specification=CLASSIFICATION_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": ROBOFLOW_MANAGED_API_KEY,
+            "classes": ["cat", "dog"],
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "openrouter_result",
+        "top_class",
+        "error_status",
+    }, "Expected all outputs to be delivered"
+    assert (
+        isinstance(result[0]["openrouter_result"], str)
+        and len(result[0]["openrouter_result"]) > 0
+    ), "Expected non-empty string generated"
+    assert result[0]["top_class"] == "dog"
+    assert result[0]["error_status"] is False
+
+
+STRUCTURED_PROMPTING_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/openrouter@v3",
+            "name": "openrouter",
+            "images": "$inputs.image",
+            "model_id": "openai/gpt-4o-mini",
+            "task_type": "structured-answering",
+            "output_structure": {
+                "dogs_count": "count of dogs instances in the image",
+                "cats_count": "count of cats instances in the image",
+            },
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/json_parser@v1",
+            "name": "parser",
+            "raw_json": "$steps.openrouter.output",
+            "expected_fields": ["dogs_count", "cats_count"],
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "property_definition",
+            "operations": [{"type": "ToString"}],
+            "data": "$steps.parser.dogs_count",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.property_definition.output",
+        }
+    ],
+}
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_structured_parsing_workflow(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+    auth_mode: str,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+    client = apply_auth_mode(client, auth_mode)
+
+    # when
+    result = client.run_workflow(
+        specification=STRUCTURED_PROMPTING_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": ROBOFLOW_MANAGED_API_KEY,
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {"result"}, "Expected all outputs to be delivered"
+    assert result[0]["result"] == "2"
+
+
+VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "model_id"},
+        {
+            "type": "WorkflowParameter",
+            "name": "classes",
+            "default_value": [
+                "russell-terrier",
+                "wirehaired-pointing-griffon",
+                "beagle",
+            ],
+        },
+    ],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "general_detection",
+            "image": "$inputs.image",
+            "model_id": "$inputs.model_id",
+            "class_filter": ["dog"],
+        },
+        {
+            "type": "Crop",
+            "name": "cropping",
+            "image": "$inputs.image",
+            "predictions": "$steps.general_detection.predictions",
+        },
+        {
+            "type": "roboflow_core/openrouter@v3",
+            "name": "openrouter",
+            "images": "$steps.cropping.crops",
+            "model_id": "openai/gpt-4o-mini",
+            "task_type": "classification",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/detections_classes_replacement@v1",
+            "name": "classes_replacement",
+            "object_detection_predictions": "$steps.general_detection.predictions",
+            "classification_predictions": "$steps.openrouter.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.classes_replacement.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_workflow_with_secondary_classifier(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+    yolov8n_640_model_id: str,
+    auth_mode: str,
+) -> None:
+    # given
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+    client = apply_auth_mode(client, auth_mode)
+
+    # when
+    result = client.run_workflow(
+        specification=VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": ROBOFLOW_MANAGED_API_KEY,
+            "classes": ["russell-terrier", "wirehaired-pointing-griffon", "beagle"],
+            "model_id": yolov8n_640_model_id,
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all outputs to be delivered"
+    assert (
+        len(result[0]["predictions"]["predictions"]) > 0
+    ), "Expected at least one classified detection"
+    assert "dog" not in set(
+        [e["class"] for e in result[0]["predictions"]["predictions"]]
+    ), "Expected classes to be substituted"
