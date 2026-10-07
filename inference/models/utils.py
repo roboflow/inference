@@ -1524,23 +1524,53 @@ _MODEL_CLASS_EXPORTS = {
 for _export_name in _MODEL_CLASS_EXPORTS:
     del globals()[_export_name]
 
-__all__ = sorted(
-    {name for name in globals() if not name.startswith("_")}
-    | _MODEL_CLASS_EXPORTS.keys()
-)
+_PUBLIC_NAMES = {name for name in globals() if not name.startswith("_")}
+
+
+def _available_model_exports():
+    names = set()
+    for name, reference in _MODEL_CLASS_EXPORTS.items():
+        if reference.optional:
+            try:
+                __getattr__(name)
+            except AttributeError:
+                continue
+
+        names.add(name)
+
+    return names
 
 
 def __getattr__(name: str):
-    """Resolve a model-class export on first attribute access."""
+    """Resolve model exports and compute available star-import names on demand."""
+    if name == "__all__":
+        names = sorted(_PUBLIC_NAMES | _available_model_exports())
+        return names
+
     reference = _MODEL_CLASS_EXPORTS.get(name)
     if reference is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-    model_class = reference._resolve()
+    try:
+        model_class = reference._resolve()
+    except Exception as error:
+        if not reference.optional and not isinstance(error, ImportError):
+            raise
+
+        if reference.warning_message:
+            reference._warn_once(
+                reference.warning_message,
+                category=reference.warning_category,
+                stacklevel=2,
+            )
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r}"
+        ) from error
+
     return model_class
 
 
 def __dir__():
-    """Include deferred model-class exports in module introspection."""
-    names = sorted(set(globals()) | _MODEL_CLASS_EXPORTS.keys())
+    """Include available deferred model-class exports in module introspection."""
+    names = sorted(set(globals()) | {"__all__"} | _available_model_exports())
     return names

@@ -104,3 +104,57 @@ def test_original_public_model_names_resolve_to_classes(
 
     with pytest.raises(AttributeError):
         getattr(module, "UnknownModelClass")
+
+
+@pytest.mark.parametrize("operation", ["hasattr", "dir", "all", "star"])
+def test_missing_optional_exports_are_absent(monkeypatch, operation):
+    """Hide optional classes whose implementation import fails.
+
+    Args:
+        monkeypatch: Pytest patch fixture.
+        operation: Public module access operation to exercise first.
+    """
+    monkeypatch.setattr(env, "CORE_MODELS_ENABLED", True)
+    monkeypatch.setattr(env, "CORE_MODEL_SAM2_ENABLED", True)
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", False)
+    classes = {}
+
+    class _Module:
+        def __init__(self, path):
+            self.path = path
+
+        def __getattr__(self, name):
+            if self.path == "inference.models" and name == "SegmentAnything2":
+                raise ModuleNotFoundError("No module named 'sam2'")
+            return classes.setdefault((self.path, name), type(name, (), {}))
+
+    def _import(module_path):
+        if module_path == "inference.models.sam2.segment_anything2":
+            raise ModuleNotFoundError("No module named 'sam2'")
+        return _Module(module_path)
+
+    importer = Mock(side_effect=_import)
+    monkeypatch.setattr(lazy.importlib, "import_module", importer)
+    spec = importlib.util.spec_from_file_location("_missing_exports", utils.__file__)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    importer.assert_not_called()
+
+    if operation == "hasattr":
+        assert not hasattr(module, "SegmentAnything2")
+    elif operation == "dir":
+        assert "SegmentAnything2" not in dir(module)
+    elif operation == "all":
+        assert "SegmentAnything2" not in module.__all__
+    else:
+        namespace = {}
+        exec("from _missing_exports import *", namespace)
+        assert "SegmentAnything2" not in namespace
+        assert (
+            namespace["YOLOv8ObjectDetection"]
+            is classes[("inference.models", "YOLOv8ObjectDetection")]
+        )
+
+    with pytest.raises(AttributeError):
+        getattr(module, "SegmentAnything2")
