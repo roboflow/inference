@@ -36,7 +36,18 @@ def detect_max_batch_size(model) -> Optional[int]:
         bs = None
     if bs is not None:
         return bs
-    # TorchScript/TRT models store it in inference_config
+    # TRT models can have a generic static forward size that differs from the
+    # TensorRT engine profile. The profile is the actual inference limit.
+    trt_cfg = getattr(model, "_trt_config", None)
+    if trt_cfg is not None:
+        sbs = getattr(trt_cfg, "static_batch_size", None)
+        if sbs is not None:
+            return sbs
+        mdb = getattr(trt_cfg, "dynamic_batch_size_max", None)
+        if mdb is not None:
+            return mdb
+
+    # TorchScript models store their batch size in inference_config.
     cfg = getattr(model, "_inference_config", None)
     if cfg is not None:
         fwd = getattr(cfg, "forward_pass", None)
@@ -47,13 +58,6 @@ def detect_max_batch_size(model) -> Optional[int]:
             mdb = getattr(fwd, "max_dynamic_batch_size", None)
             if mdb is not None:
                 return mdb
-    # TRT config (separate from inference_config)
-    trt_cfg = getattr(model, "_trt_config", None)
-    if trt_cfg is not None:
-        sbs = getattr(trt_cfg, "static_batch_size", None)
-        if sbs is not None:
-            return sbs
-        return getattr(trt_cfg, "dynamic_batch_size_max", None)
     return None
 
 
