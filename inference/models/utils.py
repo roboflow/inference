@@ -1512,3 +1512,33 @@ if USE_INFERENCE_MODELS:
         ROBOFLOW_MODEL_TYPES[(local_task, LOCAL_INFERENCE_MODELS_MODEL_TYPE)] = (
             local_adapter
         )
+
+
+_MODEL_CLASS_EXPORTS = {
+    name: value
+    for name, value in list(globals().items())
+    if not name.startswith("_") and isinstance(value, _LazyModelClass)
+}
+for _export_name in _MODEL_CLASS_EXPORTS:
+    del globals()[_export_name]
+
+__all__ = sorted(
+    {name for name in globals() if not name.startswith("_")}
+    | _MODEL_CLASS_EXPORTS.keys()
+)
+
+
+def __getattr__(name: str):
+    """Resolve a model-class export on first attribute access."""
+    reference = _MODEL_CLASS_EXPORTS.get(name)
+    if reference is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    model_class = reference._resolve()
+    return model_class
+
+
+def __dir__():
+    """Include deferred model-class exports in module introspection."""
+    names = sorted(set(globals()) | _MODEL_CLASS_EXPORTS.keys())
+    return names
