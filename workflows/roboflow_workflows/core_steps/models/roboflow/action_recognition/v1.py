@@ -34,6 +34,7 @@ from roboflow_workflows.execution_engine.entities.base import (
 from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
     CLASSIFICATION_PREDICTION_KIND,
+    DICTIONARY_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
@@ -123,6 +124,16 @@ continues.
 `latest_predictions` holds the actions of the latest model call until the next
 call, as multi-label classification with a fixed confidence of 1.0. Connect it
 to Classification Label Visualization to show them on the video.
+
+For a temporally explicit overlay, connect `window` to Action Recognition
+Visualization. It contains `status` (collecting, ready or error), all `classes`
+from the latest call, inclusive `start_frame`/`end_frame` of the actual sampled
+window, the declared source `fps` (null when assumed), and `video_identifier`.
+The snapshot is held between calls; a failure clears its classes and bounds
+and keeps error status until a successful call. Ready with no classes means
+no action was reported under the class filter. The visualizer optionally uses
+`timeline` for accumulated intervals clipped to this window. Times derived
+from frames/FPS are estimates, not source PTS or inference latency.
 """
 
 
@@ -136,6 +147,10 @@ class _ActionRecognitionBookkeeping:
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
     latest_actions: List[str] = field(default_factory=list)
+    analysis_status: str = "collecting"
+    window_start_frame: Optional[int] = None
+    window_end_frame: Optional[int] = None
+    source_fps_is_fallback: bool = False
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -218,6 +233,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name="latest_predictions", kind=[CLASSIFICATION_PREDICTION_KIND]
             ),
+            OutputDefinition(name="window", kind=[DICTIONARY_KIND]),
         ]
 
     @classmethod
@@ -543,6 +559,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 "It uses 30 FPS for windowing and sampling."
             )
             self._warned_fps_video_ids.add(metadata.video_identifier)
+        bookkeeping.source_fps_is_fallback = True
         bookkeeping.source_fps = DEFAULT_SOURCE_FPS
         return DEFAULT_SOURCE_FPS
 
@@ -574,6 +591,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
             # Stale labels would look like a fresh result on screen.
             bookkeeping.latest_actions = []
+            bookkeeping.analysis_status = "error"
+            bookkeeping.window_start_frame = None
+            bookkeeping.window_end_frame = None
             return str(error)
         # Separates "the model output one range" from "the block merged
         # several".
@@ -598,6 +618,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             id_vocabulary=id_vocabulary,
             stride=max(1, math.ceil(sampling_stride)),
         )
+        bookkeeping.analysis_status = "ready"
+        bookkeeping.window_start_frame = bookkeeping.sampled[0][0]
+        bookkeeping.window_end_frame = bookkeeping.sampled[-1][0]
         # Sorted, so an action keeps its label slot while it persists across calls.
         bookkeeping.latest_actions = sorted(
             {
@@ -718,6 +741,18 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
             "latest_predictions": latest_predictions,
+            "window": {
+                "status": bookkeeping.analysis_status,
+                "classes": list(bookkeeping.latest_actions),
+                "start_frame": bookkeeping.window_start_frame,
+                "end_frame": bookkeeping.window_end_frame,
+                "fps": (
+                    None
+                    if bookkeeping.source_fps_is_fallback
+                    else bookkeeping.source_fps
+                ),
+                "video_identifier": image.video_metadata.video_identifier,
+            },
         }
 
     def _build_latest_predictions(

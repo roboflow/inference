@@ -50,6 +50,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
     CLASSIFICATION_PREDICTION_KIND,
+    DICTIONARY_KIND,
     STRING_KIND,
 )
 from inference_models import ActionRecognitionModel
@@ -284,10 +285,12 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
         "timeline",
         "error_status",
         "latest_predictions",
+        "window",
     ]
     assert outputs[0].kind == [ACTION_RECOGNITION_PREDICTION_KIND]
     assert outputs[1].kind == [STRING_KIND]
     assert outputs[2].kind == [CLASSIFICATION_PREDICTION_KIND]
+    assert outputs[3].kind == [DICTIONARY_KIND]
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
@@ -1379,3 +1382,145 @@ def test_latest_predictions_render_with_classification_label_visualization(
     )
 
     assert bool(np.any(output["image"].numpy_image)) is has_actions
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+def test_window_snapshot_tracks_partial_coverage_error_and_empty_recovery(tensor):
+    block, _ = _make_block(
+        responses=[[_model_segment("walk", 0, 1)], RuntimeError("failed"), []],
+        tensor=tensor,
+    )
+    color = {"tensor_rgb_color": [1, 2, 3]} if tensor else {}
+    results = [_run(block, _make_frame(n, **color)) for n in range(8)]
+    assert [r["window"]["status"] for r in results] == [
+        "collecting",
+        "collecting",
+        "ready",
+        "ready",
+        "error",
+        "error",
+        "ready",
+        "ready",
+    ]
+    # The first call has a partial model window: do not infer its start from
+    # the configured 1s window or the 0.5s stride. Samples were frames 0 and 2.
+    assert results[2]["window"] == {
+        "status": "ready",
+        "classes": ["walk"],
+        "start_frame": 0,
+        "end_frame": 2,
+        "fps": 4.0,
+        "video_identifier": "stream-0",
+    }
+    assert results[3]["window"] == results[2]["window"]
+    assert results[5]["error_status"] == ""  # Existing transient output is unchanged.
+    assert results[5]["window"]["start_frame"] is None
+    assert results[5]["window"]["end_frame"] is None
+    assert results[5]["window"]["classes"] == []
+    assert results[6]["window"]["classes"] == []  # Ready-empty differs from error.
+    assert (results[6]["window"]["start_frame"], results[6]["window"]["end_frame"]) == (
+        4,
+        6,
+    )
+    # Consumers must not be able to mutate the model's held classes.
+    results[2]["window"]["classes"].append("injected")
+    assert results[3]["window"]["classes"] == ["walk"]
+
+
+def test_window_uses_actual_sample_end_and_only_declared_fps():
+    block, _ = _make_block()
+    results = [
+        _run(block, _make_frame(n, fps=None, measured_fps=100)) for n in range(16)
+    ]
+    # Inference uses the 30 FPS fallback internally; visualization must not
+    # present that assumption as the source clock, nor use measured throughput.
+    assert results[-1]["window"]["status"] == "ready"
+    assert results[-1]["window"]["fps"] is None
+    block, _ = _make_block()
+    for n in range(4):
+        result = _run(block, _make_frame(n), stride_seconds=0.75)
+    assert result["window"]["end_frame"] == 2  # Call frame 3 was not sampled.
+
+
+def test_window_resets_on_rewind_filter_change_and_other_stream():
+    block, _ = _make_block(responses=[[_model_segment("walk")]])
+    for n in range(3):
+        _run(block, _make_frame(n))
+    assert (
+        _run(block, _make_frame(3, video_id="other"))["window"]["status"]
+        == "collecting"
+    )
+    assert _run(block, _make_frame(0))["window"]["status"] == "collecting"
+    for n in (1, 2):
+        _run(block, _make_frame(n))
+    assert (
+        _run(block, _make_frame(3), class_filter=["run"])["window"]["status"]
+        == "collecting"
+    )
+
+
+@pytest.mark.parametrize("mode", ["compact", "timeline"])
+def test_action_recognition_workflow_connects_both_visualization_modes(mode):
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    model = _FakeActionRecognitionModel(responses=[[_model_segment("walk", 0, 1)]])
+    model.video_sampling = VideoSampling(window_seconds=1, sample_fps=2, min_frames=1)
+    provider = MagicMock()
+    provider.load_action_recognition_model.return_value = model
+    workflow = {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
+        "steps": [
+            {
+                "type": "roboflow_core/roboflow_action_recognition_model@v1",
+                "name": "actions",
+                "images": "$inputs.image",
+                "model_id": "cosmos-3-edge",
+                "stride_seconds": 0.5,
+            },
+            {
+                "type": "roboflow_core/action_recognition_visualization@v1",
+                "name": "visualize",
+                "image": "$inputs.image",
+                "window": "$steps.actions.window",
+                "mode": mode,
+                **(
+                    {"timeline": "$steps.actions.timeline"}
+                    if mode == "timeline"
+                    else {}
+                ),
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "image",
+                "selector": "$steps.visualize.image",
+            },
+            {
+                "type": "JsonField",
+                "name": "window",
+                "selector": "$steps.actions.window",
+            },
+        ],
+    }
+    engine = ExecutionEngine.init(
+        workflow_definition=workflow,
+        init_parameters={
+            "workflows_core.model_manager": provider,
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+    )
+    for frame in range(4):
+        small = _make_frame(frame)
+        image = WorkflowImageData.copy_and_replace(
+            origin_image_data=small, numpy_image=np.zeros((180, 320, 3), dtype=np.uint8)
+        )
+        result = engine.run(runtime_parameters={"image": image})[0]
+    assert len(model.calls) == 1
+    assert result["window"]["classes"] == ["walk"]
+    assert result["window"]["end_frame"] == 2
+    assert result["image"].video_metadata.frame_number == 3
+    assert result["image"].numpy_image.shape == (180, 320, 3)
+    assert np.any(result["image"].numpy_image)

@@ -37,6 +37,7 @@ nav:
   - "Models": "https://docs.roboflow.com/models/supported-models"
   - "Workflows": "https://docs.roboflow.com/workflows"
   - "Classifier Embeddings": workflows/classifier_embeddings.md
+  - "Action Recognition Visualization": workflows/action_recognition_visualization.md
   - "Reference": "https://docs.roboflow.com/reference/inference/choosing-the-right-tool"
   - "Changelog": "https://github.com/roboflow/inference/releases"
 
