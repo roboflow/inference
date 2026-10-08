@@ -19,6 +19,7 @@ dependencies = [
   "accelerate>=1.15.0,<2.0.0",
   "einops>=0.7.0,<1.0.0",
   "peft>=0.18.1",
+  "safetensors>=0.8.0",
   "num2words~=0.5.14",
   # <0.48 ships no libbitsandbytes_cuda130.so, so every 4-bit load fails against a
   # CUDA 13 torch build. That is what the plain PyPI wheel and the torch-cu130

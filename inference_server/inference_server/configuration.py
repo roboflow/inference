@@ -19,6 +19,12 @@ from typing import Optional
 from inference_models.configuration import INFERENCE_HOME as _MODELS_INFERENCE_HOME
 from inference_models.configuration import OFFLINE_MODE as _MODELS_OFFLINE_MODE
 from inference_models.configuration import SECURE_GATEWAY as _MODELS_SECURE_GATEWAY
+from inference_models.configuration import (
+    VLLM_PROXY_ENABLED as _MODELS_VLLM_PROXY_ENABLED,
+)
+from inference_models.configuration import (
+    VLLM_REQUEST_TIMEOUT_S as _MODELS_VLLM_REQUEST_TIMEOUT_S,
+)
 from inference_models.utils.environment import (
     get_boolean_from_env,
     get_float_from_env,
@@ -89,7 +95,15 @@ def _telemetry_env_name(name: str) -> str:
 
 # ── State timeouts (gateway.py) ───────────────────────────────────────────
 LOAD_WAIT_S = get_float_from_env("INFERENCE_LOAD_WAIT_S", default=10.0)
-INFER_TIMEOUT_S = get_float_from_env("INFERENCE_INFER_TIMEOUT_S", default=30.0)
+# vLLM pools: must cover VLLM_REQUEST_TIMEOUT_S, or long generations 504 first.
+INFER_TIMEOUT_S = get_float_from_env(
+    "INFERENCE_INFER_TIMEOUT_S",
+    default=(
+        max(30.0, _MODELS_VLLM_REQUEST_TIMEOUT_S)
+        if _MODELS_VLLM_PROXY_ENABLED
+        else 30.0
+    ),
+)
 # Hard ceiling on a single request body for the v2 dispatch path; enforced
 # both from Content-Length and while streaming (chunked uploads have none).
 # Also the aggregate budget for URL-sourced images, so URL inputs are bounded

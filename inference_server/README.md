@@ -80,7 +80,7 @@ without a code change here:
 | `PINNED_MODELS` | | Comma-separated model IDs loaded at startup like `INFERENCE_PRELOAD_MODELS` but pinned against eviction; same `model_id:api_key` form |
 | `PRELOAD_HF_IDS` | | Comma-separated OWLv2 Hugging Face IDs loaded unpinned at startup as `owlv2/<name>` (the part after the last `/`); readiness does not wait for them |
 | `INFERENCE_LOAD_WAIT_S` | `10.0` | Seconds `ensure_loaded()` waits before reporting a load timeout |
-| `INFERENCE_INFER_TIMEOUT_S` | `30.0` | Per-request inference timeout |
+| `INFERENCE_INFER_TIMEOUT_S` | `30.0` (with `VLLM_PROXY_ENABLED`: `max(30.0, VLLM_REQUEST_TIMEOUT_S)`) | Per-request inference timeout |
 | `INFERENCE_MAX_BODY_BYTES` | `100MB` | Max request body / aggregate URL-image size |
 | `INFERENCE_MAX_IMAGES_PER_REQUEST` | `32` | Max images per request (body, multipart, or `?image=<url>` params) |
 | `API_BASE_URL` | `https://api.roboflow.com` | Roboflow API for auth |

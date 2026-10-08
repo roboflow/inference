@@ -595,3 +595,42 @@ def test_stream_manager_memory_settings_ignore_unparsable_values():
     )
 
     assert settings[3:5] == ["None", "10"]
+
+
+def _infer_timeout(**env):
+    base = {
+        k: v
+        for k, v in os.environ.items()
+        if k
+        not in (
+            "VLLM_PROXY_ENABLED",
+            "VLLM_REQUEST_TIMEOUT_S",
+            "INFERENCE_INFER_TIMEOUT_S",
+        )
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from inference_server import configuration as c; "
+            "print(c.INFER_TIMEOUT_S)",
+        ],
+        env={**base, "OFFLINE_MODE": "false", **env},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    return float(result.stdout.strip().splitlines()[-1])
+
+
+@pytest.mark.parametrize(
+    "env,expected",
+    [
+        ({}, 30.0),
+        ({"VLLM_PROXY_ENABLED": "true"}, 120.0),
+        ({"VLLM_PROXY_ENABLED": "true", "VLLM_REQUEST_TIMEOUT_S": "200"}, 200.0),
+        ({"VLLM_PROXY_ENABLED": "true", "INFERENCE_INFER_TIMEOUT_S": "45"}, 45.0),
+    ],
+)
+def test_infer_timeout_default_follows_vllm_proxy(env, expected):
+    assert _infer_timeout(**env) == expected
