@@ -3,7 +3,7 @@ import math
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, Callable, List, Optional, Union
 
 import cv2
 import numpy as np
@@ -412,6 +412,7 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         fps: Optional[float] = None,
         confidence: Optional[Confidence] = None,
         duration_seconds: Optional[float] = None,
+        check_cancelled: Optional[Callable[[], None]] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         """Classify sampled RGB frames using the Cosmos generation path.
@@ -423,6 +424,7 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
             confidence (Optional[Confidence]): Ignored because Cosmos is unscored.
             duration_seconds (Optional[float]): Ignored. Spans use the supplied
                 sample count and FPS for their bounds.
+            check_cancelled (Optional[Callable]): Request control between model calls.
             **kwargs: Additional text-generation options.
 
         Returns:
@@ -433,23 +435,29 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         """
         if fps is None:
             raise ValueError("fps is required for action recognition")
+        if check_cancelled is not None:
+            check_cancelled()
 
         normalized_frames = _normalize_frames(frames)
         if not normalized_frames:
             return []
         if self._fine_tune_prefix_allowed_tokens_fn is not None:
-            return self._infer_fine_tuned(
+            result = self._infer_fine_tuned(
                 frames=normalized_frames,
                 class_filter=class_names,
                 fps=fps,
                 **kwargs,
             )
-        return self._infer_zero_shot(
-            frames=normalized_frames,
-            class_names=class_names,
-            fps=fps,
-            **kwargs,
-        )
+        else:
+            result = self._infer_zero_shot(
+                frames=normalized_frames,
+                class_names=class_names,
+                fps=fps,
+                **kwargs,
+            )
+        if check_cancelled is not None:
+            check_cancelled()
+        return result
 
     def _infer_fine_tuned(
         self,

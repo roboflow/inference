@@ -167,6 +167,7 @@ def read_frame_windows(
     frame_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     decode_state: Optional[VideoDecodeState] = None,
     window_end_frames: Optional[Sequence[int]] = None,
+    check_cancelled: Optional[Callable[[], None]] = None,
 ) -> Iterator[List[np.ndarray]]:
     """Read every window's frames in one pass, yielding a window at a time.
 
@@ -189,6 +190,7 @@ def read_frame_windows(
         decode_state: Observed decoded count and whether decoding reached EOF.
         window_end_frames: Exclusive source endpoints to read before yielding.
             These include the real interval after a window's final sample.
+        check_cancelled: Request control called during decoding and before yields.
 
     Yields:
         Lists of prepared RGB frames in each window's requested order.
@@ -216,6 +218,8 @@ def read_frame_windows(
         position = 0
         stop = max(last_of, default=-1)
         while emitted < len(windows) and position <= stop:
+            if check_cancelled is not None and position % 32 == 0:
+                check_cancelled()
             read_succeeded, frame = capture.read()
             if not read_succeeded:
                 state.reached_end = True
@@ -227,6 +231,8 @@ def read_frame_windows(
                     rgb_frame = frame_transform(rgb_frame)
                 by_index[position] = rgb_frame
             while emitted < len(windows) and last_of[emitted] <= position:
+                if check_cancelled is not None:
+                    check_cancelled()
                 yield _window_frames(emitted)
                 emitted += 1
                 # Hold only what a window still to come asks for.

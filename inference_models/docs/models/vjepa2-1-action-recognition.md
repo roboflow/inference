@@ -102,6 +102,11 @@ Workflows has no separate final model call when a stream ends.
 HTTP and Workflows store resized CPU `uint8` frames before normalization and GPU transfer.
 A nominal 160-frame window at 512×512 holds 120 MiB of pixels.
 The token limit does not bound total memory: decoding, weights, activations, and concurrent calls add further costs.
+Calls that share a V-JEPA model serialize normalization, GPU transfer, inference, and result materialization.
+
+HTTP video processing uses a 600-second deadline by default, set with `ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS` on the server.
+The server stops scheduling work when it detects a disconnected caller or an expired deadline.
+An active model call finishes before cleanup. Deadline failures return HTTP 504.
 
 HTTP releases frames after later windows no longer need them.
 Workflows discards old samples and caps retained state at 256 streams and 5,000 timeline entries per stream, plus an output snapshot.

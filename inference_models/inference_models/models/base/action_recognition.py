@@ -169,6 +169,7 @@ class ActionRecognitionModel(ABC):
         fps: Optional[float] = None,
         confidence: Optional[Confidence] = None,
         duration_seconds: Optional[float] = None,
+        check_cancelled: Optional[Callable[[], None]] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         """Classify RGB frames and return segments in their index space.
@@ -185,6 +186,8 @@ class ActionRecognitionModel(ABC):
                 Models with supports_confidence=False ignore this option.
             duration_seconds (Optional[float]): Observed window duration before
                 padding. Only models with supports_observed_duration=True use it.
+            check_cancelled (Optional[Callable]): Raises when request work must stop.
+                Models call it at safe boundaries, never inside an active GPU operation.
             **kwargs: Additional model-specific inference options.
 
         Returns:
@@ -199,6 +202,7 @@ class ActionRecognitionModel(ABC):
         fps: Optional[float] = None,
         confidence: Optional[Confidence] = None,
         duration_seconds: Optional[float] = None,
+        check_cancelled: Optional[Callable[[], None]] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         return self.infer(
@@ -207,6 +211,7 @@ class ActionRecognitionModel(ABC):
             fps=fps,
             confidence=confidence,
             duration_seconds=duration_seconds,
+            check_cancelled=check_cancelled,
             **kwargs,
         )
 

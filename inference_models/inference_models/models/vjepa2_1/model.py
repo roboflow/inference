@@ -2,7 +2,7 @@
 
 import json
 import math
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from threading import Lock
 from typing import Callable, Optional, Union
@@ -339,6 +339,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
         fps=None,
         confidence: Optional[Confidence] = None,
         duration_seconds: Optional[float] = None,
+        check_cancelled: Optional[Callable[[], None]] = None,
         **kwargs,
     ):
         """Predict scored spans using detection's confidence modes.
@@ -350,6 +351,8 @@ class VJepaActionRecognition(ActionRecognitionModel):
             confidence: Numeric override, model-eval recommendations with "best",
                 or the package default with "default" or None.
             duration_seconds: Duration used to clip the output spans.
+            check_cancelled: Request control invoked before allocation, while
+                waiting for admission, and after result materialization.
             **kwargs: Additional inference parameters.
 
         Returns:
@@ -401,7 +404,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
             raise ModelInputError("Invalid V-JEPA window duration")
         end_limit = min(end_limit, sampling.max_frames)
 
-        with self._lock:
+        with self._admit(check_cancelled):
             predictions = self._infer_window(
                 frames,
                 class_names=class_names,
@@ -409,6 +412,22 @@ class VJepaActionRecognition(ActionRecognitionModel):
                 end_limit=end_limit,
             )
         return predictions
+
+    @contextmanager
+    def _admit(self, check_cancelled):
+        if check_cancelled is None:
+            with self._lock:
+                yield
+        else:
+            check_cancelled()
+            while not self._lock.acquire(timeout=0.1):
+                check_cancelled()
+            try:
+                check_cancelled()
+                yield
+                check_cancelled()
+            finally:
+                self._lock.release()
 
     def _infer_window(self, frames, *, class_names, threshold, end_limit):
         # The caller holds admission until this helper releases its tensor locals.

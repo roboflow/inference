@@ -239,6 +239,35 @@ def test_shared_model_admits_preprocessing_and_releases_after_error(first_call_f
     assert not lock.locked()
 
 
+def test_cancelled_call_does_not_allocate_while_waiting_for_model():
+    cancelled = Event()
+    waiting = Event()
+    model = VJepaActionRecognition(None, config(), ["a", "b"], torch.device("cpu"))
+
+    def check_cancelled():
+        waiting.set()
+        if cancelled.is_set():
+            raise RuntimeError("request cancelled")
+
+    model._lock.acquire()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                model.infer,
+                [np.zeros((8, 8, 3), dtype=np.uint8)],
+                check_cancelled=check_cancelled,
+            )
+            assert waiting.wait(5)
+            cancelled.set()
+            with pytest.raises(RuntimeError, match="request cancelled"):
+                future.result(timeout=5)
+    finally:
+        cancelled.set()
+        model._lock.release()
+
+    assert not model._lock.locked()
+
+
 @pytest.mark.parametrize(
     "kwargs, message",
     [

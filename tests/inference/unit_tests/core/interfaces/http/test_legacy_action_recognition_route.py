@@ -168,6 +168,8 @@ def test_legacy_cosmos_ignores_explicit_confidence(monkeypatch) -> None:
         adapters.InferenceModelsActionRecognitionAdapter
     )
     adapter._model = SimpleNamespace(
+        supports_confidence=False,
+        supports_observed_duration=False,
         video_sampling=VideoSampling(window_seconds=2, sample_fps=4, min_frames=1),
         class_names=["walk"],
         resolved_model=None,
@@ -178,10 +180,12 @@ def test_legacy_cosmos_ignores_explicit_confidence(monkeypatch) -> None:
     )
     monkeypatch.setattr(adapters, "probe_video", lambda **kwargs: (4, 8))
     monkeypatch.setattr(
-        adapters, "read_frame_windows", lambda **kwargs: iter([[None] * 8])
+        adapters, "read_frame_windows", lambda **kwargs: ([None] * 8 for _ in range(1))
     )
     manager.infer_from_request_sync.side_effect = (
-        lambda model_id, request: adapter.infer_from_request(request)
+        lambda model_id, request, **kwargs: adapter.infer_from_request(
+            request, **kwargs
+        )
     )
 
     with TestClient(interface.app) as client:
@@ -215,3 +219,36 @@ def test_action_recognition_input_error_returns_400(monkeypatch) -> None:
 
     assert response.status_code == 400, response.text
     assert "Unknown V-JEPA class filter" in response.json()["message"]
+
+
+@pytest.mark.parametrize("typed_endpoint", [False, True])
+@pytest.mark.parametrize("disconnected", [False, True])
+def test_action_routes_propagate_request_control(
+    monkeypatch, typed_endpoint, disconnected
+):
+    from inference.core.interfaces.http import video_processing
+
+    interface, manager = _build_interface(monkeypatch, lambda_mode=False)
+    monkeypatch.setattr(video_processing.from_thread, "run", lambda *args: disconnected)
+
+    def expire(model_id, request, *, processing_control):
+        processing_control.deadline = 0
+        processing_control.check()
+
+    manager.infer_from_request_sync.side_effect = expire
+    with TestClient(interface.app) as client:
+        if typed_endpoint:
+            response = client.post(
+                "/infer/action_recognition",
+                json={
+                    "model_id": PATH_MODEL_ID,
+                    "video": {"type": "url", "value": "https://example.com/clip.mp4"},
+                },
+            )
+        else:
+            response = client.post(
+                f"/{PATH_MODEL_ID}", params={"image": "https://example.com/clip.mp4"}
+            )
+
+    assert response.status_code == (499 if disconnected else 504)
+    assert manager.infer_from_request_sync.call_count == (0 if disconnected else 1)

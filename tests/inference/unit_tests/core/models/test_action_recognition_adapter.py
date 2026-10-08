@@ -449,11 +449,56 @@ def test_a_negative_duration_cap_removes_the_limit(monkeypatch):
 def _side_handed_to_the_reader(model) -> object:
     with patch(f"{MODULE}.video_source_path") as source_path, patch(
         f"{MODULE}.probe_video", return_value=(10.0, 100)
-    ), patch(f"{MODULE}.read_frame_windows", return_value=iter([])) as reader:
+    ), patch(
+        f"{MODULE}.read_frame_windows", return_value=(item for item in [])
+    ) as reader:
         source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
         source_path.return_value.__exit__ = MagicMock(return_value=False)
         _adapter(model).infer_from_request(_request())
     return reader.call_args.kwargs["max_frame_side"]
+
+
+def test_cancellation_after_one_window_closes_decoder_and_source(monkeypatch):
+    from inference.core.models import inference_models_adapters as adapters
+    from inference.core.utils.video_processing import (
+        VideoProcessingCancelledError,
+        VideoProcessingControl,
+    )
+
+    state = {"cancelled": False, "source_closed": False}
+
+    @contextlib.contextmanager
+    def source(**kwargs):
+        try:
+            yield "/tmp/clip"
+        finally:
+            state["source_closed"] = True
+
+    class CancellingModel(_FakeModel):
+        def infer(self, frames, **kwargs):
+            self.calls.append(kwargs)
+            state["cancelled"] = True
+            return []
+
+    model = CancellingModel([], ["walk"], VideoSampling(window_seconds=4, sample_fps=4))
+    capture = MagicMock()
+    capture.isOpened.return_value = True
+    capture.read.return_value = (True, np.zeros((8, 8, 3), dtype=np.uint8))
+    control = VideoProcessingControl(
+        timeout_seconds=60, is_disconnected=lambda: state["cancelled"]
+    )
+    monkeypatch.setattr(adapters, "video_source_path", source)
+    monkeypatch.setattr(adapters, "probe_video", lambda **kwargs: (4.0, 128))
+
+    with patch(
+        "inference.core.utils.video_utils.cv2.VideoCapture", return_value=capture
+    ):
+        with pytest.raises(VideoProcessingCancelledError):
+            _adapter(model).infer_from_request(_request(), processing_control=control)
+
+    assert len(model.calls) == 1
+    assert state["source_closed"]
+    capture.release.assert_called_once()
 
 
 def test_an_untrained_model_is_read_at_the_1080p_ceiling() -> None:

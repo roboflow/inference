@@ -2,6 +2,7 @@ import base64
 import io
 from collections import OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from contextlib import ExitStack, closing
 from inspect import Parameter, signature
 from io import BytesIO
 from threading import local
@@ -51,6 +52,7 @@ from inference.core.entities.responses.inference import (
     SemanticSegmentationPrediction,
 )
 from inference.core.env import (
+    ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS,
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
@@ -83,6 +85,7 @@ from inference.core.utils.action_recognition_results import (
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
+from inference.core.utils.video_processing import VideoProcessingControl
 from inference.core.utils.video_utils import (
     VideoDecodeState,
     probe_video,
@@ -2159,8 +2162,15 @@ class InferenceModelsActionRecognitionAdapter(Model):
         )
 
     def infer_from_request(
-        self, request: ActionRecognitionInferenceRequest
+        self,
+        request: ActionRecognitionInferenceRequest,
+        *,
+        processing_control: Optional[VideoProcessingControl] = None,
     ) -> ActionRecognitionInferenceResponse:
+        control = processing_control or VideoProcessingControl(
+            timeout_seconds=ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS
+        )
+        control.check()
         sampling = self._model.video_sampling
         default_confidence = getattr(self._model, "confidence_threshold", None)
         class_filter = request.class_filter or None
@@ -2191,7 +2201,8 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 threshold = thresholds
         with video_source_path(
             video_type=request.video.type, value=request.video.value
-        ) as path:
+        ) as path, ExitStack() as cleanup:
+            control.check()
             source_fps, frame_count = probe_video(path=path)
             _ensure_clip_fits_the_duration_cap(
                 frame_count=frame_count, source_fps=source_fps
@@ -2237,16 +2248,22 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 )
                 for window in windows
             ]
-            window_frames = read_frame_windows(
-                path=path,
-                windows=[window.frame_indices for window in windows],
-                decode_state=decode_state,
-                window_end_frames=window_limits,
-                **decode_kwargs,
+            window_frames = cleanup.enter_context(
+                closing(
+                    read_frame_windows(
+                        path=path,
+                        windows=[window.frame_indices for window in windows],
+                        decode_state=decode_state,
+                        window_end_frames=window_limits,
+                        check_cancelled=control.check,
+                        **decode_kwargs,
+                    )
+                )
             )
             for window, planned_limit, frames in zip(
                 windows, window_limits, window_frames
             ):
+                control.check()
                 if len(frames) < max(1, sampling.min_frames):
                     continue
                 windows_classified += 1
@@ -2284,8 +2301,10 @@ class InferenceModelsActionRecognitionAdapter(Model):
                     frames=frames,
                     class_names=class_filter,
                     fps=window.sample_fps,
+                    check_cancelled=control.check,
                     **infer_kwargs,
                 )
+                control.check()
                 if candidates is not None:
                     result_budget.check_candidate_count(len(segments))
                     candidate_start = len(candidates)
@@ -2350,6 +2369,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
             candidates=candidates,
         )
         self._attach_resolved_model_metadata(response)
+        control.check()
         result_budget.check_response(
             timeline,
             response.model_dump(mode="json", exclude={"timeline", "candidates"}),
