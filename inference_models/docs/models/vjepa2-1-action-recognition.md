@@ -75,6 +75,10 @@ The newer, recommended HTTP endpoint `/infer/action_recognition` uses fractions,
 Set `include_candidates: true` to return unmerged predictions, including those below the threshold.
 The `timeline` remains filtered.
 Candidate output grows with video length and stays in memory for the request.
+HTTP defaults to at most 250,000 candidates and a 64 MiB encoded response.
+The server administrator can change `MAX_ACTION_RECOGNITION_CANDIDATES` and `MAX_ACTION_RECOGNITION_RESPONSE_BYTES` to positive values.
+Requests that exceed either limit fail with HTTP 413 and return no partial results.
+The server rejects known oversized candidate requests before model calls and applies both limits as results accumulate.
 
 ## Inputs and limits
 

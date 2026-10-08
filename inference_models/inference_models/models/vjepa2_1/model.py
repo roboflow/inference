@@ -305,6 +305,19 @@ class VJepaActionRecognition(ActionRecognitionModel):
     def confidence_threshold(self):
         return self._config["post_processing"]["confidence_threshold"]
 
+    def estimate_candidate_count(self, sampled_frames: int, *, class_names=None) -> int:
+        """Bound one candidate per sampled frame and requested class.
+
+        Args:
+            sampled_frames (int): Total frames across planned model calls.
+            class_names (Optional[List[str]]): Requested class filter.
+
+        Returns:
+            int: Maximum unfiltered candidate count.
+        """
+        classes = self._classes if class_names is None else set(class_names)
+        return sampled_frames * len(classes)
+
     @property
     def video_sampling(self):
         inputs, post = self._config["network_input"], self._config["post_processing"]

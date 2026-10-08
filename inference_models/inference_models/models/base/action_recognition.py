@@ -112,6 +112,20 @@ class ActionRecognitionModel(ABC):
     supports_confidence: bool = False
     supports_observed_duration: bool = False
 
+    def estimate_candidate_count(
+        self, sampled_frames: int, *, class_names: Optional[List[str]] = None
+    ) -> Optional[int]:
+        """Estimate the maximum unfiltered output count when the model knows it.
+
+        Args:
+            sampled_frames (int): Total sampled frames across all windows.
+            class_names (Optional[List[str]]): Requested class filter.
+
+        Returns:
+            Optional[int]: Upper bound, or None when the model cannot provide one.
+        """
+        return None
+
     @property
     def frame_storage_transform(
         self,

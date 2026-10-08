@@ -56,6 +56,8 @@ from inference.core.env import (
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
     GCP_SERVERLESS,
+    MAX_ACTION_RECOGNITION_CANDIDATES,
+    MAX_ACTION_RECOGNITION_RESPONSE_BYTES,
     MAX_VIDEO_DURATION_SECONDS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
@@ -75,6 +77,9 @@ from inference.core.models.semantic_segmentation_utils import (
 )
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
+from inference.core.utils.action_recognition_results import (
+    ActionRecognitionResultBudget,
+)
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
@@ -112,8 +117,8 @@ from inference_models.configuration import (
     get_rfdetr_pipeline_depth,
 )
 from inference_models.models.base.action_recognition import (
-    action_confidence_mask,
     ActionRecognitionModel,
+    action_confidence_mask,
     effective_max_frame_side,
     plan_windows,
 )
@@ -2159,6 +2164,10 @@ class InferenceModelsActionRecognitionAdapter(Model):
         sampling = self._model.video_sampling
         default_confidence = getattr(self._model, "confidence_threshold", None)
         class_filter = request.class_filter or None
+        result_budget = ActionRecognitionResultBudget(
+            max_candidates=MAX_ACTION_RECOGNITION_CANDIDATES,
+            max_bytes=MAX_ACTION_RECOGNITION_RESPONSE_BYTES,
+        )
         # Only a model that carries its own class list has ids to report. A
         # request filter is not a vocabulary: a zero-shot model ignores it and
         # answers in its own words, so a caption that happens to match one of
@@ -2198,6 +2207,13 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 if request.include_candidates and self._model.supports_confidence
                 else None
             )
+            if candidates is not None:
+                estimate = self._model.estimate_candidate_count(
+                    sum(len(window.frame_indices) for window in windows),
+                    class_names=class_filter,
+                )
+                if estimate is not None:
+                    result_budget.check_candidate_count(estimate)
             windows_classified = 0
             frame_transform = getattr(self._model, "frame_storage_transform", None)
             decode_kwargs = (
@@ -2271,6 +2287,8 @@ class InferenceModelsActionRecognitionAdapter(Model):
                     **infer_kwargs,
                 )
                 if candidates is not None:
+                    result_budget.check_candidate_count(len(segments))
+                    candidate_start = len(candidates)
                     merge_window_segments(
                         timeline=candidates,
                         frame_numbers=window.frame_indices[: len(frames)],
@@ -2281,6 +2299,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
                         frame_limit=window_frame_limit,
                         merge=False,
                     )
+                    result_budget.add_candidates(candidates[candidate_start:])
                     segment_thresholds = (
                         torch.tensor(
                             [
@@ -2311,6 +2330,12 @@ class InferenceModelsActionRecognitionAdapter(Model):
                     frame_limit=window_frame_limit,
                     sample_stride=source_fps / window.sample_fps,
                 )
+                result_budget.check_response(
+                    timeline,
+                    {
+                        "per_class_confidence_thresholds": per_class_thresholds,
+                    },
+                )
             if decode_state.reached_end:
                 frame_count = decode_state.frame_count
         timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
@@ -2325,6 +2350,10 @@ class InferenceModelsActionRecognitionAdapter(Model):
             candidates=candidates,
         )
         self._attach_resolved_model_metadata(response)
+        result_budget.check_response(
+            timeline,
+            response.model_dump(mode="json", exclude={"timeline", "candidates"}),
+        )
         return response
 
     def preprocess(self, *args, **kwargs):

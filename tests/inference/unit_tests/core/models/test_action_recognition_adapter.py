@@ -24,6 +24,9 @@ class _FakeModel:
     supports_confidence = False
     supports_observed_duration = False
 
+    def estimate_candidate_count(self, sampled_frames, *, class_names=None):
+        return None
+
     def __init__(self, responses, class_names=None, sampling=None):
         self.responses = list(responses)
         self._class_names = class_names
@@ -98,6 +101,32 @@ def test_candidates_preserve_timeline_at_float32_threshold_boundaries(confidence
     assert len(responses[0].timeline) == 1
     assert responses[0].timeline[0].class_name == "walk"
     assert len(responses[1].candidates) == 2
+
+
+@pytest.mark.parametrize("known_estimate", [False, True])
+def test_candidate_overflow_fails_before_response_or_known_oversized_inference(
+    monkeypatch, known_estimate
+):
+    from inference.core.exceptions import PayloadTooLargeError
+    from inference.core.models import inference_models_adapters as adapters
+
+    model = _FakeModel(
+        responses=[[ActionRecognitionPrediction(0, 1, "walk", 0.9, True)] * 2],
+        class_names=["walk"],
+    )
+    model.supports_confidence = True
+    model.confidence_threshold = 0.5
+    model.estimate_candidate_count = lambda *args, **kwargs: (
+        2 if known_estimate else None
+    )
+    monkeypatch.setattr(adapters, "MAX_ACTION_RECOGNITION_CANDIDATES", 1)
+    request = _request()
+    request.include_candidates = True
+
+    with _clip(frame_count=3, source_fps=10), pytest.raises(PayloadTooLargeError):
+        _adapter(model).infer_from_request(request)
+
+    assert len(model.calls) == (0 if known_estimate else 1)
 
 
 @contextlib.contextmanager
