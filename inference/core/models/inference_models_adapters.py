@@ -42,6 +42,7 @@ from inference.core.entities.responses.inference import (
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
     LMMInferenceResponse,
+    MaskCoordinateMetadata,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
@@ -568,12 +569,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
-        # The published request surface is an enum plus a float; post-processing
-        # consumes a single resolution factor. Translate here and consume both
-        # source keys, which the deeper stages do not accept.
-        kwargs["masks_resolution_factor"] = _resolve_masks_resolution_factor(
+        allow_reduced_masks = kwargs.pop("allow_reduced_mask_resolution", False)
+        resolution_factor = _resolve_masks_resolution_factor(
             mask_decode_mode=kwargs.pop("mask_decode_mode", None),
             tradeoff_factor=kwargs.pop("tradeoff_factor", None),
+        )
+        kwargs["masks_resolution_factor"] = (
+            resolution_factor if allow_reduced_masks else 1.0
         )
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
@@ -1053,19 +1055,22 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             # thread-local pinned scratch buffers. Only scalar values and
             # polygon/RLE lists may be stored on responses below; do not return
             # those arrays or any view derived from them.
-            # Contours are extracted in mask coordinates. When the mask grid
-            # is not the image grid they have to be lifted before they are
-            # reported; equal sizes short-circuit to a no-op. This also breaks
-            # any view into the pinned scratch buffers noted above, since the
-            # scaled polygons are freshly allocated.
             mask_size = getattr(det, "mask_size", None)
             produced_against = resolve_mask_frame_size(preproc_metadata)
-            if (
-                not return_in_rle
-                and mask_size is not None
-                and tuple(mask_size)
-                != (produced_against.height, produced_against.width)
-            ):
+            different_grid = mask_size is not None and tuple(mask_size) != (H, W)
+            # Async responses receive the already-resolved model factor.
+            native_grid = kwargs.get("allow_reduced_mask_resolution", False) or (
+                kwargs.get("masks_resolution_factor", 1.0) != 1.0
+            )
+            mask_metadata = None
+            if native_grid and different_grid:
+                mask_metadata = MaskCoordinateMetadata(
+                    height=int(mask_size[0]),
+                    width=int(mask_size[1]),
+                    scale_x=W / mask_size[1],
+                    scale_y=H / mask_size[0],
+                )
+            if not return_in_rle and different_grid and not native_grid:
                 polys_or_rles = scale_polygons_to_image(
                     polys_or_rles,
                     mask_size=ImageDimensions(
@@ -1152,6 +1157,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     InstanceSegmentationInferenceResponseDC(
                         predictions=predictions,
                         image=InferenceResponseImageDC(width=W, height=H),
+                        mask_metadata=mask_metadata,
                     )
                 )
             else:
@@ -1159,6 +1165,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     InstanceSegmentationInferenceResponse(
                         predictions=predictions,
                         image=InferenceResponseImage(width=W, height=H),
+                        mask_metadata=mask_metadata,
                     )
                 )
         return responses

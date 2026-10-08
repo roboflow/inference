@@ -44,9 +44,16 @@ def draw_detection_predictions(
             thickness=inference_request.visualization_stroke_width,
         )
         if hasattr(box, "points"):
+            points = box.points
+            mask_metadata = getattr(inference_response, "mask_metadata", None)
+            if mask_metadata is not None:
+                points = [
+                    Point(x=p.x * mask_metadata.scale_x, y=p.y * mask_metadata.scale_y)
+                    for p in points
+                ]
             image = draw_instance_segmentation_points(
                 image=image,
-                points=box.points,
+                points=points,
                 color=color,
                 thickness=inference_request.visualization_stroke_width,
             )

@@ -1,3 +1,4 @@
+import copy
 import os
 
 import numpy as np
@@ -21,12 +22,13 @@ BASE_URL = os.environ.get("BASE_URL", "http://localhost")
 @pytest.mark.skipif(
     not USE_INFERENCE_MODELS, reason="Resolution control uses inference-models"
 )
+@pytest.mark.parametrize("opt_in", [None, False, True])
 @pytest.mark.parametrize("response_format", ["polygon", "rle"])
 @pytest.mark.parametrize(
     "mode,factor", [("accurate", 1.0), ("tradeoff", 0.5), ("fast", 0.0)]
 )
 def test_mask_resolution_round_trip_through_server(
-    auth_mode: str, response_format: str, mode: str, factor: float
+    auth_mode: str, response_format: str, mode: str, factor: float, opt_in
 ) -> None:
     payload = {
         "image": {"type": "url", "value": "https://media.roboflow.com/dog.jpeg"},
@@ -36,6 +38,9 @@ def test_mask_resolution_round_trip_through_server(
         "mask_decode_mode": mode,
         "tradeoff_factor": factor,
     }
+    if opt_in is not None:
+        payload["allow_reduced_mask_resolution"] = opt_in
+
     response = requests.post(
         f"{BASE_URL}:{PORT}/infer/instance_segmentation",
         json=without_api_key_in_header_mode(auth_mode, payload),
@@ -44,7 +49,21 @@ def test_mask_resolution_round_trip_through_server(
     )
     response.raise_for_status()
     result = response.json()
-    detections = sv.Detections.from_inference(result)
+    image_space_result = copy.deepcopy(result)
+    metadata = result.get("mask_metadata")
+    if opt_in and mode != "accurate":
+        assert metadata["coordinate_system"] == "mask_grid"
+        assert metadata["width"] > 0 and metadata["height"] > 0
+        if response_format == "polygon":
+            for prediction in image_space_result["predictions"]:
+                for point in prediction["points"]:
+                    assert 0 <= point["x"] < metadata["width"]
+                    assert 0 <= point["y"] < metadata["height"]
+                    point["x"] *= metadata["scale_x"]
+                    point["y"] *= metadata["scale_y"]
+    else:
+        assert metadata is None
+    detections = sv.Detections.from_inference(image_space_result)
     height, width = result["image"]["height"], result["image"]["width"]
     assert len(detections) > 0
     assert all(
@@ -63,7 +82,9 @@ def test_mask_resolution_round_trip_through_server(
         }
         assert len(sizes) == 1
         mask_height, mask_width = sizes.pop()
-        if mode == "accurate":
+        if metadata:
+            assert (mask_height, mask_width) == (metadata["height"], metadata["width"])
+        if mode == "accurate" or not opt_in:
             assert (mask_height, mask_width) == (height, width)
         else:
             assert mask_height < height and mask_width < width

@@ -10,7 +10,7 @@ from tests.inference.hosted_platform_tests.conftest import (
 )
 
 
-@pytest.mark.parametrize("version", ["v4", "v5"])
+@pytest.mark.parametrize("version", ["v4"])
 @pytest.mark.parametrize(
     "mode,factor", [("accurate", 1.0), ("tradeoff", 0.5), ("fast", 0.0)]
 )

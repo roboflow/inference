@@ -1,12 +1,4 @@
-"""Mask-resolution behaviour of the instance-segmentation block versions.
-
-`mask_decode_mode` and `tradeoff_factor` are declared on every version's
-manifest but were discarded by the server until recently. Now that they are
-honoured, forwarding them from an older version would silently change the masks
-an existing workflow produces, so only `@v5` forwards them. These tests pin
-that split, and the manifest parity between a version and its tensor-native
-sibling.
-"""
+"""Existing workflow versions preserve their mask-resolution contracts."""
 
 import re
 from pathlib import Path
@@ -38,15 +30,14 @@ def _blocks_dir() -> Path:
 BLOCKS_DIR = _blocks_dir()
 
 PINNED_VERSIONS = ["v1", "v2", "v3", "v4"]
-FORWARDING_VERSIONS = ["v5"]
-ALL_VERSIONS = PINNED_VERSIONS + FORWARDING_VERSIONS
+ALL_VERSIONS = PINNED_VERSIONS
 
 
 def _source(version: str, tensor: bool) -> str:
     """Read a block implementation's source.
 
     Args:
-        version: Block version directory stem, such as ``"v5"``.
+        version: Block version directory stem, such as ``"v4"``.
         tensor: Whether to read the tensor-native sibling.
 
     Returns:
@@ -117,7 +108,7 @@ def test_legacy_versions_pin_local_conditionally_and_remote_unconditionally(
     assert source.count('mask_decode_mode="accurate",') == 1
 
 
-@pytest.mark.parametrize("version", PINNED_VERSIONS + FORWARDING_VERSIONS)
+@pytest.mark.parametrize("version", PINNED_VERSIONS)
 def test_tensor_siblings_pin_unconditionally(version: str) -> None:
     # given
     # the reason here is downstream rather than the backend: nothing under
@@ -128,16 +119,6 @@ def test_tensor_siblings_pin_unconditionally(version: str) -> None:
     # then
     assert source.count('mask_decode_mode="accurate",') == 2
     assert "USE_INFERENCE_MODELS" not in source
-
-
-@pytest.mark.parametrize("version", FORWARDING_VERSIONS)
-def test_v5_forwards_what_the_caller_set(version: str) -> None:
-    # given
-    source = _source(version, tensor=False)
-
-    # then
-    assert source.count("mask_decode_mode=mask_decode_mode,") == 4
-    assert 'mask_decode_mode="accurate",' not in source
 
 
 class TestPinningIsObservedAtTheCallSite:
@@ -174,14 +155,6 @@ class TestPinningIsObservedAtTheCallSite:
             f"{version}{'_tensor' if tensor else ''} has {len(outbound)} pinned "
             "outbound call sites, expected 2 (local and remote)"
         )
-
-    def test_v5_non_tensor_has_no_pinned_call_sites(self) -> None:
-        # given
-        source = _source("v5", tensor=False)
-
-        # then
-        assert 'mask_decode_mode="accurate",' not in source
-        assert source.count("mask_decode_mode=mask_decode_mode,") == 4
 
 
 @pytest.mark.parametrize("version", ALL_VERSIONS)
@@ -224,64 +197,68 @@ def test_remote_request_preserves_versioned_mask_settings(
     )
 
     config = client.configure.call_args.kwargs["inference_configuration"]
-    assert config.mask_decode_mode == ("fast" if version == "v5" else "accurate")
-    assert config.tradeoff_factor == (0.0 if version == "v5" else 1.0)
-    assert config.response_mask_format == ("rle" if version in {"v4", "v5"} else None)
+    assert config.mask_decode_mode == "accurate"
+    assert config.tradeoff_factor == 1.0
+    assert not config.allow_reduced_mask_resolution
+    assert config.response_mask_format == ("rle" if version == "v4" else None)
 
 
-def test_v5_reduced_rle_output_can_be_decoded_on_original_image(monkeypatch):
-    import numpy as np
-    import supervision as sv
-    from pycocotools import mask as mask_utils
-    from roboflow_workflows.core_steps.models.roboflow.instance_segmentation import v5
-    from roboflow_workflows.core_steps.visualizations.common.utils import (
-        ensure_dense_masks,
+@pytest.mark.parametrize("version", ALL_VERSIONS)
+@pytest.mark.parametrize("local_backend", [True, False])
+def test_local_requests_preserve_backend_mask_contract(
+    monkeypatch, version, local_backend
+):
+    from importlib import import_module
+    from unittest.mock import MagicMock
+
+    module = import_module(
+        f"roboflow_workflows.core_steps.models.roboflow.instance_segmentation.{version}"
     )
-    from roboflow_workflows.execution_engine.constants import (
-        RLE_MASK_KEY_IN_SV_DETECTIONS,
+    block_class = getattr(
+        module, f"RoboflowInstanceSegmentationModelBlock{version.upper()}"
+    )
+    block = block_class(
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=module.StepExecutionMode.LOCAL,
+    )
+    block._post_process_result = MagicMock(return_value=[])
+    monkeypatch.setattr(module, "USE_INFERENCE_MODELS", local_backend)
+
+    block.run_locally(
+        images=[],
+        model_id="model/1",
+        class_agnostic_nms=False,
+        class_filter=None,
+        confidence=0.5,
+        iou_threshold=0.5,
+        max_detections=10,
+        max_candidates=20,
+        mask_decode_mode="fast",
+        tradeoff_factor=0.0,
+        disable_active_learning=True,
+        active_learning_target_dataset=None,
+        **(
+            {"enforce_dense_masks_in_inference_models": False}
+            if version != "v4"
+            else {}
+        ),
     )
 
-    block = object.__new__(v5.RoboflowInstanceSegmentationModelBlockV5)
-    mask = np.zeros((20, 30), dtype=np.uint8)
-    mask[5:10, 8:14] = 1
-    rle = mask_utils.encode(np.asfortranarray(mask))
-    rle["counts"] = rle["counts"].decode("utf-8")
-    prediction = {
-        "image": {"height": 200, "width": 300},
-        "predictions": [
-            {
-                "x": 110,
-                "y": 75,
-                "width": 60,
-                "height": 50,
-                "confidence": 0.9,
-                "class_id": 0,
-                "class": "car",
-                "rle": rle,
-            }
-        ],
+    request = block._model_manager.run_instance_segmentation.call_args.kwargs
+    assert request["mask_decode_mode"] == ("accurate" if local_backend else "fast")
+    assert request["tradeoff_factor"] == (1.0 if local_backend else 0.0)
+    assert not request.get("allow_reduced_mask_resolution", False)
+
+
+def test_v5_is_not_registered():
+    from roboflow_workflows.core_steps.loader import load_blocks
+
+    identifiers = {
+        identifier
+        for block in load_blocks()
+        for identifier in block.get_manifest().model_fields["type"].annotation.__args__
     }
-    monkeypatch.setattr(
-        v5,
-        "attach_parents_coordinates_to_batch_of_sv_detections",
-        lambda images, predictions: predictions,
-    )
 
-    output = block._post_process_result(
-        images=[], predictions=[prediction], class_filter=None, model_id="model/1"
-    )
-
-    detections = output[0]["predictions"]
-    encoded = detections.data[RLE_MASK_KEY_IN_SV_DETECTIONS][0]
-    decoded = mask_utils.decode(encoded).astype(bool)
-    assert decoded.shape == (200, 300)
-    np.testing.assert_array_equal(decoded, detections.mask[0])
-    assert decoded[50:100, 80:140].all()
-    assert decoded.sum() == 50 * 60
-    detections.mask = None
-    detections = ensure_dense_masks(detections)
-    annotated = sv.MaskAnnotator().annotate(
-        scene=np.zeros((200, 300, 3), dtype=np.uint8), detections=detections
-    )
-    assert annotated.any()
-    assert rle["size"] == [20, 30]
+    assert "roboflow_core/roboflow_instance_segmentation_model@v4" in identifiers
+    assert "roboflow_core/roboflow_instance_segmentation_model@v5" not in identifiers

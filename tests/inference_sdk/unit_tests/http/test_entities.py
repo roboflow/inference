@@ -1,7 +1,10 @@
+import pytest
+
 from inference_sdk.config import outbound_service_secret
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
     DEFAULT_IMAGE_EXTENSIONS,
+    INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
     HTTPClientMode,
     InferenceConfiguration,
@@ -282,3 +285,28 @@ def test_to_legacy_call_parameters_context_overrides_explicit_count_inference_tr
     # then
     assert parameters["countinference"] is False
     assert parameters["service_secret"] == "ctx-secret"
+
+
+@pytest.mark.parametrize("client_mode", [HTTPClientMode.V0, HTTPClientMode.V1])
+@pytest.mark.parametrize("opt_in", [None, False, True])
+def test_mask_resolution_opt_in_is_serialized_only_when_selected(client_mode, opt_in):
+    configuration = InferenceConfiguration(allow_reduced_mask_resolution=opt_in)
+
+    parameters = configuration.to_api_call_parameters(
+        client_mode=client_mode, task_type=INSTANCE_SEGMENTATION_TASK
+    )
+
+    if opt_in is None:
+        assert "allow_reduced_mask_resolution" not in parameters
+    else:
+        assert parameters["allow_reduced_mask_resolution"] is opt_in
+
+
+def test_mask_resolution_opt_in_does_not_leak_to_object_detection():
+    configuration = InferenceConfiguration(allow_reduced_mask_resolution=True)
+
+    parameters = configuration.to_api_call_parameters(
+        client_mode=HTTPClientMode.V1, task_type=OBJECT_DETECTION_TASK
+    )
+
+    assert "allow_reduced_mask_resolution" not in parameters
