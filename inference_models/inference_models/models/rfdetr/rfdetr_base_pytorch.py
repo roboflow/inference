@@ -296,24 +296,24 @@ class RFDETRSemSmallConfig(ModelConfig):
 
 
 class RFDETRSemMediumConfig(ModelConfig):
-    """Semantic segmentation subnet of the RF-DETR NAS Cloud supernet (DINOv2-base)."""
+    """Semantic segmentation subnet of the RF-DETR NAS Edge supernet (DINOv2-small)."""
 
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
-        "dinov2_windowed_base"
+        "dinov2_windowed_small"
     )
-    hidden_dim: int = 512
+    hidden_dim: int = 256
     dec_layers: int = 1
-    sa_nheads: int = 16
-    ca_nheads: int = 32
-    dec_n_points: int = 4
+    sa_nheads: int = 8
+    ca_nheads: int = 16
+    dec_n_points: int = 2
     num_windows: int = 2
-    patch_size: int = 20
+    patch_size: int = 12
     projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
     out_feature_indexes: List[int] = [3, 6, 9, 12]
     num_classes: int = 151
-    positional_encoding_size: int = 440 // 20
+    positional_encoding_size: int = 432 // 12
     pretrain_weights: Optional[str] = "rf-detr-sem-medium-ade20k.pth"
-    resolution: int = 440
+    resolution: int = 432
     semantic_segmentation_head: bool = True
 
 
