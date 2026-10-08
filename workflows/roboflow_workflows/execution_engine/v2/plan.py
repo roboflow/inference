@@ -89,6 +89,7 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
+    Set,
     Tuple,
     Union,
 )
@@ -97,6 +98,12 @@ from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.context import (
     ExecutionContext,
     use_execution_context,
+)
+from roboflow_workflows.execution_engine.v2.controls import (
+    ControlPanel,
+    ControlPlan,
+    ControlView,
+    StepActivity,
 )
 from roboflow_workflows.execution_engine.v2.data import (
     AXIS_KIND_DYNAMIC_NESTING,
@@ -149,10 +156,14 @@ from roboflow_workflows.execution_engine.v2.sources import (
 )
 from roboflow_workflows.execution_engine.v2.targets import (
     ImplementationChoice,
+    QualityRequest,
     QualitySettings,
     Target,
+    UnusedQualityHint,
     check_choice,
+    check_quality_label,
     default_implementation,
+    unused_quality_hints,
 )
 
 if TYPE_CHECKING:
@@ -195,7 +206,10 @@ SkipReason = Literal[
     "empty_value",
     "all_children_filtered",
 ]
-OutputStatus = Literal["complete", "filtered"]
+OutputStatus = Literal["complete", "filtered", "omitted"]
+"""``complete``: a payload (possibly empty). ``filtered``: a gate or an absent
+input prevented one (``None`` in rows). ``omitted``: a disabled control left the
+producer out; the key is absent from rows (``controls``)."""
 
 
 @dataclass(frozen=True)
@@ -1492,7 +1506,7 @@ class CompileOptions:
     Raises:
         ContractError: On an unknown policy or mode, a negative limit, a
             target that is not a ``Target``, a malformed output request or a
-            quality that is not a non-empty label.
+            quality that is not a literal label (``check_quality_label``).
     """
 
     mutation_conflicts: Literal["warn", "error"] = "warn"
@@ -1530,12 +1544,8 @@ class CompileOptions:
             if len(set(names)) != len(names):
                 raise ContractError(f"requested_outputs repeats a name: {list(names)}")
             object.__setattr__(self, "requested_outputs", names)
-        if self.quality is not None and (
-            not isinstance(self.quality, str) or not self.quality
-        ):
-            raise ContractError(
-                f"quality must be a non-empty label or None, got {self.quality!r}"
-            )
+        if self.quality is not None:
+            check_quality_label(self.quality, location="CompileOptions.quality")
         if self.block_execution not in BLOCK_EXECUTIONS:
             raise ContractError(
                 f"block_execution must be one of {list(BLOCK_EXECUTIONS)}, "
@@ -1577,13 +1587,17 @@ class CompiledWorkflow:
         retrospective: The root ``retrospective`` stage
             (``CompiledRetrospective``) that analyses a recording of this
             plan; ``None`` when not declared.
-        quality: The root ``execution`` quality settings of the definition
-            (workflow label and step labels); empty when not declared.
+        quality_settings: The root ``execution`` quality settings of the
+            definition (workflow label and step labels); empty when not
+            declared.
         demand: What the compiled plan computes and why
             (``compilation.demand.DemandPlan``): the requested outputs, the
             retained steps with their reasons, the pruned steps and the
             outputs each retained step must produce. ``None`` for a plan
             built by hand, which then wants every output of every step.
+        controls: The compiled root ``controls`` section (``ControlPlan``):
+            what a session may enable, disable or set at run time without a
+            new plan. ``ControlPlan.EMPTY`` when not declared.
 
     Raises:
         ContractError: On duplicate step paths or child inputs, references to
@@ -1619,8 +1633,9 @@ class CompiledWorkflow:
     reactions: ReactionPlan = field(default_factory=lambda: ReactionPlan.EMPTY)
     recording: Optional["RecordingPlan"] = None
     retrospective: Optional["CompiledRetrospective"] = None
-    quality: QualitySettings = field(default_factory=QualitySettings)
+    quality_settings: QualitySettings = field(default_factory=QualitySettings)
     demand: Optional["DemandPlan"] = None
+    controls: ControlPlan = field(default_factory=lambda: ControlPlan.EMPTY)
     _axis_origins: Mapping[str, AxisOrigin] = field(
         init=False, repr=False, compare=False
     )
@@ -1647,6 +1662,7 @@ class CompiledWorkflow:
         _check_selections(self)
         _check_reactions(self)
         _check_demand(self)
+        _check_controls(self)
         object.__setattr__(self, "_axis_origins", _collect_axis_origins(self))
 
     @property
@@ -1945,12 +1961,37 @@ class CompiledWorkflow:
             description["recording"] = self.recording.describe()
         if self.retrospective is not None:
             description["retrospective"] = self.retrospective.describe()
-        if not self.quality.is_empty:
-            description["quality"] = self.quality.describe()
+        if not self.quality_settings.is_empty or self.options.quality is not None:
+            description["quality"] = {
+                **self.quality_settings.describe(),
+                "deployment": self.options.quality,
+                "unused": [item.describe() for item in self.unused_quality_hints()],
+            }
         if self.demand is not None:
             description["demand"] = self.demand.describe()
+        if not self.controls.is_empty:
+            description["controls"] = self.controls.describe()
 
         return description
+
+    def unused_quality_hints(self) -> Tuple[UnusedQualityHint, ...]:
+        """Return the workflow and deployment quality labels no step honours.
+
+        Such a hint compiles (legacy blocks and step overrides legitimately
+        ignore it); this makes a typo or a fully overridden hint visible.
+
+        Returns:
+            One entry per unused hint with the reason and available labels.
+        """
+        hints = QualityRequest(
+            workflow=self.quality_settings.workflow, deployment=self.options.quality
+        )
+        unused = unused_quality_hints(
+            hints,
+            steps=((step.path, step.spec, step.implementation) for step in self.steps),
+        )
+
+        return unused
 
     def wanted_outputs(self, path: StepPath) -> FrozenSet[str]:
         """Return the outputs a step must produce for this plan.
@@ -2163,10 +2204,11 @@ def _check_origin(
 def _check_selections(plan: CompiledWorkflow) -> None:
     """Every step's selection and mode must follow the plan's options and settings."""
     options = plan.options
-    if not isinstance(plan.quality, QualitySettings):
+    settings = plan.quality_settings
+    if not isinstance(settings, QualitySettings):
         raise ContractError(
-            f"CompiledWorkflow quality must be QualitySettings, got "
-            f"{type(plan.quality).__name__}"
+            f"CompiledWorkflow quality_settings must be QualitySettings, got "
+            f"{type(settings).__name__}"
         )
     for step in plan.steps:
         location = format_step_path(step.path)
@@ -2177,9 +2219,15 @@ def _check_selections(plan: CompiledWorkflow) -> None:
                 f"{choice.target.describe()}, but the plan targets "
                 f"{options.target.describe()}"
             )
-        expected_request = plan.quality.request_for(
-            step.path, deployment=options.quality
-        )
+        expected_request = settings.request_for(step.path, deployment=options.quality)
+        if choice is None and not expected_request.is_empty:
+            # An implicit choice would run the block without the honoured
+            # label and lose the selection's provenance.
+            raise ContractError(
+                f"{location} has no ImplementationChoice, but the plan's settings "
+                f"and options request quality {expected_request.describe()}; "
+                "select one with select_implementation(quality_request=...)"
+            )
         if choice is not None and choice.request != expected_request:
             raise ContractError(
                 f"{location} selected {choice.name!r} for quality request "
@@ -2196,38 +2244,128 @@ def _check_selections(plan: CompiledWorkflow) -> None:
 
 
 def _check_demand(plan: CompiledWorkflow) -> None:
-    """The demand record, when present, must speak about this plan's steps."""
+    """The demand record, when present, must speak about this plan's steps.
+
+    Its wanted outputs must cover everything the plan reads, so a hand-built
+    or altered record cannot tell a block to omit an output some retained
+    reader, workflow output, group field or operator input needs.
+    """
     demand = plan.demand
     if demand is None:
         return
 
+    if demand.requested != plan.options.requested_outputs:
+        raise ContractError(
+            f"demand records request {demand.requested}, but the plan's options "
+            f"request {plan.options.requested_outputs}"
+        )
     paths = {step.path for step in plan.steps}
-    unknown = sorted(set(demand.wanted) - paths, key=format_step_path)
-    if unknown:
-        raise ContractError(
-            "demand records wanted outputs of steps the plan does not contain: "
-            f"{[format_step_path(path) for path in unknown]}"
-        )
-    missing = sorted(paths - set(demand.wanted), key=format_step_path)
-    if missing:
-        raise ContractError(
-            "demand records no wanted outputs for steps "
-            f"{[format_step_path(path) for path in missing]}"
-        )
+    for name, recorded in (
+        ("wanted outputs", demand.wanted),
+        ("retention reasons", demand.retained),
+    ):
+        if set(recorded) != paths:
+            raise ContractError(
+                f"demand records {name} for steps "
+                f"{sorted(format_step_path(path) for path in recorded)}, but the "
+                f"plan contains {sorted(format_step_path(path) for path in paths)}"
+            )
     pruned = sorted(set(demand.pruned) & paths, key=format_step_path)
     if pruned:
         raise ContractError(
             "demand records steps as pruned that the plan still contains: "
             f"{[format_step_path(path) for path in pruned]}"
         )
+    read = outputs_read(plan, plan_readers(plan))
     for step in plan.steps:
-        unknown_outputs = sorted(demand.wanted[step.path] - set(step.outputs))
+        wanted = demand.wanted[step.path]
+        unknown_outputs = sorted(wanted - set(step.outputs))
         if unknown_outputs:
             raise ContractError(
                 f"demand wants outputs {unknown_outputs} of "
                 f"{format_step_path(step.path)}, which declares "
                 f"{sorted(step.outputs)}"
             )
+        unwanted_reads = sorted(read.get(step.path, set()) - wanted)
+        if unwanted_reads:
+            raise ContractError(
+                f"demand does not want outputs {unwanted_reads} of "
+                f"{format_step_path(step.path)}, but the plan reads them (a "
+                "step binding, workflow output, group field or operator input)"
+            )
+
+
+def _check_controls(plan: CompiledWorkflow) -> None:
+    """Every control must speak about this plan's steps and inputs."""
+    paths = {step.path for step in plan.steps}
+    for name, control in plan.controls.controls.items():
+        if control.type == "input":
+            if control.input not in plan.inputs:
+                raise ContractError(
+                    f"control {name!r} controls input {control.input!r}, which the "
+                    f"plan does not declare; inputs: {sorted(plan.inputs)}"
+                )
+            continue
+        unknown = sorted(set(control.closure) - paths, key=format_step_path)
+        if unknown or not set(control.members) <= set(control.closure):
+            raise ContractError(
+                f"control {name!r} names steps "
+                f"{[format_step_path(path) for path in unknown]} the plan does not "
+                "contain, or members outside its closure"
+            )
+
+
+def plan_readers(plan: CompiledWorkflow) -> List[Source]:
+    """Return every value source the plan reads at run time.
+
+    Args:
+        plan: The plan.
+
+    Returns:
+        Sources of the workflow outputs, output group fields, operator inputs
+        and step bindings, in that order.
+    """
+    readers: List[Source] = [output.source for output in plan.outputs]
+    readers.extend(
+        output.source for group in plan.output_groups for output in group.outputs
+    )
+    readers.extend(
+        item.source for operator in plan.operators.values() for item in operator.inputs
+    )
+    readers.extend(binding.source for step in plan.steps for binding in step.bindings)
+
+    return readers
+
+
+def outputs_read(
+    plan: CompiledWorkflow, sources: Iterable[Source]
+) -> Dict[StepPath, Set[str]]:
+    """Return the step outputs ``sources`` read, by producing step.
+
+    Child inputs and outputs are followed to the value behind them; a
+    wildcard reads every output of its step. Sources that are not step
+    outputs (inputs, source ports, constants) read nothing.
+
+    Args:
+        plan: The plan the sources belong to.
+        sources: Value sources.
+
+    Returns:
+        Read output names per producing step path.
+    """
+    steps = {step.path: step for step in plan.steps}
+    read: Dict[StepPath, Set[str]] = {}
+    for source in sources:
+        origin = plan.origin(source)
+        if not isinstance(origin, StepPort):
+            continue
+        names = read.setdefault(origin.step, set())
+        if origin.output == "*":
+            names.update(steps[origin.step].outputs)
+        else:
+            names.add(origin.output)
+
+    return read
 
 
 def step_execution(
@@ -3072,6 +3210,17 @@ class ExecutionObserver:
     ) -> None:
         """An operator of an active run finished, or was closed after ``error``."""
 
+    def on_step_omitted(self, *, step: StepPath, reason: str) -> None:
+        """A step of this run was not called because a control is disabled."""
+
+    def on_group_omitted(
+        self, *, run_id: str, group: str, source: str, pulse: PulseKey, reason: str
+    ) -> None:
+        """A group was not delivered: every field reads a disabled control's steps."""
+
+    def on_state_reset(self, *, step: StepPath, control: str, epoch: int) -> None:
+        """``reset_state()`` of a step ran once for an enabling of ``control``."""
+
 
 ErrorHandler = Callable[[StepExecutionError], None]
 
@@ -3143,6 +3292,25 @@ class ExecutionSession:
         self._use_lock = threading.Lock()
         self._direct_runs = 0
         self._pipeline_open = False
+        # Live controls: one panel per session; a reset guard and the epoch
+        # last reset for every step a reset_on_enable control may reset.
+        self.controls = ControlPanel(plan)
+        self._activities = {
+            path: StepActivity() for path in plan.controls.reset_members()
+        }
+        self._reset_epochs: Dict[StepPath, int] = dict.fromkeys(self._activities, 0)
+
+    def activity(self, path: StepPath) -> Optional[StepActivity]:
+        """Reset guard of a step, or ``None`` when no control may reset it."""
+        return self._activities.get(tuple(path))
+
+    def reset_epoch(self, path: StepPath) -> int:
+        """Epoch the step's instance was last reset for (``0``: never)."""
+        return self._reset_epochs[tuple(path)]
+
+    def mark_reset(self, path: StepPath, epoch: int) -> None:
+        """Record that the step's instance was reset for ``epoch``."""
+        self._reset_epochs[tuple(path)] = epoch
 
     def run(self, inputs: Mapping[str, Any]) -> "RunResult":
         """Execute the plan once with this session's block instances.
@@ -3552,6 +3720,8 @@ class RunResult:
         trace: Ordered JSON-friendly execution events, when recorded.
         input_row_count: Known row count of selected input-axis entries, kept
             even when all their payloads are filtered.
+        controls: Version and settings of the control snapshot the run used
+            (``ControlView``); ``None`` for a plan without controls.
 
     Raises:
         ContractError: When selections, statuses and buffer entries disagree.
@@ -3566,6 +3736,7 @@ class RunResult:
     run_id: str
     trace: Tuple[Mapping[str, Any], ...] = ()
     input_row_count: int = 0
+    controls: Optional[ControlView] = None
 
     def __post_init__(self) -> None:
         if (

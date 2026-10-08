@@ -273,7 +273,7 @@ def compile_composition(
     _add_operator_dependencies(nodes)
     _add_child_output_dependencies(nodes, child_gates=child_gates)
     order = _order(nodes)
-    quality = (
+    quality_settings = (
         QualitySettings()
         if handler_workflow
         else _quality_settings(composition.root, sites=sites)
@@ -303,7 +303,7 @@ def compile_composition(
             order=order,
             catalogue=catalogue,
             options=options,
-            quality=quality,
+            quality_settings=quality_settings,
         )
     check_operator_kinds(operators, catalogue=catalogue)
     steps = tuple(planned.values())
@@ -351,7 +351,7 @@ def compile_composition(
             output_groups=output_groups,
             operators=operators,
             reactions=reactions,
-            quality=quality,
+            quality_settings=quality_settings,
         )
     except ContractError as error:
         raise WorkflowCompileError(f"Compiled plan is inconsistent: {error}") from error
@@ -581,13 +581,15 @@ def _plan_step(
     order: Tuple[StepPath, ...],
     catalogue: Catalogue,
     options: CompileOptions,
-    quality: QualitySettings,
+    quality_settings: QualitySettings,
 ) -> PlannedStep:
     implementation = select_implementation(
         site.entry.spec,
         target=options.target,
         step_path=site.path,
-        quality=quality.request_for(site.path, deployment=options.quality),
+        quality_request=quality_settings.request_for(
+            site.path, deployment=options.quality
+        ),
     )
     bound = [
         _bind(

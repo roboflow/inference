@@ -16,6 +16,7 @@ from roboflow_workflows.execution_engine.v2.blocks.segmentation_views import (
     SegmentationView,
 )
 from roboflow_workflows.execution_engine.v2.errors import ContractError
+from roboflow_workflows.execution_engine.v2.recording.codecs import type_name_of
 
 from inference_models.entities import ImageDimensions
 from inference_models.models.base.instance_segmentation import InstanceDetections
@@ -751,11 +752,8 @@ def test_catalogue_registers_the_view_kind_without_a_recording_codec() -> None:
     )
     assert blocks.SegmentationView is SegmentationView
     assert blocks.MaskGridGeometry is MaskGridGeometry
-    assert all(
-        codec.type_name != SegmentationView.__qualname__
-        and not codec.type_name.endswith(".SegmentationView")
-        for codec in catalogue.codecs.values()
-    )
+    codec_types = {codec.type_name for codec in catalogue.codecs.values()}
+    assert type_name_of(SegmentationView) not in codec_types
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
@@ -915,6 +913,83 @@ def test_cuda_dense_fallback_orders_its_consumer_after_the_producer() -> None:
 
     assert selected.is_dense_fallback
     assert areas.tolist() == [600.0, 600.0]
+
+
+_BORROWED_ROWS = 65_536
+
+
+def _prediction_layouts(predictions) -> list:
+    """(shape, dtype) of every tensor field, to reallocate storage of each size."""
+    tensors = [predictions.xyxy, predictions.class_id, predictions.confidence]
+    if isinstance(predictions, InstanceDetections):
+        tensors.append(predictions.mask)
+    layouts = [(tensor.shape, tensor.dtype) for tensor in tensors]
+
+    return layouts
+
+
+def _borrowed_dense_mask_read(side: torch.cuda.Stream) -> tuple:
+    """A dense fallback borrows a default-stream mask; the side stream reads it."""
+    predictions = InstanceDetections(
+        xyxy=torch.zeros((1, 4), device="cuda"),
+        class_id=torch.zeros(1, dtype=torch.int32, device="cuda"),
+        confidence=torch.ones(1, device="cuda"),
+        mask=torch.ones((1, 1024, 1024), dtype=torch.bool, device="cuda"),
+    )
+    torch.cuda.synchronize()
+    with torch.cuda.stream(side):
+        torch.cuda._sleep(_DELAY_CYCLES)
+        total = SegmentationView.from_dense(predictions).full_res().mask.sum()
+
+    return total, _prediction_layouts(predictions), 1024 * 1024
+
+
+def _borrowed_detections_read(side: torch.cuda.Stream) -> tuple:
+    """A low-res view borrows default-stream detections; the side stream reads them."""
+    detections = Detections(
+        xyxy=torch.zeros((_BORROWED_ROWS, 4), device="cuda"),
+        class_id=torch.zeros(_BORROWED_ROWS, dtype=torch.int32, device="cuda"),
+        confidence=torch.ones(_BORROWED_ROWS, device="cuda"),
+    )
+    torch.cuda.synchronize()
+    with torch.cuda.stream(side):
+        torch.cuda._sleep(_DELAY_CYCLES)
+        view = SegmentationView(
+            detections=detections,
+            scores=torch.zeros((_BORROWED_ROWS, 2, 2), device="cuda"),
+            score_type="logits",
+            threshold=0.0,
+            geometry=MaskGridGeometry.identity((2, 2)),
+        )
+        total = view.detections.confidence.sum()
+
+    return total, _prediction_layouts(detections), _BORROWED_ROWS
+
+
+@needs_cuda
+@pytest.mark.parametrize(
+    "borrowed_read", [_borrowed_dense_mask_read, _borrowed_detections_read]
+)
+def test_cuda_borrowed_storage_outlives_its_owners_on_the_readiness_stream(
+    borrowed_read,
+) -> None:
+    # Storage from the default stream, readiness and a delayed read on a side
+    # stream. Every owner is gone when the helper returns; the default stream
+    # then allocates and zeroes storage of every borrowed size, all alive at
+    # once so that each takes its own block. Only the allocator's record of
+    # the side stream's use keeps that storage from being reused before the
+    # read completes.
+    side = torch.cuda.Stream()
+    for _ in range(3):
+        total, layouts, expected = borrowed_read(side)
+        replacements = [
+            torch.empty(shape, dtype=dtype, device="cuda") for shape, dtype in layouts
+        ]
+        for replacement in replacements:
+            replacement.zero_()
+        torch.cuda.synchronize()
+
+        assert int(total) == expected
 
 
 @needs_cuda

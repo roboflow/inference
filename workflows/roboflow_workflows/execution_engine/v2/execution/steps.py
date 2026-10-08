@@ -41,6 +41,7 @@ placeholder values: their positions are filtered in every output.
 import copy
 import dataclasses
 from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -48,6 +49,7 @@ from typing import (
     ContextManager,
     Dict,
     FrozenSet,
+    Iterator,
     List,
     NoReturn,
     Optional,
@@ -57,7 +59,13 @@ from typing import (
 
 from roboflow_workflows.execution_engine.v2.context import (
     ExecutionContext,
+    answer_wants,
     use_execution_context,
+)
+from roboflow_workflows.execution_engine.v2.controls import (
+    ControlSnapshot,
+    ControlView,
+    StepActivity,
 )
 from roboflow_workflows.execution_engine.v2.data import (
     Batch,
@@ -104,9 +112,11 @@ from roboflow_workflows.execution_engine.v2.pipelining.stages import (
     SERIAL,
     WHOLE_CALL,
     Coordination,
+    RunAborted,
     StepStages,
     Ticket,
     gates_each_phase,
+    step_stage_units,
 )
 from roboflow_workflows.execution_engine.v2.plan import (
     ChildInputPort,
@@ -164,6 +174,10 @@ class RunState:
         origin: Source and temporal context of the run's origin (the source
             pulse, or the handled event), used by a call whose arguments
             carry none; ``None`` when the run has no single origin.
+        controls: The immutable control snapshot this whole run uses: which
+            steps are omitted, which outputs are wanted, which result fields
+            are omitted and the controlled input values (``controls``).
+            ``None`` for a hand-built run, which controls nothing.
     """
 
     session: ExecutionSession
@@ -178,6 +192,7 @@ class RunState:
     cause: Optional[EventCause] = None
     handler: Optional[StepPath] = None
     origin: Optional[Tuple[Optional[SampleContext], Optional[TemporalContext]]] = None
+    controls: Optional[ControlSnapshot] = None
     outputs: Dict[Tuple[StepPath, str], Entry] = field(default_factory=dict)
     decisions: Dict[StepPath, Entry] = field(default_factory=dict)
     constants: Dict[int, Tuple[Constant, Entry]] = field(default_factory=dict)
@@ -366,10 +381,10 @@ class RunState:
     def wanted_outputs(self, step: PlannedStep) -> FrozenSet[str]:
         """Return the outputs of ``step`` some reader of this run demands.
 
-        This is the per-run seam for live controls: a control snapshot
-        narrows the plan's compile-time demand here, never on block
-        instances. Today it is the plan's demand record (every output for a
-        hand-built plan without one).
+        The plan's compile-time demand (every output for a hand-built plan
+        without one), narrowed by the run's control snapshot: an output whose
+        readers are all omitted under a disabled control is not wanted. The
+        answer is fixed for the run, so every phase of a call sees it.
 
         Args:
             step: The step about to be called.
@@ -378,8 +393,40 @@ class RunState:
             The demanded output names.
         """
         wanted = self.plan.wanted_outputs(step.path)
+        if self.controls is not None:
+            wanted = self.controls.wanted_outputs(step.path, default=wanted)
 
         return wanted
+
+    def omitted_reason(self, step: PlannedStep) -> Optional[str]:
+        """Why this run does not call ``step``; ``None`` when it runs."""
+        if self.controls is None:
+            return None
+
+        return self.controls.omitted_reason(step.path)
+
+    def omitted_outputs(self, group: Optional[str]) -> FrozenSet[str]:
+        """Result fields a disabled control omits (``None``: the flat outputs)."""
+        if self.controls is None:
+            return frozenset()
+
+        return self.controls.omitted_in(group)
+
+    def group_omitted(self, group: Any) -> bool:
+        """Whether every field of an output group is omitted in this run."""
+        omitted = self.omitted_outputs(group.name)
+        whole = bool(group.outputs) and all(
+            output.name in omitted for output in group.outputs
+        )
+
+        return whole
+
+    def control_view(self) -> Optional[ControlView]:
+        """The result-facing view of the run's snapshot; ``None`` without controls."""
+        if self.controls is None or self.plan.controls.is_empty:
+            return None
+
+        return self.controls.view()
 
 
 @dataclass(frozen=True)
@@ -425,6 +472,16 @@ def execute_step(run: RunState, step: PlannedStep) -> None:
 def _execute_step(run: RunState, step: PlannedStep) -> None:
     observer = run.observer
     location = list(step.path)
+    omitted = run.omitted_reason(step)
+    if omitted is not None:
+        # A disabled control: no call, no outputs, no placeholder. Readers
+        # are omitted too (compile-time closure) or result fields that come
+        # out "omitted". The pulse's turn at every stage retires at once.
+        observer.on_step_omitted(step=step.path, reason=omitted)
+        run.record("step_omitted", step=location, reason=omitted)
+        run.coordination.step_stages(run, step, calls=0)
+        return
+
     observer.on_step_started(step=step.path, block_type=step.block_type)
     run.record("step_started", step=location, block_type=step.block_type)
 
@@ -461,12 +518,13 @@ def _execute_step(run: RunState, step: PlannedStep) -> None:
     wanted = run.wanted_outputs(step)
     results: Dict[Index, Any] = {}
     queried: Dict[Index, FrozenSet[str]] = {}
-    for call in calls:
-        split, asked = _invoke(
-            run, step, call, stages=stages, scope=scope, wanted=wanted
-        )
-        results.update(split)
-        queried.update(dict.fromkeys(split, asked))
+    with _guarded_calls(run, step, stages=stages, calls=len(calls)):
+        for call in calls:
+            split, asked = _invoke(
+                run, step, call, stages=stages, scope=scope, wanted=wanted
+            )
+            results.update(split)
+            queried.update(dict.fromkeys(split, asked))
     stages.finish()
 
     _record_outputs(
@@ -486,6 +544,129 @@ def _execute_step(run: RunState, step: PlannedStep) -> None:
     run.record(
         "step_finished", step=location, invocations=len(calls), skipped=len(skipped)
     )
+
+
+@contextmanager
+def _guarded_calls(
+    run: RunState, step: PlannedStep, *, stages: StepStages, calls: int
+) -> Iterator[None]:
+    """Hold the step's calls of this run; reset its instance first when due.
+
+    Only a step a ``reset_on_enable`` control may reset has a guard; every
+    other step pays nothing here. The pulse first takes its turn at the
+    step (so the reset follows every earlier pulse of its domain; a static
+    member also waits for older work of every domain), resets the instance
+    once for the control's epoch while no other call of the step is in
+    progress, then runs its calls holding the guard shared.
+    """
+    activity = run.session.activity(step.path)
+    if activity is None or not calls:
+        yield
+        return
+
+    def aborted() -> Optional[BaseException]:
+        if run.coordination.aborted:
+            return RunAborted(
+                f"step {format_step_path(step.path)}: the run is aborting"
+            )
+        return None
+
+    stages.wait_turn(step_stage_units(step)[0])
+    _reset_if_due(run, step, activity=activity, aborted=aborted)
+    with activity.shared(aborted):
+        yield
+
+
+def _reset_if_due(
+    run: RunState,
+    step: PlannedStep,
+    *,
+    activity: StepActivity,
+    aborted: Callable[[], Optional[BaseException]],
+) -> None:
+    """Call ``reset_state()`` once for the newest enabling epoch the run carries."""
+    snapshot = run.controls
+    if snapshot is None:
+        return
+    controls = run.plan.controls
+    epochs = {
+        name: snapshot.epochs.get(name, 0)
+        for name in controls.controls_of(step.path)
+        if controls.controls[name].state == "reset_on_enable"
+    }
+    if not epochs:
+        return
+    control, epoch = max(epochs.items(), key=lambda item: item[1])
+    session = run.session
+    run.record(
+        "state_epoch",
+        step=list(step.path),
+        epoch=epoch,
+        instance_epoch=session.reset_epoch(step.path),
+    )
+    if session.reset_epoch(step.path) >= epoch:
+        return
+
+    _drain_before_static_reset(run, step, epoch=epoch, aborted=aborted)
+    with activity.exclusive(aborted):
+        if session.reset_epoch(step.path) >= epoch:
+            return  # another pulse carrying this epoch reset it first
+        instance = session.instances[step.path]
+        context = ExecutionContext(
+            step_path=step.path,
+            block_type=step.block_type,
+            session_id=session.session_id,
+            run_id=run.run_id,
+        )
+        try:
+            with use_execution_context(context):
+                instance.reset_state()
+        except Exception as error:
+            _fail(
+                run,
+                step,
+                f"reset_state() raised {type(error).__name__}: {error}",
+                index=None,
+                cause=error,
+            )
+        session.mark_reset(step.path, epoch)
+        run.record("state_reset", step=list(step.path), control=control, epoch=epoch)
+        run.observer.on_state_reset(step=step.path, control=control, epoch=epoch)
+
+
+def _drain_before_static_reset(
+    run: RunState,
+    step: PlannedStep,
+    *,
+    epoch: int,
+    aborted: Callable[[], Optional[BaseException]],
+) -> None:
+    """Rule 5 of ``controls``: let older work of every domain pass a static member.
+
+    A static step (domain ``None``) runs in the route of every domain, while
+    stage turns order pulses only within one domain. Work of another domain
+    admitted under a version below ``epoch`` may still be on its way to the
+    step, so the reset waits until no such work is in flight. The pulse holds
+    only its own turn at this step, which older work never needs. A
+    domain-bound step, or a plan with one domain, needs no wait (rule 3).
+    """
+    if step.domain is not None or len(run.plan.domains) < 2:
+        return
+
+    in_flight = run.session.controls.in_flight
+    if in_flight.drained_below(epoch):
+        return
+
+    run.record(
+        "reset_drain",
+        step=list(step.path),
+        epoch=epoch,
+        in_flight=in_flight.describe(),
+    )
+    in_flight.wait_drained_below(epoch, aborted)
+    error = aborted()
+    if error is not None:
+        raise error  # the older work ended because the run aborts: no reset
 
 
 def _invocation_structure(run: RunState, step: PlannedStep) -> _Structure:
@@ -700,15 +881,7 @@ class _StepScope:
         return subscribed
 
     def wants(self, context: ExecutionContext, output: str) -> bool:
-        outputs = self._step.outputs
-        if output not in outputs:
-            raise ContractError(
-                f"{format_step_path(self._step.path)} ({self._step.block_type}) "
-                f"asked wants({output!r}), but declares no such output; its outputs "
-                f"are {sorted(outputs)}"
-            )
-        context.queried_outputs.add(output)
-        wanted = context.wanted_outputs is None or output in context.wanted_outputs
+        wanted = answer_wants(context, output, declared=self._step.outputs)
 
         return wanted
 

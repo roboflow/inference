@@ -244,6 +244,8 @@ class OperatorCounters:
         processed: Emitted pulses whose route ran and whose handlers returned.
         delivered: Group results of emitted pulses handed to handlers that
             returned.
+        omitted: Group results of emitted pulses not delivered because every
+            field read steps of a disabled control (``controls``).
         cancelled: Emitted pulses that did not complete because the run
             failed, started or not. ``emitted == processed + cancelled`` once
             the run is done.
@@ -261,6 +263,7 @@ class OperatorCounters:
     emitted: int = 0
     processed: int = 0
     delivered: int = 0
+    omitted: int = 0
     cancelled: int = 0
     peak_retained: int = 0
     finished: bool = False

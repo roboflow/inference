@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Deque, Dict, List, Optional, Tuple
 
 from roboflow_workflows.execution_engine.v2.active.pulses import SourcePulse, attributed
+from roboflow_workflows.execution_engine.v2.controls import ControlSnapshot
 from roboflow_workflows.execution_engine.v2.data import Timestamp
 from roboflow_workflows.execution_engine.v2.operators import TerminationReason
 from roboflow_workflows.execution_engine.v2.pipelining.options import PipelineOptions
@@ -53,6 +54,15 @@ if TYPE_CHECKING:
 __all__ = ["PipelinedDriver"]
 
 Work = Callable[[], None]
+
+
+@dataclass(frozen=True)
+class _End:
+    """A domain end waiting for a worker, with the snapshot it was scheduled under."""
+
+    domain: str
+    reason: TerminationReason
+    controls: ControlSnapshot
 
 
 @dataclass
@@ -94,6 +104,7 @@ class PipelinedDriver:
         self._bound = admission_bound
         self._executor = run._executor
         self._counters = run.pipeline_counters
+        self._in_flight = run.session.controls.in_flight
         # Reentrant: sealing a source under it queues the source's end.
         self._condition = threading.Condition(threading.RLock())
         self._admission_open = True
@@ -103,7 +114,7 @@ class PipelinedDriver:
         }
         self._rotation: List[str] = list(self._ingress)
         self._next_source = 0
-        self._ends: Deque[Tuple[str, TerminationReason]] = deque()
+        self._ends: Deque[_End] = deque()
         self._running = 0
         self._operators_released = False
         self._pool: Optional[WorkerPool] = None
@@ -180,7 +191,11 @@ class PipelinedDriver:
 
     def end_domain_later(self, domain: str, reason: TerminationReason) -> None:
         with self._condition:
-            self._ends.append((domain, reason))
+            # Sequenced like an admission: the snapshot is taken under the
+            # driver's lock and the end is dispatched in version order.
+            controls = self._run.session.controls.current
+            self._in_flight.enter(controls.version)
+            self._ends.append(_End(domain, reason, controls))
             self._condition.notify_all()
 
     def wake(self) -> None:
@@ -259,19 +274,43 @@ class PipelinedDriver:
             return None
 
         self._running += 1
-        if self._ends:
-            domain, reason = self._ends.popleft()
-            return lambda: self._run_end(domain, reason)
+        # Lowest control version first (controls.py, rule 2), so work admitted
+        # under an older version is never left queued behind newer work that
+        # may wait for it; ties keep the order ends first, then rotation.
+        oldest = self._oldest_queued_version()
+        if self._ends and self._ends[0].controls.version == oldest:
+            end = self._ends.popleft()
+            return lambda: self._run_end(end)
 
         for offset in range(len(self._rotation)):
             position = (self._next_source + offset) % len(self._rotation)
             ingress = self._ingress[self._rotation[position]]
+            if ingress.queued and ingress.queued[0].controls.version != oldest:
+                continue
+            if not ingress.queued and oldest != self._run.session.controls.version:
+                continue  # a pending ``latest`` emission would be newer
             pulse = self._next_pulse(ingress)
             if pulse is not None:
                 self._next_source = (position + 1) % len(self._rotation)
                 return lambda: self._run_pulse(ingress, pulse)
 
         raise RuntimeError("eligible work disappeared while the dispatcher held it")
+
+    def _oldest_queued_version(self) -> int:
+        """Lowest control version among queued ends and pulses (condition held).
+
+        A pending ``latest`` emission is admitted at dispatch and takes the
+        current version, which no queued work exceeds.
+        """
+        versions = [self._ends[0].controls.version] if self._ends else []
+        versions.extend(
+            ingress.queued[0].controls.version
+            for ingress in self._ingress.values()
+            if ingress.queued
+        )
+        oldest = min(versions) if versions else self._run.session.controls.version
+
+        return oldest
 
     def _next_pulse(self, ingress: _Ingress) -> Optional[SourcePulse]:
         """The source's next pulse to run, admitting a pending one (condition held)."""
@@ -300,10 +339,11 @@ class PipelinedDriver:
 
     def _cancel_unstarted(self) -> None:
         """Cancel admitted pulses and domain ends that never started (condition held)."""
-        self._ends.clear()
+        while self._ends:
+            self._in_flight.leave(self._ends.popleft().controls.version)
         for ingress in self._ingress.values():
             while ingress.queued:
-                ingress.queued.popleft()
+                self._in_flight.leave(ingress.queued.popleft().controls.version)
                 self._counters.add("queued", -1)
                 self._executor.count(ingress.slot.counters, "cancelled")
                 self._finish_admitted(ingress)
@@ -346,18 +386,20 @@ class PipelinedDriver:
         except Exception as raised:
             self._run._fail(attributed(raised, stage="observer"))
         finally:
+            self._in_flight.leave(pulse.controls.version)
             with self._condition:
                 self._finish_admitted(ingress)
                 self._running -= 1
                 self._condition.notify_all()
 
-    def _run_end(self, domain: str, reason: TerminationReason) -> None:
+    def _run_end(self, end: "_End") -> None:
         try:
             self._counters.count("end_tasks")
-            self._executor.end_domain(domain, reason)
+            self._executor.end_domain(end.domain, end.reason, controls=end.controls)
         except Exception as raised:
             self._run._fail(attributed(raised, stage="observer"))
         finally:
+            self._in_flight.leave(end.controls.version)
             with self._condition:
                 self._running -= 1
                 self._condition.notify_all()

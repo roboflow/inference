@@ -399,6 +399,25 @@ class StepStages:
             for gate in self._gates.values():
                 gate.done(ticket)
 
+    def wait_turn(self, unit: str) -> None:
+        """Wait for this pulse's turn at ``unit`` without calling it yet.
+
+        A later ``call(unit)`` finds the turn already held. Used before a
+        causally ordered reset, so the reset follows every earlier pulse of
+        the domain at this step.
+
+        Raises:
+            RunAborted: When the coordination aborts while waiting.
+            RuntimeError: For an unknown unit.
+        """
+        gate = self._gates.get(unit)
+        if gate is None:
+            raise RuntimeError(
+                f"unknown stage unit {unit!r}; units: {list(self._gates)}"
+            )
+        if self._calls and self._uses[unit] == 0:
+            gate.wait_turn(self._ticket)
+
     @contextmanager
     def call(self, unit: str) -> Iterator[None]:
         """Run one call of ``unit`` in this pulse's turn.
@@ -454,6 +473,9 @@ class StepStages:
 
 class _NoStages:
     """Stages of a serial run: no waiting, nothing to retire."""
+
+    def wait_turn(self, unit: str) -> None:
+        pass
 
     def call(self, unit: str) -> ContextManager[None]:
         return nullcontext()

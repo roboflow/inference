@@ -29,6 +29,13 @@ _RTSP_CODEC_ENV_VAR = "ROBOFLOW_RTSP_VIDEO_CODEC"
 _RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
 _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
 _APPSINK_SYNC_ENV_VAR = "ROBOFLOW_GSTREAMER_CUDA_APPSINK_SYNC"
+# Live queues drop the oldest frame when full. Extra slots can absorb bursts
+# from the decoder, at the cost of retaining more GPU surfaces. The small limit
+# bounds queued memory; frame age also depends on arrival gaps and scheduling.
+_LIVE_APPSINK_MAX_BUFFERS_ENV_VAR = "ROBOFLOW_GSTREAMER_CUDA_LIVE_APPSINK_MAX_BUFFERS"
+_DEFAULT_LIVE_APPSINK_MAX_BUFFERS = 1
+_LIVE_APPSINK_MAX_BUFFERS_LIMIT = 4
+_FILE_APPSINK_MAX_BUFFERS = 4
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
 _RTSP_VIDEO_CODECS = ("h264", "h265")
@@ -184,8 +191,32 @@ def required_gstreamer_cuda_elements(
     return tuple(elements)
 
 
-def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
+def build_gstreamer_cuda_pipeline(
+    video: str,
+    *,
+    device_id: int = 0,
+    live_appsink_max_buffers: Optional[int] = None,
+) -> str:
+    """Build a CUDA decoding pipeline with bounded output buffering.
+
+    Args:
+        video: Video URI or local file path.
+        device_id: CUDA device used for decoding and color conversion.
+        live_appsink_max_buffers: Live output queue capacity, from 1 to 4.
+            Defaults to the environment setting or 1; ignored for files.
+
+    Returns:
+        GStreamer pipeline description. File queues use capacity 4 without drops.
+
+    Raises:
+        ValueError: The live queue capacity is invalid.
+    """
     is_live = _local_file_path(video) is None
+    if is_live:
+        if live_appsink_max_buffers is None:
+            live_appsink_max_buffers = _resolve_live_appsink_max_buffers()
+        _validate_live_appsink_max_buffers(live_appsink_max_buffers)
+
     queue_options = (
         "max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream"
         if is_live
@@ -193,9 +224,9 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
     )
     appsink_sync = "true" if _appsink_sync_enabled() else "false"
     appsink_options = (
-        f"max-buffers=1 drop=true sync={appsink_sync}"
+        f"max-buffers={live_appsink_max_buffers} drop=true sync={appsink_sync}"
         if is_live
-        else "max-buffers=4 drop=false sync=false"
+        else f"max-buffers={_FILE_APPSINK_MAX_BUFFERS} drop=false sync=false"
     )
     tail = (
         f"queue {queue_options} ! "
@@ -260,6 +291,12 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
     ) -> None:
         if not _supports_uri_source(video):
             raise TypeError("GStreamer CUDA producer requires a URI or file path")
+        # Resolved before any native resource exists, so an invalid setting
+        # fails fast and leaks nothing.
+        is_live = _local_file_path(video) is None
+        live_appsink_max_buffers = (
+            _resolve_live_appsink_max_buffers() if is_live else None
+        )
 
         gst_ok, gst_reason = probe_gstreamer_cuda_elements(
             required_gstreamer_cuda_elements(video),
@@ -288,8 +325,14 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
 
         self._source_ref = video
         self._output_tensor = output_tensor
+        self._is_live = is_live
+        self._appsink_max_buffers = (
+            live_appsink_max_buffers if self._is_live else _FILE_APPSINK_MAX_BUFFERS
+        )
         self._pipeline_description = build_gstreamer_cuda_pipeline(
-            video, device_id=gpu_id
+            video,
+            device_id=gpu_id,
+            live_appsink_max_buffers=live_appsink_max_buffers,
         )
         self._native_pipeline = NativeGstreamerCudaTensorPipeline(
             self._pipeline_description, device_id=gpu_id
@@ -396,6 +439,10 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
     def tensor_bridge_stats(self) -> Dict[str, int]:
         stats = self._native_pipeline.stats()
         stats.update(self._grab_cadence_stats())
+        # The appsink queue policy: live sinks drop the oldest frame when full,
+        # file sinks block the decoder instead.
+        stats["appsink_max_buffers"] = self._appsink_max_buffers
+        stats["appsink_drop_oldest_enabled"] = int(self._is_live)
         return stats
 
     @property
@@ -500,6 +547,35 @@ def _rtsp_latency_ms() -> int:
     except ValueError:
         return _DEFAULT_RTSP_LATENCY_MS
     return latency if latency >= 0 else _DEFAULT_RTSP_LATENCY_MS
+
+
+def _resolve_live_appsink_max_buffers() -> int:
+    raw = os.getenv(_LIVE_APPSINK_MAX_BUFFERS_ENV_VAR)
+    if raw is None:
+        return _DEFAULT_LIVE_APPSINK_MAX_BUFFERS
+    try:
+        max_buffers = int(raw.strip())
+    except ValueError:
+        raise ValueError(
+            f"{_LIVE_APPSINK_MAX_BUFFERS_ENV_VAR} must be an integer from 1 to "
+            f"{_LIVE_APPSINK_MAX_BUFFERS_LIMIT}, got {raw!r}"
+        ) from None
+
+    _validate_live_appsink_max_buffers(max_buffers)
+    return max_buffers
+
+
+def _validate_live_appsink_max_buffers(max_buffers: int) -> None:
+    if (
+        isinstance(max_buffers, bool)
+        or not isinstance(max_buffers, int)
+        or not 1 <= max_buffers <= _LIVE_APPSINK_MAX_BUFFERS_LIMIT
+    ):
+        raise ValueError(
+            f"Live appsink max-buffers ({_LIVE_APPSINK_MAX_BUFFERS_ENV_VAR}) must "
+            f"be an integer from 1 to {_LIVE_APPSINK_MAX_BUFFERS_LIMIT}, "
+            f"got {max_buffers!r}"
+        )
 
 
 def _appsink_sync_enabled() -> bool:

@@ -63,6 +63,8 @@ def _producer(
     producer._grab_gap_under_half_period = 0
     producer._grab_gap_over_one_and_half_period = 0
     producer._grab_timeout_ns = 5_000_000_000
+    producer._is_live = True
+    producer._appsink_max_buffers = 1
     producer._closed = False
     producer._eos = False
     return producer
@@ -170,6 +172,108 @@ def test_live_appsink_sync_preserves_low_latency_default(monkeypatch) -> None:
     assert "appsink name=rf_tensor_sink max-buffers=1 drop=true sync=false" in pipeline
 
 
+class _RecordingNativePipeline(_NativePipeline):
+    created = []
+
+    def __init__(self, description: str, *, device_id: int = 0) -> None:
+        super().__init__(factories=("nvh264dec", "cudaconvertscale"))
+        self.description = description
+        _RecordingNativePipeline.created.append(self)
+
+
+def _install_fake_runtime(monkeypatch) -> None:
+    from streamvision.camera import gstreamer_cuda_tensor_bridge
+
+    _RecordingNativePipeline.created = []
+    monkeypatch.setattr(
+        "streamvision.camera.gstreamer_cuda_producer.probe_gstreamer_cuda_elements",
+        lambda elements, boost_ranks=False: (True, "ok"),
+    )
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(
+        gstreamer_cuda_tensor_bridge,
+        "gstreamer_cuda_tensor_bridge_available",
+        lambda: (True, "ok"),
+    )
+    monkeypatch.setattr(
+        gstreamer_cuda_tensor_bridge,
+        "NativeGstreamerCudaTensorPipeline",
+        _RecordingNativePipeline,
+    )
+
+
+def test_live_appsink_capacity_defaults_to_one_frame(monkeypatch) -> None:
+    monkeypatch.delenv(
+        "ROBOFLOW_GSTREAMER_CUDA_LIVE_APPSINK_MAX_BUFFERS", raising=False
+    )
+    _install_fake_runtime(monkeypatch)
+
+    producer = GstreamerCudaVideoFrameProducer("rtsp://camera.example.test/live")
+
+    (native_pipeline,) = _RecordingNativePipeline.created
+    assert "appsink name=rf_tensor_sink max-buffers=1 drop=true" in (
+        native_pipeline.description
+    )
+    assert producer.tensor_bridge_stats["appsink_max_buffers"] == 1
+    assert producer.tensor_bridge_stats["appsink_drop_oldest_enabled"] == 1
+
+
+def test_live_appsink_capacity_is_opt_in_and_keeps_drop_oldest(monkeypatch) -> None:
+    monkeypatch.setenv("ROBOFLOW_GSTREAMER_CUDA_LIVE_APPSINK_MAX_BUFFERS", "2")
+    _install_fake_runtime(monkeypatch)
+
+    producer = GstreamerCudaVideoFrameProducer("rtsp://camera.example.test/live")
+
+    (native_pipeline,) = _RecordingNativePipeline.created
+    assert "appsink name=rf_tensor_sink max-buffers=2 drop=true sync=false" in (
+        native_pipeline.description
+    )
+    assert producer.tensor_bridge_stats["appsink_max_buffers"] == 2
+    assert producer.tensor_bridge_stats["appsink_drop_oldest_enabled"] == 1
+
+
+def test_live_appsink_capacity_does_not_change_file_backpressure(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("ROBOFLOW_GSTREAMER_CUDA_LIVE_APPSINK_MAX_BUFFERS", "2")
+    _install_fake_runtime(monkeypatch)
+    video = tmp_path / "clip.mp4"
+
+    producer = GstreamerCudaVideoFrameProducer(str(video))
+
+    (native_pipeline,) = _RecordingNativePipeline.created
+    assert "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false" in (
+        native_pipeline.description
+    )
+    assert producer.tensor_bridge_stats["appsink_max_buffers"] == 4
+    assert producer.tensor_bridge_stats["appsink_drop_oldest_enabled"] == 0
+
+
+@pytest.mark.parametrize("raw", ["0", "5", "-1", "two", "1.5", ""])
+def test_invalid_live_appsink_capacity_fails_before_native_pipeline_exists(
+    monkeypatch, raw
+) -> None:
+    monkeypatch.setenv("ROBOFLOW_GSTREAMER_CUDA_LIVE_APPSINK_MAX_BUFFERS", raw)
+    _install_fake_runtime(monkeypatch)
+
+    with pytest.raises(
+        ValueError, match="ROBOFLOW_GSTREAMER_CUDA_LIVE_APPSINK_MAX_BUFFERS"
+    ):
+        GstreamerCudaVideoFrameProducer("rtsp://camera.example.test/live")
+
+    assert _RecordingNativePipeline.created == []
+
+
+@pytest.mark.parametrize("max_buffers", [0, 5, True, 2.0])
+def test_pipeline_builder_rejects_out_of_range_live_capacity(max_buffers) -> None:
+    with pytest.raises(ValueError, match="Live appsink max-buffers"):
+        build_gstreamer_cuda_pipeline(
+            "rtsp://camera.example.test/live",
+            live_appsink_max_buffers=max_buffers,
+        )
+
+
 def test_grab_cadence_stats_count_short_and_long_gaps(monkeypatch) -> None:
     timestamps = iter((0, 10_000_000, 80_000_000))
     monkeypatch.setattr(
@@ -190,6 +294,8 @@ def test_grab_cadence_stats_count_short_and_long_gaps(monkeypatch) -> None:
         "grab_gap_over_one_and_half_period": 1,
         "grab_gap_max_us": 70_000,
         "grab_gap_mean_us": 40_000,
+        "appsink_max_buffers": 1,
+        "appsink_drop_oldest_enabled": 1,
     }
 
 
@@ -347,3 +453,24 @@ def test_v4l2_device_is_not_treated_as_a_regular_file() -> None:
         pass
     else:
         raise AssertionError("V4L2 device path must not use the URI producer")
+
+
+@pytest.mark.parametrize("raw", ["0", "invalid"])
+@pytest.mark.parametrize("as_uri", [False, True])
+def test_file_input_ignores_invalid_live_appsink_setting(
+    monkeypatch, tmp_path, raw, as_uri
+) -> None:
+    monkeypatch.setenv("ROBOFLOW_GSTREAMER_CUDA_LIVE_APPSINK_MAX_BUFFERS", raw)
+    _install_fake_runtime(monkeypatch)
+    path = tmp_path / "clip.mp4"
+    video = path.as_uri() if as_uri else str(path)
+
+    description = build_gstreamer_cuda_pipeline(video)
+    producer = GstreamerCudaVideoFrameProducer(video)
+
+    (native_pipeline,) = _RecordingNativePipeline.created
+    assert description == native_pipeline.description
+    assert (
+        "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false" in description
+    )
+    assert producer.tensor_bridge_stats["appsink_max_buffers"] == 4

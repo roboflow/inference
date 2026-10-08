@@ -77,6 +77,14 @@ from roboflow_workflows.execution_engine.v2.context import (
     current_pulse_run_id,
     get_execution_context,
 )
+from roboflow_workflows.execution_engine.v2.controls import (
+    ControlPanel,
+    ControlPlan,
+    ControlReceipt,
+    ControlSnapshot,
+    ControlView,
+    PlannedControl,
+)
 from roboflow_workflows.execution_engine.v2.data import (
     Axis,
     Batch,
@@ -110,6 +118,8 @@ from roboflow_workflows.execution_engine.v2.declaration import (
 )
 from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
+    ControlDefinitionError,
+    ControlError,
     DemandError,
     EventEmissionError,
     OperatorError,
@@ -195,6 +205,7 @@ from roboflow_workflows.execution_engine.v2.targets import (
     Target,
     UnsupportedQualityError,
     UnsupportedTargetError,
+    UnusedQualityHint,
     select_implementation,
 )
 
@@ -218,6 +229,13 @@ __all__ = [
     "CompileOptions",
     "ContextPolicy",
     "ContractError",
+    "ControlDefinitionError",
+    "ControlError",
+    "ControlPanel",
+    "ControlPlan",
+    "ControlReceipt",
+    "ControlSnapshot",
+    "ControlView",
     "DemandError",
     "DemandPlan",
     "DependentResource",
@@ -265,6 +283,7 @@ __all__ = [
     "PipelineCounters",
     "PipelineFullError",
     "PipelineOptions",
+    "PlannedControl",
     "PlannedHandler",
     "PlannedHandlerGroup",
     "PlannedMachine",
@@ -319,6 +338,7 @@ __all__ = [
     "TransitionResult",
     "UnsupportedQualityError",
     "UnsupportedTargetError",
+    "UnusedQualityHint",
     "WorkflowCompileError",
     "WorkflowExecutionError",
     "WorkflowInputError",

@@ -21,7 +21,10 @@ names and ``<group>.<field>`` entries of an active one. ``None`` requests every
 declared output. Unrequested outputs and groups are absent from the plan and
 from results: a missing key, never a ``None``. A recorded group is demanded
 whole whatever the request says; requesting one of its fields alone is an
-error, so nothing recorded is ever silently left out. Nested workflows need no
+error, so nothing recorded is ever silently left out. A handler group (fed by
+``$handlers.…``) is not managed by demand: its handler delivers it whatever
+the request says, so it is recorded with status ``handler`` and a request may
+name it but cannot narrow it. Nested workflows need no
 special case: their steps are plan steps and their boundaries resolve through
 ``plan.origin``, so two uses of one saved child are demanded independently.
 
@@ -63,8 +66,8 @@ from roboflow_workflows.execution_engine.v2.plan import (
     PlannedStep,
     PlannedWorkflowOutput,
     Source,
-    StepPort,
     derive_dependencies,
+    outputs_read,
 )
 
 __all__ = [
@@ -83,6 +86,9 @@ NOT_PRUNABLE = "block is not prunable"
 UNDEMANDED = "no retained step, output or operator reads it, and its block is prunable"
 """Pruning reason of a dropped step."""
 
+HANDLER_DELIVERED = "delivered by its handler; requests do not narrow it"
+"""Why a handler group is outside demand."""
+
 
 @dataclass(frozen=True)
 class OutputDemand:
@@ -90,8 +96,9 @@ class OutputDemand:
 
     Args:
         name: Output name (passive), group name or ``<group>.<field>`` (active).
-        status: ``requested``, ``recorded`` (an unrequested recorded group) or
-            ``omitted`` (not requested; absent from results).
+        status: ``requested``, ``recorded`` (an unrequested recorded group),
+            ``omitted`` (not requested; absent from results) or ``handler`` (a
+            handler group, delivered by its handler whatever the request).
         fields: For a group, the fields the plan delivers; empty otherwise.
     """
 
@@ -104,6 +111,8 @@ class OutputDemand:
         description: Dict[str, Any] = {"status": self.status}
         if self.fields:
             description["fields"] = list(self.fields)
+        if self.status == "handler":
+            description["reason"] = HANDLER_DELIVERED
 
         return description
 
@@ -229,6 +238,7 @@ def apply_demand(
     *,
     requested: Optional[Sequence[str]],
     recorded_groups: Sequence[str] = (),
+    retained: Sequence[Tuple[StepPath, str]] = (),
 ) -> CompiledWorkflow:
     """Narrow ``plan`` to the requested outputs and record the demand.
 
@@ -238,6 +248,9 @@ def apply_demand(
             ``None`` requests every declared output.
         recorded_groups: Output groups the root ``recording`` declaration
             records; demanded whole regardless of ``requested``.
+        retained: Steps kept whatever the request, each with its reason: the
+            members of runtime ``controls``, so an initially disabled control
+            can be enabled without a new plan.
 
     Returns:
         A plan with the undemanded steps, outputs and groups removed and
@@ -272,13 +285,15 @@ def apply_demand(
         plan,
         root_sources=root_sources,
         always=[
-            (step.path, NOT_PRUNABLE) for step in plan.steps if not step.spec.prunable
+            *(
+                (step.path, NOT_PRUNABLE)
+                for step in plan.steps
+                if not step.spec.prunable
+            ),
+            *((tuple(path), reason) for path, reason in retained),
         ],
     )
 
-    narrowed = _narrow(
-        plan, demand=demand, outputs=outputs, groups=groups, statuses=statuses
-    )
     record = DemandPlan(
         requested=tuple(requested) if requested is not None else None,
         outputs=statuses,
@@ -291,6 +306,7 @@ def apply_demand(
         wanted=demand.wanted,
     )
     try:
+        narrowed = _narrow(plan, demand=demand, outputs=outputs, groups=groups)
         applied = replace(narrowed, demand=record)
     except ContractError as error:
         raise WorkflowCompileError(
@@ -321,11 +337,12 @@ def compute_demand(
     Returns:
         The retained steps with reasons and the wanted outputs per step.
     """
+    roots = tuple(root_sources)
     steps = {step.path: step for step in plan.steps}
     boundaries = _boundaries(plan)
     retained: Dict[StepPath, str] = {}
     worklist: Deque[Tuple[StepPath, str]] = deque()
-    for source, reason in root_sources:
+    for source, reason in roots:
         for path in derive_dependencies([source], steps=steps, boundaries=boundaries):
             worklist.append((path, reason))
     worklist.extend((tuple(path), reason) for path, reason in always)
@@ -339,25 +356,14 @@ def compute_demand(
             if dependency not in retained:
                 worklist.append((dependency, f"dependency of {format_step_path(path)}"))
 
-    wanted: Dict[StepPath, Set[str]] = {
-        path: set() for path in steps if path in retained
-    }
-    readers: List[Source] = [source for source, _ in root_sources]
-    readers.extend(
-        binding.source for path in wanted for binding in steps[path].bindings
-    )
-    for source in readers:
-        origin = plan.origin(source)
-        if not isinstance(origin, StepPort) or origin.step not in wanted:
-            continue
-        if origin.output == "*":
-            wanted[origin.step].update(steps[origin.step].outputs)
-        else:
-            wanted[origin.step].add(origin.output)
+    kept = [path for path in steps if path in retained]
+    readers: List[Source] = [source for source, _ in roots]
+    readers.extend(binding.source for path in kept for binding in steps[path].bindings)
+    read = outputs_read(plan, readers)
 
     demand = Demand(
-        retained={path: retained[path] for path in steps if path in retained},
-        wanted={path: frozenset(names) for path, names in wanted.items()},
+        retained={path: retained[path] for path in kept},
+        wanted={path: frozenset(read.get(path, ())) for path in kept},
     )
 
     return demand
@@ -391,7 +397,11 @@ def requested_fields(
     recorded = tuple(recorded_groups)
     declared_outputs = {output.name: output for output in plan.outputs}
     declared_groups = {group.name: group for group in plan.output_groups}
-    handler_groups = {group.name for group in plan.reactions.groups}
+    handler_groups = {group.name: group for group in plan.reactions.groups}
+    handler_statuses = tuple(
+        OutputDemand(name=name, status="handler", fields=tuple(group.fields))
+        for name, group in handler_groups.items()
+    )
 
     if requested is None:
         statuses = [
@@ -405,6 +415,7 @@ def requested_fields(
             )
             for name, group in declared_groups.items()
         )
+        statuses.extend(handler_statuses)
         groups = {name: tuple(group.outputs) for name, group in declared_groups.items()}
         return tuple(plan.outputs), groups, tuple(statuses)
 
@@ -419,7 +430,6 @@ def requested_fields(
             whole_groups.add(name)
             continue
         if name in handler_groups:
-            # Handler groups are delivered by the reaction runtime regardless.
             continue
         group_name, separator, field_name = name.partition(".")
         group = declared_groups.get(group_name) if separator else None
@@ -479,6 +489,7 @@ def requested_fields(
                 )
                 for output in group.outputs
             )
+    statuses.extend(handler_statuses)
 
     return outputs, groups, tuple(statuses)
 
@@ -495,6 +506,13 @@ def _unknown_request(name: str, *, plan: CompiledWorkflow) -> str:
     else:
         known = list(output.name for output in plan.outputs)
         hint = "workflow output names"
+    handlers = [group.name for group in plan.reactions.groups]
+    if handlers:
+        known += handlers
+        hint += (
+            ", or handler group names (whole only: a handler group is "
+            f"{HANDLER_DELIVERED})"
+        )
 
     return (
         f"requested_outputs names {name!r}, which the definition does not declare; "
@@ -516,7 +534,6 @@ def _narrow(
     demand: Demand,
     outputs: Tuple[PlannedWorkflowOutput, ...],
     groups: Mapping[str, Tuple[PlannedWorkflowOutput, ...]],
-    statuses: Tuple[OutputDemand, ...],
 ) -> CompiledWorkflow:
     """Build the plan that contains only the retained steps, outputs and groups."""
     retained = demand.retained

@@ -628,11 +628,11 @@ def test_blocked_submitters_prepare_nothing_beyond_one_waiting_submission(
     second_prepared = threading.Event()
     real_prepare = passive.prepare_inputs
 
-    def recording_prepare(plan, inputs):
+    def recording_prepare(plan, inputs, **options):
         prepared.append(inputs["value"])
         if len(prepared) == 2:
             second_prepared.set()
-        return real_prepare(plan, inputs)
+        return real_prepare(plan, inputs, **options)
 
     monkeypatch.setattr(passive, "prepare_inputs", recording_prepare)
 

@@ -30,6 +30,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    FrozenSet,
     List,
     Mapping,
     Optional,
@@ -39,6 +40,7 @@ from typing import (
     Union,
 )
 
+from roboflow_workflows.execution_engine.v2.controls import ControlView
 from roboflow_workflows.execution_engine.v2.data import (
     AXIS_KIND_SAMPLE,
     Batch,
@@ -206,13 +208,15 @@ class GroupResult:
         outputs: Buffer of selected port entries, keyed by entry key. Entries
             filtered as a whole are absent.
         selections: Field name to ``{port selector: entry key}``.
-        statuses: ``complete`` or ``filtered`` per entry key.
+        statuses: ``complete``, ``filtered`` or ``omitted`` per entry key.
         filtered_paths: Minimal filtered logical index paths per entry key.
         plan: The plan that produced the result.
         trace: Ordered JSON-friendly execution events of the pulse so far.
         input_row_count: Known row count of selected source-axis entries.
         causes: For an operator pulse, the upstream pulses whose values it
             carries, in order; empty for a source pulse.
+        controls: Version and settings of the control snapshot the pulse
+            used (``ControlView``); ``None`` for a plan without controls.
     """
 
     group: str
@@ -229,6 +233,7 @@ class GroupResult:
     trace: Tuple[Mapping[str, Any], ...] = ()
     input_row_count: int = 0
     causes: Tuple[PulseKey, ...] = ()
+    controls: Optional[ControlView] = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "fields", tuple(self.fields))
@@ -237,10 +242,23 @@ class GroupResult:
 
     @property
     def is_filtered(self) -> bool:
-        """Whether every selected port is filtered."""
-        filtered = all(status == "filtered" for status in self.statuses.values())
+        """Whether every delivered (non-omitted) port is filtered."""
+        filtered = all(
+            status == "filtered"
+            for status in self.statuses.values()
+            if status != "omitted"
+        )
 
         return filtered
+
+    @property
+    def omitted(self) -> Tuple[str, ...]:
+        """Entry keys a disabled control left out of this result."""
+        keys = tuple(
+            key for key, status in self.statuses.items() if status == "omitted"
+        )
+
+        return keys
 
     def rows(self, *, serialize: bool = False) -> List[Dict[str, Any]]:
         """Build V1-shaped rows from this group result.
@@ -280,8 +298,17 @@ class _Selected:
         return buffer
 
 
-def _select(run: RunState, outputs: Sequence[PlannedWorkflowOutput]) -> _Selected:
-    """Read every port selected by ``outputs`` from the run's entries."""
+def _select(
+    run: RunState,
+    outputs: Sequence[PlannedWorkflowOutput],
+    *,
+    omitted: FrozenSet[str] = frozenset(),
+) -> _Selected:
+    """Read every port selected by ``outputs`` from the run's entries.
+
+    An output named in ``omitted`` (a disabled control left its producer
+    out) gets status ``omitted`` and no entry is read for it.
+    """
     plan = run.plan
     selected = _Selected(
         selections={output.name: {} for output in outputs},
@@ -293,6 +320,11 @@ def _select(run: RunState, outputs: Sequence[PlannedWorkflowOutput]) -> _Selecte
         input_row_count=0,
     )
     for port in selected_ports(plan, outputs):
+        if port.output.name in omitted:
+            selected.selections[port.output.name][port.selector] = port.key
+            selected.statuses[port.key] = "omitted"
+            selected.filtered_paths[port.key] = ()
+            continue
         entry = run.entry_for(port.port)
         if port.layout.depth and _follows_rows(plan, port):
             known_rows = entry.children.get((), ())
@@ -316,9 +348,16 @@ def _select(run: RunState, outputs: Sequence[PlannedWorkflowOutput]) -> _Selecte
 
 
 def _select_filtered(
-    plan: CompiledWorkflow, outputs: Sequence[PlannedWorkflowOutput]
+    plan: CompiledWorkflow,
+    outputs: Sequence[PlannedWorkflowOutput],
+    *,
+    omitted: FrozenSet[str] = frozenset(),
 ) -> _Selected:
-    """Every port selected by ``outputs`` filtered as a whole, entries unread."""
+    """Every port selected by ``outputs`` filtered as a whole, entries unread.
+
+    Outputs named in ``omitted`` stay ``omitted``: a disabled control is
+    stronger than an empty emission.
+    """
     selected = _Selected(
         selections={output.name: {} for output in outputs},
         statuses={},
@@ -330,6 +369,10 @@ def _select_filtered(
     )
     for port in selected_ports(plan, outputs):
         selected.selections[port.output.name][port.selector] = port.key
+        if port.output.name in omitted:
+            selected.statuses[port.key] = "omitted"
+            selected.filtered_paths[port.key] = ()
+            continue
         selected.statuses[port.key] = "filtered"
         selected.filtered_paths[port.key] = ((),)
 
@@ -362,7 +405,7 @@ def build_result(run: RunState) -> RunResult:
     Returns:
         Selected port entries, statuses, filtered paths and the trace.
     """
-    selected = _select(run, run.plan.outputs)
+    selected = _select(run, run.plan.outputs, omitted=run.omitted_outputs(None))
     run.record("run_finished", statuses=dict(selected.statuses))
     result = RunResult(
         outputs=selected.buffer(lineage_id=f"run:{run.run_id}", pulse_id=0),
@@ -374,6 +417,7 @@ def build_result(run: RunState) -> RunResult:
         run_id=run.run_id,
         trace=tuple(run.trace),
         input_row_count=selected.input_row_count,
+        controls=run.control_view(),
     )
 
     return result
@@ -394,10 +438,11 @@ def build_group_result(
         Selected port entries, statuses, filtered paths and the trace so far.
     """
     pulse = run.pulse
+    omitted = run.omitted_outputs(group.name)
     selected = (
-        _select_filtered(run.plan, group.outputs)
+        _select_filtered(run.plan, group.outputs, omitted=omitted)
         if filtered
-        else _select(run, group.outputs)
+        else _select(run, group.outputs, omitted=omitted)
     )
     run.record("group_built", group=group.name, statuses=dict(selected.statuses))
     result = GroupResult(
@@ -415,6 +460,7 @@ def build_group_result(
         trace=tuple(run.trace),
         input_row_count=selected.input_row_count,
         causes=run.causes,
+        controls=run.control_view(),
     )
 
     return result
@@ -439,7 +485,15 @@ def build_rows(result: Result, *, serialize: bool) -> List[Dict[str, Any]]:
             input axes, or a kind hook fails for every declared kind.
     """
     plan = result.plan
-    outputs = result.fields if isinstance(result, GroupResult) else plan.outputs
+    declared = result.fields if isinstance(result, GroupResult) else plan.outputs
+    # An omitted output has no key in any row: "not computed" is neither a
+    # filtered None nor a value.
+    omitted_names = {
+        port.output.name
+        for port in selected_ports(plan, declared)
+        if result.statuses.get(port.key) == "omitted"
+    }
+    outputs = [output for output in declared if output.name not in omitted_names]
     ports = selected_ports(plan, outputs)
     projections = {
         port.key: _project(result, port, serialize=serialize) for port in ports

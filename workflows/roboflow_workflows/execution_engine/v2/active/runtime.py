@@ -130,7 +130,6 @@ from typing import (
     Union,
 )
 
-from roboflow_workflows.execution_engine.v2.active.execution import engine_observation
 from roboflow_workflows.execution_engine.v2.active.pulses import (
     OperatorSlot,
     PulseExecutor,
@@ -143,6 +142,7 @@ from roboflow_workflows.execution_engine.v2.context import (
     ExecutionContext,
     use_execution_context,
 )
+from roboflow_workflows.execution_engine.v2.controls import ControlSnapshot
 from roboflow_workflows.execution_engine.v2.data import (
     SampleContext,
     TemporalContext,
@@ -186,7 +186,10 @@ from roboflow_workflows.execution_engine.v2.reactions.runtime import (
     ReactionOutcome,
     ReactionRuntime,
 )
-from roboflow_workflows.execution_engine.v2.sources import Emission
+from roboflow_workflows.execution_engine.v2.sources import (
+    Emission,
+    engine_observation,
+)
 
 if TYPE_CHECKING:
     from roboflow_workflows.execution_engine.v2.recording.compilation import Capture
@@ -228,6 +231,8 @@ class SourceCounters:
             a pending ``latest`` emission included.
         processed: Pulses whose route ran and whose handlers returned.
         delivered: Group results handed to handlers that returned.
+        omitted: Group results not delivered because every field of the
+            group read steps of a disabled control (``controls``).
         cancelled: Admitted pulses that did not complete: dropped after a
             failure or cancellation, cut short by one, or the pulse that
             failed itself.
@@ -244,6 +249,7 @@ class SourceCounters:
     unadmitted: int = 0
     processed: int = 0
     delivered: int = 0
+    omitted: int = 0
     cancelled: int = 0
     peak_admitted: int = 0
     ended: bool = False
@@ -278,6 +284,7 @@ class _SourceSlot:
 @dataclass(frozen=True)
 class _ReaderDone:
     source: str
+    controls: Optional[ControlSnapshot] = None
 
 
 class _Driver(Protocol):
@@ -405,7 +412,7 @@ def start_session(
                 f"Session {session.session_id} already has active run "
                 f"{previous.run_id}; wait() for it before starting another"
             )
-        entries = prepare_inputs(plan, inputs or {})
+        entries = prepare_inputs(plan, inputs or {}, controls=session.controls.current)
         run_id = uuid.uuid4().hex
         stop_event = threading.Event()
         slots = {
@@ -615,6 +622,7 @@ def _prepare_source(
                 stage="start",
                 source=planned.name,
             )
+    instance.source_name = planned.name
     instance.stop_event = stop_event
     slot = _SourceSlot(
         planned=planned,
@@ -1218,7 +1226,16 @@ class ActiveRun:
         slot.counters.admitted += 1
         slot.counters.peak_admitted = max(slot.counters.peak_admitted, slot.in_flight)
         self._executor.progress.add(slot.name)
-        pulse = SourcePulse(key=key, emission=emission, observed=observed)
+        # The control snapshot is taken here, under the admission lock: pulses
+        # admitted before an update keep the old version, later ones the new.
+        pulse = SourcePulse(
+            key=key,
+            emission=emission,
+            observed=observed,
+            controls=self.session.controls.current,
+        )
+        # Counted in flight until the driver reports it processed or cancelled.
+        self.session.controls.in_flight.enter(pulse.controls.version)
 
         return pulse
 
@@ -1356,6 +1373,9 @@ class _SerialDriver:
         self._lock = threading.Lock()
         self._admission_open = True
         self._queue: "queue.Queue[Union[SourcePulse, _ReaderDone]]" = queue.Queue()
+        # Snapshot of the source end being processed; chained domain ends
+        # (an operator finishing) run under it.
+        self._ending: Optional[ControlSnapshot] = None
         self._processor = threading.Thread(
             target=self._process,
             name=f"workflows-v2-run-{run.run_id[:8]}",
@@ -1383,7 +1403,12 @@ class _SerialDriver:
         return True
 
     def reader_finished(self, source: str) -> None:
-        self._queue.put(_ReaderDone(source))
+        # The end of a source is sequenced like a pulse: its snapshot is taken
+        # under the admission lock, so the queue stays version-monotonic.
+        with self._lock:
+            controls = self._run.session.controls.current
+            self._run.session.controls.in_flight.enter(controls.version)
+            self._queue.put(_ReaderDone(source, controls))
 
     def close_admission(self) -> bool:
         """Close admission; ``True`` only for the call that closed it."""
@@ -1395,8 +1420,17 @@ class _SerialDriver:
         return True
 
     def end_domain_later(self, domain: str, reason: TerminationReason) -> None:
-        # Serially there is no later: the processor ends the domain right away.
-        self._run._executor.end_domain(domain, reason)
+        # Serially there is no later: the processor ends the domain right away,
+        # under the snapshot of the source end it is processing. Every serial
+        # domain end is chained from a source end; taking the current snapshot
+        # instead could carry a newer reset epoch and make this thread drain
+        # (rule 4) for work it is itself running.
+        if self._ending is None:
+            raise ContractError(
+                f"domain {domain!r} ended outside the processing of a source end; "
+                "the serial driver has no admitted control snapshot for it"
+            )
+        self._run._executor.end_domain(domain, reason, controls=self._ending)
 
     def wake(self) -> None:
         """Nothing waits on anything but the queue, which readers always feed."""
@@ -1407,18 +1441,27 @@ class _SerialDriver:
         executor = run._executor
         try:
             remaining = len(run._slots)
+            in_flight = run.session.controls.in_flight
             while remaining:
                 item = self._queue.get()
                 if isinstance(item, _ReaderDone):
                     remaining -= 1
-                    if not run.aborting:
-                        executor.seal(item.source, run._termination(item.source))
+                    self._ending = item.controls
+                    try:
+                        if not run.aborting:
+                            executor.seal(item.source, run._termination(item.source))
+                    finally:
+                        self._ending = None
+                        in_flight.leave(item.controls.version)
                 else:
                     slot = run._slots[item.key.source]
-                    if run.aborting:
-                        executor.count(slot.counters, "cancelled")
-                    else:
-                        executor.run_source_pulse(item, counters=slot.counters)
+                    try:
+                        if run.aborting:
+                            executor.count(slot.counters, "cancelled")
+                        else:
+                            executor.run_source_pulse(item, counters=slot.counters)
+                    finally:
+                        in_flight.leave(item.controls.version)
                     with self._lock:
                         slot.in_flight -= 1
                     slot.admission.release()

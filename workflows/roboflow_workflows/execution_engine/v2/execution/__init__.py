@@ -33,6 +33,7 @@ import uuid
 from typing import Any, Callable, Dict, Mapping, Optional
 
 from roboflow_workflows.execution_engine.v2.context import use_pulse_run_id
+from roboflow_workflows.execution_engine.v2.controls import ControlSnapshot
 from roboflow_workflows.execution_engine.v2.errors import StepPath
 from roboflow_workflows.execution_engine.v2.execution.entries import Entry
 from roboflow_workflows.execution_engine.v2.execution.inputs import prepare_inputs
@@ -77,12 +78,15 @@ def run_session(session: ExecutionSession, *, inputs: Mapping[str, Any]) -> RunR
         StepExecutionError: When a step fails; the session's error handler and
             observer are notified first.
     """
+    # The snapshot is taken once, here: inputs and every step of the run use it.
+    controls = session.controls.current
     result = _run(
         session,
-        entries=lambda: prepare_inputs(session.plan, inputs),
+        entries=lambda: prepare_inputs(session.plan, inputs, controls=controls),
         coordination=SERIAL,
         ticket=None,
         aborted=None,
+        controls=controls,
     )
 
     return result
@@ -95,6 +99,7 @@ def run_prepared(
     coordination: Coordination,
     ticket: Ticket,
     aborted: Callable[[], Exception],
+    controls: ControlSnapshot,
 ) -> RunResult:
     """Execute a session's plan once as one turn-taking run of a pipeline.
 
@@ -107,6 +112,8 @@ def run_prepared(
         ticket: This run's place in the order of every stage.
         aborted: Builds the error reported to the observer and raised when
             the coordination aborts this run before it completes.
+        controls: Control snapshot taken when the run was submitted; the
+            run's controlled inputs in ``entries`` were prepared from it.
 
     Returns:
         The run result.
@@ -123,6 +130,7 @@ def run_prepared(
         coordination=coordination,
         ticket=ticket,
         aborted=aborted,
+        controls=controls,
     )
 
     return result
@@ -156,12 +164,15 @@ def run_handler(
         WorkflowInputError: When inputs are invalid.
         StepExecutionError: When a handler step fails.
     """
+    # Like ``run_session``: the handler run takes its session's snapshot once.
+    controls = session.controls.current
     result = _run(
         session,
-        entries=lambda: prepare_inputs(session.plan, inputs),
+        entries=lambda: prepare_inputs(session.plan, inputs, controls=controls),
         coordination=SERIAL,
         ticket=None,
         aborted=None,
+        controls=controls,
         cause=cause,
         handler=handler,
         reactions=reactions,
@@ -177,6 +188,7 @@ def _run(
     coordination: Coordination,
     ticket: Optional[Ticket],
     aborted: Optional[Callable[[], Exception]],
+    controls: ControlSnapshot,
     cause: Optional[EventCause] = None,
     handler: Optional[StepPath] = None,
     reactions: Optional[Reactions] = None,
@@ -198,8 +210,11 @@ def _run(
                 cause=cause,
                 handler=handler,
                 origin=None if cause is None else (cause.sample, cause.temporal),
+                controls=controls,
             )
             run.record("run_started", run_id=run_id, session_id=session.session_id)
+            if not session.plan.controls.is_empty:
+                run.record("controls", **controls.view().describe())
             for step in session.plan.steps:
                 execute_step(run, step)
             result = build_result(run)

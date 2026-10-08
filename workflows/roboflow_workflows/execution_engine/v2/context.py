@@ -38,7 +38,17 @@ the source pulse's context, or the triggering event's one in a handler run.
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, FrozenSet, Iterator, Mapping, Optional, Protocol, Set, Tuple
+from typing import (
+    Any,
+    Collection,
+    FrozenSet,
+    Iterator,
+    Mapping,
+    Optional,
+    Protocol,
+    Set,
+    Tuple,
+)
 
 from roboflow_workflows.execution_engine.v2.data import (
     Index,
@@ -57,6 +67,7 @@ __all__ = [
     "ExecutionContext",
     "ExecutionContextReader",
     "NoExecutionContextError",
+    "answer_wants",
     "current_pulse_run_id",
     "get_execution_context",
     "use_execution_context",
@@ -123,7 +134,9 @@ class ExecutionContext:
             step; ``None`` for a constructor or a hand-built context.
         wanted_outputs: Outputs of the step some reader demands in this run;
             ``None`` (a constructor or a hand-built context) wants every
-            output. Fixed for the whole call, every phase included.
+            output. Fixed for the whole call, every phase included. Block
+            code asks ``self.wants(name)`` instead of reading this: only an
+            asked output may be left out of the result.
         queried_outputs: Outputs this call asked ``wants`` about; the engine
             lets the call leave out exactly the queried ones it answered
             ``False`` for. Engine-owned, per call, never shared.
@@ -436,14 +449,46 @@ class ExecutionContextReader:
             EventEmissionError: Outside a block call.
             ContractError: For an undeclared output name.
         """
-        context = _call_context(f"wants({output!r})")
+        context = _call_context(f"wants({output!r})", needs="demand answers")
         wanted = context.call_scope.wants(context, output)
 
         return wanted
 
 
-def _call_context(action: str) -> ExecutionContext:
-    """The running call's context; constructors and plain calls cannot emit."""
+def answer_wants(
+    context: ExecutionContext, output: str, *, declared: Collection[str]
+) -> bool:
+    """Record that a call asked about ``output`` and answer from its demand.
+
+    The engine and ``reactions.testing.block_call`` both answer ``wants``
+    here, so a unit test sees exactly the engine's behaviour.
+
+    Args:
+        context: The running call's context.
+        output: The asked output name.
+        declared: Output names the step declares.
+
+    Returns:
+        Whether some reader demands ``output``; ``True`` when the context
+        carries no demand.
+
+    Raises:
+        ContractError: When the step declares no such output.
+    """
+    if output not in declared:
+        raise ContractError(
+            f"{context.step_selector} ({context.block_type}) asked "
+            f"wants({output!r}), but declares no such output; its outputs are "
+            f"{sorted(declared)}"
+        )
+    context.queried_outputs.add(output)
+    wanted = context.wanted_outputs is None or output in context.wanted_outputs
+
+    return wanted
+
+
+def _call_context(action: str, *, needs: str = "events") -> ExecutionContext:
+    """The running call's context; constructors and plain calls have none."""
     context = _CURRENT.get()
     if context is None or context.run_id is None or context.call_scope is None:
         where = (
@@ -452,7 +497,7 @@ def _call_context(action: str) -> ExecutionContext:
             else (f"in {context.step_selector} outside a block call")
         )
         raise EventEmissionError(
-            f"{action} was called {where}; events exist only while the engine "
+            f"{action} was called {where}; {needs} exist only while the engine "
             "runs the block. In a unit test, wrap the call in "
             "reactions.testing.block_call()"
         )

@@ -200,6 +200,16 @@ class DemandError(WorkflowCompileError):
     """Requested outputs name nothing the definition declares, or a recorded group partially."""
 
 
+class ControlDefinitionError(WorkflowCompileError):
+    """A root ``controls`` declaration is malformed or targets what cannot be controlled.
+
+    Raised for an unknown control type or key, a member that is not a block
+    step of the main flow, a reader of a controlled output that is neither
+    listed nor ``prunable``, a state policy a member cannot honour, or a
+    control that would change a recording's static schema or settings.
+    """
+
+
 class WorkflowExecutionError(RuntimeError):
     """A compiled V2 workflow failed during execution."""
 
@@ -346,6 +356,16 @@ class EventEmissionError(ContractError):
     ownership snapshot, or an emission after the run's reactions closed or
     were cancelled. Missing, unknown or ill-kinded fields raise
     ``events.EventPayloadError`` instead.
+    """
+
+
+class ControlError(ContractError):
+    """A runtime control update was rejected; no part of it was applied.
+
+    Raised by ``ControlPanel.update`` for an unknown control name, a value of
+    the wrong type or kind, or an update that would need a new compiled plan
+    (an implementation, quality or graph change). The current snapshot and
+    every admitted pulse are unaffected.
     """
 
 

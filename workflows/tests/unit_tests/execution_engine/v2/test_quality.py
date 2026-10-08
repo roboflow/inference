@@ -8,6 +8,8 @@ step-level label nothing serves is an error; a lower level is recorded as
 ignored. Legacy blocks without labels select exactly as before.
 """
 
+from dataclasses import replace
+
 import pytest
 from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
 from roboflow_workflows.execution_engine.v2.declaration import (
@@ -91,7 +93,7 @@ def test_without_any_request_the_first_fitting_implementation_wins_as_before():
     choice = plan.step(("model",)).implementation
 
     assert choice.name == "accurate"
-    assert choice.quality is None and choice.request.is_empty
+    assert choice.selected_quality is None and choice.request.is_empty
     assert choice.describe() == {
         "name": "accurate",
         "target": ["cpu"],
@@ -126,13 +128,13 @@ def test_block_beats_workflow_beats_deployment_and_the_plan_records_the_level(
     choice = plan.step(("model",)).implementation
 
     assert choice.name == expected
-    assert choice.quality.level == level
+    assert choice.selected_quality.level == level
     assert choice.describe()["quality"]["selected"] == {
-        "label": choice.quality.label,
+        "label": choice.selected_quality.label,
         "level": level,
     }
     assert choice.ignored == ()
-    assert label_of(plan) == {"label": f"{expected}@{choice.quality.label}"}
+    assert label_of(plan) == {"label": f"{expected}@{choice.selected_quality.label}"}
 
 
 def test_step_quality_reaches_nested_block_steps_by_their_full_path():
@@ -144,11 +146,15 @@ def test_step_quality_reaches_nested_block_steps_by_their_full_path():
     )
 
     assert plan.step(("child", "model")).implementation.name == "fast"
-    assert plan.quality.describe() == {
+    assert plan.quality_settings.describe() == {
         "workflow": None,
         "steps": {"$steps.child/model": "fast"},
     }
-    assert plan.describe()["quality"] == plan.quality.describe()
+    assert plan.describe()["quality"] == {
+        **plan.quality_settings.describe(),
+        "deployment": None,
+        "unused": [],
+    }
 
 
 # Unsupported labels ---------------------------------------------------------
@@ -194,7 +200,7 @@ def test_workflow_and_deployment_labels_nothing_serves_fall_through_and_are_reco
     legacy = plan.step(("legacy",)).implementation
     model = plan.step(("model",)).implementation
     labeled = plan.step(("labeled",)).implementation
-    assert legacy.name == "default" and legacy.quality is None
+    assert legacy.name == "default" and legacy.selected_quality is None
     assert [item.describe() for item in legacy.ignored] == [
         {
             "label": "draft",
@@ -207,11 +213,13 @@ def test_workflow_and_deployment_labels_nothing_serves_fall_through_and_are_reco
             "reason": "no implementation of the block declares quality labels",
         },
     ]
-    assert model.name == "fast" and model.quality == QualityChoice("fast", "deployment")
+    assert model.name == "fast" and model.selected_quality == QualityChoice(
+        "fast", "deployment"
+    )
     assert [(item.label, item.level) for item in model.ignored] == [
         ("draft", "workflow")
     ]
-    assert labeled.quality == QualityChoice("fast", "deployment")
+    assert labeled.selected_quality == QualityChoice("fast", "deployment")
     assert label_of(plan) == {
         "legacy": "legacy@None",
         "model": "fast@fast",
@@ -234,7 +242,7 @@ def test_target_and_quality_combine_a_label_served_only_off_target():
     )
 
     choice = hinted.step(("model",)).implementation
-    assert choice.name == "accurate" and choice.quality is None
+    assert choice.name == "accurate" and choice.selected_quality is None
     assert choice.ignored[0].reason == (
         "the implementation(s) ['cuda-fast'] serving 'fast' do not fit the compile "
         "target"
@@ -280,9 +288,57 @@ def test_execution_settings_are_root_only():
         )
 
 
-def test_compile_options_quality_must_be_a_label():
-    with pytest.raises(ContractError, match="non-empty label"):
-        CompileOptions(quality="")
+NOT_LABELS = [
+    ("$inputs.quality", "must be a literal"),
+    ("$steps.model.label", "must be a literal"),
+    ("", "quality label of letters"),
+    (" fast", "quality label of letters"),
+    ("fast!", "quality label of letters"),
+    ("fa st", "quality label of letters"),
+    (3, "quality label of letters"),
+]
+
+
+def _declare_implementation(label):
+    class Labelled(Implementation):
+        name = "labelled"
+        quality = (label,)
+
+        def run(self, *, value):
+            return {"label": "x"}
+
+    class Host(Block):
+        type = "test/m7_label_host@v1"
+        outputs = {"label": Output(STRING_KIND)}
+        implementations = (Labelled,)
+
+        class Params(BlockParams):
+            value: Ref()
+
+    return Host
+
+
+@pytest.mark.parametrize("value, message", NOT_LABELS)
+def test_every_quality_entry_point_accepts_only_literal_labels(value, message):
+    with pytest.raises(ContractError, match=message):
+        CompileOptions(quality=value)
+    for level in ("step", "workflow", "deployment"):
+        with pytest.raises(ContractError, match=message):
+            QualityRequest(**{level: value})
+    with pytest.raises(WorkflowCompileError, match=message):
+        compiled(MODEL, OUTPUT, execution={"quality": value})
+    with pytest.raises(WorkflowCompileError, match=message):
+        compiled(MODEL, OUTPUT, execution={"step_quality": {"$steps.model": value}})
+    with pytest.raises(DeclarationError, match=message):
+        _declare_implementation(value)
+
+
+def test_valid_labels_pass_every_entry_point_unchanged():
+    assert CompileOptions(quality="fast-v2_1").quality == "fast-v2_1"
+    assert QualityRequest(deployment="fast-v2_1").deployment == "fast-v2_1"
+    assert spec_of(_declare_implementation("fast-v2_1")).implementations[
+        0
+    ].quality == frozenset({"fast-v2_1"})
 
 
 def test_implementation_quality_declarations_are_validated():
@@ -355,14 +411,14 @@ def test_a_forged_quality_choice_is_rejected_by_the_plan_checks():
         target=Target.cpu(),
         considered=consider(spec, target=Target.cpu()),
         request=request,
-        quality=QualityChoice("fast", "workflow"),
+        selected_quality=QualityChoice("fast", "workflow"),
     )
 
     with pytest.raises(ContractError, match="is not the selection"):
         check_choice(spec, forged)
 
     genuine = select_implementation(
-        spec, target=Target.cpu(), step_path=("model",), quality=request
+        spec, target=Target.cpu(), step_path=("model",), quality_request=request
     )
     check_choice(spec, genuine)
     assert genuine.spec is spec.implementations[1]
@@ -379,5 +435,94 @@ def test_quality_settings_build_the_request_of_each_step():
     )
     assert QualityRequest().levels() == ()
     assert QualityRequest(deployment="fast").levels() == (("deployment", "fast"),)
-    with pytest.raises(ContractError, match="non-empty label"):
+    with pytest.raises(ContractError, match="quality label of letters"):
         QualityRequest(step="")
+
+
+@pytest.mark.parametrize(
+    "execution, deployment",
+    [
+        (None, "fast"),
+        ({"quality": "fast"}, None),
+        ({"step_quality": {"$steps.labeled": "fast"}}, None),
+    ],
+)
+def test_a_step_without_a_choice_cannot_bypass_a_quality_request(execution, deployment):
+    plan = compiled(
+        [step(Labeled, "labeled", value="$inputs.value")],
+        {"label": "$steps.labeled.label"},
+        execution=execution,
+        quality=deployment,
+    )
+    assert label_of(plan) == {"label": "labeled@fast"}
+
+    with pytest.raises(ContractError, match="has no ImplementationChoice"):
+        replace(plan, steps=(replace(plan.steps[0], implementation=None),))
+
+
+def test_a_quality_free_plan_still_accepts_an_implicit_ordinary_choice():
+    plan = compiled(
+        [step(Labeled, "labeled", value="$inputs.value")],
+        {"label": "$steps.labeled.label"},
+    )
+    implicit = replace(plan, steps=(replace(plan.steps[0], implementation=None),))
+
+    assert label_of(implicit) == {"label": "labeled@None"}
+
+
+# Unused hints ---------------------------------------------------------------
+
+
+def test_a_workflow_hint_no_step_serves_compiles_and_is_reported_on_the_plan():
+    plan = compiled(MODEL, OUTPUT, execution={"quality": "fsat"})
+
+    assert plan.step(("model",)).implementation.name == "accurate"
+    assert plan.describe()["quality"] == {
+        "workflow": "fsat",
+        "steps": {},
+        "deployment": None,
+        "unused": [
+            {
+                "label": "fsat",
+                "level": "workflow",
+                "reason": "no step serves 'fsat' on the compile target",
+                "available": ["accurate", "balanced", "fast"],
+            }
+        ],
+    }
+
+
+def test_a_hint_every_serving_step_overrides_is_reported_with_the_steps():
+    plan = compiled(
+        MODEL,
+        OUTPUT,
+        execution={"quality": "accurate", "step_quality": {"$steps.model": "fast"}},
+        quality="balanced",
+    )
+
+    assert [(item.level, item.label) for item in plan.unused_quality_hints()] == [
+        ("workflow", "accurate"),
+        ("deployment", "balanced"),
+    ]
+    assert plan.unused_quality_hints()[0].reason == (
+        "every step serving 'accurate' (['$steps.model']) honours a "
+        "higher-precedence label"
+    )
+
+
+def test_a_hint_one_step_honours_is_used_even_beside_legacy_blocks():
+    plan = compiled(
+        [
+            step(Legacy, "legacy", value="$inputs.value"),
+            step(Model, "model", value="$inputs.value"),
+        ],
+        {"legacy": "$steps.legacy.label", "model": "$steps.model.label"},
+        execution={"quality": "fast"},
+    )
+
+    assert plan.unused_quality_hints() == ()
+    assert plan.describe()["quality"]["unused"] == []
+
+
+def test_a_plan_without_quality_describes_exactly_as_before():
+    assert "quality" not in compiled(MODEL, OUTPUT).describe()

@@ -58,6 +58,7 @@ from roboflow_workflows.execution_engine.v2.resources import (
     ResourceSpec,
     read_resource_specs,
 )
+from roboflow_workflows.execution_engine.v2.targets import check_quality_label
 
 __all__ = [
     "CONTRACT_ATTRIBUTES",
@@ -105,15 +106,20 @@ RESERVED_PHASE_NAMES: Tuple[str, ...] = CONTRACT_ATTRIBUTES + (
     QUALITY_ATTRIBUTE,
     "run",
     "wants",
+    "reset_state",
     "execution_context",
     "discover_dependent_resources",
     "discover_work_operations",
     "discover_restrictions",
 )
-"""Attributes of ``Block`` and ``Implementation`` that a phase cannot shadow."""
+"""Attributes of ``Block`` and ``Implementation`` that a phase cannot shadow.
+
+``reset_state`` is the reset capability a ``reset_on_enable`` control needs:
+an instance method without arguments that returns the block's local state to
+its freshly constructed value (``controls``).
+"""
 
 _NAME = re.compile(r"[A-Za-z0-9_\-.]+")
-_QUALITY_LABEL = re.compile(r"[A-Za-z0-9_\-]+")
 
 
 class Implementation(ExecutionContextReader):
@@ -200,6 +206,11 @@ class ImplementationSpec:
         """Whether this implementation declares the quality ``label``."""
         return label in self.quality
 
+    @property
+    def resettable(self) -> bool:
+        """Whether the class declares ``reset_state()`` (a ``reset_on_enable`` control may reset it)."""
+        return callable(getattr(self.implementation_class, "reset_state", None))
+
     def describe(self) -> Dict[str, Any]:
         """Return a JSON-friendly description without constructing anything."""
         owner = self.implementation_class
@@ -213,6 +224,8 @@ class ImplementationSpec:
         }
         if self.quality:
             description["quality"] = sorted(self.quality)
+        if self.resettable:
+            description["resettable"] = True
 
         return description
 
@@ -230,8 +243,8 @@ def read_quality_labels(
         The declared labels; empty when the owner declares none.
 
     Raises:
-        Exception: ``fail(message)`` when the value is not a tuple of labels
-            made of letters, digits, ``_`` and ``-``, or repeats a label.
+        Exception: ``fail(message)`` when the value is not a tuple of literal
+            labels (``targets.check_quality_label``) or repeats a label.
     """
     declared = getattr(owner, QUALITY_ATTRIBUTE, ())
     if isinstance(declared, str) or not isinstance(declared, (tuple, list)):
@@ -240,13 +253,8 @@ def read_quality_labels(
         )
 
     labels = tuple(declared)
-    invalid = [
-        label
-        for label in labels
-        if not isinstance(label, str) or not _QUALITY_LABEL.fullmatch(label)
-    ]
-    if invalid:
-        raise fail(f"quality labels must be letters, digits, _ or -, got {invalid!r}")
+    for label in labels:
+        check_quality_label(label, location="quality entry", fail=fail)
     if len(set(labels)) != len(labels):
         raise fail(f"quality repeats a label: {list(labels)}")
 

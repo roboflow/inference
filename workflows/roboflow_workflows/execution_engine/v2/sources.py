@@ -33,21 +33,42 @@ configuration); the compiler rejects anything else. Constructor keyword
 parameters are resources, resolved like a block's. The constructor must not
 acquire the input itself; ``open`` does.
 
-Lifecycle, all on the source's own reader thread of one active run::
+Lifecycle of one active run. The constructor runs inside ``start()`` on the
+caller's thread; ``open``, ``read`` and ``close`` run on the source's own
+reader thread::
 
-    instance = SourceClass(**resources)      # per start(); no acquisition here
+    instance = SourceClass(**resources)      # start() caller; no acquisition here
+    instance.source_name = declared_name     # set by the engine before open
     instance.stop_event = threading.Event()  # set by the engine before open
-    instance.open(**params)                  # acquire (open the file, connect)
+    instance.open(**params)                  # reader thread: open the file, connect
     while (emission := instance.read()) is not None:
         ...                                  # one terminal pulse per emission
     instance.close()                         # exactly once after open was attempted
 
-``read`` blocks until the next emission. Once ``stop_event`` is set it should
-return promptly (a timed source waits with ``self.stop_event.wait(delay)``
-instead of sleeping); whatever it returns afterwards is discarded. Authors read
-the event and never set, clear or replace it. ``close`` runs exactly once after
-``open`` was attempted, also when ``open`` raised part-way, so it must tolerate
-a partial open. Interrupting a blocked native read is not promised.
+``source_name`` is the declared name of the source in the workflow. It is not
+available in the constructor. ``read`` blocks until the next emission. Once ``stop_event`` is
+set it should return promptly (a timed source waits with
+``self.stop_event.wait(delay)`` instead of sleeping); whatever it returns
+afterwards is discarded. Authors read both attributes and never replace them;
+they never set or clear the event. ``close`` runs exactly once after ``open``
+was attempted, also when ``open`` raised part-way, so it must tolerate a
+partial open. Interrupting a blocked native read is not promised.
+
+Identity. By default, the engine gives each present port a ``SampleContext``
+whose ``source_id`` is ``source_name``. A source that delivers several cameras
+provides indexed ``EntryMetadata.sample`` contexts through ``InputValue``,
+giving each camera a stable, distinct ``source_id`` (for example,
+``f"{source_name}/{camera_index}"``). Per-source managed state is keyed by
+these identifiers; reusing an identifier shares that state across cameras.
+
+Timing. ``Emission.media`` and ``Emission.capture`` default to unknown; leave
+``capture`` as ``None`` unless a real capture time is known, and give every
+independent media timeline its own clock id. The engine stamps the pulse's
+``observed`` time with ``engine_observation()`` when ``read`` returns. A
+source that collects several members into one emission may stamp each
+member's own arrival with ``engine_observation()`` in that member's
+``TemporalContext``; the time is on ``ENGINE_CLOCK_ID``, the same clock as
+the pulse's.
 
 Emitted payloads are handed over to the engine: a source must not mutate or
 reuse them after ``read`` returns.
@@ -61,7 +82,9 @@ declare a time axis or emit filtered positions.
 
 import inspect
 import threading
+import time
 from dataclasses import dataclass, field
+from fractions import Fraction
 from types import MappingProxyType
 from typing import Any, ClassVar, Dict, Mapping, Optional, Tuple, Type
 
@@ -99,14 +122,38 @@ from roboflow_workflows.execution_engine.v2.resources import (
 )
 
 __all__ = [
+    "ENGINE_CLOCK_ID",
     "Emission",
     "Source",
     "SourceDeclarationError",
     "SourceOutput",
     "SourceParams",
     "SourceSpec",
+    "engine_observation",
     "spec_of_source",
 ]
+
+ENGINE_CLOCK_ID = "engine.monotonic"
+"""Clock of the observation timestamps the engine stamps (``time.monotonic_ns``)."""
+
+
+def engine_observation() -> Timestamp:
+    """Return the current time on the engine's monotonic clock.
+
+    The engine stamps each pulse's ``observed`` time with it. A source may use
+    it for a member's own arrival so both are on one comparable clock.
+
+    Returns:
+        A nanosecond timestamp on ``ENGINE_CLOCK_ID``. It is never comparable
+        to a media clock and never derived from media ticks.
+    """
+    stamp = Timestamp(
+        ticks=time.monotonic_ns(),
+        time_base=Fraction(1, 10**9),
+        clock_id=ENGINE_CLOCK_ID,
+    )
+
+    return stamp
 
 
 class SourceDeclarationError(ContractError):
@@ -440,10 +487,13 @@ class Source:
         metadata: Free-form UI and catalogue metadata.
 
     Resources are the keyword parameters of ``__init__``. The engine creates a
-    fresh instance for every active run and drives ``open``, ``read`` and
-    ``close`` on that run's reader thread for this source (module docstring).
+    fresh instance for every active run inside ``start()`` on the caller's
+    thread, then drives ``open``, ``read`` and ``close`` on that run's reader
+    thread for this source (module docstring).
 
     Attributes:
+        source_name: Declared name of this source in the workflow. Set by the
+            engine before ``open``; read it, never replace it.
         stop_event: Set by the engine before ``open`` and set when the run is
             stopping. Read it (``is_set()``, ``wait(timeout)``); never set,
             clear or replace it.
@@ -456,6 +506,7 @@ class Source:
     engine_compatibility: ClassVar[Optional[str]] = None
     metadata: ClassVar[Mapping[str, Any]] = MappingProxyType({})
 
+    source_name: str
     stop_event: threading.Event
 
     __source_spec__: ClassVar[Optional[SourceSpec]] = None

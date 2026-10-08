@@ -57,6 +57,7 @@ from roboflow_workflows.execution_engine.v2.active.execution import (
     operator_arrivals,
 )
 from roboflow_workflows.execution_engine.v2.context import use_pulse_run_id
+from roboflow_workflows.execution_engine.v2.controls import ControlSnapshot
 from roboflow_workflows.execution_engine.v2.data import Timestamp
 from roboflow_workflows.execution_engine.v2.errors import (
     ActiveRunError,
@@ -109,11 +110,20 @@ Counters = Any
 
 @dataclass(frozen=True)
 class SourcePulse:
-    """An admitted emission of a source: its key and when it was read."""
+    """An admitted emission of a source: its key, when it was read and its controls.
+
+    Args:
+        key: Identity of the pulse.
+        emission: What the source emitted.
+        observed: When the runtime read the emission.
+        controls: Control snapshot taken at admission; the whole pulse, the
+            operator pulses it feeds and its results use exactly this one.
+    """
 
     key: PulseKey
     emission: Emission
     observed: Timestamp
+    controls: ControlSnapshot
 
 
 @dataclass(frozen=True)
@@ -375,21 +385,31 @@ class PulseExecutor:
         if not self._aborting():
             self._schedule_end(domain, reason)
 
-    def end_domain(self, domain: str, reason: TerminationReason) -> None:
+    def end_domain(
+        self,
+        domain: str,
+        reason: TerminationReason,
+        *,
+        controls: ControlSnapshot,
+    ) -> None:
         """Tell the operators of ``domain`` that its inputs ended; finish the done ones.
 
         An operator finishes once, by whichever upstream domain ends last;
         its domain ends after its final pulses and any pulse of it still
         running elsewhere. Stops at the first failure, which is recorded.
+        ``controls`` is the snapshot the driver took when it sequenced this
+        end; every pulse the end emits runs under it.
         """
         try:
             for planned in self.session.plan.consumers_of(domain):
                 if self._aborting():
                     return
                 slot = self.operators[planned.name]
-                if not self._end_inputs(slot, planned, domain, reason=reason):
+                if not self._end_inputs(
+                    slot, planned, domain, reason=reason, controls=controls
+                ):
                     return
-                if not self._finish_if_ended(slot, planned):
+                if not self._finish_if_ended(slot, planned, controls=controls):
                     return
         except RunAborted:
             return
@@ -401,21 +421,55 @@ class PulseExecutor:
         domain: str,
         *,
         reason: TerminationReason,
+        controls: ControlSnapshot,
     ) -> bool:
         inputs = planned.inputs_from(domain)
         for position, item in enumerate(inputs):
+            self._drain_before_operator(controls)
             with self._exclusive(slot):
                 slot.stopped = slot.stopped or reason == "stop"
                 emitted = self._call_operator(slot, "end_input", item.name)
                 if position == len(inputs) - 1:
                     slot.ended.add(domain)
-            if not self._run_emissions(slot, emitted).completed:
+            if not self._run_emissions(slot, emitted, controls=controls).completed:
                 return False
 
         return True
 
-    def _finish_if_ended(self, slot: OperatorSlot, planned: PlannedOperator) -> bool:
+    def _drain_before_operator(
+        self, controls: ControlSnapshot, run: Optional[RunState] = None
+    ) -> None:
+        """Rule 4 of ``controls``: let older in-flight work enter the operator first.
+
+        Work carrying reset epoch ``e`` waits until no work admitted under a
+        version below ``e`` is in flight, so every operator pulse an older
+        pulse emits is sequenced before this work's emissions and reaches a
+        reset member before the reset. Holds no turn; raises ``RunAborted``
+        when the run aborts meanwhile.
+        """
+        epoch = controls.reset_epoch
+        in_flight = self.session.controls.in_flight
+        if not epoch or in_flight.drained_below(epoch):
+            return
+
+        def aborted() -> Optional[BaseException]:
+            if self._aborting():
+                return RunAborted("the run is aborting while older work drains")
+            return None
+
+        if run is not None:
+            run.record("reset_drain", epoch=epoch, in_flight=in_flight.describe())
+        in_flight.wait_drained_below(epoch, aborted)
+
+    def _finish_if_ended(
+        self,
+        slot: OperatorSlot,
+        planned: PlannedOperator,
+        *,
+        controls: ControlSnapshot,
+    ) -> bool:
         ended: Optional[TerminationReason] = None
+        self._drain_before_operator(controls)
         with self._exclusive(slot):
             if slot.finish_called or not slot.ended.issuperset(
                 planned.upstream_domains
@@ -427,7 +481,7 @@ class PulseExecutor:
             if emitted is not None:
                 slot.counters.finished = True
                 ended = self.progress.seal(slot.name, final)
-        completed = self._run_emissions(slot, emitted).completed
+        completed = self._run_emissions(slot, emitted, controls=controls).completed
         if ended is not None:
             self._end_later(slot.name, ended)
 
@@ -448,6 +502,7 @@ class PulseExecutor:
                 observed=pulse.observed,
                 coordination=self.coordination,
                 reactions=self.reactions,
+                controls=pulse.controls,
             ),
             begin_stage="emission",
             present=frozenset(pulse.emission.data),
@@ -456,7 +511,12 @@ class PulseExecutor:
         )
 
     def _run_operator_pulse(
-        self, slot: OperatorSlot, key: PulseKey, emission: OperatorPulse
+        self,
+        slot: OperatorSlot,
+        key: PulseKey,
+        emission: OperatorPulse,
+        *,
+        controls: ControlSnapshot,
     ) -> _Outcome:
         outcome = self._run_pulse(
             key,
@@ -468,6 +528,7 @@ class PulseExecutor:
                 inputs=self._inputs,
                 coordination=self.coordination,
                 reactions=self.reactions,
+                controls=controls,
             ),
             begin_stage="operator",
             present=frozenset(emission.ports),
@@ -552,11 +613,13 @@ class PulseExecutor:
                 return _CANCELLED
             slot = self.operators[planned.name]
             arrivals = operator_arrivals(run, planned)
+            self._drain_before_operator(run.controls, run)
             turn = self.coordination.stages(run, {"push": slot.stage}, calls=1)
             with turn.call("push"):
                 self.count(slot.counters, "arrivals", len(arrivals))
                 emitted = self._call_operator(slot, "push", arrivals, fed_by=run.pulse)
-            outcome = self._run_emissions(slot, emitted)
+            # An operator pulse inherits the snapshot of the pulse that fed it.
+            outcome = self._run_emissions(slot, emitted, controls=run.controls)
             if not outcome.completed:
                 return outcome
 
@@ -631,13 +694,20 @@ class PulseExecutor:
         return emitted
 
     def _run_emissions(
-        self, slot: OperatorSlot, emitted: Optional[_Emitted]
+        self,
+        slot: OperatorSlot,
+        emitted: Optional[_Emitted],
+        *,
+        controls: ControlSnapshot,
     ) -> _Outcome:
         """Run an operator's returned pulses in order until one does not complete.
 
         ``None`` is a failed call (see ``_call_operator``). A started pulse
         counts itself as processed or cancelled; returned pulses that never
-        started because of a failure are counted cancelled here.
+        started because of a failure are counted cancelled here. ``controls``
+        is the snapshot the emitted pulses run under: the feeding pulse's for
+        a ``push``; the one the driver took when it scheduled the domain end
+        for an end-of-input or finish emission, which no pulse fed.
         """
         if emitted is None:
             return _Outcome(completed=False, error=slot.error)
@@ -650,7 +720,7 @@ class PulseExecutor:
             if self._aborting():
                 break
             self._gauge("pending_operator_pulses", -1)
-            outcome = self._run_operator_pulse(slot, key, emission)
+            outcome = self._run_operator_pulse(slot, key, emission, controls=controls)
             started += 1
         unstarted = len(emitted) - started
         self.count(slot.counters, "cancelled", unstarted)
@@ -698,10 +768,17 @@ class PulseExecutor:
             if item.group.source != run.pulse.source:
                 continue
             activated = filtered or item.group.anchor.output in present
+            omitted = activated and run.group_omitted(item.group)
             turn = self.coordination.stages(
-                run, {"deliver": item.stage}, calls=1 if activated else 0
+                run,
+                {"deliver": item.stage},
+                calls=1 if activated and not omitted else 0,
             )
-            if activated:
+            if omitted:
+                # Every field reads a disabled control's steps: nothing to
+                # deliver, nothing to wait for; the turn retired above.
+                self._omit_group(run, item, counters=counters)
+            elif activated:
                 pending.append((item, turn))
         executed: Set[StepPath] = set()
         delivery = _Delivery(
@@ -717,6 +794,31 @@ class PulseExecutor:
         completed = not pending
 
         return completed
+
+    def _omit_group(
+        self, run: RunState, item: Registered, *, counters: Counters
+    ) -> None:
+        reason = (
+            run.controls.omitted_reason(next(iter(item.group.dependencies), ()))
+            or "every field reads steps of a disabled control"
+        )
+        run.record("group_omitted", group=item.group.name, reason=reason)
+        self.count(counters, "omitted")
+        try:
+            self.observer.on_group_omitted(
+                run_id=run.run_id,
+                group=item.group.name,
+                source=run.pulse.source,
+                pulse=run.pulse,
+                reason=reason,
+            )
+        except Exception as error:
+            raise ActiveRunError(
+                f"on_group_omitted raised {type(error).__name__}: {error}",
+                stage="observer",
+                group=item.group.name,
+                **self._where(run.pulse),
+            ) from error
 
     def _deliver_ready(
         self,

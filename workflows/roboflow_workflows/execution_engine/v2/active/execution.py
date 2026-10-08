@@ -31,10 +31,9 @@ pipelined run passes its ``coordination``; each pulse then carries the ticket
 ``(domain, sequence)`` that orders it at every stage it visits.
 """
 
-import time
-from fractions import Fraction
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
+from roboflow_workflows.execution_engine.v2.controls import ControlSnapshot
 from roboflow_workflows.execution_engine.v2.data import (
     EntryLayout,
     EntryMetadata,
@@ -53,6 +52,7 @@ from roboflow_workflows.execution_engine.v2.execution.entries import (
 from roboflow_workflows.execution_engine.v2.execution.inputs import (
     check_payload,
     check_shared_axes,
+    control_input_entries,
     kinds_named,
 )
 from roboflow_workflows.execution_engine.v2.execution.outputs import (
@@ -79,30 +79,16 @@ from roboflow_workflows.execution_engine.v2.plan import (
     SourcePort,
 )
 from roboflow_workflows.execution_engine.v2.reactions.dispatch import Reactions
+
+# ENGINE_CLOCK_ID and engine_observation are public in ``v2.sources``; both stay
+# importable from here for existing callers.
 from roboflow_workflows.execution_engine.v2.sources import (
+    ENGINE_CLOCK_ID,
     Emission,
     _ReplaySource,
     _RestoredPort,
+    engine_observation,
 )
-
-ENGINE_CLOCK_ID = "engine.monotonic"
-"""Clock of the observation timestamps the runtime stamps itself."""
-
-
-def engine_observation() -> Timestamp:
-    """Return the current time on the engine's monotonic clock.
-
-    Returns:
-        A nanosecond timestamp on ``ENGINE_CLOCK_ID``. It is never comparable
-        to a media clock and never derived from media ticks.
-    """
-    stamp = Timestamp(
-        ticks=time.monotonic_ns(),
-        time_base=Fraction(1, 10**9),
-        clock_id=ENGINE_CLOCK_ID,
-    )
-
-    return stamp
 
 
 def begin_pulse(
@@ -114,6 +100,7 @@ def begin_pulse(
     observed: Optional[Timestamp] = None,
     coordination: Coordination = SERIAL,
     reactions: Optional[Reactions] = None,
+    controls: Optional[ControlSnapshot] = None,
 ) -> RunState:
     """Create the run state of one pulse from an emission.
 
@@ -126,6 +113,10 @@ def begin_pulse(
             now when omitted.
         coordination: The run's coordination; ``SERIAL`` gates nothing.
         reactions: The active run's reaction runtime; ``None`` without handlers.
+        controls: Control snapshot the pulse runs under: the active runtime
+            always passes the one taken at admission. Omit it only for a
+            hand-built pulse, which then takes the session's current one.
+            Controlled inputs take the snapshot's values, overlaying ``inputs``.
 
     Returns:
         A fresh run state holding the static inputs and the emitted ports;
@@ -142,15 +133,19 @@ def begin_pulse(
         emission=emission,
         observed=observed if observed is not None else engine_observation(),
     )
+    if controls is None:  # hand-built pulse; the runtime always passes one
+        controls = session.controls.current
+    inputs = _with_control_inputs(session, controls=controls, inputs=inputs)
     run = RunState(
         session=session,
         run_id=pulse.run_id,
-        inputs=dict(inputs),
+        inputs=inputs,
         pulse=pulse,
         ports=ports,
         coordination=coordination,
         ticket=pulse_ticket(pulse),
         reactions=reactions,
+        controls=controls,
     )
     run.record(
         "pulse_started",
@@ -159,8 +154,28 @@ def begin_pulse(
         pulse=pulse.sequence,
         ports=sorted(emission.data),
     )
+    _record_controls(run)
 
     return run
+
+
+def _with_control_inputs(
+    session: ExecutionSession,
+    *,
+    controls: ControlSnapshot,
+    inputs: Mapping[str, Entry],
+) -> Dict[str, Entry]:
+    """The pulse's inputs with the controlled ones overlaid from its snapshot."""
+    entries = dict(inputs)
+    if session.plan.controls.controlled_inputs:
+        entries.update(control_input_entries(session.plan, controls))
+
+    return entries
+
+
+def _record_controls(run: RunState) -> None:
+    if not run.plan.controls.is_empty:
+        run.record("controls", **run.controls.view().describe())
 
 
 def pulse_ticket(pulse: PulseKey) -> Ticket:
@@ -347,6 +362,7 @@ def begin_operator_pulse(
     inputs: Mapping[str, Entry],
     coordination: Coordination = SERIAL,
     reactions: Optional[Reactions] = None,
+    controls: Optional[ControlSnapshot] = None,
 ) -> RunState:
     """Create the run state of one pulse an operator emitted.
 
@@ -357,6 +373,10 @@ def begin_operator_pulse(
         inputs: Static input entries prepared once per active run.
         coordination: The run's coordination; ``SERIAL`` gates nothing.
         reactions: The active run's reaction runtime; ``None`` without handlers.
+        controls: Control snapshot the pulse runs under: the active runtime
+            always passes the feeding pulse's for a ``push`` emission, or the
+            one it sequenced the domain end under. Omit it only for a
+            hand-built pulse, which then takes the session's current one.
 
     Returns:
         A fresh run state holding the static inputs and the operator's
@@ -368,16 +388,20 @@ def begin_operator_pulse(
             entry's layout differs from the port's planned layout.
     """
     ports = operator_port_entries(session.plan, pulse.source, emission=emission)
+    if controls is None:  # hand-built pulse; the runtime always passes one
+        controls = session.controls.current
+    inputs = _with_control_inputs(session, controls=controls, inputs=inputs)
     run = RunState(
         session=session,
         run_id=pulse.run_id,
-        inputs=dict(inputs),
+        inputs=inputs,
         pulse=pulse,
         ports=ports,
         causes=emission.causes,
         coordination=coordination,
         ticket=pulse_ticket(pulse),
         reactions=reactions,
+        controls=controls,
     )
     run.record(
         "pulse_started",
@@ -387,6 +411,7 @@ def begin_operator_pulse(
         ports=sorted(emission.ports),
         causes=[f"{cause.source}#{cause.sequence}" for cause in emission.causes],
     )
+    _record_controls(run)
 
     return run
 

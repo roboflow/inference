@@ -16,6 +16,8 @@ resource providers or executes submitted Python::
                                                  mutation analysis, quality
                ──▶ demand.apply_demand           requested outputs, recorded
                                                  groups, prunable steps
+               ──▶ controls.compile_controls     root controls: closures, state
+                                                 policies (only when declared)
                ──▶ recording.compilation         root recording/retrospective
                                                  declarations (only when set)
                ──▶ CompiledWorkflow
@@ -43,6 +45,10 @@ from roboflow_workflows.execution_engine.v2.compilation.composition import (
     Composition,
     ReferenceResolver,
     compose_workflow,
+)
+from roboflow_workflows.execution_engine.v2.compilation.controls import (
+    compile_controls,
+    control_members,
 )
 from roboflow_workflows.execution_engine.v2.compilation.definition import (
     NESTED_WORKFLOW_TYPES,
@@ -171,8 +177,25 @@ def compile_definition(
         recorded_groups = recording_compilation.recorded_group_names(
             root.recording, plan=plan
         )
+    # Control members survive demand narrowing even when initially disabled,
+    # so re-enabling them needs no new plan.
+    members = control_members(plan, root.controls)
     plan = apply_demand(
-        plan, requested=options.requested_outputs, recorded_groups=recorded_groups
+        plan,
+        requested=options.requested_outputs,
+        recorded_groups=recorded_groups,
+        retained=[
+            (path, f"member of control {name!r}")
+            for name, paths in members.items()
+            for path in paths
+        ],
+    )
+    plan = compile_controls(
+        plan,
+        root.controls,
+        members=members,
+        recorded_groups=recorded_groups,
+        recording=root.recording,
     )
     if recording_compilation is None:
         return plan

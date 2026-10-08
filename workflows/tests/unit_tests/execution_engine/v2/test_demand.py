@@ -8,6 +8,7 @@ what it is.
 """
 
 import threading
+from dataclasses import replace
 from typing import Any, Dict, List
 
 import pytest
@@ -927,3 +928,185 @@ def test_compute_demand_is_reusable_with_a_narrower_root_set():
     assert narrowed.wanted[("painter",)] == frozenset({"count"})
     with pytest.raises(ContractError, match="without a demand record"):
         apply_demand(plan, requested=None)
+
+
+@pytest.mark.parametrize(
+    "roots",
+    [list, iter, lambda items: (item for item in items)],
+    ids=["list", "iterator", "generator"],
+)
+def test_compute_demand_consumes_root_sources_once(roots):
+    plan = compiled(
+        [step(Painter, "painter", value="$inputs.value")],
+        {"overlay": "$steps.painter.overlay", "count": "$steps.painter.count"},
+    )
+    items = [(StepPort(("painter",), "overlay"), "request")]
+
+    demand = compute_demand(plan, root_sources=roots(items), always=iter([]))
+
+    assert dict(demand.retained) == {("painter",): "request"}
+    assert dict(demand.wanted) == {("painter",): frozenset({"overlay"})}
+
+
+# Hand-built or altered demand records ---------------------------------------
+
+
+def with_wanted(plan, path, names):
+    wanted = dict(plan.demand.wanted)
+    wanted[path] = frozenset(names)
+
+    return replace(plan, demand=replace(plan.demand, wanted=wanted))
+
+
+def test_a_demand_record_must_want_every_selected_workflow_output():
+    plan = compiled(
+        [step(Painter, "painter", value="$inputs.value")],
+        {"overlay": "$steps.painter.overlay", "count": "$steps.painter.count"},
+    )
+
+    with pytest.raises(ContractError, match=r"does not want outputs \['overlay'\]"):
+        with_wanted(plan, ("painter",), {"count"})
+
+
+def test_a_demand_record_must_want_what_a_retained_step_binds():
+    plan = compiled(
+        [
+            step(Double, "double", value="$inputs.value"),
+            step(Painter, "painter", value="$steps.double.doubled"),
+        ],
+        {"count": "$steps.painter.count"},
+        requested=("count",),
+    )
+
+    with pytest.raises(ContractError, match=r"does not want outputs \['doubled'\]"):
+        with_wanted(plan, ("double",), ())
+
+
+def test_a_demand_record_must_want_what_a_nested_boundary_reads():
+    plan = compiled(
+        [nested("left", CHILD, value="$inputs.value")],
+        {"left_overlay": "$steps.left.overlay"},
+        requested=("left_overlay",),
+    )
+
+    with pytest.raises(ContractError, match=r"does not want outputs \['overlay'\]"):
+        with_wanted(plan, ("left", "painter"), ())
+
+
+def test_a_demand_record_must_want_what_a_kept_group_field_reads():
+    definition_ = active(
+        [source("a")],
+        [step(Painter, "painter", value="$sources.a.value")],
+        [group("frames", "$sources.a.value", overlay="$steps.painter.overlay")],
+    )
+    plan = compile_workflow(definition_, catalogue=ACTIVE_CATALOGUE)
+
+    with pytest.raises(ContractError, match=r"does not want outputs \['overlay'\]"):
+        with_wanted(plan, ("painter",), ())
+
+
+def test_a_demand_record_must_want_what_an_operator_reads():
+    from roboflow_workflows.execution_engine.v2.operators.alignment import Align
+
+    catalogue = Catalogue(
+        BLOCKS, sources=[Scripted], operators=[Align], namespace="test"
+    )
+    definition_ = active(
+        [source("a"), source("b")],
+        [
+            step(Double, "double_a", value="$sources.a.value"),
+            step(Double, "double_b", value="$sources.b.value"),
+        ],
+        [group("pairs", "$operators.pair.a", a="$operators.pair.a")],
+    )
+    definition_["operators"] = [
+        {
+            "type": Align.type,
+            "name": "pair",
+            "inputs": {"a": "$steps.double_a.doubled", "b": "$steps.double_b.doubled"},
+            "clock": "media",
+        }
+    ]
+    plan = compile_workflow(definition_, catalogue=catalogue)
+
+    with pytest.raises(ContractError, match=r"does not want outputs \['doubled'\]"):
+        with_wanted(plan, ("double_b",), ())
+
+
+def test_a_demand_record_may_want_more_than_the_plan_reads():
+    plan = compiled(
+        [step(Painter, "painter", value="$inputs.value")],
+        {"count": "$steps.painter.count"},
+        requested=("count",),
+    )
+    generous = with_wanted(plan, ("painter",), {"overlay", "count"})
+
+    assert generous.create_session().run({"value": 1.0}).rows() == [{"count": 1}]
+
+
+def test_a_demand_record_must_match_the_plan_request_and_steps():
+    plan = compiled(
+        [step(Painter, "painter", value="$inputs.value")],
+        {"overlay": "$steps.painter.overlay", "count": "$steps.painter.count"},
+        requested=("count",),
+    )
+
+    with pytest.raises(ContractError, match="the plan's options request"):
+        replace(plan, demand=replace(plan.demand, requested=None))
+    with pytest.raises(ContractError, match="retention reasons for steps"):
+        replace(plan, demand=replace(plan.demand, retained={}))
+
+
+# Handler groups ---------------------------------------------------------------
+
+
+def handler_definition():
+    definition_ = active(
+        [source("a")],
+        [
+            step(Double, "double", value="$sources.a.value"),
+            step(Emitter, "emitter", value="$steps.double.doubled"),
+        ],
+        [
+            group("frames", "$sources.a.value", doubled="$steps.double.doubled"),
+            group("alerts", "$handlers.notify.out", out="$handlers.notify.out"),
+        ],
+    )
+    definition_["handlers"] = [
+        {
+            "name": "notify",
+            "on": "$steps.emitter.events.seen",
+            "execution": {"mode": "sync"},
+            "bindings": {"value": "$event.value"},
+            "workflow": HANDLER,
+        }
+    ]
+
+    return definition_
+
+
+@pytest.mark.parametrize("requested", [None, ("frames",), ("frames", "alerts")])
+def test_handler_groups_are_recorded_as_delivered_by_their_handler(requested):
+    plan = compile_workflow(
+        handler_definition(),
+        catalogue=ACTIVE_CATALOGUE,
+        options=CompileOptions(requested_outputs=requested),
+    )
+
+    assert plan.describe()["demand"]["outputs"]["alerts"] == {
+        "status": "handler",
+        "fields": ["out"],
+        "reason": "delivered by its handler; requests do not narrow it",
+    }
+
+
+def test_a_handler_group_field_request_lists_handler_groups_as_whole_only():
+    with pytest.raises(DemandError, match="does not declare") as raised:
+        compile_workflow(
+            handler_definition(),
+            catalogue=ACTIVE_CATALOGUE,
+            options=CompileOptions(requested_outputs=("alerts.out",)),
+        )
+
+    message = str(raised.value)
+    assert "'alerts'" in message and "handler group names (whole only" in message

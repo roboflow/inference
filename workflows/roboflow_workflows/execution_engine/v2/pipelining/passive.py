@@ -43,6 +43,7 @@ import time
 from concurrent.futures import Future
 from typing import Any, Dict, Mapping, Optional
 
+from roboflow_workflows.execution_engine.v2.controls import ControlSnapshot
 from roboflow_workflows.execution_engine.v2.errors import ContractError
 from roboflow_workflows.execution_engine.v2.execution import run_prepared
 from roboflow_workflows.execution_engine.v2.execution.entries import Entry
@@ -221,9 +222,13 @@ class PassivePipeline:
             raise self._full()
         try:
             # Prepared only by the one submitter allowed to wait for a worker.
+            # The control snapshot is taken here, at submission.
             self._check_accepting()
-            entries = prepare_inputs(self.session.plan, inputs)
-            future = self._accept(entries, block=block, deadline=deadline)
+            controls = self.session.controls.current
+            entries = prepare_inputs(self.session.plan, inputs, controls=controls)
+            future = self._accept(
+                entries, controls=controls, block=block, deadline=deadline
+            )
         finally:
             self._submit_lock.release()
 
@@ -271,7 +276,12 @@ class PassivePipeline:
             self.session._release_pipeline()
 
     def _accept(
-        self, entries: Dict[str, Entry], *, block: bool, deadline: Optional[float]
+        self,
+        entries: Dict[str, Entry],
+        *,
+        controls: ControlSnapshot,
+        block: bool,
+        deadline: Optional[float],
     ) -> "Future[RunResult]":
         future: "Future[RunResult]" = Future()
         # Running from the start: an accepted run cannot be withdrawn, so its
@@ -280,7 +290,7 @@ class PassivePipeline:
         ticket = Ticket(PASSIVE_DOMAIN, self._next_ordinal)
 
         def work() -> None:
-            self._execute(future, entries=entries, ticket=ticket)
+            self._execute(future, entries=entries, ticket=ticket, controls=controls)
 
         if block:
             remaining = (
@@ -299,7 +309,12 @@ class PassivePipeline:
         return future
 
     def _execute(
-        self, future: "Future[RunResult]", *, entries: Dict[str, Entry], ticket: Ticket
+        self,
+        future: "Future[RunResult]",
+        *,
+        entries: Dict[str, Entry],
+        ticket: Ticket,
+        controls: ControlSnapshot,
     ) -> None:
         with self.counters.track("live_states"):
             try:
@@ -309,6 +324,7 @@ class PassivePipeline:
                     coordination=self._coordination,
                     ticket=ticket,
                     aborted=lambda: self._aborted(ticket),
+                    controls=controls,
                 )
             except PipelineAbortedError as error:
                 self._count("aborted")

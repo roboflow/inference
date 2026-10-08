@@ -140,6 +140,7 @@ from roboflow_workflows.execution_engine.v2.reactions.plan import (
     QueuePolicy,
     StateDefaults,
 )
+from roboflow_workflows.execution_engine.v2.targets import check_quality_label
 
 SUPPORTED_VERSION = "2.0"
 NESTED_WORKFLOW_TYPES: Tuple[str, ...] = (
@@ -186,11 +187,17 @@ _DEFINITION_KEYS = frozenset(
         "recording",
         "retrospective",
         "execution",
+        "controls",
     }
 )
-_ROOT_ONLY_KEYS = ("recording", "retrospective", "execution")
+_ROOT_ONLY_KEYS = ("recording", "retrospective", "execution", "controls")
 _EXECUTION_SETTINGS_KEYS = frozenset({"quality", "step_quality"})
-_QUALITY_LABEL = re.compile(r"[A-Za-z0-9_\-]+")
+_ENABLE_CONTROL_KEYS = frozenset(
+    {"type", "steps", "enabled", "state", "suspends_effects"}
+)
+_INPUT_CONTROL_KEYS = frozenset({"type", "input", "default"})
+CONTROL_STATE_POLICIES = ("keep_ticking", "reset_on_enable")
+"""State policies of an ``enable`` control (see ``ControlDeclaration``)."""
 _NESTED_STEP_KEYS = frozenset(
     {
         "type",
@@ -579,6 +586,8 @@ class WorkflowDeclaration:
             absent.
         execution: Root ``execution`` settings (quality labels); ``None``
             when absent.
+        controls: Root ``controls`` declarations in declaration order; empty
+            when absent. Compiled by ``compilation.controls`` against the plan.
     """
 
     inputs: Mapping[str, WorkflowInputDeclaration]
@@ -597,6 +606,7 @@ class WorkflowDeclaration:
     recording: Optional[Mapping[str, Any]] = None
     retrospective: Optional[Mapping[str, Any]] = None
     execution: Optional["ExecutionSettingsDeclaration"] = None
+    controls: Tuple["ControlDeclaration", ...] = ()
 
     def step(self, name: str) -> Optional[StepDeclaration]:
         """Return the step named ``name``.
@@ -702,6 +712,176 @@ def parse_workflow(definition: Any, *, location: str = "") -> WorkflowDeclaratio
         recording=_optional_section(definition, "recording"),
         retrospective=_optional_section(definition, "retrospective"),
         execution=_parse_execution_settings(_optional_section(definition, "execution")),
+        controls=_parse_controls(_optional_section(definition, "controls")),
+    )
+
+    return declaration
+
+
+@dataclass(frozen=True)
+class ControlDeclaration:
+    """One root ``controls`` entry, as written.
+
+    ::
+
+        "controls": {
+            "overlay": {"type": "enable", "steps": ["$steps.painter"],
+                        "enabled": true, "state": "keep_ticking"},
+            "tracking": {"type": "enable", "steps": ["$steps.tracker"],
+                         "enabled": false, "state": "reset_on_enable",
+                         "suspends_effects": true},
+            "confidence": {"type": "input", "input": "$inputs.confidence",
+                           "default": 0.5}
+        }
+
+    An ``enable`` control switches its member steps (a nested workflow step
+    names every step inside it) on and off at run time; an ``input`` control
+    changes one ungrouped root input between pulses. Quality labels and
+    implementations are chosen at compile time and have no control type.
+
+    Args:
+        name: Control name (a selector segment).
+        type: ``"enable"`` or ``"input"``.
+        steps: Member step selectors of an ``enable`` control, as written.
+        enabled: Initial state of an ``enable`` control.
+        state: ``"keep_ticking"`` (default): while disabled, ``prunable``
+            members stop and non-prunable members keep running with their
+            outputs hidden. ``"reset_on_enable"``: every member stops, and
+            ``reset_state()`` runs once when the control is enabled again.
+        suspends_effects: Explicit consent that stopping the non-prunable
+            members of a ``reset_on_enable`` control may pause their effects
+            (events, in-place mutations); required whenever it has any. The
+            engine cannot prove that skipping such a block has no effect.
+        input: Root input name of an ``input`` control.
+        default: Initial value of an ``input`` control, when ``has_default``;
+            otherwise the input's own default applies.
+        has_default: Whether the declaration wrote a ``default`` key.
+    """
+
+    name: str
+    type: str
+    steps: Tuple[str, ...] = ()
+    enabled: bool = True
+    state: str = "keep_ticking"
+    suspends_effects: bool = False
+    input: Optional[str] = None
+    default: Any = None
+    has_default: bool = False
+
+
+def _parse_controls(
+    raw: Optional[Mapping[str, Any]],
+) -> Tuple[ControlDeclaration, ...]:
+    if raw is None:
+        return ()
+
+    declarations: List[ControlDeclaration] = []
+    for name, entry in raw.items():
+        where = f"controls[{name!r}]"
+        if not is_selector_segment(name):
+            raise WorkflowCompileError(
+                f"controls names must use letters, digits, _ or -, got {name!r}"
+            )
+        if not isinstance(entry, Mapping):
+            raise WorkflowCompileError(
+                f"{where} must be a mapping with a 'type', got {type(entry).__name__}"
+            )
+        control_type = entry.get("type")
+        if control_type == "enable":
+            declarations.append(_parse_enable_control(name, entry, where=where))
+        elif control_type == "input":
+            declarations.append(_parse_input_control(name, entry, where=where))
+        elif control_type == "quality":
+            raise WorkflowCompileError(
+                f"{where}: type 'quality' is not a runtime control; a quality label "
+                "selects a compiled implementation. Set execution.quality, "
+                "execution.step_quality or CompileOptions.quality and compile a "
+                "new plan"
+            )
+        else:
+            raise WorkflowCompileError(
+                f"{where}.type must be 'enable' or 'input', got {control_type!r}"
+            )
+
+    return tuple(declarations)
+
+
+def _parse_enable_control(
+    name: str, entry: Mapping[str, Any], *, where: str
+) -> ControlDeclaration:
+    _reject_unknown_keys(entry, allowed=_ENABLE_CONTROL_KEYS, location=where)
+    steps = entry.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise WorkflowCompileError(
+            f"{where}.steps must be a non-empty list of step selectors such as "
+            f"'$steps.painter', got {steps!r}"
+        )
+    for selector in steps:
+        if not isinstance(selector, str) or not selector.startswith("$steps."):
+            raise WorkflowCompileError(
+                f"{where}.steps entries must be step selectors such as "
+                f"'$steps.painter' or '$steps.child/overlay', got {selector!r}"
+            )
+    if len(set(steps)) != len(steps):
+        raise WorkflowCompileError(f"{where}.steps repeats a selector: {steps}")
+    enabled = entry.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise WorkflowCompileError(
+            f"{where}.enabled must be true or false, got {enabled!r}"
+        )
+    state = entry.get("state", "keep_ticking")
+    if state not in CONTROL_STATE_POLICIES:
+        raise WorkflowCompileError(
+            f"{where}.state must be one of {list(CONTROL_STATE_POLICIES)}, got "
+            f"{state!r}"
+        )
+    suspends_effects = entry.get("suspends_effects", False)
+    if not isinstance(suspends_effects, bool):
+        raise WorkflowCompileError(
+            f"{where}.suspends_effects must be true or false, got "
+            f"{suspends_effects!r}"
+        )
+    if suspends_effects and state == "keep_ticking":
+        raise WorkflowCompileError(
+            f"{where}: suspends_effects has no effect under state 'keep_ticking', "
+            "which never pauses a non-prunable member, so there are no effects to "
+            "suspend; use state 'reset_on_enable' or drop the key"
+        )
+    declaration = ControlDeclaration(
+        name=name,
+        type="enable",
+        steps=tuple(steps),
+        enabled=enabled,
+        state=state,
+        suspends_effects=suspends_effects,
+    )
+
+    return declaration
+
+
+def _parse_input_control(
+    name: str, entry: Mapping[str, Any], *, where: str
+) -> ControlDeclaration:
+    _reject_unknown_keys(entry, allowed=_INPUT_CONTROL_KEYS, location=where)
+    selected = entry.get("input")
+    if not isinstance(selected, str) or not selected:
+        raise WorkflowCompileError(
+            f"{where}.input must name a root input as '$inputs.<name>' or "
+            f"'<name>', got {selected!r}"
+        )
+    input_name = (
+        selected[len("$inputs.") :] if selected.startswith("$inputs.") else selected
+    )
+    if not is_selector_segment(input_name):
+        raise WorkflowCompileError(
+            f"{where}.input names {selected!r}, which is not a root input name"
+        )
+    declaration = ControlDeclaration(
+        name=name,
+        type="input",
+        input=input_name,
+        default=entry.get("default"),
+        has_default="default" in entry,
     )
 
     return declaration
@@ -770,19 +950,9 @@ def _parse_execution_settings(
 
 
 def _quality_label(value: Any, *, location: str) -> str:
-    if isinstance(value, str) and value.startswith("$"):
-        raise WorkflowCompileError(
-            f"{location} is the selector {value!r}; a quality label selects a "
-            "compiled implementation, so it must be a literal, never a runtime "
-            "value"
-        )
-    if not isinstance(value, str) or not _QUALITY_LABEL.fullmatch(value):
-        raise WorkflowCompileError(
-            f"{location} must be a quality label of letters, digits, _ or -, got "
-            f"{value!r}"
-        )
+    label = check_quality_label(value, location=location, fail=WorkflowCompileError)
 
-    return value
+    return label
 
 
 def _optional_section(definition: Mapping[str, Any], key: str) -> Optional[Any]:

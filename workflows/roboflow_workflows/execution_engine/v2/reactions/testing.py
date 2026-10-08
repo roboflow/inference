@@ -15,6 +15,13 @@ name and fields, kinds, ``at`` for several indices), ``has_subscribers``
 answers per ``subscribed``, ``execution_context.sample_at`` returns the
 given sources, and ``ManagedState.source`` resolves to them. No handler
 runs; nothing is snapshotted.
+
+``self.wants(name)`` answers from ``wanted`` (every output when ``None``)
+exactly as the engine does, and ``call.queried`` lists what the block asked::
+
+    with block_call(painter, wanted=("count",)) as call:
+        result = painter.run(value=1.0)
+    assert "overlay" not in result and call.queried == {"overlay"}
 """
 
 from contextlib import contextmanager
@@ -33,6 +40,7 @@ from typing import (
 
 from roboflow_workflows.execution_engine.v2.context import (
     ExecutionContext,
+    answer_wants,
     use_execution_context,
 )
 from roboflow_workflows.execution_engine.v2.data import (
@@ -79,6 +87,11 @@ class CapturedCall:
 
     context: ExecutionContext
     events: List[CapturedEvent] = field(default_factory=list)
+
+    @property
+    def queried(self) -> FrozenSet[str]:
+        """Outputs the block asked ``wants`` about during the call."""
+        return frozenset(self.context.queried_outputs)
 
 
 class _Capture:
@@ -145,13 +158,7 @@ class _Scope:
         self._outputs = frozenset(outputs)
 
     def wants(self, context: ExecutionContext, output: str) -> bool:
-        if output not in self._outputs:
-            raise ContractError(
-                f"wants({output!r}): the block declares no such output; its "
-                f"outputs are {sorted(self._outputs)}"
-            )
-        context.queried_outputs.add(output)
-        wanted = context.wanted_outputs is None or output in context.wanted_outputs
+        wanted = answer_wants(context, output, declared=self._outputs)
 
         return wanted
 
@@ -207,6 +214,7 @@ def block_call(
     sources: Optional[Mapping[Index, Optional[str]]] = None,
     temporal: Optional[Mapping[Index, Optional[TemporalContext]]] = None,
     subscribed: Optional[Iterable[str]] = None,
+    wanted: Optional[Iterable[str]] = None,
     step_path: StepPath = ("block",),
 ) -> Iterator[CapturedCall]:
     """Run block code as one engine call and capture its events.
@@ -223,13 +231,31 @@ def block_call(
         subscribed: Events reported as having subscribers; every declared
             event when ``None``. Unsubscribed events are validated, not
             captured, as in a run.
+        wanted: Outputs ``self.wants`` answers ``True`` for; every declared
+            output when ``None``. Use it to test the branch that skips an
+            unwanted output.
         step_path: Step path shown in messages.
 
     Yields:
-        The captured call; ``events`` fills while the block runs.
+        The captured call; ``events`` fills while the block runs and
+        ``queried`` lists the outputs the block asked about.
+
+    Raises:
+        ContractError: When ``wanted`` names an output the block does not
+            declare.
     """
     block_class = block if isinstance(block, type) else type(block)
     spec = spec_of(block_class)
+    if isinstance(wanted, str):
+        raise ContractError(
+            f"block_call wanted must be a collection of output names, got {wanted!r}"
+        )
+    wanted_outputs = None if wanted is None else frozenset(wanted)
+    if wanted_outputs is not None and not wanted_outputs <= set(spec.outputs):
+        raise ContractError(
+            f"block_call wanted {sorted(wanted_outputs - set(spec.outputs))}, which "
+            f"{spec.type} does not declare; its outputs are {sorted(spec.outputs)}"
+        )
     call_indices = tuple(tuple(index) for index in indices)
     named: Dict[Index, Optional[str]] = {index: source_id for index in call_indices}
     named.update({tuple(index): value for index, value in (sources or {}).items()})
@@ -254,6 +280,7 @@ def block_call(
         indices=call_indices,
         batched=len(call_indices) > 1 if batched is None else batched,
         call_scope=scope,
+        wanted_outputs=wanted_outputs,
     )
     call.context = context
     with use_execution_context(context):

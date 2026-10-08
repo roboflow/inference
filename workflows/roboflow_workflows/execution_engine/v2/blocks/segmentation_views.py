@@ -109,18 +109,21 @@ def _order_current_stream(
 ) -> None:
     """Order the caller's current stream after ``readiness``.
 
-    No host synchronization. On another stream, the stream waits for the
-    event, and the caching allocator learns that the stream uses the tensors,
-    so their memory is not reused before that stream's work completes.
+    No host synchronization. Two separate guarantees:
+
+    - Readiness: on a stream other than the one that recorded the event, the
+      stream waits for the event before it reads the tensors.
+    - Allocation lifetime: the caching allocator learns that the current
+      stream uses the tensors, even on the readiness stream, so their memory
+      is not reused before that stream's work completes. A borrowed tensor
+      may have been allocated on yet another stream.
     """
     if readiness is None:
         return
 
     stream = torch.cuda.current_stream(readiness.stream.device)
-    if stream == readiness.stream:
-        return
-
-    stream.wait_event(readiness.event)
+    if stream != readiness.stream:
+        stream.wait_event(readiness.event)
     for tensor in tensors:
         tensor.record_stream(stream)
 
@@ -188,7 +191,11 @@ class MaskGridGeometry:
                 f"static crop {self.static_crop_xywh} does not match "
                 f"crop_size_hw {tuple(self.crop_size_hw)}"
             )
-        if min(crop_x, crop_y) < 0 or crop_x + crop_w > image_w or crop_y + crop_h > image_h:
+        if (
+            min(crop_x, crop_y) < 0
+            or crop_x + crop_w > image_w
+            or crop_y + crop_h > image_h
+        ):
             raise ContractError(
                 f"static crop {self.static_crop_xywh} leaves the "
                 f"{image_w} x {image_h} image"
@@ -879,7 +886,9 @@ def _check_view_parts(
     if score_type == "binary" and not is_binary:
         raise ContractError(f"binary scores must be bool or uint8, got {scores.dtype}")
     if score_type == "binary" and threshold != 0.0:
-        raise ContractError(f"binary scores use the fixed threshold 0.0, got {threshold}")
+        raise ContractError(
+            f"binary scores use the fixed threshold 0.0, got {threshold}"
+        )
     if score_type != "binary" and not scores.dtype.is_floating_point:
         raise ContractError(f"{score_type} scores must be floating, got {scores.dtype}")
     if score_type == "probabilities" and not 0.0 <= threshold <= 1.0:

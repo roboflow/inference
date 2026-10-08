@@ -32,14 +32,23 @@ an ``UnsupportedQualityError``: the author asked for it explicitly. A
 workflow or deployment label nothing serves is recorded as ignored and the
 next level is tried; without any served label the plain target selection
 applies. Labels are literals: a quality value selects a compiled
-implementation, so it is never a runtime selector.
+implementation, so it is never a runtime selector. ``check_quality_label`` is
+the one grammar every entry point uses (definition, ``CompileOptions``,
+``QualityRequest``, ``Implementation.quality``).
+
+A hint nothing honours is visible on the plan, not only per step:
+``unused_quality_hints`` lists every workflow or deployment label no step
+honoured, with the reason and the labels the plan's steps do serve, so a typo
+or a hint every step overrides shows in ``plan.describe()["quality"]``.
 """
 
+import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Dict,
     FrozenSet,
     Iterable,
@@ -72,10 +81,13 @@ __all__ = [
     "Target",
     "UnsupportedQualityError",
     "UnsupportedTargetError",
+    "UnusedQualityHint",
     "check_choice",
+    "check_quality_label",
     "consider",
     "default_implementation",
     "select_implementation",
+    "unused_quality_hints",
 ]
 
 Considered = Tuple[Tuple[str, Tuple[str, ...]], ...]
@@ -83,6 +95,43 @@ Considered = Tuple[Tuple[str, Tuple[str, ...]], ...]
 
 QUALITY_LEVELS: Tuple[str, ...] = ("step", "workflow", "deployment")
 """Quality precedence, highest first."""
+
+_QUALITY_LABEL = re.compile(r"[A-Za-z0-9_\-]+")
+
+
+def check_quality_label(
+    value: Any,
+    *,
+    location: str,
+    fail: Callable[[str], Exception] = ContractError,
+) -> str:
+    """Check that ``value`` is a literal quality label and return it.
+
+    Args:
+        value: The candidate label.
+        location: Where the value was written, for the message.
+        fail: Builds the exception to raise from a message.
+
+    Returns:
+        ``value`` unchanged.
+
+    Raises:
+        Exception: ``fail(message)`` for a selector such as ``$inputs.quality``
+            or a value that is not letters, digits, ``_`` and ``-``.
+    """
+    if isinstance(value, str) and value.startswith("$"):
+        raise fail(
+            f"{location} is the selector {value!r}; a quality label selects a "
+            "compiled implementation, so it must be a literal, never a runtime "
+            "value"
+        )
+    if not isinstance(value, str) or not _QUALITY_LABEL.fullmatch(value):
+        raise fail(
+            f"{location} must be a quality label of letters, digits, _ or -, got "
+            f"{value!r}"
+        )
+
+    return value
 
 
 @dataclass(frozen=True)
@@ -154,7 +203,8 @@ class QualityRequest:
         deployment: ``CompileOptions.quality``; ``None`` when unset.
 
     Raises:
-        ContractError: When a label is not a non-empty string.
+        ContractError: When a label is not a literal quality label
+            (``check_quality_label``).
     """
 
     step: Optional[str] = None
@@ -164,10 +214,8 @@ class QualityRequest:
     def __post_init__(self) -> None:
         for level in QUALITY_LEVELS:
             label = getattr(self, level)
-            if label is not None and (not isinstance(label, str) or not label):
-                raise ContractError(
-                    f"{level} quality must be a non-empty label, got {label!r}"
-                )
+            if label is not None:
+                check_quality_label(label, location=f"{level} quality")
 
     @property
     def is_empty(self) -> bool:
@@ -297,8 +345,8 @@ class ImplementationChoice:
             with none missing, or the first fitting one serving the honoured
             quality label.
         request: The quality labels asked for at every level.
-        quality: The honoured label and its level; ``None`` when no level
-            asked for a label the block serves.
+        selected_quality: The honoured label and its level; ``None`` when no
+            level asked for a label the block serves.
         ignored: Workflow or deployment labels nothing served, in precedence
             order.
     """
@@ -307,7 +355,7 @@ class ImplementationChoice:
     target: Target
     considered: Considered
     request: QualityRequest = field(default_factory=QualityRequest)
-    quality: Optional[QualityChoice] = None
+    selected_quality: Optional[QualityChoice] = None
     ignored: Tuple[IgnoredQuality, ...] = ()
 
     def __post_init__(self) -> None:
@@ -323,7 +371,8 @@ class ImplementationChoice:
     @property
     def quality_label(self) -> Optional[str]:
         """The honoured quality label, or ``None``."""
-        label = self.quality.label if self.quality is not None else None
+        selected = self.selected_quality
+        label = selected.label if selected is not None else None
 
         return label
 
@@ -345,7 +394,9 @@ class ImplementationChoice:
             description["quality"] = {
                 "requested": self.request.describe(),
                 "selected": (
-                    self.quality.describe() if self.quality is not None else None
+                    self.selected_quality.describe()
+                    if self.selected_quality is not None
+                    else None
                 ),
                 "ignored": [item.describe() for item in self.ignored],
             }
@@ -422,9 +473,9 @@ def select_implementation(
     *,
     target: Target,
     step_path: StepPath,
-    quality: Optional[QualityRequest] = None,
+    quality_request: Optional[QualityRequest] = None,
 ) -> ImplementationChoice:
-    """Select the implementation of ``block`` for ``target`` and ``quality``.
+    """Select the implementation of ``block`` for ``target`` and ``quality_request``.
 
     Without a quality request, or when no level names a label the block
     serves, the first declared implementation that fits ``target`` wins.
@@ -433,7 +484,8 @@ def select_implementation(
         block: Declaration of the logical block.
         target: Compile target.
         step_path: Step being compiled, for error messages.
-        quality: Labels asked for at each level; ``None`` asks for none.
+        quality_request: Labels asked for at each level; ``None`` asks for
+            none.
 
     Returns:
         The selection and the reasons for every alternative.
@@ -443,7 +495,7 @@ def select_implementation(
         UnsupportedQualityError: When the step-level label is served by no
             implementation that fits the target.
     """
-    request = quality if quality is not None else QualityRequest()
+    request = quality_request if quality_request is not None else QualityRequest()
     considered = consider(block, target=target)
     fitting = [
         implementation
@@ -471,7 +523,7 @@ def select_implementation(
                 target=target,
                 considered=considered,
                 request=request,
-                quality=QualityChoice(label=label, level=level),
+                selected_quality=QualityChoice(label=label, level=level),
                 ignored=tuple(ignored),
             )
             return choice
@@ -496,7 +548,7 @@ def select_implementation(
         target=target,
         considered=considered,
         request=request,
-        quality=None,
+        selected_quality=None,
         ignored=tuple(ignored),
     )
 
@@ -529,6 +581,92 @@ def _unserved_reason(
     )
 
     return f"no implementation serves {label!r} ({listed})"
+
+
+@dataclass(frozen=True)
+class UnusedQualityHint:
+    """A workflow or deployment label that no step of a plan honours.
+
+    Args:
+        label: The requested label.
+        level: ``workflow`` or ``deployment``.
+        reason: Why no step honours it.
+        available: Labels the plan's steps can serve on the compile target,
+            sorted.
+    """
+
+    label: str
+    level: str
+    reason: str
+    available: Tuple[str, ...] = ()
+
+    def describe(self) -> Dict[str, Any]:
+        """Return a JSON-friendly description."""
+        return {
+            "label": self.label,
+            "level": self.level,
+            "reason": self.reason,
+            "available": list(self.available),
+        }
+
+
+def unused_quality_hints(
+    hints: QualityRequest,
+    *,
+    steps: Iterable[Tuple[StepPath, "BlockSpec", Optional[ImplementationChoice]]],
+) -> Tuple[UnusedQualityHint, ...]:
+    """Return the workflow and deployment hints no step honours.
+
+    A hint stays a hint: this reports, it never rejects. A label is unused
+    when no step's choice honours it at its level, either because no step
+    serves it (a typo, a model without that variant) or because every step
+    serving it honours a higher-precedence label.
+
+    Args:
+        hints: The workflow and deployment labels of the plan.
+        steps: Path, block declaration and implementation choice per step.
+
+    Returns:
+        One entry per unused hint, in precedence order.
+    """
+    servable: Dict[StepPath, FrozenSet[str]] = {}
+    honoured = set()
+    for path, block, choice in steps:
+        fitting = (
+            {name for name, missing in choice.considered if not missing}
+            if choice is not None
+            else {implementation.name for implementation in block.implementations}
+        )
+        servable[path] = frozenset(
+            label
+            for implementation in block.implementations
+            if implementation.name in fitting
+            for label in implementation.quality
+        )
+        if choice is not None and choice.selected_quality is not None:
+            honoured.add(choice.selected_quality)
+    available = tuple(sorted(set().union(*servable.values())))
+
+    unused = []
+    for level, label in hints.levels():
+        if level == "step" or QualityChoice(label=label, level=level) in honoured:
+            continue
+        serving = [path for path, labels in servable.items() if label in labels]
+        if serving:
+            reason = (
+                f"every step serving {label!r} "
+                f"({[format_step_path(path) for path in serving]}) honours a "
+                "higher-precedence label"
+            )
+        else:
+            reason = f"no step serves {label!r} on the compile target"
+        unused.append(
+            UnusedQualityHint(
+                label=label, level=level, reason=reason, available=available
+            )
+        )
+
+    return tuple(unused)
 
 
 def default_implementation(block: "BlockSpec") -> "ImplementationSpec":
@@ -585,7 +723,10 @@ def check_choice(block: "BlockSpec", choice: Any) -> None:
 
     try:
         expected = select_implementation(
-            block, target=choice.target, step_path=(), quality=choice.request
+            block,
+            target=choice.target,
+            step_path=(),
+            quality_request=choice.request,
         )
     except UnsupportedTargetError as error:
         raise ContractError(
@@ -600,7 +741,7 @@ def check_choice(block: "BlockSpec", choice: Any) -> None:
     if (
         expected.spec is not choice.spec
         or expected.considered != choice.considered
-        or expected.quality != choice.quality
+        or expected.selected_quality != choice.selected_quality
         or expected.ignored != choice.ignored
     ):
         raise ContractError(

@@ -18,6 +18,7 @@ their validators. The caller's mapping and containers are never rewritten.
 import copy
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from roboflow_workflows.execution_engine.v2.controls import ControlSnapshot
 from roboflow_workflows.execution_engine.v2.data import (
     Batch,
     EntryLayout,
@@ -89,32 +90,57 @@ def check_kinds(kinds: Sequence[Kind], payload: Any) -> None:
 
 
 def prepare_inputs(
-    plan: CompiledWorkflow, inputs: Mapping[str, Any]
+    plan: CompiledWorkflow,
+    inputs: Mapping[str, Any],
+    *,
+    controls: Optional[ControlSnapshot] = None,
 ) -> Dict[str, Entry]:
     """Validate the caller's inputs and build one entry per declared input.
+
+    A root input an ``input`` control owns has exactly one writer, the
+    session's ``ControlPanel``: its entry comes from ``controls`` and the
+    caller may not supply it.
 
     Args:
         plan: Compiled plan declaring the inputs.
         inputs: Values by input name: payloads, plain lists, ``Batch`` trees
             or ``InputValue`` objects carrying metadata.
+        controls: The run's control snapshot; required when the plan
+            declares ``input`` controls.
 
     Returns:
         Entry per input name.
 
     Raises:
-        WorkflowInputError: On unknown or missing inputs, disagreeing
-            sizes or structures, or values their kinds reject.
+        WorkflowInputError: On unknown or missing inputs, a controlled input
+            supplied by the caller, disagreeing sizes or structures, or
+            values their kinds reject.
+        ContractError: When the plan has controlled inputs and no snapshot.
     """
     if not isinstance(inputs, Mapping):
         raise WorkflowInputError(
             f"Workflow inputs must be a mapping, got {type(inputs).__name__}"
         )
 
+    controlled = plan.controls.controlled_inputs
+    if controlled and controls is None:
+        raise ContractError(
+            f"inputs {sorted(controlled)} are controlled; prepare them with the "
+            "session's control snapshot (session.controls.current)"
+        )
+    supplied_controlled = sorted(set(inputs) & set(controlled))
+    if supplied_controlled:
+        owners = {name: controlled[name] for name in supplied_controlled}
+        raise WorkflowInputError(
+            f"Workflow inputs {supplied_controlled} are owned by controls {owners}; "
+            "set them with session.controls.update(<control>=value) instead of "
+            "passing them to run() or start()"
+        )
     unknown = sorted(set(inputs) - set(plan.inputs))
     missing = sorted(
         name
         for name, planned in plan.inputs.items()
-        if planned.required and name not in inputs
+        if planned.required and name not in inputs and name not in controlled
     )
     if unknown or missing:
         raise WorkflowInputError(
@@ -125,7 +151,11 @@ def prepare_inputs(
     supplied = {
         name: _supplied(name, inputs[name]) if name in inputs else _default_of(planned)
         for name, planned in plan.inputs.items()
+        if name not in controlled
     }
+    if controls is not None:
+        for name, control in controlled.items():
+            supplied[name] = (controls.values[control], EntryMetadata())
     top_sizes = _top_axis_sizes(plan, supplied=supplied)
 
     entries: Dict[str, Entry] = {}
@@ -141,6 +171,35 @@ def prepare_inputs(
         entries[name] = entry_from_tree(tree, layout=planned.layout, metadata=metadata)
 
     _check_shared_axes(plan, entries=entries)
+
+    return entries
+
+
+def control_input_entries(
+    plan: CompiledWorkflow, controls: ControlSnapshot
+) -> Dict[str, Entry]:
+    """Build the entries of every controlled input from a snapshot, for one run.
+
+    Each pulse of an active run overlays these on the static entries prepared
+    at ``start``, so the pulse reads the values of its own snapshot. Values
+    are shared, not copied: control values are immutable built-in scalars.
+
+    Args:
+        plan: Compiled plan.
+        controls: The run's control snapshot.
+
+    Returns:
+        Entry per controlled input name; empty without ``input`` controls.
+    """
+    entries: Dict[str, Entry] = {}
+    for name, control in plan.controls.controlled_inputs.items():
+        planned = plan.inputs[name]
+        data = controls.values[control]
+        kinds = kinds_named(plan, planned.kinds)
+        tree = _build_tree(planned, data=data, kinds=kinds, top_size=None)
+        metadata = EntryMetadata()
+        validate_entry(tree, layout=planned.layout, metadata=metadata)
+        entries[name] = entry_from_tree(tree, layout=planned.layout, metadata=metadata)
 
     return entries
 
