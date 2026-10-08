@@ -16,6 +16,9 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+
+## `0.2.4-post1`
+
 ### Added
 
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-haiku-5-5` model option.
