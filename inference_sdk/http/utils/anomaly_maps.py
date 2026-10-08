@@ -17,8 +17,22 @@ _ANOMALY_MAP_NUMPY_DTYPE = np.dtype("<f4")
 
 
 def decode_anomaly_map(payload: Mapping[str, Any]) -> np.ndarray:
-    """Decode a payload produced by `encode_anomaly_map` to a float32 array of
-    shape `(height, width)`."""
+    """Decode the ``anomaly_map`` payload of an anomaly detection response.
+
+    Args:
+        payload (Mapping[str, Any]): Mapping with ``shape`` (``[height, width]``),
+            ``dtype`` (``"float32"``) and ``data`` (base64 of row-major
+            little-endian float32 bytes), as the server serializes it.
+
+    Returns:
+        Writable float32 array of shape ``(height, width)`` at the network input
+        resolution; stretch it to the image size to overlay it.
+
+    Raises:
+        ValueError: If the dtype is not float32, the shape is not two positive
+            ints, the data is not valid base64, or its length does not match
+            the shape.
+    """
     if payload.get("dtype") != ANOMALY_MAP_DTYPE:
         raise ValueError(
             f"Expected anomaly map dtype {ANOMALY_MAP_DTYPE!r}, got "
@@ -48,10 +62,20 @@ def decode_anomaly_map(payload: Mapping[str, Any]) -> np.ndarray:
 def decode_anomaly_detection_result(
     result: Union[dict, List[dict]],
 ) -> Union[dict, List[dict]]:
-    """Replace a serialized `anomaly_map` payload with a float32 numpy array.
+    """Replace a serialized ``anomaly_map`` payload with a float32 numpy array.
 
-    Results without an `anomaly_map` (the map was not requested, or the model is
-    not an anomaly detector) pass through unchanged.
+    Args:
+        result (Union[dict, List[dict]]): One parsed inference response, or a list
+            of them. Modified in place.
+
+    Returns:
+        The same result(s) with ``anomaly_map`` decoded via ``decode_anomaly_map``.
+        Results without an ``anomaly_map`` mapping (the map was not requested,
+        the model is not an anomaly detector, or an older server returned a
+        nested float list) pass through unchanged.
+
+    Raises:
+        ValueError: If an ``anomaly_map`` payload is malformed.
     """
     if isinstance(result, list):
         return [decode_anomaly_detection_result(element) for element in result]

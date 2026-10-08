@@ -17,8 +17,19 @@ _ANOMALY_MAP_NUMPY_DTYPE = np.dtype("<f4")
 
 
 def encode_anomaly_map(anomaly_map: Any) -> Dict[str, Any]:
-    """Encode a 2D anomaly map as `{"shape": [height, width], "dtype": "float32",
-    "data": <base64 of little-endian row-major float32 bytes>}`."""
+    """Encode a 2D anomaly map for the HTTP response.
+
+    Args:
+        anomaly_map (Any): 2D array-like of anomaly evidence at the network input
+            resolution. Converted to little-endian float32.
+
+    Returns:
+        Dict with ``shape`` (``[height, width]``), ``dtype`` (``"float32"``) and
+        ``data`` (base64 of the row-major little-endian float32 bytes).
+
+    Raises:
+        ValueError: If ``anomaly_map`` is not two-dimensional.
+    """
     values = np.ascontiguousarray(anomaly_map, dtype=_ANOMALY_MAP_NUMPY_DTYPE)
     if values.ndim != 2:
         raise ValueError(
@@ -32,8 +43,21 @@ def encode_anomaly_map(anomaly_map: Any) -> Dict[str, Any]:
 
 
 def decode_anomaly_map(payload: Mapping[str, Any]) -> np.ndarray:
-    """Decode a payload produced by `encode_anomaly_map` to a float32 array of
-    shape `(height, width)`."""
+    """Decode a payload produced by ``encode_anomaly_map``.
+
+    Args:
+        payload (Mapping[str, Any]): Mapping with ``shape``, ``dtype`` and ``data``
+            as serialized by ``encode_anomaly_map``.
+
+    Returns:
+        Writable float32 array of shape ``(height, width)`` holding the exact
+        serialized values.
+
+    Raises:
+        ValueError: If the dtype is not float32, the shape is not two positive
+            ints, the data is not valid base64, or its length does not match
+            the shape.
+    """
     if payload.get("dtype") != ANOMALY_MAP_DTYPE:
         raise ValueError(
             f"Expected anomaly map dtype {ANOMALY_MAP_DTYPE!r}, got "

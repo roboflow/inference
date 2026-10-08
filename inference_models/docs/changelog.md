@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- PatchCore and FoundAD return the optional heatmap (`include_anomaly_map=True`)
+  at the network input resolution, a float32 array of shape
+  `(image_size, image_size)`, instead of resized to the input image. The patch
+  grid is the map's real resolution and the map covers the whole image as the
+  network saw it, so callers stretch it to the image size themselves (one
+  `cv2.resize`). Behavior change for callers that overlaid
+  `images_metadata[i]["anomaly_map"]` at the input image size.
+
 ---
 
 ## `0.39.1`
@@ -131,8 +141,8 @@
   (`patchcore` and `foundad` architectures, `classification` task, `torch`
   backend). Predictions are `ClassificationPrediction` over `normal` and
   `anomalous`; the raw score, the saved threshold, the decision and an
-  optional heatmap (`include_anomaly_map=True`, a float32 array at the
-  network input resolution) are returned in `images_metadata`. Both models run on the base dependencies: PatchCore
+  optional heatmap (`include_anomaly_map=True`) are returned in
+  `images_metadata`. Both models run on the base dependencies: PatchCore
   nearest-neighbour search is done in PyTorch, so FAISS is not needed.
 
 ---
