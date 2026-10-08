@@ -4,6 +4,8 @@ import torch
 
 from inference_models.models.rfdetr.common import (
     keypoint_precision_cholesky_to_pixel_covariance,
+    load_rfdetr_weights,
+    strip_data_parallel_prefix,
 )
 
 
@@ -214,3 +216,86 @@ class TestInstanceSegmentationMaxDetectionsCap:
         # then
         assert torch.equal(dense.confidence, rle.confidence)
         assert torch.equal(dense.class_id, rle.class_id)
+
+
+def test_data_parallel_prefix_is_stripped_when_every_key_has_it() -> None:
+    # given
+    state_dict = {
+        "module.class_embed.bias": torch.zeros(3),
+        "module.transformer.enc_out_class_embed.0.bias": torch.ones(3),
+    }
+
+    # when
+    result = strip_data_parallel_prefix(state_dict)
+
+    # then
+    assert list(result) == [
+        "class_embed.bias",
+        "transformer.enc_out_class_embed.0.bias",
+    ]
+    assert torch.equal(result["class_embed.bias"], torch.zeros(3))
+
+
+def test_unprefixed_weights_are_returned_unchanged() -> None:
+    # given
+    state_dict = {"class_embed.bias": torch.zeros(3)}
+
+    # when
+    result = strip_data_parallel_prefix(state_dict)
+
+    # then
+    assert result is state_dict
+
+
+def test_partially_prefixed_weights_are_returned_unchanged() -> None:
+    # given
+    # Only a fully wrapped model prefixes every key; a lone "module." name is a
+    # real parameter and must keep its name.
+    state_dict = {"module.weight": torch.zeros(1), "class_embed.bias": torch.zeros(3)}
+
+    # when
+    result = strip_data_parallel_prefix(state_dict)
+
+    # then
+    assert result is state_dict
+
+
+def test_load_rfdetr_weights_reads_data_parallel_training_checkpoint(
+    tmp_path,
+) -> None:
+    # given
+    # Layout of a published rfdetr-nano torch package: a DDP training checkpoint.
+    checkpoint_path = tmp_path / "weights.pth"
+    torch.save(
+        {
+            "model": {"module.class_embed.bias": torch.arange(3.0)},
+            "optimizer": {},
+            "lr_scheduler": {},
+            "epoch": 1,
+            "args": {},
+        },
+        checkpoint_path,
+    )
+
+    # when
+    weights = load_rfdetr_weights(
+        checkpoint_path=str(checkpoint_path), device=torch.device("cpu")
+    )
+
+    # then
+    assert list(weights) == ["class_embed.bias"]
+    assert torch.equal(weights["class_embed.bias"], torch.arange(3.0))
+
+
+def test_load_rfdetr_weights_reads_clean_checkpoint(tmp_path) -> None:
+    # given
+    checkpoint_path = tmp_path / "weights.pth"
+    torch.save({"model": {"class_embed.bias": torch.arange(3.0)}}, checkpoint_path)
+
+    # when
+    weights = load_rfdetr_weights(
+        checkpoint_path=str(checkpoint_path), device=torch.device("cpu")
+    )
+
+    # then
+    assert list(weights) == ["class_embed.bias"]

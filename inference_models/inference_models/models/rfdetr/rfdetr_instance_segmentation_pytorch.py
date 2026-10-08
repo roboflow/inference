@@ -44,6 +44,7 @@ from inference_models.models.rfdetr.class_remapping import (
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.common import (
+    load_rfdetr_weights,
     parse_model_type,
     post_process_instance_segmentation_results,
     post_process_instance_segmentation_results_to_rle_masks,
@@ -149,11 +150,9 @@ class RFDetrForInstanceSegmentationTorch(
                 class_names_operations=inference_config.class_names_operations,
                 device=device,
             )
-        weights_dict = torch.load(
-            model_package_content["weights.pth"],
-            map_location=device,
-            weights_only=False,
-        )["model"]
+        weights_dict = load_rfdetr_weights(
+            checkpoint_path=model_package_content["weights.pth"], device=device
+        )
         model_type = parse_model_type(
             config_path=model_package_content["model_type.json"]
         )
@@ -204,11 +203,9 @@ class RFDetrForInstanceSegmentationTorch(
                 f"full context.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#missingmodelinitparametererror",
             )
-        weights_dict = torch.load(
-            checkpoint_path,
-            map_location=device,
-            weights_only=False,
-        )["model"]
+        weights_dict = load_rfdetr_weights(
+            checkpoint_path=checkpoint_path, device=device
+        )
         if model_type not in CONFIG_FOR_MODEL_TYPE:
             raise CorruptedModelPackageError(
                 message=f"Model package describes model_type as '{model_type}' which is not supported. "

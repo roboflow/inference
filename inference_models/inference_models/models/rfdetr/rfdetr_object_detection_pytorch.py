@@ -39,7 +39,7 @@ from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
-from inference_models.models.rfdetr.common import parse_model_type
+from inference_models.models.rfdetr.common import load_rfdetr_weights, parse_model_type
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.optimization.backend_path import (
     RFDetrBackendPath,
@@ -186,11 +186,9 @@ class RFDetrForObjectDetectionTorch(
                 class_names_operations=inference_config.class_names_operations,
                 device=device,
             )
-        weights_dict = torch.load(
-            model_package_content["weights.pth"],
-            map_location=device,
-            weights_only=False,
-        )["model"]
+        weights_dict = load_rfdetr_weights(
+            checkpoint_path=model_package_content["weights.pth"], device=device
+        )
         model_type = parse_model_type(
             config_path=model_package_content["model_type.json"]
         )
@@ -273,11 +271,9 @@ class RFDetrForObjectDetectionTorch(
                 f"full context.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#missingmodelinitparametererror",
             )
-        weights_dict = torch.load(
-            checkpoint_path,
-            map_location=device,
-            weights_only=False,
-        )["model"]
+        weights_dict = load_rfdetr_weights(
+            checkpoint_path=checkpoint_path, device=device
+        )
         if model_type not in CONFIG_FOR_MODEL_TYPE:
             raise InvalidModelInitParameterError(
                 message=f"Model package describes model_type as '{model_type}' which is not supported. "

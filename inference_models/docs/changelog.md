@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- RF-DETR PyTorch packages whose `weights.pth` is a DataParallel /
+  DistributedDataParallel training checkpoint (every key prefixed with
+  `module.`) now load instead of failing with `KeyError: 'class_embed.bias'`.
+  The prefix is removed only when every key carries it. Packages of this kind
+  were published to the staging registries for `rfdetr-nano` and
+  `rfdetr-medium` (since replaced).
+
 ---
 
 ## `0.39.1`

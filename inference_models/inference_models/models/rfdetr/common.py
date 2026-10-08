@@ -36,6 +36,36 @@ _TRITON_POSTPROC_JIT_DISABLED = False
 _TRITON_POSTPROC_JIT_WARNED_REASONS: set[str] = set()
 
 
+_DATA_PARALLEL_PREFIX = "module."
+
+
+def load_rfdetr_weights(
+    checkpoint_path: str, device: torch.device
+) -> dict[str, torch.Tensor]:
+    """Model weights of an RF-DETR training checkpoint.
+
+    Checkpoints saved from a DataParallel / DistributedDataParallel wrapper
+    prefix every key with ``module.``, and some published torch packages are
+    stored that way. The prefix is removed when every key carries it, so both
+    layouts load.
+    """
+    weights = torch.load(checkpoint_path, map_location=device, weights_only=False)[
+        "model"
+    ]
+    return strip_data_parallel_prefix(weights)
+
+
+def strip_data_parallel_prefix(
+    state_dict: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    if state_dict and all(key.startswith(_DATA_PARALLEL_PREFIX) for key in state_dict):
+        return {
+            key[len(_DATA_PARALLEL_PREFIX) :]: value
+            for key, value in state_dict.items()
+        }
+    return state_dict
+
+
 def parse_model_type(config_path: str) -> str:
     try:
         parsed_config = read_json(path=config_path)
