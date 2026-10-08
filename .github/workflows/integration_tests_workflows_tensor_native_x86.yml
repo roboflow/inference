@@ -30,8 +30,11 @@ jobs:
   build-dev-test:
     needs: call_is_mergeable
     if: ${{ (github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
+    # I/O-bound workflow integration tests. Measured on Depot over 2,360 jobs on the
+    # 16c/64GB machine: ~15% average CPU and ~12.8GB peak RAM. 8c/32GB keeps the peak
+    # at ~40% of memory; 4c/16GB would leave only ~3GB headroom.
     runs-on:
-      labels: depot-ubuntu-22.04-16
+      labels: depot-ubuntu-22.04-8
       group: public-depot
     strategy:
       matrix:
