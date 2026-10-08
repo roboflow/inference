@@ -844,10 +844,12 @@ def post_process_semantic_segmentation_logits(
             )
         else:
             if class_activation == "sigmoid":
-                image_results = image_results.sigmoid()
+                # Pick the class on the raw logits: sigmoid saturates, and ties at 1.0 would favor the lowest index.
+                max_logits, image_class_ids = torch.max(image_results, dim=0)
+                image_confidence = max_logits.sigmoid()
             else:
                 image_results = torch.nn.functional.softmax(image_results, dim=0)
-            image_confidence, image_class_ids = torch.max(image_results, dim=0)
+                image_confidence, image_class_ids = torch.max(image_results, dim=0)
             if len(class_names) == image_results.shape[0] + 1:
                 image_class_ids = insert_background_class(
                     image_class_ids,

@@ -164,3 +164,47 @@ def test_post_processing_crops_letterbox_padding_of_the_intermediate_image() -> 
     # then: only the road columns between the pads remain
     assert result.segmentation_map.unique().tolist() == [1]
     assert torch.allclose(result.confidence, torch.sigmoid(torch.tensor(2.0)))
+
+
+@pytest.mark.parametrize(
+    ("dtype", "background_logit", "foreground_logit"),
+    [
+        pytest.param(torch.float16, 9.0, 10.0, id="fp16"),
+        pytest.param(torch.float32, 17.0, 18.0, id="fp32"),
+    ],
+)
+def test_post_processing_picks_the_class_before_the_sigmoid_saturates(
+    dtype: torch.dtype, background_logit: float, foreground_logit: float
+) -> None:
+    # given: logits whose sigmoids both round to 1.0 in this dtype
+    logits = torch.empty((1, 2, 2, 2), dtype=dtype)
+    logits[0, 0] = background_logit
+    logits[0, 1] = foreground_logit
+    metadata = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=2, width=2),
+        size_after_pre_processing=ImageDimensions(height=2, width=2),
+        inference_size=ImageDimensions(height=2, width=2),
+        scale_width=1.0,
+        scale_height=1.0,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0, offset_y=0, crop_width=2, crop_height=2
+        ),
+    )
+
+    # when
+    (result,) = post_process_semantic_segmentation_results(
+        logits,
+        [metadata],
+        class_names=["background", "foreground"],
+        background_class_id=0,
+        device=CPU,
+        confidence=0.4,
+        recommended_parameters=None,
+    )
+
+    # then: the larger logit wins, as argmax over the logits does in training
+    assert result.segmentation_map.unique().tolist() == [1]
