@@ -23,6 +23,7 @@ class ActionRecognitionPrediction:
 SLIDING_WINDOW_MODE = "sliding_window"
 WHOLE_VIDEO_MODE = "whole_video"
 _MICROSECONDS = 1_000_000
+WINDOW_DURATION_ROUNDING_SECONDS = 0.5 / _MICROSECONDS
 # The frames one sample holds when a model recorded no budget of its own.
 #
 # Nothing bounds an untrained sample otherwise, so a long clip is read whole

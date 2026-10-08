@@ -8,6 +8,7 @@ from PIL import Image
 from torchvision.transforms import v2
 
 from inference_models.errors import ModelInputError
+from inference_models.models.base.action_recognition import plan_windows
 from inference_models.models.vjepa2_1.model import (
     VJepaActionRecognition,
     validate_config,
@@ -145,6 +146,31 @@ def test_action_recognition_capabilities_and_cosmos_ignored_options(monkeypatch)
     assert not cosmos.supports_observed_duration
     assert "confidence" not in calls[0]
     assert "duration_seconds" not in calls[0]
+
+
+@pytest.mark.parametrize("sample_fps", [6.0, 7.0, 30.0])
+def test_planned_fractional_duration_is_accepted_and_clipped(sample_fps):
+    metadata = config()
+    metadata["network_input"]["fps"] = sample_fps
+    network = SimpleNamespace(
+        encoder=lambda inputs: inputs,
+        head=lambda inputs: (
+            torch.ones((1, 4, 2)),
+            torch.tensor([[[[0.0, 5.0], [0.0, 5.0]]] * 4]),
+        ),
+    )
+    model = VJepaActionRecognition(network, metadata, ["a", "b"], torch.device("cpu"))
+    window = plan_windows(120, 30.0, model.video_sampling)[0]
+    frames = [np.zeros((384, 384, 3), dtype=np.uint8)] * 4
+
+    predictions = model.infer(
+        frames, fps=sample_fps, duration_seconds=window.duration_seconds
+    )
+
+    assert predictions
+    assert all(prediction.end_frame_idx <= 4 for prediction in predictions)
+    with pytest.raises(ModelInputError, match="window duration"):
+        model.infer(frames, duration_seconds=4 / sample_fps + 0.000002)
 
 
 @pytest.mark.parametrize(

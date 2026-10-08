@@ -18,6 +18,7 @@ from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import Confidence
 from inference_models.errors import ModelInputError
 from inference_models.models.base.action_recognition import (
+    WINDOW_DURATION_ROUNDING_SECONDS,
     ActionRecognitionModel,
     ActionRecognitionPrediction,
     VideoSampling,
@@ -380,11 +381,15 @@ class VJepaActionRecognition(ActionRecognitionModel):
             if duration_seconds is None
             else duration_seconds * sampling.sample_fps
         )
-        if (
-            not math.isfinite(end_limit)
-            or not 0 < end_limit <= sampling.max_frames + 1e-6
+        rounding_allowance = (
+            WINDOW_DURATION_ROUNDING_SECONDS * sampling.sample_fps
+            + math.ulp(float(sampling.max_frames))
+        )
+        if not math.isfinite(end_limit) or not 0 < end_limit <= (
+            sampling.max_frames + rounding_allowance
         ):
             raise ModelInputError("Invalid V-JEPA window duration")
+        end_limit = min(end_limit, sampling.max_frames)
         images.extend([images[-1]] * (sampling.max_frames - count))
         inputs = torch.stack(images, dim=1)[None].to(self._device)
         autocast = (
