@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Cosmos 3 Edge loads and runs on Apple Silicon GPUs (`DEFAULT_DEVICE=mps`), in bf16 with SDPA
+  attention. Loading used to crash or hang from a thread race in PyTorch's Metal kernel cache.
+
 ---
 
 ## `0.39.1`
