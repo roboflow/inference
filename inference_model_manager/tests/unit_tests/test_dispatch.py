@@ -401,3 +401,44 @@ def test_unpack_config_handles_7_and_8_tuples():
     assert _unpack_config(seven)[7] == {}
     eight = ("t", "m", True, {}, "v", "s", "r", {"a": "b"})
     assert _unpack_config(eight)[7] == {"a": "b"}
+
+
+def test_apply_action_defaults_fills_only_declared_defaults_the_caller_left_out():
+    from inference_model_manager.dispatch import apply_action_defaults
+    from inference_model_manager.registry import ActionEntry
+
+    entry = ActionEntry(
+        method="segment",
+        default=False,
+        params={
+            "images": {"type": "image", "required": True},
+            "mask_format": {"type": "str", "required": False, "default": "rle"},
+            "return_logits": {"type": "bool", "required": False, "default": True},
+        },
+        validator=lambda kwargs: kwargs,
+        serializer=lambda output, model: {},
+        response_type="roboflow-generic-v1",
+        param_aliases={},
+    )
+    kwargs = {"images": "img", "mask_format": "dense"}
+
+    filled = apply_action_defaults(entry, kwargs)
+
+    assert filled == {"images": "img", "mask_format": "dense", "return_logits": True}
+    assert kwargs == {"images": "img", "mask_format": "dense"}
+    assert apply_action_defaults(None, kwargs) is kwargs
+
+
+def test_sam3_registry_defaults_request_rle_masks_and_logits():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
+
+    sam3 = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["SAM3Torch"]}
+
+    visual = sam3["segment_with_visual_prompts"][3]
+    assert visual["mask_format"]["default"] == "rle"
+    assert visual["return_logits"]["default"] is True
+    assert sam3["segment_with_text_prompts"][3]["mask_format"]["default"] == "rle"
+    assert sam3["segment_with_text_prompts"][5] == "serialize_sam3_text_segmentation"

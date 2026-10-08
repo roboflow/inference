@@ -311,19 +311,34 @@ def test_flag_on_local_path_never_touches_the_provider(
     provider.assert_not_called()
 
 
-def test_offline_mode_with_flag_raises_at_configuration_import(monkeypatch) -> None:
+def test_offline_mode_with_flag_keeps_the_package_importable(monkeypatch) -> None:
     monkeypatch.setattr(_offline, "OFFLINE_MODE", True)
     monkeypatch.setenv("VLLM_PROXY_ENABLED", "true")
 
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            with pytest.raises(
-                InvalidEnvVariable,
-                match="VLLM_PROXY_ENABLED is not supported while OFFLINE_MODE is enabled",
-            ):
-                importlib.reload(configuration)
+            reloaded = importlib.reload(configuration)
+        assert reloaded.VLLM_PROXY_ENABLED is True
+        with pytest.raises(
+            InvalidEnvVariable,
+            match="VLLM_PROXY_ENABLED is not supported while OFFLINE_MODE is enabled",
+        ):
+            reloaded.validate_vllm_proxy_settings()
     finally:
         monkeypatch.undo()
         importlib.reload(configuration)
     assert configuration.OFFLINE_MODE is _offline.OFFLINE_MODE
+
+
+def test_offline_mode_with_flag_rejects_remote_loads_when_the_proxy_is_selected(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(configuration, "OFFLINE_MODE", True)
+    monkeypatch.setattr(configuration, "VLLM_PROXY_ENABLED", True)
+
+    with mock.patch.object(core, "get_model_from_provider") as provider:
+        with pytest.raises(InvalidEnvVariable, match="OFFLINE_MODE"):
+            core.AutoModel.from_pretrained("qwen3_5-0.8b", api_key="key")
+
+    provider.assert_not_called()

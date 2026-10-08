@@ -518,3 +518,15 @@ def serialize_passthrough(output: Any, model: Any) -> dict:
         "type": "roboflow-generic-v1",
         "data": output,
     }
+
+
+def serialize_sam3_text_segmentation(output: Any, model: Any) -> dict:
+    """SAM3 text-prompt results (per image, per prompt) → generic envelope.
+
+    Scores become Python floats so the envelope is JSON-ready; masks pass
+    through untouched.
+    """
+    from inference_model_manager.marshalling import sam3_text_scores_to_floats
+
+    serialized = serialize_passthrough(sam3_text_scores_to_floats(output), model)
+    return serialized

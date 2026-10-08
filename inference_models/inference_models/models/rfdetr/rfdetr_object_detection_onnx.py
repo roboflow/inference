@@ -10,7 +10,6 @@ from inference_models import Detections, ObjectDetectionModel, PreProcessingOver
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
-    RFDETR_MAX_INPUT_RESOLUTION,
 )
 from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
@@ -115,8 +114,6 @@ class RFDetrForObjectDetectionONNX(
             TypeError: If both a non-None execution_plan and its alias are supplied.
             ValueError: If a serialized execution plan is invalid.
         """
-        if rf_detr_max_input_resolution is None:
-            rf_detr_max_input_resolution = RFDETR_MAX_INPUT_RESOLUTION
         execution_plan = _normalize_execution_plan_argument(
             execution_plan=execution_plan, kwargs=kwargs
         )

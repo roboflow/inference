@@ -408,8 +408,8 @@ definition; the last column is the new reader.
 | `ONNXRUNTIME_EXECUTION_PROVIDERS` | `env.py:846-849` (bracketed list) | `configuration.py:18-25` (brackets stripped) | same four providers |
 | `SAM3_IMAGE_SIZE` | `env.py:886` | `configuration.py:137` | `1008` |
 | `RUNNING_ON_JETSON` | `env.py:1248` (fallback spelling) | `configuration.py:96` | unset |
-| `RFDETR_ONNX_MAX_RESOLUTION` | `env.py:1466-1469` | `configuration.py:37-42` | `1600`, `<= 0` disables on both sides |
-| `DISABLED_INFERENCE_MODELS_BACKENDS` | `env.py:1703-1726` (validates entries) | `configuration.py:29-33` (no validation) | empty |
+| `RFDETR_ONNX_MAX_RESOLUTION` | `env.py:1466-1469` | `inference_model_manager/configuration.py` (passed as `rf_detr_max_input_resolution` by `pipelines.load_model`; `inference_models` itself applies no cap) | `1600`, `<= 0` disables on both sides |
+| `DISABLED_INFERENCE_MODELS_BACKENDS` | `env.py:1703-1726` (validates entries) | `inference_model_manager/configuration.py` (validates entries; `pipelines.load_model` passes `disabled_backends=[...]` and forwards it to dependency loads). `inference_models` parses it into `configuration.DISABLED_INFERENCE_MODELS_BACKENDS` but applies it only when passed as `from_pretrained(disabled_backends=...)` | empty |
 | `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `YOLO_OFFLINE` | written by `env.py:515-517` under `OFFLINE_MODE` | written by `inference_models/_offline.py:140-142` under the same condition | not read by either side |
 | `VLLM_PROXY_ENABLED` | `inference/models/vllm_proxy/config.py:24`; `env.py:519` | `configuration.py:439-441`; with `OFFLINE_MODE` the module raises `InvalidEnvVariable` (`configuration.py:442-449`) | `False` |
 | `VLLM_BASE_URL` | `vllm_proxy/config.py:49` | `configuration.py:450` | `http://127.0.0.1:8000` |

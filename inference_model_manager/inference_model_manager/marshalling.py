@@ -115,3 +115,37 @@ def split_batched_result(
 def model_supports_rle(model: Any) -> bool:
     """True if the model's instance masks can be requested in RLE format."""
     return "rle" in getattr(model, "supported_mask_formats", set())
+
+
+def _prompt_scores_to_floats(prompt_result: Any) -> Any:
+    if not isinstance(prompt_result, dict) or "scores" not in prompt_result:
+        return prompt_result
+    return {**prompt_result, "scores": [float(s) for s in prompt_result["scores"]]}
+
+
+def sam3_text_scores_to_floats(result: Any) -> Any:
+    """Return SAM3 text-prompt results with every score as a Python float.
+
+    The library reports scores as scalar tensors; callers of the manager get
+    plain floats (per image, per prompt) while masks pass through untouched.
+
+    Args:
+        result: Per-image list of per-prompt dicts, a single per-prompt list,
+            or any other value, which is returned unchanged.
+
+    Returns:
+        The same structure with `scores` entries converted to floats.
+    """
+    if isinstance(result, dict):
+        return _prompt_scores_to_floats(result)
+    if not isinstance(result, list):
+        return result
+    converted = [
+        (
+            [_prompt_scores_to_floats(prompt_result) for prompt_result in item]
+            if isinstance(item, list)
+            else _prompt_scores_to_floats(item)
+        )
+        for item in result
+    ]
+    return converted

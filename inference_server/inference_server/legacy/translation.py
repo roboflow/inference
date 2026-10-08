@@ -1123,9 +1123,9 @@ def build_interactive_segmentation_params(
         return _build_sam2_segment_params(request, api_key, model_id)
     if action == "segment_with_visual_prompts":
         params = _build_visual_prompt_params(request, api_key, model_id)
-        if getattr(request, "format", None) == "binary":
-            params["mask_format"] = "dense"
-            params["return_logits"] = True
+        binary = getattr(request, "format", None) == "binary"
+        params["mask_format"] = "dense" if binary else "rle"
+        params["return_logits"] = True
         return params
     if action == "segment_with_text_prompts":
         return _build_text_prompt_params(request)
@@ -1315,6 +1315,7 @@ def _build_text_prompt_params(request: Any) -> dict:
         "prompts": [prompt.model_dump() for prompt in prompts],
         "output_prob_thresh": threshold,
         "max_detections": configuration.SAM3_MAX_DETECTIONS,
+        "mask_format": "rle",
     }
 
 

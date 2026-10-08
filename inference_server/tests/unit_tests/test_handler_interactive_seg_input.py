@@ -299,3 +299,20 @@ def test_sam_embed_response_strips_own_tenant_namespace():
     resp = serialize_sam_embeddings(emb, _common())
     body = json.loads(resp.body)
     assert body["predictions"][0]["data"]["image_hash"] == "h1"
+
+
+def test_sam3_text_segmentation_response_serializes_scalar_scores():
+    from inference_server.handlers.interactive_instance_segmentation.output_serializer import (
+        serialize_sam_segmentation,
+    )
+
+    prediction = [
+        [{"prompt_index": 0, "masks": [], "scores": [torch.tensor(0.75)]}],
+    ]
+
+    resp = serialize_sam_segmentation(prediction, _common())
+
+    body = json.loads(resp.body)
+    (image_result,) = body["predictions"]
+    assert image_result["type"] == "roboflow-generic-v1"
+    assert image_result["data"] == [{"prompt_index": 0, "masks": [], "scores": [0.75]}]

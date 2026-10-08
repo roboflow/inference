@@ -16,6 +16,7 @@ from typing import (
     Callable,
     Dict,
     Generator,
+    Iterable,
     List,
     Optional,
     Set,
@@ -32,7 +33,6 @@ from rich.text import Text
 from inference_models import configuration
 from inference_models.configuration import (
     DEFAULT_DEVICE,
-    DISABLED_INFERENCE_MODELS_BACKENDS,
     FILE_LOCK_ACQUIRE_TIMEOUT,
     INFERENCE_HOME,
     OFFLINE_MODE,
@@ -1559,7 +1559,6 @@ class AutoModel:
         task_type: Optional[str] = None,
         allow_loading_dependency_models: bool = True,
         dependency_models_params: Optional[dict] = None,
-        preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]] = None,
         point_model_directory: Optional[Callable[[str], None]] = None,
         forwarded_kwargs: Optional[List[str]] = None,
         weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
@@ -1568,6 +1567,9 @@ class AutoModel:
             ContentAddressedArtifactCache
         ] = None,
         required_capabilities: Optional[List[str]] = None,
+        *,
+        preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]] = None,
+        disabled_backends: Optional[Iterable[str]] = None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -1709,6 +1711,16 @@ class AutoModel:
             required_capabilities: Required operations, such as ["image_embeddings"].
                 Selects a compatible package for this model version.
 
+            preloaded_model_dependencies: Already loaded dependency models keyed by
+                dependency name. Each entry must match the dependency declared in
+                the model metadata (model id and package id); matching entries are
+                reused instead of being loaded again.
+
+            disabled_backends: Backend names excluded from auto-negotiation when
+                `backend` is not given and the model is not a local path. Not applied
+                by default; pass `configuration.DISABLED_INFERENCE_MODELS_BACKENDS`
+                to honour the `DISABLED_INFERENCE_MODELS_BACKENDS` environment variable.
+
             **kwargs: Additional model-specific parameters passed to the model's
                 `from_pretrained()` method. Varies by model type. For image embeddings,
                 output_type selects "feature_vector" (default) or "logits" and determines
@@ -1810,20 +1822,12 @@ class AutoModel:
         if not isinstance(model_id_or_path, str):
             _validate_remote_model_id(model_id=model_id_or_path)
         model_path_exists = os.path.exists(model_id_or_path)
-        if (
-            backend is None
-            and DISABLED_INFERENCE_MODELS_BACKENDS
-            and not model_path_exists
-        ):
-            # Env-driven default: negotiate over everything except the
-            # disabled backends, so bare calls (MMP workers, v2 server)
-            # converge with callers that pass the allowed set explicitly.
-            # Local checkpoint loads keep None — their resolution rejects
-            # backend lists.
+        if backend is None and disabled_backends and not model_path_exists:
+            excluded_backends = set(disabled_backends)
             backend = sorted(
                 backend_type.value
                 for backend_type in BackendType
-                if backend_type.value not in DISABLED_INFERENCE_MODELS_BACKENDS
+                if backend_type.value not in excluded_backends
             )
         if not model_path_exists:
             _validate_remote_model_id(model_id=model_id_or_path)
@@ -1896,6 +1900,7 @@ class AutoModel:
             # drive?
             prefetched_model_metadata: Optional[ModelMetadata] = None
             if configuration.VLLM_PROXY_ENABLED:
+                configuration.validate_vllm_proxy_settings()
                 try:
                     prefetched_model_metadata = get_model_from_provider(
                         provider=weights_provider,
@@ -1931,6 +1936,8 @@ class AutoModel:
             forwarded_kwargs_values = {
                 name: kwargs[name] for name in forwarded_kwargs if name in kwargs
             }
+            if "disabled_backends" in forwarded_kwargs and disabled_backends:
+                forwarded_kwargs_values["disabled_backends"] = disabled_backends
             runtime_x_ray = x_ray_runtime_environment()
             runtime_compatibility = _runtime_compatibility_content(
                 runtime_x_ray=runtime_x_ray
@@ -2402,7 +2409,6 @@ def attempt_loading_model_with_auto_load_cache(
     api_key: Optional[str],
     allow_loading_dependency_models: bool,
     forwarded_kwargs_values: Dict[str, Any],
-    preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]] = None,
     verbose: bool = False,
     weights_provider: str = "roboflow",
     max_package_loading_attempts: Optional[int] = None,
@@ -2418,6 +2424,8 @@ def attempt_loading_model_with_auto_load_cache(
     weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     point_model_directory: Optional[Callable[[str], None]] = None,
     content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
+    *,
+    preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]] = None,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
         return None

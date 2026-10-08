@@ -303,13 +303,27 @@ def test_sam3_visual_binary_params_request_dense_masks_with_logits():
     )
     assert params["mask_format"] == "dense"
     assert params["return_logits"] is True
-    polygon_params = build_interactive_segmentation_params(
-        "segment_with_visual_prompts",
-        Sam2SegmentationRequest(image=IMG),
-        None,
-        model_id="sam3/sam3_interactive",
+
+
+@pytest.mark.parametrize("response_format", [None, "polygon", "json", "rle"])
+def test_sam3_visual_non_binary_params_request_rle_masks_from_logits(
+    response_format,
+):
+    kwargs = {"format": response_format} if response_format else {}
+    req = Sam2SegmentationRequest(image=IMG, **kwargs)
+    params = build_interactive_segmentation_params(
+        "segment_with_visual_prompts", req, None, model_id="sam3/sam3_interactive"
     )
-    assert "mask_format" not in polygon_params and "return_logits" not in polygon_params
+    assert params["mask_format"] == "rle"
+    assert params["return_logits"] is True
+
+
+def test_sam3_text_prompt_params_request_rle_masks():
+    req = Sam3SegmentationRequest(image=IMG, prompts=[Sam3Prompt(text="cat")])
+    params = build_interactive_segmentation_params(
+        "segment_with_text_prompts", req, None
+    )
+    assert params["mask_format"] == "rle"
 
 
 def test_sam3_visual_binary_response_packs_masks_as_returned():

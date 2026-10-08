@@ -14,11 +14,13 @@ from inference_model_manager.backends.base import Backend, BackendState
 from inference_model_manager.dispatch import (
     _build_pre_processing_overrides,
     _get_registry,
+    apply_action_defaults,
     invoke_action,
     resolve_action,
 )
 from inference_model_manager.marshalling import (
     model_supports_rle,
+    sam3_text_scores_to_floats,
     split_batched_result,
     tensors_to_numpy,
 )
@@ -65,6 +67,46 @@ _ENTRY_POINT_BACKENDS_LOADED = False
 
 def register_backend_factory(name: str, factory: Callable[..., "Backend"]) -> None:
     BACKEND_FACTORIES[name] = factory
+
+
+def _normalize_raw_result(action_name: Optional[str], result: Any) -> Any:
+    if action_name == "segment_with_text_prompts":
+        return sam3_text_scores_to_floats(result)
+    return result
+
+
+def _normalized_future(future: Future, action_name: Optional[str]) -> Future:
+    if action_name != "segment_with_text_prompts":
+        return future
+    normalized: Future = Future()
+
+    def _copy(done: Future) -> None:
+        if done.cancelled():
+            normalized.cancel()
+            return
+        error = done.exception()
+        if error is not None:
+            normalized.set_exception(error)
+            return
+        normalized.set_result(_normalize_raw_result(action_name, done.result()))
+
+    future.add_done_callback(_copy)
+    return normalized
+
+
+def _remote_action(backend: Any, action: Optional[str]) -> Tuple[Optional[str], Any]:
+    """Resolve (action_name, registry entry) for an out-of-process backend.
+
+    The model lives elsewhere, so the entry comes from the MRO class names the
+    backend reports; the entry is None when nothing is registered for them.
+    """
+    mro_names = getattr(backend, "_model_mro_names", [])
+    if not mro_names:
+        return action, None
+    reg = _get_registry()
+    action_name = action or reg.get_default_action_by_mro_names(mro_names) or "infer"
+    entry = reg.get_entry_by_mro_names(mro_names, action_name)
+    return action_name, entry
 
 
 def _direct_backend_factory(model_id, api_key, *, manager, **kwargs):
@@ -559,22 +601,14 @@ class ModelManager:
             ).result(timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S)
             if not serialize:
                 return result
-            # Serialize the result through the registry using the MRO class
-            # names the backend reports (the model may live out-of-process,
-            # so the manager doesn't import the real class).
-            mro_names = getattr(backend, "_model_mro_names", [])
-            if mro_names:
-                reg = _get_registry()
-                action_name = (
-                    action or reg.get_default_action_by_mro_names(mro_names) or "infer"
-                )
-                entry = reg.get_entry_by_mro_names(mro_names, action_name)
-                if entry is not None:
-                    return entry.serializer(result, backend)
+            _, entry = _remote_action(backend, action)
+            if entry is not None:
+                return entry.serializer(result, backend)
             return result
 
         # Resolve action (validates it exists, raises ValueError if not)
-        action_name, _entry = resolve_action(backend.model, action)
+        action_name, entry = resolve_action(backend.model, action)
+        kwargs = apply_action_defaults(entry, kwargs)
 
         clock = [0.0]
         measured = timing is not None and not self._is_stream_pipelined(kwargs)
@@ -618,6 +652,7 @@ class ModelManager:
                     n_images,
                     retry_single=(_retry_single if isinstance(images, list) else None),
                 )
+            result = _normalize_raw_result(action_name, result)
             if serialize:
                 # Inside the in-flight lease: serialization still reads
                 # backend.model, which an unload would drop underneath it.
@@ -703,27 +738,23 @@ class ModelManager:
         backend, pipeline = self._admit(model_id)
 
         if hasattr(backend, "submit_request"):
+            action_name, entry = _remote_action(backend, action)
+            kwargs = apply_action_defaults(entry, kwargs)
             if raw_input is None:
                 raw_input = kwargs.pop("images", None)
-            validate = None
-            mro_names = getattr(backend, "_model_mro_names", [])
-            if mro_names:
-                reg = _get_registry()
-                action_name = action or reg.get_default_action_by_mro_names(mro_names)
-                if action_name:
-                    entry = reg.get_entry_by_mro_names(mro_names, action_name)
-                    if entry is not None:
-                        validate = entry.validator
-            return backend.submit_request(
+            validate = entry.validator if entry is not None else None
+            future = backend.submit_request(
                 action=action, raw_input=raw_input, validate=validate, **kwargs
             )
+            return _normalized_future(future, action_name)
 
         # Direct backend: validate sync, run in thread pool, record stats.
         if not backend.is_accepting:
             raise RuntimeError(
                 f"Backend '{model_id}' not accepting requests (state={backend.state})"
             )
-        action_name, _ = resolve_action(backend.model, action)
+        action_name, entry = resolve_action(backend.model, action)
+        kwargs = apply_action_defaults(entry, kwargs)
         kwargs = _get_registry().validate(backend.model, action_name, kwargs)
 
         def _run():
@@ -732,7 +763,9 @@ class ModelManager:
             if _begin is not None:
                 _begin()
             try:
-                result = self._invoke(backend.model, pipeline, action, kwargs)
+                result = _normalize_raw_result(
+                    action_name, self._invoke(backend.model, pipeline, action, kwargs)
+                )
             except Exception:
                 backend.record_inference(t0, error=True)
                 raise

@@ -237,6 +237,10 @@ def test_load_pp_ocr_small_small_expands_to_stage_models():
             is mm.torchscript_state_global_lock
             for c in fp.call_args_list
         )
+        assert all(
+            c.kwargs["rf_detr_max_input_resolution"] == cfg.RFDETR_ONNX_MAX_RESOLUTION
+            for c in fp.call_args_list
+        )
         entry = next(
             m for m in mm.stats()["models"] if m["model_id"] == "pp_ocr/small-small"
         )

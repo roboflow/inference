@@ -88,6 +88,25 @@ def resolve_action(model: Any, action: Optional[str] = None) -> tuple[str, Actio
     return action, actions[action]
 
 
+def apply_action_defaults(entry: Optional[ActionEntry], kwargs: dict) -> dict:
+    """Fill kwargs absent from the call with the action's registry defaults.
+
+    Args:
+        entry: Registry entry of the action, or None when unregistered.
+        kwargs: Caller-supplied kwargs; never mutated.
+
+    Returns:
+        A copy of ``kwargs`` with every declared default the caller left out.
+    """
+    if entry is None or not isinstance(entry.params, dict):
+        return kwargs
+    filled = dict(kwargs)
+    for name, spec in entry.params.items():
+        if name not in filled and "default" in spec:
+            filled[name] = spec["default"]
+    return filled
+
+
 def invoke_action(
     model: Any,
     action: Optional[str] = None,

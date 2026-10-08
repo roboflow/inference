@@ -153,11 +153,48 @@ def pipeline_stage_model_ids(model_id: str) -> List[str]:
     return [stage for stage in request.stage_model_ids if stage is not None]
 
 
+LOAD_KWARGS_FORWARDED_TO_DEPENDENCIES = (
+    "rf_detr_max_input_resolution",
+    "disabled_backends",
+)
+
+
+def _with_load_defaults(model_id: str, load_kwargs: dict) -> dict:
+    from inference_model_manager import configuration
+    from inference_models.models.auto_loaders.core import (
+        DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS,
+    )
+
+    load_kwargs = dict(load_kwargs)
+    load_kwargs.setdefault(
+        "rf_detr_max_input_resolution", configuration.RFDETR_ONNX_MAX_RESOLUTION
+    )
+    if configuration.DISABLED_INFERENCE_MODELS_BACKENDS:
+        load_kwargs.setdefault(
+            "disabled_backends",
+            sorted(configuration.DISABLED_INFERENCE_MODELS_BACKENDS),
+        )
+    forwarded_kwargs = load_kwargs.get("forwarded_kwargs")
+    if forwarded_kwargs is None:
+        forwarded_kwargs = DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS
+    load_kwargs["forwarded_kwargs"] = [
+        *forwarded_kwargs,
+        *(
+            name
+            for name in LOAD_KWARGS_FORWARDED_TO_DEPENDENCIES
+            if name not in forwarded_kwargs
+        ),
+    ]
+    return load_kwargs
+
+
 def _load_stage(stage: str, api_key: str, **load_kwargs) -> Any:
     from inference_model_manager.backends.base import attach_model_caches
     from inference_models.models.auto_loaders.core import AutoModel
 
-    model = AutoModel.from_pretrained(stage, api_key=api_key, **load_kwargs)
+    model = AutoModel.from_pretrained(
+        stage, api_key=api_key, **_with_load_defaults(stage, load_kwargs)
+    )
     attach_model_caches(model)
     return model
 
@@ -185,5 +222,7 @@ def load_model(model_id: str, api_key: str, **load_kwargs) -> Any:
     if request is None:
         from inference_models.models.auto_loaders.core import AutoModel
 
-        return AutoModel.from_pretrained(model_id, api_key=api_key, **load_kwargs)
+        return AutoModel.from_pretrained(
+            model_id, api_key=api_key, **_with_load_defaults(model_id, load_kwargs)
+        )
     return load_pipeline(request, api_key, **load_kwargs)

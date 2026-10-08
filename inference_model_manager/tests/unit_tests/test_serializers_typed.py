@@ -16,6 +16,7 @@ from inference_model_manager.serializers_typed import (
     serialize_instance_segmentation_rich,
     serialize_keypoints_compact,
     serialize_multilabel_classification_compact,
+    serialize_sam3_text_segmentation,
     serialize_semantic_segmentation_compact,
     serialize_text,
 )
@@ -349,3 +350,35 @@ class TestDetectionsClassNamesMetadataFallback:
 
         out = serialize_detections_rich(_det_with_metadata(), None)
         assert out["detections"][0]["class_name"] == "bolt"
+
+
+def test_serialize_sam3_text_segmentation_turns_library_scores_into_floats():
+    import torch
+
+    masks = np.zeros((2, 4, 4), dtype=bool)
+    output = [
+        [
+            {
+                "prompt_index": 0,
+                "masks": masks,
+                "scores": [torch.tensor(0.75), np.float32(0.5)],
+            }
+        ]
+    ]
+
+    result = serialize_sam3_text_segmentation(output, _MODEL)
+
+    assert result["type"] == "roboflow-generic-v1"
+    (prompt_result,) = result["data"][0]
+    assert prompt_result["scores"] == [0.75, 0.5]
+    assert all(type(score) is float for score in prompt_result["scores"])
+    assert prompt_result["masks"] is masks
+    assert output[0][0]["scores"][0].dtype == torch.float32
+
+
+def test_serialize_sam3_text_segmentation_accepts_a_single_image_result():
+    result = serialize_sam3_text_segmentation(
+        [{"prompt_index": 0, "masks": [], "scores": [np.float64(0.25)]}], _MODEL
+    )
+
+    assert result["data"] == [{"prompt_index": 0, "masks": [], "scores": [0.25]}]

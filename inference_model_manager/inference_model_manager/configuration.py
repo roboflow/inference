@@ -10,10 +10,15 @@ call site keeps the ``os.environ.get`` so the read happens at the right
 moment.
 """
 
+import os
+from typing import Optional
+
+from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.utils.environment import (
     get_boolean_from_env,
     get_float_from_env,
     get_integer_from_env,
+    parse_comma_separated_values,
 )
 
 # ── ModelManager (model_manager.py) ─────────────────────────────────────────
@@ -34,6 +39,25 @@ INFERENCE_MAX_ACTIVE_MODELS = get_integer_from_env(
 INFERENCE_MEMORY_FREE_THRESHOLD = get_float_from_env(
     "INFERENCE_MEMORY_FREE_THRESHOLD", default=0.0
 )
+
+# ── Model loading (pipelines.py) ───────────────────────────────────────────
+_RFDETR_ONNX_MAX_RESOLUTION_RAW = get_integer_from_env(
+    "RFDETR_ONNX_MAX_RESOLUTION", default=1600
+)
+RFDETR_ONNX_MAX_RESOLUTION: Optional[int] = (
+    _RFDETR_ONNX_MAX_RESOLUTION_RAW if _RFDETR_ONNX_MAX_RESOLUTION_RAW > 0 else None
+)
+VALID_INFERENCE_MODELS_BACKENDS = {backend.value for backend in BackendType}
+DISABLED_INFERENCE_MODELS_BACKENDS = set(
+    parse_comma_separated_values(
+        values=os.getenv("DISABLED_INFERENCE_MODELS_BACKENDS", "")
+    )
+)
+if not DISABLED_INFERENCE_MODELS_BACKENDS.issubset(VALID_INFERENCE_MODELS_BACKENDS):
+    raise ValueError(
+        "Invalid value of `DISABLED_INFERENCE_MODELS_BACKENDS` variable - each enlisted "
+        f"backend must be within {sorted(VALID_INFERENCE_MODELS_BACKENDS)}"
+    )
 
 # ── Decode gate (backends/decode.py) ───────────────────────────────────────
 # Decompression-bomb ceiling: encoded-byte limits say nothing about how much

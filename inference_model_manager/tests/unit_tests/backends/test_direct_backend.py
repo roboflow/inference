@@ -42,6 +42,150 @@ class TestTorchscriptLockPassThrough:
             mm.shutdown()
 
 
+class TestRfDetrResolutionCapPassThrough:
+    _FROM_PRETRAINED = (
+        "inference_models.models.auto_loaders.core.AutoModel.from_pretrained"
+    )
+
+    def _load(self, monkeypatch, cap, **load_kwargs):
+        from unittest.mock import patch
+
+        from inference_model_manager import configuration as cfg
+        from inference_model_manager.model_manager import ModelManager
+
+        monkeypatch.setattr(cfg, "RFDETR_ONNX_MAX_RESOLUTION", cap)
+        mm = ModelManager()
+        try:
+            with patch(self._FROM_PRETRAINED) as fp:
+                fp.return_value = SimpleNamespace()
+                mm.load("m-cap", api_key="k", warmup_iters=0, **load_kwargs)
+            return fp.call_args.kwargs
+        finally:
+            mm.shutdown()
+
+    def test_manager_passes_the_configured_cap_to_from_pretrained(self, monkeypatch):
+        kwargs = self._load(monkeypatch, cap=1600)
+
+        assert kwargs["rf_detr_max_input_resolution"] == 1600
+
+    def test_disabled_cap_is_passed_as_none(self, monkeypatch):
+        kwargs = self._load(monkeypatch, cap=None)
+
+        assert kwargs["rf_detr_max_input_resolution"] is None
+
+    def test_explicit_load_kwarg_wins_over_the_configured_cap(self, monkeypatch):
+        kwargs = self._load(monkeypatch, cap=1600, rf_detr_max_input_resolution=800)
+
+        assert kwargs["rf_detr_max_input_resolution"] == 800
+
+    def test_cap_and_backend_exclusions_are_forwarded_to_dependency_models(
+        self, monkeypatch
+    ):
+        from inference_models.models.auto_loaders.core import (
+            DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS,
+        )
+
+        kwargs = self._load(monkeypatch, cap=1600)
+
+        assert kwargs["forwarded_kwargs"] == [
+            *DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS,
+            "rf_detr_max_input_resolution",
+            "disabled_backends",
+        ]
+
+    def test_explicit_none_forwarded_kwargs_is_treated_as_omitted(self, monkeypatch):
+        from inference_models.models.auto_loaders.core import (
+            DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS,
+        )
+
+        kwargs = self._load(monkeypatch, cap=1600, forwarded_kwargs=None)
+
+        assert kwargs["forwarded_kwargs"] == [
+            *DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS,
+            "rf_detr_max_input_resolution",
+            "disabled_backends",
+        ]
+
+    def test_caller_forwarded_kwargs_get_the_manager_names_appended_once(
+        self, monkeypatch
+    ):
+        kwargs = self._load(
+            monkeypatch, cap=1600, forwarded_kwargs=["device", "disabled_backends"]
+        )
+
+        assert kwargs["forwarded_kwargs"] == [
+            "device",
+            "disabled_backends",
+            "rf_detr_max_input_resolution",
+        ]
+
+
+class TestDisabledBackendsPassThrough:
+    _FROM_PRETRAINED = (
+        "inference_models.models.auto_loaders.core.AutoModel.from_pretrained"
+    )
+
+    def _load(self, monkeypatch, disabled, **load_kwargs):
+        from unittest.mock import patch
+
+        from inference_model_manager import configuration as cfg
+        from inference_model_manager.pipelines import load_model
+
+        monkeypatch.setattr(cfg, "DISABLED_INFERENCE_MODELS_BACKENDS", disabled)
+        with patch(self._FROM_PRETRAINED) as fp:
+            load_model("m-backends", "k", **load_kwargs)
+        return fp.call_args.kwargs
+
+    def test_no_disabled_backends_leaves_negotiation_to_the_library(self, monkeypatch):
+        kwargs = self._load(monkeypatch, disabled=set())
+
+        assert "disabled_backends" not in kwargs
+        assert "backend" not in kwargs
+
+    def test_disabled_backends_are_passed_explicitly(self, monkeypatch):
+        kwargs = self._load(monkeypatch, disabled={"trt", "onnx"})
+
+        assert kwargs["disabled_backends"] == ["onnx", "trt"]
+        assert "backend" not in kwargs
+
+    def test_explicit_disabled_backends_win(self, monkeypatch):
+        kwargs = self._load(
+            monkeypatch, disabled={"trt", "onnx"}, disabled_backends=["coreml"]
+        )
+
+        assert kwargs["disabled_backends"] == ["coreml"]
+
+    def test_explicit_backend_is_passed_through(self, monkeypatch):
+        kwargs = self._load(monkeypatch, disabled={"trt", "onnx"}, backend="trt")
+
+        assert kwargs["backend"] == "trt"
+        assert kwargs["disabled_backends"] == ["onnx", "trt"]
+
+
+class TestDisabledBackendsConfiguration:
+    def _reload(self, monkeypatch, value):
+        import importlib
+
+        from inference_model_manager import configuration as cfg
+
+        monkeypatch.setenv("DISABLED_INFERENCE_MODELS_BACKENDS", value)
+        try:
+            return importlib.reload(cfg).DISABLED_INFERENCE_MODELS_BACKENDS
+        finally:
+            monkeypatch.delenv("DISABLED_INFERENCE_MODELS_BACKENDS")
+            importlib.reload(cfg)
+
+    def test_unset_means_no_restriction(self, monkeypatch):
+        assert self._reload(monkeypatch, "") == set()
+
+    def test_disabled_backends_are_parsed_and_stripped(self, monkeypatch):
+        assert self._reload(monkeypatch, "trt, onnx") == {"trt", "onnx"}
+
+    def test_unknown_backend_is_rejected(self, monkeypatch):
+        with pytest.raises(ValueError, match="DISABLED_INFERENCE_MODELS_BACKENDS"):
+            self._reload(monkeypatch, "mediapipe")
+
+
 class TestResolvedModelInStats:
     def test_stats_report_resolved_model_when_model_exposes_it(self):
         from types import SimpleNamespace

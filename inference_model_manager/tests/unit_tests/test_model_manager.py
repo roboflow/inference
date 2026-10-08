@@ -1719,3 +1719,200 @@ class TestStreamPipeline:
         assert "seg/1" not in mm
         assert "seg/1" not in mm._stream_pipelines
         assert executor._shutdown is True
+
+
+class SAM3Torch:
+    """Fake named like the library class so the SAM3 registry config applies."""
+
+    def __init__(self):
+        self.calls: List[Tuple[str, dict]] = []
+
+    def segment_with_visual_prompts(self, **kwargs) -> Any:
+        self.calls.append(("segment_with_visual_prompts", kwargs))
+        return [{"masks": [], "scores": []}]
+
+    def segment_with_text_prompts(self, **kwargs) -> Any:
+        import torch
+
+        self.calls.append(("segment_with_text_prompts", kwargs))
+        return [[{"prompt_index": 0, "masks": [], "scores": [torch.tensor(0.75)]}]]
+
+
+class TestRegistryDefaultsAreRequestedExplicitly:
+    @pytest.fixture
+    def sam3_manager(self):
+        mm = ModelManager()
+        fake_backend = FakeBackend("sam3")
+        fake_backend._fake_model = SAM3Torch()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: fake_backend
+        try:
+            mm.load("sam3", api_key="")
+            yield mm, fake_backend._fake_model
+        finally:
+            mm.shutdown()
+
+    def test_visual_prompts_get_rle_masks_from_logits_by_default(self, sam3_manager):
+        mm, model = sam3_manager
+        image = np.zeros((4, 4, 3), dtype=np.uint8)
+
+        mm.process(
+            "sam3", action="segment_with_visual_prompts", serialize=False, images=image
+        )
+
+        ((_, kwargs),) = model.calls
+        assert kwargs["mask_format"] == "rle"
+        assert kwargs["return_logits"] is True
+        assert kwargs["multi_mask_output"] is True
+
+    def test_text_prompts_get_rle_masks_by_default(self, sam3_manager):
+        mm, model = sam3_manager
+        image = np.zeros((4, 4, 3), dtype=np.uint8)
+
+        mm.process(
+            "sam3",
+            action="segment_with_text_prompts",
+            serialize=False,
+            images=image,
+            prompts=[{"text": "cat"}],
+        )
+
+        ((_, kwargs),) = model.calls
+        assert kwargs["mask_format"] == "rle"
+        assert kwargs["output_prob_thresh"] == 0.5
+
+    def test_explicit_values_win_over_registry_defaults(self, sam3_manager):
+        mm, model = sam3_manager
+        image = np.zeros((4, 4, 3), dtype=np.uint8)
+
+        mm.process(
+            "sam3",
+            action="segment_with_visual_prompts",
+            serialize=False,
+            images=image,
+            mask_format="dense",
+            return_logits=False,
+        )
+
+        ((_, kwargs),) = model.calls
+        assert kwargs["mask_format"] == "dense"
+        assert kwargs["return_logits"] is False
+
+    @pytest.mark.parametrize("wire_marshalling", [False, True])
+    def test_raw_text_prompt_scores_are_python_floats(
+        self, sam3_manager, wire_marshalling
+    ):
+        mm, _ = sam3_manager
+        image = np.zeros((4, 4, 3), dtype=np.uint8)
+
+        result = mm.process(
+            "sam3",
+            action="segment_with_text_prompts",
+            serialize=False,
+            wire_marshalling=wire_marshalling,
+            images=image,
+            prompts=[{"text": "cat"}],
+        )
+
+        per_prompt = result if wire_marshalling else result[0]
+        assert per_prompt[0]["scores"] == [0.75]
+        assert type(per_prompt[0]["scores"][0]) is float
+
+    def _remote(self):
+        import torch
+
+        class _RecordingRemote(_FakeRemoteBackend):
+            _model_mro_names = ["SAM3Torch", "object"]
+
+            def __init__(self, model_id: str, **kwargs):
+                super().__init__(model_id, **kwargs)
+                self.submitted: List[dict] = []
+
+            def submit_request(self, action=None, raw_input=None, **kwargs):
+                self.submitted.append({"action": action, "kwargs": kwargs})
+                future: Future = Future()
+                future.set_result(
+                    [[{"prompt_index": 0, "masks": [], "scores": [torch.tensor(0.5)]}]]
+                )
+                return future
+
+        return _RecordingRemote("sam3-remote")
+
+    def test_submit_request_backends_get_the_same_defaults_and_float_scores(self):
+        mm = ModelManager()
+        remote = self._remote()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: remote
+        try:
+            mm.load("sam3-remote", api_key="")
+            result = mm.process(
+                "sam3-remote",
+                action="segment_with_text_prompts",
+                serialize=False,
+                images=np.zeros((4, 4, 3), dtype=np.uint8),
+                prompts=[{"text": "cat"}],
+            )
+        finally:
+            mm.shutdown()
+
+        assert remote.submitted[-1]["kwargs"]["mask_format"] == "rle"
+        assert result == [[{"prompt_index": 0, "masks": [], "scores": [0.5]}]]
+        assert type(result[0][0]["scores"][0]) is float
+
+
+class TestSubmitAppliesTheSameBoundaryHandling:
+    def test_direct_submit_injects_defaults_and_returns_float_scores(self):
+        mm = ModelManager()
+        fake_backend = FakeBackend("sam3")
+        fake_backend._fake_model = SAM3Torch()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: fake_backend
+        try:
+            mm.load("sam3", api_key="")
+            result = mm.submit(
+                "sam3",
+                action="segment_with_text_prompts",
+                images=np.zeros((4, 4, 3), dtype=np.uint8),
+                prompts=[{"text": "cat"}],
+            ).result(timeout=5)
+        finally:
+            mm.shutdown()
+
+        ((_, kwargs),) = fake_backend._fake_model.calls
+        assert kwargs["mask_format"] == "rle"
+        assert result == [[{"prompt_index": 0, "masks": [], "scores": [0.75]}]]
+        assert type(result[0][0]["scores"][0]) is float
+
+    def test_direct_submit_requests_rle_masks_from_logits_for_visual_prompts(self):
+        mm = ModelManager()
+        fake_backend = FakeBackend("sam3")
+        fake_backend._fake_model = SAM3Torch()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: fake_backend
+        try:
+            mm.load("sam3", api_key="")
+            mm.submit(
+                "sam3",
+                action="segment_with_visual_prompts",
+                images=np.zeros((4, 4, 3), dtype=np.uint8),
+            ).result(timeout=5)
+        finally:
+            mm.shutdown()
+
+        ((_, kwargs),) = fake_backend._fake_model.calls
+        assert kwargs["mask_format"] == "rle" and kwargs["return_logits"] is True
+
+    def test_remote_submit_injects_defaults_and_normalizes_the_future(self):
+        remote = TestRegistryDefaultsAreRequestedExplicitly._remote(None)
+        mm = ModelManager()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: remote
+        try:
+            mm.load("sam3-remote", api_key="")
+            result = mm.submit(
+                "sam3-remote",
+                action="segment_with_text_prompts",
+                images=np.zeros((4, 4, 3), dtype=np.uint8),
+                prompts=[{"text": "cat"}],
+            ).result(timeout=5)
+        finally:
+            mm.shutdown()
+
+        assert remote.submitted[-1]["kwargs"]["mask_format"] == "rle"
+        assert result == [[{"prompt_index": 0, "masks": [], "scores": [0.5]}]]
+        assert type(result[0][0]["scores"][0]) is float

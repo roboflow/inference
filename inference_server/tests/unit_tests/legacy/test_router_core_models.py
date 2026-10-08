@@ -1287,6 +1287,7 @@ def test_sam3_concept_segment_keeps_echo_and_null_fields(legacy_client, fake_sta
     }
     assert body["prompt_results"][0]["predictions"][0]["confidence"] == 0.8
     assert "frame_id" in body and body["frame_id"] is None
+    assert _infer_params(gw)["mask_format"] == "rle"
 
 
 def test_depth_rejects_list_image(legacy_client, fake_stat):

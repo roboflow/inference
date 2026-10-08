@@ -9,6 +9,7 @@ from inference_model_manager.hash_namespacing import strip_tenant_namespace
 from inference_model_manager.serializers_typed import (
     serialize_embeddings,
     serialize_passthrough,
+    serialize_sam3_text_segmentation,
     serialize_sam_segmentation_compact,
 )
 from inference_server.framework.entities import CommonRequestParams
@@ -70,5 +71,5 @@ def serialize_sam_segmentation(
 ) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     proxy = _ModelProxy(class_names=None)
-    typed = [serialize_passthrough(p, proxy) for p in items]
+    typed = [serialize_sam3_text_segmentation(p, proxy) for p in items]
     return _envelope(typed, common)
