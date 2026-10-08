@@ -1,11 +1,11 @@
 [project]
 name = "inference-server"
-version = "0.4.1"
+version = "0.4.2"
 description = "FastAPI inference server — direct client for inference-model-manager"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-  "inference-model-manager==0.5.2",
+  "inference-model-manager==0.5.3",
   "inference-sdk>=1.6.0",
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",

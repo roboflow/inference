@@ -17,6 +17,7 @@ from inference_model_manager.pipelines import (
     pipeline_stage_model_ids,
     resolve_pipeline_request,
     stage_tokens,
+    with_load_defaults,
 )
 from inference_model_manager.registry_defaults import lazy_register
 from inference_models.errors import ModelNotFoundError
@@ -397,3 +398,26 @@ def test_pinned_pipeline_survives_eviction(monkeypatch):
         assert "pp_ocr/small-small" in mm and "other-model" in mm
     finally:
         mm.shutdown()
+
+
+def test_with_load_defaults_applies_configuration_and_keeps_explicit_values(
+    monkeypatch,
+):
+    monkeypatch.setattr(cfg, "RFDETR_ONNX_MAX_RESOLUTION", 1600)
+    monkeypatch.setattr(cfg, "DISABLED_INFERENCE_MODELS_BACKENDS", {"trt", "onnx"})
+    original = {"device": "cpu"}
+
+    result = with_load_defaults("m/1", original)
+
+    assert original == {"device": "cpu"}
+    assert result["device"] == "cpu"
+    assert result["rf_detr_max_input_resolution"] == 1600
+    assert result["disabled_backends"] == ["onnx", "trt"]
+    assert "rf_detr_max_input_resolution" in result["forwarded_kwargs"]
+    assert "disabled_backends" in result["forwarded_kwargs"]
+
+    explicit = with_load_defaults(
+        "m/1", {"rf_detr_max_input_resolution": 800, "disabled_backends": ["x"]}
+    )
+    assert explicit["rf_detr_max_input_resolution"] == 800
+    assert explicit["disabled_backends"] == ["x"]

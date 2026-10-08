@@ -159,7 +159,21 @@ LOAD_KWARGS_FORWARDED_TO_DEPENDENCIES = (
 )
 
 
-def _with_load_defaults(model_id: str, load_kwargs: dict) -> dict:
+def with_load_defaults(model_id: str, load_kwargs: dict) -> dict:
+    """Return load kwargs completed with the model manager's load defaults.
+
+    Adds the RF-DETR input resolution cap and the disabled backends from the
+    model manager configuration, and extends ``forwarded_kwargs`` so dependent
+    models receive them. Values already present in ``load_kwargs`` take
+    precedence.
+
+    Args:
+        model_id: Identifier of the model about to be loaded.
+        load_kwargs: Keyword arguments intended for ``AutoModel.from_pretrained``.
+
+    Returns:
+        A new dictionary with the defaults applied; ``load_kwargs`` is not mutated.
+    """
     from inference_model_manager import configuration
     from inference_models.models.auto_loaders.core import (
         DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS,
@@ -193,7 +207,7 @@ def _load_stage(stage: str, api_key: str, **load_kwargs) -> Any:
     from inference_models.models.auto_loaders.core import AutoModel
 
     model = AutoModel.from_pretrained(
-        stage, api_key=api_key, **_with_load_defaults(stage, load_kwargs)
+        stage, api_key=api_key, **with_load_defaults(stage, load_kwargs)
     )
     attach_model_caches(model)
     return model
@@ -223,6 +237,6 @@ def load_model(model_id: str, api_key: str, **load_kwargs) -> Any:
         from inference_models.models.auto_loaders.core import AutoModel
 
         return AutoModel.from_pretrained(
-            model_id, api_key=api_key, **_with_load_defaults(model_id, load_kwargs)
+            model_id, api_key=api_key, **with_load_defaults(model_id, load_kwargs)
         )
     return load_pipeline(request, api_key, **load_kwargs)
