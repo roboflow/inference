@@ -4,7 +4,6 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
-
 from streamvision.camera import jetson_producer
 from streamvision.camera.jetson_producer import (
     JetsonVideoFrameProducer,
