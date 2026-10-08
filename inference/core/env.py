@@ -196,7 +196,18 @@ API_BASE_URL = os.getenv(
     "API_BASE_URL",
     resolve_roboflow_service_url("api", region=ROBOFLOW_REGION, project=PROJECT),
 )
-API_PROXY_BASE_URL = os.getenv("API_PROXY_BASE_URL", API_BASE_URL)
+# Base URL for apiproxy/* calls (managed third-party model keys). Defaults to
+# the region's long-running proxy host, which bypasses the 60-second Firebase
+# Hosting limit on API_BASE_URL. An explicitly pinned API_BASE_URL (on-prem,
+# secure gateway, custom mirror) keeps serving the proxy too, unless
+# API_PROXY_BASE_URL is set as well.
+API_PROXY_BASE_URL = os.getenv("API_PROXY_BASE_URL") or (
+    API_BASE_URL
+    if "API_BASE_URL" in os.environ
+    else resolve_roboflow_service_url(
+        "api_proxy", region=ROBOFLOW_REGION, project=PROJECT
+    )
+)
 
 # Suffix path to be appended to API_BASE_URL for endpoints that serve model weights.
 # This is only expected to be used in Roboflow internal hosting environments.
@@ -1390,6 +1401,16 @@ TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL = int(
 ROBOFLOW_API_REQUEST_TIMEOUT = os.getenv("ROBOFLOW_API_REQUEST_TIMEOUT", "120")
 if ROBOFLOW_API_REQUEST_TIMEOUT:
     ROBOFLOW_API_REQUEST_TIMEOUT = int(ROBOFLOW_API_REQUEST_TIMEOUT)
+
+# Timeout (seconds) for apiproxy/* calls. Third-party models with reasoning
+# enabled regularly take several minutes to answer, so this matches the
+# 300-second budget of the Cloud Run service behind API_PROXY_BASE_URL rather
+# than the general-purpose ROBOFLOW_API_REQUEST_TIMEOUT.
+ROBOFLOW_API_PROXY_REQUEST_TIMEOUT = os.getenv(
+    "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", "300"
+)
+if ROBOFLOW_API_PROXY_REQUEST_TIMEOUT:
+    ROBOFLOW_API_PROXY_REQUEST_TIMEOUT = int(ROBOFLOW_API_PROXY_REQUEST_TIMEOUT)
 
 
 # Control SSL certificate verification for requests to the Roboflow API

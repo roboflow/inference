@@ -5,8 +5,6 @@ import sys
 
 import pytest
 
-import pytest
-
 from inference.core import env as env_module
 
 
@@ -181,3 +179,73 @@ def test_openai_compatible_allowed_base_urls_configuration(
             assert env_module.OPENAI_COMPATIBLE_ALLOWED_BASE_URLS == expected
     finally:
         importlib.reload(env_module)
+
+
+def _reload_env_with(monkeypatch, **variables) -> dict:
+    try:
+        with monkeypatch.context() as env_context:
+            for name in (
+                "API_BASE_URL",
+                "API_PROXY_BASE_URL",
+                "ROBOFLOW_REGION",
+                "ROBOFLOW_ENVIRONMENT",
+                "PROJECT",
+                "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT",
+            ):
+                env_context.delenv(name, raising=False)
+            for name, value in variables.items():
+                env_context.setenv(name, value)
+            importlib.reload(env_module)
+            return {
+                "API_BASE_URL": env_module.API_BASE_URL,
+                "API_PROXY_BASE_URL": env_module.API_PROXY_BASE_URL,
+                "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT": (
+                    env_module.ROBOFLOW_API_PROXY_REQUEST_TIMEOUT
+                ),
+            }
+    finally:
+        importlib.reload(env_module)
+
+
+def test_api_proxy_base_url_defaults_to_long_running_host(monkeypatch) -> None:
+    result = _reload_env_with(monkeypatch)
+
+    assert result["API_BASE_URL"] == "https://api.roboflow.com"
+    assert result["API_PROXY_BASE_URL"] == "https://heavy-api.roboflow.com"
+
+
+def test_api_proxy_base_url_follows_region_and_environment(monkeypatch) -> None:
+    result = _reload_env_with(
+        monkeypatch, ROBOFLOW_REGION="us", ROBOFLOW_ENVIRONMENT="staging"
+    )
+
+    assert result["API_BASE_URL"] == "https://api.roboflow.one"
+    assert result["API_PROXY_BASE_URL"] == "https://heavy-api.roboflow.one"
+
+
+def test_api_proxy_base_url_follows_pinned_api_base_url(monkeypatch) -> None:
+    result = _reload_env_with(monkeypatch, API_BASE_URL="https://api.internal.example")
+
+    assert result["API_PROXY_BASE_URL"] == "https://api.internal.example"
+
+
+def test_api_proxy_base_url_explicit_value_wins(monkeypatch) -> None:
+    result = _reload_env_with(
+        monkeypatch,
+        API_BASE_URL="https://api.internal.example",
+        API_PROXY_BASE_URL="https://proxy.internal.example",
+    )
+
+    assert result["API_PROXY_BASE_URL"] == "https://proxy.internal.example"
+
+
+def test_api_proxy_request_timeout_defaults_to_cloud_run_budget(monkeypatch) -> None:
+    result = _reload_env_with(monkeypatch)
+
+    assert result["ROBOFLOW_API_PROXY_REQUEST_TIMEOUT"] == 300
+
+
+def test_api_proxy_request_timeout_is_configurable(monkeypatch) -> None:
+    result = _reload_env_with(monkeypatch, ROBOFLOW_API_PROXY_REQUEST_TIMEOUT="45")
+
+    assert result["ROBOFLOW_API_PROXY_REQUEST_TIMEOUT"] == 45

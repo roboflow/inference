@@ -54,6 +54,7 @@ from inference.core.env import (
     OFFLINE_MODE,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
+    ROBOFLOW_API_PROXY_REQUEST_TIMEOUT,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
@@ -2106,14 +2107,24 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     return f"{url}?{parameters_string}"
 
 
-def _api_base_url_for_endpoint(endpoint: str) -> str:
+def _is_api_proxy_endpoint(endpoint: str) -> bool:
     endpoint_path = endpoint.strip("/")
-    if any(
+    return any(
         endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
         for prefix in API_PROXY_ENDPOINT_PREFIXES
-    ):
+    )
+
+
+def _api_base_url_for_endpoint(endpoint: str) -> str:
+    if _is_api_proxy_endpoint(endpoint=endpoint):
         return API_PROXY_BASE_URL
     return API_BASE_URL
+
+
+def _request_timeout_for_endpoint(endpoint: str) -> int:
+    if _is_api_proxy_endpoint(endpoint=endpoint):
+        return ROBOFLOW_API_PROXY_REQUEST_TIMEOUT
+    return ROBOFLOW_API_REQUEST_TIMEOUT
 
 
 @wrap_roboflow_api_errors()
@@ -2222,7 +2233,7 @@ def post_to_roboflow_api(
             url=wrapped_url,
             json=payload,
             headers=headers,
-            timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+            timeout=_request_timeout_for_endpoint(endpoint=endpoint),
             verify=ROBOFLOW_API_VERIFY_SSL,
         )
         api_key_safe_raise_for_status(response=response)

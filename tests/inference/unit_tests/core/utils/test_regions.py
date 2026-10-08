@@ -127,9 +127,35 @@ def test_api_url_matrix(
     assert result == expected_api_url
 
 
+@pytest.mark.parametrize(
+    "region, environment, expected_api_proxy_url",
+    [
+        ("us", "prod", "https://heavy-api.roboflow.com"),
+        ("us", "staging", "https://heavy-api.roboflow.one"),
+        ("eu", "prod", "https://api.roboflow.eu"),
+        ("eu", "staging", "https://api.roboflow-eu.one"),
+    ],
+)
+def test_api_proxy_url_matrix(
+    monkeypatch,
+    region: str,
+    environment: str,
+    expected_api_proxy_url: str,
+) -> None:
+    # given
+    monkeypatch.setenv("ROBOFLOW_REGION", region)
+    monkeypatch.setenv("ROBOFLOW_ENVIRONMENT", environment)
+
+    # when
+    result = resolve_roboflow_service_url("api_proxy")
+
+    # then
+    assert result == expected_api_proxy_url
+
+
 def test_every_region_environment_pair_defines_the_same_services() -> None:
     # given
-    expected_services = {"api", "app", "serverless"}
+    expected_services = {"api", "api_proxy", "app", "serverless"}
 
     # then
     for services in ROBOFLOW_SERVICE_URLS.values():

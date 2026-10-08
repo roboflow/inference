@@ -5289,7 +5289,8 @@ def test_build_roboflow_api_headers_always_sets_version_header() -> None:
     assert result["custom"] == "value"
 
 
-def test_post_to_roboflow_api_uses_api_base_url_by_default_for_api_proxy(
+@mock.patch.object(roboflow_api, "API_PROXY_BASE_URL", API_BASE_URL)
+def test_post_to_roboflow_api_uses_api_base_url_for_api_proxy_when_pinned_to_it(
     requests_mock: Mocker,
 ) -> None:
     requests_mock.post(
@@ -5353,6 +5354,47 @@ def test_post_to_roboflow_api_does_not_use_api_proxy_base_url_for_other_endpoint
 
     assert result == {"status": "ok"}
     assert requests_mock.last_request.url == expected_url
+
+
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", 345)
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_REQUEST_TIMEOUT", 12)
+def test_post_to_roboflow_api_uses_proxy_timeout_for_api_proxy_endpoint(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.post(
+        url=wrap_url(
+            f"{roboflow_api.API_PROXY_BASE_URL.rstrip('/')}"
+            "/apiproxy/openrouter?api_key=my_api_key"
+        ),
+        json={"status": "ok"},
+    )
+
+    post_to_roboflow_api(
+        endpoint="apiproxy/openrouter",
+        api_key="my_api_key",
+        payload={"prompt": "hello"},
+    )
+
+    assert requests_mock.last_request.timeout == 345
+
+
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", 345)
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_REQUEST_TIMEOUT", 12)
+def test_post_to_roboflow_api_keeps_default_timeout_for_other_endpoints(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/some/endpoint?api_key=my_api_key"),
+        json={"status": "ok"},
+    )
+
+    post_to_roboflow_api(
+        endpoint="some/endpoint",
+        api_key="my_api_key",
+        payload={"prompt": "hello"},
+    )
+
+    assert requests_mock.last_request.timeout == 12
 
 
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)

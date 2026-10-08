@@ -25,24 +25,33 @@ US_PROD_PROJECT_NAME = "roboflow-platform"
 DEFAULT_REGION = "us"
 DEFAULT_ENVIRONMENT = PROD_ENVIRONMENT_NAME
 
+# ``api_proxy`` is the host for ``apiproxy/*`` calls (managed third-party model
+# keys). The ``api`` host is served by Firebase Hosting, which cuts every
+# request at 60 seconds; ``heavy-api.*`` is a load balancer straight to the
+# same Cloud Run service with no such limit. The EU region has no such load
+# balancer yet, so it keeps the ``api`` host.
 ROBOFLOW_SERVICE_URLS = {
     ("us", "prod"): {
         "api": "https://api.roboflow.com",
+        "api_proxy": "https://heavy-api.roboflow.com",
         "app": "https://app.roboflow.com",
         "serverless": "https://serverless.roboflow.com",
     },
     ("us", "staging"): {
         "api": "https://api.roboflow.one",
+        "api_proxy": "https://heavy-api.roboflow.one",
         "app": "https://app.roboflow.one",
         "serverless": "https://serverless.roboflow.one",
     },
     ("eu", "prod"): {
         "api": "https://api.roboflow.eu",
+        "api_proxy": "https://api.roboflow.eu",
         "app": "https://app.roboflow.eu",
         "serverless": "https://serverless.roboflow.eu",
     },
     ("eu", "staging"): {
         "api": "https://api.roboflow-eu.one",
+        "api_proxy": "https://api.roboflow-eu.one",
         "app": "https://app.roboflow-eu.one",
         "serverless": "https://serverless.roboflow-eu.one",
     },
