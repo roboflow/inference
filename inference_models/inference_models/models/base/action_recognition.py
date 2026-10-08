@@ -20,6 +20,23 @@ class ActionRecognitionPrediction:
     end_exclusive: bool = False
 
 
+def action_confidence_mask(
+    scores: torch.Tensor, threshold: Union[float, torch.Tensor]
+) -> torch.Tensor:
+    """Compare action scores and thresholds at the same float32 precision.
+
+    Args:
+        scores (torch.Tensor): Confidence scores before merging.
+        threshold (Union[float, torch.Tensor]): Scalar or broadcastable thresholds.
+
+    Returns:
+        torch.Tensor: Boolean mask of scores that meet the thresholds.
+    """
+    thresholds = torch.as_tensor(threshold, dtype=torch.float32, device=scores.device)
+    mask = scores.to(dtype=torch.float32) >= thresholds
+    return mask
+
+
 SLIDING_WINDOW_MODE = "sliding_window"
 WHOLE_VIDEO_MODE = "whole_video"
 _MICROSECONDS = 1_000_000

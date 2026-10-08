@@ -111,6 +111,7 @@ from inference_models.configuration import (
     get_rfdetr_pipeline_depth,
 )
 from inference_models.models.base.action_recognition import (
+    action_confidence_mask,
     ActionRecognitionModel,
     effective_max_frame_side,
     plan_windows,
@@ -2256,15 +2257,26 @@ class InferenceModelsActionRecognitionAdapter(Model):
                         frame_limit=window_frame_limit,
                         merge=False,
                     )
-                    segments = [
-                        segment
-                        for segment in segments
-                        if segment.confidence
-                        >= (
-                            per_class_thresholds[segment.class_name]
-                            if per_class_thresholds is not None
-                            else threshold
+                    segment_thresholds = (
+                        torch.tensor(
+                            [
+                                per_class_thresholds[segment.class_name]
+                                for segment in segments
+                            ],
+                            dtype=torch.float32,
                         )
+                        if per_class_thresholds is not None
+                        else threshold
+                    )
+                    keep = action_confidence_mask(
+                        torch.tensor(
+                            [segment.confidence for segment in segments],
+                            dtype=torch.float32,
+                        ),
+                        segment_thresholds,
+                    ).tolist()
+                    segments = [
+                        segment for segment, accepted in zip(segments, keep) if accepted
                     ]
                 merge_window_segments(
                     timeline=timeline,

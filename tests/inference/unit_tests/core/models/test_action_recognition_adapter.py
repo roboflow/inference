@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+import torch
 
 from inference.core.entities.requests.action_recognition import (
     ActionRecognitionInferenceRequest,
@@ -62,6 +63,41 @@ def _request(class_filter=None):
         video=InferenceRequestVideo(type="base64", value="Zm9v"),
         class_filter=class_filter,
     )
+
+
+@pytest.mark.parametrize("confidence", [0.9, "best"])
+def test_candidates_preserve_timeline_at_float32_threshold_boundaries(confidence):
+    class ScoredModel(_FakeModel):
+        supports_confidence = True
+        confidence_threshold = 0.9
+        recommended_parameters = SimpleNamespace(
+            confidence=0.9, per_class_confidence={"walk": 0.9, "run": 0.9}
+        )
+
+        def infer(self, frames, class_names=None, fps=None, **kwargs):
+            self.calls.append(kwargs)
+            scores = torch.tensor([0.9, 0.9 - 1e-6], dtype=torch.float32)
+            threshold = 0.0 if kwargs.get("confidence") == 0.0 else 0.9
+            return [
+                ActionRecognitionPrediction(0, 1, label, score.item(), True)
+                for label, score in zip(self.class_names, scores)
+                if score >= threshold
+            ]
+
+    responses = []
+    for include_candidates in (False, True):
+        model = ScoredModel([], class_names=["walk", "run"])
+        request = _request()
+        request.confidence = confidence
+        request.include_candidates = include_candidates
+        with _clip(frame_count=3, source_fps=10.0):
+            responses.append(_adapter(model).infer_from_request(request))
+        assert len(model.calls) == 1
+
+    assert responses[0].timeline == responses[1].timeline
+    assert len(responses[0].timeline) == 1
+    assert responses[0].timeline[0].class_name == "walk"
+    assert len(responses[1].candidates) == 2
 
 
 @contextlib.contextmanager
