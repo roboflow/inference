@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import torch
 
+from inference_models.entities import Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.logger import LOGGER
 from inference_models.models.base.action_recognition import (
@@ -409,8 +410,27 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         frames: List[Union[np.ndarray, torch.Tensor]],
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
+        duration_seconds: Optional[float] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
+        """Classify sampled RGB frames using the Cosmos generation path.
+
+        Args:
+            frames (list): Sampled RGB images in temporal order.
+            class_names (Optional[List[str]]): Requested vocabulary or class filter.
+            fps (Optional[float]): Sampling rate represented by the images.
+            confidence (Optional[Confidence]): Ignored because Cosmos is unscored.
+            duration_seconds (Optional[float]): Ignored. Spans use the supplied
+                sample count and FPS for their bounds.
+            **kwargs: Additional text-generation options.
+
+        Returns:
+            List[ActionRecognitionPrediction]: Unscored sampled-frame spans.
+
+        Raises:
+            ValueError: The caller does not supply a sampling rate.
+        """
         if fps is None:
             raise ValueError("fps is required for action recognition")
 

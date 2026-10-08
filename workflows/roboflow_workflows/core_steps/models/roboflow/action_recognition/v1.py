@@ -595,14 +595,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         try:
             infer_kwargs = (
                 {"confidence": confidence}
-                if getattr(model, "confidence_threshold", None) is not None
-                and confidence not in (None, "default")
+                if model.supports_confidence and confidence not in (None, "default")
                 else {}
             )
-            if (
-                getattr(model, "span_semantics", None) == "class_union"
-                and frame_limit is not None
-            ):
+            if model.supports_observed_duration and frame_limit is not None:
                 duration_seconds = (frame_limit - bookkeeping.sampled[0][0]) / (
                     sampling_stride * effective_sample_fps
                 )

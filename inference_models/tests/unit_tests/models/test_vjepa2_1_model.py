@@ -120,6 +120,33 @@ def test_contract_rejects_causal_or_different_head_artifacts():
         validate_config(metadata)
 
 
+def test_action_recognition_capabilities_and_cosmos_ignored_options(monkeypatch):
+    from inference_models.models.cosmos3.cosmos3_action_recognition import (
+        Cosmos3EdgeActionRecognition,
+    )
+
+    assert VJepaActionRecognition.supports_confidence
+    assert VJepaActionRecognition.supports_observed_duration
+    cosmos = Cosmos3EdgeActionRecognition.__new__(Cosmos3EdgeActionRecognition)
+    cosmos._fine_tune_prefix_allowed_tokens_fn = object()
+    calls = []
+    monkeypatch.setattr(
+        cosmos, "_infer_fine_tuned", lambda **kwargs: calls.append(kwargs) or []
+    )
+
+    cosmos.infer(
+        frames=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        fps=4,
+        confidence=0.9,
+        duration_seconds=0.2,
+    )
+
+    assert not cosmos.supports_confidence
+    assert not cosmos.supports_observed_duration
+    assert "confidence" not in calls[0]
+    assert "duration_seconds" not in calls[0]
+
+
 @pytest.mark.parametrize(
     "kwargs, message",
     [

@@ -20,6 +20,8 @@ MODULE = "inference.core.models.inference_models_adapters"
 
 class _FakeModel:
     resolved_model: Optional[SimpleNamespace] = None
+    supports_confidence = False
+    supports_observed_duration = False
 
     def __init__(self, responses, class_names=None, sampling=None):
         self.responses = list(responses)

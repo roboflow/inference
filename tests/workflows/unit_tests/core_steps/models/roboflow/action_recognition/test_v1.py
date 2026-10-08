@@ -1170,7 +1170,8 @@ def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
     model.video_sampling = VideoSampling(
         window_seconds=4.0, sample_fps=4.0, min_frames=1, max_frames=16
     )
-    model.span_semantics = "class_union"
+    model.span_semantics = "instances"
+    model.supports_observed_duration = True
     source_window_frames = round(4.0 * source_fps)
 
     for frame_number in range(3 * source_window_frames + 1):
@@ -1184,6 +1185,22 @@ def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
     assert any(len(call["frames"]) == 16 for call in model.calls)
     assert all(1 <= len(call["frames"]) <= 16 for call in model.calls)
     assert all(0 < call["duration_seconds"] <= 4.0 for call in model.calls)
+
+
+@pytest.mark.parametrize("supports_confidence", [False, True])
+def test_confidence_option_uses_declared_capability(supports_confidence):
+    block, model = _make_block()
+    model.supports_confidence = supports_confidence
+    model.video_sampling = VideoSampling(window_seconds=1, sample_fps=4, min_frames=1)
+
+    for frame_number in range(5):
+        block.run(
+            images=[_make_frame(frame_number)],
+            model_id="cosmos-3-edge",
+            confidence=0.7,
+        )
+
+    assert model.calls[-1]["confidence"] == (0.7 if supports_confidence else None)
 
 
 def test_unscored_streaming_model_ignores_confidence() -> None:

@@ -180,6 +180,8 @@ def validate_config(config):
 
 class VJepaActionRecognition(ActionRecognitionModel):
     span_semantics = "class_union"
+    supports_confidence = True
+    supports_observed_duration = True
 
     @classmethod
     def from_pretrained(
@@ -321,7 +323,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
         class_names=None,
         fps=None,
         confidence: Optional[Confidence] = None,
-        duration_seconds=None,
+        duration_seconds: Optional[float] = None,
         **kwargs,
     ):
         """Predict scored spans using detection's confidence modes.

@@ -2164,7 +2164,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
         id_vocabulary = self._model.class_names or None
         threshold = None
         per_class_thresholds = None
-        if default_confidence is not None:
+        if self._model.supports_confidence:
             thresholds = ConfidenceFilter(
                 confidence=(
                     "default" if request.confidence is None else request.confidence
@@ -2193,7 +2193,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
             timeline: List[ActionRecognitionPrediction] = []
             candidates = (
                 []
-                if request.include_candidates and default_confidence is not None
+                if request.include_candidates and self._model.supports_confidence
                 else None
             )
             windows_classified = 0
@@ -2217,7 +2217,10 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 infer_kwargs = {}
                 window_frame_limit = frame_count
                 window_duration_seconds = getattr(window, "duration_seconds", None)
-                if window_duration_seconds is not None:
+                if (
+                    self._model.supports_observed_duration
+                    and window_duration_seconds is not None
+                ):
                     infer_kwargs["duration_seconds"] = window_duration_seconds
                     window_frame_limit = min(
                         frame_count,
@@ -2226,7 +2229,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
                             + window_duration_seconds * source_fps
                         ),
                     )
-                if default_confidence is not None:
+                if self._model.supports_confidence:
                     infer_kwargs["confidence"] = (
                         0.0
                         if request.include_candidates

@@ -16,6 +16,7 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- Action Recognition Model uses explicit confidence and observed-duration capabilities for each model family.
 - Inference hosts can set `VJEPA2_1_ENABLED=False` to block V-JEPA loading through the Action Recognition Model block before weights load.
 - Action-recognition response schemas retain frame indices, class fields, and optional confidence for HTTP clients and Workflows.
 - Action Recognition Model ignores confidence overrides for unscored models, including Cosmos, instead of rejecting them.

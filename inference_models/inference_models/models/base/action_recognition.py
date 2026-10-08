@@ -6,6 +6,8 @@ from typing import Callable, List, Optional, Tuple, Union
 import numpy as np
 import torch
 
+from inference_models.entities import Confidence
+
 
 @dataclass(frozen=True)
 class ActionRecognitionPrediction:
@@ -89,6 +91,8 @@ class ActionRecognitionModel(ABC):
 
     span_semantics = "instances"
     confidence_threshold = None
+    supports_confidence: bool = False
+    supports_observed_duration: bool = False
 
     @property
     def frame_storage_transform(
@@ -131,6 +135,8 @@ class ActionRecognitionModel(ABC):
         frames: List[Union[np.ndarray, torch.Tensor]],
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
+        duration_seconds: Optional[float] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         """Classify RGB frames and return segments in their index space.
@@ -138,6 +144,19 @@ class ActionRecognitionModel(ABC):
         Frames are numpy HWC arrays or torch CHW tensors. ``class_names``
         restricts a model's own vocabulary to a subset, and supplies the
         vocabulary for an open-vocabulary model.
+
+        Args:
+            frames (list): Sampled RGB images in temporal order.
+            class_names (Optional[List[str]]): Requested class vocabulary or filter.
+            fps (Optional[float]): Sampling rate represented by the images.
+            confidence (Optional[Confidence]): Threshold, "best", or "default".
+                Models with supports_confidence=False ignore this option.
+            duration_seconds (Optional[float]): Observed window duration before
+                padding. Only models with supports_observed_duration=True use it.
+            **kwargs: Additional model-specific inference options.
+
+        Returns:
+            List[ActionRecognitionPrediction]: Spans in sampled-frame coordinates.
         """
         pass
 
@@ -146,12 +165,16 @@ class ActionRecognitionModel(ABC):
         frames: List[Union[np.ndarray, torch.Tensor]],
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
+        duration_seconds: Optional[float] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         return self.infer(
             frames=frames,
             class_names=class_names,
             fps=fps,
+            confidence=confidence,
+            duration_seconds=duration_seconds,
             **kwargs,
         )
 
