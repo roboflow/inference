@@ -321,6 +321,7 @@ def test_video_source_selects_gstreamer_producer_for_rtsps_on_jetson() -> None:
                 "inference.core.interfaces.camera.gstreamer_rtsp_producer.GStreamerRtspVideoFrameProducer"
             ) as mock_producer_cls:
                 mock_producer_cls.return_value.isOpened.return_value = True
+                mock_producer_cls.return_value.retrieve.return_value = (False, None)
                 mock_producer_cls.return_value.discover_source_properties.return_value = SourceProperties(
                     width=640,
                     height=480,
@@ -330,6 +331,7 @@ def test_video_source_selects_gstreamer_producer_for_rtsps_on_jetson() -> None:
                 )
                 source = VideoSource.init(video_reference=credentialed_url)
                 source.start()
+                tear_down_source(source)
 
     mock_producer_cls.assert_called_once_with(credentialed_url)
 
@@ -356,6 +358,7 @@ def test_video_source_selects_gstreamer_for_rtsps_when_running_on_jetson_alias_r
                 "inference.core.interfaces.camera.gstreamer_rtsp_producer.GStreamerRtspVideoFrameProducer"
             ) as mock_producer_cls:
                 mock_producer_cls.return_value.isOpened.return_value = True
+                mock_producer_cls.return_value.retrieve.return_value = (False, None)
                 mock_producer_cls.return_value.discover_source_properties.return_value = SourceProperties(
                     width=640,
                     height=480,
@@ -365,6 +368,7 @@ def test_video_source_selects_gstreamer_for_rtsps_when_running_on_jetson_alias_r
                 )
                 source = VideoSource.init(video_reference=credentialed_url)
                 source.start()
+                tear_down_source(source)
 
     mock_producer_cls.assert_called_once_with(credentialed_url)
 
@@ -376,6 +380,7 @@ def test_video_source_keeps_cv2_producer_for_plain_rtsp_on_jetson() -> None:
             "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
         ) as mock_producer_cls:
             mock_producer_cls.return_value.isOpened.return_value = True
+            mock_producer_cls.return_value.retrieve.return_value = (False, None)
             mock_producer_cls.return_value.discover_source_properties.return_value = (
                 SourceProperties(
                     width=640,
@@ -387,6 +392,7 @@ def test_video_source_keeps_cv2_producer_for_plain_rtsp_on_jetson() -> None:
             )
             source = VideoSource.init(video_reference=url)
             source.start()
+            tear_down_source(source)
 
     mock_producer_cls.assert_called_once_with(url)
 
