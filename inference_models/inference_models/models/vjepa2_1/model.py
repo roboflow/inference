@@ -371,11 +371,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
             recommended_parameters=self.recommended_parameters,
             default_confidence=self.confidence_threshold,
         ).get_threshold(self._classes)
-        images = []
-        for frame in frames:
-            frame = self.prepare_frame_for_storage(frame)
-            images.append(self._transform(Image.fromarray(frame)))
-        count = len(images)
+        count = len(frames)
         end_limit = (
             count
             if duration_seconds is None
@@ -390,6 +386,24 @@ class VJepaActionRecognition(ActionRecognitionModel):
         ):
             raise ModelInputError("Invalid V-JEPA window duration")
         end_limit = min(end_limit, sampling.max_frames)
+
+        with self._lock:
+            predictions = self._infer_window(
+                frames,
+                class_names=class_names,
+                threshold=threshold,
+                end_limit=end_limit,
+            )
+        return predictions
+
+    def _infer_window(self, frames, *, class_names, threshold, end_limit):
+        # The caller holds admission until this helper releases its tensor locals.
+        images = []
+        for frame in frames:
+            frame = self.prepare_frame_for_storage(frame)
+            images.append(self._transform(Image.fromarray(frame)))
+        count = len(images)
+        sampling = self.video_sampling
         images.extend([images[-1]] * (sampling.max_frames - count))
         inputs = torch.stack(images, dim=1)[None].to(self._device)
         autocast = (
@@ -397,7 +411,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
             if self._device.type == "cuda" and self._dtype != torch.float32
             else nullcontext()
         )
-        with self._lock, autocast:
+        with autocast:
             logits, intervals = self._model.head(self._model.encoder(inputs))
         if not torch.isfinite(logits).all() or not torch.isfinite(intervals).all():
             raise FloatingPointError("V-JEPA produced nonfinite predictions")

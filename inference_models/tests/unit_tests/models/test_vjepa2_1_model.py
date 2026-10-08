@@ -1,4 +1,6 @@
 import copy
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event, Lock
 from types import SimpleNamespace
 
 import numpy as np
@@ -171,6 +173,70 @@ def test_planned_fractional_duration_is_accepted_and_clipped(sample_fps):
     assert all(prediction.end_frame_idx <= 4 for prediction in predictions)
     with pytest.raises(ModelInputError, match="window duration"):
         model.infer(frames, duration_seconds=4 / sample_fps + 0.000002)
+
+
+@pytest.mark.parametrize("first_call_fails", [False, True])
+def test_shared_model_admits_preprocessing_and_releases_after_error(first_call_fails):
+    first_forward = Event()
+    release_forward = Event()
+    second_waiting = Event()
+    lock = Lock()
+    attempts = []
+    prepared = []
+
+    class AdmissionLock:
+        def __enter__(self):
+            attempts.append(True)
+            if len(attempts) == 2:
+                second_waiting.set()
+            lock.acquire()
+
+        def __exit__(self, *args):
+            lock.release()
+
+    def encoder(inputs):
+        if not first_forward.is_set():
+            first_forward.set()
+            assert release_forward.wait(5)
+            if first_call_fails:
+                raise RuntimeError("first call failed")
+        return inputs
+
+    network = SimpleNamespace(
+        encoder=encoder,
+        head=lambda inputs: (
+            torch.ones((1, 4, 2)),
+            torch.tensor([[[[0.0, 1.0], [0.0, 1.0]]] * 4]),
+        ),
+    )
+    model = VJepaActionRecognition(network, config(), ["a", "b"], torch.device("cpu"))
+    model._lock = AdmissionLock()
+    transform = model._transform
+
+    def prepare(image):
+        assert lock.locked()
+        prepared.append(True)
+        return transform(image)
+
+    model._transform = prepare
+    frames = [np.zeros((384, 384, 3), dtype=np.uint8)]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(model.infer, frames)
+        try:
+            assert first_forward.wait(5)
+            second = executor.submit(model.infer, frames)
+            assert second_waiting.wait(5)
+            assert len(prepared) == 1
+        finally:
+            release_forward.set()
+        if first_call_fails:
+            with pytest.raises(RuntimeError, match="first call failed"):
+                first.result(timeout=5)
+        else:
+            assert first.result(timeout=5)
+        assert second.result(timeout=5)
+    assert len(prepared) == 2
+    assert not lock.locked()
 
 
 @pytest.mark.parametrize(
