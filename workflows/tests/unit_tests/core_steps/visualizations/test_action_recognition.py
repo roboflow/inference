@@ -12,6 +12,7 @@ from roboflow_workflows.core_steps.visualizations.action_recognition.v1 import (
     ActionRecognitionVisualizationBlockV1,
     BlockManifest,
     _clip_history,
+    _time,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
@@ -184,3 +185,9 @@ def test_in_place_render_invalidates_the_tensor_cache():
     )["image"]
     assert not torch.equal(image.tensor_image, before)
     np.testing.assert_array_equal(image.numpy_image, output.numpy_image)
+
+
+def test_time_rounding_carries_into_the_next_minute():
+    assert _time(1799, 30) == "~01:00.0"
+    assert _time(1798, 30) == "~00:59.9"
+    assert _time(1799, None) == "f1799"

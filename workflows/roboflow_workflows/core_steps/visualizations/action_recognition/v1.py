@@ -268,9 +268,9 @@ def _color(name):
 def _time(frame, fps):
     if fps is None:
         return f"f{frame}"
-    seconds = frame / fps
-    minutes = int(seconds // 60)
-    label = f"~{minutes:02d}:{seconds % 60:04.1f}"
+    # Round before splitting minutes, so 59.97s displays 01:00.0, not 00:60.0.
+    minutes, tenths = divmod(round(frame / fps * 10), 600)
+    label = f"~{minutes:02d}:{tenths / 10:04.1f}"
     return label
 
 
