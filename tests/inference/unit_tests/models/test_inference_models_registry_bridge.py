@@ -13,8 +13,8 @@ from inference.models.utils import ROBOFLOW_MODEL_TYPES
 @pytest.mark.parametrize("enabled", [True, False])
 def test_vjepa_registry_respects_enablement(enabled) -> None:
     from inference.core import env
-    from inference.models import utils
 
+    utils = importlib.import_module("inference.models.utils")
     original = env.VJEPA2_1_ENABLED
     try:
         with patch.object(env, "VJEPA2_1_ENABLED", enabled):
