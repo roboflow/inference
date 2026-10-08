@@ -79,6 +79,7 @@ from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
 from inference.core.utils.video_utils import (
+    VideoDecodeState,
     probe_video,
     read_frame_windows,
     video_source_path,
@@ -2204,31 +2205,54 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 if frame_transform is not None
                 else {"max_frame_side": effective_max_frame_side(sampling)}
             )
+            decode_state = VideoDecodeState()
+            window_limits = [
+                min(
+                    frame_count,
+                    round(
+                        window.frame_indices[0]
+                        + (
+                            window.duration_seconds
+                            if window.duration_seconds is not None
+                            else len(window.frame_indices) / window.sample_fps
+                        )
+                        * source_fps
+                    ),
+                )
+                for window in windows
+            ]
             window_frames = read_frame_windows(
                 path=path,
                 windows=[window.frame_indices for window in windows],
+                decode_state=decode_state,
+                window_end_frames=window_limits,
                 **decode_kwargs,
             )
-            for window, frames in zip(windows, window_frames):
+            for window, planned_limit, frames in zip(
+                windows, window_limits, window_frames
+            ):
                 if len(frames) < max(1, sampling.min_frames):
                     continue
                 windows_classified += 1
                 # A window's segments index its own frames; the timeline
                 # counts the clip's.
                 infer_kwargs = {}
-                window_frame_limit = frame_count
+                window_frame_limit = min(
+                    planned_limit,
+                    (
+                        decode_state.frame_count
+                        if decode_state.reached_end
+                        else frame_count
+                    ),
+                )
                 window_duration_seconds = getattr(window, "duration_seconds", None)
                 if (
                     self._model.supports_observed_duration
                     and window_duration_seconds is not None
                 ):
-                    infer_kwargs["duration_seconds"] = window_duration_seconds
-                    window_frame_limit = min(
-                        frame_count,
-                        round(
-                            window.frame_indices[0]
-                            + window_duration_seconds * source_fps
-                        ),
+                    infer_kwargs["duration_seconds"] = min(
+                        window_duration_seconds,
+                        (window_frame_limit - window.frame_indices[0]) / source_fps,
                     )
                 if self._model.supports_confidence:
                     infer_kwargs["confidence"] = (
@@ -2287,6 +2311,8 @@ class InferenceModelsActionRecognitionAdapter(Model):
                     frame_limit=window_frame_limit,
                     sample_stride=source_fps / window.sample_fps,
                 )
+            if decode_state.reached_end:
+                frame_count = decode_state.frame_count
         timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
         response = ActionRecognitionInferenceResponse(
             timeline=timeline,

@@ -107,7 +107,7 @@ def _clip(frame_count: int, source_fps: float):
         f"{MODULE}.probe_video", return_value=(source_fps, frame_count)
     ), patch(
         f"{MODULE}.read_frame_windows",
-        side_effect=lambda path, windows, max_frame_side=None, frame_transform=None: (
+        side_effect=lambda path, windows, max_frame_side=None, frame_transform=None, **kwargs: (
             [frame_transform(frame) if frame_transform else frame] * len(window)
             for window in windows
         ),
@@ -261,7 +261,9 @@ def test_windows_classified_counts_calls_not_plans() -> None:
         f"{MODULE}.probe_video", return_value=(10.0, 80)
     ), patch(
         f"{MODULE}.read_frame_windows",
-        side_effect=lambda path, windows, max_frame_side: ([frame] for _ in windows),
+        side_effect=lambda path, windows, max_frame_side, **kwargs: (
+            [frame] for _ in windows
+        ),
     ):
         source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
         source_path.return_value.__exit__ = MagicMock(return_value=False)
@@ -281,6 +283,52 @@ def test_an_open_vocabulary_label_reports_no_class_id() -> None:
         response = _adapter(model).infer_from_request(_request())
 
     assert response.timeline[0].class_id == -1
+
+
+@pytest.mark.parametrize("reported_count", [31, 120])
+@pytest.mark.parametrize("include_candidates", [False, True])
+def test_early_decode_end_clips_timeline_candidates_and_metadata(
+    reported_count, include_candidates
+):
+    class ScoredModel(_FakeModel):
+        supports_confidence = True
+        supports_observed_duration = True
+        confidence_threshold = 0.5
+
+        def infer(self, frames, class_names=None, fps=None, **kwargs):
+            self.calls.append(kwargs)
+            return [ActionRecognitionPrediction(0, 16, "walk", 0.9, True)]
+
+    model = ScoredModel(
+        [],
+        ["walk"],
+        VideoSampling(
+            window_seconds=4,
+            sample_fps=4,
+            min_frames=1,
+            max_frames=16,
+            fixed_sample_fps=True,
+        ),
+    )
+    frame = np.zeros((8, 8, 3), dtype=np.uint8)
+    capture = MagicMock()
+    capture.isOpened.return_value = True
+    capture.read.side_effect = [(True, frame)] * 30 + [(False, None)]
+    request = _request()
+    request.include_candidates = include_candidates
+
+    with patch(f"{MODULE}.video_source_path") as source_path, patch(
+        f"{MODULE}.probe_video", return_value=(30.0, reported_count)
+    ), patch("inference.core.utils.video_utils.cv2.VideoCapture", return_value=capture):
+        source_path.return_value.__enter__.return_value = "/tmp/clip"
+        response = _adapter(model).infer_from_request(request)
+
+    assert model.calls[0]["duration_seconds"] == 1.0
+    assert response.frame_count == 30
+    assert response.timeline[0].end_frame_idx == 29
+    if include_candidates:
+        assert response.candidates[0].end_frame_idx == 29
+    capture.release.assert_called_once()
 
 
 def test_the_wire_shape_names_the_class_field_class() -> None:
