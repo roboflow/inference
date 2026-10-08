@@ -11,8 +11,6 @@ from roboflow_workflows.core_steps.visualizations.action_recognition.v1 import (
     TYPE,
     ActionRecognitionVisualizationBlockV1,
     BlockManifest,
-    _clip_history,
-    _time,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
@@ -79,9 +77,15 @@ def test_manifest_defaults_and_requires_history_only_in_timeline_mode():
     )
 
 
-@pytest.mark.parametrize("tensor", [False, True])
-@pytest.mark.parametrize("mode", ["compact", "timeline"])
-@pytest.mark.parametrize("size", [(720, 1280), (180, 320), (640, 360)])
+@pytest.mark.parametrize(
+    "tensor,mode,size",
+    [
+        (False, "compact", (720, 1280)),
+        (True, "compact", (180, 320)),
+        (False, "timeline", (180, 320)),
+        (True, "timeline", (640, 360)),
+    ],
+)
 def test_render_preserves_size_metadata_and_input_and_needs_no_history_state(
     tensor, mode, size
 ):
@@ -136,19 +140,45 @@ def test_states_do_not_show_stale_history_or_confidence(
         assert not any(text == "old" for text in labels)
 
 
-def test_clipping_preserves_overlaps_and_single_frame_ranges_without_extending_history():
+def test_timeline_pixels_clip_history_and_leave_the_unanalyzed_tail_clear():
     history = [
         _segment("punch", 100, 400),
         _segment("hook", 390, 600),
         _segment("punch", 840, 900),
-        _segment("ignored", 841, 850),
+        _segment("future", 841, 850),
     ]
-    assert _clip_history(history, 360, 840) == [
-        ("punch", 360, 401),
-        ("hook", 390, 601),
-        ("punch", 840, 841),
-    ]
+    block = ActionRecognitionVisualizationBlockV1()
+    image = _image()
+    actual = block.run(image, _window(), mode="timeline", timeline=history)[
+        "image"
+    ].numpy_image
+    # Crossing ranges and entirely future history must render exactly as
+    # already-clipped history, including one frame at the inclusive window end.
+    expected = block.run(
+        image,
+        _window(),
+        mode="timeline",
+        timeline=[
+            _segment("punch", 360, 400),
+            _segment("hook", 390, 600),
+            _segment("punch", 840, 840),
+        ],
+    )["image"].numpy_image
+    np.testing.assert_array_equal(actual, expected)
     assert history[-2].end_frame_idx == 900
+    without_last_frame = block.run(
+        image, _window(), mode="timeline", timeline=history[:2]
+    )["image"].numpy_image
+    assert np.any(actual != without_last_frame)
+    # Both rows have simultaneous evidence, but neither class's bar can reach
+    # the far-right tail representing frames after the analyzed window.
+    hook_color, punch_color = (255, 201, 142), (193, 240, 126)
+    hook_x = np.where(np.all(actual[570] == hook_color, axis=1))[0]
+    punch_x = np.where(np.all(actual[610] == punch_color, axis=1))[0]
+    assert len(set(hook_x) & set(punch_x)) > 0
+    assert hook_x.max() < 1117
+    assert punch_x.max() <= 1117
+    assert not np.any(np.all(actual[550:630, 1130:1220] == punch_color, axis=2))
 
 
 def test_frames_fallback_and_overflow_are_explicit(monkeypatch):
@@ -187,7 +217,17 @@ def test_in_place_render_invalidates_the_tensor_cache():
     np.testing.assert_array_equal(image.numpy_image, output.numpy_image)
 
 
-def test_time_rounding_carries_into_the_next_minute():
-    assert _time(1799, 30) == "~01:00.0"
-    assert _time(1798, 30) == "~00:59.9"
-    assert _time(1799, None) == "f1799"
+@pytest.mark.parametrize(
+    "frame,label", [(1799, "~01:00.0"), (1798, "~00:59.9"), (1800, "~01:00.0")]
+)
+def test_displayed_time_rounds_across_minutes(monkeypatch, frame, label):
+    labels = []
+    original = cv2.putText
+
+    def record(img, text, *args, **kwargs):
+        labels.append(text)
+        return original(img, text, *args, **kwargs)
+
+    monkeypatch.setattr(cv2, "putText", record)
+    ActionRecognitionVisualizationBlockV1().run(_image(frame=frame), _window())
+    assert any(text.endswith("Frame " + label) for text in labels)

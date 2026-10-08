@@ -73,3 +73,6 @@ The model owns window length and sampling; stride controls analysis cadence.
 Inference remains synchronous. Holding a label does not establish live-video
 throughput or real-model accuracy, and the model still does not run an extra
 analysis automatically at the end of a stream.
+
+The [conceptual API](../api/overview.md) defines the ownership of analysis
+state and the invariants shared by the model and visualization.
