@@ -98,6 +98,33 @@ def test_every_registry_key_imports_its_real_class(
         expected[("3d-reconstruction", "sam3-3d-objects")] = (
             "inference.models.sam3_3d.segment_anything_3d:SegmentAnything3_3D_Objects"
         )
+    fallback_paths = {
+        tuple(key): path
+        for path, keys in inventory["cases"][
+            f"adapters=False,proxy={use_proxy}"
+        ].items()
+        for key in keys
+    }
+    available = {}
+    for key, path in expected.items():
+        module_path, class_name = path.split(":", 1)
+        try:
+            getattr(importlib.import_module(module_path), class_name)
+        except (ImportError, AttributeError):
+            fallback = fallback_paths.get(key) if use_adapters else None
+            if fallback is None or fallback == path:
+                continue
+
+            module_path, class_name = fallback.split(":", 1)
+            try:
+                getattr(importlib.import_module(module_path), class_name)
+            except (ImportError, AttributeError):
+                continue
+
+            path = fallback
+        available[key] = path
+
+    expected = available
     assert set(registry) == set(expected)
     failures = []
     for key in registry:
@@ -273,3 +300,30 @@ def test_sam3_visual_segmentation_fixture_in_fresh_process():
         env={**os.environ, "DISABLE_VERSION_CHECK": "True"},
     )
     assert process.returncode == 0, process.stdout + process.stderr
+
+
+def test_real_registry_probe_with_missing_optional_models(monkeypatch):
+    """Exercise real registry coverage without the SAM and YOLO World extras.
+
+    Args:
+        monkeypatch: Pytest patch fixture.
+    """
+    from inference import models
+
+    real_import = importlib.import_module
+
+    class _PartialModels:
+        def __getattr__(self, name):
+            if name in {"SegmentAnything", "YOLOWorld"}:
+                raise ImportError("Optional model dependency is unavailable")
+            return getattr(models, name)
+
+    def _import(module_path, package=None):
+        if module_path == "inference.models":
+            return _PartialModels()
+        return real_import(module_path, package=package)
+
+    monkeypatch.setattr(importlib, "import_module", _import)
+    test_every_registry_key_imports_its_real_class(
+        monkeypatch, use_adapters=False, use_proxy=False, sam3_enabled=False
+    )

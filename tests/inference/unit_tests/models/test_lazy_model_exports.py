@@ -73,6 +73,18 @@ def test_original_public_model_names_resolve_to_classes(
         ):
             continue
 
+        if real_imports:
+            module_path, class_name = path.split(":", 1)
+            try:
+                expected_class = getattr(
+                    importlib.import_module(module_path), class_name
+                )
+            except (ImportError, AttributeError):
+                assert not hasattr(
+                    module, name
+                ), f"Unavailable export {name} is advertised"
+                continue
+
         try:
             namespace = {}
             exec(f"from _model_exports import {name}", namespace)
@@ -81,12 +93,7 @@ def test_original_public_model_names_resolve_to_classes(
             assert callable(model_class)
             if name not in {"Gaze", "InferenceModelsGazeAdapter"}:
                 assert issubclass(model_class, Model)
-            if real_imports:
-                module_path, class_name = path.split(":", 1)
-                expected_class = getattr(
-                    importlib.import_module(module_path), class_name
-                )
-            else:
+            if not real_imports:
                 expected_class = classes[path]
             assert model_class is expected_class
             assert getattr(module, name) is model_class
@@ -158,3 +165,32 @@ def test_missing_optional_exports_are_absent(monkeypatch, operation):
 
     with pytest.raises(AttributeError):
         getattr(module, "SegmentAnything2")
+
+
+def test_real_export_probe_with_missing_optional_models(monkeypatch):
+    """Exercise real export coverage without the SAM and YOLO World extras.
+
+    Args:
+        monkeypatch: Pytest patch fixture.
+    """
+    from types import ModuleType
+
+    from inference import models
+
+    class _PartialModels(ModuleType):
+        def __getattr__(self, name):
+            if name in {"SegmentAnything", "YOLOWorld"}:
+                raise ImportError("Optional model dependency is unavailable")
+            return getattr(models, name)
+
+    real_import = importlib.import_module
+
+    def _import(module_path, package=None):
+        if module_path == "inference.models":
+            return _PartialModels(module_path)
+        return real_import(module_path, package=package)
+
+    monkeypatch.setattr(lazy.importlib, "import_module", _import)
+    test_original_public_model_names_resolve_to_classes(
+        monkeypatch, use_adapters=False, use_proxy=False, real_imports=True
+    )
