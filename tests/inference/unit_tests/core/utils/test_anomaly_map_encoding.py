@@ -38,12 +38,13 @@ def test_encoding_accepts_array_like_input_of_other_dtypes():
     assert np.array_equal(decoded, np.ones((2, 2), dtype=np.float32))
 
 
-def test_payload_is_a_quarter_of_the_json_float_list():
+def test_payload_is_a_third_of_the_json_float_list():
+    # Base64 costs 16/3 characters per float32; a JSON float list costs about 20.
     anomaly_map = np.random.default_rng(1).random((64, 64), dtype=np.float32)
 
     payload = encode_anomaly_map(anomaly_map)
 
-    assert len(payload["data"]) < len(str(anomaly_map.tolist())) / 4
+    assert len(payload["data"]) < len(str(anomaly_map.tolist())) / 3
 
 
 @pytest.mark.parametrize("shape", [(5,), (2, 3, 4)])
