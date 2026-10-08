@@ -29,6 +29,7 @@ from inference.core.entities.responses.action_recognition import (
 from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
     AnomalyDetectionResponse,
+    AnomalyMapPayload,
     ClassificationInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
@@ -70,6 +71,7 @@ from inference.core.models.semantic_segmentation_utils import (
 )
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
+from inference.core.utils.anomaly_map_encoding import encode_anomaly_map
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
@@ -1764,7 +1766,11 @@ def prepare_anomaly_detection_response(
                 anomaly_score=image_metadata["anomaly_score"],
                 anomaly_threshold=image_metadata["anomaly_threshold"],
                 is_anomalous=image_metadata["is_anomalous"],
-                anomaly_map=anomaly_map.tolist() if anomaly_map is not None else None,
+                anomaly_map=(
+                    AnomalyMapPayload(**encode_anomaly_map(anomaly_map))
+                    if anomaly_map is not None
+                    else None
+                ),
             )
         )
     return responses
