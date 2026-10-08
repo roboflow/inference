@@ -119,6 +119,10 @@ The class vocabulary is optional. Leave it empty to report every class the
 model carries, or list classes to report a subset of them. When a model call
 fails, error_status carries the error text for that frame and the stream
 continues.
+
+If required samples are missing, the block skips that window and reports
+their source-frame indices in error_status. Later complete windows resume
+inference. Source frames intentionally skipped by sampling are not missing.
 """
 
 
@@ -491,9 +495,19 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         sampling_stride = source_fps / effective_sample_fps
         window_frames = max(1, round(requested_window_seconds * source_fps))
         stride_frames = max(1, round(requested_stride_seconds * source_fps))
+        cutoff_frame_number = frame_number - window_frames
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
-        if frame_number >= bookkeeping.next_sample_frame_number:
+        if bookkeeping.next_sample_frame_number <= cutoff_frame_number:
+            expired_positions = (
+                math.floor(
+                    (cutoff_frame_number - bookkeeping.next_sample_frame_number)
+                    / sampling_stride
+                )
+                + 1
+            )
+            bookkeeping.next_sample_frame_number += expired_positions * sampling_stride
+        if frame_number >= math.ceil(bookkeeping.next_sample_frame_number - 1e-9):
             frame = self._extract_frame(image=image)
             frame_transform = getattr(model, "frame_storage_transform", None)
             if frame_transform is None:
@@ -503,20 +517,16 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 )
             else:
                 frame = frame_transform(frame)
-            # Frames can arrive with gaps. A timestamp stranded in a gap has
-            # no frame of its own, and copying this one under each would
-            # flood the buffer, so the cursor snaps past them first.
-            if bookkeeping.next_sample_frame_number < frame_number - 1:
-                bookkeeping.next_sample_frame_number = float(frame_number)
-            # Advance on the float grid; integer anchoring rounds every step
-            # up and drags the real sample rate below sample_fps. Several
-            # timestamps landing on one frame each take it, which is the
-            # repeat training fed a source slower than the recorded rate.
-            while bookkeeping.next_sample_frame_number <= frame_number:
-                bookkeeping.sampled.append((frame_number, frame))
+            # Empty slots preserve the model clock without inventing missing pixels.
+            while (
+                math.ceil(bookkeeping.next_sample_frame_number - 1e-9) <= frame_number
+            ):
+                expected_frame = math.ceil(bookkeeping.next_sample_frame_number - 1e-9)
+                bookkeeping.sampled.append(
+                    (expected_frame, frame if expected_frame == frame_number else None)
+                )
                 bookkeeping.next_sample_frame_number += sampling_stride
 
-        cutoff_frame_number = frame_number - window_frames
         while bookkeeping.sampled and bookkeeping.sampled[0][0] <= cutoff_frame_number:
             bookkeeping.sampled.pop(0)
         if video_sampling.max_frames is not None:
@@ -589,6 +599,20 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
     ) -> str:
         if not bookkeeping.sampled:
             return ""
+        missing = [number for number, frame in bookkeeping.sampled if frame is None]
+        if missing:
+            first_frame = bookkeeping.sampled[0][0]
+            last_frame = (
+                frame_limit - 1
+                if frame_limit is not None
+                else bookkeeping.sampled[-1][0]
+            )
+            indices = ", ".join(str(number) for number in missing[:16])
+            remainder = f" and {len(missing) - 16} more" if len(missing) > 16 else ""
+            return (
+                f"Missing required samples at source-frame indices {indices}{remainder} "
+                f"for window {first_frame}-{last_frame}. Inference skipped this window."
+            )
         frames = self._prepare_frames_for_model(
             [frame for _, frame in bookkeeping.sampled]
         )
