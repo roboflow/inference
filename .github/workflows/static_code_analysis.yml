@@ -23,7 +23,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-24.04-small
       group: public-depot
-    timeout-minutes: 7
+    timeout-minutes: 15
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
