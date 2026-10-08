@@ -1,9 +1,12 @@
 # Action Recognition Visualization
 
-Connect a camera or WebRTC image to **Action Recognition Model**, then connect
+Connect a camera or WebRTC image to **Action Recognition Model v2**, then connect
 that same image and the model's **window** output to **Action Recognition
 Visualization**. Return the visualizer's **image** output to display or record
 it. This needs no custom Python and draws directly into the output image.
+
+Version 1 retains its original `timeline` and `error_status` outputs. Select
+model v2 to use `window` and `latest_predictions`; the visualization block is v1.
 
 ## Choose the display
 
@@ -19,7 +22,8 @@ fit. Text uses the existing OpenCV renderer (non-ASCII characters render as `?`)
 The input image is copied by default; dimensions and video metadata are retained.
 NumPy and tensor-backed images use the same NumPy drawing path.
 
-For an existing `actions` model step, add:
+For an `actions` model step with type
+`roboflow_core/roboflow_action_recognition_model@v2`, add:
 
 ```json
 {

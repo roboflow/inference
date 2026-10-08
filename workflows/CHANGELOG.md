@@ -18,7 +18,7 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
-- Action Recognition Model: `latest_predictions` output connects to Classification Label Visualization; `window` exposes the last analysis state, classes and actual sampled coverage.
+- Action Recognition Model v2: `latest_predictions` output connects to Classification Label Visualization; `window` exposes the last analysis state, classes and actual sampled coverage.
 - Action Recognition Visualization: compact labels (default) or a recent timeline overlay, with collecting, empty and error states. Renders into the output image using the model window and existing timeline, without additional temporal state.
 
 ## `0.2.4`

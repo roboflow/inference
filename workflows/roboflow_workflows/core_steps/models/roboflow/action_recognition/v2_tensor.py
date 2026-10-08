@@ -4,18 +4,33 @@
 same manifest.
 """
 
+from typing import Any, List
+
 import numpy as np
 import torch
-from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
-    ActionRecognitionModelBlockV1 as _NumpyActionRecognitionModelBlockV1,
+from roboflow_workflows.core_steps.common.deserializers_tensor import (
+    deserialize_native_classification_prediction_kind,
 )
-from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (  # noqa: F401
+from roboflow_workflows.core_steps.models.roboflow.action_recognition.v2 import (
+    ActionRecognitionModelBlockV2 as _NumpyActionRecognitionModelBlockV2,
+)
+from roboflow_workflows.core_steps.models.roboflow.action_recognition.v2 import (  # noqa: F401
     BlockManifest,
 )
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 
 
-class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
+class ActionRecognitionModelBlockV2(_NumpyActionRecognitionModelBlockV2):
+    def _build_latest_predictions(
+        self, image: WorkflowImageData, actions: List[str]
+    ) -> Any:
+        # Tensor consumers of classification_prediction expect the native object.
+        predictions = super()._build_latest_predictions(image=image, actions=actions)
+        native_predictions = deserialize_native_classification_prediction_kind(
+            parameter="latest_predictions", value=predictions
+        )
+        return native_predictions
+
     def _extract_frame(self, image: WorkflowImageData):
         if image.is_tensor_materialised():
             frame = image.tensor_image
@@ -41,7 +56,7 @@ class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
         if not max_side or max_side <= 0:
             return frame
         if isinstance(frame, np.ndarray):
-            return _NumpyActionRecognitionModelBlockV1._cap_frame_side(
+            return _NumpyActionRecognitionModelBlockV2._cap_frame_side(
                 frame=frame, max_side=max_side
             )
         height, width = frame.shape[1], frame.shape[2]

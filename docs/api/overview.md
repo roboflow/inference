@@ -32,6 +32,7 @@ Inference capabilities are outside this document's current scope.
 - Frame/FPS time is approximate. An assumed FPS cannot be presented as a
   declared source clock. Sampling coverage is not a latency measurement.
 
-The existing model and visualization blocks implement these operations.
+Action Recognition Model v2 and Action Recognition Visualization v1 implement
+these operations. Model v1 retains its original timeline and error outputs.
 See [connections and value-object fields](../workflows/action_recognition_visualization.md)
 for their concrete Workflow interface.

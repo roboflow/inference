@@ -33,8 +33,6 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
-    DICTIONARY_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
@@ -120,20 +118,6 @@ The class vocabulary is optional. Leave it empty to report every class the
 model carries, or list classes to report a subset of them. When a model call
 fails, error_status carries the error text for that frame and the stream
 continues.
-
-`latest_predictions` holds the actions of the latest model call until the next
-call, as multi-label classification with a fixed confidence of 1.0. Connect it
-to Classification Label Visualization to show them on the video.
-
-For a temporally explicit overlay, connect `window` to Action Recognition
-Visualization. It contains `status` (collecting, ready or error), all `classes`
-from the latest call, inclusive `start_frame`/`end_frame` of the actual sampled
-window, the declared source `fps` (null when assumed), and `video_identifier`.
-The snapshot is held between calls; a failure clears its classes and bounds
-and keeps error status until a successful call. Ready with no classes means
-no action was reported under the class filter. The visualizer optionally uses
-`timeline` for accumulated intervals clipped to this window. Times derived
-from frames/FPS are estimates, not source PTS or inference latency.
 """
 
 
@@ -146,11 +130,6 @@ class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
-    latest_actions: List[str] = field(default_factory=list)
-    analysis_status: str = "collecting"
-    window_start_frame: Optional[int] = None
-    window_end_frame: Optional[int] = None
-    source_fps_is_fallback: bool = False
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -230,10 +209,6 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[ACTION_RECOGNITION_PREDICTION_KIND],
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
-            OutputDefinition(
-                name="latest_predictions", kind=[CLASSIFICATION_PREDICTION_KIND]
-            ),
-            OutputDefinition(name="window", kind=[DICTIONARY_KIND]),
         ]
 
     @classmethod
@@ -452,7 +427,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 and frame_number < bookkeeping.last_frame_number
             )
         ):
-            bookkeeping = _ActionRecognitionBookkeeping(signature=signature)
+            bookkeeping = self._create_bookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
             while len(self._video_bookkeeping) > MAX_TRACKED_VIDEOS:
                 evicted_video_id, _ = self._video_bookkeeping.popitem(last=False)
@@ -538,6 +513,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             image=image, bookkeeping=bookkeeping, error_status=error_status
         )
 
+    @staticmethod
+    def _create_bookkeeping(signature: Tuple[Tuple[str, ...], float, float]):
+        return _ActionRecognitionBookkeeping(signature=signature)
+
     def _resolve_source_fps(
         self,
         metadata: VideoMetadata,
@@ -559,7 +538,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 "It uses 30 FPS for windowing and sampling."
             )
             self._warned_fps_video_ids.add(metadata.video_identifier)
-        bookkeeping.source_fps_is_fallback = True
         bookkeeping.source_fps = DEFAULT_SOURCE_FPS
         return DEFAULT_SOURCE_FPS
 
@@ -589,11 +567,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 error,
                 exc_info=True,
             )
-            # Stale labels would look like a fresh result on screen.
-            bookkeeping.latest_actions = []
-            bookkeeping.analysis_status = "error"
-            bookkeeping.window_start_frame = None
-            bookkeeping.window_end_frame = None
             return str(error)
         # Separates "the model output one range" from "the block merged
         # several".
@@ -617,17 +590,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
             stride=max(1, math.ceil(sampling_stride)),
-        )
-        bookkeeping.analysis_status = "ready"
-        bookkeeping.window_start_frame = bookkeeping.sampled[0][0]
-        bookkeeping.window_end_frame = bookkeeping.sampled[-1][0]
-        # Sorted, so an action keeps its label slot while it persists across calls.
-        bookkeeping.latest_actions = sorted(
-            {
-                segment.class_name
-                for segment in segments
-                if block_filter is None or segment.class_name in block_filter
-            }
         )
         return ""
 
@@ -734,41 +696,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         # up with. The entries come from the snapshot the last fire built.
         # The list is still fresh per frame, so a consumer that appends to
         # one frame's output leaves the next frame alone.
-        latest_predictions = self._build_latest_predictions(
-            image=image, actions=bookkeeping.latest_actions
-        )
         return {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
-            "latest_predictions": latest_predictions,
-            "window": {
-                "status": bookkeeping.analysis_status,
-                "classes": list(bookkeeping.latest_actions),
-                "start_frame": bookkeeping.window_start_frame,
-                "end_frame": bookkeeping.window_end_frame,
-                "fps": (
-                    None
-                    if bookkeeping.source_fps_is_fallback
-                    else bookkeeping.source_fps
-                ),
-                "video_identifier": image.video_metadata.video_identifier,
-            },
-        }
-
-    def _build_latest_predictions(
-        self, image: WorkflowImageData, actions: List[str]
-    ) -> Any:
-        # Multi-label so every action gets a label. Position ids stay dense, which
-        # the tensor confidence vector needs; captions also have no vocabulary id.
-        height, width = image._read_shape_without_materialization()
-        return {
-            "image": {"height": height, "width": width},
-            "predictions": {
-                action: {"confidence": 1.0, "class_id": class_id}
-                for class_id, action in enumerate(actions)
-            },
-            "predicted_classes": list(actions),
-            "prediction_type": "classification",
-            "parent_id": image.parent_metadata.parent_id,
-            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
         }
