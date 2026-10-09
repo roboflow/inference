@@ -38,6 +38,8 @@ conflicts = [[
     { package = "inference-models", extra = "onnx-jp6-cu126" },
 ]]
 
+[manifest]
+
 [[manifest.dependency-metadata]]
 name = "nvidia-cuda-runtime-cu12"
 
@@ -358,7 +360,7 @@ wheels = [
 
 [[package]]
 name = "cairosvg"
-version = "2.9.0"
+version = "2.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cairocffi" },
@@ -367,9 +369,9 @@ dependencies = [
     { name = "pillow" },
     { name = "tinycss2" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/38/07/e8412a13019b3f737972dea23a2c61ca42becafc16c9338f4ca7a0caa993/cairosvg-2.9.0.tar.gz", hash = "sha256:1debb00cd2da11350d8b6f5ceb739f1b539196d71d5cf5eb7363dbd1bfbc8dc5", size = 40877, upload-time = "2026-03-13T15:42:00.564Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/80/db62c0a96d2e55282c83524f6b1d02f09c7fd7f612e93bf83e30de1dc75c/cairosvg-2.9.1.tar.gz", hash = "sha256:861bc28ad97ce4f537d50eb3d6ee97a7afcccec9c61ac25c4e7d073fe409aec7", size = 41256, upload-time = "2026-09-07T10:35:09.563Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bf/e0/5011747466414c12cac8a8df77aa235068669a6a5a5df301a96209db6054/cairosvg-2.9.0-py3-none-any.whl", hash = "sha256:4b82d07d145377dffdfc19d9791bd5fb65539bb4da0adecf0bdbd9cd4ffd7c68", size = 45962, upload-time = "2026-03-14T13:56:33.512Z" },
+    { url = "https://files.pythonhosted.org/packages/41/51/8041c2e70649e5b7f2a0aedbbbd0609ac099cfaa0cbde2014279c9c05756/cairosvg-2.9.1-py3-none-any.whl", hash = "sha256:f91c5628e834be024a0ed4544d76261cd84016a4c73bcdf26c386495825c05a1", size = 46165, upload-time = "2026-09-07T10:35:07.952Z" },
 ]
 
 [[package]]
@@ -973,11 +975,11 @@ wheels = [
 
 [[package]]
 name = "fsspec"
-version = "2025.5.1"
+version = "2026.9.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/00/f7/27f15d41f0ed38e8fcc488584b57e902b331da7f7c6dcda53721b15838fc/fsspec-2025.5.1.tar.gz", hash = "sha256:2e55e47a540b91843b755e83ded97c6e897fa0942b11490113f09e9c443c2475", size = 303033, upload-time = "2025-05-24T12:03:23.792Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/77/cd/9be253869fc42e764de7f3dedd6969af7d44ff9c3375214a3442a6f3fc08/fsspec-2026.9.0.tar.gz", hash = "sha256:0f08147951c8cb31d844c3547d631053b127863b60be04cf06e121333ee0e2fe", size = 333545, upload-time = "2026-09-18T17:50:42.825Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bb/61/78c7b3851add1481b048b5fdc29067397a1784e2910592bc81bb3f608635/fsspec-2025.5.1-py3-none-any.whl", hash = "sha256:24d3a2e663d5fc735ab256263c4075f374a174c3410c0b25e5bd1970bceaa462", size = 199052, upload-time = "2025-05-24T12:03:21.66Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/c0/a98505f18594f1bce828bb159cec0fcf9860562f1a2c85913409fc8f3d9e/fsspec-2026.9.0-py3-none-any.whl", hash = "sha256:8dd6e646e99ea382bd85f97a45e6b526a442d79423a7dc673f1e2756d05fcb5f", size = 221738, upload-time = "2026-09-18T17:50:41.341Z" },
 ]
 
 [[package]]
@@ -1169,16 +1171,16 @@ wheels = [
 
 [[package]]
 name = "hydra-core"
-version = "1.3.6"
+version = "1.3.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "antlr4-python3-runtime" },
     { name = "omegaconf" },
     { name = "packaging" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/03/adfa2bf3a9eef568a85f2e7cf18ce1938e7aa0b5257c432e5eb48f89960a/hydra_core-1.3.6.tar.gz", hash = "sha256:8c4c215b6cfba68e9a4e76f565bd7399fc2a86b93cfe8cb7328b046834dfbee5", size = 3272413, upload-time = "2026-08-29T14:36:08.092Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/a9/fe2c936f36881e3197a8800f5bfba078d7846d54eb5d009b445eda1ee281/hydra_core-1.3.7.tar.gz", hash = "sha256:d4ff629c7e23b64a9db5fe5b027cf7c55b633b737f03be51ef41b77ed016f75e", size = 3278662, upload-time = "2026-09-14T18:02:55.528Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d5/fd/612cc7905787100dc9225ae6ad71b42b60cbc23cd56ca55afcdd1e000f81/hydra_core-1.3.6-py3-none-any.whl", hash = "sha256:55951f49c7e19c29f4281cce2eeaa6e73ef6c5620093a4efb402a7e4b839fc38", size = 163055, upload-time = "2026-08-29T14:36:06.385Z" },
+    { url = "https://files.pythonhosted.org/packages/25/0c/21890c10cc94da917c8e47efc1c55cd3e56a1d25ab5947bdd35abaf9fdc1/hydra_core-1.3.7-py3-none-any.whl", hash = "sha256:83606c4a05c770f1e026e0489875f28989829d151799eabd8cfa8cbe82164515", size = 168790, upload-time = "2026-09-14T18:02:53.661Z" },
 ]
 
 [[package]]
@@ -1227,7 +1229,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.39.1"
+version = "0.39.2rc4"
 source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
@@ -1241,6 +1243,7 @@ dependencies = [
     { name = "einops" },
     { name = "filelock" },
     { name = "fonttools" },
+    { name = "fsspec" },
     { name = "gitpython" },
     { name = "hydra-core" },
     { name = "idna" },
@@ -1420,25 +1423,26 @@ requires-dist = [
     { name = "bleach", marker = "extra == 'docs'", specifier = ">=6.4.0" },
     { name = "boto3", marker = "extra == 'model-blob-cache'", specifier = ">=1.40.0,<=1.41.5" },
     { name = "botocore", marker = "extra == 'model-blob-cache'", specifier = ">=1.40.0,<=1.41.5" },
-    { name = "cairosvg", specifier = ">=2.9.0,<3.0.0" },
+    { name = "cairosvg", specifier = ">=2.9.1,<3.0.0" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'coreml'", specifier = ">=8.3,<10.0" },
     { name = "diffusers", specifier = ">=0.39.0,<0.41.0" },
     { name = "easyocr", specifier = "~=1.7.2" },
     { name = "einops", specifier = ">=0.7.0,<1.0.0" },
     { name = "filelock", specifier = ">=3.20.3,<4.0.0" },
     { name = "fonttools", specifier = ">=4.60.2,<5.0.0" },
+    { name = "fsspec", specifier = ">=2026.6.0" },
     { name = "gitpython", specifier = ">=3.1.59,<4.0.0" },
-    { name = "hydra-core", specifier = ">=1.3.4" },
+    { name = "hydra-core", specifier = ">=1.3.7" },
     { name = "idna", specifier = ">=3.15" },
-    { name = "mako", marker = "extra == 'onnx-cu118'", specifier = ">=1.3.11" },
-    { name = "mako", marker = "extra == 'onnx-cu12'", specifier = ">=1.3.11" },
-    { name = "mako", marker = "extra == 'onnx-jp6-cu126'", specifier = ">=1.3.11" },
-    { name = "mako", marker = "extra == 'torch-cu118'", specifier = ">=1.3.11" },
-    { name = "mako", marker = "extra == 'torch-cu124'", specifier = ">=1.3.11" },
-    { name = "mako", marker = "extra == 'torch-cu128'", specifier = ">=1.3.11" },
-    { name = "mako", marker = "extra == 'torch-cu130'", specifier = ">=1.3.11" },
-    { name = "mako", marker = "extra == 'torch-jp6-cu126'", specifier = ">=1.3.11" },
-    { name = "mako", marker = "extra == 'trt10'", specifier = ">=1.3.11" },
+    { name = "mako", marker = "extra == 'onnx-cu118'", specifier = ">=1.4.2" },
+    { name = "mako", marker = "extra == 'onnx-cu12'", specifier = ">=1.4.2" },
+    { name = "mako", marker = "extra == 'onnx-jp6-cu126'", specifier = ">=1.4.2" },
+    { name = "mako", marker = "extra == 'torch-cu118'", specifier = ">=1.4.2" },
+    { name = "mako", marker = "extra == 'torch-cu124'", specifier = ">=1.4.2" },
+    { name = "mako", marker = "extra == 'torch-cu128'", specifier = ">=1.4.2" },
+    { name = "mako", marker = "extra == 'torch-cu130'", specifier = ">=1.4.2" },
+    { name = "mako", marker = "extra == 'torch-jp6-cu126'", specifier = ">=1.4.2" },
+    { name = "mako", marker = "extra == 'trt10'", specifier = ">=1.4.2" },
     { name = "mike", marker = "extra == 'docs'", specifier = ">=2.0.0" },
     { name = "mistune", marker = "extra == 'docs'", specifier = ">=3.3.3,<4.0.0" },
     { name = "mkdocs-gen-files", marker = "extra == 'docs'", specifier = "~=0.6.0" },
@@ -1895,14 +1899,14 @@ wheels = [
 
 [[package]]
 name = "mako"
-version = "1.3.12"
+version = "1.4.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markupsafe" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/00/62/791b31e69ae182791ec67f04850f2f062716bbd205483d63a215f3e062d3/mako-1.3.12.tar.gz", hash = "sha256:9f778e93289bd410bb35daadeb4fc66d95a746f0b75777b942088b7fd7af550a", size = 400219, upload-time = "2026-04-28T19:01:08.512Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/09/e07c4b5579a79f4b16f8d4f29f6c54514ac787c4ad506b8c4f28a0e6b0bf/mako-1.4.3.tar.gz", hash = "sha256:cd6537fe88d5fec315c55c2f8529bc4ce7a9a352ad7db3eeaa6a66e2dd4ec37a", size = 412799, upload-time = "2026-09-22T20:54:31.509Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/b1/a0ec7a5a9db730a08daef1fdfb8090435b82465abbf758a596f0ea88727e/mako-1.3.12-py3-none-any.whl", hash = "sha256:8f61569480282dbf557145ce441e4ba888be453c30989f879f0d652e39f53ea9", size = 78521, upload-time = "2026-04-28T19:01:10.393Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/a0/053d6af3e8f871e0073b4a36732d9e65be77a72e5434c31b94f6af78a6bb/mako-1.4.3-py3-none-any.whl", hash = "sha256:723296007c870bfd6b3f0c3230dba7198096e5269297ebf5e4eff9e7ffa39d4f", size = 80164, upload-time = "2026-09-22T20:54:33.128Z" },
 ]
 
 [[package]]
