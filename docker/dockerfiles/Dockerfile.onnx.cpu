@@ -31,6 +31,11 @@ COPY requirements/_requirements.txt \
     ./
 
 RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
+
+# Keep later pip installs (including wheel builds) on the CPU variants.
+COPY requirements/requirements.torch-cpu.txt /requirements.torch-cpu.txt
+ARG PIP_CONSTRAINT=/requirements.torch-cpu.txt
+RUN pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu -r /requirements.torch-cpu.txt
 RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
@@ -48,10 +53,8 @@ RUN pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-FROM scratch
 ARG TARGETPLATFORM
 
-COPY --from=base / /
 
 WORKDIR /build
 COPY . .
