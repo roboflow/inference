@@ -157,6 +157,10 @@ SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.
 SNAKES_RFDETR_SEG_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-nonsquare-letterbox.zip"
 SNAKES_RFDETR_SEG_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-bs-nonsquare-letterbox.zip"
 
+BALLOONS_RFDETR_SEM_NANO_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-sem-nano-onnx-static-bs-stretch.zip"
+BALLOONS_RFDETR_SEM_NANO_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-sem-nano-torch-stretch.zip"
+BALLOONS_RFDETR_SEM_NANO_T4_TRT_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-sem-nano-t4-trt.zip"
+
 DINOV3_CLASSIFICATION_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification-onnx.zip"
 DINOV3_MULTI_LABEL_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-onnx.zip"
 DINOV3_CLASSIFICATION_TORCH_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification-torch.zip"
@@ -1349,6 +1353,30 @@ def snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package() -> str:
     return download_model_package(
         model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL,
         package_name="snakes-rfdetr-seg-torch-static-bs-nonsquare-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_rfdetr_sem_nano_onnx_static_bs_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=BALLOONS_RFDETR_SEM_NANO_ONNX_STATIC_BS_STRETCH_URL,
+        package_name="balloons-rfdetr-sem-nano-onnx-static-bs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_rfdetr_sem_nano_torch_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=BALLOONS_RFDETR_SEM_NANO_TORCH_STRETCH_URL,
+        package_name="balloons-rfdetr-sem-nano-torch-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_rfdetr_sem_nano_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=BALLOONS_RFDETR_SEM_NANO_T4_TRT_URL,
+        package_name="balloons-rfdetr-sem-nano-t4-trt",
     )
 
 
