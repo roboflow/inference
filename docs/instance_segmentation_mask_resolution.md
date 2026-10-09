@@ -103,6 +103,11 @@ The existing Triton enablement flag still controls this path; no execution plan 
 required. Sparse-record capacity limits are unchanged, including the existing
 deferred-mode overflow error.
 
+The first request for a new mask grid may compile Triton kernels and initialize
+interpolation tables. Warm each expected image shape and mask-resolution factor
+before serving latency-sensitive requests. Warm inference measurements exclude
+this first-use time and memory cost.
+
 Workflow versions v1–v4 retain their compatibility guards. Workflow v5,
 reduced-mask downstream handling, and full tensor support are deferred to a
 separate PR. This change does not introduce reduced-grid workflow outputs.
