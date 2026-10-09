@@ -16,6 +16,9 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- Tracker blocks log the missing-FPS fallback only when creating a tracker for a video, including tensor variants.
 ### Added
 
 - MQTT Writer v2 (`roboflow_enterprise/mqtt_writer_sink@v2`): v1 plus an optional `fire_and_forget` (default `False`) and outage hardening; v1 is unchanged.

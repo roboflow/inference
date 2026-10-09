@@ -81,7 +81,7 @@ class Watchdog:
                 self._session_id,
             ]
         ):
-            logger.info(
+            logger.debug(
                 "Skipping session heartbeat: url=%s, workspace=%s, session=%s",
                 bool(self._heartbeat_url),
                 bool(self._workspace_id),
