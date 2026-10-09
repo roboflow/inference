@@ -34,6 +34,9 @@ CLIENT_CLASS_PATH = (
 )
 
 
+PAHO_CLIENT_CLASS = mqtt.Client
+
+
 def run_kwargs(**overrides) -> dict:
     kwargs = {
         "host": "localhost",
@@ -977,6 +980,19 @@ class TestConnectionOwnership:
         mock_client.publish.assert_called_once()
 
 
+def use_paho_publish(mock_client_cls) -> None:
+    paho_client = PAHO_CLIENT_CLASS()
+    paho_client._sock = MagicMock()
+    paho_client._thread = MagicMock()
+
+    def publish(*args, **kwargs):
+        info = paho_client.publish(*args, **kwargs)
+        info._set_as_published()
+        return info
+
+    mock_client_cls.return_value.publish.side_effect = publish
+
+
 class TestPublishing:
     def test_successful_publish(self, mock_client_cls, block):
         block._connected.set()
@@ -1071,6 +1087,58 @@ class TestPublishing:
 
         assert result["error_status"] is True
         assert "Invalid topic" in result["message"]
+
+    @pytest.mark.parametrize("fire_and_forget", [False, True])
+    @pytest.mark.parametrize("topic", ["a/#", "a/+/b", ""])
+    def test_invalid_topic_is_reported_as_failed_publish(
+        self, mock_client_cls, block, topic, fire_and_forget
+    ):
+        use_paho_publish(mock_client_cls)
+        block._connected.set()
+        block.run(**run_kwargs(fire_and_forget=fire_and_forget))
+
+        with patch.object(v2, "logger") as mock_logger:
+            result = block.run(
+                **run_kwargs(topic=topic, fire_and_forget=fire_and_forget)
+            )
+
+        assert result["error_status"] is True
+        assert "Failed to publish message" in result["message"]
+        assert mock_logger.error.call_count == 1
+
+    @pytest.mark.parametrize("fire_and_forget", [False, True])
+    @pytest.mark.parametrize("message", [5, None])
+    def test_non_string_message_paho_converts_is_published(
+        self, mock_client_cls, block, message, fire_and_forget
+    ):
+        use_paho_publish(mock_client_cls)
+        block._connected.set()
+
+        result = block.run(
+            **run_kwargs(message=message, fire_and_forget=fire_and_forget)
+        )
+
+        assert result["error_status"] is False
+        mock_client_cls.return_value.publish.assert_called_once_with(
+            "test/topic", message, qos=0, retain=False
+        )
+
+    @pytest.mark.parametrize("fire_and_forget", [False, True])
+    def test_dict_message_is_reported_as_failed_publish(
+        self, mock_client_cls, block, fire_and_forget
+    ):
+        use_paho_publish(mock_client_cls)
+        block._connected.set()
+
+        result = block.run(
+            **run_kwargs(message={"a": 1}, fire_and_forget=fire_and_forget)
+        )
+
+        assert result["error_status"] is True
+        assert result["message"] == (
+            "Failed to publish message: payload must be a string, bytearray, "
+            "int, float or None."
+        )
 
     def test_no_raw_prints_in_any_code_path(self, mock_client_cls, block):
         with patch("builtins.print") as mock_print:
@@ -1526,6 +1594,22 @@ class TestFireAndForget:
 
         assert result["message"] == FIRE_AND_FORGET_QUEUED
 
+    def test_qos_change_between_runs_keeps_the_client(self, mock_client_cls, block):
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+
+        results = [
+            block.run(**run_kwargs(qos=qos, fire_and_forget=True)) for qos in (0, 1, 2)
+        ]
+
+        assert all(result["error_status"] is False for result in results)
+        assert mock_client_cls.call_count == 1
+        assert [call.kwargs["qos"] for call in mock_client.publish.call_args_list] == [
+            0,
+            1,
+            2,
+        ]
+
 
 class TestSelectorSwitches:
     """The engine hands run() the raw selector value, not the manifest's
@@ -1604,6 +1688,17 @@ class TestCleanup:
         block.close()
 
         mock_client.loop_stop.assert_called_once()
+
+    def test_del_swallows_a_failing_close_and_logs_it(self, block):
+        with patch.object(
+            MQTTWriterSinkBlockV2, "close", side_effect=RuntimeError("boom")
+        ):
+            with patch.object(v2, "logger") as mock_logger:
+                block.__del__()
+
+        mock_logger.error.assert_called_once()
+        assert mock_logger.error.call_args.args[0] == "Failed to close MQTT client: %s"
+        assert str(mock_logger.error.call_args.args[1]) == "boom"
 
     def test_close_on_uninitialized_block_is_noop(self, block):
         block.close()

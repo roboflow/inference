@@ -11,6 +11,8 @@ from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
 )
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer import v2
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v2 import (
+    MAX_QUEUED_MESSAGES,
+    QUEUE_FULL,
     MQTTWriterSinkBlockV2,
 )
 
@@ -131,9 +133,9 @@ def test_refused_connection_is_reported_once_and_not_retried():
         assert "not authorised" in first["message"]
         assert "Check username and password" in first["message"]
         assert "Raise 'timeout'" not in first["message"]
-        assert first_elapsed < 0.4
+        assert first_elapsed < kwargs["timeout"]
         assert second == first
-        assert second_elapsed < 0.1
+        assert second_elapsed < kwargs["timeout"]
         assert broker.connections_accepted == 1
         assert broker.messages == []
     finally:
@@ -731,6 +733,143 @@ MQTT_SINK_WORKFLOW = {
         },
     ],
 }
+
+
+@pytest.mark.timeout(60)
+def test_fire_and_forget_reports_a_full_client_queue_once():
+    broker = FakeMQTTBroker(keep_serving=True)
+    threading.Thread(target=broker.serve, daemon=True).start()
+    block = MQTTWriterSinkBlockV2()
+    kwargs = dict(
+        host=broker.host,
+        port=broker.port,
+        topic="RoboflowTopic",
+        qos=1,
+        timeout=2.0,
+        fire_and_forget=True,
+    )
+
+    try:
+        with patch.object(v2, "logger") as mock_logger:
+            queued = [
+                block.run(message=f"queued {i}", **kwargs)
+                for i in range(MAX_QUEUED_MESSAGES)
+            ]
+            client = block.mqtt_client
+            dropped = [block.run(message=f"dropped {i}", **kwargs) for i in range(4)]
+
+        assert all(result["error_status"] is False for result in queued)
+        assert all(
+            result == {"error_status": True, "message": QUEUE_FULL}
+            for result in dropped
+        )
+        assert len(client._out_messages) == MAX_QUEUED_MESSAGES
+        mock_logger.error.assert_called_once_with("MQTT Writer failure: %s", QUEUE_FULL)
+    finally:
+        block.close()
+        broker.finish()
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.parametrize("fire_and_forget", [False, True])
+@pytest.mark.parametrize("topic", ["a/#", "a/+/b", ""])
+def test_invalid_topic_is_reported_by_the_real_client(topic, fire_and_forget):
+    broker = FakeMQTTBroker(keep_serving=True)
+    threading.Thread(target=broker.serve, daemon=True).start()
+    block = MQTTWriterSinkBlockV2()
+
+    try:
+        result = block.run(
+            host=broker.host,
+            port=broker.port,
+            topic=topic,
+            message="never sent",
+            timeout=2.0,
+            fire_and_forget=fire_and_forget,
+        )
+
+        assert result["error_status"] is True
+        assert "Failed to publish message" in result["message"]
+        assert block._connected.is_set()
+        assert broker.messages == []
+    finally:
+        block.close()
+        broker.finish()
+
+
+@pytest.mark.timeout(15)
+def test_close_waits_for_a_run_waiting_for_the_broker_and_stops_the_client():
+    connack_gate = threading.Event()
+    broker = FakeMQTTBroker(keep_serving=True, connack_gate=connack_gate)
+    threading.Thread(target=broker.serve, daemon=True).start()
+    block = MQTTWriterSinkBlockV2()
+    outcome = {}
+    entered = threading.Event()
+    close_started = threading.Event()
+    close_body_started = threading.Event()
+    run_finished = threading.Event()
+    run_finished_when_close_body_started = []
+    wait_until_connected = block._wait_until_connected
+    connect_and_publish = block._connect_and_publish
+
+    def gated_wait_until_connected(timeout):
+        entered.set()
+        close_started.wait(timeout=5)
+        close_body_started.wait(timeout=1)
+        return wait_until_connected(timeout)
+
+    def marking_connect_and_publish(*args, **kwargs):
+        try:
+            return connect_and_publish(*args, **kwargs)
+        finally:
+            run_finished.set()
+
+    block._wait_until_connected = gated_wait_until_connected
+    block._connect_and_publish = marking_connect_and_publish
+
+    def run_block():
+        try:
+            outcome["result"] = block.run(
+                host=broker.host,
+                port=broker.port,
+                topic="RoboflowTopic",
+                message="never sent",
+                timeout=2.0,
+            )
+        except Exception as e:
+            outcome["exception"] = e
+
+    worker = threading.Thread(target=run_block)
+
+    try:
+        worker.start()
+        assert entered.wait(timeout=5)
+        client = block.mqtt_client
+        thread = client._thread
+        disconnect = client.disconnect
+
+        def snapshotting_disconnect(*args, **kwargs):
+            run_finished_when_close_body_started.append(run_finished.is_set())
+            close_body_started.set()
+            return disconnect(*args, **kwargs)
+
+        client.disconnect = snapshotting_disconnect
+
+        close_started.set()
+        block.close()
+        worker.join(timeout=5)
+
+        assert "exception" not in outcome
+        assert outcome["result"]["error_status"] is True
+        assert run_finished_when_close_body_started == [True]
+        assert not thread.is_alive()
+        assert block.mqtt_client is None
+    finally:
+        close_started.set()
+        connack_gate.set()
+        block.close()
+        broker.finish()
+        worker.join(timeout=5)
 
 
 @pytest.fixture
