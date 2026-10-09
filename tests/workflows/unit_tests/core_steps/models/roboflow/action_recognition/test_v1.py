@@ -786,6 +786,76 @@ def test_regular_sampling_accepts_late_frames_without_shifting_spans(tensor, del
 
 
 @pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize("source_fps", [2, 3, 4])
+@pytest.mark.parametrize("drop_frame", [False, True])
+def test_regular_sampling_repeats_slow_source_frames_without_filling_gaps(
+    tensor, source_fps, drop_frame
+):
+    segment = ModelActionRecognitionPrediction(
+        class_name="walk",
+        start_frame_idx=1,
+        end_frame_idx=2,
+        confidence=0.9,
+        end_exclusive=True,
+    )
+    block, model = _make_block(responses=[[segment], [segment]], tensor=tensor)
+    model.supports_observed_duration = True
+    model.video_sampling = VideoSampling(
+        window_seconds=4,
+        sample_fps=4,
+        min_frames=1,
+        max_frames=16,
+        fixed_sample_fps=True,
+        requires_regular_sampling=True,
+        max_sample_lateness_seconds=0.05,
+    )
+
+    for number in range(8 * source_fps + 1):
+        if drop_frame and number == 3:
+            continue
+
+        result = block.run(
+            images=[
+                _make_frame(
+                    number,
+                    fps=source_fps,
+                    bgr_color=[number, 10, 20],
+                    tensor_rgb_color=[20, 10, number] if tensor else None,
+                )
+            ],
+            model_id="cosmos-3-edge",
+        )[0]
+        if number == 4 * source_fps:
+            assert len(model.calls) == (0 if drop_frame else 1)
+            if drop_frame:
+                assert (
+                    "Missing required samples at source-frame indices 3"
+                    in result["error_status"]
+                )
+            else:
+                assert not result["error_status"]
+
+    assert len(model.calls) == (1 if drop_frame else 2)
+    assert not result["error_status"]
+    assert all(call["fps"] == 4 for call in model.calls)
+    assert all(len(call["frames"]) == 16 for call in model.calls)
+    # The second window is complete even if frame 3 was absent from the first.
+    # Each intended timestamp selects the first source frame at or after it.
+    intended = [index * source_fps / 4 for index in range(17, 33)]
+    expected_indices = [math.ceil(number) for number in intended]
+    samples = block._video_bookkeeping["stream-0"].sampled
+    assert [sample.intended_frame_number for sample in samples] == intended
+    assert [sample.source_frame_number for sample in samples] == expected_indices
+    pixels = [
+        int(frame[2, 0, 0] if tensor else frame[0, 0, 2])
+        for frame in model.calls[-1]["frames"]
+    ]
+    assert pixels == expected_indices
+    assert result["timeline"][-1].start_frame_idx == math.floor(intended[1])
+    assert result["timeline"][-1].end_frame_idx == math.ceil(intended[2]) - 1
+
+
+@pytest.mark.parametrize("tensor", [False, True])
 def test_regular_sampling_large_gap_skips_window_and_recovers(tensor):
     block, model = _make_block(tensor=tensor)
     model.video_sampling = VideoSampling(
