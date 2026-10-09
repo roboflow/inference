@@ -362,6 +362,39 @@ class PulseExecutor:
             else None
         )
 
+    def rebind(self, registered: Sequence[Registered]) -> None:
+        """Deliver these groups from now on (a graph update, while no pulse runs).
+
+        Args:
+            registered: Output groups with handlers of the new plan, in plan
+                order; the session's plan is the new plan once published.
+        """
+        self._registered = list(registered)
+
+    def restart(
+        self,
+        registered: Sequence[Registered],
+        *,
+        operators: Mapping[str, OperatorSlot],
+        reactions: Optional[Any],
+    ) -> None:
+        """Run a reset's new processing from now on (while no pulse runs).
+
+        Assignments only. Domain progress starts again for the sources and
+        the new operators: nothing is outstanding at the boundary, and the
+        drivers seal ended sources again at resume, so the new operators
+        learn about them. The replaced operators are not finished.
+
+        Args:
+            registered: Output groups with handlers of the new plan.
+            operators: The new operators, numbered on from earlier ones.
+            reactions: The new reaction runtime; ``None`` without reactions.
+        """
+        self._registered = list(registered)
+        self.operators = operators
+        self.reactions = reactions
+        self.progress = DomainProgress([*self._sources, *operators])
+
     # Counters ---------------------------------------------------------------
 
     def count(self, counters: Counters, name: str, amount: int = 1) -> None:

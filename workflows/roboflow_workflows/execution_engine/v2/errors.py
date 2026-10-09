@@ -10,6 +10,9 @@ The V2 runtime distinguishes three failure families:
 * ``WorkflowExecutionError``: a compiled workflow failed while running. An
   active run reports its one terminal failure as ``ActiveRunError``.
 
+A rejected graph update of a session raises a ``GraphUpdateError``, which is
+a ``ContractError``. Using a closed session raises ``SessionClosedError``.
+
 Subclasses carry structured location data (step path, field path, index) in
 addition to their message. The engine preserves an underlying exception as
 ``__cause__``. The three base classes accept a plain message, so older
@@ -366,6 +369,69 @@ class ControlError(ContractError):
     the wrong type or kind, or an update that would need a new compiled plan
     (an implementation, quality or graph change). The current snapshot and
     every admitted pulse are unaffected.
+    """
+
+
+class SessionClosedError(ContractError):
+    """The session was closed, so it no longer runs or changes its graph.
+
+    ``close`` released the services the session owns. Create a new session.
+    """
+
+
+class GraphUpdateError(ContractError):
+    """A graph update of a session was rejected before its commit point.
+
+    The session keeps its current plan, block instances, state and resources.
+    Instances an update constructed for new steps are dropped; effects of
+    their constructors and factories are not undone.
+    """
+
+
+class IncompatibleUpdateError(GraphUpdateError):
+    """The new plan cannot reuse the session's current graph.
+
+    Args:
+        message: Summary of the breaking changes.
+        diff: The ``updates.PlanDiff`` naming every change and its reason.
+        assessment: The ``updates.UpdateAssessment`` of a refused reset,
+            with the session's own reasons; ``None`` for a preserving update.
+    """
+
+    def __init__(self, message: str, *, diff: Any = None, assessment: Any = None):
+        super().__init__(message)
+        self.diff = diff
+        self.assessment = assessment
+
+
+class UpdateConflictError(GraphUpdateError):
+    """A prepared update no longer applies to its session.
+
+    Raised when the candidate belongs to another session, was already applied
+    or discarded, or was prepared from a graph version the session has since
+    left, and when another reset of the session is being prepared.
+    """
+
+
+class SessionBusyError(GraphUpdateError):
+    """The session is executing, so its graph cannot change now.
+
+    A direct run, an open passive pipeline or an unfinished active run uses
+    the current block instances. Wait for them to finish, then update the
+    idle session, or update the active run itself (``ActiveRun.apply_update``).
+    """
+
+
+class UpdateTimeoutError(GraphUpdateError):
+    """An active run's update did not complete within the timeout.
+
+    Either the run did not reach its update boundary in time, or a lock of
+    the commit (the session, its run registry, the candidate, the control
+    panel or the run) was not free in time; a control write with a slow
+    custom kind codec holds the panel, for example. The pause was abandoned:
+    the run continues with its current graph, no admitted work was lost and
+    the candidate stays prepared, so the update can be tried again. Discard
+    the candidate when giving up.
     """
 
 

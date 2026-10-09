@@ -217,6 +217,13 @@ class GroupResult:
             carries, in order; empty for a source pulse.
         controls: Version and settings of the control snapshot the pulse
             used (``ControlView``); ``None`` for a plan without controls.
+        graph_version: Graph version of the session that produced the result
+            (``ExecutionSession.graph_version``); independent of the control
+            version. A handler group reports its handler session's version.
+        processing_version: Processing version of that session
+            (``ExecutionSession.processing_version``); a reset advances it,
+            so results of one graph version with different processing
+            versions come from different block instances.
     """
 
     group: str
@@ -234,6 +241,8 @@ class GroupResult:
     input_row_count: int = 0
     causes: Tuple[PulseKey, ...] = ()
     controls: Optional[ControlView] = None
+    graph_version: int = 0
+    processing_version: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "fields", tuple(self.fields))
@@ -418,6 +427,8 @@ def build_result(run: RunState) -> RunResult:
         trace=tuple(run.trace),
         input_row_count=selected.input_row_count,
         controls=run.control_view(),
+        graph_version=run.session.graph_version,
+        processing_version=run.session.processing_version,
     )
 
     return result
@@ -461,6 +472,8 @@ def build_group_result(
         input_row_count=selected.input_row_count,
         causes=run.causes,
         controls=run.control_view(),
+        graph_version=run.session.graph_version,
+        processing_version=run.session.processing_version,
     )
 
     return result

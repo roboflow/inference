@@ -109,10 +109,13 @@ phase, with ``phase_overlap``) is never entered by two pulses at once, and
 every handler and observer callback of the run is serialized.
 """
 
+import contextlib
+import functools
 import importlib
 import inspect
 import queue
 import threading
+import time
 import uuid
 import weakref
 from dataclasses import dataclass, field
@@ -121,11 +124,13 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Iterator,
     List,
     Mapping,
     Optional,
     Protocol,
     Sequence,
+    Set,
     Tuple,
     Union,
 )
@@ -152,6 +157,10 @@ from roboflow_workflows.execution_engine.v2.errors import (
     ActiveRunError,
     ContractError,
     EventEmissionError,
+    GraphUpdateError,
+    SessionClosedError,
+    UpdateConflictError,
+    UpdateTimeoutError,
     WorkflowInputError,
 )
 from roboflow_workflows.execution_engine.v2.execution.arguments import (
@@ -161,6 +170,7 @@ from roboflow_workflows.execution_engine.v2.execution.arguments import (
 from roboflow_workflows.execution_engine.v2.execution.entries import Entry
 from roboflow_workflows.execution_engine.v2.execution.inputs import prepare_inputs
 from roboflow_workflows.execution_engine.v2.execution.outputs import GroupResult
+from roboflow_workflows.execution_engine.v2.locking import acquired
 from roboflow_workflows.execution_engine.v2.operators import (
     OperatorCounters,
     TerminationReason,
@@ -192,7 +202,13 @@ from roboflow_workflows.execution_engine.v2.sources import (
 )
 
 if TYPE_CHECKING:
+    from roboflow_workflows.execution_engine.v2.plan import SessionGeneration
     from roboflow_workflows.execution_engine.v2.recording.compilation import Capture
+    from roboflow_workflows.execution_engine.v2.updates.prepared import (
+        ActiveUpdateReceipt,
+        PreparedUpdate,
+    )
+    from roboflow_workflows.execution_engine.v2.updates.reset import Retirement
 
 __all__ = [
     "ActiveRun",
@@ -210,6 +226,15 @@ PIPELINE_MODULE = "roboflow_workflows.execution_engine.v2.active.pipeline"
 
 RECORDING_MODULE = "roboflow_workflows.execution_engine.v2.recording.compilation"
 """Capture of recorded groups, imported only by plans that declare ``recording``."""
+
+UPDATES_MODULE = "roboflow_workflows.execution_engine.v2.updates.prepared"
+"""Receipts of graph updates, imported only by ``ActiveRun.apply_update``."""
+
+RESET_MODULE = "roboflow_workflows.execution_engine.v2.updates.reset"
+"""Retirement of a reset's replaced processing, imported only by resets."""
+
+DEFAULT_UPDATE_TIMEOUT = 30.0
+"""Seconds ``ActiveRun.apply_update`` waits for the run's update boundary."""
 
 GroupHandler = Callable[[GroupResult], None]
 """Synchronous callback receiving one ``GroupResult`` per delivered pulse."""
@@ -285,16 +310,69 @@ class _SourceSlot:
 class _ReaderDone:
     source: str
     controls: Optional[ControlSnapshot] = None
+    # The source ended before a reset: its end is told to the new processing.
+    replay: bool = False
+
+
+class _UpdateToken:
+    """One reservation of a run's update boundary (``ActiveRun.apply_update``).
+
+    ``acked`` and ``rejected`` are written under ``ActiveRun._lock`` and
+    waited for on its condition: the driver acknowledges once every admitted
+    pulse and domain end completed, or rejects when the run concluded first.
+    """
+
+    def __init__(self) -> None:
+        self.acked = False
+        self.rejected: Optional[str] = None
+        # time.monotonic() when the driver paused admission.
+        self.cut_at = 0.0
+
+
+class _Replacement:
+    """A reset's new run-specific processing, built before the cut.
+
+    Args:
+        operators: The new operators, constructed but never called.
+        reactions: The new reaction runtime; ``None`` without reactions.
+    """
+
+    def __init__(
+        self,
+        *,
+        operators: Dict[str, OperatorSlot],
+        reactions: Optional[ReactionRuntime],
+    ) -> None:
+        self.operators = operators
+        self.reactions = reactions
+
+    def discard(self) -> None:
+        """The reset did not commit: close what was built; never raises."""
+        for slot in self.operators.values():
+            close_operator(slot)
+        if self.reactions is not None:
+            try:
+                self.reactions.close()
+            except Exception:
+                pass
+
+
+@dataclass(frozen=True)
+class _Barrier:
+    """Serial queue marker: everything queued before it has completed."""
+
+    token: _UpdateToken
 
 
 class _Driver(Protocol):
     """How an ``ActiveRun`` admits and executes pulses: serially or pipelined.
 
-    ``ActiveRun`` and its readers call these six methods. A driver may use
+    ``ActiveRun`` and its readers call these methods. A driver may use
     from the run: ``run_id``, ``aborting``, ``pipeline_counters``,
     ``_slots``, ``_readers``, ``_owned`` (mark its own threads),
     ``_executor`` (pulses, seals and domain ends), ``_admitted`` (under its
-    admission lock), ``_termination``, ``_fail`` and ``_conclude``.
+    admission lock), ``_termination``, ``_fail``, ``_conclude``,
+    ``_boundary_reached`` and ``_boundary_rejected``.
 
     Obligations of every driver:
 
@@ -306,6 +384,14 @@ class _Driver(Protocol):
       on its dispatcher after shutting down its workers and joining the
       readers. The serial driver concludes on its processor thread once
       every reader reported finished; it does not join the readers.
+
+    A graph update pauses the driver (``pause``): admission of new pulses
+    stops reversibly, nothing that was admitted is lost, a source that ends
+    meanwhile is remembered but not sealed, and the driver reports
+    ``_boundary_reached`` once no admitted pulse or domain end runs or
+    waits. ``resume`` lifts the pause under whatever graph the session has
+    then; a run that concluded before the boundary reports
+    ``_boundary_rejected`` instead. Neither closes admission.
     """
 
     def start(self) -> None:
@@ -327,6 +413,31 @@ class _Driver(Protocol):
 
     def wake(self) -> None:
         """``ActiveRun._abort``: wake driver threads to observe the abort."""
+
+    def pause(self, token: _UpdateToken) -> None:
+        """Stop admitting new pulses reversibly; report the boundary for ``token``."""
+
+    def resume(self, token: _UpdateToken) -> None:
+        """Lift ``token``'s pause (another token's is left alone); admit again.
+
+        Seals or sequences the sources that ended while paused.
+        """
+
+    def settle_workers(self, timeout: float) -> bool:
+        """After the boundary: ``True`` once no worker thread executes work."""
+
+    def readers_finished(self) -> bool:
+        """Whether every reader reported finished (paused: sources ended)."""
+
+    def frontiers(self) -> Dict[str, int]:
+        """Next pulse sequence per source (under the admission lock)."""
+
+    def restart_domains(self) -> None:
+        """A reset's install: seal the sources that ended once more at ``resume``.
+
+        Assignments only. The new processing's domain progress then learns
+        about every ended source, and its operators get their input ends.
+        """
 
 
 _ACTIVE_RUNS: "weakref.WeakKeyDictionary[ExecutionSession, ActiveRun]" = (
@@ -412,6 +523,16 @@ def start_session(
                 f"Session {session.session_id} already has active run "
                 f"{previous.run_id}; wait() for it before starting another"
             )
+        if session.closed:
+            raise SessionClosedError(
+                f"Session {session.session_id} is closed; it cannot start. "
+                "Create a new session."
+            )
+        if session.plan is not plan:
+            raise ContractError(
+                f"Session {session.session_id} switched to graph version "
+                f"{session.graph_version} while this start prepared; call start again"
+            )
         entries = prepare_inputs(plan, inputs or {}, controls=session.controls.current)
         run_id = uuid.uuid4().hex
         stop_event = threading.Event()
@@ -475,6 +596,73 @@ def stop_session(session: ExecutionSession) -> None:
         run = _ACTIVE_RUNS.get(session)
     if run is not None:
         run.stop()
+
+
+@contextlib.contextmanager
+def holding_run_registry(
+    session: ExecutionSession, *, deadline: Optional[float] = None
+) -> Iterator[Optional["ActiveRun"]]:
+    """Hold the run registry and yield the session's unfinished active run.
+
+    While the block runs, no ``start`` registers a run. A graph update and
+    ``close`` change the session inside it, so a start sees either the old
+    session or the changed one.
+
+    Args:
+        session: The session to change.
+        deadline: ``time.monotonic()`` value at which waiting for the
+            registry gives up; ``None`` waits.
+
+    Yields:
+        The unfinished active run of ``session``, or ``None``.
+
+    Raises:
+        UpdateTimeoutError: When the registry was not free before ``deadline``.
+    """
+    with acquired(_ACTIVE_RUNS_LOCK, deadline=deadline, what="the run registry"):
+        run = _ACTIVE_RUNS.get(session)
+        yield run if run is not None and not run.done else None
+
+
+RECORDING_RUN = "recording_run"
+SOURCES_ENDED = "sources_ended"
+
+
+def reset_blockers(session: ExecutionSession) -> Tuple[Tuple[str, str], ...]:
+    """Reasons the session's unfinished active run cannot take a reset now.
+
+    Advisory, for ``assess_update``: ``ActiveRun.apply_update`` checks both
+    again. Takes the run registry and then the driver's lock, one after the
+    other, never nested; an idle session, or one whose run finished, has none.
+
+    Returns:
+        ``(reason, detail)`` pairs; empty when a reset can apply.
+    """
+    with _ACTIVE_RUNS_LOCK:
+        run = _ACTIVE_RUNS.get(session)
+    if run is None or run.done:
+        return ()
+
+    blockers = []
+    if run._capture is not None:
+        blockers.append(
+            (
+                RECORDING_RUN,
+                f"run {run.run_id} records output groups, and records cannot be "
+                "attributed to one processing across a reset; stop the run, then "
+                "reset the idle session",
+            )
+        )
+    if run._driver.readers_finished():
+        blockers.append(
+            (
+                SOURCES_ENDED,
+                f"every source of run {run.run_id} ended; the run completes with "
+                "its current processing. Reset the session once it finished",
+            )
+        )
+
+    return tuple(blockers)
 
 
 def _is_async_callable(target: Any) -> bool:
@@ -663,6 +851,19 @@ def _prepare_operators(
     return prepared
 
 
+def _close_replaced_operator(slot: OperatorSlot) -> None:
+    """Close an operator a reset replaced; raise what its ``close`` raised."""
+    failure = close_operator(slot)
+    if failure is not None:
+        raise failure.__cause__
+
+
+def _retire_reactions(runtime: ReactionRuntime) -> None:
+    """Close a reaction runtime a reset replaced and wait for its handler threads."""
+    runtime.close()
+    runtime.join()
+
+
 def _static_value(binding: Binding, entries: Mapping[str, Entry]) -> Any:
     """Value of a source parameter selector: a literal or an ungrouped static input."""
     if isinstance(binding.source, Constant):
@@ -723,17 +924,33 @@ class ActiveRun:
         self.stop_event = stop_event
         self._slots = slots
         self._lock = threading.Lock()
+        # Lifecycle changes (stop, cancel, failure, done) and update boundary
+        # acknowledgements are signalled here; apply_update waits on it.
+        self._changed = threading.Condition(self._lock)
+        self._update_token: Optional[_UpdateToken] = None
+        # Next emission ordinal of every operator name this run has had, so
+        # a reset's operators number on and never repeat an ordinal.
+        self._operator_next: Dict[str, int] = {}
         self._failure: Optional[ActiveRunError] = None
         self._cancelled = False
         self._done = threading.Event()
+        self._releasing = False
         self._owned = OwnedThreads()
+        # The run's callbacks by group name: the start's handlers, replaced
+        # as a whole by every applied update. The reaction runtime reads it
+        # at each delivery of a handler group.
+        self._handlers: Dict[str, GroupHandler] = dict(handlers or {})
         self._coordination: Coordination = (
             PipelinedCoordination(session, options=pipeline)
             if pipeline is not None
             else SERIAL
         )
         self._observer = self._coordination.observer(session)
-        self._reactions = self._reaction_runtime(handlers or {})
+        self._reactions = self._reaction_runtime(
+            session.plan,
+            sessions=session.handler_sessions,
+            managed_state=getattr(session, "managed_state", None),
+        )
         self._executor = PulseExecutor(
             session,
             run_id=run_id,
@@ -824,6 +1041,16 @@ class ActiveRun:
     def done(self) -> bool:
         """Whether every source is closed and every admitted pulse handled."""
         return self._done.is_set()
+
+    @property
+    def releasing(self) -> bool:
+        """Whether the run no longer uses its session and only releases resources.
+
+        Set after workers, reactions and operators settled, just before
+        ``finalize``, also after a failed start; ``done`` follows. A
+        replay's ``finalize`` closes its session then.
+        """
+        return self._releasing
 
     @property
     def failure(self) -> Optional[ActiveRunError]:
@@ -952,6 +1179,7 @@ class ActiveRun:
                 self._stopped_early = not all(
                     slot.counters.ended for slot in self._slots.values()
                 )
+                self._changed.notify_all()
         if self._reactions is not None:
             self._reactions.stop_ingress()
         self._close_admission()
@@ -971,6 +1199,7 @@ class ActiveRun:
             if self._failure is not None or self._done.is_set():
                 return
             self._cancelled = True
+            self._changed.notify_all()
         self._abort()
 
     def wait(self, timeout: Optional[float] = None) -> bool:
@@ -1008,22 +1237,549 @@ class ActiveRun:
         else:
             self._done.wait()
 
+    # Graph updates ---------------------------------------------------------
+
+    def apply_update(
+        self,
+        update: "PreparedUpdate",
+        *,
+        handlers: Optional[Mapping[str, GroupHandler]] = None,
+        timeout: float = DEFAULT_UPDATE_TIMEOUT,
+    ) -> "ActiveUpdateReceipt":
+        """Switch this running run to a prepared graph at a quiescent boundary.
+
+        The run pauses admission, lets everything already admitted settle
+        and then publishes the new graph::
+
+            cut      readers park (``block``) or keep replacing their pending
+                     emission (``latest``); ``signal()`` is rejected
+            drain    admitted pulses, their deliveries and the operator
+                     pulses they fed, scheduled domain ends, queued and
+                     running handler events, accepted signals and the
+                     cascades they cause all complete
+            commit   the session's graph, this run's deliveries and callbacks,
+                     the control snapshot and the stage frontiers switch
+            resume   parked readers admit under the new graph
+
+        Sources stay open and keep their slots and sequences; operators keep
+        their instances, buffers and ended inputs (a partial window is not
+        flushed); retained steps keep their state; the reaction runtime,
+        its handler sessions and every model or resource stay. Nothing is
+        restarted. Results delivered after the commit carry the new
+        ``graph_version``; an operator result whose window spans the
+        boundary keeps its old causes. Control values, version, epochs and
+        a pending reset are kept; a control write during the drain lands
+        before or after the commit, never half-way.
+
+        A reset candidate (``prepare_update(plan, reset=True)``) replaces
+        the processing instead: its operators and reaction runtime are built
+        before the cut; the commit installs them with every step instance,
+        fresh stage gates and domain progress. Sources, readers, driver and
+        workers stay; operator ordinals continue per name; ended sources are
+        told to the new operators; partial windows are dropped, never
+        flushed; the replaced reactions refuse every later signal, and the
+        new ones refuse signals until the resume, like the cut. The
+        replaced processing closes on a thread started before the cut,
+        after the resume (``receipt.cleanup``, an ``updates.Cleanup``);
+        until it finished, the session refuses another reset, in this run
+        or a later one. The new reaction runtime gets no ``started`` event
+        (the run started once), so a handler subscribed to ``started``
+        does not run again; its state machines initialize on their first
+        event, as at start.
+
+        The boundary is host-quiescent, not device-quiescent: every admitted
+        pulse finished, including the futures its blocks returned, so the
+        engine honors the completion each block declares. Device work a
+        block queued without a future or a result that waits for it may
+        still run; the engine adds no device synchronization. A reset's
+        replaced instances are released on the cleanup thread after the
+        resume, so their memory can be freed while the new processing runs.
+
+        Handlers are a patch of the run's callbacks: a group named here gets
+        this callback (replacing the one it had), a group not named keeps
+        its callback, and a group the new plan no longer declares loses
+        its callback. Every name is validated against the new plan before
+        anything pauses. A new group without a callback is built but not
+        delivered, as at ``start``.
+
+        Call it from a host thread, never from a handler, block, source or
+        reaction thread of this run: there it raises ``ContractError``, as
+        it would wait for itself. Queue the request there and apply it from
+        the thread that started the run. Prepare the candidate first with
+        ``session.prepare_update``; its construction and this call may
+        overlap with processing. One update of a run at a time; a second
+        call while one is in progress is rejected.
+
+        Args:
+            update: An ``updates.PreparedUpdate`` of this run's session.
+            handlers: Callbacks to add or replace, by output group name.
+            timeout: Seconds for the cut, the drain and the commit's lock
+                waits; positive and finite. A reset's construction before
+                the cut is not counted, and a rejected reset closes the
+                operators it built on this thread afterwards: both are block
+                code, which no timeout bounds.
+
+        Returns:
+            The ``updates.ActiveUpdateReceipt``, with the raw stamps of the
+            call, cut, drain and resume, the durations between them, and
+            the domain frontiers the new stages started at (the next source
+            read ordinal or operator emission ordinal per domain at the
+            boundary).
+
+        Raises:
+            ContractError: When called from a thread of this run (a handler,
+                observer, block, source or reaction thread, or a ``signal``
+                caller), for an invalid ``timeout``, or for a handler that
+                names an unknown group, is not callable or is asynchronous.
+            GraphUpdateError: When the run records groups (``recording``):
+                records would not be attributable to one graph version, so
+                stop the run and start one from the updated session instead;
+                when the operators or reactions of a reset candidate cannot
+                be built, or no thread starts to close what it replaces. The
+                candidate stays prepared.
+            UpdateConflictError: When the candidate belongs to another
+                session, was applied or discarded, or was prepared from an
+                earlier graph version (it is discarded then); when another
+                update of this run is in progress; when the run is
+                stopping, cancelled, failed or done, also if that happened
+                while this call waited; or when every source ended before
+                the boundary; for a reset, while the session still retires
+                what its last reset replaced. The run continues, or
+                concludes, with its current graph.
+            UpdateTimeoutError: When the boundary was not reached in time,
+                or a lock of the commit (the session, its run registry, the
+                candidate, the control panel or this run) was not free in
+                time, e.g. a control write whose custom kind codec is slow
+                holds the panel. The pause is lifted, nothing admitted is
+                lost, the run keeps its graph and the candidate stays
+                prepared: try again, or discard it when giving up.
+            SessionClosedError: When the session was closed.
+        """
+        called = time.monotonic()
+        self._owned.reject_wait(
+            "ActiveRun.apply_update()",
+            remedy=(
+                "Hand the update to a host thread, e.g. put the plan on a queue "
+                "that the thread which started the run reads"
+            ),
+        )
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not timeout > 0
+            or timeout == float("inf")
+        ):
+            raise ContractError(
+                f"timeout must be a positive finite number of seconds, got {timeout!r}"
+            )
+        if self._capture is not None:
+            raise GraphUpdateError(
+                f"run {self.run_id} records output groups; records cannot be "
+                "attributed to one graph version across an update, so stop the "
+                "run and start a new one from the updated session instead"
+            )
+        self._check_candidate(update)
+        callbacks = self._patched_callbacks(update.plan, handlers)
+        registered = _register_handlers(update.plan, callbacks)
+        replacement = self._replacement(update) if update.reset else None
+
+        retirement = None
+        committed = False
+        try:
+            if replacement is not None:
+                retirement = self._reserved_retirement()
+            # The reservation starts here; the legacy durations count from it.
+            reserving = time.monotonic()
+            deadline = reserving + timeout
+            token = self._reserve_boundary(deadline=deadline, reset=update.reset)
+            try:
+                self._wait_boundary(token, deadline=deadline)
+                drained = time.monotonic()
+                frontiers = self._frontiers()
+                if replacement is None:
+                    install = functools.partial(
+                        self._rebind,
+                        registered=registered,
+                        callbacks=callbacks,
+                        frontiers=frontiers,
+                    )
+                else:
+                    frontiers = {
+                        **{name: frontiers[name] for name in self._slots},
+                        **self._numbered_on(replacement.operators, frontiers),
+                    }
+                    install = functools.partial(
+                        self._install,
+                        replacement,
+                        token=token,
+                        registered=registered,
+                        callbacks=callbacks,
+                        frontiers=frontiers,
+                    )
+                receipt, _ = self.session._commit_in_run(
+                    update,
+                    run=self,
+                    check=lambda: self._check_boundary(token, deadline=deadline),
+                    install=install,
+                    retirement=retirement,
+                    deadline=deadline,
+                )
+                committed = True
+            finally:
+                resumed = self._release_boundary(token)
+        finally:
+            if retirement is not None:
+                if committed:
+                    retirement.release()
+                else:
+                    retirement.cancel()
+            if replacement is not None and not committed:
+                replacement.discard()
+
+        updates = importlib.import_module(UPDATES_MODULE)
+        receipt = updates.ActiveUpdateReceipt(
+            graph_version=receipt.graph_version,
+            previous_version=receipt.previous_version,
+            diff=receipt.diff,
+            reset=receipt.reset,
+            processing_version=receipt.processing_version,
+            run_id=self.run_id,
+            drained_seconds=drained - reserving,
+            paused_seconds=resumed - reserving,
+            frontiers=frontiers,
+            called_at=called,
+            cut_at=token.cut_at,
+            drained_at=drained,
+            resumed_at=resumed,
+            run_build_seconds=reserving - called if replacement is not None else 0.0,
+            cleanup=None if retirement is None else retirement.cleanup,
+        )
+
+        return receipt
+
+    def _replacement(self, update: "PreparedUpdate") -> _Replacement:
+        """Build a reset's operators and reactions; nothing pauses meanwhile."""
+        parts = update._reset_parts
+        try:
+            operators = _prepare_operators(update.plan.operators.values())
+        except ActiveRunError as error:
+            raise GraphUpdateError(
+                f"the reset was not applied; the run keeps its graph: {error}"
+            ) from error
+        try:
+            reactions = self._reaction_runtime(
+                update.plan,
+                sessions=parts.handler_sessions,
+                managed_state=parts.managed_state,
+            )
+        except BaseException:
+            for slot in operators.values():
+                close_operator(slot)
+            raise
+        replacement = _Replacement(operators=operators, reactions=reactions)
+
+        return replacement
+
+    def _reserved_retirement(self) -> "Retirement":
+        """A reset's ``updates.Retirement`` with its closing thread started.
+
+        Before the cut: a reset that gets no thread is refused while nothing
+        changed, rather than closing arbitrary operators on this caller.
+        """
+        reset = importlib.import_module(RESET_MODULE)
+        retirement = reset.Retirement()
+        try:
+            retirement.reserve(name=f"workflows-v2-cleanup-{self.run_id[:8]}")
+        except RuntimeError as error:
+            raise GraphUpdateError(
+                "the reset was not applied; the run keeps its graph: no thread "
+                f"starts to close the processing it would replace: {error}"
+            ) from error
+
+        return retirement
+
+    def _numbered_on(
+        self, operators: Mapping[str, OperatorSlot], frontiers: Mapping[str, int]
+    ) -> Dict[str, int]:
+        """Where each new operator numbers on: after every ordinal its name had."""
+        numbered = {
+            name: frontiers.get(name, self._operator_next.get(name, 0))
+            for name in operators
+        }
+
+        return numbered
+
+    def _install(
+        self,
+        replacement: _Replacement,
+        retirement: Any,
+        *,
+        token: _UpdateToken,
+        registered: List[Registered],
+        callbacks: Dict[str, GroupHandler],
+        frontiers: Mapping[str, int],
+    ) -> None:
+        """Run the reset's new processing: assignments only, nothing raises.
+
+        Called like ``_rebind``, with the commit's ``updates.Retirement``.
+        The replaced operators and reactions go into it; they are neither
+        finished nor closed here (partial windows are dropped at the
+        closing), and the replaced reactions refuse every later signal from
+        now on. The new reactions are paused under ``token`` before they
+        are reachable: ``signal()`` reaches them only after the session's
+        publication, when ``_release_boundary`` resumes them.
+        """
+        for name, slot in self._executor.operators.items():
+            self._operator_next[name] = slot.next_sequence
+        for name, slot in replacement.operators.items():
+            slot.next_sequence = frontiers[name]
+        retirement.run_operators = {
+            name: functools.partial(_close_replaced_operator, slot)
+            for name, slot in self._executor.operators.items()
+        }
+        if self._reactions is not None:
+            self._reactions.seal_replaced()
+            retirement.run_reactions = functools.partial(
+                _retire_reactions, self._reactions
+            )
+        if replacement.reactions is not None:
+            replacement.reactions.pause_ingress(token)
+        self._executor.restart(
+            registered, operators=replacement.operators, reactions=replacement.reactions
+        )
+        self._reactions = replacement.reactions
+        self._handlers = dict(callbacks)
+        self._driver.restart_domains()
+        if isinstance(self._coordination, PipelinedCoordination):
+            self._coordination.restart_gates(frontiers)
+
+    def _check_candidate(self, update: "PreparedUpdate") -> None:
+        """Reject a candidate that can never commit, before anything pauses."""
+        if update.session is not self.session:
+            raise UpdateConflictError(
+                f"the update was prepared for session {update.session.session_id}, "
+                f"not {self.session.session_id}"
+            )
+        updates = importlib.import_module(UPDATES_MODULE)
+        if update.state != updates.PREPARED:
+            raise UpdateConflictError(f"the update was already {update.state}")
+        if update.reset:
+            self.session._raise_if_retiring()
+        if update.base_version != self.session.graph_version:
+            update.discard()
+            raise UpdateConflictError(
+                f"the update was prepared from graph version {update.base_version}, "
+                f"but the session is at version {self.session.graph_version}; "
+                "prepare it again"
+            )
+
+    def _patched_callbacks(
+        self, plan: Any, handlers: Optional[Mapping[str, GroupHandler]]
+    ) -> Dict[str, GroupHandler]:
+        """The run's callbacks after the patch: kept, replaced, added, dropped."""
+        declared = {group.name for group in plan.output_groups}
+        declared.update(group.name for group in plan.reactions.groups)
+        kept = {name: h for name, h in self._handlers.items() if name in declared}
+        patched = {**kept, **dict(handlers or {})}
+
+        return patched
+
+    def _reserve_boundary(self, *, deadline: float, reset: bool) -> _UpdateToken:
+        """Take the run's one update token and cut admission.
+
+        Lock order: the session's lifecycle guard and run registry, then
+        this run's lock, then the driver's admission lock and the reaction
+        runtime's admission. No callback runs inside. Waiting for the guard,
+        the registry or the lock (an idle update or a close of the session
+        in progress) gives up at ``deadline``.
+        """
+        with acquired(self.session._use_lock, deadline=deadline, what="the session"):
+            with holding_run_registry(self.session, deadline=deadline) as active:
+                if self.session.closed:
+                    raise SessionClosedError(
+                        f"Session {self.session.session_id} is closed; it cannot "
+                        "update its graph"
+                    )
+                if active is not self:
+                    raise UpdateConflictError(
+                        f"run {self.run_id} is done or no longer the active run of "
+                        f"session {self.session.session_id}; it cannot be updated"
+                    )
+                with acquired(self._lock, deadline=deadline, what="the active run"):
+                    if self._update_token is not None:
+                        raise UpdateConflictError(
+                            f"run {self.run_id} already has a graph update in progress"
+                        )
+                    if reset:
+                        self.session._raise_if_retiring()
+                    self._raise_if_terminal()
+                    token = _UpdateToken()
+                    self._update_token = token
+                self._driver.pause(token)
+                token.cut_at = time.monotonic()
+                if self._reactions is not None:
+                    self._reactions.pause_ingress(token)
+
+        return token
+
+    def _raise_if_terminal(self) -> None:
+        """Lock held: a stopping, aborting or done run cannot switch graphs."""
+        if self._done.is_set():
+            state = "done"
+        elif self._failure is not None:
+            state = "failed"
+        elif self._cancelled:
+            state = "cancelled"
+        elif self._stop_requested:
+            state = "stopping"
+        else:
+            return
+
+        raise UpdateConflictError(
+            f"run {self.run_id} is {state}; it keeps its current graph"
+        )
+
+    def _wait_boundary(self, token: _UpdateToken, *, deadline: float) -> None:
+        """Wait until nothing admitted runs: driver, workers, then reactions."""
+        with self._lock:
+            while not token.acked:
+                if token.rejected is not None:
+                    raise UpdateConflictError(
+                        f"run {self.run_id} {token.rejected}; it keeps its "
+                        "current graph"
+                    )
+                self._raise_if_terminal()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise self._timed_out("its admitted pulses")
+                self._changed.wait(remaining)
+        if not self._driver.settle_workers(max(deadline - time.monotonic(), 0.0)):
+            raise self._timed_out("its worker threads")
+        if self._reactions is not None:
+            quiescent = self._reactions.wait_quiescent(
+                max(deadline - time.monotonic(), 0.0), interrupted=self._interrupted
+            )
+            if not quiescent:
+                with self._lock:
+                    self._raise_if_terminal()
+                raise self._timed_out("its reactions")
+        in_flight = self.session.controls.in_flight.describe()
+        if in_flight:
+            raise ContractError(
+                f"run {self.run_id} reached its update boundary with work still "
+                f"counted in flight per control version: {in_flight}"
+            )
+
+    def _interrupted(self) -> bool:
+        interrupted = (
+            self._stop_requested or self._failure is not None or self._cancelled
+        )
+
+        return interrupted
+
+    def _timed_out(self, what: str) -> UpdateTimeoutError:
+        error = UpdateTimeoutError(
+            f"run {self.run_id} did not settle {what} within the timeout; the "
+            "pause was lifted and the run keeps its current graph"
+        )
+
+        return error
+
+    def _frontiers(self) -> Dict[str, int]:
+        """Next ordinal per source and operator domain at the boundary."""
+        frontiers = self._driver.frontiers()
+        for name, slot in self._executor.operators.items():
+            frontiers[name] = slot.next_sequence
+
+        return frontiers
+
+    def _check_boundary(self, token: _UpdateToken, *, deadline: float) -> None:
+        """The commit's last check of this run; raises to reject the commit.
+
+        The session calls it under its commit locks and this run's lock,
+        with the run paused and drained, right before ``_rebind`` and the
+        publication under the same hold of the lock: a stop, cancel or
+        failure of the run is decided either before this check or after the
+        publication, never in between.
+        """
+        if self._update_token is not token:
+            raise UpdateConflictError(
+                f"the update of run {self.run_id} was withdrawn before its commit"
+            )
+        self._raise_if_terminal()
+        if time.monotonic() > deadline:
+            raise self._timed_out("its commit")
+        if self._driver.readers_finished():
+            raise UpdateConflictError(
+                f"every source of run {self.run_id} ended before the update "
+                "boundary; the run completes with its current graph"
+            )
+
+    def _rebind(
+        self,
+        retirement: None,
+        *,
+        registered: List[Registered],
+        callbacks: Dict[str, GroupHandler],
+        frontiers: Mapping[str, int],
+    ) -> None:
+        """Bind this run to the new graph: assignments only, nothing raises.
+
+        The session calls it after ``_check_boundary`` passed, under the
+        same hold of this run's lock, and publishes the generation next.
+        A preserving update replaces nothing, so ``retirement`` is ``None``.
+        """
+        self._executor.rebind(registered)
+        self._handlers = dict(callbacks)
+        if isinstance(self._coordination, PipelinedCoordination):
+            self._coordination.seed_frontiers(frontiers)
+
+    def _release_boundary(self, token: _UpdateToken) -> float:
+        """Lift this token's pause, then give the token up.
+
+        The token is cleared last: no other update can reserve the run while
+        its driver or reactions are still paused for this one, and a pause
+        that already belongs to another token is left alone. Terminal state
+        set meanwhile is never undone. Returns when admission resumed
+        (``time.monotonic``).
+        """
+        self._driver.resume(token)
+        resumed = time.monotonic()
+        if self._reactions is not None:
+            self._reactions.resume_ingress(token)
+        with self._lock:
+            if self._update_token is token:
+                self._update_token = None
+
+        return resumed
+
+    def _boundary_reached(self, token: _UpdateToken) -> None:
+        """The driver: nothing admitted runs or waits any more (driver thread)."""
+        with self._lock:
+            if self._update_token is token:
+                token.acked = True
+                self._changed.notify_all()
+
+    def _boundary_rejected(self, token: _UpdateToken, reason: str) -> None:
+        """The driver: the run concludes before the boundary (driver thread)."""
+        with self._lock:
+            if self._update_token is token:
+                token.rejected = reason
+                self._changed.notify_all()
+
     def _reaction_runtime(
-        self, handlers: Mapping[str, GroupHandler]
+        self, plan: Any, *, sessions: Mapping[Any, Any], managed_state: Any
     ) -> Optional[ReactionRuntime]:
         """The run's reactions, or ``None``: no locks or threads without them."""
-        reactions = self.session.plan.reactions
+        reactions = plan.reactions
         if not (reactions.handlers or reactions.machines or reactions.signals):
             return None
 
-        callbacks = {
-            group.name: handlers[group.name]
-            for group in reactions.groups
-            if group.name in handlers
-        }
-
         def deliver(group: str, result: GroupResult) -> None:
-            callbacks[group](result)
+            # Read at delivery: an applied update replaces self._handlers.
+            callback = self._handlers.get(group)
+            if callback is not None:
+                callback(result)
 
         def fail(raised: BaseException, group: Optional[str]) -> None:
             stage = "handler" if group is not None else "observer"
@@ -1034,15 +1790,20 @@ class ActiveRun:
             self._fail(failure)
 
         runtime = ReactionRuntime(
-            self.session.plan,
-            sessions=self.session.handler_sessions,
+            plan,
+            sessions=sessions,
             session_id=self.session.session_id,
-            managed_state=getattr(self.session, "managed_state", None),
+            managed_state=managed_state,
             observer=getattr(self.session, "reaction_observer", None),
             owned=self._owned,
             active_run_id=self.run_id,
-            deliver=deliver if callbacks else None,
+            deliver=deliver if reactions.groups else None,
             fail=fail,
+            graph_version=lambda: self.session.graph_version,
+            processing_version=lambda: self.session.processing_version,
+            # Build a handler group's result only while a callback receives
+            # it (an update may add or drop one at a quiescent boundary).
+            subscribed=lambda group: group in self._handlers,
         )
 
         return runtime
@@ -1051,13 +1812,14 @@ class ActiveRun:
         """Notify the observer, start the processing and ``started``, then readers.
 
         Before processing starts, sources are constructed but not opened,
-        so a failure only closes the constructed operators and releases the
-        registration. Once processing runs, a failure of the ``started``
-        reactions or of starting a reader is a failure of the run: the
-        readers that never started are marked done so processing does not
-        wait for them, the started readers stop cooperatively and close
-        their sources, and the run is drained before the attributed failure
-        is raised.
+        so a failure only closes the constructed operators, releases the
+        caller's resources and then the registration; the run stays
+        registered until that cleanup settled. Once processing runs, a
+        failure of the ``started`` reactions or of starting a reader is a
+        failure of the run: the readers that never started are marked done
+        so processing does not wait for them, the started readers stop
+        cooperatively and close their sources, and the run is drained before
+        the attributed failure is raised.
         """
         try:
             self._observer.on_run_started(
@@ -1065,14 +1827,13 @@ class ActiveRun:
             )
             self._driver.start()
         except Exception as raised:
-            self._unregister()
             failure = attributed(raised, stage="start")
             for slot in self._executor.operators.values():
                 close_error = close_operator(slot)
                 if close_error is not None:
                     failure.suppressed += (close_error,)
             self._failure = failure
-            self._settle_resources()
+            self._release()
             raise failure from raised
 
         names = list(self._readers)
@@ -1275,10 +2036,30 @@ class ActiveRun:
         except Exception as raised:
             self._fail(attributed(raised, stage="observer"))
         finally:
-            self._executor.close_operators()
+            try:
+                self._executor.close_operators()
+            finally:
+                self._release()
+
+    def _release(self) -> None:
+        """Release the caller's resources, then the session; the run is done.
+
+        Called once the run no longer uses the session: workers, reactions
+        and operators have settled. ``releasing`` turns true first, so a
+        replay's ``finalize`` may close the session. The registration ends
+        and ``done`` is set on every exit. A release error is recorded before
+        waiters can observe completion, beneath any earlier run failure.
+        """
+        self._releasing = True
+        try:
             self._settle_resources()
+        except Exception as raised:
+            self._fail(attributed(raised, stage="finalize"))
+        finally:
             self._unregister()
             self._done.set()
+            with self._lock:
+                self._changed.notify_all()
 
     def _settle_resources(self) -> None:
         """Finalize the recording, then release what the caller made for the run."""
@@ -1358,6 +2139,7 @@ class ActiveRun:
                 self._failure = failure
             elif failure is not self._failure:
                 self._failure.suppressed += (failure,)
+            self._changed.notify_all()
         self._abort(self._failure)
 
 
@@ -1366,13 +2148,27 @@ class _SerialDriver:
 
     The queue holds at most ``admission_bound`` pulses per source, because
     a reader takes one of its source's slots before admitting.
+
+    A graph update pauses the driver: readers that hold a slot wait before
+    admitting, a ``_Barrier`` is queued behind everything admitted so far,
+    and the processor parks once it reaches it. A source that ends while
+    paused is remembered and sequenced at ``resume``, so the run cannot
+    conclude, nor an operator finish early, across the boundary.
     """
 
     def __init__(self, run: ActiveRun):
         self._run = run
-        self._lock = threading.Lock()
+        # Guards admission, the pause and the processor's parking.
+        self._condition = threading.Condition()
         self._admission_open = True
-        self._queue: "queue.Queue[Union[SourcePulse, _ReaderDone]]" = queue.Queue()
+        self._paused = False
+        self._token: Optional[_UpdateToken] = None
+        self._finished: Set[str] = set()
+        self._deferred: List[str] = []
+        self._replayed: List[str] = []
+        self._queue: "queue.Queue[Union[SourcePulse, _ReaderDone, _Barrier]]" = (
+            queue.Queue()
+        )
         # Snapshot of the source end being processed; chained domain ends
         # (an operator finishing) run under it.
         self._ending: Optional[ControlSnapshot] = None
@@ -1391,10 +2187,13 @@ class _SerialDriver:
         """Take one of the source's slots and queue the pulse.
 
         Returns ``False`` once admission is closed; the emission is then
-        counted unadmitted and the reader stops.
+        counted unadmitted and the reader stops. While a graph update pauses
+        the run, the reader keeps the slot and the emission and waits here.
         """
         slot.admission.acquire()
-        with self._lock:
+        with self._condition:
+            while self._paused and self._admission_open:
+                self._condition.wait()
             if not self._admission_open:
                 slot.counters.unadmitted += 1
                 return False
@@ -1403,19 +2202,28 @@ class _SerialDriver:
         return True
 
     def reader_finished(self, source: str) -> None:
+        with self._condition:
+            self._finished.add(source)
+            if self._paused:
+                # Sequenced at resume, under the graph published by then.
+                self._deferred.append(source)
+                return
+            self._queue_done(source)
+
+    def _queue_done(self, source: str, *, replay: bool = False) -> None:
         # The end of a source is sequenced like a pulse: its snapshot is taken
         # under the admission lock, so the queue stays version-monotonic.
-        with self._lock:
-            controls = self._run.session.controls.current
-            self._run.session.controls.in_flight.enter(controls.version)
-            self._queue.put(_ReaderDone(source, controls))
+        controls = self._run.session.controls.current
+        self._run.session.controls.in_flight.enter(controls.version)
+        self._queue.put(_ReaderDone(source, controls, replay=replay))
 
     def close_admission(self) -> bool:
         """Close admission; ``True`` only for the call that closed it."""
-        with self._lock:
+        with self._condition:
             if not self._admission_open:
                 return False
             self._admission_open = False
+            self._condition.notify_all()
 
         return True
 
@@ -1433,7 +2241,55 @@ class _SerialDriver:
         self._run._executor.end_domain(domain, reason, controls=self._ending)
 
     def wake(self) -> None:
-        """Nothing waits on anything but the queue, which readers always feed."""
+        """Wake parked readers and the processor so they observe the abort."""
+        with self._condition:
+            self._condition.notify_all()
+
+    def pause(self, token: _UpdateToken) -> None:
+        with self._condition:
+            self._paused = True
+            self._token = token
+            self._queue.put(_Barrier(token))
+
+    def resume(self, token: _UpdateToken) -> None:
+        with self._condition:
+            if self._token is not token:
+                return
+            self._paused = False
+            self._token = None
+            replayed, self._replayed = self._replayed, []
+            for source in replayed:
+                self._queue_done(source, replay=True)
+            deferred, self._deferred = self._deferred, []
+            for source in deferred:
+                self._queue_done(source)
+            self._condition.notify_all()
+
+    def restart_domains(self) -> None:
+        with self._condition:
+            self._replayed = [
+                name
+                for name in self._run._slots
+                if name in self._finished and name not in self._deferred
+            ]
+
+    def settle_workers(self, timeout: float) -> bool:
+        """The processor is the only worker, and it is parked at the barrier."""
+        return True
+
+    def readers_finished(self) -> bool:
+        with self._condition:
+            finished = len(self._finished) == len(self._run._slots)
+
+        return finished
+
+    def frontiers(self) -> Dict[str, int]:
+        with self._condition:
+            frontiers = {
+                name: slot.next_sequence for name, slot in self._run._slots.items()
+            }
+
+        return frontiers
 
     def _process(self) -> None:
         run = self._run
@@ -1444,8 +2300,11 @@ class _SerialDriver:
             in_flight = run.session.controls.in_flight
             while remaining:
                 item = self._queue.get()
+                if isinstance(item, _Barrier):
+                    self._park(item.token)
+                    continue
                 if isinstance(item, _ReaderDone):
-                    remaining -= 1
+                    remaining -= 0 if item.replay else 1
                     self._ending = item.controls
                     try:
                         if not run.aborting:
@@ -1462,13 +2321,41 @@ class _SerialDriver:
                             executor.run_source_pulse(item, counters=slot.counters)
                     finally:
                         in_flight.leave(item.controls.version)
-                    with self._lock:
+                    with self._condition:
                         slot.in_flight -= 1
                     slot.admission.release()
                 if run.aborting:
                     # Release what operators retain now, not after the readers.
                     executor.close_operators()
+            self._reject_pending_barriers()
         except Exception as raised:
             run._fail(attributed(raised, stage="observer"))
         finally:
             run._conclude()
+
+    def _park(self, token: _UpdateToken) -> None:
+        """Everything queued before the barrier completed: report, then park.
+
+        A withdrawn token (the update timed out or failed) is passed over.
+        Parking ends at ``resume``; a stop or abort meanwhile is observed by
+        the updater, which resumes the driver.
+        """
+        with self._condition:
+            if self._token is not token:
+                return
+        self._run._boundary_reached(token)
+        with self._condition:
+            while self._paused and self._token is token:
+                self._condition.wait()
+
+    def _reject_pending_barriers(self) -> None:
+        """Every source ended before a queued barrier: the run concludes instead."""
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            if isinstance(item, _Barrier):
+                self._run._boundary_rejected(
+                    item.token, "concluded before the update boundary"
+                )

@@ -94,6 +94,7 @@ from roboflow_workflows.execution_engine.v2.errors import (
     StepPath,
     format_step_path,
 )
+from roboflow_workflows.execution_engine.v2.locking import acquired
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from roboflow_workflows.execution_engine.v2.plan import CompiledWorkflow
@@ -505,17 +506,20 @@ class ControlPanel:
                 needs a new compiled plan. Nothing is applied and the current
                 snapshot stays.
         """
-        controls = self._plan.controls
         if not changes:
             raise ControlError("update() needs at least one <control>=<value> change")
-        unknown = sorted(name for name in changes if name not in controls.controls)
-        if unknown:
-            raise ControlError(self._unknown_message(unknown))
-        normalized = {
-            name: self._normalize(controls.controls[name], value)
-            for name, value in changes.items()
-        }
+        # Validated and published under one lock, so a change is always
+        # checked against the plan it is published for; a graph update
+        # (``_rebasing``) lands entirely before or after it.
         with self._lock:
+            controls = self._plan.controls
+            unknown = sorted(name for name in changes if name not in controls.controls)
+            if unknown:
+                raise ControlError(self._unknown_message(unknown))
+            normalized = {
+                name: self._normalize(controls.controls[name], value)
+                for name, value in changes.items()
+            }
             current = self._snapshot
             version = current.version + 1
             enabled = dict(current.enabled)
@@ -540,6 +544,102 @@ class ControlPanel:
         )
 
         return receipt
+
+    @contextmanager
+    def _rebasing(
+        self, plan: "CompiledWorkflow", *, deadline: Optional[float] = None
+    ) -> Iterator[Callable[[], None]]:
+        """Hold the panel for a graph update; yield the step adopting ``plan``.
+
+        Only a session graph update uses this, while no work of the session
+        runs (an idle session, or an active run paused at its update
+        boundary), after ``updates.compare_plans`` proved that ``plan``
+        declares the same controls. The current snapshot is rebuilt for
+        ``plan`` before the yield, so a rebuild that raises changes nothing.
+        The yielded step assigns the plan and the rebuilt snapshot, and never
+        raises: the version, enable states, input values and epochs stay,
+        while omitted outputs and wanted outputs follow the new graph. The
+        session calls the step once the update is certain, or not at all. A
+        concurrent ``update`` waits for the panel, so it lands entirely
+        before or after the graph update.
+
+        Args:
+            plan: The updated plan.
+            deadline: ``time.monotonic()`` value at which waiting for the
+                panel gives up; ``None`` waits.
+
+        Raises:
+            UpdateTimeoutError: When the panel was not free before ``deadline``.
+        """
+        with acquired(self._lock, deadline=deadline, what="the control panel"):
+            current = self._snapshot
+            snapshot = self._build(
+                current.version,
+                enabled=current.enabled,
+                values=current.values,
+                epochs=current.epochs,
+                plan=plan,
+            )
+
+            def adopt() -> None:
+                self._plan = plan
+                self._snapshot = snapshot
+
+            yield adopt
+
+    @contextmanager
+    def _resetting(
+        self,
+        plan: "CompiledWorkflow",
+        *,
+        carried: FrozenSet[str],
+        deadline: Optional[float] = None,
+    ) -> Iterator[Callable[[], None]]:
+        """Hold the panel for a processing reset; yield the step adopting ``plan``.
+
+        Like ``_rebasing``, but the controls may differ. Under the panel lock,
+        so with the values current at the commit, the rebuilt snapshot keeps
+        the enable state or input value of every ``carried`` control and
+        starts every other control of ``plan`` at its declared initial
+        state. Its version is one above the current one; every epoch
+        restarts at ``0``, because every step the reset constructs is fresh
+        and has nothing to reset. The panel object stays, so a host's saved
+        ``session.controls`` keeps working.
+
+        Args:
+            plan: The reset's plan.
+            carried: Names of controls declared alike in the current and the
+                new plan (their closures may differ).
+            deadline: ``time.monotonic()`` value at which waiting for the
+                panel gives up; ``None`` waits.
+
+        Raises:
+            UpdateTimeoutError: When the panel was not free before ``deadline``.
+        """
+        with acquired(self._lock, deadline=deadline, what="the control panel"):
+            current = self._snapshot
+            controls = plan.controls
+            enabled = {
+                name: current.enabled[name] if name in carried else control.enabled
+                for name, control in controls.enable_controls.items()
+            }
+            values = {
+                name: current.values[name] if name in carried else control.default
+                for name, control in controls.input_controls.items()
+            }
+            snapshot = self._build(
+                current.version + 1,
+                enabled=enabled,
+                values=values,
+                epochs=dict.fromkeys(enabled, 0),
+                plan=plan,
+            )
+
+            def adopt() -> None:
+                self._plan = plan
+                self._snapshot = snapshot
+
+            yield adopt
 
     def _unknown_message(self, unknown: List[str]) -> str:
         plan = self._plan
@@ -607,8 +707,9 @@ class ControlPanel:
         enabled: Mapping[str, bool],
         values: Mapping[str, Any],
         epochs: Mapping[str, int],
+        plan: Optional["CompiledWorkflow"] = None,
     ) -> ControlSnapshot:
-        plan = self._plan
+        plan = plan if plan is not None else self._plan
         controls = plan.controls
         reset_epoch = max(
             (

@@ -30,6 +30,13 @@ the workers are joined, operators closed and ``on_run_finished`` called. On a
 failure or ``cancel()`` the dispatcher cancels what was admitted but not
 started, waits until no work runs, closes the operators (releasing what they
 retained) and then waits for the readers, which close their sources.
+
+A graph update pauses the driver: ``block`` readers holding a slot wait
+before admitting, ``latest`` readers keep replacing their pending emission
+(still counted dropped) but nothing pending is promoted, queued pulses and
+domain ends still dispatch, and the dispatcher reports the boundary once
+nothing is queued or running. A source that ends meanwhile is sealed at
+``resume``, so the run cannot finish across the boundary.
 """
 
 import threading
@@ -49,6 +56,7 @@ if TYPE_CHECKING:
     from roboflow_workflows.execution_engine.v2.active.runtime import (
         ActiveRun,
         _SourceSlot,
+        _UpdateToken,
     )
 
 __all__ = ["PipelinedDriver"]
@@ -117,6 +125,9 @@ class PipelinedDriver:
         self._ends: Deque[_End] = deque()
         self._running = 0
         self._operators_released = False
+        self._paused = False
+        self._token: Optional["_UpdateToken"] = None
+        self._acknowledged = False
         self._pool: Optional[WorkerPool] = None
         self._dispatcher = threading.Thread(
             target=self._dispatch,
@@ -152,6 +163,8 @@ class PipelinedDriver:
         if not ingress.latest:
             slot.admission.acquire()
         with self._condition:
+            while self._paused and self._admission_open and not ingress.latest:
+                self._condition.wait()
             if not self._admission_open:
                 slot.counters.unadmitted += 1
                 return False
@@ -171,7 +184,9 @@ class PipelinedDriver:
         with self._condition:
             ingress = self._ingress[source]
             ingress.reading = False
-            self._seal_if_exhausted(ingress)
+            if not self._paused:
+                # Paused: sealed at resume, under the graph published by then.
+                self._seal_if_exhausted(ingress)
             self._condition.notify_all()
 
     def close_admission(self) -> bool:
@@ -202,6 +217,50 @@ class PipelinedDriver:
         with self._condition:
             self._condition.notify_all()
 
+    def pause(self, token: "_UpdateToken") -> None:
+        with self._condition:
+            self._paused = True
+            self._token = token
+            self._acknowledged = False
+            self._condition.notify_all()
+
+    def resume(self, token: "_UpdateToken") -> None:
+        with self._condition:
+            if self._token is not token:
+                return
+            self._paused = False
+            self._token = None
+            for ingress in self._ingress.values():
+                if not ingress.reading:
+                    self._seal_if_exhausted(ingress)
+            self._condition.notify_all()
+
+    def restart_domains(self) -> None:
+        with self._condition:
+            for ingress in self._ingress.values():
+                ingress.sealed = False
+
+    def settle_workers(self, timeout: float) -> bool:
+        """``True`` once every worker handed back its last work (the updater's thread)."""
+        idle = self._pool.wait_idle(timeout)
+
+        return idle
+
+    def readers_finished(self) -> bool:
+        with self._condition:
+            finished = all(not ingress.reading for ingress in self._ingress.values())
+
+        return finished
+
+    def frontiers(self) -> Dict[str, int]:
+        with self._condition:
+            frontiers = {
+                name: ingress.slot.next_sequence
+                for name, ingress in self._ingress.items()
+            }
+
+        return frontiers
+
     # Dispatcher thread ----------------------------------------------------
 
     def _dispatch(self) -> None:
@@ -216,6 +275,7 @@ class PipelinedDriver:
 
     def _dispatch_next(self) -> bool:
         """Hand one unit of work to a worker; ``False`` once nothing is left."""
+        boundary = None
         with self._condition:
             while not self._has_work():
                 if self._run.aborting:
@@ -224,9 +284,17 @@ class PipelinedDriver:
                         break
                 if self._exhausted():
                     return False
+                boundary = self._boundary()
+                if boundary is not None:
+                    break
                 self._condition.wait()
         if self._run.aborting:
             self._release_operators()
+            return True
+        if boundary is not None:
+            # Reported outside the condition: the run's lock is taken first
+            # by an updater that then pauses this driver.
+            self._run._boundary_reached(boundary)
             return True
 
         # Only this thread submits, so a free worker is still free below.
@@ -251,14 +319,36 @@ class PipelinedDriver:
         return eligible
 
     def _latest_ready(self, ingress: _Ingress) -> bool:
-        ready = ingress.pending is not None and ingress.slot.in_flight < self._bound
+        """Whether a pending ``latest`` emission may be admitted now (condition held).
+
+        Not while paused: an admitted pulse takes its sequence, control
+        snapshot and graph at admission, which the update is about to change.
+        """
+        ready = (
+            not self._paused
+            and ingress.pending is not None
+            and ingress.slot.in_flight < self._bound
+        )
 
         return ready
 
+    def _boundary(self) -> Optional["_UpdateToken"]:
+        """The token to acknowledge once, when paused with nothing left to run."""
+        if self._paused and not self._acknowledged and self._running == 0:
+            self._acknowledged = True
+            return self._token
+
+        return None
+
     def _exhausted(self) -> bool:
-        """Every reader finished and nothing is queued, pending or running."""
+        """Every reader finished and nothing is queued, pending or running.
+
+        Never while paused: a source that ended meanwhile is sealed at
+        resume, and the update decides whether the run continues.
+        """
         exhausted = (
-            self._running == 0
+            not self._paused
+            and self._running == 0
             and not self._ends
             and all(
                 not ingress.reading and not ingress.queued and ingress.pending is None

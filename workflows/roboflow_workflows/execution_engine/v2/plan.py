@@ -72,6 +72,7 @@ The executor, not this module, implements execution and row construction.
 ``run`` and ``rows`` delegate to ``roboflow_workflows.execution_engine.v2.execution``.
 """
 
+import contextlib
 import importlib
 import threading
 import uuid
@@ -81,6 +82,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ContextManager,
     Dict,
     FrozenSet,
     Iterable,
@@ -124,15 +126,20 @@ from roboflow_workflows.execution_engine.v2.declaration import (
 )
 from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
+    GraphUpdateError,
     ResourceError,
+    SessionBusyError,
+    SessionClosedError,
     StepExecutionError,
     StepPath,
+    UpdateConflictError,
     WorkflowCompileError,
     WorkflowInputError,
     format_step_path,
 )
 from roboflow_workflows.execution_engine.v2.events import Event
 from roboflow_workflows.execution_engine.v2.kinds import Kind, kinds_compatible
+from roboflow_workflows.execution_engine.v2.locking import acquired
 from roboflow_workflows.execution_engine.v2.pipelining.options import PipelineOptions
 
 # Re-exported: callers import the shared readiness helper from here as before.
@@ -179,11 +186,23 @@ if TYPE_CHECKING:
     from roboflow_workflows.execution_engine.v2.recording.retrospective import (
         CompiledRetrospective,
     )
+    from roboflow_workflows.execution_engine.v2.updates import (
+        PreparedUpdate,
+        UpdateAssessment,
+        UpdateReceipt,
+    )
+    from roboflow_workflows.execution_engine.v2.updates.prepared import ResetParts
+    from roboflow_workflows.execution_engine.v2.updates.reset import (
+        Cleanup,
+        Retirement,
+    )
 
 EXECUTION_MODULE = "roboflow_workflows.execution_engine.v2.execution"
 ACTIVE_RUNTIME_MODULE = "roboflow_workflows.execution_engine.v2.active.runtime"
 PASSIVE_PIPELINE_MODULE = "roboflow_workflows.execution_engine.v2.pipelining.passive"
 STATE_SESSION_MODULE = "roboflow_workflows.execution_engine.v2.state.session"
+REACTIONS_RUNTIME_MODULE = "roboflow_workflows.execution_engine.v2.reactions.runtime"
+UPDATES_MODULE = "roboflow_workflows.execution_engine.v2.updates"
 # Reserved constructor resource name of managed state
 # (``state.MANAGED_STATE_RESOURCE``).
 MANAGED_STATE_RESOURCE = "managed_state"
@@ -3227,10 +3246,45 @@ ErrorHandler = Callable[[StepExecutionError], None]
 NULL_OBSERVER = ExecutionObserver()
 
 
+@dataclass(frozen=True)
+class SessionGeneration:
+    """One graph of a session: the plan and the instances that run it.
+
+    A graph update replaces the whole generation with one assignment. Runs do
+    not pin a generation: they read the session's ``plan``, ``instances`` and
+    ``graph_version`` while they execute. They are consistent because an
+    update commits only while nothing executes: the session is idle (no run,
+    pipeline or active run uses it), or its active run is paused at its
+    update boundary with every admitted pulse, reaction and callback
+    drained (``ActiveRun.apply_update``).
+
+    Args:
+        graph_version: ``0`` for the created graph, then ``+1`` per applied
+            update.
+        plan: The compiled plan.
+        instances: One instance per step path; retained steps keep the
+            objects of the previous generation.
+        resources: Resources chosen per step.
+        resolver: Resolver whose session factory values the steps share; an
+            update resolves its new steps in a fork of it.
+        processing_version: ``0`` for the created processing, then ``+1``
+            per applied reset; a preserving update keeps it.
+    """
+
+    graph_version: int
+    plan: "CompiledWorkflow"
+    instances: Mapping[StepPath, Any]
+    resources: Mapping[StepPath, Mapping[str, ResolvedResource]]
+    resolver: ResourceResolver
+    processing_version: int = 0
+
+
 class ExecutionSession:
     """Block instances of one plan, reused by every run of the session.
 
-    Create sessions with ``CompiledWorkflow.create_session``.
+    Create sessions with ``CompiledWorkflow.create_session``. An idle session
+    can switch to a compatible new plan with ``update``; retained steps keep
+    their instances (see ``updates``).
 
     Args:
         plan: The compiled plan.
@@ -3254,6 +3308,9 @@ class ExecutionSession:
             path. Handler runs reuse these block instances at event rate.
         reaction_observer: ``observer.ReactionObserver`` the reaction runtime
             reports handler outcomes to; ``None`` reports none.
+        resolver: Resolver that resolved ``resources``; a graph update
+            resolves new steps in a fork of it. ``None`` starts one from the
+            catalogue providers alone.
     """
 
     def __init__(
@@ -3270,6 +3327,7 @@ class ExecutionSession:
         owned_state: Any = None,
         handler_sessions: Optional[Mapping[StepPath, "ExecutionSession"]] = None,
         reaction_observer: Any = None,
+        resolver: Optional[ResourceResolver] = None,
     ):
         handler_paths = {handler.path for handler in plan.reactions.handlers}
         if set(handler_sessions or {}) != handler_paths:
@@ -3277,9 +3335,15 @@ class ExecutionSession:
                 f"Session handler sessions {sorted(handler_sessions or {})} must "
                 f"cover exactly the plan handlers {sorted(handler_paths)}"
             )
-        self.plan = plan
-        self.instances = MappingProxyType(dict(instances))
-        self.resources = MappingProxyType(dict(resources))
+        if resolver is None:
+            resolver = ResourceResolver(providers=plan.catalogue.providers)
+        self._generation = SessionGeneration(
+            graph_version=0,
+            plan=plan,
+            instances=MappingProxyType(dict(instances)),
+            resources=MappingProxyType(dict(resources)),
+            resolver=resolver,
+        )
         self.observer = observer
         self.error_handler = error_handler
         self.session_id = session_id if session_id is not None else uuid.uuid4().hex
@@ -3288,10 +3352,22 @@ class ExecutionSession:
         self.owned_state = owned_state
         self.handler_sessions = MappingProxyType(dict(handler_sessions or {}))
         self.reaction_observer = reaction_observer
-        # Passive use of the instances: direct runs or one open pipeline.
+        # Passive use of the instances: direct runs or one open pipeline. A
+        # graph update and close() change the session under this lock too.
+        # Lock order: _use_lock, then the active run registry, then the
+        # update candidate's lock, then the control panel's lock, then the
+        # active run's lock. An update of a running run bounds every one of
+        # these waits by its deadline (``locking.acquired``).
         self._use_lock = threading.Lock()
         self._direct_runs = 0
         self._pipeline_open = False
+        self._closed = False
+        # One reset preparation at a time (``updates.reset``); never held
+        # with another lock.
+        self._reset_preparation = threading.Lock()
+        # The last reset's ``updates.Cleanup``. While it is pending, the
+        # session refuses another reset, idle or in any run (one outstanding).
+        self._last_cleanup: Optional["Cleanup"] = None
         # Live controls: one panel per session; a reset guard and the epoch
         # last reset for every step a reset_on_enable control may reset.
         self.controls = ControlPanel(plan)
@@ -3299,6 +3375,41 @@ class ExecutionSession:
             path: StepActivity() for path in plan.controls.reset_members()
         }
         self._reset_epochs: Dict[StepPath, int] = dict.fromkeys(self._activities, 0)
+
+    @property
+    def generation(self) -> SessionGeneration:
+        """The current graph: plan, instances, resources and graph version."""
+        return self._generation
+
+    @property
+    def plan(self) -> CompiledWorkflow:
+        """The plan of the current graph."""
+        return self._generation.plan
+
+    @property
+    def instances(self) -> Mapping[StepPath, Any]:
+        """One block instance per step path of the current graph."""
+        return self._generation.instances
+
+    @property
+    def resources(self) -> Mapping[StepPath, Mapping[str, ResolvedResource]]:
+        """Resources chosen per step of the current graph, for inspection."""
+        return self._generation.resources
+
+    @property
+    def graph_version(self) -> int:
+        """``0`` for the created graph, then ``+1`` per applied update."""
+        return self._generation.graph_version
+
+    @property
+    def processing_version(self) -> int:
+        """``0`` for the created processing, then ``+1`` per applied reset."""
+        return self._generation.processing_version
+
+    @property
+    def closed(self) -> bool:
+        """Whether ``close`` released the session; it then never runs again."""
+        return self._closed
 
     def activity(self, path: StepPath) -> Optional[StepActivity]:
         """Reset guard of a step, or ``None`` when no control may reset it."""
@@ -3378,6 +3489,7 @@ class ExecutionSession:
     def _claim_direct_run(self) -> None:
         """Count a direct ``run``; refused while a pipeline is open."""
         with self._use_lock:
+            self._raise_if_closed("run")
             if self._pipeline_open:
                 raise ContractError(
                     f"Session {self.session_id} has an open pipeline; submit to it, "
@@ -3393,9 +3505,11 @@ class ExecutionSession:
         """Reserve the session for one pipeline (``pipelining.passive`` only).
 
         Raises:
+            SessionClosedError: When the session was closed.
             ContractError: When a pipeline is open or a direct run is running.
         """
         with self._use_lock:
+            self._raise_if_closed("open a pipeline")
             if self._pipeline_open:
                 raise ContractError(
                     f"Session {self.session_id} already has an open pipeline; "
@@ -3473,7 +3587,29 @@ class ExecutionSession:
 
         Closes ``managed_state`` only when the engine created it. Block
         instances are not torn down; they live as long as the session object.
+        A closed session rejects later runs, starts and graph updates with
+        ``SessionClosedError``.
+
+        Raises:
+            ContractError: While a direct run, a passive pipeline or an active
+                run of this session is unfinished; ``stop()`` and ``wait()``
+                an active run first. The session stays open.
         """
+        with self._use_lock, self._run_registry() as active_run:
+            if self._closed:
+                return
+            if active_run is not None and active_run.releasing:
+                # The run's own finalize, e.g. a replay's, closes the session
+                # after the run stopped using it.
+                active_run = None
+            busy = self._busy_reason(active_run)
+            if busy is not None:
+                raise ContractError(
+                    f"Session {self.session_id} {busy}; close it after that finishes"
+                )
+            self._closed = True
+
+        # Nothing can use the session now, so its state closes outside the locks.
         if self.owned_state is not None:
             self.owned_state.close()
 
@@ -3498,6 +3634,448 @@ class ExecutionSession:
 
         runtime = importlib.import_module(ACTIVE_RUNTIME_MODULE)
         runtime.stop_session(self)
+
+    def assess_update(
+        self,
+        plan: CompiledWorkflow,
+        *,
+        resources: Optional[Mapping[str, Any]] = None,
+    ) -> "UpdateAssessment":
+        """Tell whether an update to ``plan`` preserves, resets or cannot apply.
+
+        Constructs nothing, writes no state and changes nothing, so a UI may
+        call it for every edit. The answer is advisory: ``prepare_update``
+        decides again.
+
+        Args:
+            plan: The new compiled plan.
+            resources: Caller values a reset would get (see
+                ``prepare_update``).
+
+        Returns:
+            The ``updates.UpdateAssessment``: ``kind``, every reason and what
+            a reset would replace and keep.
+
+        Raises:
+            SessionClosedError: When the session was closed.
+        """
+        updates = importlib.import_module(UPDATES_MODULE)
+        assessment = updates.assess_update(self, plan, resources=resources)
+
+        return assessment
+
+    def prepare_update(
+        self,
+        plan: CompiledWorkflow,
+        *,
+        resources: Optional[Mapping[str, Any]] = None,
+        reset: bool = False,
+    ) -> "PreparedUpdate":
+        """Compare ``plan`` with the current graph and construct its new steps.
+
+        Nothing in the session changes, so the session may keep running.
+        New steps resolve resources in a fork of the session's resolver and
+        share the session ``Factory`` values it already created. ``close()``
+        does not wait for a preparation: a constructor that uses a service
+        the close released may fail with ``ResourceError``, and the candidate
+        can never be applied to the closed session.
+
+        With ``reset=True`` the candidate replaces the whole processing
+        instead: every step and handler session is constructed in a fresh
+        resolver (caller values passed again, ``Factory`` values created
+        again) with the managed state ``assess_update`` describes. It is
+        allowed for any plan a reset can apply, also one a preserving update
+        could. One reset preparation runs per session at a time.
+
+        Args:
+            plan: The new compiled plan.
+            resources: Caller values for resource keys the session does not
+                have yet, e.g. for a new step's constructor. A reset may also
+                give an existing key a new value, e.g. an isolated
+                ``managed_state``.
+            reset: Whether the candidate resets the processing.
+
+        Returns:
+            The ``updates.PreparedUpdate`` for ``apply_update``.
+
+        Raises:
+            SessionClosedError: When the session was closed.
+            IncompatibleUpdateError: When the comparison finds a breaking
+                change (its message says whether a reset can apply it) or,
+                for a reset, a change or the session rules it out; ``diff``
+                and, for a reset, ``assessment`` name each reason.
+            UpdateConflictError: When another reset of the session is being
+                prepared.
+            ContractError: When ``resources`` repeats a session resource key
+                of a preserving update.
+            ResourceError: When a step requests another managed state
+                service than the session's, or a resource, factory or
+                constructor fails.
+        """
+        updates = importlib.import_module(UPDATES_MODULE)
+        if reset:
+            prepared = updates.prepare_reset(self, plan, resources=resources)
+        else:
+            prepared = updates.prepare_update(self, plan, resources=resources)
+
+        return prepared
+
+    def apply_update(self, update: "PreparedUpdate") -> "UpdateReceipt":
+        """Switch the idle session to a prepared graph.
+
+        Retained steps keep their instances and block-local state; added
+        steps use the prepared instances. Managed state, handler sessions,
+        controls and their version stay. Later runs use the new plan, and
+        their results report the new ``graph_version``.
+
+        A reset candidate replaces every instance, the handler sessions and
+        the managed state its assessment named, and advances
+        ``processing_version``. The control panel object stays: controls
+        declared alike keep their values as they are at this commit, others
+        start at their declared initial state, the control version advances
+        by one. After the commit, outside every lock, the engine-owned state
+        it replaced is closed before this returns; ``receipt.cleanup``, an
+        ``updates.Cleanup``, reports it finished. A failure there is reported in
+        ``receipt.cleanup_failures`` and does not undo the commit.
+
+        Args:
+            update: An ``updates.PreparedUpdate`` of this session.
+
+        Returns:
+            The ``updates.UpdateReceipt``.
+
+        Raises:
+            SessionClosedError: When the session was closed.
+            SessionBusyError: While a direct run, a passive pipeline or an
+                active run of this session is unfinished. The candidate
+                stays prepared.
+            UpdateConflictError: When the candidate belongs to another
+                session, was applied or discarded, or the session's graph
+                changed since it was prepared; for a reset, while the
+                session still retires what its last reset replaced. The
+                candidate stays prepared then.
+        """
+        # Lock order: see __init__. Holding the run registry keeps a start of
+        # this session from registering a run until the new graph is in place.
+        with self._use_lock, self._run_registry() as active_run:
+            self._raise_if_closed("update its graph")
+            busy = self._busy_reason(active_run, updating=True)
+            if busy is not None:
+                raise SessionBusyError(
+                    f"Session {self.session_id} {busy}; update the graph after "
+                    "that finishes"
+                )
+            receipt, retirement = self._commit(update)
+        if retirement is not None:
+            # Outside every lock: what the reset replaced is freed here.
+            retirement.close()
+
+        return receipt
+
+    def update(
+        self,
+        plan: CompiledWorkflow,
+        *,
+        resources: Optional[Mapping[str, Any]] = None,
+        reset: bool = False,
+    ) -> "UpdateReceipt":
+        """Prepare and apply a graph update in one call.
+
+        Args:
+            plan: The new compiled plan.
+            resources: Caller values for new resource keys (see
+                ``prepare_update``).
+            reset: Whether the update resets the processing.
+
+        Returns:
+            The ``updates.UpdateReceipt``.
+
+        Raises:
+            SessionClosedError: When the session was closed.
+            GraphUpdateError: As ``prepare_update`` and ``apply_update``; a
+                candidate that cannot be applied is discarded.
+            ResourceError: When a new step's resource or constructor fails.
+        """
+        updates = importlib.import_module(UPDATES_MODULE)
+        prepared = self.prepare_update(plan, resources=resources, reset=reset)
+        try:
+            receipt = self.apply_update(prepared)
+        except BaseException:
+            if prepared.state == updates.PREPARED:
+                prepared.discard()
+            raise
+
+        return receipt
+
+    def _run_registry(self, *, deadline: Optional[float] = None) -> ContextManager[Any]:
+        """Hold the active run registry; yields this session's unfinished run.
+
+        A passive plan never registers runs, so it yields ``None`` and leaves
+        the registry alone. Waiting for the registry gives up at ``deadline``
+        (``time.monotonic``); ``None`` waits.
+        """
+        if not self.plan.is_active:
+            return contextlib.nullcontext()
+
+        runtime = importlib.import_module(ACTIVE_RUNTIME_MODULE)
+
+        return runtime.holding_run_registry(self, deadline=deadline)
+
+    def _busy_reason(self, active_run: Any, *, updating: bool = False) -> Optional[str]:
+        # Caller holds _use_lock and the run registry. ``updating``: the
+        # caller wants a new graph, which the active run itself can take.
+        if self._direct_runs:
+            return f"is running {self._direct_runs} direct run(s)"
+        if self._pipeline_open:
+            return "has an open pipeline; close it first"
+        if active_run is not None:
+            switch = (
+                "switch its graph with "
+                "run.apply_update(session.prepare_update(plan)), or "
+                if updating
+                else ""
+            )
+            return (
+                f"has unfinished active run {active_run.run_id}; {switch}stop it "
+                "and wait() for it first"
+            )
+
+        return None
+
+    def _raise_if_retiring(self) -> None:
+        """One outstanding retirement: a reset waits until the last one finished."""
+        if self._last_cleanup is not None and not self._last_cleanup.wait(0):
+            raise UpdateConflictError(
+                f"session {self.session_id} still retires the processing its "
+                "last reset replaced; wait for receipt.cleanup, then reset again"
+            )
+
+    def _raise_if_closed(self, action: str) -> None:
+        if self._closed:
+            raise SessionClosedError(
+                f"Session {self.session_id} is closed; it cannot {action}. "
+                "Create a new session."
+            )
+
+    def _commit_in_run(
+        self,
+        update: "PreparedUpdate",
+        *,
+        run: Any,
+        check: Callable[[], None],
+        install: Callable[[Optional["Retirement"]], None],
+        retirement: Optional["Retirement"],
+        deadline: float,
+    ) -> Tuple["UpdateReceipt", Optional["Retirement"]]:
+        """Commit a candidate for ``run``, the session's paused active run.
+
+        ``ActiveRun.apply_update`` only. The run has drained every admitted
+        pulse, reaction and callback and holds its admission paused, so the
+        session's instances are as idle as between two runs. Under every
+        lock of the commit, right before publication, ``check`` raises to
+        reject the commit (the session then keeps its graph), and then
+        ``install`` rebinds the run to the new graph with assignments only.
+        Every lock wait gives up at ``deadline`` (``time.monotonic``).
+        A reset brings the ``retirement`` whose thread the run reserved;
+        ``install`` fills it, and the run releases it after it resumed.
+
+        Raises:
+            SessionClosedError: When the session was closed.
+            UpdateConflictError: When ``run`` is no longer the session's
+                registered active run, or as ``_commit``.
+            UpdateTimeoutError: When a lock was not free before ``deadline``,
+                or as ``check``.
+        """
+        # Lock order: see __init__. The registry keeps a later start, an
+        # idle update and close() out until the run resumed under the new graph.
+        with acquired(self._use_lock, deadline=deadline, what="the session"):
+            with self._run_registry(deadline=deadline) as active_run:
+                self._raise_if_closed("update its graph")
+                if active_run is not run:
+                    raise UpdateConflictError(
+                        f"run {run.run_id} is no longer the active run of session "
+                        f"{self.session_id}; the update cannot target it"
+                    )
+                committed = self._commit(
+                    update,
+                    check=check,
+                    install=install,
+                    retirement=retirement,
+                    lock=run._lock,
+                    deadline=deadline,
+                )
+
+        return committed
+
+    def _commit(
+        self,
+        update: "PreparedUpdate",
+        *,
+        check: Optional[Callable[[], None]] = None,
+        install: Optional[Callable[[Optional["Retirement"]], None]] = None,
+        retirement: Optional["Retirement"] = None,
+        lock: Optional[Any] = None,
+        deadline: Optional[float] = None,
+    ) -> Tuple["UpdateReceipt", Optional["Retirement"]]:
+        # Caller holds _use_lock and the run registry, and the session is idle
+        # or its active run is paused at its update boundary. ``lock`` is that
+        # run's lock; ``check`` and ``install`` are the run's last check and
+        # its rebinding. Lock order: see __init__; each wait gives up at
+        # ``deadline``, and the idle session passes none.
+        #
+        # One transaction for both kinds of update:
+        #
+        #   candidate -> control panel -> run lock -> check -> publish
+        #
+        # Everything that can raise happens before the first assignment, so a
+        # rejected commit changed nothing. A reset differs only in data: its
+        # generation, how the panel adopts its controls, and the session parts
+        # it replaces. What it replaced goes into the returned Retirement
+        # (``None`` for a preserving update), which ``install`` also gets; the
+        # caller closes it after leaving every lock. An active run passes the
+        # reset's ``retirement`` with its thread reserved; an idle one, none.
+        updates = importlib.import_module(UPDATES_MODULE)
+        if update.reset:
+            self._raise_if_retiring()
+        current = self._generation
+        run_lock = (
+            acquired(lock, deadline=deadline, what="the active run")
+            if lock is not None
+            else contextlib.nullcontext()
+        )
+        # Holding the candidate: a concurrent discard() waits for the commit.
+        with update._committing(
+            self, graph_version=current.graph_version, deadline=deadline
+        ) as resolver:
+            # Build everything the publication assigns; this changes nothing.
+            generation = self._next_generation(update, resolver=resolver)
+            parts = update._reset_parts
+            if parts is None:
+                # compare_plans proved the controls equal, and the reset guards
+                # (_activities) stay complete: an added consumer joins a
+                # control's closure only as a prunable (pure) step.
+                panel = self.controls._rebasing(update.plan, deadline=deadline)
+                activities = retirement = None
+            else:
+                # Carried controls keep the values they have at this commit.
+                panel = self.controls._resetting(
+                    update.plan, carried=parts.carried_controls, deadline=deadline
+                )
+                activities = {
+                    path: StepActivity()
+                    for path in update.plan.controls.reset_members()
+                }
+                if retirement is None:
+                    retirement = updates.Retirement()
+
+            # The panel stays held, so a concurrent control update lands
+            # before or after the publication, never half-way.
+            with panel as adopt:
+                with run_lock:
+                    # The run's last check, then the publication, under one
+                    # hold of the run's lock: a stop, cancel or failure of
+                    # the run is decided before the check or after the
+                    # publication, never in between.
+                    if check is not None:
+                        check()
+                    adopt()
+                    if install is not None:
+                        install(retirement)
+                    self._generation = generation
+                    if parts is not None:
+                        self._replace_processing(
+                            parts,
+                            activities=activities,
+                            replaced=current,
+                            retirement=retirement,
+                        )
+        # Leaving _committing marked the candidate applied and released it.
+
+        if retirement is not None:
+            reactions_runtime = importlib.import_module(REACTIONS_RUNTIME_MODULE)
+            reactions = reactions_runtime.forget_session_reactions(self)
+            if reactions is not None:
+                retirement.session_reactions = reactions.close
+        receipt = updates.UpdateReceipt(
+            graph_version=generation.graph_version,
+            previous_version=current.graph_version,
+            diff=update.diff,
+            reset=update.reset,
+            processing_version=generation.processing_version,
+            cleanup=None if retirement is None else retirement.cleanup,
+        )
+
+        return receipt, retirement
+
+    def _next_generation(
+        self, update: "PreparedUpdate", *, resolver: Any
+    ) -> SessionGeneration:
+        """The generation a commit publishes; retained steps keep their instances.
+
+        A reset brings an instance for every step and advances the
+        processing version.
+        """
+        current = self._generation
+        if update.reset:
+            instances = update.instances
+            resources = update.resources
+            processing_version = current.processing_version + 1
+        else:
+            instances = MappingProxyType(
+                {
+                    step.path: (
+                        update.instances[step.path]
+                        if step.path in update.instances
+                        else current.instances[step.path]
+                    )
+                    for step in update.plan.steps
+                }
+            )
+            resources = MappingProxyType(
+                {
+                    path: (
+                        update.resources[path]
+                        if path in update.resources
+                        else current.resources[path]
+                    )
+                    for path in instances
+                }
+            )
+            processing_version = current.processing_version
+        generation = SessionGeneration(
+            graph_version=current.graph_version + 1,
+            plan=update.plan,
+            instances=instances,
+            resources=resources,
+            resolver=resolver,
+            processing_version=processing_version,
+        )
+
+        return generation
+
+    def _replace_processing(
+        self,
+        parts: "ResetParts",
+        *,
+        activities: Dict[StepPath, StepActivity],
+        replaced: SessionGeneration,
+        retirement: "Retirement",
+    ) -> None:
+        """A reset's session assignments, inside the publication; never raises.
+
+        What they replace goes into ``retirement``: the engine-owned state
+        to close, the old generation and handler sessions to drop. It is
+        the session's one outstanding retirement from now on.
+        """
+        if self.owned_state is not None:
+            retirement.owned_state = self.owned_state.close
+        retirement.dropped = (replaced, self.handler_sessions)
+        self._last_cleanup = retirement.cleanup
+        self.managed_state = parts.managed_state
+        self.owned_state = parts.owned_state
+        self.handler_sessions = parts.handler_sessions
+        self._activities = activities
+        self._reset_epochs = dict.fromkeys(activities, 0)
 
 
 def _pipeline_options(
@@ -3600,32 +4178,9 @@ def _build_session(
     instances: Dict[StepPath, Any] = {}
     chosen: Dict[StepPath, Mapping[str, ResolvedResource]] = {}
     for step in plan.steps:
-        # Only the selected implementation is resolved and constructed; its
-        # resource keys keep the logical block's namespace and type.
-        implementation = step.selected
-        resolved = resolver.resolve(
-            implementation.resources,
-            namespace=step.namespace,
-            step_path=step.path,
-            block_type=step.block_type,
+        instances[step.path], chosen[step.path] = construct_step(
+            step, resolver=resolver, session_id=session_id
         )
-        arguments = {name: item.value for name, item in resolved.items()}
-        context = ExecutionContext(
-            step_path=step.path, block_type=step.block_type, session_id=session_id
-        )
-        constructor = implementation.implementation_class
-        try:
-            with use_execution_context(context):
-                instance = constructor(**arguments)
-        except Exception as error:
-            raise ResourceError(
-                f"constructor of {constructor.__qualname__} failed: "
-                f"{type(error).__name__}: {error}",
-                step_path=step.path,
-                block_type=step.block_type,
-            ) from error
-        instances[step.path] = instance
-        chosen[step.path] = MappingProxyType(resolved)
 
     # Handler plans get the same resources, so they share this session's
     # managed state; each handler keeps its own instances for every event.
@@ -3647,9 +4202,57 @@ def _build_session(
         owned_state=owned_state,
         handler_sessions=handler_sessions,
         reaction_observer=reaction_observer,
+        resolver=resolver,
     )
 
     return session
+
+
+def construct_step(
+    step: PlannedStep, *, resolver: ResourceResolver, session_id: str
+) -> Tuple[Any, Mapping[str, ResolvedResource]]:
+    """Resolve the resources of one step and construct its instance.
+
+    Only the selected implementation is resolved and constructed; its
+    resource keys keep the logical block's namespace and type. The
+    constructor runs inside an ``ExecutionContext`` of ``session_id``.
+
+    Args:
+        step: The planned step.
+        resolver: Resolver of the session (or of an update's fork).
+        session_id: Identity of the session the instance belongs to.
+
+    Returns:
+        The instance and the resources chosen for it.
+
+    Raises:
+        ResourceError: When a resource is missing, a factory fails or the
+            constructor raises.
+    """
+    implementation = step.selected
+    resolved = resolver.resolve(
+        implementation.resources,
+        namespace=step.namespace,
+        step_path=step.path,
+        block_type=step.block_type,
+    )
+    arguments = {name: item.value for name, item in resolved.items()}
+    context = ExecutionContext(
+        step_path=step.path, block_type=step.block_type, session_id=session_id
+    )
+    constructor = implementation.implementation_class
+    try:
+        with use_execution_context(context):
+            instance = constructor(**arguments)
+    except Exception as error:
+        raise ResourceError(
+            f"constructor of {constructor.__qualname__} failed: "
+            f"{type(error).__name__}: {error}",
+            step_path=step.path,
+            block_type=step.block_type,
+        ) from error
+
+    return instance, MappingProxyType(resolved)
 
 
 def requests_managed_state(plan: CompiledWorkflow) -> bool:
@@ -3722,6 +4325,11 @@ class RunResult:
             even when all their payloads are filtered.
         controls: Version and settings of the control snapshot the run used
             (``ControlView``); ``None`` for a plan without controls.
+        graph_version: Graph version of the session that produced the result
+            (``ExecutionSession.graph_version``); independent of the control
+            version.
+        processing_version: Processing version of that session
+            (``ExecutionSession.processing_version``).
 
     Raises:
         ContractError: When selections, statuses and buffer entries disagree.
@@ -3737,6 +4345,8 @@ class RunResult:
     trace: Tuple[Mapping[str, Any], ...] = ()
     input_row_count: int = 0
     controls: Optional[ControlView] = None
+    graph_version: int = 0
+    processing_version: int = 0
 
     def __post_init__(self) -> None:
         if (

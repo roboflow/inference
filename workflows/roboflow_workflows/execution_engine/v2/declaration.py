@@ -1245,7 +1245,12 @@ class Block(ExecutionContextReader):
             implementation) serves; see ``Implementation.quality``.
 
     Resources are the keyword parameters of ``__init__``. The engine creates
-    one instance per step per execution session and keeps it across runs.
+    one instance per step per execution session and keeps it across runs and
+    preserving graph updates. A processing reset replaces it: the new
+    instance is constructed while the old one may still run, so both exist
+    at once, and the old one is dropped, never closed. No close hook and no
+    ``reset_state()`` call reaches it. Keep exclusive handles, open files and
+    module-global state out of ``__init__``, or make them safe to share.
     ``run`` may compose ``@phase`` methods, which the engine can also execute
     from their declared graph (see ``phases``).
 

@@ -544,11 +544,16 @@ class ReactionRuntime:
             owned, so ``ActiveRun.wait()`` from a handler raises. ``None``
             for a passive session.
         active_run_id: Identity of the active run; ``None`` when passive.
-        deliver: Delivers a handler output group's result; ``None`` when no
-            group has a callback.
+        deliver: Delivers a handler output group's result; ``None`` when the
+            plan declares no handler group.
         fail: Records a failed callback as the run's failure; ``None`` raises
             it instead (passive).
         outcome_limit: Outcomes kept for ``outcomes()``.
+        graph_version: The delivering run's current graph version, stamped
+            on handler results; ``None`` stamps ``0``.
+        processing_version: The same for the processing version.
+        subscribed: Whether a group currently has a callback; a result is
+            built only then. ``None`` builds every declared group's result.
 
     Raises:
         ContractError: When ``active_run_id`` is ``None`` and the plan has
@@ -569,6 +574,9 @@ class ReactionRuntime:
         deliver: Optional[Callable[[str, Any], None]] = None,
         fail: Optional[Callable[[BaseException, Optional[str]], None]] = None,
         outcome_limit: int = DEFAULT_OUTCOME_LIMIT,
+        graph_version: Optional[Callable[[], int]] = None,
+        subscribed: Optional[Callable[[str], bool]] = None,
+        processing_version: Optional[Callable[[], int]] = None,
     ):
         reactions = plan.reactions
         asynchronous = [h for h in reactions.handlers if h.mode == "async"]
@@ -593,6 +601,9 @@ class ReactionRuntime:
         self._active_run_id = active_run_id
         self._deliver = deliver
         self._fail = fail
+        self._graph_version = graph_version
+        self._processing_version = processing_version
+        self._subscribed = subscribed
         self._sequence = itertools.count()
         self._callbacks = threading.Lock()
         self._reporter: Optional[int] = None
@@ -607,6 +618,11 @@ class ReactionRuntime:
         self._admission = threading.Condition()
         self._state = _OPEN
         self._ingress = True
+        # Set when a processing reset replaced this runtime; never cleared.
+        self._replaced = False
+        # A graph update pauses ingress reversibly under its token;
+        # ``signal()`` says why.
+        self._pause_token: Optional[object] = None
         self._in_flight = 0
         self._handlers: Dict[StepPath, _Handler] = {
             handler.path: _Handler(self, handler) for handler in reactions.handlers
@@ -789,10 +805,20 @@ class ReactionRuntime:
         if sample is None:
             self._require_source(origin)
         with self._admission:
+            if self._replaced:
+                raise EventEmissionError(
+                    f"{origin.selector} rejected: a processing reset replaced the "
+                    "reactions it was sent to; signal again"
+                )
             if not self._ingress or self._state != _OPEN:
                 raise EventEmissionError(
                     f"{origin.selector} rejected: the run is stopping, cancelled "
                     "or finished"
+                )
+            if self._pause_token is not None:
+                raise EventEmissionError(
+                    f"{origin.selector} rejected: a graph update of the run is in "
+                    "progress; signal again once it returned"
                 )
             self._in_flight += 1
         try:
@@ -947,6 +973,84 @@ class ReactionRuntime:
         """Reject new ``signal()`` calls; admitted ones and cascades continue."""
         with self._admission:
             self._ingress = False
+            # A graph update waiting for quiescence must observe the stop.
+            self._admission.notify_all()
+
+    def seal_replaced(self) -> None:
+        """Reject every later ``signal()`` for good: a reset replaced this runtime.
+
+        A signal that passed its payload check before the seal but was not
+        admitted yet is rejected too, so it never runs replaced handlers.
+        """
+        with self._admission:
+            self._replaced = True
+            self._ingress = False
+            self._admission.notify_all()
+
+    def pause_ingress(self, token: object) -> bool:
+        """Reject new ``signal()`` calls until ``resume_ingress(token)``; reversible.
+
+        Unlike ``stop_ingress``, nothing else changes: the runtime stays
+        open, queued and running handlers continue, and the cascades and
+        machine events they cause are still accepted. An active graph update
+        pauses ingress before it waits for ``quiescent``.
+
+        Args:
+            token: Identifies the pause; only ``resume_ingress`` with the
+                same token lifts it.
+
+        Returns:
+            ``False`` when ingress was already stopped, cancelled or sealed;
+            nothing is paused then.
+        """
+        with self._admission:
+            if not self._ingress or self._state != _OPEN:
+                return False
+            self._pause_token = token
+
+        return True
+
+    def resume_ingress(self, token: object) -> None:
+        """Accept ``signal()`` calls again after ``pause_ingress(token)``.
+
+        Args:
+            token: The pause to lift; another token's pause is left alone.
+        """
+        with self._admission:
+            if self._pause_token is not token:
+                return
+            self._pause_token = None
+            self._admission.notify_all()
+
+    def wait_quiescent(
+        self, timeout: float, *, interrupted: Callable[[], bool]
+    ) -> bool:
+        """Wait until no accepted event, handler run or callback is in flight.
+
+        Admission stays as it is: a paused or stopped ingress rejects signals
+        while pulse reactions, queued handler entries and cascades are
+        accepted and counted until they returned. The wait ends early when
+        ``interrupted`` returns ``True`` after a lifecycle change woke it.
+
+        Args:
+            timeout: Seconds to wait at most.
+            interrupted: Whether the caller should give up (e.g. the run was
+                stopped or failed meanwhile).
+
+        Returns:
+            ``True`` when nothing is in flight; ``False`` on timeout or
+            interruption.
+        """
+        deadline = time.monotonic() + timeout
+        with self._admission:
+            while self._in_flight and not interrupted():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._admission.wait(remaining)
+            quiescent = self._in_flight == 0
+
+        return quiescent
 
     def drain(self) -> None:
         """Close ingress, wait for every in-flight event, then seal.
@@ -1068,8 +1172,14 @@ class ReactionRuntime:
             error=None if error is None else f"{type(error).__name__}: {error}",
             step=error.step_path if isinstance(error, StepExecutionError) else None,
         )
+        # Results are built only for groups somebody receives; the handler
+        # run, its outcome and its sequence progress either way.
         groups = (
-            self._reactions.groups_of(state.handler.path)
+            [
+                group
+                for group in self._reactions.groups_of(state.handler.path)
+                if self._subscribed is None or self._subscribed(group.name)
+            ]
             if status == "completed" and self._deliver is not None
             else ()
         )
@@ -1201,6 +1311,12 @@ class ReactionRuntime:
             plan=plan,
             input_row_count=result.input_row_count,
             causes=(cause.pulse,) if cause.pulse is not None else (),
+            # The active run's graph, not the handler session's: a handler
+            # result belongs to the generation of the run that delivers it.
+            graph_version=self._graph_version() if self._graph_version else 0,
+            processing_version=(
+                self._processing_version() if self._processing_version else 0
+            ),
         )
 
         return delivered
@@ -1242,5 +1358,24 @@ def session_reactions(session: Any) -> Optional[ReactionRuntime]:
                 observer=getattr(session, "reaction_observer", None),
             )
             _SESSION_RUNTIMES[session] = runtime
+
+    return runtime
+
+
+def forget_session_reactions(session: Any) -> Optional[ReactionRuntime]:
+    """Detach the passive session's reaction runtime; the next use builds one.
+
+    A processing reset of an idle session calls it at its commit: the
+    runtime was built for the old plan, handler sessions and state. The
+    caller closes the returned runtime after the commit.
+
+    Args:
+        session: A passive session.
+
+    Returns:
+        The detached runtime, or ``None`` when none was built.
+    """
+    with _SESSION_RUNTIMES_LOCK:
+        runtime = _SESSION_RUNTIMES.pop(session, None)
 
     return runtime

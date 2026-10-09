@@ -267,16 +267,39 @@ class StageGate:
     """
 
     def __init__(
-        self, name: str, *, aborted: threading.Event, counters: PipelineCounters
+        self,
+        name: str,
+        *,
+        aborted: threading.Event,
+        counters: PipelineCounters,
+        frontiers: Optional[Mapping[str, int]] = None,
     ):
         self.name = name
         self._aborted = aborted
         self._counters = counters
         self._stats = counters.stage(name)
         self._condition = threading.Condition()
-        self._next: Dict[str, int] = {}
+        # Next ordinal per domain; a gate created after a graph update starts
+        # at the domains' frontiers of that update (see ``seed_frontiers``).
+        self._next: Dict[str, int] = dict(frontiers or {})
         self._finished: Dict[str, Set[int]] = {}
         self._busy = False
+
+    def seed_frontiers(self, frontiers: Mapping[str, int]) -> None:
+        """Start every domain this gate has not seen yet at its frontier.
+
+        A graph update calls this while no pulse runs. A domain that already
+        passed through the gate keeps its progress; one that never did (its
+        pulses did not reach this stage yet) starts at the next ordinal the
+        update boundary will admit, so a new stage never waits for ordinals
+        that completed before it existed.
+
+        Args:
+            frontiers: Next ordinal per domain at the update boundary.
+        """
+        with self._condition:
+            for domain, ordinal in frontiers.items():
+                self._next.setdefault(domain, ordinal)
 
     def wait_turn(self, ticket: Ticket) -> None:
         """Wait until every earlier ordinal of the ticket's domain is done here.
@@ -651,6 +674,8 @@ class PipelinedCoordination(Coordination):
         self._abort_cause: Optional[BaseException] = None
         self._lock = threading.Lock()
         self._gates: Dict[str, StageGate] = {}
+        # Frontiers of the last graph update: gates created later start there.
+        self._frontiers: Dict[str, int] = {}
         self._callbacks = threading.RLock()
         self._observer = _serialized_observer(session.observer, lock=self._callbacks)
         self._error_handler = (
@@ -664,10 +689,48 @@ class PipelinedCoordination(Coordination):
         with self._lock:
             gate = self._gates.get(name)
             if gate is None:
-                gate = StageGate(name, aborted=self._aborted, counters=self.counters)
+                gate = StageGate(
+                    name,
+                    aborted=self._aborted,
+                    counters=self.counters,
+                    frontiers=self._frontiers,
+                )
                 self._gates[name] = gate
 
         return gate
+
+    def seed_frontiers(self, frontiers: Mapping[str, int]) -> None:
+        """Start the stages a graph update adds at the domains' current ordinals.
+
+        Called at an active update's boundary, while no pulse runs. Every
+        existing gate keeps the progress of the domains that passed it and
+        adopts the frontier of the ones that never did; every gate created
+        afterwards starts at these frontiers. Without this, a stage first
+        reached by ordinal ``n`` of a domain would wait for ordinals
+        ``0..n-1``, which completed before the stage existed.
+
+        Args:
+            frontiers: Next ordinal per source and operator domain.
+        """
+        with self._lock:
+            self._frontiers = dict(frontiers)
+            gates = list(self._gates.values())
+        for gate in gates:
+            gate.seed_frontiers(frontiers)
+
+    def restart_gates(self, frontiers: Mapping[str, int]) -> None:
+        """Drop every gate: a processing reset's stages start at ``frontiers``.
+
+        Called at a reset's boundary, while no pulse runs. Gates are created
+        again on first use, so no stage keeps the turns of the replaced
+        processing, e.g. of an operator that was removed and added back.
+
+        Args:
+            frontiers: Next ordinal per source and operator domain.
+        """
+        with self._lock:
+            self._frontiers = dict(frontiers)
+            self._gates = {}
 
     def step_stages(
         self, run: "RunState", step: "PlannedStep", *, calls: int

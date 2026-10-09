@@ -73,7 +73,12 @@ STATE_MACHINE_SET_TYPE = "v2/state_machine_set"
 
 SYSTEM_EVENTS: Mapping[str, Event] = MappingProxyType(
     {
-        "started": Event(description="The active run started, before any source."),
+        "started": Event(
+            description=(
+                "The active run started, before any source. Sent once per run, "
+                "also when a processing reset replaces the handlers."
+            )
+        ),
         "ended": Event(
             description="The main pulses finished on end of input or graceful stop."
         ),

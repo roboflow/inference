@@ -60,11 +60,17 @@ class OwnedThreads:
 
         return owned
 
-    def reject_wait(self, action: str) -> None:
+    def reject_wait(
+        self,
+        action: str,
+        *,
+        remedy: str = "Call stop() there and wait from another thread",
+    ) -> None:
         """Raise when the calling thread is owned.
 
         Args:
             action: What would wait, e.g. ``"ActiveRun.wait()"``.
+            remedy: What the caller should do instead; ends the message.
 
         Raises:
             ContractError: When called on an owned thread (a handler, an
@@ -73,8 +79,7 @@ class OwnedThreads:
         if self.owns_current():
             raise ContractError(
                 f"{action} was called from a thread of the same run (a handler, "
-                "observer, block or source); it would wait for itself. Call "
-                "stop() there and wait from another thread"
+                f"observer, block or source); it would wait for itself. {remedy}"
             )
 
 

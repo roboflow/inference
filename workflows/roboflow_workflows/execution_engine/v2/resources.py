@@ -26,6 +26,7 @@ ranked plugin initializers above the caller's unscoped values.
 
 import inspect
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Callable, Dict, Iterable, Literal, Mapping, Optional, Tuple
 
 from roboflow_workflows.execution_engine.v2.errors import (
@@ -113,6 +114,28 @@ class ResolvedResource:
     source: str
 
 
+@dataclass(frozen=True)
+class ResourceChoice:
+    """Where a resource of one step would come from; nothing is created.
+
+    Args:
+        name: Constructor parameter name.
+        source: ``"provided:<key>"``, ``"catalogue:<namespace>.<name>"``,
+            ``"default"``, or ``"missing"`` for a required resource without
+            any value.
+        factory: ``"session"`` or ``"step"`` when the value is a ``Factory``
+            that construction creates; ``None`` for a value passed as is.
+    """
+
+    name: str
+    source: str
+    factory: Optional[FactoryScope] = None
+
+    def describe(self) -> Dict[str, Any]:
+        """Return a JSON-friendly description."""
+        return {"name": self.name, "source": self.source, "factory": self.factory}
+
+
 def read_resource_specs(block_class: type) -> Tuple[ResourceSpec, ...]:
     """Read constructor resources from a block class's ``__init__``.
 
@@ -172,6 +195,101 @@ class ResourceResolver:
             namespace: dict(values) for namespace, values in (providers or {}).items()
         }
         self._session_values: Dict[str, Any] = {}
+
+    def fork(
+        self,
+        *,
+        provided: Optional[Mapping[str, Any]] = None,
+        replacing: Optional[Mapping[str, Any]] = None,
+    ) -> "ResourceResolver":
+        """Return a resolver that starts from this one and never changes it.
+
+        The fork sees the same caller values, providers and session factory
+        values. Values it creates later stay in the fork, so a graph update
+        resolves its new steps in a fork and the session adopts the fork only
+        when the update is applied.
+
+        Args:
+            provided: Additional caller values; their keys must be new.
+            replacing: Values that replace keys in the fork only, applied
+                after ``provided``; a graph update maps the managed-state keys
+                its new steps chose to the session's service.
+
+        Returns:
+            The forked resolver.
+
+        Raises:
+            ContractError: When ``provided`` repeats a key of this resolver.
+        """
+        extra = dict(provided or {})
+        repeated = sorted(key for key in extra if key in self._provided)
+        if repeated:
+            raise ContractError(
+                f"resources {repeated} are already provided to this session; an "
+                "update may add new resource keys only"
+            )
+
+        forked = ResourceResolver(
+            provided={**self._provided, **extra, **dict(replacing or {})},
+            providers=self._providers,
+        )
+        forked._session_values = dict(self._session_values)
+
+        return forked
+
+    @property
+    def provided(self) -> Mapping[str, Any]:
+        """Caller values of this resolver by key, read-only."""
+        return MappingProxyType(self._provided)
+
+    def choices(
+        self, resources: Iterable[ResourceSpec], *, namespace: str
+    ) -> Tuple[ResourceChoice, ...]:
+        """Tell where each resource of one step would come from.
+
+        Uses the precedence of ``resolve`` but creates nothing: a ``Factory``
+        is reported, not called.
+
+        Args:
+            resources: The block's resource declarations.
+            namespace: Catalogue namespace of the block; may be empty.
+
+        Returns:
+            One choice per declaration, in declaration order.
+        """
+        choices = tuple(
+            self.candidate(resource, namespace=namespace)[0] for resource in resources
+        )
+
+        return choices
+
+    def candidate(
+        self, resource: ResourceSpec, *, namespace: str
+    ) -> Tuple[ResourceChoice, Any]:
+        """Tell where one resource would come from, and the value found there.
+
+        Uses the precedence of ``resolve`` but creates nothing: a ``Factory``
+        is returned as it is, not called.
+
+        Args:
+            resource: The block's resource declaration.
+            namespace: Catalogue namespace of the block; may be empty.
+
+        Returns:
+            The choice and its value: the caller's or catalogue's value, the
+            constructor default, or ``None`` for ``missing``.
+        """
+        chosen = next(iter(self._candidates(resource.name, namespace=namespace)), None)
+        if chosen is not None:
+            source, value = chosen
+        elif resource.required:
+            source, value = "missing", None
+        else:
+            source, value = "default", resource.default
+        factory = value.scope if isinstance(value, Factory) else None
+        choice = ResourceChoice(name=resource.name, source=source, factory=factory)
+
+        return choice, value
 
     def resolve(
         self,
