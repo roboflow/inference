@@ -44,6 +44,20 @@ for contributor and maintainer responsibilities.
   decoding.
   The server sets it from `inference.core.env.USE_INFERENCE_MODELS`.
 
+- MQTT Writer v2 (`roboflow_enterprise/mqtt_writer_sink@v2`): v1 plus an optional `fire_and_forget` (default `False`) and outage hardening; v1 is unchanged.
+  - With `fire_and_forget` a run queues the message and returns without waiting for the send or the broker's acknowledgement, and after the first run it never waits for a reconnect, so a disconnected broker no longer stalls each frame by up to `timeout`. If the first connection attempt fails, the client is kept and retries in the background instead of reconnecting synchronously on every frame. Success means queued, not delivered.
+  - While the broker is disconnected a QoS 0 message is dropped and a QoS 1/2 message is queued and sent after reconnect, both reported with `error_status` set; these repeating failures are logged when they start or change and once on recovery, not on every run.
+  - The step declares the `fire_and_forget_hides_persistence_failures` and `connection_and_state_rebuilt_per_request` restrictions when the switch is on (over the HTTP API every request builds a fresh block, so each request is a first run and a message still queued when the request ends is dropped), and reports a selector-driven switch as unknown.
+  - In either mode the block refuses a new publish once 1000 QoS 1/2 messages await acknowledgement or 1000 packets wait to be sent (paho buffers both without limit by default), and reports it as a queue-full error; after a reconnect up to about 2000 packets can be buffered briefly. The limits count messages, not bytes.
+  - The background reconnect backs off exponentially: the first retry waits half of `timeout` (at least 0.1 s), each further one doubles that, up to twice `timeout` (at least 1 s), plus the time each attempt takes, so a tiny `timeout` cannot retry a dead broker in a busy loop.
+  - Selector-supplied `retain`, `fail_fast` and `fire_and_forget` are coerced the way the manifest validates them (for example `"false"` is False; v1 treats any non-empty string as True), and so are `port` and `qos` (for example `"1883.0"`, which v1 rejects); booleans are still rejected as a port or QoS.
+  - While the broker stays unreachable or keeps answering "unavailable", the background reconnect loop logs the first failure as an error and later attempts at debug level until a connection succeeds, instead of an error about once per second.
+  - Closing the block (when a pipeline stops) is bounded even when it races a background reconnect: a connection the broker accepts after the close began is disconnected at once, and the close never waits for acknowledgements or for the broker; messages not yet acknowledged are dropped, though packets already queued may still be sent before the disconnect. A close during an in-flight reconnect first waits for that connection attempt (TCP bounded by `timeout`, a TLS handshake by the 15 s keepalive, DNS by the OS resolver).
+
+### Fixed
+
+- Tracker blocks log the missing-FPS fallback only when creating a tracker for a video, including tensor variants.
+
 ## `0.2.4-post1`
 
 Bundled execution engine: `1.16.1`.
