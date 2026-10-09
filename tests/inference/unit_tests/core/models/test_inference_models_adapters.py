@@ -1202,7 +1202,7 @@ def test_crop_response_uses_the_frame_represented_by_mask(
     )[0]
 
     coordinate_metadata = response.mask_metadata
-    if opt_in and factor != 1.0:
+    if response_format == "rle" and opt_in and factor != 1.0:
         assert coordinate_metadata.height == detections.mask_size[0]
         assert coordinate_metadata.width == detections.mask_size[1]
         assert coordinate_metadata.coordinate_system == "mask_grid"
@@ -1226,10 +1226,8 @@ def test_crop_response_uses_the_frame_represented_by_mask(
         return
 
     prediction = response.predictions[0]
-    scale_x = coordinate_metadata.scale_x if coordinate_metadata else 1.0
-    scale_y = coordinate_metadata.scale_y if coordinate_metadata else 1.0
-    xs = [point.x * scale_x for point in prediction.points]
-    ys = [point.y * scale_y for point in prediction.points]
+    xs = [point.x for point in prediction.points]
+    ys = [point.y for point in prediction.points]
     assert min(xs) == pytest.approx(20 + offset_x)
     assert min(ys) == pytest.approx(10 + offset_y)
     pixel_size = 150 / round(30 * (1 - factor) + 150 * factor)
@@ -1241,7 +1239,10 @@ def test_crop_response_uses_the_frame_represented_by_mask(
 
 @pytest.mark.parametrize("use_dc", [False, True])
 @pytest.mark.parametrize("empty", [False, True])
-def test_deferred_response_preserves_mask_coordinate_metadata(use_dc, empty):
+@pytest.mark.parametrize("response_format", ["polygon", "rle"])
+def test_deferred_response_preserves_coordinate_contract(
+    use_dc, empty, response_format
+):
     adapter = _seg_adapter()
     adapter._pipeline_depth = 2
     count = 0 if empty else 1
@@ -1257,22 +1258,67 @@ def test_deferred_response_preserves_mask_coordinate_metadata(use_dc, empty):
         _make_meta("mask-grid"),
         {
             "masks_resolution_factor": 0.25,
+            "response_mask_format": response_format,
             "source": "workflow-execution" if use_dc else "api",
         },
     )[0]
 
     serialized = (
-        response.to_dict() if use_dc else response.model_dump(exclude_none=True)
+        response.to_dict()
+        if use_dc and response_format == "polygon"
+        else response.model_dump(exclude_none=True)
     )
     assert serialized["image"] == {"width": 10, "height": 20}
-    assert serialized["mask_metadata"] == {
-        "coordinate_system": "mask_grid",
-        "width": 2,
-        "height": 5,
-        "scale_x": 5.0,
-        "scale_y": 4.0,
-    }
+    if response_format == "rle":
+        assert serialized["mask_metadata"] == {
+            "coordinate_system": "mask_grid",
+            "width": 2,
+            "height": 5,
+            "scale_x": 5.0,
+            "scale_y": 4.0,
+        }
+    else:
+        assert "mask_metadata" not in serialized
     assert len(serialized["predictions"]) == count
-    if not empty:
-        assert max(p["x"] for p in serialized["predictions"][0]["points"]) == 1
-        assert max(p["y"] for p in serialized["predictions"][0]["points"]) == 4
+    if not empty and response_format == "polygon":
+        assert max(p["x"] for p in serialized["predictions"][0]["points"]) == 5
+        assert max(p["y"] for p in serialized["predictions"][0]["points"]) == 16
+
+
+@pytest.mark.parametrize("mask_format", ["dense", "rle"])
+def test_opted_in_polygons_share_box_coordinates_on_non_square_image(mask_format):
+    masks = torch.zeros((1, 160, 160), dtype=torch.bool)
+    masks[:, 48:72, 48:72] = True
+    mask = masks
+    if mask_format == "rle":
+        from inference_models.entities import ImageDimensions
+
+        rle = mask_utils.encode(np.asfortranarray(masks[0].numpy().astype(np.uint8)))
+        mask = InstancesRLEMasks(
+            image_size=ImageDimensions(height=800, width=1000),
+            masks=[rle["counts"]],
+            mask_size=(160, 160),
+        )
+    detections = InstanceDetections(
+        xyxy=torch.tensor([[300, 240, 450, 360]], dtype=torch.float32),
+        confidence=torch.tensor([0.9]),
+        class_id=torch.tensor([0]),
+        mask=mask,
+    )
+    metadata = SimpleNamespace(original_size=SimpleNamespace(width=1000, height=800))
+
+    response = _seg_adapter()._build_responses_from_detections(
+        [detections], [metadata], allow_reduced_mask_resolution=True
+    )[0]
+
+    prediction = response.predictions[0]
+    xs = [point.x for point in prediction.points]
+    ys = [point.y for point in prediction.points]
+    assert response.mask_metadata is None
+    assert (min(xs), min(ys), max(xs), max(ys)) == (300, 240, 443.75, 355)
+    converted = sv.Detections.from_inference(response.model_dump(by_alias=True))
+    np.testing.assert_array_equal(converted.xyxy, [[300, 240, 450, 360]])
+    np.testing.assert_allclose(
+        sv.mask_to_xyxy(converted.mask), [[300, 240, 443.75, 355]], atol=1
+    )
+    sv.MaskAnnotator().annotate(np.zeros((800, 1000, 3), dtype=np.uint8), converted)

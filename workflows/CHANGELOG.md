@@ -33,8 +33,9 @@ for contributor and maintainer responsibilities.
 ### Added
 
 - Optional `mask_metadata` on instance-segmentation response DTOs describes the
-  mask grid and coordinate mapping for opted-in HTTP responses. Existing
-  workflow blocks do not opt in and retain their image-space contract.
+  encoded mask grid and coordinate mapping for opted-in RLE HTTP responses.
+  Polygon points and bounding boxes retain image coordinates. Existing workflow
+  blocks do not opt in and retain their image-space contract.
 
 - `ModelsConfiguration.use_inference_models`, defaulting to `True`. Hosts using
   the legacy backend must set it to `False` to retain local legacy decoding.

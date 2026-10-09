@@ -125,7 +125,7 @@ class MaskCoordinateMetadata(BaseModel):
     """Describe the mask grid and its mapping to the response image.
 
     Attributes:
-        coordinate_system (str): Coordinate frame for polygon points and RLE masks.
+        coordinate_system (str): Coordinate frame for encoded RLE masks.
         width (int): Width of the encoded mask grid.
         height (int): Height of the encoded mask grid.
         scale_x (float): Multiply mask x coordinates by this to obtain image x.
@@ -133,7 +133,8 @@ class MaskCoordinateMetadata(BaseModel):
     """
 
     coordinate_system: Literal["mask_grid"] = Field(
-        default="mask_grid", description="Polygon points and RLE masks use this grid."
+        default="mask_grid",
+        description="RLE masks use this grid; polygon points use image coordinates.",
     )
     width: int = Field(gt=0, description="Mask-grid width in pixels.", examples=[160])
     height: int = Field(gt=0, description="Mask-grid height in pixels.", examples=[107])
@@ -162,8 +163,7 @@ class InstanceSegmentationInferenceResponse(
     ]
     mask_metadata: Optional[MaskCoordinateMetadata] = Field(
         default=None,
-        description="Present for opted-in responses whose mask grid differs from "
-        "the image. Polygon points and RLE masks use this grid; bounding boxes "
-        "and image dimensions remain in original-image coordinates. Multiply "
-        "polygon coordinates by scale_x/scale_y to restore image coordinates.",
+        description="Present for opted-in RLE responses whose encoded mask grid "
+        "differs from the image. Describes the RLE grid and its mapping to image "
+        "coordinates. Bounding boxes and polygon points always use image coordinates.",
     )

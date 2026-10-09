@@ -20,8 +20,13 @@ client = InferenceHTTPClient(api_url="http://localhost:9001").configure(
 result = client.infer("image.jpg", model_id="yolov8n-seg-640")
 ```
 
-With the opt-in, polygons and RLE use the same mask grid. When its dimensions
-differ from the response image, `mask_metadata` explicitly describes that grid:
+With the opt-in, contours can be extracted from reduced masks, but polygon
+points and bounding boxes always use the original image's pixel coordinates.
+The server scales contour coordinates before returning polygon predictions;
+callers do not need to transform the points.
+
+RLE responses retain the encoded mask grid. When its dimensions differ from
+the response image, `mask_metadata` explicitly describes that RLE grid:
 
 ```json
 {
@@ -37,37 +42,25 @@ differ from the response image, `mask_metadata` explicitly describes that grid:
 ```
 
 These dimensions illustrate the contract, not an expected result for every
-model or factor. `image` and bounding boxes remain in image coordinates.
-Polygon points are in mask coordinates; RLE `size` is `[height, width]` from
-`mask_metadata`. Multiply polygon x by `scale_x` and y by `scale_y` to recover
-image coordinates. The metadata is omitted when the grids agree, including
-normal accurate-mode responses. Empty predictions still include grid metadata
-when their mask grid differs. Each image in a batch has its own metadata.
+model or factor. RLE `size` is `[height, width]` from `mask_metadata`.
+The scales map positions on the encoded RLE grid to image coordinates.
+Metadata is omitted for polygon responses and for RLE grids matching the
+image. Empty RLE predictions still include metadata when their grid differs.
+Each image in a batch has its own metadata.
 
-Existing Supervision conversion does not consume the new polygon metadata.
-Restore polygon coordinates before passing an opted-in polygon response to
-`sv.Detections.from_inference`:
+Polygon responses can be passed directly to Supervision:
 
 ```python
-from copy import deepcopy
 import supervision as sv
 
-image_result = deepcopy(result)
-metadata = image_result.get("mask_metadata")
-if metadata:
-    for prediction in image_result["predictions"]:
-        for point in prediction.get("points", []):
-            point["x"] *= metadata["scale_x"]
-            point["y"] *= metadata["scale_y"]
-    image_result.pop("mask_metadata")
-detections = sv.Detections.from_inference(image_result)
+detections = sv.Detections.from_inference(result)
 ```
 
 Decode RLE on its declared grid; never replace its `size` with image dimensions
-without resampling the mask. The SDK preserves mask-grid points and RLE during
-client-side image resizing, adjusting bounding boxes and metadata scales to the
-client image. Server-rendered polygon visualizations restore image coordinates
-without changing the returned points.
+without resampling the mask. During client-side image resizing, the SDK scales
+polygon points and bounding boxes together. It preserves encoded RLE data and
+updates its metadata scales to the client image. Server-rendered polygon
+visualizations use the returned points directly.
 
 Direct `inference_models` calls keep their `masks_resolution_factor` interface.
 The legacy model backend retains its existing decode-mode behavior and ignores

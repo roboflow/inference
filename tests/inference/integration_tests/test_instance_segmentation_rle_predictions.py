@@ -1,4 +1,3 @@
-import copy
 import os
 
 import numpy as np
@@ -49,21 +48,13 @@ def test_mask_resolution_round_trip_through_server(
     )
     response.raise_for_status()
     result = response.json()
-    image_space_result = copy.deepcopy(result)
     metadata = result.get("mask_metadata")
-    if opt_in and mode != "accurate":
+    if response_format == "rle" and opt_in and mode != "accurate":
         assert metadata["coordinate_system"] == "mask_grid"
         assert metadata["width"] > 0 and metadata["height"] > 0
-        if response_format == "polygon":
-            for prediction in image_space_result["predictions"]:
-                for point in prediction["points"]:
-                    assert 0 <= point["x"] < metadata["width"]
-                    assert 0 <= point["y"] < metadata["height"]
-                    point["x"] *= metadata["scale_x"]
-                    point["y"] *= metadata["scale_y"]
     else:
         assert metadata is None
-    detections = sv.Detections.from_inference(image_space_result)
+    detections = sv.Detections.from_inference(result)
     height, width = result["image"]["height"], result["image"]["width"]
     assert len(detections) > 0
     assert all(

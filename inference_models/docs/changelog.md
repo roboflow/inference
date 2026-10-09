@@ -24,11 +24,13 @@
 - Server requests using `inference_models` now require
   `allow_reduced_mask_resolution=true` to apply `mask_decode_mode` and
   `tradeoff_factor`. Without this opt-in, masks retain image resolution.
-  Opted-in polygons and RLE masks share the encoded mask grid. When that grid
-  differs from the image, response `mask_metadata` supplies its dimensions and
-  x/y scales to image coordinates; bounding boxes retain image coordinates.
-  The SDK preserves this metadata during client resizing, and server-rendered
-  polygon visualizations still align with the image.
+  Polygon points and bounding boxes always share image coordinates, including
+  when contours are extracted from reduced masks. Opted-in RLE responses retain
+  the encoded mask grid; when it differs from the image, `mask_metadata`
+  supplies its dimensions and x/y scales to image coordinates. The SDK scales
+  polygon points and boxes together during client resizing, while preserving
+  encoded RLE data and updating its metadata. Server visualizations use the
+  returned image-space polygon points directly.
   Direct `inference_models` callers continue to use `masks_resolution_factor`.
   Reduced-grid workflow support is deferred to a separate PR.
 

@@ -693,7 +693,7 @@ def test_filter_model_descriptions_when_input_with_multiple_matches_given() -> N
 
 
 @pytest.mark.parametrize("mask_format", ["polygon", "rle", "empty"])
-def test_client_downsizing_preserves_native_mask_grid(mask_format):
+def test_client_downsizing_preserves_mask_coordinate_contract(mask_format):
     prediction = {
         "image": {"width": 301, "height": 199},
         "mask_metadata": {
@@ -706,7 +706,8 @@ def test_client_downsizing_preserves_native_mask_grid(mask_format):
         "predictions": [{"x": 100, "y": 60, "width": 20, "height": 30}],
     }
     if mask_format == "polygon":
-        prediction["predictions"][0]["points"] = [{"x": 25, "y": 10}]
+        prediction.pop("mask_metadata")
+        prediction["predictions"][0]["points"] = [{"x": 75, "y": 40}]
     elif mask_format == "rle":
         prediction["predictions"][0]["rle"] = {"size": [50, 100], "counts": "fixture"}
     else:
@@ -715,14 +716,18 @@ def test_client_downsizing_preserves_native_mask_grid(mask_format):
     result = adjust_prediction_to_client_scaling_factor(prediction, scaling_factor=0.6)
 
     assert result["image"] == {"width": 502, "height": 332}
-    assert result["mask_metadata"]["width"] == 100
-    assert result["mask_metadata"]["height"] == 50
-    assert result["mask_metadata"]["scale_x"] == pytest.approx(5.02)
-    assert result["mask_metadata"]["scale_y"] == pytest.approx(6.64)
+    if mask_format == "polygon":
+        assert "mask_metadata" not in result
+    else:
+        assert result["mask_metadata"]["width"] == 100
+        assert result["mask_metadata"]["height"] == 50
+        assert result["mask_metadata"]["scale_x"] == pytest.approx(5.02)
+        assert result["mask_metadata"]["scale_y"] == pytest.approx(6.64)
     if mask_format != "empty":
         assert result["predictions"][0]["x"] == pytest.approx(100 / 0.6)
     if mask_format == "polygon":
-        assert result["predictions"][0]["points"] == [{"x": 25, "y": 10}]
+        assert result["predictions"][0]["points"][0]["x"] == pytest.approx(75 / 0.6)
+        assert result["predictions"][0]["points"][0]["y"] == pytest.approx(40 / 0.6)
     if mask_format == "rle":
         assert result["predictions"][0]["rle"] == {
             "size": [50, 100],

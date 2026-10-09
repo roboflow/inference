@@ -1063,14 +1063,14 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 kwargs.get("masks_resolution_factor", 1.0) != 1.0
             )
             mask_metadata = None
-            if native_grid and different_grid:
+            if return_in_rle and native_grid and different_grid:
                 mask_metadata = MaskCoordinateMetadata(
                     height=int(mask_size[0]),
                     width=int(mask_size[1]),
                     scale_x=W / mask_size[1],
                     scale_y=H / mask_size[0],
                 )
-            if not return_in_rle and different_grid and not native_grid:
+            if not return_in_rle and different_grid:
                 polys_or_rles = scale_polygons_to_image(
                     polys_or_rles,
                     mask_size=ImageDimensions(

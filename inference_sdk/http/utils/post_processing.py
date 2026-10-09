@@ -226,13 +226,6 @@ def adjust_prediction_to_client_scaling_factor(
         mask_metadata["scale_y"] = (
             prediction["image"]["height"] / mask_metadata["height"]
         )
-        if not predictions_should_not_be_post_processed(prediction=prediction):
-            prediction["predictions"] = (
-                adjust_object_detection_predictions_to_client_scaling_factor(
-                    predictions=prediction["predictions"], scaling_factor=scaling_factor
-                )
-            )
-        return prediction
 
     if predictions_should_not_be_post_processed(prediction=prediction):
         return prediction
