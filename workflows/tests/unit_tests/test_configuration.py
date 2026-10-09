@@ -67,7 +67,7 @@ def test_configuration_is_frozen_in_every_group() -> None:
         total_fields += len(dataclasses.fields(value))
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(value, dataclasses.fields(value)[0].name, "mutated")
-    assert total_fields == 80, total_fields
+    assert total_fields == 81, total_fields
 
 
 def test_default_configuration_matches_env_pys_empty_environment_defaults() -> None:
@@ -132,6 +132,7 @@ def test_default_configuration_matches_env_pys_empty_environment_defaults() -> N
     assert configuration.fonts.allow_download is True
     assert configuration.fonts.model_cache_dir == "/tmp/cache"
     assert configuration.models.lmm_enabled is False
+    assert configuration.models.use_inference_models is True
     assert configuration.models.clip_version_id == "ViT-B-16"
     assert configuration.models.sam3_exec_mode == "local"
     assert configuration.models.sam3_3d_objects_enabled is False
@@ -460,7 +461,7 @@ def test_environment_facade_exports_every_owned_symbol() -> None:
         for name in vars(workflows_environment)
         if name.isupper() and not name.startswith("_")
     }
-    assert len(exported) == 80, sorted(exported)
+    assert len(exported) == 81, sorted(exported)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_TYPES, list)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_PATTERNS, list)
     assert isinstance(workflows_environment.ENABLE_TENSOR_DATA_REPRESENTATION, bool)
@@ -481,6 +482,9 @@ def test_the_facade_was_bound_from_the_installed_configuration() -> None:
     )
     assert workflows_environment.ENABLE_TENSOR_DATA_REPRESENTATION is (
         _INSTALLED_AT_COLLECTION.tensor.representation_enabled
+    )
+    assert workflows_environment.USE_INFERENCE_MODELS is (
+        _INSTALLED_AT_COLLECTION.models.use_inference_models
     )
 
 

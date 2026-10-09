@@ -226,6 +226,7 @@ class RFDetrForInstanceSegmentationCoreML(
         confidence: Confidence = "default",
         mask_format: InstanceSegmentationMaskFormat = "dense",
         max_detections: Optional[int] = INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS,
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         """Convert raw predictions with the shared RF-DETR post-processing.
@@ -235,6 +236,7 @@ class RFDetrForInstanceSegmentationCoreML(
             pre_processing_meta (list[PreProcessingMetadata]): Per-image transforms.
             confidence (Confidence): Detection threshold or model-default selector.
             mask_format (InstanceSegmentationMaskFormat): ``dense`` masks or ``rle`` encoded masks.
+            masks_resolution_factor (float): Mask-grid interpolation factor in [0, 1].
             max_detections (int, optional): Cap on detections per image, applied before masks are aligned.
             **kwargs: Other shared inference options, ignored here.
 
@@ -274,4 +276,5 @@ class RFDetrForInstanceSegmentationCoreML(
             num_classes=len(self.class_names),
             classes_re_mapping=self._classes_re_mapping,
             max_detections=max_detections,
+            masks_resolution_factor=masks_resolution_factor,
         )

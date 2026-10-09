@@ -246,6 +246,7 @@ class YOLOACTForInstanceSegmentationOnnx(
         max_detections: int = INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS,
         mask_format: InstanceSegmentationMaskFormat = "dense",
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:
@@ -317,12 +318,14 @@ class YOLOACTForInstanceSegmentationOnnx(
                     nms_results=nms_results,
                     all_proto_data=all_proto_data,
                     pre_processing_meta=pre_processing_meta,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
             else:
                 final_results = prepare_rle_masks(
                     nms_results=nms_results,
                     all_proto_data=all_proto_data,
                     pre_processing_meta=pre_processing_meta,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
         if post_process_stream is not None:
             post_process_stream.synchronize()
