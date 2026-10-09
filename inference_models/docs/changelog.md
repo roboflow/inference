@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## `0.39.3`
+
 ### Added
 
 - V-JEPA 2.1 action recognition for Roboflow-trained PyTorch packages. The loader
