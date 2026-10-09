@@ -58,6 +58,7 @@ class StreamsConfiguration:
     disable_native_stderr_capture: bool = False
     restart_attempt_delay: int = 1
     runs_on_jetson: bool = False
+    video_source_allow_cpu_fallback: bool = True
     # runtime / manager
     enable_frame_drop_on_video_file_rate_limiting: bool = False
     enable_tensor_data_representation: bool = False
