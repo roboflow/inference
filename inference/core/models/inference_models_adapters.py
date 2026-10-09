@@ -630,6 +630,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         return 1
 
     def predict(self, img_in, **kwargs):
+        allow_reduced_masks = kwargs.get("allow_reduced_mask_resolution", False)
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         if self._pipeline_depth <= 1:
             # Original path: forward on current frame, postprocess on
@@ -650,6 +651,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_next_pending_gpu_work()
         pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
         fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
+        fut._adapter_allow_reduced_mask_resolution = allow_reduced_masks
         stream_pipeline_context_id = kwargs.get(STREAM_PIPELINE_CONTEXT_ID_KWARG)
         if not isinstance(stream_pipeline_context_id, str):
             stream_pipeline_context_id = None
@@ -859,8 +861,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         fut._meta = preprocess_return_metadata  # type: ignore[attr-defined]
         fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
         detections_list = fut.result()
+        response_kwargs = dict(mapped_kwargs)
+        response_kwargs["allow_reduced_mask_resolution"] = getattr(
+            fut, "_adapter_allow_reduced_mask_resolution", False
+        )
         return self._build_responses_from_detections(
-            detections_list, preprocess_return_metadata, **mapped_kwargs
+            detections_list, preprocess_return_metadata, **response_kwargs
         )
 
     def _postprocess_sync(
@@ -870,13 +876,17 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
         return_in_rle = kwargs.get("response_mask_format") == "rle"
+        allow_reduced_masks = kwargs.get("allow_reduced_mask_resolution", False)
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         mapped_kwargs["defer_count_to_adapter"] = not return_in_rle
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
         )
         return self._build_responses_from_detections(
-            detections_list, preprocess_return_metadata, **kwargs
+            detections_list,
+            preprocess_return_metadata,
+            allow_reduced_mask_resolution=allow_reduced_masks,
+            **kwargs,
         )
 
     def _build_responses_from_detections(
@@ -1065,14 +1075,21 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 kwargs.get("masks_resolution_factor", 1.0) != 1.0
             )
             mask_metadata = None
-            if return_in_rle and native_grid and different_grid:
+            original_image = None
+            output_height, output_width = H, W
+            box_scale_x = box_scale_y = 1.0
+            if native_grid and mask_size is not None:
+                output_height, output_width = int(mask_size[0]), int(mask_size[1])
+                original_image = InferenceResponseImage(width=W, height=H)
+                box_scale_x = output_width / W
+                box_scale_y = output_height / H
                 mask_metadata = MaskCoordinateMetadata(
                     height=int(mask_size[0]),
                     width=int(mask_size[1]),
                     scale_x=W / mask_size[1],
                     scale_y=H / mask_size[0],
                 )
-            if not return_in_rle and different_grid:
+            if not return_in_rle and different_grid and not native_grid:
                 polys_or_rles = scale_polygons_to_image(
                     polys_or_rles,
                     mask_size=ImageDimensions(
@@ -1088,10 +1105,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             for (x1, y1, x2, y2), mask_as_poly_or_rle, conf, class_id in zip(
                 xyxy, polys_or_rles, confs, class_ids
             ):
-                cx = (float(x1) + float(x2)) / 2.0
-                cy = (float(y1) + float(y2)) / 2.0
-                w = float(x2) - float(x1)
-                h = float(y2) - float(y1)
+                cx = (float(x1) + float(x2)) / 2.0 * box_scale_x
+                cy = (float(y1) + float(y2)) / 2.0 * box_scale_y
+                w = (float(x2) - float(x1)) * box_scale_x
+                h = (float(y2) - float(y1)) * box_scale_y
                 class_id_int = int(class_id)
                 class_name = (
                     self.class_names[class_id_int]
@@ -1158,7 +1175,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 responses.append(
                     InstanceSegmentationInferenceResponseDC(
                         predictions=predictions,
-                        image=InferenceResponseImageDC(width=W, height=H),
+                        image=InferenceResponseImageDC(
+                            width=output_width, height=output_height
+                        ),
+                        original_image=original_image,
                         mask_metadata=mask_metadata,
                     )
                 )
@@ -1166,7 +1186,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 responses.append(
                     InstanceSegmentationInferenceResponse(
                         predictions=predictions,
-                        image=InferenceResponseImage(width=W, height=H),
+                        image=InferenceResponseImage(
+                            width=output_width, height=output_height
+                        ),
+                        original_image=original_image,
                         mask_metadata=mask_metadata,
                     )
                 )

@@ -27,13 +27,16 @@
   `allow_reduced_mask_resolution=true` to apply `mask_decode_mode` and
   `tradeoff_factor`. Without this opt-in, masks retain image resolution.
   The legacy backend retains its existing decoding behavior.
-  Polygon extraction uses the selected mask resolution, then scales the returned
-  points to image coordinates so they share the bounding boxes' coordinate frame.
-  Opted-in RLE responses retain the encoded mask grid; when it differs from the
-  image, `mask_metadata` supplies its dimensions and x/y scales to image coordinates.
-  The SDK scales polygon points and boxes together during client resizing, while
-  preserving encoded RLE data and updating its metadata. Server visualizations
-  use the returned image-space polygon points directly.
+  With opt-in, boxes, polygon points and RLE masks all use the selected mask
+  grid, reported in response `image`. `original_image` retains the input dimensions
+  and `mask_metadata` maps all output geometry back to them, including when both
+  grids have the same dimensions. Without opt-in, all outputs use image coordinates.
+  The SDK defaults the flag to `False`; during client downsizing it preserves an
+  opted-in output grid and geometry, updating only original-image dimensions and
+  mapping scales. Server visualizations project geometry onto the original image
+  without mutating returned predictions.
+  The active-learning manager projects a separate copy to image-space polygon
+  annotations before passing it to sampling and registration.
   Direct `inference_models` callers use `masks_resolution_factor` without the HTTP
   opt-in. Reduced-grid workflow support is deferred to a separate PR.
 - RLE export and `InstanceDetections` iteration declare the encoded mask grid in

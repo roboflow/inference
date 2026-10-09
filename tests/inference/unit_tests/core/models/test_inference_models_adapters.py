@@ -1202,7 +1202,7 @@ def test_crop_response_uses_the_frame_represented_by_mask(
     )[0]
 
     coordinate_metadata = response.mask_metadata
-    if response_format == "rle" and opt_in and factor != 1.0:
+    if opt_in:
         assert coordinate_metadata.height == detections.mask_size[0]
         assert coordinate_metadata.width == detections.mask_size[1]
         assert coordinate_metadata.coordinate_system == "mask_grid"
@@ -1210,7 +1210,15 @@ def test_crop_response_uses_the_frame_represented_by_mask(
         assert coordinate_metadata is None
 
     if response_format == "rle":
-        converted = sv.Detections.from_inference(response.model_dump(by_alias=True))
+        serialized = response.model_dump(by_alias=True)
+        if opt_in:
+            assert serialized["image"] == {
+                "width": detections.mask_size[1],
+                "height": detections.mask_size[0],
+            }
+            assert serialized["original_image"] == {"width": 300, "height": 200}
+            serialized["image"] = serialized["original_image"]
+        converted = sv.Detections.from_inference(serialized)
         expected = np.zeros((1, 200, 300), dtype=bool)
         expected[:, 10 + offset_y : 50 + offset_y, 20 + offset_x : 80 + offset_x] = True
         assert converted.mask.shape == expected.shape
@@ -1226,15 +1234,17 @@ def test_crop_response_uses_the_frame_represented_by_mask(
         return
 
     prediction = response.predictions[0]
-    xs = [point.x for point in prediction.points]
-    ys = [point.y for point in prediction.points]
+    scale_x = coordinate_metadata.scale_x if coordinate_metadata else 1.0
+    scale_y = coordinate_metadata.scale_y if coordinate_metadata else 1.0
+    xs = [point.x * scale_x for point in prediction.points]
+    ys = [point.y * scale_y for point in prediction.points]
     assert min(xs) == pytest.approx(20 + offset_x)
     assert min(ys) == pytest.approx(10 + offset_y)
     pixel_size = 150 / round(30 * (1 - factor) + 150 * factor)
     assert max(xs) == pytest.approx(80 + offset_x - pixel_size)
     assert max(ys) == pytest.approx(50 + offset_y - pixel_size)
-    assert prediction.x == pytest.approx(50 + offset_x)
-    assert prediction.y == pytest.approx(30 + offset_y)
+    assert prediction.x * scale_x == pytest.approx(50 + offset_x)
+    assert prediction.y * scale_y == pytest.approx(30 + offset_y)
 
 
 @pytest.mark.parametrize("use_dc", [False, True])
@@ -1268,21 +1278,19 @@ def test_deferred_response_preserves_coordinate_contract(
         if use_dc and response_format == "polygon"
         else response.model_dump(exclude_none=True)
     )
-    assert serialized["image"] == {"width": 10, "height": 20}
-    if response_format == "rle":
-        assert serialized["mask_metadata"] == {
-            "coordinate_system": "mask_grid",
-            "width": 2,
-            "height": 5,
-            "scale_x": 5.0,
-            "scale_y": 4.0,
-        }
-    else:
-        assert "mask_metadata" not in serialized
+    assert serialized["image"] == {"width": 2, "height": 5}
+    assert serialized["original_image"] == {"width": 10, "height": 20}
+    assert serialized["mask_metadata"] == {
+        "coordinate_system": "mask_grid",
+        "width": 2,
+        "height": 5,
+        "scale_x": 5.0,
+        "scale_y": 4.0,
+    }
     assert len(serialized["predictions"]) == count
     if not empty and response_format == "polygon":
-        assert max(p["x"] for p in serialized["predictions"][0]["points"]) == 5
-        assert max(p["y"] for p in serialized["predictions"][0]["points"]) == 16
+        assert max(p["x"] for p in serialized["predictions"][0]["points"]) == 1
+        assert max(p["y"] for p in serialized["predictions"][0]["points"]) == 4
 
 
 @pytest.mark.parametrize("mask_format", ["dense", "rle"])
@@ -1314,11 +1322,148 @@ def test_opted_in_polygons_share_box_coordinates_on_non_square_image(mask_format
     prediction = response.predictions[0]
     xs = [point.x for point in prediction.points]
     ys = [point.y for point in prediction.points]
-    assert response.mask_metadata is None
-    assert (min(xs), min(ys), max(xs), max(ys)) == (300, 240, 443.75, 355)
+    assert response.mask_metadata.scale_x == 6.25
+    assert response.mask_metadata.scale_y == 5.0
+    assert response.image.width == response.image.height == 160
+    assert (min(xs), min(ys), max(xs), max(ys)) == (48, 48, 71, 71)
     converted = sv.Detections.from_inference(response.model_dump(by_alias=True))
-    np.testing.assert_array_equal(converted.xyxy, [[300, 240, 450, 360]])
+    np.testing.assert_array_equal(converted.xyxy, [[48, 48, 72, 72]])
     np.testing.assert_allclose(
-        sv.mask_to_xyxy(converted.mask), [[300, 240, 443.75, 355]], atol=1
+        sv.mask_to_xyxy(converted.mask), [[48, 48, 71, 71]], atol=1
     )
-    sv.MaskAnnotator().annotate(np.zeros((800, 1000, 3), dtype=np.uint8), converted)
+    sv.MaskAnnotator().annotate(np.zeros((160, 160, 3), dtype=np.uint8), converted)
+
+
+@pytest.mark.parametrize("opt_in", [False, True])
+@pytest.mark.parametrize("response_format", ["polygon", "rle"])
+@pytest.mark.parametrize("factor", [0.0, 0.5, 1.0])
+def test_response_geometry_uses_one_grid(opt_in, response_format, factor):
+    from inference_models.entities import ImageDimensions
+    from inference_models.models.common.roboflow.model_packages import StaticCropOffset
+    from inference_models.models.common.roboflow.post_processing import (
+        align_instance_segmentation_results,
+    )
+
+    original_size = ImageDimensions(height=800, width=1000)
+    input_boxes = torch.tensor([[300, 240, 450, 360]], dtype=torch.float32)
+    input_masks = torch.full((1, 160, 160), -1.0)
+    input_masks[:, 48:72, 48:72] = 1.0
+    adapter = _seg_adapter()
+
+    def post_process(predictions, metadata, **kwargs):
+        assert "allow_reduced_mask_resolution" not in kwargs
+        boxes, masks = align_instance_segmentation_results(
+            image_bboxes=input_boxes.clone(),
+            masks=input_masks.clone(),
+            padding=(0, 0, 0, 0),
+            scale_width=1.0,
+            scale_height=1.0,
+            original_size=original_size,
+            size_after_pre_processing=original_size,
+            inference_size=original_size,
+            static_crop_offset=StaticCropOffset(
+                offset_x=0, offset_y=0, crop_width=1000, crop_height=800
+            ),
+            masks_resolution_factor=kwargs["masks_resolution_factor"],
+        )
+        return [
+            InstanceDetections(
+                xyxy=boxes,
+                confidence=torch.tensor([0.9]),
+                class_id=torch.tensor([0]),
+                mask=masks,
+            )
+        ]
+
+    adapter._model = SimpleNamespace(
+        supported_mask_formats=[], post_process=post_process
+    )
+    response = adapter._postprocess_sync(
+        [],
+        [SimpleNamespace(original_size=original_size)],
+        allow_reduced_mask_resolution=opt_in,
+        mask_decode_mode="tradeoff",
+        tradeoff_factor=factor,
+        response_mask_format=response_format,
+    )[0]
+    width = round(160 * (1 - factor) + 1000 * factor) if opt_in else 1000
+    height = round(160 * (1 - factor) + 800 * factor) if opt_in else 800
+    assert response.image.width == width
+    assert response.image.height == height
+    prediction = response.predictions[0]
+    np.testing.assert_allclose(
+        [prediction.x, prediction.y, prediction.width, prediction.height],
+        np.array([375, 300, 150, 120])
+        * [width / 1000, height / 800, width / 1000, height / 800],
+    )
+    if opt_in:
+        assert response.original_image.model_dump() == {"width": 1000, "height": 800}
+        assert response.mask_metadata.scale_x == pytest.approx(1000 / width)
+        assert response.mask_metadata.scale_y == pytest.approx(800 / height)
+    else:
+        assert response.original_image is None and response.mask_metadata is None
+    if response_format == "rle":
+        assert prediction.rle["size"] == [height, width]
+    converted = sv.Detections.from_inference(response.model_dump(by_alias=True))
+    assert converted.mask.shape == (1, height, width)
+    np.testing.assert_allclose(
+        sv.mask_to_xyxy(converted.mask), converted.xyxy, atol=1.1
+    )
+    sv.MaskAnnotator().annotate(np.zeros((height, width, 3), dtype=np.uint8), converted)
+
+
+@pytest.mark.parametrize("response_format", ["polygon", "rle"])
+def test_async_opt_in_survives_factor_one(response_format):
+    adapter = _seg_adapter()
+    adapter._pipeline_depth = 2
+    detections = InstanceDetections(
+        xyxy=torch.tensor([[0, 0, 10, 20]], dtype=torch.float32),
+        confidence=torch.tensor([0.9]),
+        class_id=torch.tensor([0]),
+        mask=torch.ones((1, 20, 10), dtype=torch.bool),
+    )
+    future = SimpleNamespace(result=lambda: [detections])
+    adapter._model = SimpleNamespace(
+        supported_mask_formats=[], forward_async=lambda *args, **kwargs: future
+    )
+    adapter._submit_next_pending_gpu_work = lambda: None
+    adapter._submit_ready_responses = lambda: None
+    returned_future = adapter.predict(
+        torch.zeros((1, 3, 20, 10)),
+        allow_reduced_mask_resolution=True,
+        mask_decode_mode="accurate",
+        response_mask_format=response_format,
+    )
+    from inference_models.models.base.async_handoff import get_adapter_mapped_kwargs
+
+    mapped_kwargs = get_adapter_mapped_kwargs(returned_future)
+    assert "allow_reduced_mask_resolution" not in mapped_kwargs
+    response = adapter._finalize_future(
+        returned_future, _make_meta("accurate"), mapped_kwargs
+    )[0]
+    assert response.original_image.model_dump() == {"width": 10, "height": 20}
+    assert response.mask_metadata.scale_x == response.mask_metadata.scale_y == 1.0
+
+
+def test_native_grid_batch_does_not_mutate_model_boxes():
+    adapter = _seg_adapter()
+    boxes = torch.tensor([[20, 10, 60, 30]], dtype=torch.float32)
+    det = InstanceDetections(
+        xyxy=boxes,
+        confidence=torch.tensor([0.9]),
+        class_id=torch.tensor([0]),
+        mask=torch.ones((1, 10, 20), dtype=torch.bool),
+    )
+    metadata = [
+        SimpleNamespace(original_size=SimpleNamespace(width=100, height=50)),
+        SimpleNamespace(original_size=SimpleNamespace(width=200, height=200)),
+    ]
+    responses = adapter._build_responses_from_detections(
+        [det, det], metadata, allow_reduced_mask_resolution=True
+    )
+    assert [r.predictions[0].x for r in responses] == [8, 4]
+    assert [r.predictions[0].y for r in responses] == [4, 1]
+    assert [r.mask_metadata.scale_x for r in responses] == [5, 10]
+    torch.testing.assert_close(
+        boxes, torch.tensor([[20, 10, 60, 30]], dtype=torch.float32)
+    )

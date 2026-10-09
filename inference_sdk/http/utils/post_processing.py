@@ -208,24 +208,38 @@ def adjust_prediction_to_client_scaling_factor(
 
     Args:
         prediction: The prediction to adjust.
-        scaling_factor: The scaling factor.
+        scaling_factor: The scaling factor applied to the input image.
 
     Returns:
-        The adjusted prediction.
+        Predictions mapped to the client image, or opted-in grid predictions
+        unchanged with their original-image dimensions and mapping updated.
     """
     if scaling_factor is None or prediction.get("is_stub", False):
         return prediction
+    mask_metadata = prediction.get("mask_metadata")
+    original_image = prediction.get("original_image")
+    if (
+        mask_metadata
+        and mask_metadata.get("coordinate_system") == "mask_grid"
+        and original_image is not None
+    ):
+        prediction["original_image"] = {
+            "width": round(original_image["width"] / scaling_factor),
+            "height": round(original_image["height"] / scaling_factor),
+        }
+        mask_metadata["scale_x"] = (
+            prediction["original_image"]["width"] / mask_metadata["width"]
+        )
+        mask_metadata["scale_y"] = (
+            prediction["original_image"]["height"] / mask_metadata["height"]
+        )
+        return prediction
+
     if "image" in prediction:
         prediction["image"] = {
             "width": round(prediction["image"]["width"] / scaling_factor),
             "height": round(prediction["image"]["height"] / scaling_factor),
         }
-    mask_metadata = prediction.get("mask_metadata")
-    if mask_metadata and mask_metadata.get("coordinate_system") == "mask_grid":
-        mask_metadata["scale_x"] = prediction["image"]["width"] / mask_metadata["width"]
-        mask_metadata["scale_y"] = (
-            prediction["image"]["height"] / mask_metadata["height"]
-        )
 
     if predictions_should_not_be_post_processed(prediction=prediction):
         return prediction

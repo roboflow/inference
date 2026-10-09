@@ -1,3 +1,4 @@
+from copy import copy
 from typing import Dict, List, Tuple, Union
 
 import cv2
@@ -32,8 +33,30 @@ def draw_detection_predictions(
     ],
     colors: Dict[str, str],
 ) -> bytes:
+    """Render predictions on the original input image without changing the response.
+
+    Args:
+        inference_request: Request carrying the input image and drawing settings.
+        inference_response: Predictions and optional output-grid mapping.
+        colors: Class names mapped to hexadecimal drawing colors.
+
+    Returns:
+        JPEG bytes with boxes and polygon points projected to the input image.
+    """
     image = load_image_rgb(inference_request.image)
+    mask_metadata = getattr(inference_response, "mask_metadata", None)
     for box in inference_response.predictions:
+        if mask_metadata is not None:
+            box = copy(box)
+            box.x *= mask_metadata.scale_x
+            box.y *= mask_metadata.scale_y
+            box.width *= mask_metadata.scale_x
+            box.height *= mask_metadata.scale_y
+            if hasattr(box, "points"):
+                box.points = [
+                    Point(x=p.x * mask_metadata.scale_x, y=p.y * mask_metadata.scale_y)
+                    for p in box.points
+                ]
         color = tuple(
             int(colors.get(box.class_name, "#4892EA")[i : i + 2], 16) for i in (1, 3, 5)
         )

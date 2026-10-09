@@ -96,6 +96,7 @@ def test_to_api_call_parameters_for_api_v0() -> None:
         "format": "json",
         "labels": True,
         "mask_decode_mode": "fast",
+        "allow_reduced_mask_resolution": False,
         "tradeoff_factor": 0.0,
         "max_detections": 20,
         "overlap": 0.7,
@@ -310,3 +311,15 @@ def test_mask_resolution_opt_in_does_not_leak_to_object_detection():
     )
 
     assert "allow_reduced_mask_resolution" not in parameters
+
+
+@pytest.mark.parametrize("client_mode", [HTTPClientMode.V0, HTTPClientMode.V1])
+def test_mask_resolution_opt_in_defaults_to_false(client_mode):
+    configuration = InferenceConfiguration()
+    assert configuration.allow_reduced_mask_resolution is False
+    assert (
+        configuration.to_api_call_parameters(
+            client_mode=client_mode, task_type=INSTANCE_SEGMENTATION_TASK
+        )["allow_reduced_mask_resolution"]
+        is False
+    )

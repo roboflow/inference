@@ -236,6 +236,7 @@ class InstanceSegmentationInferenceResponseDC:
     visualization: object = None
     resolved_model: Optional[ResolvedModel] = None
     mask_metadata: Optional[MaskCoordinateMetadata] = None
+    original_image: Optional[InferenceResponseImage] = None
     # Internal stream-pipeline fast path: lets workflow execution carry a
     # response future through Model.infer_from_request without blocking the
     # inference thread. `_is_response_dc_to_dict` intentionally ignores it.
@@ -289,6 +290,8 @@ def _is_response_dc_to_dict(r: InstanceSegmentationInferenceResponseDC) -> dict:
         d["visualization"] = r.visualization
     if r.mask_metadata is not None:
         d["mask_metadata"] = r.mask_metadata.model_dump()
+    if r.original_image is not None:
+        d["original_image"] = r.original_image.model_dump()
     if r.resolved_model is not None:
         d["resolved_model"] = r.resolved_model.model_dump()
     return d

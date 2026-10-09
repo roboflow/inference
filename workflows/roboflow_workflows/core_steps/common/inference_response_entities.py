@@ -26,13 +26,15 @@ class InferenceResponseImage(BaseModel):
     """Inference response image information.
 
     Attributes:
-        width (int): The original width of the image used in inference.
-        height (int): The original height of the image used in inference.
+        width (int): The width of the represented image coordinate frame.
+        height (int): The height of the represented image coordinate frame.
     """
 
-    width: int = Field(description="The original width of the image used in inference")
+    width: int = Field(
+        description="The width of the represented image coordinate frame"
+    )
     height: int = Field(
-        description="The original height of the image used in inference"
+        description="The height of the represented image coordinate frame"
     )
 
 
@@ -122,10 +124,10 @@ class WithVisualizationResponse(BaseModel):
 
 
 class MaskCoordinateMetadata(BaseModel):
-    """Describe the mask grid and its mapping to the response image.
+    """Describe the prediction grid and its mapping to the original image.
 
     Attributes:
-        coordinate_system (str): Coordinate frame for encoded RLE masks.
+        coordinate_system (str): Coordinate frame shared by boxes, polygons and encoded RLE masks.
         width (int): Width of the encoded mask grid.
         height (int): Height of the encoded mask grid.
         scale_x (float): Multiply mask x coordinates by this to obtain image x.
@@ -134,15 +136,19 @@ class MaskCoordinateMetadata(BaseModel):
 
     coordinate_system: Literal["mask_grid"] = Field(
         default="mask_grid",
-        description="RLE masks use this grid; polygon points use image coordinates.",
+        description="All prediction geometry uses this grid, matching response image dimensions.",
     )
     width: int = Field(gt=0, description="Mask-grid width in pixels.", examples=[160])
     height: int = Field(gt=0, description="Mask-grid height in pixels.", examples=[107])
     scale_x: float = Field(
-        gt=0, description="Image width divided by mask width.", examples=[4.0]
+        gt=0,
+        description="Original image width divided by output-grid width.",
+        examples=[4.0],
     )
     scale_y: float = Field(
-        gt=0, description="Image height divided by mask height.", examples=[4.0]
+        gt=0,
+        description="Original image height divided by output-grid height.",
+        examples=[4.0],
     )
 
 
@@ -161,9 +167,19 @@ class InstanceSegmentationInferenceResponse(
     predictions: List[
         Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
     ]
+    image: InferenceResponseImage = Field(
+        description="Dimensions of the coordinate frame shared by bounding boxes, "
+        "polygon points and RLE masks. With opt-in this is the selected mask grid; "
+        "otherwise it is the original image.",
+    )
+    original_image: Optional[InferenceResponseImage] = Field(
+        default=None,
+        description="Original image dimensions retained for opted-in responses, "
+        "including when the selected grid has the same dimensions.",
+    )
     mask_metadata: Optional[MaskCoordinateMetadata] = Field(
         default=None,
-        description="Present for opted-in RLE responses whose encoded mask grid "
-        "differs from the image. Describes the RLE grid and its mapping to image "
-        "coordinates. Bounding boxes and polygon points always use image coordinates.",
+        description="Present for opted-in responses in either format. All prediction "
+        "geometry uses this grid. Multiply x coordinates and widths by scale_x, "
+        "and y coordinates and heights by scale_y, to map to original_image.",
     )

@@ -135,8 +135,9 @@ class InferenceConfiguration:
         format: The format for the inference.
         mask_decode_mode: The mask decode mode for the inference.
         tradeoff_factor: The tradeoff factor for the inference.
-        allow_reduced_mask_resolution: Opt into configurable mask grids on the
-            inference_models server backend. Legacy backend behavior is unchanged.
+        allow_reduced_mask_resolution: Return boxes, polygon points and RLE masks
+            on the selected mask grid with inference_models. Defaults to False.
+            Legacy backend behavior is unchanged.
         max_candidates: The maximum number of candidates for the inference.
         max_detections: The maximum number of detections for the inference.
         iou_threshold: The intersection over union threshold for the inference.
@@ -186,7 +187,7 @@ class InferenceConfiguration:
     # Pass "legacy" explicitly to keep the old behaviour silently.
     api_key_transport: Optional[Union[str, ApiKeyTransport]] = None
 
-    allow_reduced_mask_resolution: Optional[bool] = None
+    allow_reduced_mask_resolution: bool = False
 
     def __post_init__(self) -> None:
         # Normalise the transport to the enum so the client can rely on

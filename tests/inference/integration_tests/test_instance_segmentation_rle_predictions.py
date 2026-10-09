@@ -1,5 +1,6 @@
 import os
 
+import cv2
 import numpy as np
 import pytest
 import requests
@@ -49,11 +50,20 @@ def test_mask_resolution_round_trip_through_server(
     response.raise_for_status()
     result = response.json()
     metadata = result.get("mask_metadata")
-    if response_format == "rle" and opt_in and mode != "accurate":
+    if opt_in:
         assert metadata["coordinate_system"] == "mask_grid"
-        assert metadata["width"] > 0 and metadata["height"] > 0
+        assert result["image"] == {
+            "width": metadata["width"],
+            "height": metadata["height"],
+        }
+        assert result["original_image"] == {"width": 720, "height": 1280}
+        assert metadata["scale_x"] == pytest.approx(720 / metadata["width"])
+        assert metadata["scale_y"] == pytest.approx(1280 / metadata["height"])
+        if mode != "accurate":
+            assert metadata["width"] < 720 and metadata["height"] < 1280
     else:
         assert metadata is None
+        assert result.get("original_image") is None
     detections = sv.Detections.from_inference(result)
     height, width = result["image"]["height"], result["image"]["width"]
     assert len(detections) > 0
@@ -75,10 +85,7 @@ def test_mask_resolution_round_trip_through_server(
         mask_height, mask_width = sizes.pop()
         if metadata:
             assert (mask_height, mask_width) == (metadata["height"], metadata["width"])
-        if mode == "accurate" or not opt_in:
-            assert (mask_height, mask_width) == (height, width)
-        else:
-            assert mask_height < height and mask_width < width
+        assert (mask_height, mask_width) == (height, width)
 
     reference_response = requests.post(
         f"{BASE_URL}:{PORT}/infer/instance_segmentation",
@@ -90,10 +97,22 @@ def test_mask_resolution_round_trip_through_server(
     )
     reference_response.raise_for_status()
     reference = sv.Detections.from_inference(reference_response.json())
-    np.testing.assert_allclose(detections.xyxy, reference.xyxy, atol=1)
+    scale_x = metadata["scale_x"] if metadata else 1.0
+    scale_y = metadata["scale_y"] if metadata else 1.0
+    np.testing.assert_allclose(
+        detections.xyxy * [scale_x, scale_y, scale_x, scale_y], reference.xyxy, atol=1
+    )
     np.testing.assert_array_equal(detections.class_id, reference.class_id)
-    intersection = np.logical_and(detections.mask, reference.mask).sum(axis=(1, 2))
-    union = np.logical_or(detections.mask, reference.mask).sum(axis=(1, 2))
+    restored_masks = np.stack(
+        [
+            cv2.resize(
+                mask.astype(np.uint8), (720, 1280), interpolation=cv2.INTER_NEAREST
+            ).astype(bool)
+            for mask in detections.mask
+        ]
+    )
+    intersection = np.logical_and(restored_masks, reference.mask).sum(axis=(1, 2))
+    union = np.logical_or(restored_masks, reference.mask).sum(axis=(1, 2))
     assert np.all(intersection / np.maximum(union, 1) > 0.8)
 
 
