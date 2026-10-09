@@ -24,14 +24,21 @@
 ### Changed
 
 - Direct instance-segmentation model results now return `xyxy` boxes in the same
-  `mask_size` coordinate grid as dense or RLE masks. Scaling happens in
-  `inference_models`, and the HTTP adapter no longer repeats it. Boxes retain
-  fractional coordinates when the grids differ; factor `1.0` is unchanged.
-  Direct consumers of reduced results must interpret `.xyxy` in mask-grid
-  coordinates. `InstanceDetections.to_supervision()` restores both boxes and
-  masks to image coordinates. Manually constructed detections should supply
-  mask-grid boxes, or use `InstanceDetections.from_image_coordinates(...)` with
-  image-space boxes and the original `image_size`.
+  `mask_size` coordinate grid as dense or RLE masks for YOLOv5, YOLOv7, YOLOv8,
+  YOLO26, YOLACT, and RF-DETR. Previously, reduced masks and image-space boxes
+  used different coordinate systems until the HTTP adapter scaled the boxes.
+  Scaling now happens in `inference_models`, using the actual mask-to-image
+  dimension ratios, including static-crop canvases. Boxes use floating-point
+  coordinates when the grids differ; factor `1.0` retains its existing behavior.
+  The HTTP adapter no longer repeats the scaling, preserving the existing
+  opted-in and default HTTP coordinate contracts.
+  **Direct-call compatibility:** callers reading `.xyxy` from reduced results
+  must now interpret those boxes in `mask_size` coordinates. Use
+  `InstanceDetections.to_supervision()` to restore both boxes and masks to
+  original-image coordinates. Manually constructed detections should supply
+  mask-grid boxes and retain `image_size`, or use
+  `InstanceDetections.from_image_coordinates(...)` with image-space boxes and
+  the original `image_size`.
 - Server requests using `inference_models` require
   `allow_reduced_mask_resolution=true` to apply `mask_decode_mode` and
   `tradeoff_factor`. Without this opt-in, masks retain image resolution.
@@ -49,9 +56,9 @@
   Direct `inference_models` callers use `masks_resolution_factor` without the HTTP
   opt-in. Reduced-grid workflow support is deferred to a separate PR.
 - RLE export and `InstanceDetections` iteration declare the encoded mask grid in
-  COCO `size`. `InstanceDetections.to_supervision()` restores boxes and masks to image
-  resolution for annotation; manually constructed reduced dense detections must
-  supply `image_size` because it cannot be inferred from the reduced tensor.
+  COCO `size`. Manually constructed reduced dense detections must supply
+  `image_size` for image-space conversion because it cannot be inferred from the
+  reduced tensor.
 - The RF-DETR fused Triton post-processor supports factor `1.0` only. Other
   factors use the fallback post-processor so the requested resolution is honored.
   Reduced-resolution Triton support and its benchmarking are deferred to a
