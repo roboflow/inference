@@ -4,6 +4,11 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Fixed
+
+- WebRTC sessions await peer/transport cleanup on cancellation and setup failures, finish in-flight inference, and join workflow thread pools before returning. Normal connection closure is no longer logged as fatal.
+- WebRTC worker logs TURN channel binds the relay refuses (403) at debug level instead of asyncio "Task exception was never retrieved" tracebacks.
+
 ## `0.1.0`
 
 ### Added

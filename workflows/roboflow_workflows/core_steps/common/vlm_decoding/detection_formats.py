@@ -50,6 +50,19 @@ XYXY_0_1000_PROMPT_TEMPLATE = (
     "Only use these labels: {class_list}"
 )
 
+# Same wording as `XYXY_0_1000_PROMPT_TEMPLATE` on a 0-999 grid, the
+# convention Mistral documents for its models.
+XYXY_0_999_PROMPT_TEMPLATE = (
+    "Detect all objects in this image. "
+    "Output a JSON list where each entry contains the 2D bounding box "
+    'in the key "box_2d" and the text label in the key "label". '
+    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
+    "top-left and bottom-right corners as integers between 0 and 999, "
+    "normalized to the image width (x) and height (y). "
+    "Return only the JSON list, with no extra text. "
+    "Only use these labels: {class_list}"
+)
+
 YXYX_0_1000_PROMPT_TEMPLATE = (
     "Detect all objects in this image. "
     "Output a JSON list where each entry contains the 2D bounding box "
@@ -82,6 +95,7 @@ NAMED_0_1000_PROMPT_TEMPLATE = (
 
 # Coordinate scales.
 NORMALIZED_0_1000_SCALE = 1000.0
+NORMALIZED_0_999_SCALE = 999.0
 PERCENT_SCALE = 100.0
 
 # Entry shape vocabulary. Models drift between the prompted keys and their
@@ -193,6 +207,24 @@ def _convert_xyxy_0_1000(
     )
     scale_x = image_width / NORMALIZED_0_1000_SCALE
     scale_y = image_height / NORMALIZED_0_1000_SCALE
+    return [x_min * scale_x, y_min * scale_y, x_max * scale_x, y_max * scale_y]
+
+
+def _convert_xyxy_0_999(
+    entry: dict,
+    image_width: int,
+    image_height: int,
+    upload_width: Optional[int],
+    upload_height: Optional[int],
+) -> Optional[List[float]]:
+    box = _read_box_2d(entry)
+    if box is None:
+        return None
+    x_min, y_min, x_max, y_max = (
+        _clamp(value, NORMALIZED_0_999_SCALE) for value in box
+    )
+    scale_x = image_width / NORMALIZED_0_999_SCALE
+    scale_y = image_height / NORMALIZED_0_999_SCALE
     return [x_min * scale_x, y_min * scale_y, x_max * scale_x, y_max * scale_y]
 
 
@@ -365,6 +397,13 @@ DETECTION_BOX_FORMATS: Dict[str, DetectionBoxFormat] = {
         converter=_convert_xyxy_0_1000,
         reads_confidence=False,
     ),
+    "xyxy_0_999": DetectionBoxFormat(
+        name="xyxy_0_999",
+        prompt_template=XYXY_0_999_PROMPT_TEMPLATE,
+        requires_upload_dimensions=False,
+        converter=_convert_xyxy_0_999,
+        reads_confidence=False,
+    ),
     "yxyx_0_1000": DetectionBoxFormat(
         name="yxyx_0_1000",
         prompt_template=YXYX_0_1000_PROMPT_TEMPLATE,
@@ -399,6 +438,7 @@ DETECTION_BOX_FORMATS: Dict[str, DetectionBoxFormat] = {
 BoxFormatName = Literal[
     "xyxy_absolute",
     "xyxy_0_1000",
+    "xyxy_0_999",
     "yxyx_0_1000",
     "xyxy_percent",
     "named_0_1000",
