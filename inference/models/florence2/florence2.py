@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import torch
 from peft import get_peft_model, load_peft_weights, set_peft_model_state_dict
@@ -12,6 +12,35 @@ from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
 
+def _repeated_bos_ban(model: Any, processor: Any) -> Optional[List[List[int]]]:
+    """bad_words_ids banning the <s><s> bigram, or None when the ban cannot apply.
+
+    Florence-2-large-ft predicts another <s> after "</s><s>" with high probability
+    (~0.7 in the base checkpoint, ~0.95 after a short LoRA fine-tune). Microsoft's
+    generation config hides it with no_repeat_ngram_size=3, but predict() turns
+    n-gram blocking off, so decoding loops on <s> until max_new_tokens and the
+    parsed answer is empty. Banning only the <s><s> bigram keeps every other
+    n-gram legal.
+
+    Args:
+        model: The loaded generation model (plain or PEFT-wrapped).
+        processor: The Florence-2 processor whose tokenizer defines <s>.
+
+    Returns:
+        [[bos, bos]], or None when the tokenizer has no BOS token or the decoder
+        starts on BOS (then a forced first <s> would leave no legal token).
+    """
+    bos_token_id = processor.tokenizer.bos_token_id
+    if bos_token_id is None:
+        return None
+    generation_config = getattr(model, "generation_config", None)
+    decoder_start_token_id = getattr(generation_config, "decoder_start_token_id", None)
+    if decoder_start_token_id == bos_token_id:
+        return None
+    ban = [[bos_token_id, bos_token_id]]
+    return ban
+
+
 class Florence2Processing:
     def predict(self, image_in: Image, prompt="", history=None, **kwargs):
         (decoded,) = super().predict(image_in, prompt, history, **kwargs)
@@ -20,6 +49,18 @@ class Florence2Processing:
         )
 
         return (parsed_answer,)
+
+    def prepare_generation_params(
+        self, preprocessed_inputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        generation_params = {
+            "input_ids": preprocessed_inputs["input_ids"],
+            "pixel_values": preprocessed_inputs["pixel_values"],
+        }
+        bad_words_ids = _repeated_bos_ban(self.model, self.processor)
+        if bad_words_ids is not None:
+            generation_params["bad_words_ids"] = bad_words_ids
+        return generation_params
 
 
 class Florence2(Florence2Processing, TransformerModel):
@@ -48,14 +89,6 @@ class Florence2(Florence2Processing, TransformerModel):
                 "Florence2Processor",
             )
         super().initialize_model(**kwargs)
-
-    def prepare_generation_params(
-        self, preprocessed_inputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        return {
-            "input_ids": preprocessed_inputs["input_ids"],
-            "pixel_values": preprocessed_inputs["pixel_values"],
-        }
 
 
 class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
@@ -201,14 +234,6 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
             )
 
         return cache_dir
-
-    def prepare_generation_params(
-        self, preprocessed_inputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        return {
-            "input_ids": preprocessed_inputs["input_ids"],
-            "pixel_values": preprocessed_inputs["pixel_values"],
-        }
 
 
 def normalize_adapter_state_dict(adapter_state: dict) -> dict:
