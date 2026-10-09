@@ -2308,3 +2308,37 @@ def test_workflow_http_routes_propagate_dispatch_depth(monkeypatch, path) -> Non
     assert response.status_code == 200
     parameters = execution_engine.init.call_args.kwargs["init_parameters"]
     assert parameters["workflows_core.inner_workflow_dispatch_depth"] == 2
+
+
+@pytest.mark.parametrize("route", ["v0", "v1"])
+@pytest.mark.parametrize("opt_in", [None, False, True])
+def test_instance_segmentation_routes_forward_mask_resolution_opt_in(
+    monkeypatch, route, opt_in
+) -> None:
+    interface, manager = _build_plain_interface(monkeypatch)
+    manager.get_task_type.return_value = "instance-segmentation"
+    parameters = {"mask_decode_mode": "tradeoff", "tradeoff_factor": 0.25}
+    if opt_in is not None:
+        parameters["allow_reduced_mask_resolution"] = opt_in
+
+    with TestClient(interface.app) as client:
+        if route == "v0":
+            response = client.post(
+                "/model/1",
+                params={**parameters, "image": "https://example.com/image.jpg"},
+            )
+        else:
+            response = client.post(
+                "/infer/instance_segmentation",
+                json={
+                    **parameters,
+                    "model_id": "model/1",
+                    "image": {"type": "url", "value": "https://example.com/image.jpg"},
+                },
+            )
+
+    assert response.status_code == 200, response.text
+    request = manager.infer_from_request_sync.call_args.args[1]
+    assert request.allow_reduced_mask_resolution is (opt_in is True)
+    assert request.mask_decode_mode == "tradeoff"
+    assert request.tradeoff_factor == 0.25
