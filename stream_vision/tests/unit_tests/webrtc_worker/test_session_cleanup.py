@@ -11,7 +11,9 @@ from streamvision.webrtc_worker import webrtc
 from streamvision.webrtc_worker.entities import WebRTCWorkerRequest
 
 
-@pytest.mark.parametrize("ending", ["cancel", "closed", "failed", "setup_error"])
+@pytest.mark.parametrize(
+    "ending", ["cancel", "closed", "failed", "setup_error", "close_error"]
+)
 def test_session_finishes_cleanup_before_returning(monkeypatch, caplog, ending):
     async def run():
         callbacks = {}
@@ -37,6 +39,8 @@ def test_session_finishes_cleanup_before_returning(monkeypatch, caplog, ending):
             # Simulate the transport work still pending after the closed event.
             await asyncio.sleep(0)
             transports_closed.set()
+            if ending == "close_error":
+                raise RuntimeError("close failed")
 
         peer.close = AsyncMock(side_effect=close)
         processor = MagicMock(_received_frames=52, data_channel=None)
@@ -70,7 +74,7 @@ def test_session_finishes_cleanup_before_returning(monkeypatch, caplog, ending):
             if ending == "cancel":
                 asyncio.current_task().cancel("watchdog timeout")
             else:
-                peer.connectionState = ending
+                peer.connectionState = "closed" if ending == "close_error" else ending
                 result = callbacks["connectionstatechange"]()
                 if inspect.isawaitable(result):
                     await result
@@ -96,6 +100,9 @@ def test_session_finishes_cleanup_before_returning(monkeypatch, caplog, ending):
                 await asyncio.wait_for(task, timeout=2)
         elif ending == "setup_error":
             with pytest.raises(ValueError, match="bad offer"):
+                await asyncio.wait_for(task, timeout=2)
+        elif ending == "close_error":
+            with pytest.raises(RuntimeError, match="close failed"):
                 await asyncio.wait_for(task, timeout=2)
         else:
             await asyncio.wait_for(task, timeout=2)

@@ -1484,7 +1484,7 @@ WEBRTC_MODAL_FUNCTION_TIME_LIMIT = int(
 )
 # Separate budget for imports, model downloads and compilation before inputs.
 WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT = int(
-    os.getenv("WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT", "600")
+    os.getenv("WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT", "3600")
 )
 # seconds
 WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT = int(

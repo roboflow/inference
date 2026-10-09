@@ -926,6 +926,9 @@ def _quiet_turn_bind_failures(loop: asyncio.AbstractEventLoop) -> None:
     Args:
         loop: The event loop running the peer connection.
     """
+    previous = loop.get_exception_handler()
+    if getattr(previous, "_quiet_turn_bind_failures", False):
+        return
 
     def handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
         exception = context.get("exception")
@@ -940,8 +943,12 @@ def _quiet_turn_bind_failures(loop: asyncio.AbstractEventLoop) -> None:
                 logger.debug("TURN channel bind refused: %s", exception)
                 return
 
-        loop.default_exception_handler(context)
+        if previous is not None:
+            previous(loop, context)
+        else:
+            loop.default_exception_handler(context)
 
+    handler._quiet_turn_bind_failures = True
     loop.set_exception_handler(handler)
 
 
@@ -1459,17 +1466,19 @@ async def init_rtc_peer_connection_with_loop(
         if processing_tasks:
             await asyncio.gather(*processing_tasks, return_exceptions=True)
         try:
-            # "closed" can be emitted before aiortc finishes closing transports.
-            # Always await close(), even if another task already started it.
-            if peer_connection is not None:
-                await peer_connection.close()
+            try:
+                # "closed" can be emitted before aiortc finishes closing transports.
+                # Always await close(), even if another task already started it.
+                if peer_connection is not None:
+                    await peer_connection.close()
+            finally:
+                if player and player.video:
+                    player.video.stop()
+                if video_processor.track:
+                    video_processor.track.stop()
+                await video_processor.close()
         finally:
-            if player and player.video:
-                player.video.stop()
-            if video_processor.track:
-                video_processor.track.stop()
-            await video_processor.close()
-        await get_webrtc_worker_host().async_push_usage_payloads()
+            await get_webrtc_worker_host().async_push_usage_payloads()
         logger.info("WebRTC peer connection closed")
 
 

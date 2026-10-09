@@ -13,7 +13,8 @@ import pytest
     "worker", ["RTCPeerConnectionModalCPU", "RTCPeerConnectionModalGPU"]
 )
 def test_workflow_imports_survive_cancelled_modal_input(worker):
-    pytest.importorskip("modal")
+    # Repo-root modal/ makes a bare "modal" import succeed without the SDK.
+    pytest.importorskip("modal._partial_function")
     root = Path(__file__).resolve().parents[6]
     result = subprocess.run(
         [

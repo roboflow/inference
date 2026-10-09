@@ -93,3 +93,21 @@ def test_other_loop_exceptions_still_reach_the_default_handler(
         debug.assert_not_called()
     finally:
         loop.close()
+
+
+def test_host_exception_handler_is_kept_and_filter_installed_once():
+    loop = asyncio.new_event_loop()
+    try:
+        received = []
+        loop.set_exception_handler(lambda loop, context: received.append(context))
+        worker_webrtc._quiet_turn_bind_failures(loop)
+        installed = loop.get_exception_handler()
+        worker_webrtc._quiet_turn_bind_failures(loop)
+        context = _context(RuntimeError("boom"), future=loop.create_future())
+
+        loop.call_exception_handler(context)
+
+        assert loop.get_exception_handler() is installed
+        assert received == [context]
+    finally:
+        loop.close()
