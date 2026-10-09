@@ -124,6 +124,7 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
             model_cache_dir=env.MODEL_CACHE_DIR,
         ),
         models=ModelsConfiguration(
+            use_inference_models=env.USE_INFERENCE_MODELS,
             lmm_enabled=env.LMM_ENABLED,
             vlm_segmentation_max_polygon_vertices=env.WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES,
             clip_version_id=env.CLIP_VERSION_ID,

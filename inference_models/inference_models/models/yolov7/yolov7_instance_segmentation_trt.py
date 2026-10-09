@@ -266,6 +266,7 @@ class YOLOv7ForInstanceSegmentationTRT(
         max_detections: int = INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS,
         mask_format: InstanceSegmentationMaskFormat = "dense",
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:
@@ -307,12 +308,14 @@ class YOLOv7ForInstanceSegmentationTRT(
                     nms_results=nms_results,
                     protos=protos,
                     pre_processing_meta=pre_processing_meta,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
             else:
                 final_results = prepare_rle_masks(
                     nms_results=nms_results,
                     protos=protos,
                     pre_processing_meta=pre_processing_meta,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
         self._post_process_stream.synchronize()
         return final_results
