@@ -123,7 +123,6 @@ from inference_models.configuration import (
 )
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
-    action_confidence_mask,
     effective_max_frame_side,
     plan_windows,
 )
@@ -2225,6 +2224,10 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 else None
             )
             if candidates is not None:
+                from inference_models.models.base.action_recognition import (
+                    action_confidence_mask,
+                )
+
                 estimate = self._model.estimate_candidate_count(
                     sum(len(window.frame_indices) for window in windows),
                     class_names=class_filter,
