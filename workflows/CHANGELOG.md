@@ -19,6 +19,8 @@ for contributor and maintainer responsibilities.
 
 ## `0.2.4-post1`
 
+Bundled execution engine: `1.16.1`.
+
 ### Added
 
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-haiku-5-5` model option.
