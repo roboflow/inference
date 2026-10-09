@@ -1,0 +1,161 @@
+"""Load and predict with a real fine-tuned V-JEPA package.
+
+From inference_models/, with CUDA available for the prediction cases:
+
+    VJEPA_ACTION_RECOGNITION_PACKAGE_DIR=/path/to/flat/package \
+    python -m pytest tests/integration_tests/models/test_vjepa2_1_action_recognition_predictions.py -m slow
+
+Without the override, the fixture downloads the synthetic-dataset t23 package.
+Its four-frame, 256-pixel window uses 512 tokens to keep GPU CI memory needs low.
+"""
+
+import json
+import math
+from hashlib import sha256
+from itertools import islice
+from pathlib import Path
+
+import numpy as np
+import pytest
+import supervision as sv
+import torch
+
+from inference_models.models.vjepa2_1.model import VJepaActionRecognition
+
+pytestmark = [pytest.mark.slow, pytest.mark.torch_models]
+
+
+@pytest.fixture(scope="module")
+def loaded_model(vjepa_action_recognition_package):
+    """Load the real export once through the model's normal loader.
+
+    Args:
+        vjepa_action_recognition_package: Directory containing the trained export.
+
+    Returns:
+        Model loaded with the package's real encoder and head weights.
+    """
+    model = VJepaActionRecognition.from_pretrained(
+        model_name_or_path=str(vjepa_action_recognition_package),
+        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    )
+
+    return model
+
+
+def test_real_package_loads_from_export(
+    loaded_model, vjepa_action_recognition_package: Path
+) -> None:
+    config = json.loads(
+        (vjepa_action_recognition_package / "inference_config.json").read_text()
+    )
+    classes = (
+        (vjepa_action_recognition_package / "class_names.txt").read_text().splitlines()
+    )
+
+    assert isinstance(loaded_model, VJepaActionRecognition)
+    assert loaded_model.class_names == classes == config["class_names"]
+    assert loaded_model.video_sampling.max_frames == config["network_input"]["frames"]
+    assert loaded_model.video_sampling.sample_fps == config["network_input"]["fps"]
+    assert (
+        loaded_model.confidence_threshold
+        == config["post_processing"]["confidence_threshold"]
+    )
+
+
+@pytest.mark.gpu_only
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA is required for predictions"
+)
+@pytest.mark.parametrize(
+    "input_kind", ["numpy_full_window", "cuda_tensor_padded_window"]
+)
+def test_real_weights_predict_scored_spans_and_filter_them(
+    loaded_model, input_kind
+) -> None:
+    model = loaded_model
+    count = model.video_sampling.max_frames
+    if input_kind == "cuda_tensor_padded_window":
+        count = max(1, count // 2)
+    frames = []
+    for x in np.linspace(0, 96, num=count, dtype=int):
+        frame = np.zeros((96, 128, 3), dtype=np.uint8)
+        frame[32:64, x : x + 32] = 255
+        if input_kind == "cuda_tensor_padded_window":
+            frame = torch.from_numpy(frame).permute(2, 0, 1).to("cuda")
+        frames.append(frame)
+
+    predictions = model.infer(
+        frames=frames, fps=model.video_sampling.sample_fps, confidence=0
+    )
+
+    assert len(predictions) == count * len(model.class_names)
+    for prediction in predictions:
+        assert prediction.class_name in model.class_names
+        assert prediction.end_exclusive is True
+        assert 0 <= prediction.start_frame_idx < prediction.end_frame_idx <= count
+        assert math.isfinite(prediction.confidence)
+        assert 0 <= prediction.confidence <= 1
+
+    selected_class = model.class_names[0]
+    class_predictions = [p for p in predictions if p.class_name == selected_class]
+    threshold = sorted(p.confidence for p in class_predictions)[
+        len(class_predictions) // 2
+    ]
+    filtered = model.infer(
+        frames=frames,
+        fps=model.video_sampling.sample_fps,
+        confidence=threshold,
+        class_names=[selected_class],
+    )
+
+    assert filtered == [p for p in class_predictions if p.confidence >= threshold]
+    assert filtered
+
+
+@pytest.mark.gpu_only
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA is required for predictions"
+)
+def test_t23_predictions_match_pinned_reference(
+    loaded_model, vjepa_action_recognition_package, vjepa_prediction_video
+) -> None:
+    expected = json.loads(
+        (
+            Path(__file__).parent / "fixtures" / "vjepa2_1_t23_predictions.json"
+        ).read_text()
+    )
+    video_info = sv.VideoInfo.from_video_path(str(vjepa_prediction_video))
+    assert video_info.fps == pytest.approx(expected["sample_fps"])
+    assert loaded_model.video_sampling.max_frames == expected["frame_count"]
+    frames = [
+        np.ascontiguousarray(frame[:, :, ::-1])
+        for frame in islice(
+            sv.get_video_frames_generator(str(vjepa_prediction_video)),
+            expected["frame_count"],
+        )
+    ]
+    assert len(frames) == expected["frame_count"]
+    weights_hash = sha256()
+    with (vjepa_action_recognition_package / "model.safetensors").open("rb") as weights:
+        for block in iter(lambda: weights.read(1024 * 1024), b""):
+            weights_hash.update(block)
+    assert weights_hash.hexdigest() == expected["weights_sha256"]
+
+    predictions = loaded_model.infer(frames=frames, fps=video_info.fps, confidence=0)
+
+    assert len(predictions) == expected["prediction_count"]
+    # Serving uses BF16; the independent reference was captured in FP32.
+    for reference in expected["predictions"]:
+        prediction = predictions[reference["index"]]
+        assert prediction.class_name == reference["class_name"]
+        assert prediction.end_exclusive is True
+        np.testing.assert_allclose(
+            [prediction.start_frame_idx, prediction.end_frame_idx],
+            [reference["start_frame"], reference["end_frame"]],
+            rtol=0,
+            atol=0.5,
+        )
+        assert prediction.confidence == pytest.approx(
+            reference["confidence"], rel=0, abs=0.01
+        )

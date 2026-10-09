@@ -4,6 +4,11 @@
 
 ### Added
 
+- V-JEPA 2.1 action recognition for Roboflow-trained PyTorch packages. The loader
+  validates the saved input settings and uses the trained labels, normalization,
+  and sampling policy. Predictions include frame ranges and confidence scores.
+- `safetensors` as a runtime dependency for loading V-JEPA weights.
+
 - Configurable mask resolution through `masks_resolution_factor` in `[0.0, 1.0]`
   for YOLOv5, YOLOv7, YOLOv8, YOLO26, YOLACT, and RF-DETR instance segmentation.
   Supported implementations forward the factor through dense and RLE
@@ -23,6 +28,12 @@
 
 ### Changed
 
+- Action-recognition models can prepare frames before HTTP or Workflows stores
+  them. V-JEPA resizes full frames to the saved square size without cropping.
+  Cosmos keeps its existing aspect-ratio-preserving resize.
+- V-JEPA supports overlapping windows, an end-aligned final HTTP window, and
+  package or model-eval confidence thresholds. Same-class spans merge after
+  filtering. Invalid frame inputs and request options raise `ModelInputError`.
 - Direct instance-segmentation model results now return `xyxy` boxes in the same
   `mask_size` coordinate grid as dense or RLE masks for YOLOv5, YOLOv7, YOLOv8,
   YOLO26, YOLACT, and RF-DETR. Previously, reduced masks and image-space boxes

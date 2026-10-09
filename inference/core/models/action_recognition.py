@@ -8,6 +8,7 @@ frame number it came from, resolve a class id, and union the result. That is
 this module.
 """
 
+import math
 from typing import Any, List, Optional, Sequence
 
 from inference.core.entities.responses.action_recognition import (
@@ -23,6 +24,10 @@ def merge_window_segments(
     id_vocabulary: Optional[List[str]],
     stride: float,
     class_filter: Optional[List[str]] = None,
+    frame_limit: Optional[int] = None,
+    sample_stride: Optional[float] = None,
+    merge: bool = True,
+    sample_start_frame: Optional[float] = None,
 ) -> None:
     """Union one window's segments into ``timeline``, in place.
 
@@ -30,6 +35,21 @@ def merge_window_segments(
     the order the model saw them. ``class_filter`` drops classes the caller
     did not ask for. Classes outside ``id_vocabulary`` report ``-1``, which is
     what an open-vocabulary answer gets.
+
+    ``sample_start_frame`` anchors continuous spans to the intended sample
+    clock when streaming delivery selects a slightly later source frame.
+
+    Args:
+        timeline (List[ActionRecognitionPrediction]): Timeline updated in place.
+        frame_numbers (Sequence[int]): Selected source indices in sample order.
+        segments (List[Any]): Model spans in sampled-frame coordinates.
+        id_vocabulary (Optional[List[str]]): Model classes used to assign IDs.
+        stride (float): Maximum source-frame gap for merging discrete spans.
+        class_filter (Optional[List[str]]): Classes retained in the timeline.
+        frame_limit (Optional[int]): Exclusive source-frame endpoint.
+        sample_stride (Optional[float]): Source-frame interval for continuous spans.
+        merge (bool): Merge overlapping spans instead of appending each span.
+        sample_start_frame (Optional[float]): Intended origin for continuous spans.
     """
     sample_count = len(frame_numbers)
     if sample_count == 0:
@@ -43,17 +63,50 @@ def merge_window_segments(
         class_name = segment.class_name
         if class_filter is not None and class_name not in class_filter:
             continue
-        start_index = min(sample_count - 1, max(0, int(segment.start_frame_idx)))
-        end_index = min(sample_count - 1, max(0, int(segment.end_frame_idx)))
-        if start_index > end_index:
-            start_index, end_index = end_index, start_index
-        merge_segment(
-            timeline=timeline,
-            segment=ActionRecognitionPrediction(
-                start_frame_idx=frame_numbers[start_index],
-                end_frame_idx=frame_numbers[end_index],
-                class_name=class_name,
-                class_id=class_ids.get(class_name, -1),
-            ),
-            stride=stride,
+        if getattr(segment, "end_exclusive", False):
+            # Neural span heads return continuous, half-open sample coordinates.
+            # The public timeline uses inclusive source-frame indices.
+            step = stride if sample_stride is None else sample_stride
+            origin = (
+                frame_numbers[0] if sample_start_frame is None else sample_start_frame
+            )
+            sample_limit = (
+                sample_count if frame_limit is None else (frame_limit - origin) / step
+            )
+            start = max(0.0, min(float(segment.start_frame_idx), sample_limit))
+            end = max(0.0, min(float(segment.end_frame_idx), sample_limit))
+            limit = (
+                frame_limit
+                if frame_limit is not None
+                else math.ceil(
+                    frame_numbers[-1] + step
+                    if sample_start_frame is None
+                    else origin + sample_count * step
+                )
+            )
+            start_frame = max(math.floor(origin), math.floor(origin + start * step))
+            end_frame = min(limit - 1, math.ceil(origin + end * step) - 1)
+            if end <= start or end_frame < start_frame:
+                continue
+            merge_stride = 1
+        else:
+            start_index = min(sample_count - 1, max(0, int(segment.start_frame_idx)))
+            end_index = min(sample_count - 1, max(0, int(segment.end_frame_idx)))
+            if start_index > end_index:
+                start_index, end_index = end_index, start_index
+            start_frame, end_frame = (
+                frame_numbers[start_index],
+                frame_numbers[end_index],
+            )
+            merge_stride = stride
+        prediction = ActionRecognitionPrediction(
+            start_frame_idx=start_frame,
+            end_frame_idx=end_frame,
+            class_name=class_name,
+            class_id=class_ids.get(class_name, -1),
+            confidence=getattr(segment, "confidence", None),
         )
+        if merge:
+            merge_segment(timeline=timeline, segment=prediction, stride=merge_stride)
+        else:
+            timeline.append(prediction)
