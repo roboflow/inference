@@ -1,24 +1,29 @@
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
-from typing import List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+
+from inference_models.entities import Confidence
 
 
 @dataclass(frozen=True)
 class ActionRecognitionPrediction:
     """One classified frame segment; ranges may overlap."""
 
-    start_frame_idx: int
-    end_frame_idx: int
+    start_frame_idx: Union[int, float]
+    end_frame_idx: Union[int, float]
     class_name: str
+    confidence: Optional[float] = None
+    end_exclusive: bool = False
 
 
 SLIDING_WINDOW_MODE = "sliding_window"
 WHOLE_VIDEO_MODE = "whole_video"
 _MICROSECONDS = 1_000_000
+WINDOW_DURATION_ROUNDING_SECONDS = 0.5 / _MICROSECONDS
 # The frames one sample holds when a model recorded no budget of its own.
 #
 # Nothing bounds an untrained sample otherwise, so a long clip is read whole
@@ -63,6 +68,14 @@ class VideoSampling:
     the model at their own size and rate. Reading a model below what it
     expects costs the detail the answer is made of.
 
+    ``requires_regular_sampling`` rejects incomplete streaming windows when
+    the model requires a regular sample clock. Otherwise, streams retain
+    available frames and map discrete spans through their actual source indices.
+    ``max_sample_lateness_seconds`` allows a later source frame after the
+    requested source index for a regular streaming sample. The block caps
+    this allowance at half a sample interval and retains the intended time
+    separately from the selected source index.
+
     ``max_frames`` is the budget one sample holds, which only a trained model
     has. A fine-tune records it, and a clip longer than the budget is sampled
     below ``sample_fps`` so the frames still span it. It stays ``None`` for a
@@ -78,9 +91,48 @@ class VideoSampling:
     max_frame_side: Optional[int] = None
     mode: str = SLIDING_WINDOW_MODE
     max_frames: Optional[int] = None
+    overlap_frames: int = 0
+    end_aligned: bool = False
+    fixed_sample_fps: bool = False
+    requires_regular_sampling: bool = False
+    max_sample_lateness_seconds: float = 0.0
 
 
 class ActionRecognitionModel(ABC):
+
+    span_semantics = "instances"
+    confidence_threshold = None
+    supports_confidence: bool = False
+    supports_observed_duration: bool = False
+
+    def estimate_candidate_count(
+        self, sampled_frames: int, *, class_names: Optional[List[str]] = None
+    ) -> Optional[int]:
+        """Estimate the maximum unfiltered output count when the model knows it.
+
+        Args:
+            sampled_frames (int): Total sampled frames across all windows.
+            class_names (Optional[List[str]]): Requested class filter.
+
+        Returns:
+            Optional[int]: Upper bound, or None when the model cannot provide one.
+        """
+        return None
+
+    @property
+    def frame_storage_transform(
+        self,
+    ) -> Optional[
+        Callable[[Union[np.ndarray, torch.Tensor]], Union[np.ndarray, torch.Tensor]]
+    ]:
+        """Get the optional model-owned transform used before retaining frames.
+
+        Returns:
+            A transform that prepares RGB uint8 frames for storage, or None
+            to retain the existing max-frame-side policy. The transform must
+            preserve inference pixels when called again on a prepared frame.
+        """
+        return None
 
     @property
     def video_sampling(self) -> VideoSampling:
@@ -108,6 +160,9 @@ class ActionRecognitionModel(ABC):
         frames: List[Union[np.ndarray, torch.Tensor]],
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
+        duration_seconds: Optional[float] = None,
+        check_cancelled: Optional[Callable[[], None]] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         """Classify RGB frames and return segments in their index space.
@@ -115,6 +170,21 @@ class ActionRecognitionModel(ABC):
         Frames are numpy HWC arrays or torch CHW tensors. ``class_names``
         restricts a model's own vocabulary to a subset, and supplies the
         vocabulary for an open-vocabulary model.
+
+        Args:
+            frames (list): Sampled RGB images in temporal order.
+            class_names (Optional[List[str]]): Requested class vocabulary or filter.
+            fps (Optional[float]): Sampling rate represented by the images.
+            confidence (Optional[Confidence]): Threshold, "best", or "default".
+                Models with supports_confidence=False ignore this option.
+            duration_seconds (Optional[float]): Observed window duration before
+                padding. Only models with supports_observed_duration=True use it.
+            check_cancelled (Optional[Callable]): Raises when request work must stop.
+                Models call it at safe boundaries, never inside an active GPU operation.
+            **kwargs: Additional model-specific inference options.
+
+        Returns:
+            List[ActionRecognitionPrediction]: Spans in sampled-frame coordinates.
         """
         pass
 
@@ -123,12 +193,18 @@ class ActionRecognitionModel(ABC):
         frames: List[Union[np.ndarray, torch.Tensor]],
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
+        duration_seconds: Optional[float] = None,
+        check_cancelled: Optional[Callable[[], None]] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         return self.infer(
             frames=frames,
             class_names=class_names,
             fps=fps,
+            confidence=confidence,
+            duration_seconds=duration_seconds,
+            check_cancelled=check_cancelled,
             **kwargs,
         )
 
@@ -144,6 +220,7 @@ class WindowSpec:
 
     frame_indices: Tuple[int, ...]
     sample_fps: float
+    duration_seconds: Optional[float] = None
 
 
 def plan_windows(
@@ -166,6 +243,30 @@ def plan_windows(
     window_us = _window_span_us(sampling=sampling)
     if window_us is None or duration_us <= window_us:
         return [_plan_interval(0, duration_us, frame_count, source_fps, sampling)]
+    if sampling.overlap_frames or sampling.end_aligned:
+        stride_us = window_us - round(
+            sampling.overlap_frames / sampling.sample_fps * _MICROSECONDS
+        )
+        if sampling.overlap_frames < 0 or stride_us <= 0:
+            raise ValueError(
+                "Window overlap must be nonnegative and shorter than the window"
+            )
+        last_start = duration_us - window_us
+        starts = list(range(0, last_start + 1, stride_us))
+        if sampling.end_aligned and starts[-1] != last_start:
+            starts.append(last_start)
+        elif not sampling.end_aligned and starts[-1] + window_us < duration_us:
+            starts.append(starts[-1] + stride_us)
+        return [
+            _plan_interval(
+                start,
+                min(start + window_us, duration_us),
+                frame_count,
+                source_fps,
+                sampling,
+            )
+            for start in starts
+        ]
     whole_windows = duration_us // window_us
     windows = [
         _plan_interval(
@@ -284,12 +385,24 @@ def _plan_interval(
                 sampling.max_frames, int(round(duration_seconds * sampling.sample_fps))
             ),
         )
-        step_us = span_us / count
+        step_us = (
+            _MICROSECONDS / sampling.sample_fps
+            if sampling.fixed_sample_fps
+            else span_us / count
+        )
         indices = tuple(
             min(last_frame, _frame_at_or_after(start_us + index * step_us, source_fps))
             for index in range(count)
         )
-        return WindowSpec(frame_indices=indices, sample_fps=count / duration_seconds)
+        return WindowSpec(
+            frame_indices=indices,
+            sample_fps=(
+                sampling.sample_fps
+                if sampling.fixed_sample_fps
+                else count / duration_seconds
+            ),
+            duration_seconds=duration_seconds if sampling.fixed_sample_fps else None,
+        )
     effective_fps = min(sampling.sample_fps, source_fps)
     count = max(floor, int(round(duration_seconds * effective_fps)))
     step_us = _MICROSECONDS / effective_fps
@@ -352,25 +465,29 @@ def merge_segment(timeline: list, segment, stride: float) -> None:
             segment=segment,
             start_frame_idx=start_frame_idx,
             end_frame_idx=end_frame_idx,
+            confidence=max(
+                (
+                    value
+                    for entry in [segment, *matching]
+                    if (value := getattr(entry, "confidence", None)) is not None
+                ),
+                default=None,
+            ),
         )
     )
 
 
-def _widened(segment, start_frame_idx: int, end_frame_idx: int):
+def _widened(segment, start_frame_idx: int, end_frame_idx: int, confidence=None):
     """A copy of ``segment`` covering the wider range.
 
     Timeline entries are frozen dataclasses on the model side and pydantic
     models on the response side, so the copy uses whichever protocol the entry
     offers rather than assuming one.
     """
+    updates = {"start_frame_idx": start_frame_idx, "end_frame_idx": end_frame_idx}
+    if confidence is not None:
+        updates["confidence"] = confidence
     model_copy = getattr(segment, "model_copy", None)
     if callable(model_copy):
-        return model_copy(
-            update={
-                "start_frame_idx": start_frame_idx,
-                "end_frame_idx": end_frame_idx,
-            }
-        )
-    return replace(
-        segment, start_frame_idx=start_frame_idx, end_frame_idx=end_frame_idx
-    )
+        return model_copy(update=updates)
+    return replace(segment, **updates)

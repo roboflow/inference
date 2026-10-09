@@ -94,6 +94,8 @@ class _FakeActionRecognitionModel(ActionRecognitionModel):
                 "frames": recorded_frames,
                 "class_names": (list(class_names) if class_names is not None else None),
                 "fps": fps,
+                "duration_seconds": kwargs.get("duration_seconds"),
+                "confidence": kwargs.get("confidence"),
             }
         )
         if not self.responses:
@@ -194,6 +196,8 @@ def _run(
     stride_seconds=0.5,
     sample_fps=2.0,
     min_frames=1,
+    requires_regular_sampling=False,
+    max_sample_lateness_seconds=0.0,
 ):
     # The temporal contract travels with the model.
     if block._model is not None:
@@ -201,6 +205,8 @@ def _run(
             window_seconds=window_seconds,
             sample_fps=sample_fps,
             min_frames=min_frames,
+            requires_regular_sampling=requires_regular_sampling,
+            max_sample_lateness_seconds=max_sample_lateness_seconds,
         )
     return block.run(
         images=[frame],
@@ -615,7 +621,8 @@ def test_fractional_sampling_stride_keeps_the_true_sample_rate():
         )
 
     sampled_numbers = [
-        number for number, _ in block._video_bookkeeping["stream-0"].sampled
+        sample.source_frame_number
+        for sample in block._video_bookkeeping["stream-0"].sampled
     ]
     assert sampled_numbers == [0, 8, 15, 23, 30]
 
@@ -632,7 +639,7 @@ def test_sample_fps_is_capped_at_source_fps():
     assert len(model.calls[1]["frames"]) == 2
 
 
-def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
+def test_dropped_frame_gap_rejects_window_and_recovers_after_gap_expires():
     block, model = _make_block(
         responses=[
             [_model_segment("walk")],
@@ -640,13 +647,14 @@ def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
         ]
     )
 
-    _run(block, _make_frame(10))
-    _run(block, _make_frame(12))
+    _run(block, _make_frame(10), requires_regular_sampling=True)
+    _run(block, _make_frame(12), requires_regular_sampling=True)
     calls_before_gap = len(model.calls)
-    result = _run(block, _make_frame(100))
+    result = _run(block, _make_frame(100), requires_regular_sampling=True)
 
-    assert len(model.calls) == calls_before_gap + 1
-    assert len(model.calls[-1]["frames"]) == 1
+    assert len(model.calls) == calls_before_gap
+    assert "Missing required samples" in result["error_status"]
+    assert "98" in result["error_status"]
     assert _timeline_as_dicts(result) == [
         {
             "start_frame_idx": 10,
@@ -654,13 +662,180 @@ def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
             "class_name": "walk",
             "class_id": -1,
         },
-        {
-            "start_frame_idx": 100,
-            "end_frame_idx": 100,
-            "class_name": "run",
-            "class_id": -1,
-        },
     ]
+    _run(block, _make_frame(101), requires_regular_sampling=True)
+    result = _run(block, _make_frame(102), requires_regular_sampling=True)
+    assert not result["error_status"]
+    assert len(model.calls) == calls_before_gap + 1
+    assert result["timeline"][-1].start_frame_idx == 100
+
+
+@pytest.mark.parametrize("requires_regular_sampling", [False, True])
+def test_processing_paced_gap_follows_declared_sampling_policy(
+    requires_regular_sampling,
+):
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=4,
+        sample_fps=4,
+        min_frames=1,
+        max_frames=16,
+        requires_regular_sampling=requires_regular_sampling,
+    )
+    outputs = []
+    for number in [0, 8, 15, 23, 90, 98, 105, 113, 120]:
+        outputs.extend(
+            block.run(
+                images=[_make_frame(number, fps=30)],
+                model_id="cosmos-3-edge",
+                stride_seconds=4,
+            )
+        )
+
+    if requires_regular_sampling:
+        assert model.calls == []
+        assert "source-frame indices 30, 38, 45" in outputs[-1]["error_status"]
+        assert "window 7-120" in outputs[-1]["error_status"]
+    else:
+        assert len(model.calls) == 1
+        assert not outputs[-1]["error_status"]
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize("delivery_stride", [1, 2])
+def test_cosmos_fps_limited_stream_preserves_calls_and_source_indices(
+    tensor, delivery_stride
+):
+    block, model = _make_block(
+        responses=[[_model_segment("walk")] for _ in range(4)],
+        tensor=tensor,
+    )
+    for number in range(0, 64 * 30 + 1, delivery_stride):
+        result = block.run(
+            images=[
+                _make_frame(
+                    number,
+                    fps=30,
+                    tensor_rgb_color=[20, 10, number % 255] if tensor else None,
+                )
+            ],
+            model_id="cosmos-3-edge",
+        )[0]
+
+    assert len(model.calls) == 4
+    assert not result["error_status"]
+    first_sample = 8
+    assert result["timeline"][0].start_frame_idx == first_sample
+    assert result["timeline"][0].end_frame_idx == first_sample
+    first_pixels = model.calls[0]["frames"][0]
+    if tensor:
+        assert first_pixels[2, 0, 0] == first_sample
+    else:
+        assert first_pixels[0, 0, 2] == first_sample
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize("delivery", ["one_frame_late", "fps_limited"])
+def test_regular_sampling_accepts_late_frames_without_shifting_spans(tensor, delivery):
+    segment = ModelActionRecognitionPrediction(
+        class_name="walk",
+        start_frame_idx=1,
+        end_frame_idx=2,
+        confidence=0.9,
+        end_exclusive=True,
+    )
+    block, model = _make_block(responses=[[segment]], tensor=tensor)
+    model.supports_observed_duration = True
+    model.video_sampling = VideoSampling(
+        window_seconds=4,
+        sample_fps=4,
+        min_frames=1,
+        max_frames=16,
+        requires_regular_sampling=True,
+        max_sample_lateness_seconds=0.05,
+    )
+    numbers = (
+        [number for number in range(121) if number != 15]
+        if delivery == "one_frame_late"
+        else range(0, 121, 2)
+    )
+    for number in numbers:
+        result = block.run(
+            images=[
+                _make_frame(
+                    number,
+                    fps=30,
+                    tensor_rgb_color=[20, 10, number] if tensor else None,
+                )
+            ],
+            model_id="cosmos-3-edge",
+        )[0]
+
+    samples = block._video_bookkeeping["stream-0"].sampled
+    assert len(model.calls) == 1
+    assert not result["error_status"]
+    assert [sample.intended_frame_number for sample in samples] == [
+        7.5 * index for index in range(1, 17)
+    ]
+    assert samples[1].source_frame_number == 16
+    assert len({sample.source_frame_number for sample in samples}) == len(samples)
+    assert model.calls[0]["fps"] == 4
+    assert model.calls[0]["duration_seconds"] == pytest.approx((121 - 7.5) / 30)
+    assert result["timeline"][0].start_frame_idx == 15
+    assert result["timeline"][0].end_frame_idx == 22
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+def test_regular_sampling_large_gap_skips_window_and_recovers(tensor):
+    block, model = _make_block(tensor=tensor)
+    model.video_sampling = VideoSampling(
+        window_seconds=4,
+        sample_fps=4,
+        min_frames=1,
+        max_frames=16,
+        requires_regular_sampling=True,
+        max_sample_lateness_seconds=0.05,
+    )
+    numbers = [0, 8, 15, 23, 90, *range(92, 241, 2)]
+    for number in numbers:
+        result = block.run(
+            images=[_make_frame(number, fps=30)],
+            model_id="cosmos-3-edge",
+        )[0]
+        if number == 120:
+            assert model.calls == []
+            assert "source-frame indices 30, 38, 45" in result["error_status"]
+            assert "Inference skipped this window." in result["error_status"]
+
+    assert len(model.calls) == 1
+    assert not result["error_status"]
+
+
+@pytest.mark.parametrize(
+    "source_fps,sample_fps,late_frames,accepted",
+    [(20, 4, 1, True), (20, 4, 2, False), (1000, 100, 5, True), (1000, 100, 6, False)],
+)
+def test_regular_sampling_enforces_lateness_and_half_interval_cap(
+    source_fps, sample_fps, late_frames, accepted
+):
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=1,
+        sample_fps=sample_fps,
+        min_frames=1,
+        requires_regular_sampling=True,
+        max_sample_lateness_seconds=0.05,
+    )
+    next_sample = int(source_fps / sample_fps)
+    for number in [0, next_sample + late_frames]:
+        block.run(
+            images=[_make_frame(number, fps=source_fps)],
+            model_id="cosmos-3-edge",
+        )
+
+    samples = block._video_bookkeeping["stream-0"].sampled
+    assert samples[1].intended_frame_number == next_sample
+    assert (samples[1].frame is not None) == accepted
 
 
 def test_merges_same_class_across_windows_when_gap_is_at_most_stride():
@@ -1162,6 +1337,63 @@ def test_an_untrained_model_still_caps_at_the_source_rate() -> None:
     assert len(model.calls[-1]["frames"]) == 4
 
 
+@pytest.mark.parametrize("source_fps", [29.97, 59.94, 1.2])
+def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=4.0, sample_fps=4.0, min_frames=1, max_frames=16
+    )
+    model.span_semantics = "instances"
+    model.supports_observed_duration = True
+    source_window_frames = round(4.0 * source_fps)
+
+    for frame_number in range(3 * source_window_frames + 1):
+        result = block.run(
+            images=[_make_frame(frame_number, fps=source_fps)],
+            model_id="cosmos-3-edge",
+            stride_seconds=(source_window_frames - 1) / source_fps,
+        )
+        assert not result[0]["error_status"]
+
+    assert any(len(call["frames"]) == 16 for call in model.calls)
+    assert all(1 <= len(call["frames"]) <= 16 for call in model.calls)
+    assert all(0 < call["duration_seconds"] <= 4.0 for call in model.calls)
+
+
+@pytest.mark.parametrize("supports_confidence", [False, True])
+def test_confidence_option_uses_declared_capability(supports_confidence):
+    block, model = _make_block()
+    model.supports_confidence = supports_confidence
+    model.video_sampling = VideoSampling(window_seconds=1, sample_fps=4, min_frames=1)
+
+    for frame_number in range(5):
+        block.run(
+            images=[_make_frame(frame_number)],
+            model_id="cosmos-3-edge",
+            confidence=0.7,
+        )
+
+    assert model.calls[-1]["confidence"] == (0.7 if supports_confidence else None)
+
+
+def test_unscored_streaming_model_ignores_confidence() -> None:
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=1.0, sample_fps=2.0, min_frames=1
+    )
+
+    for frame_number in range(3):
+        result = block.run(
+            images=[_make_frame(frame_number, fps=2.0)],
+            model_id="cosmos-3-edge",
+            confidence=0.4,
+        )
+        assert not result[0]["error_status"]
+
+    assert model.calls
+    assert all(call["confidence"] is None for call in model.calls)
+
+
 def _timeline_entry(
     start_frame_idx: int,
     end_frame_idx: int,
@@ -1245,16 +1477,33 @@ def test_buffered_frames_are_capped_to_the_trained_side():
         assert max(frame.shape[:2]) <= 8
 
 
-def test_a_model_declaring_no_side_keeps_frames_whole():
-    block, model = _make_block(responses=[[_model_segment("walk")]])
+@pytest.mark.parametrize("prepare_frames", [False, True])
+@pytest.mark.parametrize("tensor", [False, True])
+def test_a_model_declaring_no_side_keeps_frames_whole(
+    monkeypatch, prepare_frames, tensor
+):
+    block, model = _make_block(responses=[[_model_segment("walk")]], tensor=tensor)
+    transform = MagicMock(return_value=np.zeros((1, 1, 3), dtype=np.uint8))
+    if prepare_frames:
+        monkeypatch.setattr(
+            _FakeActionRecognitionModel,
+            "frame_storage_transform",
+            property(lambda self: transform),
+        )
 
-    _run(block, _make_frame(0))
-    _run(block, _make_frame(2))
+    _run(block, _make_frame(0, tensor_rgb_color=[20, 10, 0] if tensor else None))
+    stored = block._video_bookkeeping["stream-0"].sampled[0].frame
+    if prepare_frames:
+        assert stored.shape == (1, 1, 3)
+        assert stored.dtype == np.uint8
+    _run(block, _make_frame(2, tensor_rgb_color=[20, 10, 2] if tensor else None))
 
     assert len(model.calls) == 1
     original = _make_frame(0).numpy_image.shape[:2]
     for frame in model.calls[0]["frames"]:
-        assert frame.shape[:2] == original
+        shape = frame.shape[1:] if isinstance(frame, torch.Tensor) else frame.shape[:2]
+        assert shape == ((1, 1) if prepare_frames else original)
+    assert transform.call_count == (2 if prepare_frames else 0)
 
 
 def test_the_block_cap_matches_the_model_cap():
