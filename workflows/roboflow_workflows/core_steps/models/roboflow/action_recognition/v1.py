@@ -427,7 +427,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 and frame_number < bookkeeping.last_frame_number
             )
         ):
-            bookkeeping = _ActionRecognitionBookkeeping(signature=signature)
+            bookkeeping = self._create_bookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
             while len(self._video_bookkeeping) > MAX_TRACKED_VIDEOS:
                 evicted_video_id, _ = self._video_bookkeeping.popitem(last=False)
@@ -509,7 +509,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
 
         bookkeeping.last_frame_number = frame_number
-        return self._build_output(bookkeeping=bookkeeping, error_status=error_status)
+        return self._build_output(
+            image=image, bookkeeping=bookkeeping, error_status=error_status
+        )
+
+    @staticmethod
+    def _create_bookkeeping(signature: Tuple[Tuple[str, ...], float, float]):
+        return _ActionRecognitionBookkeeping(signature=signature)
 
     def _resolve_source_fps(
         self,
@@ -681,6 +687,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def _build_output(
         self,
+        image: WorkflowImageData,
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
     ) -> dict:

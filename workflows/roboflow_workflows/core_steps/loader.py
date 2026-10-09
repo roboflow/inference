@@ -902,9 +902,15 @@ if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
         ActionRecognitionModelBlockV1,
     )
+    from roboflow_workflows.core_steps.models.roboflow.action_recognition.v2 import (
+        ActionRecognitionModelBlockV2,
+    )
 else:
     from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
         ActionRecognitionModelBlockV1,
+    )
+    from roboflow_workflows.core_steps.models.roboflow.action_recognition.v2_tensor import (
+        ActionRecognitionModelBlockV2,
     )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
@@ -1418,6 +1424,9 @@ else:
         RichLabelVisualizationBlockV1,
     )
 
+from roboflow_workflows.core_steps.visualizations.action_recognition.v1 import (
+    ActionRecognitionVisualizationBlockV1,
+)
 from roboflow_workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
 )
@@ -1830,6 +1839,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TrackClassLockBlockV1,
         TriangleVisualizationBlockV1,
         TextDisplayVisualizationBlockV1,
+        ActionRecognitionVisualizationBlockV1,
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
@@ -1862,6 +1872,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowMultiLabelClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV3,
         ActionRecognitionModelBlockV1,
+        ActionRecognitionModelBlockV2,
         RoboflowObjectDetectionModelBlockV2,
         RoboflowObjectDetectionModelBlockV3,
         VLMAsClassifierBlockV2,
