@@ -143,6 +143,7 @@ def _expected_result(
     threshold,
     classes_re_mapping,
     num_classes: int = 2,
+    masks_resolution_factor: float = 1.0,
 ):
     return _post_process_single_instance_segmentation_result_to_rle_masks(
         image_bboxes=bboxes,
@@ -152,6 +153,7 @@ def _expected_result(
         threshold=threshold,
         num_classes=num_classes,
         classes_re_mapping=classes_re_mapping,
+        masks_resolution_factor=masks_resolution_factor,
     )
 
 
@@ -388,10 +390,12 @@ def test_rfdetr_triton_postproc_accepts_2xlarge_shape_limits(monkeypatch) -> Non
     assert reason == "cuda_device_required"
 
 
+@pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
 @pytest.mark.parametrize("case", ["no_class_mapping", "tensor_threshold", "padding"])
 def test_rfdetr_triton_postproc_unsupported_cases_use_reference_path(
     monkeypatch,
     case: str,
+    factor: float,
 ) -> None:
     monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_ENABLED", True)
     calls = 0
@@ -415,7 +419,6 @@ def test_rfdetr_triton_postproc_unsupported_cases_use_reference_path(
     metadata = _metadata()
     threshold = 0.4
     classes_re_mapping = _class_mapping(device)
-    extra_kwargs = {}
     if case == "no_class_mapping":
         classes_re_mapping = None
     elif case == "tensor_threshold":
@@ -430,6 +433,7 @@ def test_rfdetr_triton_postproc_unsupported_cases_use_reference_path(
         metadata=metadata,
         threshold=threshold,
         classes_re_mapping=classes_re_mapping,
+        masks_resolution_factor=factor,
     )
     actual = post_process_instance_segmentation_results_to_rle_masks(
         bboxes=bboxes.unsqueeze(0),
@@ -439,7 +443,7 @@ def test_rfdetr_triton_postproc_unsupported_cases_use_reference_path(
         threshold=threshold,
         num_classes=2,
         classes_re_mapping=classes_re_mapping,
-        **extra_kwargs,
+        masks_resolution_factor=factor,
     )[0]
 
     assert calls == 1
@@ -838,7 +842,9 @@ def test_triton_downsampling_uses_the_reference_antialias_path(
 )
 @pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
 @pytest.mark.parametrize("image_size", [(64, 64), (63, 95)])
-@pytest.mark.parametrize("mode", ["single", "multiclass", "deferred", "empty"])
+@pytest.mark.parametrize(
+    "mode", ["single", "multiclass", "deferred", "empty", "deferred_empty"]
+)
 def test_triton_mask_grid_matches_reference_on_cuda(factor, image_size, mode) -> None:
     from inference_models.models.base.async_handoff import (
         get_deferred_postprocess_finalizer,
@@ -855,7 +861,7 @@ def test_triton_mask_grid_matches_reference_on_cuda(factor, image_size, mode) ->
     if mode in ("multiclass", "deferred"):
         logits[0, 1] = 3.0
         logits[1, 0] = 2.0
-    elif mode == "empty":
+    elif mode in ("empty", "deferred_empty"):
         logits.fill_(-4.0)
     scores = logits.sigmoid().T.contiguous().T
     metadata = _metadata(height=image_size[0], width=image_size[1])
@@ -882,11 +888,11 @@ def test_triton_mask_grid_matches_reference_on_cuda(factor, image_size, mode) ->
             threshold=0.4,
             classes_re_mapping=mapping,
             masks_resolution_factor=factor,
-            defer_postprocess_sync=mode == "deferred",
+            defer_postprocess_sync=mode.startswith("deferred"),
             max_detections=100,  # must still respect RF-DETR's query-count cap
         )
     assert actual is not None
-    if mode == "deferred":
+    if mode.startswith("deferred"):
         finalize = get_deferred_postprocess_finalizer(actual)
         assert finalize is not None
         actual = finalize()
@@ -899,7 +905,7 @@ def test_triton_mask_grid_matches_reference_on_cuda(factor, image_size, mode) ->
     assert actual.image_size == actual.mask_frame_size == image_size
     assert actual.mask.image_size == image_size
     assert actual.mask_size == actual.mask.mask_size == target
-    if mode != "empty":
+    if mode not in ("empty", "deferred_empty"):
         _assert_detections_equal(actual, expected)
     else:
         assert len(actual) == 0
