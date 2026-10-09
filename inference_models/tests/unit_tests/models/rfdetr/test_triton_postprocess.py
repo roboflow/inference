@@ -1083,3 +1083,56 @@ def test_ignored_classes_on_inactive_query_consume_global_topk_slots(factor):
     # explicitly retains the requested grid even when selection is empty.
     expected_side = {0.0: 8, 0.25: 22, 0.5: 36, 1.0: 64}[factor]
     assert actual.mask_size == (expected_side, expected_side)
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or triton_postprocess.triton is None,
+    reason="CUDA and Triton are required",
+)
+@pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
+@pytest.mark.parametrize("deferred", [False, True])
+def test_triton_2xlarge_strided_queries_match_reference(factor, deferred):
+    from inference_models.models.base.async_handoff import (
+        get_deferred_postprocess_finalizer,
+    )
+
+    device = torch.device("cuda")
+    # Exercise the largest supported model grid with a channels-last view,
+    # 300 global top-k slots, shared masks, and an ignored high-scoring class.
+    masks = torch.full((192, 192, 300), -2.0, device=device).permute(2, 0, 1)
+    masks[0, 12:185, 41:161] = 3.0
+    masks[1, 40:120, 10:80] = 2.0
+    scores = torch.full((300, 91), 0.01, device=device)
+    scores[0, 1] = 0.95
+    scores[0, 2] = 0.90
+    scores[1, 3] = 0.85
+    scores[2, 0] = 0.99
+    bboxes = torch.tensor([[0.5, 0.5, 0.6, 0.4]], device=device).repeat(300, 1)
+    mapping = _class_mapping(device, num_classes=91)
+    mapping.class_mapping[0] = -1
+    meta = _metadata(height=1031, width=257)
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks(
+        image_bboxes=bboxes,
+        image_logits=scores,
+        image_masks=masks,
+        image_meta=meta,
+        threshold=0.4,
+        num_classes=91,
+        classes_re_mapping=mapping,
+        masks_resolution_factor=factor,
+    )
+    actual = post_process_single_instance_segmentation_result_to_rle_masks_triton(
+        image_bboxes=bboxes,
+        image_scores=scores,
+        image_masks=masks,
+        image_meta=meta,
+        threshold=0.4,
+        classes_re_mapping=mapping,
+        masks_resolution_factor=factor,
+        defer_postprocess_sync=deferred,
+    )
+    assert actual is not None
+    if deferred:
+        actual = get_deferred_postprocess_finalizer(actual)()
+    assert len(actual) == 3
+    _assert_detections_equal(actual, expected)
