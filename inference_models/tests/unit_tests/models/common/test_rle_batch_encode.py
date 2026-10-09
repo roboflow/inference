@@ -224,6 +224,7 @@ def test_batched_align_encode_matches_generator(
         assert list(got["size"]) == list(want["size"])
 
 
+@pytest.mark.parametrize("factor", [1.0, 0.5, 0.0])
 @pytest.mark.parametrize("chunk", [1, 2, 3, 16])
 @pytest.mark.parametrize(
     "n,ow,oh,sw,sh,pad,scl,cx,cy,seed",
@@ -235,8 +236,10 @@ def test_batched_align_encode_matches_generator(
     ],
 )
 def test_chunked_align_encode_matches_generator(
-    chunk, n, ow, oh, sw, sh, pad, scl, cx, cy, seed
+    chunk, n, ow, oh, sw, sh, pad, scl, cx, cy, seed, factor
 ) -> None:
+    # factor < 1.0 locks that the batched path honours masks_resolution_factor
+    # exactly like the generator it replaced in every model's RLE path.
     mh = mw = 64
     boxes = _boxes(n, ow, oh, seed)
     masks = (
@@ -252,6 +255,7 @@ def test_chunked_align_encode_matches_generator(
         static_crop_offset=StaticCropOffset(
             offset_x=cx, offset_y=cy, crop_width=ow, crop_height=oh
         ),
+        masks_resolution_factor=factor,
     )
     gen = list(
         align_instance_segmentation_results_to_rle_masks(
