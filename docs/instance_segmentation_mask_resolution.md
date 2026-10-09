@@ -115,8 +115,7 @@ The RF-DETR Triton RLE post-processor supports native and upsampled mask grids
 at every factor. Boxes and masks share the encoded grid in `mask_size`, including
 for empty and deferred results. It preserves fractional float32 boxes on grids
 that differ from the image and rounds to integers only on the image grid.
-It uses the same target-size
-rounding as the reference path. Antialiased downsampling, unsupported preprocessing
+It uses the same target-size rounding as the reference path. Antialiased downsampling, unsupported preprocessing
 transforms, and other existing compatibility limits use the reference post-processor.
 The existing Triton enablement flag still controls this path; no execution plan is
 required. Sparse-record capacity limits are unchanged, including the existing

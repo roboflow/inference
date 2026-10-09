@@ -1181,11 +1181,12 @@ def test_triton_fractional_boxes_match_final_grid_reference(
     bboxes, logits, masks = _single_detection_inputs(device)
     bboxes[0] = torch.tensor([0.501, 0.493, 0.503, 0.489], device=device)
     bboxes = bboxes.to(dtype=dtype)
-    metadata = _metadata(height=image_size[0], width=image_size[1])
-    metadata.inference_size = ImageDimensions(height=624, width=624)
-    metadata.nonsquare_intermediate_size = ImageDimensions(height=480, width=624)
-    metadata.scale_width = 624 / image_size[1]
-    metadata.scale_height = 480 / image_size[0]
+    metadata = _metadata(height=image_size[0], width=image_size[1])._replace(
+        inference_size=ImageDimensions(height=624, width=624),
+        nonsquare_intermediate_size=ImageDimensions(height=480, width=624),
+        scale_width=624 / image_size[1],
+        scale_height=480 / image_size[0],
+    )
     if mode in ("multiclass", "deferred"):
         logits[0, 1] = 3.0
     elif mode == "empty":
