@@ -545,20 +545,20 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                     within_tolerance = (
                         frame_number - expected_frame <= allowed_lateness_frames + 1e-9
                     )
+                    # A slow source can map several intended timestamps to this
+                    # exact frame. Repeat it for those slots, but do not reuse a
+                    # late frame to fill slots that requested a different frame.
+                    use_frame = within_tolerance and (
+                        not frame_used or expected_frame == frame_number
+                    )
                     bookkeeping.sampled.append(
                         _SampledFrame(
                             intended_frame_number=intended_frame,
-                            source_frame_number=(
-                                frame_number
-                                if within_tolerance and not frame_used
-                                else None
-                            ),
-                            frame=(
-                                frame if within_tolerance and not frame_used else None
-                            ),
+                            source_frame_number=frame_number if use_frame else None,
+                            frame=frame if use_frame else None,
                         )
                     )
-                    frame_used = frame_used or within_tolerance
+                    frame_used = frame_used or use_frame
                     bookkeeping.next_sample_frame_number += sampling_stride
             else:
                 if bookkeeping.next_sample_frame_number < frame_number - 1:
