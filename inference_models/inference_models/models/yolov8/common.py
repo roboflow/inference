@@ -8,8 +8,10 @@ from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks,
     crop_masks_to_boxes,
+    finalize_instance_segmentation_boxes,
     preprocess_segmentation_masks,
     resolve_mask_frame_size,
+    resolve_mask_output_size,
 )
 
 
@@ -53,7 +55,11 @@ def prepare_dense_masks(
         )
         final_results.append(
             InstanceDetections(
-                xyxy=aligned_boxes[:, :4].round().int(),
+                xyxy=finalize_instance_segmentation_boxes(
+                    aligned_boxes[:, :4],
+                    mask_size=tuple(aligned_masks.shape[1:]),
+                    image_size=image_meta.original_size,
+                ),
                 class_id=aligned_boxes[:, 5].int(),
                 confidence=aligned_boxes[:, 4],
                 mask=aligned_masks,
@@ -111,13 +117,30 @@ def prepare_rle_masks(
                 image_meta.original_size.width,
             ),
             masks=rle_masks,
-            mask_size=tuple(rle_masks[0]["size"]) if rle_masks else None,
+            mask_size=(
+                tuple(rle_masks[0]["size"])
+                if rle_masks
+                else resolve_mask_output_size(
+                    cropped_masks.shape[1],
+                    cropped_masks.shape[2],
+                    padding=padding,
+                    inference_size=image_meta.inference_size,
+                    original_size=image_meta.original_size,
+                    size_after_pre_processing=image_meta.size_after_pre_processing,
+                    static_crop_offset=image_meta.static_crop_offset,
+                    masks_resolution_factor=masks_resolution_factor,
+                )
+            ),
         )
         if len(aligned_boxes) > 0:
             aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
             final_results.append(
                 InstanceDetections(
-                    xyxy=aligned_boxes_tensor[:, :4].round().int(),
+                    xyxy=finalize_instance_segmentation_boxes(
+                        aligned_boxes_tensor[:, :4],
+                        mask_size=instances_masks.mask_size,
+                        image_size=image_meta.original_size,
+                    ),
                     class_id=aligned_boxes_tensor[:, 5].int(),
                     confidence=aligned_boxes_tensor[:, 4],
                     mask=instances_masks,
