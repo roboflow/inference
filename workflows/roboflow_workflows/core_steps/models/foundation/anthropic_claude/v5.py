@@ -104,6 +104,12 @@ CLAUDE_MODELS = [
         "max_output_tokens": 128000,
     },
     {
+        "id": "claude-haiku-5-5",
+        "name": "Claude Haiku 5.5",
+        "exact_version": "claude-haiku-5-5",
+        "max_output_tokens": 128000,
+    },
+    {
         "id": "claude-fable-5-1",
         "name": "Claude Fable 5.1",
         "exact_version": "claude-fable-5-1",
