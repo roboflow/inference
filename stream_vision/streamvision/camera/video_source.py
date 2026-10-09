@@ -753,7 +753,13 @@ class VideoSource:
                 )
                 self._video = CV2VideoFrameProducer(self._stream_reference)
                 self._initialise_selected_video()
-            self._video_consumer.reset(source_properties=self._source_properties)
+            self._video_consumer.reset(
+                source_properties=self._source_properties,
+                initial_seek=any(
+                    str(key).lower().startswith("pos_")
+                    for key in self._video_source_properties
+                ),
+            )
             if self._source_properties.is_file:
                 self._set_file_mode_consumption_strategies()
             else:
@@ -1021,6 +1027,7 @@ class VideoConsumer:
         self._declared_source_fps = None
         self._is_source_video_file = None
         self._source_total_frames: Optional[int] = None
+        self._initial_seek = False
         self._timestamp_created: Optional[datetime] = None
         self._status_update_handlers = status_update_handlers
         self._next_frame_from_video_to_accept = 1
@@ -1030,7 +1037,21 @@ class VideoConsumer:
     def buffer_filling_strategy(self) -> Optional[BufferFillingStrategy]:
         return self._buffer_filling_strategy
 
-    def reset(self, source_properties: SourceProperties) -> None:
+    def reset(
+        self, source_properties: SourceProperties, *, initial_seek: bool = False
+    ) -> None:
+        """Prepare the consumer for a fresh start of the video source.
+
+        Frame numbering continues across resets, so the source frame count is
+        withheld once it no longer matches the frame position.
+
+        Args:
+            source_properties: Properties of the (re)opened source.
+            initial_seek: Whether the source was opened at a seek position.
+        """
+        self._initial_seek = initial_seek
+        if self._frame_counter > 0 or initial_seek:
+            self._source_total_frames = None
         if source_properties.is_file:
             self._set_file_mode_buffering_strategies()
         else:
@@ -1061,8 +1082,11 @@ class VideoConsumer:
             self._is_source_video_file = source_properties.is_file
             self._declared_source_fps = source_properties.fps
             self._timestamp_created = source_properties.timestamp_created
-            # producers report 0 / -1 when the count is unknown (e.g. streams)
-            if source_properties.is_file and source_properties.total_frames > 0:
+            if (
+                source_properties.is_file
+                and source_properties.total_frames > 0
+                and not self._initial_seek
+            ):
                 self._source_total_frames = source_properties.total_frames
 
         if self._timestamp_created:

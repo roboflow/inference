@@ -19,7 +19,8 @@ for contributor and maintainer responsibilities.
 ### Execution engine
 
 - `VideoMetadata` carries an optional `total_frames`: the frame count of the
-  source video file, or `None` for live streams and files that don't report it.
+  source video file, or `None` for live streams, files that don't report it,
+  realtime WebRTC uploads, and after a source restart or initial seek.
   Blocks can compute playback progress as `frame_number / total_frames` (e.g. a
   timeline overlay). Image inputs may include it under `video_metadata`.
 

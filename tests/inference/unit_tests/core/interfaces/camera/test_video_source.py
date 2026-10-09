@@ -1262,6 +1262,114 @@ def test_stream_consumption_leaves_total_frames_unset_when_unknown(
     assert frame.total_frames is None
 
 
+def test_stream_consumption_withholds_total_frames_after_restart() -> None:
+    # given
+    source_properties = SourceProperties(
+        width=128, height=128, total_frames=431, is_file=True, fps=30.0
+    )
+    consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
+        buffer_filling_strategy=None,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    video.retrieve.return_value = (True, np.zeros((128, 128, 3), dtype=np.uint8))
+    video.discover_source_properties.return_value = source_properties
+    buffer = Queue()
+
+    def consume() -> VideoFrame:
+        consumer.consume_frame(
+            video=video,
+            declared_source_fps=source_properties.fps,
+            is_source_video_file=source_properties.is_file,
+            buffer=buffer,
+            frames_buffering_allowed=True,
+        )
+        return buffer.get_nowait()
+
+    consumer.reset(source_properties=source_properties)
+    first_frame = consume()
+
+    # when
+    consumer.reset(source_properties=source_properties)
+    frame_after_restart = consume()
+
+    # then
+    assert first_frame.total_frames == 431
+    assert frame_after_restart.frame_id == 2
+    assert frame_after_restart.total_frames is None
+
+
+def test_stream_consumption_withholds_total_frames_after_seek_restart() -> None:
+    # given
+    source_properties = SourceProperties(
+        width=128, height=128, total_frames=431, is_file=True, fps=30.0
+    )
+    consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
+        buffer_filling_strategy=None,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.side_effect = [False, True]
+    video.retrieve.return_value = (True, np.zeros((128, 128, 3), dtype=np.uint8))
+    video.discover_source_properties.return_value = source_properties
+    buffer = Queue()
+    consumer.reset(source_properties=source_properties, initial_seek=False)
+    consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
+        buffer=buffer,
+        frames_buffering_allowed=True,
+    )
+
+    # when
+    consumer.reset(source_properties=source_properties, initial_seek=True)
+    consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
+        buffer=buffer,
+        frames_buffering_allowed=True,
+    )
+
+    # then
+    frame = buffer.get_nowait()
+    assert frame.frame_id == 1
+    assert frame.total_frames is None
+
+
+@pytest.mark.parametrize("property_name", ["pos_frames", "POS_MSEC", "pos_avi_ratio"])
+def test_video_source_withholds_total_frames_after_initial_seek(
+    local_video_path: str, property_name: str
+) -> None:
+    # given
+    source = VideoSource.init(
+        video_reference=local_video_path,
+        video_source_properties={property_name: 0.0},
+    )
+
+    try:
+        # when
+        source.start()
+        frame = source.read_frame()
+
+        # then
+        assert frame.total_frames is None
+    finally:
+        tear_down_source(source=source)
+
+
 def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
     # given
     consumer = VideoConsumer.init(

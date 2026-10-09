@@ -1309,8 +1309,6 @@ async def init_rtc_peer_connection_with_loop(
                             video_processor._declared_fps,
                         )
 
-                    video_processor._total_frames = get_video_total_frames(video_path)
-
                     if webrtc_request.webrtc_realtime_processing:
                         # We are dealing with a live video stream,
                         player = MediaPlayer(video_path, loop=False)
@@ -1320,6 +1318,9 @@ async def init_rtc_peer_connection_with_loop(
                         )
                     else:
                         # we are dealing with a video file,
+                        video_processor._total_frames = get_video_total_frames(
+                            video_path
+                        )
                         track = ThreadedVideoFileTrack(video_path)
                         video_processor.set_track(
                             track=track, rotation_code=rotation_code

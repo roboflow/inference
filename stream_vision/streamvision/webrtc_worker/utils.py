@@ -5,6 +5,7 @@ import struct
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import av
 import cv2 as cv
 import numpy as np
 from av import VideoFrame
@@ -269,8 +270,6 @@ def get_video_total_frames(filepath: str) -> Optional[int]:
     Returns:
         Frame count, or None if the container does not report it
     """
-    import av
-
     try:
         with av.open(filepath) as container:
             total_frames = container.streams.video[0].frames
