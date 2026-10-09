@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.6`
+
+Bundled execution engine: `1.16.1`.
+
 ### Execution engine
 
 - `VideoMetadata` carries an optional `total_frames`: the frame count of the
