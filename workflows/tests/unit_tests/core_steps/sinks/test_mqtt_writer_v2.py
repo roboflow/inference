@@ -145,6 +145,72 @@ class TestManifest:
 
         assert manifest.port == port
 
+    @pytest.mark.parametrize("qos", [-1, 3])
+    def test_literal_qos_must_be_zero_to_two(self, qos):
+        with pytest.raises(ValidationError):
+            BlockManifest.model_validate(
+                {
+                    "type": "roboflow_enterprise/mqtt_writer_sink@v2",
+                    "name": "mqtt",
+                    "host": "localhost",
+                    "port": 1883,
+                    "topic": "test/topic",
+                    "message": "Hello, MQTT!",
+                    "qos": qos,
+                }
+            )
+
+    @pytest.mark.parametrize("qos", [0, 1, 2, "$inputs.qos"])
+    def test_valid_qos_accepted(self, qos):
+        manifest = BlockManifest.model_validate(
+            {
+                "type": "roboflow_enterprise/mqtt_writer_sink@v2",
+                "name": "mqtt",
+                "host": "localhost",
+                "port": 1883,
+                "topic": "test/topic",
+                "message": "Hello, MQTT!",
+                "qos": qos,
+            }
+        )
+
+        assert manifest.qos == qos
+
+    def test_credentials_may_be_omitted(self):
+        manifest = BlockManifest.model_validate(
+            {
+                "type": "roboflow_enterprise/mqtt_writer_sink@v2",
+                "name": "mqtt",
+                "host": "localhost",
+                "port": 1883,
+                "topic": "test/topic",
+                "message": "Hello, MQTT!",
+            }
+        )
+        schema = BlockManifest.model_json_schema()["properties"]
+
+        assert manifest.username is None
+        assert manifest.password is None
+        for field in ("username", "password"):
+            assert {"type": "null"} in schema[field]["anyOf"]
+
+    def test_credentials_accept_explicit_null(self):
+        manifest = BlockManifest.model_validate(
+            {
+                "type": "roboflow_enterprise/mqtt_writer_sink@v2",
+                "name": "mqtt",
+                "host": "localhost",
+                "port": 1883,
+                "topic": "test/topic",
+                "message": "Hello, MQTT!",
+                "username": None,
+                "password": None,
+            }
+        )
+
+        assert manifest.username is None
+        assert manifest.password is None
+
 
 class TestCallbacks:
     def test_on_connect_sets_event_only_for_accepted_connack(self):
