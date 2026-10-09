@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
@@ -322,6 +322,34 @@ def test_require_cosmos3_transformers_names_the_floor(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="transformers>=5.15.0"):
         reasoner_module._require_cosmos3_transformers()
+
+
+@pytest.mark.parametrize(
+    "device_type, device_map, dtype, attention, moves",
+    [
+        # Threaded weight loading onto MPS races in PyTorch's Metal kernel cache.
+        ("mps", "cpu", torch.bfloat16, "sdpa", [call(torch.device("mps"))]),
+        ("cpu", torch.device("cpu"), torch.float32, "eager", []),
+    ],
+)
+def test_from_pretrained_loads_for_the_device(
+    tmp_path, monkeypatch, device_type, device_map, dtype, attention, moves
+) -> None:
+    loaded = _fake_loaded_model()
+    load_model = MagicMock(return_value=loaded)
+    monkeypatch.setattr(reasoner_module, "_require_cosmos3_transformers", lambda: None)
+    monkeypatch.setattr(
+        reasoner_module.AutoModelForImageTextToText, "from_pretrained", load_model
+    )
+    monkeypatch.setattr(reasoner_module.AutoProcessor, "from_pretrained", MagicMock())
+
+    Cosmos3EdgeReasoner.from_pretrained(str(tmp_path), device=torch.device(device_type))
+
+    load_kwargs = load_model.call_args.kwargs
+    assert load_kwargs["device_map"] == device_map
+    assert load_kwargs["dtype"] == dtype
+    assert load_kwargs["attn_implementation"] == attention
+    assert loaded.to.call_args_list == moves
 
 
 def test_post_process_generation_returns_the_answer_as_answer_when_thinking_is_off() -> (
