@@ -285,7 +285,8 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
 
     image_scores = image_scores.contiguous()
     image_bboxes = image_bboxes.contiguous()
-    image_masks = image_masks.contiguous()
+    # Both mask kernels consume explicit strides. Keeping the model's view
+    # avoids copying every query mask before selecting detections.
     class_mapping = classes_re_mapping.class_mapping.contiguous()
     num_queries, num_classes = image_scores.shape
     # The reference selects at most num_queries query/class pairs before
@@ -964,10 +965,6 @@ def _unsupported_triton_postprocess_reason(
     """Explain why the Triton path should not run, or ``None`` when supported."""
     if triton is None:
         return "triton_unavailable"
-    if masks_resolution_factor != 1.0:
-        # the fused kernel interpolates straight to the image; it cannot honour
-        # a reduced target, so defer rather than silently ignore the request
-        return "mask_resolution_factor_unsupported"
     if classes_re_mapping is None:
         return "class_remapping_required"
     if isinstance(threshold, torch.Tensor):
