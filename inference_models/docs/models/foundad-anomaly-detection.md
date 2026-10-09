@@ -58,7 +58,8 @@ prediction = model(image, include_anomaly_map=True)
 result = prediction.images_metadata[0]
 print(model.class_names[prediction.class_id[0].item()])  # "normal" or "anomalous"
 print(result["anomaly_score"], result["anomaly_threshold"], result["is_anomalous"])
-heatmap = result["anomaly_map"]  # float32 array with the input image height and width
+heatmap = result["anomaly_map"]  # float32 array of shape (image_size, image_size)
+overlay = cv2.resize(heatmap, (image.shape[1], image.shape[0]))  # stretch onto the image
 ```
 
 ## Prediction Format
@@ -72,7 +73,10 @@ The model returns a `ClassificationPrediction` over the fixed classes `normal` a
   `is_anomalous` and, when `include_anomaly_map=True` is passed, `anomaly_map`.
 
 The score of an image does not depend on the other images in the batch. The heatmap is local evidence for the
-score, not a supervised segmentation mask.
+score, not a supervised segmentation mask. It is returned at the network input resolution (a square of the
+package's `image_size`) and covers the whole image as the network saw it, so resizing it to the image's width
+and height is a plain stretch. Over HTTP, `inference` serves it as base64 float32 bytes with its shape and the
+`inference_sdk` client decodes it back to a numpy array.
 
 ## Input Images
 
