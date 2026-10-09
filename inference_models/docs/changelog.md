@@ -43,10 +43,12 @@
   COCO `size`. `InstanceDetections.to_supervision()` resizes masks to image
   resolution for annotation; manually constructed reduced dense detections must
   supply `image_size` because it cannot be inferred from the reduced tensor.
-- The RF-DETR fused Triton post-processor supports factor `1.0` only. Other
-  factors use the fallback post-processor so the requested resolution is honored.
-  Reduced-resolution Triton support and its benchmarking are deferred to a
-  separate PR.
+- The RF-DETR fused Triton RLE post-processor now honors `masks_resolution_factor`
+  for native and upsampled mask grids, including multiclass and deferred streaming
+  results. Boxes retain image coordinates, while RLE and empty results carry the
+  selected mask-grid dimensions. Antialiased downsampling and previously unsupported
+  transforms use the reference post-processor. Multiclass results respect RF-DETR's
+  query-count cap even when `max_detections` is larger.
 - The `inference_models` adapter now rejects unknown `mask_decode_mode` values
   with `InvalidMaskDecodeArgument`; it previously ignored the mode. The legacy
   backend already rejected invalid modes. Validation also runs without opt-in.

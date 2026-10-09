@@ -94,8 +94,13 @@ decode-mode behavior and ignores the new opt-in flag.
 Values from 0 to 1 interpolate model-grid and image-grid dimensions. A lower
 factor does not always mean a smaller grid or faster execution. `accurate`
 selects factor 1.0, `fast` selects 0.0, and only `tradeoff` reads `tradeoff_factor`.
-Damian's Triton optimization is separate; factors other than 1.0 currently use
-the fallback post-processor.
+The RF-DETR Triton RLE post-processor supports native and upsampled mask grids
+at every factor. It preserves image-space boxes and records the encoded grid in
+`mask_size`, including for empty and deferred results. It uses the same target-size
+rounding as the reference path. Antialiased downsampling, unsupported preprocessing
+transforms, and other existing compatibility limits use the reference post-processor.
+The existing Triton enablement flag still controls this path; no execution plan is
+required.
 
 Workflow versions v1–v4 retain their compatibility guards. Workflow v5,
 reduced-mask downstream handling, and full tensor support are deferred to a

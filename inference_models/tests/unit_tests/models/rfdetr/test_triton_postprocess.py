@@ -673,39 +673,16 @@ def test_rfdetr_triton_postproc_topk_retry_matches_reference_rle_path() -> None:
     _assert_detections_equal(actual, expected)
 
 
-@pytest.mark.parametrize(
-    "factor,expected_supported", [(1.0, True), (0.5, False), (0.0, False)]
-)
-def test_reduced_mask_resolution_is_unsupported_by_the_fused_path(
-    monkeypatch,
-    factor: float,
-    expected_supported: bool,
-) -> None:
-    # given
-    # the fused kernel interpolates straight to the image size, so it cannot
-    # honour a reduced target; it must say so rather than silently ignore it.
-    # triton is absent on CPU CI, and that reason is checked first, so stand it
-    # in to reach the check under test
+@pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
+def test_reduced_mask_resolution_reaches_the_device_check(monkeypatch, factor) -> None:
+    # Stand in for Triton on CPU CI to verify that every valid factor passes
+    # shape/metadata validation before the CUDA requirement is checked.
     monkeypatch.setattr(triton_postprocess, "triton", object())
-    device = torch.device("cpu")
-    bboxes, logits, masks = _single_detection_inputs(device)
-
-    # when
-    reason = triton_postprocess._unsupported_triton_postprocess_reason(
-        image_bboxes=bboxes,
-        image_scores=logits,
-        image_masks=masks,
-        image_meta=_metadata(),
-        threshold=0.4,
-        classes_re_mapping=_class_mapping(device),
-        masks_resolution_factor=factor,
+    reason = _unsupported_triton_postprocess_reason(
+        **_support_kwargs(), masks_resolution_factor=factor
     )
 
-    # then
-    if expected_supported:
-        assert reason != "mask_resolution_factor_unsupported"
-    else:
-        assert reason == "mask_resolution_factor_unsupported"
+    assert reason == "cuda_device_required"
 
 
 @pytest.mark.parametrize("factor", [0.25, 0.5])
@@ -742,3 +719,232 @@ def test_triton_dispatcher_forwards_the_resolution_factor(monkeypatch, factor) -
 
     # then
     assert seen.get("masks_resolution_factor") == factor
+
+
+@pytest.mark.parametrize("shared_queries", [False, True])
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("max_detections", [None, 0, 1])
+def test_sparse_assembly_preserves_independent_mask_grid(
+    shared_queries, empty, max_detections
+) -> None:
+    metadata = np.zeros((2, triton_postprocess._HEADER_SIZE), dtype=np.float32)
+    if not empty:
+        metadata[:, 0] = 1
+    metadata[:, 1] = [3, 8]
+    metadata[:, 2] = [0.9, 0.8]
+    metadata[:, 3:7] = [24, 16, 73, 49]
+    metadata[:, 9] = 0  # both class rows refer to the same query
+    records = np.array([[2, 0, 0], [0, 6, 8], [0, 11, 13]], dtype=np.int32)
+    kwargs = dict(
+        max_total_runs=2,
+        height=5,
+        width=7,
+        image_size=(65, 97),
+        max_detections=max_detections,
+    )
+    if shared_queries:
+        result = triton_postprocess._instance_detections_from_sparse_query_records(
+            class_metadata_host=metadata, records_host=records, **kwargs
+        )
+    else:
+        result = triton_postprocess._instance_detections_from_sparse_records(
+            metadata_host=metadata, records=torch.from_numpy(records), **kwargs
+        )
+
+    assert result is not None
+    assert result.image_size == result.mask_frame_size == (65, 97)
+    assert result.mask.image_size == (65, 97)
+    assert result.mask_size == result.mask.mask_size == (5, 7)
+    count = 0 if empty else min(2, max_detections if max_detections is not None else 2)
+    assert len(result) == count
+    if count:
+        assert result.xyxy.tolist() == [[24, 16, 73, 49]] * count
+        decoded = coco_rle_masks_to_numpy_mask(result.mask)
+        expected = np.zeros((5, 7), dtype=bool)
+        expected[1:3, 1:3] = True
+        np.testing.assert_array_equal(decoded[0], expected)
+        if shared_queries and count == 2:
+            np.testing.assert_array_equal(decoded[1], expected)
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_deferred_assembly_preserves_grid_until_finalization(
+    monkeypatch, empty
+) -> None:
+    from unittest.mock import Mock
+
+    from inference_models.models.base.async_handoff import (
+        get_deferred_postprocess_finalizer,
+    )
+
+    metadata = torch.zeros((1, triton_postprocess._HEADER_SIZE), dtype=torch.float32)
+    metadata[0, :7] = torch.tensor([not empty, 3, 0.9, 24, 16, 73, 49])
+    records = torch.tensor([[1, 0, 0], [0, 6, 8]], dtype=torch.int32)
+    done_event = Mock()
+    release = Mock()
+    monkeypatch.setattr(triton_postprocess, "_release_pinned_host_buffer", release)
+    placeholder = (
+        triton_postprocess._deferred_instance_detections_from_sparse_query_records(
+            class_metadata_host=metadata,
+            records_host=records,
+            keepalive_tensors=(),
+            done_event=done_event,
+            outputs_consumed_event=Mock(),
+            max_total_runs=1,
+            height=5,
+            width=7,
+            image_size=(65, 97),
+            max_detections=1,
+        )
+    )
+    assert placeholder.mask_size == (5, 7)
+    assert placeholder.image_size == placeholder.mask_frame_size == (65, 97)
+    done_event.synchronize.assert_not_called()
+    result = get_deferred_postprocess_finalizer(placeholder)()
+    done_event.synchronize.assert_called_once()
+    assert release.call_count == 2
+    assert result.mask_size == (5, 7)
+    assert result.image_size == result.mask_frame_size == (65, 97)
+    assert len(result) == (0 if empty else 1)
+
+
+@pytest.mark.parametrize("factor", [-0.1, 1.1, float("nan"), float("inf")])
+def test_triton_rejects_invalid_mask_resolution_factor(monkeypatch, factor) -> None:
+    monkeypatch.setattr(triton_postprocess, "triton", object())
+    with pytest.raises(ValueError, match="finite and in"):
+        _unsupported_triton_postprocess_reason(
+            **_support_kwargs(), masks_resolution_factor=factor
+        )
+
+
+@pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
+def test_triton_downsampling_uses_the_reference_antialias_path(
+    monkeypatch, factor
+) -> None:
+    monkeypatch.setattr(triton_postprocess, "triton", object())
+    kwargs = _support_kwargs(mask_size=(8, 8))
+    kwargs["image_meta"] = _metadata(height=4, width=6)
+    reason = _unsupported_triton_postprocess_reason(
+        **kwargs, masks_resolution_factor=factor
+    )
+    assert reason == (
+        "cuda_device_required" if factor == 0 else "mask_downsampling_unsupported"
+    )
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or triton_postprocess.triton is None,
+    reason="CUDA and Triton are required",
+)
+@pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
+@pytest.mark.parametrize("image_size", [(64, 64), (63, 95)])
+@pytest.mark.parametrize("mode", ["single", "multiclass", "deferred", "empty"])
+def test_triton_mask_grid_matches_reference_on_cuda(factor, image_size, mode) -> None:
+    from inference_models.models.base.async_handoff import (
+        get_deferred_postprocess_finalizer,
+    )
+    from inference_models.models.common.roboflow.post_processing import (
+        resolve_mask_target_size,
+    )
+
+    device = torch.device("cuda")
+    bboxes, logits, masks = _single_detection_inputs(device)
+    # An asymmetric source and noncontiguous views expose swapped axes/strides.
+    masks[0, 1:5, 2:7] = 3.0
+    masks = masks.transpose(1, 2)
+    if mode in ("multiclass", "deferred"):
+        logits[0, 1] = 3.0
+        logits[1, 0] = 2.0
+    elif mode == "empty":
+        logits.fill_(-4.0)
+    scores = logits.sigmoid().T.contiguous().T
+    metadata = _metadata(height=image_size[0], width=image_size[1])
+    mapping = _class_mapping(device)
+    mapping.class_mapping[:] = torch.tensor([3, 8], device=device)
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks(
+        image_bboxes=bboxes,
+        image_logits=scores,
+        image_masks=masks,
+        image_meta=metadata,
+        threshold=0.4,
+        num_classes=2,
+        classes_re_mapping=mapping,
+        masks_resolution_factor=factor,
+    )
+    with torch.cuda.stream(torch.cuda.Stream()):
+        # Producer data were created on the default stream.
+        torch.cuda.current_stream().wait_stream(torch.cuda.default_stream())
+        actual = post_process_single_instance_segmentation_result_to_rle_masks_triton(
+            image_bboxes=bboxes,
+            image_scores=scores,
+            image_masks=masks,
+            image_meta=metadata,
+            threshold=0.4,
+            classes_re_mapping=mapping,
+            masks_resolution_factor=factor,
+            defer_postprocess_sync=mode == "deferred",
+            max_detections=100,  # must still respect RF-DETR's query-count cap
+        )
+    assert actual is not None
+    if mode == "deferred":
+        finalize = get_deferred_postprocess_finalizer(actual)
+        assert finalize is not None
+        actual = finalize()
+    target = resolve_mask_target_size(
+        8,
+        8,
+        size_after_pre_processing=metadata.original_size,
+        masks_resolution_factor=factor,
+    )
+    assert actual.image_size == actual.mask_frame_size == image_size
+    assert actual.mask.image_size == image_size
+    assert actual.mask_size == actual.mask.mask_size == target
+    if mode != "empty":
+        _assert_detections_equal(actual, expected)
+    else:
+        assert len(actual) == 0
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or triton_postprocess.triton is None,
+    reason="CUDA and Triton are required",
+)
+@pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
+def test_triton_native_and_large_source_grids(factor) -> None:
+    from inference_models.models.common.roboflow.post_processing import (
+        resolve_mask_target_size,
+    )
+
+    device = torch.device("cuda")
+    bboxes, logits, _ = _single_detection_inputs(device)
+    masks = torch.full((2, 192, 192), -2.0, device=device)
+    masks[0, 12:185, 41:161] = 3.0
+    metadata = _metadata(height=1031, width=257)
+    mapping = _class_mapping(device)
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks(
+        image_bboxes=bboxes,
+        image_logits=logits.sigmoid(),
+        image_masks=masks,
+        image_meta=metadata,
+        threshold=0.4,
+        num_classes=2,
+        classes_re_mapping=mapping,
+        masks_resolution_factor=factor,
+    )
+    actual = post_process_single_instance_segmentation_result_to_rle_masks_triton(
+        image_bboxes=bboxes,
+        image_scores=logits.sigmoid(),
+        image_masks=masks,
+        image_meta=metadata,
+        threshold=0.4,
+        classes_re_mapping=mapping,
+        masks_resolution_factor=factor,
+    )
+    assert actual is not None
+    _assert_detections_equal(actual, expected)
+    assert actual.mask_size == resolve_mask_target_size(
+        192,
+        192,
+        size_after_pre_processing=metadata.original_size,
+        masks_resolution_factor=factor,
+    )

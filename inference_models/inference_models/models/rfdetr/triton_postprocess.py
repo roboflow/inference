@@ -40,6 +40,9 @@ from inference_models.models.base.async_handoff import (
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
+from inference_models.models.common.roboflow.post_processing import (
+    resolve_mask_target_size,
+)
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 
 try:
@@ -233,6 +236,10 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     are supported. Returns ``None`` when the caller should use the reference
     PyTorch/RLE implementation instead.
 
+    Masks use the grid selected by ``masks_resolution_factor``; boxes and
+    image metadata remain in original-image coordinates. Unsupported transforms
+    and antialiased downsampling use the reference path.
+
     The fast path first emits one candidate per query. If any query has more
     than one class above threshold, the first pass asks for a retry and the
     second pass emits up to ``_SPARSE_MAX_CLASSES_PER_QUERY`` query-class
@@ -265,11 +272,20 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     image_masks = image_masks.contiguous()
     class_mapping = classes_re_mapping.class_mapping.contiguous()
     num_queries, num_classes = image_scores.shape
-    if max_detections is None:
-        max_detections = num_queries
+    # The reference selects at most num_queries query/class pairs before
+    # applying max_detections, including in the multiclass retry path.
+    max_detections = (
+        num_queries if max_detections is None else min(max_detections, num_queries)
+    )
     mask_height, mask_width = image_masks.shape[-2:]
-    output_height = image_meta.original_size.height
-    output_width = image_meta.original_size.width
+    image_height, image_width = image_meta.original_size
+    image_size = (image_height, image_width)
+    output_height, output_width = resolve_mask_target_size(
+        mask_height=mask_height,
+        mask_width=mask_width,
+        size_after_pre_processing=image_meta.size_after_pre_processing,
+        masks_resolution_factor=masks_resolution_factor,
+    )
     confidence_threshold = float(threshold)
 
     # Precompute resize tables outside the hot kernel. The tables are tiny
@@ -324,8 +340,8 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
             num_queries,
             num_classes,
             class_mapping.shape[0],
-            output_height,
-            output_width,
+            image_height,
+            image_width,
             BLOCK_CLASSES=triton.next_power_of_2(num_classes),
             METADATA_STRIDE=_HEADER_SIZE,
             MAX_CLASSES_PER_QUERY=_SPARSE_MAX_CLASSES_PER_QUERY,
@@ -398,6 +414,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
             max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
             height=output_height,
             width=output_width,
+            image_size=image_size,
             max_detections=max_detections,
         )
 
@@ -429,8 +446,8 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         num_queries,
         num_classes,
         class_mapping.shape[0],
-        output_height,
-        output_width,
+        image_height,
+        image_width,
         BLOCK_CLASSES=triton.next_power_of_2(num_classes),
         METADATA_STRIDE=_HEADER_SIZE,
         FLAG_MULTICLASS=True,
@@ -487,6 +504,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
         height=output_height,
         width=output_width,
+        image_size=image_size,
         max_detections=max_detections,
     )
     if result is not None:
@@ -530,8 +548,8 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         num_queries,
         num_classes,
         class_mapping.shape[0],
-        output_height,
-        output_width,
+        image_height,
+        image_width,
         BLOCK_CLASSES=triton.next_power_of_2(num_classes),
         METADATA_STRIDE=_HEADER_SIZE,
         MAX_CLASSES_PER_QUERY=_SPARSE_MAX_CLASSES_PER_QUERY,
@@ -592,6 +610,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         max_total_runs=_SPARSE_TOPK_MAX_TOTAL_RUNS,
         height=output_height,
         width=output_width,
+        image_size=image_size,
         max_detections=max_detections,
     )
 
@@ -603,6 +622,8 @@ def _instance_detections_from_sparse_records(
     height: int,
     width: int,
     max_detections: Optional[int] = None,
+    *,
+    image_size: Optional[Tuple[int, int]] = None,
 ) -> Optional[InstanceDetections]:
     """Convert sparse device records into ``InstanceDetections``.
 
@@ -613,6 +634,7 @@ def _instance_detections_from_sparse_records(
     ``None`` means the sparse device result is incomplete or overflowed and the
     caller should retry or fall back to the reference implementation.
     """
+    image_size = image_size or (height, width)
     active_ranks = np.flatnonzero(metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return InstanceDetections(
@@ -620,9 +642,12 @@ def _instance_detections_from_sparse_records(
             confidence=torch.empty((0,), dtype=torch.float32),
             class_id=torch.empty((0,), dtype=torch.int32),
             mask=InstancesRLEMasks.from_coco_rle_masks(
-                image_size=(height, width),
+                image_size=image_size,
+                mask_size=(height, width),
                 masks=[],
             ),
+            image_size=image_size,
+            mask_frame_size=image_size,
         )
     if np.any(metadata_host[active_ranks, 8] > 0.5):
         return None
@@ -675,7 +700,8 @@ def _instance_detections_from_sparse_records(
         rle_masks.append(_rle_from_counts(counts=counts, height=height, width=width))
 
     instances_masks = InstancesRLEMasks.from_coco_rle_masks(
-        image_size=(height, width),
+        image_size=image_size,
+        mask_size=(height, width),
         masks=rle_masks,
     )
     # The pipeline RLE-to-polygon path consumes uncompressed counts directly, so
@@ -686,6 +712,8 @@ def _instance_detections_from_sparse_records(
         confidence=confidence,
         class_id=class_id,
         mask=instances_masks,
+        image_size=image_size,
+        mask_frame_size=image_size,
     )
 
 
@@ -696,6 +724,8 @@ def _instance_detections_from_sparse_query_records(
     height: int,
     width: int,
     max_detections: Optional[int] = None,
+    *,
+    image_size: Optional[Tuple[int, int]] = None,
 ) -> Optional[InstanceDetections]:
     """Assemble detections when class rows share query-level RLE records.
 
@@ -704,6 +734,7 @@ def _instance_detections_from_sparse_query_records(
     once per query and this CPU helper fans that query mask out to the selected
     class detections.
     """
+    image_size = image_size or (height, width)
     active_ranks = np.flatnonzero(class_metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return InstanceDetections(
@@ -711,9 +742,12 @@ def _instance_detections_from_sparse_query_records(
             confidence=torch.empty((0,), dtype=torch.float32),
             class_id=torch.empty((0,), dtype=torch.int32),
             mask=InstancesRLEMasks.from_coco_rle_masks(
-                image_size=(height, width),
+                image_size=image_size,
+                mask_size=(height, width),
                 masks=[],
             ),
+            image_size=image_size,
+            mask_frame_size=image_size,
         )
     if np.any(class_metadata_host[active_ranks, 8] > 0.5):
         return None
@@ -779,7 +813,8 @@ def _instance_detections_from_sparse_query_records(
         rle_masks.append(_rle_from_counts(counts=counts, height=height, width=width))
 
     instances_masks = InstancesRLEMasks.from_coco_rle_masks(
-        image_size=(height, width),
+        image_size=image_size,
+        mask_size=(height, width),
         masks=rle_masks,
     )
     # The pipeline RLE-to-polygon path consumes uncompressed counts directly, so
@@ -790,6 +825,8 @@ def _instance_detections_from_sparse_query_records(
         confidence=confidence,
         class_id=class_id,
         mask=instances_masks,
+        image_size=image_size,
+        mask_frame_size=image_size,
     )
 
 
@@ -826,6 +863,8 @@ def _deferred_instance_detections_from_sparse_query_records(
     height: int,
     width: int,
     max_detections: Optional[int],
+    *,
+    image_size: Optional[Tuple[int, int]] = None,
 ) -> InstanceDetections:
     """Return a placeholder detection object with deferred CPU finalization.
 
@@ -834,6 +873,8 @@ def _deferred_instance_detections_from_sparse_query_records(
     before synchronizing on ``done_event`` and converting sparse records to
     ``InstanceDetections``.
     """
+
+    image_size = image_size or (height, width)
 
     def finalize() -> InstanceDetections:
         """Synchronize the DtoH copies and build the real detections."""
@@ -848,6 +889,7 @@ def _deferred_instance_detections_from_sparse_query_records(
                 max_total_runs=max_total_runs,
                 height=height,
                 width=width,
+                image_size=image_size,
                 max_detections=max_detections,
             )
             if result is None:
@@ -869,9 +911,12 @@ def _deferred_instance_detections_from_sparse_query_records(
         confidence=torch.empty((0,), dtype=torch.float32),
         class_id=torch.empty((0,), dtype=torch.int32),
         mask=InstancesRLEMasks.from_coco_rle_masks(
-            image_size=(height, width),
+            image_size=image_size,
+            mask_size=(height, width),
             masks=[],
         ),
+        image_size=image_size,
+        mask_frame_size=image_size,
     )
     attach_deferred_postprocess_handoff(
         detections=detections,
@@ -905,6 +950,7 @@ def _supports_triton_postprocess_path(
     image_meta: PreProcessingMetadata,
     threshold: Union[float, torch.Tensor],
     classes_re_mapping: Optional[ClassesReMapping],
+    masks_resolution_factor: float = 1.0,
 ) -> bool:
     """Return ``True`` when the sparse Triton path can represent this input."""
     return (
@@ -915,6 +961,7 @@ def _supports_triton_postprocess_path(
             image_meta=image_meta,
             threshold=threshold,
             classes_re_mapping=classes_re_mapping,
+            masks_resolution_factor=masks_resolution_factor,
         )
         is None
     )
@@ -932,10 +979,6 @@ def _unsupported_triton_postprocess_reason(
     """Explain why the Triton path should not run, or ``None`` when supported."""
     if triton is None:
         return "triton_unavailable"
-    if masks_resolution_factor != 1.0:
-        # the fused kernel interpolates straight to the image; it cannot honour
-        # a reduced target, so defer rather than silently ignore the request
-        return "mask_resolution_factor_unsupported"
     if classes_re_mapping is None:
         return "class_remapping_required"
     if isinstance(threshold, torch.Tensor):
@@ -979,6 +1022,24 @@ def _unsupported_triton_postprocess_reason(
         or image_meta.size_after_pre_processing.width != output_width
     ):
         return "resize_metadata_unsupported"
+    target_height, target_width = resolve_mask_target_size(
+        mask_height=mask_height,
+        mask_width=mask_width,
+        size_after_pre_processing=image_meta.size_after_pre_processing,
+        masks_resolution_factor=masks_resolution_factor,
+    )
+    if (
+        target_height > 4096
+        or target_width > 4096
+        or target_height * target_width
+        > INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS
+        or target_height * target_width >= _MAX_EXACT_FLAT_INDEX
+    ):
+        return "input_size_exceeds_triton_limits"
+    if target_height < mask_height or target_width < mask_width:
+        # Antialiased downsampling needs more than the kernel's two taps per
+        # axis. Keep the reference resize instead of failing in table creation.
+        return "mask_downsampling_unsupported"
     if image_scores.device.type != "cuda":
         return "cuda_device_required"
     if (
@@ -1576,8 +1637,8 @@ if triton is not None:
             num_queries: Number of query masks in ``masks``.
             mask_height: Height of each low-resolution RF-DETR mask.
             mask_width: Width of each low-resolution RF-DETR mask.
-            output_height: Original image height for the output RLE mask.
-            output_width: Original image width for the output RLE mask.
+            output_height: Requested mask-grid height for the output RLE mask.
+            output_width: Requested mask-grid width for the output RLE mask.
             mask_stride_q: Stride between query masks in ``masks``.
             mask_stride_h: Row stride for ``masks``.
             mask_stride_w: Column stride for ``masks``.
