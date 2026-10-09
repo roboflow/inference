@@ -74,6 +74,7 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Action Recognition Model preserves repeated samples when V-JEPA requests a higher sampling rate than the source FPS. Complete low-FPS streams run inference while genuinely missing source frames still invalidate affected windows.
 - SAM3 v1/v2/v3 remote SDK execution, with NumPy or tensor predictions, now honors `WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS` across the input batch while sending one image per HTTP request. Each concurrency-sized group is converted before dispatching the next, bounding response buffering and stopping later groups after an HTTP failure. Results retain input order, formats and class mapping; empty batches issue no requests. Local execution and the inference-proxy transport are unchanged.
 - Tracker blocks log the missing-FPS fallback only when creating a tracker for a video, including tensor variants.
 
