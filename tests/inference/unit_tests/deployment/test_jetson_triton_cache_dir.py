@@ -20,3 +20,18 @@ def test_jetson_images_using_triton_set_a_writable_cache_dir():
     }
     for name, source in triton_images.items():
         assert "TRITON_CACHE_DIR=/tmp/triton-cache" in source, name
+
+
+def test_x86_gpu_images_using_triton_set_a_writable_cache_dir():
+    # Same reason as Jetson: the documented docker run command is
+    # --read-only with only /tmp writable.
+    toolchain_images = {
+        image.name
+        for image in (ROOT / "docker/dockerfiles").glob("Dockerfile.*")
+        if "verify_triton_jit_toolchain.py" in image.read_text()
+    }
+    assert toolchain_images >= {"Dockerfile.onnx.gpu", "Dockerfile.onnx.cu13.gpu"}
+    # The slim image skips the toolchain check but still takes the Triton path.
+    for name in sorted(toolchain_images | {"Dockerfile.onnx.gpu.slim"}):
+        source = (ROOT / "docker/dockerfiles" / name).read_text()
+        assert "TRITON_CACHE_DIR=/tmp/triton-cache" in source, name
