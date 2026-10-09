@@ -6,6 +6,9 @@ import time
 from unittest.mock import patch
 
 import pytest
+from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
+    MQTT_KEEPALIVE_SECONDS,
+)
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer import v2
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v2 import (
     MQTTWriterSinkBlockV2,
@@ -496,6 +499,207 @@ def test_publish_over_tls_with_ca_certificate(mqtt_test_certificates):
         assert result["message"] == "Message published successfully"
         assert b"encrypted payload" in broker.messages[-1]
         assert broker.handshake_failures == 0
+    finally:
+        block.close()
+        broker.finish()
+
+
+class ReconnectGate:
+    def __init__(self, client):
+        self.entered = threading.Event()
+        self.released = threading.Event()
+        create_socket_connection = client._create_socket_connection
+        disconnect = client.disconnect
+
+        def gated_create_socket_connection():
+            self.entered.set()
+            self.released.wait(timeout=10)
+            return create_socket_connection()
+
+        def releasing_disconnect(*args, **kwargs):
+            rc = disconnect(*args, **kwargs)
+            self.released.set()
+            return rc
+
+        client._create_socket_connection = gated_create_socket_connection
+        client.disconnect = releasing_disconnect
+
+
+def hold_reconnect_until_close_disconnects(block, broker) -> ReconnectGate:
+    gate = ReconnectGate(block.mqtt_client)
+    broker.drop_connection()
+    assert gate.entered.wait(timeout=5)
+    return gate
+
+
+@pytest.mark.timeout(15)
+def test_close_leaves_no_network_thread_or_socket():
+    broker = FakeMQTTBroker(keep_serving=True)
+    threading.Thread(target=broker.serve, daemon=True).start()
+    block = MQTTWriterSinkBlockV2()
+
+    try:
+        result = block.run(
+            host=broker.host,
+            port=broker.port,
+            topic="RoboflowTopic",
+            message="delivered",
+            timeout=2.0,
+        )
+        client = block.mqtt_client
+        thread = client._thread
+
+        block.close()
+
+        assert result["error_status"] is False
+        assert not thread.is_alive()
+        assert client._sock is None
+        assert wait_until(lambda: broker.disconnects == 1)
+    finally:
+        block.close()
+        broker.finish()
+
+
+@pytest.mark.timeout(15)
+def test_close_drops_queued_messages_without_waiting_for_acknowledgement():
+    broker = FakeMQTTBroker(keep_serving=True)
+    threading.Thread(target=broker.serve, daemon=True).start()
+    block = MQTTWriterSinkBlockV2()
+    kwargs = dict(
+        host=broker.host,
+        port=broker.port,
+        topic="RoboflowTopic",
+        qos=1,
+        timeout=1.0,
+        fire_and_forget=True,
+    )
+
+    try:
+        results = [block.run(message=f"unacknowledged {i}", **kwargs) for i in range(3)]
+        client = block.mqtt_client
+        assert wait_until(lambda: len(broker.messages) == 3)
+        assert len(client._out_messages) == 3
+
+        block.close()
+
+        assert all(result["error_status"] is False for result in results)
+        assert len(client._out_messages) == 3
+        assert wait_until(lambda: broker.disconnects == 1)
+        assert len(broker.messages) == 3
+    finally:
+        block.close()
+        broker.finish()
+
+
+@pytest.mark.timeout(30)
+def test_close_during_reconnect_with_unacknowledged_messages_returns():
+    broker = FakeMQTTBroker(keep_serving=True)
+    threading.Thread(target=broker.serve, daemon=True).start()
+    block = MQTTWriterSinkBlockV2()
+    gate = None
+
+    try:
+        first = block.run(
+            host=broker.host,
+            port=broker.port,
+            topic="RoboflowTopic",
+            message="in flight",
+            qos=1,
+            timeout=0.5,
+            fire_and_forget=True,
+        )
+        assert first["error_status"] is False
+        client = block.mqtt_client
+        thread = client._thread
+        assert wait_until(lambda: len(broker.messages) == 1)
+        gate = hold_reconnect_until_close_disconnects(block, broker)
+        assert client._out_messages
+
+        block.close()
+
+        assert not thread.is_alive()
+        assert client._sock is None
+        assert client._out_messages
+        assert not block._connected.is_set()
+        assert wait_until(lambda: broker.disconnects == 1)
+        assert broker.connections_accepted == 2
+        assert len(broker.messages) == 1
+    finally:
+        if gate is not None:
+            gate.released.set()
+        block.close()
+        broker.finish()
+
+
+@pytest.mark.timeout(30)
+def test_close_during_reconnect_ends_a_loop_waiting_for_a_connack_that_never_comes():
+    connack_gate = threading.Event()
+    broker = FakeMQTTBroker(keep_serving=True, connack_gate=connack_gate)
+    threading.Thread(target=broker.serve, daemon=True).start()
+    block = MQTTWriterSinkBlockV2()
+    gate = None
+
+    try:
+        first = block.run(
+            host=broker.host,
+            port=broker.port,
+            topic="RoboflowTopic",
+            message="queued",
+            qos=1,
+            timeout=0.5,
+            fire_and_forget=True,
+        )
+        assert first["error_status"] is True
+        client = block.mqtt_client
+        thread = client._thread
+        assert wait_until(lambda: broker.connections_accepted == 1)
+        gate = hold_reconnect_until_close_disconnects(block, broker)
+        assert client._out_messages
+
+        started = time.monotonic()
+        block.close()
+        elapsed = time.monotonic() - started
+
+        assert elapsed < MQTT_KEEPALIVE_SECONDS
+        assert not thread.is_alive()
+        assert client._sock is None
+        assert wait_until(lambda: broker.connections_accepted == 2)
+    finally:
+        if gate is not None:
+            gate.released.set()
+        connack_gate.set()
+        block.close()
+        broker.finish()
+
+
+@pytest.mark.timeout(15)
+def test_close_from_a_callback_on_the_network_thread_lets_the_loop_end_itself():
+    broker = FakeMQTTBroker(keep_serving=True)
+    threading.Thread(target=broker.serve, daemon=True).start()
+    block = MQTTWriterSinkBlockV2()
+
+    try:
+        result = block.run(
+            host=broker.host,
+            port=broker.port,
+            topic="RoboflowTopic",
+            message="delivered",
+            timeout=2.0,
+        )
+        client = block.mqtt_client
+        thread = client._thread
+        client.on_disconnect = lambda _client, _state, _rc: block.close()
+
+        with patch.object(v2, "logger") as mock_logger:
+            broker.drop_connection()
+            assert wait_until(lambda: not thread.is_alive())
+
+        assert result["error_status"] is False
+        assert block.mqtt_client is None
+        assert block._connection.closing.is_set()
+        assert client._sock is None
+        assert broker.connections_accepted == 1
+        mock_logger.error.assert_not_called()
     finally:
         block.close()
         broker.finish()

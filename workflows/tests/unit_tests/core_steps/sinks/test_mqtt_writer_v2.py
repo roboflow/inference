@@ -1,3 +1,4 @@
+import socket
 import threading
 import time
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
 )
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer import v2
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v2 import (
+    CLOSE_JOIN_ATTEMPTS,
     FIRE_AND_FORGET_QOS0_DROPPED,
     FIRE_AND_FORGET_QUEUED,
     FIRE_AND_FORGET_QUEUED_UNTIL_RECONNECT,
@@ -341,6 +343,7 @@ class TestCallbacks:
         state = MQTTWriterState()
         mqtt_on_connect(MagicMock(), state, {}, 5)
         mqtt_on_connect_fail(MagicMock(), state)
+        state.closing.set()
 
         state.reset()
 
@@ -348,6 +351,35 @@ class TestCallbacks:
         assert not state.connack.is_set()
         assert state.refused_code is None
         assert state.connect_failing is False
+        assert not state.closing.is_set()
+
+    @pytest.mark.parametrize("reason_code", [0, 3, 5])
+    def test_on_connect_while_closing_disconnects_without_marking_connected(
+        self, reason_code
+    ):
+        client = MagicMock()
+        state = MQTTWriterState()
+        state.closing.set()
+
+        mqtt_on_connect(client, state, {}, reason_code)
+
+        assert not state.connected.is_set()
+        assert not state.connack.is_set()
+        assert state.refused_code is None
+        client.disconnect.assert_called_once_with()
+
+    @pytest.mark.timeout(10)
+    def test_callbacks_complete_while_the_lifecycle_lock_is_held(self, block):
+        client = MagicMock()
+        state = block._connection
+        state.closing.set()
+
+        with block._lifecycle_lock:
+            mqtt_on_connect(client, state, {}, 0)
+            mqtt_on_connect_fail(client, state)
+            mqtt_on_disconnect(client, state, 0)
+
+        client.disconnect.assert_called_once_with()
 
 
 def _answer_connect_with(mock_client_cls, reason_code: int) -> None:
@@ -665,16 +697,22 @@ class TestClientSetup:
                 clock[0] += self.spent
                 return self.result
 
+            def clear(self):
+                pass
+
         block._connection.connack = FakeEvent(spent=0.15, result=True)
         block._connection.connected = FakeEvent(spent=0.05, result=False)
         fake_time = SimpleNamespace(monotonic=lambda: clock[0])
 
         with patch.object(v2, "time", fake_time):
             result = block.run(**run_kwargs(timeout=0.2))
+        with patch.object(v2, "logger") as mock_logger:
+            block.close()
 
         assert result["error_status"] is True
         assert result["message"] == NOT_CONNECTED_WITHIN_TIMEOUT
         assert waits == [pytest.approx(0.2), pytest.approx(0.05)]
+        mock_logger.error.assert_not_called()
 
     def test_client_registers_static_callbacks(self, mock_client_cls, block):
         block._connected.set()
@@ -1523,6 +1561,117 @@ class TestCleanup:
 
         assert event_state_at_loop_stop == [True]
         assert not block._connected.is_set()
+
+    def test_close_marks_the_state_closing_before_disconnecting(
+        self, mock_client_cls, block
+    ):
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+        closing_at_disconnect = []
+        mock_client.disconnect.side_effect = lambda: closing_at_disconnect.append(
+            block._connection.closing.is_set()
+        )
+        block.run(**run_kwargs())
+
+        block.close()
+
+        assert closing_at_disconnect == [True]
+        assert not block._connection.closing.is_set()
+
+    def test_run_after_close_builds_a_fresh_client_that_is_not_closing(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 0)
+        block.run(**run_kwargs())
+        block.close()
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is False
+        assert mock_client_cls.call_count == 2
+        assert block._connection.connected.is_set()
+        assert not block._connection.closing.is_set()
+
+    def test_close_shuts_the_socket_down_while_the_loop_thread_outlives_the_join(
+        self, mock_client_cls, block
+    ):
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+        mock_client._thread.is_alive.return_value = True
+        block.run(**run_kwargs())
+
+        block.close()
+
+        assert mock_client._thread.join.call_count == CLOSE_JOIN_ATTEMPTS
+        assert mock_client._sock.shutdown.call_count == CLOSE_JOIN_ATTEMPTS
+        mock_client._sock.shutdown.assert_called_with(socket.SHUT_RDWR)
+        mock_client.loop_stop.assert_called_once()
+        mock_client._sock_close.assert_called_once()
+
+    def test_close_does_not_touch_the_socket_once_the_loop_thread_ended(
+        self, mock_client_cls, block
+    ):
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+        mock_client._thread.is_alive.return_value = False
+        block.run(**run_kwargs())
+
+        block.close()
+
+        assert mock_client._thread.join.call_count == 1
+        mock_client._sock.shutdown.assert_not_called()
+        mock_client.loop_stop.assert_called_once()
+        mock_client._sock_close.assert_called_once()
+
+    def test_close_from_the_network_thread_only_requests_termination(
+        self, mock_client_cls, block
+    ):
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+        mock_client._thread = threading.current_thread()
+        block.run(**run_kwargs())
+
+        with patch.object(v2, "logger") as mock_logger:
+            block.close()
+
+        assert mock_client._thread_terminate is True
+        assert block.mqtt_client is None
+        assert block._connection.closing.is_set()
+        mock_client._sock_close.assert_not_called()
+        mock_client._sock.shutdown.assert_not_called()
+        mock_logger.error.assert_not_called()
+
+    def test_close_disables_paho_reconnects_before_disconnecting(
+        self, mock_client_cls, block
+    ):
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+        reconnect_flag_at_disconnect = []
+        mock_client.disconnect.side_effect = (
+            lambda: reconnect_flag_at_disconnect.append(
+                mock_client._reconnect_on_failure
+            )
+        )
+        block.run(**run_kwargs())
+
+        block.close()
+
+        assert reconnect_flag_at_disconnect == [False]
+
+    @pytest.mark.parametrize("reason_code", [1, 2])
+    def test_connack_refusal_after_close_does_not_reconnect(self, block, reason_code):
+        client = mqtt.Client(userdata=block._connection)
+        client.reconnect = MagicMock()
+        block.mqtt_client = client
+        block.close()
+        client._in_packet["remaining_length"] = 2
+        client._in_packet["packet"] = bytes([0, reason_code])
+
+        rc = client._handle_connack()
+
+        client.reconnect.assert_not_called()
+        assert rc == mqtt.MQTT_ERR_PROTOCOL
+        assert not block._connection.connack.is_set()
 
 
 class TestBrokerPolicy:

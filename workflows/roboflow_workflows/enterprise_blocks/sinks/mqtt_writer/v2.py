@@ -1,5 +1,6 @@
 import logging
 import math
+import socket
 import threading
 import time
 from typing import Any, List, Literal, Optional, Tuple, Type, Union
@@ -123,7 +124,13 @@ be buffered briefly. The limits count messages, not bytes: with large
 payloads a long outage can still hold up to 1000 of them in memory, so prefer
 QoS 0 for large messages. Fire and forget is meant for InferencePipelines: over
 the HTTP API every request builds a fresh block instance, so each request is a
-first run, and a message still queued when the request ends is dropped.
+first run, and a message still queued when the request ends is dropped. In
+either mode, closing the block (when the pipeline stops) never waits for
+acknowledgements or for the broker: messages not yet acknowledged are dropped,
+though packets already queued for sending may still be written before the
+disconnect. A close that lands during a background reconnect first waits for
+that connection attempt (TCP bounded by `timeout`, a TLS handshake by the 15 s
+keepalive, DNS by the OS resolver).
 
 Outputs:
     - error_status (bool): Indicates if an error occurred during the MQTT publishing process.
@@ -245,6 +252,9 @@ MAX_QUEUED_MESSAGES = 1000
 # dead broker in a busy loop
 MIN_RECONNECT_DELAY_SECONDS = 0.1
 MIN_MAX_RECONNECT_DELAY_SECONDS = 1.0
+# paho's network loop checks for a stop request once per select timeout (1 s)
+CLOSE_JOIN_SECONDS = 1.0
+CLOSE_JOIN_ATTEMPTS = 3
 QUEUE_FULL = (
     f"MQTT client queue is full ({MAX_QUEUED_MESSAGES} messages awaiting "
     "delivery); the message was dropped."
@@ -279,6 +289,10 @@ class MQTTWriterState:
         connect_failing: Set by a failed connection attempt or a refused CONNACK
             and cleared by an accepted CONNACK, so an outage is logged once
             rather than on every background retry.
+        closing: Set by ``close()`` before it asks the client to disconnect, so a
+            CONNACK landing after that point disconnects the client instead of
+            reviving the session; cleared by ``reset()`` once the network thread
+            is gone.
     """
 
     def __init__(self):
@@ -286,17 +300,23 @@ class MQTTWriterState:
         self.connack = threading.Event()
         self.refused_code: Optional[int] = None
         self.connect_failing = False
+        self.closing = threading.Event()
 
     def reset(self) -> None:
         self.connected.clear()
         self.connack.clear()
         self.refused_code = None
         self.connect_failing = False
+        self.closing.clear()
 
 
 def mqtt_on_connect(
     client, state: MQTTWriterState, flags, reason_code, properties=None
 ):
+    if state.closing.is_set():
+        # a reconnect that raced close(): this CONNACK must end the loop
+        client.disconnect()
+        return
     # paho invokes on_connect for accepted and rejected CONNACK alike;
     # only reason_code 0 means an established MQTT session. The outcome is
     # recorded before `connack` wakes a waiting run, so the run never reads a
@@ -353,6 +373,38 @@ def mqtt_on_disconnect(client, state: MQTTWriterState, reason_code, properties=N
         # a transport drop: the next run waits for the reconnect's CONNACK; after
         # a refusal the answer stays visible so run() reports it without waiting
         state.connack.clear()
+
+
+def _stop_network_loop(client: mqtt.Client) -> bool:
+    """Stop paho's network thread within a bounded time, then close its socket.
+
+    Returns False when called on that thread itself: termination is requested
+    and the thread ends on its own after the caller returns.
+    """
+    thread = client._thread
+    if thread is threading.current_thread():
+        client._thread_terminate = True
+        return False
+    if thread is not None:
+        client._thread_terminate = True
+        for _ in range(CLOSE_JOIN_ATTEMPTS):
+            thread.join(timeout=CLOSE_JOIN_SECONDS)
+            if not thread.is_alive():
+                break
+            _shut_down_socket(client)
+    client.loop_stop()
+    client._sock_close()
+    return True
+
+
+def _shut_down_socket(client: mqtt.Client) -> None:
+    sock = client._sock
+    if sock is None:
+        return
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -540,19 +592,22 @@ class MQTTWriterSinkBlockV2(WorkflowBlock):
             self.mqtt_client = None
             self._connection_identity = None
             self._fire_and_forget_failure = None
+            self._connection.closing.set()
+            # _reconnect_on_failure also gates paho's inline reconnect on CONNACK 1/2
+            client._reconnect_on_failure = False
             try:
                 client.disconnect()
             except Exception as e:
                 logger.error("Failed to disconnect MQTT client: %s", e)
             finally:
+                loop_stopped = True
                 try:
-                    # loop_stop() joins the network thread without a timeout;
-                    # accepted so the thread never outlives the block
-                    client.loop_stop()
+                    loop_stopped = _stop_network_loop(client)
                 finally:
                     # only after the join can no callback re-set the events; a
                     # client rebuilt by a later run starts without a stale refusal
-                    self._connection.reset()
+                    if loop_stopped:
+                        self._connection.reset()
 
     def __del__(self):
         try:
