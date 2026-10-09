@@ -1,5 +1,6 @@
 import threading
 import time
+from types import SimpleNamespace
 from typing import get_args
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +8,9 @@ import paho.mqtt.client as mqtt
 import pytest
 from pydantic import ValidationError
 from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
+from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
+    MQTT_KEEPALIVE_SECONDS,
+)
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer import v2
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v2 import (
     FIRE_AND_FORGET_QOS0_DROPPED,
@@ -315,6 +319,24 @@ class TestCallbacks:
 
         assert not state.connected.is_set()
 
+    def test_connect_fail_after_transient_refusal_forgets_the_refusal(self):
+        state = MQTTWriterState()
+        mqtt_on_connect(MagicMock(), state, {}, 3)
+
+        mqtt_on_connect_fail(MagicMock(), state)
+
+        assert state.refused_code is None
+        assert not state.connack.is_set()
+
+    def test_connect_fail_after_permanent_refusal_keeps_the_refusal(self):
+        state = MQTTWriterState()
+        mqtt_on_connect(MagicMock(), state, {}, 5)
+
+        mqtt_on_connect_fail(MagicMock(), state)
+
+        assert state.refused_code == 5
+        assert state.connack.is_set()
+
     def test_reset_clears_everything(self):
         state = MQTTWriterState()
         mqtt_on_connect(MagicMock(), state, {}, 5)
@@ -405,6 +427,32 @@ class TestRefusedConnection:
         with pytest.raises(Exception, match="not authorised"):
             block.run(**run_kwargs(fail_fast=True))
 
+    def test_fire_and_forget_logs_a_permanent_refusal_once(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+
+        with patch.object(v2, "logger") as mock_logger:
+            results = [block.run(**run_kwargs(fire_and_forget=True)) for _ in range(3)]
+
+        assert all(result["error_status"] is True for result in results)
+        assert all("not authorised" in result["message"] for result in results)
+        failure_logs = [
+            call
+            for call in mock_logger.error.call_args_list
+            if call.args[0] == "MQTT Writer failure: %s"
+        ]
+        assert len(failure_logs) == 1
+
+    def test_fire_and_forget_permanent_refusal_still_raises_with_fail_fast(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+        block.run(**run_kwargs(fire_and_forget=True))
+
+        with pytest.raises(RuntimeError, match="not authorised"):
+            block.run(**run_kwargs(fire_and_forget=True, fail_fast=True))
+
     def test_broker_unavailable_keeps_retrying_and_names_the_reason(
         self, mock_client_cls, block
     ):
@@ -464,6 +512,16 @@ class TestRunValidation:
         assert "timeout" in result["message"].lower()
         mock_client_cls.assert_not_called()
 
+    @pytest.mark.parametrize("timeout", [True, False])
+    def test_boolean_timeout_rejected_before_client_construction(
+        self, mock_client_cls, block, timeout
+    ):
+        result = block.run(**run_kwargs(timeout=timeout))
+
+        assert result["error_status"] is True
+        assert "Invalid timeout" in result["message"]
+        mock_client_cls.assert_not_called()
+
     @pytest.mark.parametrize(
         "port", [0, -1, 65536, "abc", "1883.5", 1883.7, True, None]
     )
@@ -487,7 +545,9 @@ class TestRunValidation:
         result = block.run(**run_kwargs(port=port))
 
         assert result["error_status"] is False
-        mock_client_cls.return_value.connect.assert_called_once_with("localhost", 1883)
+        mock_client_cls.return_value.connect.assert_called_once_with(
+            "localhost", 1883, keepalive=MQTT_KEEPALIVE_SECONDS
+        )
 
     @pytest.mark.parametrize("qos", [-1, 3, "abc", 1.5, "1.5", True, False, None])
     def test_invalid_qos_rejected_before_client_construction(
@@ -553,10 +613,68 @@ class TestClientSetup:
 
         assert result["error_status"] is False
         mock_client_cls.assert_called_once_with(userdata=block._connection)
-        mock_client.connect.assert_called_once_with("localhost", 1883)
+        mock_client.connect.assert_called_once_with(
+            "localhost", 1883, keepalive=MQTT_KEEPALIVE_SECONDS
+        )
         mock_client.connect_async.assert_not_called()
         called_methods = [call[0] for call in mock_client.method_calls]
         assert called_methods.index("connect") < called_methods.index("loop_start")
+
+    def test_client_connects_with_the_short_keepalive(self, mock_client_cls, block):
+        block._connected.set()
+
+        block.run(**run_kwargs())
+
+        mock_client_cls.return_value.connect.assert_called_once_with(
+            "localhost", 1883, keepalive=MQTT_KEEPALIVE_SECONDS
+        )
+
+    def test_timeout_hint_only_for_a_connect_timeout(self, mock_client_cls, block):
+        mock_client = mock_client_cls.return_value
+        mock_client.connect.side_effect = TimeoutError("timed out")
+
+        result = block.run(**run_kwargs())
+
+        assert "Raise 'timeout'" in result["message"]
+
+    def test_no_timeout_hint_when_the_broker_refuses_the_connection(
+        self, mock_client_cls, block
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.connect.side_effect = ConnectionRefusedError("refused")
+
+        result = block.run(**run_kwargs())
+
+        assert "not connected" in result["message"]
+        assert "Raise 'timeout'" not in result["message"]
+
+    def test_readiness_wait_shares_one_deadline(self, mock_client_cls, block):
+        clock = [100.0]
+        waits = []
+
+        class FakeEvent:
+            def __init__(self, spent, result):
+                self.spent = spent
+                self.result = result
+
+            def is_set(self):
+                return False
+
+            def wait(self, timeout=None):
+                waits.append(timeout)
+                clock[0] += self.spent
+                return self.result
+
+        block._connection.connack = FakeEvent(spent=0.15, result=True)
+        block._connection.connected = FakeEvent(spent=0.05, result=False)
+        fake_time = SimpleNamespace(monotonic=lambda: clock[0])
+
+        with patch.object(v2, "time", fake_time):
+            result = block.run(**run_kwargs(timeout=0.2))
+
+        assert result["error_status"] is True
+        assert result["message"] == NOT_CONNECTED_WITHIN_TIMEOUT
+        assert waits == [pytest.approx(0.2), pytest.approx(0.05)]
 
     def test_client_registers_static_callbacks(self, mock_client_cls, block):
         block._connected.set()
@@ -727,7 +845,9 @@ class TestConnectionOwnership:
 
         assert result["error_status"] is True
         assert "parameters" in result["message"].lower()
-        mock_client.connect.assert_called_once_with("broker-a", 1883)
+        mock_client.connect.assert_called_once_with(
+            "broker-a", 1883, keepalive=MQTT_KEEPALIVE_SECONDS
+        )
         mock_client.publish.assert_called_once()
 
     def test_changed_credentials_rejected(self, mock_client_cls, block):
@@ -766,11 +886,9 @@ class TestPublishing:
             "test/topic", "Hello, MQTT!", qos=1, retain=True
         )
 
-    def test_qos0_publish_confirmation_timeout_reported_as_lost(
+    def test_qos0_publish_confirmation_timeout_reported_as_unconfirmed(
         self, mock_client_cls, block
     ):
-        # paho never retransmits QoS 0: reconnect() clears _out_packet and
-        # QoS 0 messages are not queued, so an unconfirmed send is a real loss
         block._connected.set()
         mock_client = mock_client_cls.return_value
         mock_client.publish.return_value.is_published.return_value = False
@@ -779,7 +897,10 @@ class TestPublishing:
             result = block.run(**run_kwargs(qos=0))
 
         assert result["error_status"] is True
-        assert "lost" in result["message"].lower()
+        assert result["message"] == (
+            "Publish confirmation timed out; the QoS 0 message was not fully sent "
+            "within timeout and may still be sent or may be lost."
+        )
         assert "delivery status unknown" not in result["message"].lower()
         assert mock_logger.error.called
 
@@ -831,7 +952,11 @@ class TestPublishing:
         result = block.run(**run_kwargs(qos=0))
 
         assert result["error_status"] is True
-        assert "failed to publish" in result["message"].lower()
+        assert result["message"] == (
+            "MQTT broker not connected; QoS 0 messages are not queued, so the "
+            "message was dropped."
+        )
+        publish_result.wait_for_publish.assert_not_called()
 
     def test_publish_exception_returned_as_error(self, mock_client_cls, block):
         block._connected.set()
@@ -1410,7 +1535,9 @@ class TestBrokerPolicy:
         result = block.run(**run_kwargs())
 
         assert result["error_status"] is False
-        mock_client_cls.return_value.connect.assert_called_once_with("localhost", 1883)
+        mock_client_cls.return_value.connect.assert_called_once_with(
+            "localhost", 1883, keepalive=MQTT_KEEPALIVE_SECONDS
+        )
 
     def test_unlisted_broker_rejected_before_client_construction(
         self, mock_client_cls, block, monkeypatch
@@ -1454,7 +1581,9 @@ class TestBrokerPolicy:
 
         assert first["error_status"] is False
         assert second["error_status"] is False
-        mock_client_cls.return_value.connect.assert_called_once_with("operator", 8883)
+        mock_client_cls.return_value.connect.assert_called_once_with(
+            "operator", 8883, keepalive=MQTT_KEEPALIVE_SECONDS
+        )
 
     def test_user_host_not_allowed_without_operator_broker_disables_block(
         self, mock_client_cls, block, monkeypatch

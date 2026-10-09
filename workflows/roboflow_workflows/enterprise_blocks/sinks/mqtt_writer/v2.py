@@ -1,6 +1,7 @@
 import logging
 import math
 import threading
+import time
 from typing import Any, List, Literal, Optional, Tuple, Type, Union
 
 import paho.mqtt.client as mqtt
@@ -16,6 +17,7 @@ from roboflow_workflows.core_steps.common.workload_presets import (
 )
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
+    MQTT_KEEPALIVE_SECONDS,
     PERMANENT_CONNACK_CODES,
     TRANSIENT_CONNACK_CODE,
     ConfigurationError,
@@ -56,22 +58,26 @@ MQTT Writer block for publishing messages to an MQTT broker.
 Compared with v1, this version adds `fire_and_forget`, bounds the client's
 outgoing queue, and logs a broker outage once instead of on every retry.
 
-The first run connects synchronously: the TCP connect and the broker's
-session acknowledgement are each bounded by `timeout` (DNS resolution is
-bounded by the OS resolver instead), so a cold start may take up to twice
-`timeout` - raise it for remote brokers. Afterwards a background network
-loop maintains the connection and owns reconnects.
+The first run connects synchronously: the TCP connect is bounded by `timeout`
+per resolved address and the broker's session acknowledgement by `timeout`.
+DNS resolution is bounded by the OS resolver and a TLS handshake by the
+15 s MQTT keepalive, not by `timeout`. Raise `timeout` for remote brokers.
+Afterwards a background network loop maintains the connection and owns
+reconnects with an exponential backoff: the first retry waits half of
+`timeout` (at least 0.1 s), each further one doubles that, up to twice
+`timeout` (at least 1 s), plus the time each attempt takes. A large `timeout`
+therefore also slows recovery after an outage.
 
 Without `fire_and_forget`, a run whose TCP connect fails reports the failure
 and leaves nothing behind; the next run on the same block instance (video
 pipelines) retries from scratch. Once the TCP connection is open the client
 is kept: a broker that does not answer within `timeout` or answers
 "unavailable" is retried by the background loop, which also re-establishes an
-established connection that later drops. Over the HTTP API every request builds a fresh block
-instance, so each request pays the bounded connect and a failed request is
-final for that request. One block instance publishes to a single broker
-connection: changing host, port, credentials, timeout or the TLS settings
-between runs is rejected as a configuration error.
+established connection that later drops. Over the HTTP API every request
+builds a fresh block instance, so each request pays the bounded connect and a
+failed request is final for that request. One block instance publishes to a
+single broker connection: changing host, port, credentials, timeout or the TLS
+settings between runs is rejected as a configuration error.
 
 The server operator may restrict which brokers the MQTT blocks connect to
 with `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (an allowlist of `host[:port]`
@@ -87,7 +93,7 @@ machine running inference, which requires local file system access for
 Workflow blocks (`ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`).
 Certificate verification cannot be disabled. A peer that accepts the TCP
 connection but never completes the TLS handshake is given up on after the
-MQTT keepalive interval (60 s), not after `timeout`; real brokers close such
+MQTT keepalive interval (15 s), not after `timeout`; real brokers close such
 a connection immediately.
 
 A broker that refuses the connection (bad user name or password, not
@@ -109,9 +115,11 @@ disconnected a QoS 0 message is dropped (paho does not queue QoS 0), and a
 QoS 1/2 message is queued by the client and sent once the background loop
 reconnects; both are reported with `error_status` set on every run, but logged
 only when the failure starts or changes, and the recovery is logged once. In
-either mode the client holds at most 1000 QoS 1/2 messages awaiting
-acknowledgement and 1000 packets waiting to be sent; a publish beyond that is
-dropped and reported. The limit counts messages, not bytes: with large
+either mode the block refuses a new publish, and reports it as dropped, once
+1000 QoS 1/2 messages await acknowledgement or 1000 packets wait to be sent
+(the client's own limit counts only QoS 1/2 messages). After a reconnect the
+client re-sends its queued QoS 1/2 messages, so up to about 2000 packets can
+be buffered briefly. The limits count messages, not bytes: with large
 payloads a long outage can still hold up to 1000 of them in memory, so prefer
 QoS 0 for large messages. Fire and forget is meant for InferencePipelines: over
 the HTTP API every request builds a fresh block instance, so each request is a
@@ -125,7 +133,8 @@ Outputs:
                     or success confirmation if error_status is False.
                     A publish acknowledgement timeout on QoS 1/2 is reported
                     as delivery-unknown (the message may still be delivered);
-                    an unconfirmed QoS 0 send is reported as lost. With
+                    an unconfirmed QoS 0 send is reported as not fully sent
+                    within timeout (it may still be sent or may be lost). With
                     fire_and_forget a successful run only confirms the
                     message was queued.
 
@@ -212,10 +221,12 @@ def _not_connected_message(error: BaseException, encryption: str) -> str:
             "the broker's TLS port and that ca_certificate_path matches the broker's "
             "certificate authority."
         )
-    return (
-        f"MQTT broker not connected ({error}). Raise 'timeout' if the broker needs "
-        "longer to connect."
-    )
+    if isinstance(error, TimeoutError):
+        return (
+            f"MQTT broker not connected ({error}). Raise 'timeout' if the broker "
+            "needs longer to connect."
+        )
+    return f"MQTT broker not connected ({error})."
 
 
 WRITER_CONNECTION_INPUTS = "username and password"
@@ -326,6 +337,9 @@ def mqtt_on_connect_fail(client, state: MQTTWriterState):
         logger.error("MQTT client failed to establish connection with broker")
     state.connect_failing = True
     state.connected.clear()
+    if state.refused_code not in PERMANENT_CONNACK_CODES:
+        state.refused_code = None
+        state.connack.clear()
 
 
 def mqtt_on_disconnect(client, state: MQTTWriterState, reason_code, properties=None):
@@ -581,6 +595,8 @@ class MQTTWriterSinkBlockV2(WorkflowBlock):
             )
         # selector-resolved values bypass manifest constraints, so validate here
         try:
+            if isinstance(timeout, bool):
+                raise TypeError("a boolean is not a timeout")
             timeout_seconds = float(timeout)
         except (TypeError, ValueError, OverflowError):
             timeout_seconds = math.nan
@@ -733,7 +749,7 @@ class MQTTWriterSinkBlockV2(WorkflowBlock):
                 # the TCP connect happens here, bounded by _connect_timeout
                 # (DNS resolution is not - it runs under the OS resolver
                 # timeout); the CONNACK wait below covers the handshake rest
-                client.connect(host, port)
+                client.connect(host, port, keepalive=MQTT_KEEPALIVE_SECONDS)
                 client.loop_start()
             except ConfigurationError as e:
                 # TLS setup refused before any socket was opened: nothing kept
@@ -777,11 +793,12 @@ class MQTTWriterSinkBlockV2(WorkflowBlock):
         # a permanent refusal stopped the network loop: report it on every run
         # without waiting and without touching the broker again
         if state.refused_code in PERMANENT_CONNACK_CODES:
-            return self._handle_failure(
+            return self._report_failure(
                 connection_refused_message(
                     state.refused_code, block_inputs=WRITER_CONNECTION_INPUTS
                 ),
                 fail_fast=fail_fast,
+                fire_and_forget=fire_and_forget,
             )
         # fire and forget waits for the broker only on the run that built the
         # client; afterwards a disconnected run returns at once and leaves the
@@ -799,7 +816,11 @@ class MQTTWriterSinkBlockV2(WorkflowBlock):
             if not_ready is not None:
                 # a permanent refusal stopped the loop: nothing would be sent
                 if not fire_and_forget or state.refused_code in PERMANENT_CONNACK_CODES:
-                    return self._handle_failure(not_ready, fail_fast=fail_fast)
+                    return self._report_failure(
+                        not_ready,
+                        fail_fast=fail_fast,
+                        fire_and_forget=fire_and_forget,
+                    )
                 return self._report_not_connected(
                     not_ready,
                     topic=topic,
@@ -838,6 +859,12 @@ class MQTTWriterSinkBlockV2(WorkflowBlock):
                 "delivery status unknown and the message may still be delivered.",
                 fail_fast=fail_fast,
             )
+        if res.rc == mqtt.MQTT_ERR_NO_CONN and qos == 0:
+            return self._handle_failure(
+                "MQTT broker not connected; QoS 0 messages are not queued, so the "
+                "message was dropped.",
+                fail_fast=fail_fast,
+            )
         try:
             res.wait_for_publish(timeout=timeout)
             published = res.is_published()
@@ -851,12 +878,9 @@ class MQTTWriterSinkBlockV2(WorkflowBlock):
                 "message": "Message published successfully",
             }
         if qos == 0:
-            # an unconfirmed QoS 0 send is a real loss: paho never queues
-            # QoS 0 messages and reconnect() clears the pending out packet
             return self._handle_failure(
-                "Publish confirmation timed out; the connection dropped before "
-                "the message was fully sent and QoS 0 messages are not "
-                "retransmitted, so the message is lost.",
+                "Publish confirmation timed out; the QoS 0 message was not fully "
+                "sent within timeout and may still be sent or may be lost.",
                 fail_fast=fail_fast,
             )
         return self._handle_failure(
@@ -907,20 +931,21 @@ class MQTTWriterSinkBlockV2(WorkflowBlock):
         """Wait for the background loop to establish the session.
 
         Args:
-            timeout: Bound for the CONNACK wait and, after a transient refusal,
-                for the reconnect.
+            timeout: Total bound for the CONNACK wait and, after a transient
+                refusal, the reconnect.
 
         Returns:
             None once connected, otherwise the reason the broker is not ready.
         """
         state = self._connection
+        deadline = time.monotonic() + timeout
         if not state.connack.wait(timeout=timeout):
             return NOT_CONNECTED_WITHIN_TIMEOUT
         if state.refused_code in PERMANENT_CONNACK_CODES:
             return connection_refused_message(
                 state.refused_code, block_inputs=WRITER_CONNECTION_INPUTS
             )
-        if not state.connected.wait(timeout=timeout):
+        if not state.connected.wait(timeout=max(0.0, deadline - time.monotonic())):
             if state.refused_code == TRANSIENT_CONNACK_CODE:
                 return connection_refused_message(
                     state.refused_code, block_inputs=WRITER_CONNECTION_INPUTS
@@ -985,6 +1010,13 @@ class MQTTWriterSinkBlockV2(WorkflowBlock):
             f"Failed to publish message: {mqtt.error_string(rc)}",
             fail_fast=fail_fast,
         )
+
+    def _report_failure(
+        self, message: str, fail_fast: bool, fire_and_forget: bool
+    ) -> BlockResult:
+        if fire_and_forget:
+            return self._fire_and_forget_outage(message, fail_fast=fail_fast)
+        return self._handle_failure(message, fail_fast=fail_fast)
 
     def _fire_and_forget_outage(self, message: str, fail_fast: bool) -> BlockResult:
         # without the readiness wait a pipeline reaches this on every frame of
