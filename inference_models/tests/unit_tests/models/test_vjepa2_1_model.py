@@ -1,4 +1,6 @@
 import copy
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event, Lock
 from types import SimpleNamespace
 
 import numpy as np
@@ -8,6 +10,7 @@ from PIL import Image
 from torchvision.transforms import v2
 
 from inference_models.errors import ModelInputError
+from inference_models.models.base.action_recognition import plan_windows
 from inference_models.models.vjepa2_1.model import (
     VJepaActionRecognition,
     validate_config,
@@ -118,6 +121,151 @@ def test_contract_rejects_causal_or_different_head_artifacts():
     metadata["head"].update(queries=162, offset_scale_frames=162)
     with pytest.raises(ValueError, match="81920 vision tokens"):
         validate_config(metadata)
+
+
+def test_action_recognition_capabilities_and_cosmos_ignored_options(monkeypatch):
+    from inference_models.models.cosmos3.cosmos3_action_recognition import (
+        Cosmos3EdgeActionRecognition,
+    )
+
+    assert VJepaActionRecognition.supports_confidence
+    assert VJepaActionRecognition.supports_observed_duration
+    cosmos = Cosmos3EdgeActionRecognition.__new__(Cosmos3EdgeActionRecognition)
+    cosmos._fine_tune_prefix_allowed_tokens_fn = object()
+    calls = []
+    monkeypatch.setattr(
+        cosmos, "_infer_fine_tuned", lambda **kwargs: calls.append(kwargs) or []
+    )
+
+    cosmos.infer(
+        frames=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        fps=4,
+        confidence=0.9,
+        duration_seconds=0.2,
+    )
+
+    assert not cosmos.supports_confidence
+    assert not cosmos.supports_observed_duration
+    assert "confidence" not in calls[0]
+    assert "duration_seconds" not in calls[0]
+
+
+@pytest.mark.parametrize("sample_fps", [6.0, 7.0, 30.0])
+def test_planned_fractional_duration_is_accepted_and_clipped(sample_fps):
+    metadata = config()
+    metadata["network_input"]["fps"] = sample_fps
+    network = SimpleNamespace(
+        encoder=lambda inputs: inputs,
+        head=lambda inputs: (
+            torch.ones((1, 4, 2)),
+            torch.tensor([[[[0.0, 5.0], [0.0, 5.0]]] * 4]),
+        ),
+    )
+    model = VJepaActionRecognition(network, metadata, ["a", "b"], torch.device("cpu"))
+    window = plan_windows(120, 30.0, model.video_sampling)[0]
+    frames = [np.zeros((384, 384, 3), dtype=np.uint8)] * 4
+
+    predictions = model.infer(
+        frames, fps=sample_fps, duration_seconds=window.duration_seconds
+    )
+
+    assert predictions
+    assert all(prediction.end_frame_idx <= 4 for prediction in predictions)
+    with pytest.raises(ModelInputError, match="window duration"):
+        model.infer(frames, duration_seconds=4 / sample_fps + 0.000002)
+
+
+@pytest.mark.parametrize("first_call_fails", [False, True])
+def test_shared_model_admits_preprocessing_and_releases_after_error(first_call_fails):
+    first_forward = Event()
+    release_forward = Event()
+    second_waiting = Event()
+    lock = Lock()
+    attempts = []
+    prepared = []
+
+    class AdmissionLock:
+        def __enter__(self):
+            attempts.append(True)
+            if len(attempts) == 2:
+                second_waiting.set()
+            lock.acquire()
+
+        def __exit__(self, *args):
+            lock.release()
+
+    def encoder(inputs):
+        if not first_forward.is_set():
+            first_forward.set()
+            assert release_forward.wait(5)
+            if first_call_fails:
+                raise RuntimeError("first call failed")
+        return inputs
+
+    network = SimpleNamespace(
+        encoder=encoder,
+        head=lambda inputs: (
+            torch.ones((1, 4, 2)),
+            torch.tensor([[[[0.0, 1.0], [0.0, 1.0]]] * 4]),
+        ),
+    )
+    model = VJepaActionRecognition(network, config(), ["a", "b"], torch.device("cpu"))
+    model._lock = AdmissionLock()
+    transform = model._transform
+
+    def prepare(image):
+        assert lock.locked()
+        prepared.append(True)
+        return transform(image)
+
+    model._transform = prepare
+    frames = [np.zeros((384, 384, 3), dtype=np.uint8)]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(model.infer, frames)
+        try:
+            assert first_forward.wait(5)
+            second = executor.submit(model.infer, frames)
+            assert second_waiting.wait(5)
+            assert len(prepared) == 1
+        finally:
+            release_forward.set()
+        if first_call_fails:
+            with pytest.raises(RuntimeError, match="first call failed"):
+                first.result(timeout=5)
+        else:
+            assert first.result(timeout=5)
+        assert second.result(timeout=5)
+    assert len(prepared) == 2
+    assert not lock.locked()
+
+
+def test_cancelled_call_does_not_allocate_while_waiting_for_model():
+    cancelled = Event()
+    waiting = Event()
+    model = VJepaActionRecognition(None, config(), ["a", "b"], torch.device("cpu"))
+
+    def check_cancelled():
+        waiting.set()
+        if cancelled.is_set():
+            raise RuntimeError("request cancelled")
+
+    model._lock.acquire()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                model.infer,
+                [np.zeros((8, 8, 3), dtype=np.uint8)],
+                check_cancelled=check_cancelled,
+            )
+            assert waiting.wait(5)
+            cancelled.set()
+            with pytest.raises(RuntimeError, match="request cancelled"):
+                future.result(timeout=5)
+    finally:
+        cancelled.set()
+        model._lock.release()
+
+    assert not model._lock.locked()
 
 
 @pytest.mark.parametrize(

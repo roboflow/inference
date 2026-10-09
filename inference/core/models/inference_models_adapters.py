@@ -2,6 +2,7 @@ import base64
 import io
 from collections import OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from contextlib import ExitStack, closing
 from inspect import Parameter, signature
 from io import BytesIO
 from threading import local
@@ -29,6 +30,7 @@ from inference.core.entities.responses.action_recognition import (
 from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
     AnomalyDetectionResponse,
+    AnomalyMapPayload,
     ClassificationInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
@@ -51,11 +53,14 @@ from inference.core.entities.responses.inference import (
     SemanticSegmentationPrediction,
 )
 from inference.core.env import (
+    ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS,
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
     GCP_SERVERLESS,
+    MAX_ACTION_RECOGNITION_CANDIDATES,
+    MAX_ACTION_RECOGNITION_RESPONSE_BYTES,
     MAX_VIDEO_DURATION_SECONDS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
@@ -75,10 +80,16 @@ from inference.core.models.semantic_segmentation_utils import (
 )
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
+from inference.core.utils.action_recognition_results import (
+    ActionRecognitionResultBudget,
+)
+from inference.core.utils.anomaly_map_encoding import encode_anomaly_map
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
+from inference.core.utils.video_processing import VideoProcessingControl
 from inference.core.utils.video_utils import (
+    VideoDecodeState,
     probe_video,
     read_frame_windows,
     video_source_path,
@@ -112,6 +123,7 @@ from inference_models.configuration import (
 )
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
+    action_confidence_mask,
     effective_max_frame_side,
     plan_windows,
 )
@@ -1770,7 +1782,11 @@ def prepare_anomaly_detection_response(
                 anomaly_score=image_metadata["anomaly_score"],
                 anomaly_threshold=image_metadata["anomaly_threshold"],
                 is_anomalous=image_metadata["is_anomalous"],
-                anomaly_map=anomaly_map.tolist() if anomaly_map is not None else None,
+                anomaly_map=(
+                    AnomalyMapPayload(**encode_anomaly_map(anomaly_map))
+                    if anomaly_map is not None
+                    else None
+                ),
             )
         )
     return responses
@@ -2152,11 +2168,22 @@ class InferenceModelsActionRecognitionAdapter(Model):
         )
 
     def infer_from_request(
-        self, request: ActionRecognitionInferenceRequest
+        self,
+        request: ActionRecognitionInferenceRequest,
+        *,
+        processing_control: Optional[VideoProcessingControl] = None,
     ) -> ActionRecognitionInferenceResponse:
+        control = processing_control or VideoProcessingControl(
+            timeout_seconds=ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS
+        )
+        control.check()
         sampling = self._model.video_sampling
         default_confidence = getattr(self._model, "confidence_threshold", None)
         class_filter = request.class_filter or None
+        result_budget = ActionRecognitionResultBudget(
+            max_candidates=MAX_ACTION_RECOGNITION_CANDIDATES,
+            max_bytes=MAX_ACTION_RECOGNITION_RESPONSE_BYTES,
+        )
         # Only a model that carries its own class list has ids to report. A
         # request filter is not a vocabulary: a zero-shot model ignores it and
         # answers in its own words, so a caption that happens to match one of
@@ -2164,7 +2191,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
         id_vocabulary = self._model.class_names or None
         threshold = None
         per_class_thresholds = None
-        if default_confidence is not None:
+        if self._model.supports_confidence:
             thresholds = ConfidenceFilter(
                 confidence=(
                     "default" if request.confidence is None else request.confidence
@@ -2180,7 +2207,8 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 threshold = thresholds
         with video_source_path(
             video_type=request.video.type, value=request.video.value
-        ) as path:
+        ) as path, ExitStack() as cleanup:
+            control.check()
             source_fps, frame_count = probe_video(path=path)
             _ensure_clip_fits_the_duration_cap(
                 frame_count=frame_count, source_fps=source_fps
@@ -2193,9 +2221,16 @@ class InferenceModelsActionRecognitionAdapter(Model):
             timeline: List[ActionRecognitionPrediction] = []
             candidates = (
                 []
-                if request.include_candidates and default_confidence is not None
+                if request.include_candidates and self._model.supports_confidence
                 else None
             )
+            if candidates is not None:
+                estimate = self._model.estimate_candidate_count(
+                    sum(len(window.frame_indices) for window in windows),
+                    class_names=class_filter,
+                )
+                if estimate is not None:
+                    result_budget.check_candidate_count(estimate)
             windows_classified = 0
             frame_transform = getattr(self._model, "frame_storage_transform", None)
             decode_kwargs = (
@@ -2203,30 +2238,62 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 if frame_transform is not None
                 else {"max_frame_side": effective_max_frame_side(sampling)}
             )
-            window_frames = read_frame_windows(
-                path=path,
-                windows=[window.frame_indices for window in windows],
-                **decode_kwargs,
+            decode_state = VideoDecodeState()
+            window_limits = [
+                min(
+                    frame_count,
+                    round(
+                        window.frame_indices[0]
+                        + (
+                            window.duration_seconds
+                            if window.duration_seconds is not None
+                            else len(window.frame_indices) / window.sample_fps
+                        )
+                        * source_fps
+                    ),
+                )
+                for window in windows
+            ]
+            window_frames = cleanup.enter_context(
+                closing(
+                    read_frame_windows(
+                        path=path,
+                        windows=[window.frame_indices for window in windows],
+                        decode_state=decode_state,
+                        window_end_frames=window_limits,
+                        check_cancelled=control.check,
+                        **decode_kwargs,
+                    )
+                )
             )
-            for window, frames in zip(windows, window_frames):
+            for window, planned_limit, frames in zip(
+                windows, window_limits, window_frames
+            ):
+                control.check()
                 if len(frames) < max(1, sampling.min_frames):
                     continue
                 windows_classified += 1
                 # A window's segments index its own frames; the timeline
                 # counts the clip's.
                 infer_kwargs = {}
-                window_frame_limit = frame_count
+                window_frame_limit = min(
+                    planned_limit,
+                    (
+                        decode_state.frame_count
+                        if decode_state.reached_end
+                        else frame_count
+                    ),
+                )
                 window_duration_seconds = getattr(window, "duration_seconds", None)
-                if window_duration_seconds is not None:
-                    infer_kwargs["duration_seconds"] = window_duration_seconds
-                    window_frame_limit = min(
-                        frame_count,
-                        round(
-                            window.frame_indices[0]
-                            + window_duration_seconds * source_fps
-                        ),
+                if (
+                    self._model.supports_observed_duration
+                    and window_duration_seconds is not None
+                ):
+                    infer_kwargs["duration_seconds"] = min(
+                        window_duration_seconds,
+                        (window_frame_limit - window.frame_indices[0]) / source_fps,
                     )
-                if default_confidence is not None:
+                if self._model.supports_confidence:
                     infer_kwargs["confidence"] = (
                         0.0
                         if request.include_candidates
@@ -2240,9 +2307,13 @@ class InferenceModelsActionRecognitionAdapter(Model):
                     frames=frames,
                     class_names=class_filter,
                     fps=window.sample_fps,
+                    check_cancelled=control.check,
                     **infer_kwargs,
                 )
+                control.check()
                 if candidates is not None:
+                    result_budget.check_candidate_count(len(segments))
+                    candidate_start = len(candidates)
                     merge_window_segments(
                         timeline=candidates,
                         frame_numbers=window.frame_indices[: len(frames)],
@@ -2253,15 +2324,27 @@ class InferenceModelsActionRecognitionAdapter(Model):
                         frame_limit=window_frame_limit,
                         merge=False,
                     )
-                    segments = [
-                        segment
-                        for segment in segments
-                        if segment.confidence
-                        >= (
-                            per_class_thresholds[segment.class_name]
-                            if per_class_thresholds is not None
-                            else threshold
+                    result_budget.add_candidates(candidates[candidate_start:])
+                    segment_thresholds = (
+                        torch.tensor(
+                            [
+                                per_class_thresholds[segment.class_name]
+                                for segment in segments
+                            ],
+                            dtype=torch.float32,
                         )
+                        if per_class_thresholds is not None
+                        else threshold
+                    )
+                    keep = action_confidence_mask(
+                        torch.tensor(
+                            [segment.confidence for segment in segments],
+                            dtype=torch.float32,
+                        ),
+                        segment_thresholds,
+                    ).tolist()
+                    segments = [
+                        segment for segment, accepted in zip(segments, keep) if accepted
                     ]
                 merge_window_segments(
                     timeline=timeline,
@@ -2272,6 +2355,14 @@ class InferenceModelsActionRecognitionAdapter(Model):
                     frame_limit=window_frame_limit,
                     sample_stride=source_fps / window.sample_fps,
                 )
+                result_budget.check_response(
+                    timeline,
+                    {
+                        "per_class_confidence_thresholds": per_class_thresholds,
+                    },
+                )
+            if decode_state.reached_end:
+                frame_count = decode_state.frame_count
         timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
         response = ActionRecognitionInferenceResponse(
             timeline=timeline,
@@ -2284,6 +2375,11 @@ class InferenceModelsActionRecognitionAdapter(Model):
             candidates=candidates,
         )
         self._attach_resolved_model_metadata(response)
+        control.check()
+        result_budget.check_response(
+            timeline,
+            response.model_dump(mode="json", exclude={"timeline", "candidates"}),
+        )
         return response
 
     def preprocess(self, *args, **kwargs):

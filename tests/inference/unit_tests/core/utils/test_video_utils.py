@@ -10,6 +10,7 @@ import pytest
 
 from inference.core.exceptions import InputImageLoadError, PayloadTooLargeError
 from inference.core.utils.video_utils import (
+    VideoDecodeState,
     probe_video,
     read_frame_windows,
     read_frames,
@@ -82,6 +83,22 @@ def test_a_window_past_the_end_comes_back_short(clip) -> None:
 
     assert _frame_numbers(result[0]) == [0, 1]
     assert result[1] == []
+
+
+def test_decoder_observes_eof_after_the_final_requested_sample(clip):
+    state = VideoDecodeState()
+    result = list(
+        read_frame_windows(
+            path=clip,
+            windows=[[0, 10, 20]],
+            decode_state=state,
+            window_end_frames=[31],
+        )
+    )
+
+    assert _frame_numbers(result[0]) == [0, 10, 20]
+    assert state.reached_end
+    assert state.frame_count == 30
 
 
 def test_frames_are_capped_only_when_a_side_is_given(clip) -> None:

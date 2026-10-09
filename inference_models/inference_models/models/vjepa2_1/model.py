@@ -2,7 +2,7 @@
 
 import json
 import math
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from threading import Lock
 from typing import Callable, Optional, Union
@@ -18,9 +18,11 @@ from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import Confidence
 from inference_models.errors import ModelInputError
 from inference_models.models.base.action_recognition import (
+    WINDOW_DURATION_ROUNDING_SECONDS,
     ActionRecognitionModel,
     ActionRecognitionPrediction,
     VideoSampling,
+    action_confidence_mask,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
@@ -180,6 +182,8 @@ def validate_config(config):
 
 class VJepaActionRecognition(ActionRecognitionModel):
     span_semantics = "class_union"
+    supports_confidence = True
+    supports_observed_duration = True
 
     @classmethod
     def from_pretrained(
@@ -301,6 +305,19 @@ class VJepaActionRecognition(ActionRecognitionModel):
     def confidence_threshold(self):
         return self._config["post_processing"]["confidence_threshold"]
 
+    def estimate_candidate_count(self, sampled_frames: int, *, class_names=None) -> int:
+        """Bound one candidate per sampled frame and requested class.
+
+        Args:
+            sampled_frames (int): Total frames across planned model calls.
+            class_names (Optional[List[str]]): Requested class filter.
+
+        Returns:
+            int: Maximum unfiltered candidate count.
+        """
+        classes = self._classes if class_names is None else set(class_names)
+        return sampled_frames * len(classes)
+
     @property
     def video_sampling(self):
         inputs, post = self._config["network_input"], self._config["post_processing"]
@@ -321,7 +338,8 @@ class VJepaActionRecognition(ActionRecognitionModel):
         class_names=None,
         fps=None,
         confidence: Optional[Confidence] = None,
-        duration_seconds=None,
+        duration_seconds: Optional[float] = None,
+        check_cancelled: Optional[Callable[[], None]] = None,
         **kwargs,
     ):
         """Predict scored spans using detection's confidence modes.
@@ -333,6 +351,8 @@ class VJepaActionRecognition(ActionRecognitionModel):
             confidence: Numeric override, model-eval recommendations with "best",
                 or the package default with "default" or None.
             duration_seconds: Duration used to clip the output spans.
+            check_cancelled: Request control invoked before allocation, while
+                waiting for admission, and after result materialization.
             **kwargs: Additional inference parameters.
 
         Returns:
@@ -368,21 +388,55 @@ class VJepaActionRecognition(ActionRecognitionModel):
             recommended_parameters=self.recommended_parameters,
             default_confidence=self.confidence_threshold,
         ).get_threshold(self._classes)
-        images = []
-        for frame in frames:
-            frame = self.prepare_frame_for_storage(frame)
-            images.append(self._transform(Image.fromarray(frame)))
-        count = len(images)
+        count = len(frames)
         end_limit = (
             count
             if duration_seconds is None
             else duration_seconds * sampling.sample_fps
         )
-        if (
-            not math.isfinite(end_limit)
-            or not 0 < end_limit <= sampling.max_frames + 1e-6
+        rounding_allowance = (
+            WINDOW_DURATION_ROUNDING_SECONDS * sampling.sample_fps
+            + math.ulp(float(sampling.max_frames))
+        )
+        if not math.isfinite(end_limit) or not 0 < end_limit <= (
+            sampling.max_frames + rounding_allowance
         ):
             raise ModelInputError("Invalid V-JEPA window duration")
+        end_limit = min(end_limit, sampling.max_frames)
+
+        with self._admit(check_cancelled):
+            predictions = self._infer_window(
+                frames,
+                class_names=class_names,
+                threshold=threshold,
+                end_limit=end_limit,
+            )
+        return predictions
+
+    @contextmanager
+    def _admit(self, check_cancelled):
+        if check_cancelled is None:
+            with self._lock:
+                yield
+        else:
+            check_cancelled()
+            while not self._lock.acquire(timeout=0.1):
+                check_cancelled()
+            try:
+                check_cancelled()
+                yield
+                check_cancelled()
+            finally:
+                self._lock.release()
+
+    def _infer_window(self, frames, *, class_names, threshold, end_limit):
+        # The caller holds admission until this helper releases its tensor locals.
+        images = []
+        for frame in frames:
+            frame = self.prepare_frame_for_storage(frame)
+            images.append(self._transform(Image.fromarray(frame)))
+        count = len(images)
+        sampling = self.video_sampling
         images.extend([images[-1]] * (sampling.max_frames - count))
         inputs = torch.stack(images, dim=1)[None].to(self._device)
         autocast = (
@@ -390,14 +444,12 @@ class VJepaActionRecognition(ActionRecognitionModel):
             if self._device.type == "cuda" and self._dtype != torch.float32
             else nullcontext()
         )
-        with self._lock, autocast:
+        with autocast:
             logits, intervals = self._model.head(self._model.encoder(inputs))
         if not torch.isfinite(logits).all() or not torch.isfinite(intervals).all():
             raise FloatingPointError("V-JEPA produced nonfinite predictions")
         scores = logits[0, :count].float().sigmoid()
-        if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(scores.device)
-        rows, columns = (scores >= threshold).nonzero(as_tuple=True)
+        rows, columns = action_confidence_mask(scores, threshold).nonzero(as_tuple=True)
         spans = intervals[0, rows, columns].float().clamp(0, end_limit).cpu().tolist()
         confidences = scores[rows, columns].cpu().tolist()
         return [

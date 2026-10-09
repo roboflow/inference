@@ -634,7 +634,7 @@ def test_sample_fps_is_capped_at_source_fps():
     assert len(model.calls[1]["frames"]) == 2
 
 
-def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
+def test_dropped_frame_gap_rejects_window_and_recovers_after_gap_expires():
     block, model = _make_block(
         responses=[
             [_model_segment("walk")],
@@ -647,8 +647,9 @@ def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
     calls_before_gap = len(model.calls)
     result = _run(block, _make_frame(100))
 
-    assert len(model.calls) == calls_before_gap + 1
-    assert len(model.calls[-1]["frames"]) == 1
+    assert len(model.calls) == calls_before_gap
+    assert "Missing required samples" in result["error_status"]
+    assert "98" in result["error_status"]
     assert _timeline_as_dicts(result) == [
         {
             "start_frame_idx": 10,
@@ -656,13 +657,35 @@ def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
             "class_name": "walk",
             "class_id": -1,
         },
-        {
-            "start_frame_idx": 100,
-            "end_frame_idx": 100,
-            "class_name": "run",
-            "class_id": -1,
-        },
     ]
+    _run(block, _make_frame(101))
+    result = _run(block, _make_frame(102))
+    assert not result["error_status"]
+    assert len(model.calls) == calls_before_gap + 1
+    assert result["timeline"][-1].start_frame_idx == 100
+
+
+@pytest.mark.parametrize("scored", [False, True])
+def test_processing_paced_gap_never_reaches_either_model_family(scored):
+    block, model = _make_block()
+    model.supports_confidence = scored
+    model.supports_observed_duration = scored
+    model.video_sampling = VideoSampling(
+        window_seconds=4, sample_fps=4, min_frames=1, max_frames=16
+    )
+    outputs = []
+    for number in [0, 8, 15, 23, 90, 98, 105, 113, 120]:
+        outputs.extend(
+            block.run(
+                images=[_make_frame(number, fps=30)],
+                model_id="cosmos-3-edge",
+                stride_seconds=4,
+            )
+        )
+
+    assert model.calls == []
+    assert "source-frame indices 30, 38, 45" in outputs[-1]["error_status"]
+    assert "window 8-120" in outputs[-1]["error_status"]
 
 
 def test_merges_same_class_across_windows_when_gap_is_at_most_stride():
@@ -1170,7 +1193,8 @@ def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
     model.video_sampling = VideoSampling(
         window_seconds=4.0, sample_fps=4.0, min_frames=1, max_frames=16
     )
-    model.span_semantics = "class_union"
+    model.span_semantics = "instances"
+    model.supports_observed_duration = True
     source_window_frames = round(4.0 * source_fps)
 
     for frame_number in range(3 * source_window_frames + 1):
@@ -1184,6 +1208,22 @@ def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
     assert any(len(call["frames"]) == 16 for call in model.calls)
     assert all(1 <= len(call["frames"]) <= 16 for call in model.calls)
     assert all(0 < call["duration_seconds"] <= 4.0 for call in model.calls)
+
+
+@pytest.mark.parametrize("supports_confidence", [False, True])
+def test_confidence_option_uses_declared_capability(supports_confidence):
+    block, model = _make_block()
+    model.supports_confidence = supports_confidence
+    model.video_sampling = VideoSampling(window_seconds=1, sample_fps=4, min_frames=1)
+
+    for frame_number in range(5):
+        block.run(
+            images=[_make_frame(frame_number)],
+            model_id="cosmos-3-edge",
+            confidence=0.7,
+        )
+
+    assert model.calls[-1]["confidence"] == (0.7 if supports_confidence else None)
 
 
 def test_unscored_streaming_model_ignores_confidence() -> None:

@@ -280,6 +280,9 @@ from inference.core.interfaces.http.request_metrics import (
     GCPServerlessMiddleware,
     build_model_response_headers,
 )
+from inference.core.interfaces.http.video_processing import (
+    infer_action_recognition_request,
+)
 from inference.core.interfaces.roboflow_platform_client import (
     install_workflows_platform_bindings,
 )
@@ -4573,8 +4576,11 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = self.model_manager.infer_from_request_sync(
-                        model_id, inference_request
+                    response = infer_action_recognition_request(
+                        self.model_manager,
+                        model_id=model_id,
+                        inference_request=inference_request,
+                        request=request,
                     )
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
@@ -4891,7 +4897,7 @@ class HttpInterface(BaseInterface):
                 ),
                 include_anomaly_map: Optional[bool] = Query(
                     default=False,
-                    description="Anomaly detection only: include the raw anomaly heatmap in original image coordinates",
+                    description="Anomaly detection only: include the raw anomaly heatmap at the network input resolution",
                 ),
                 source: Optional[str] = Query(
                     "external",
@@ -5018,13 +5024,14 @@ class HttpInterface(BaseInterface):
                     # carries a URL here, which is the transport to prefer: a
                     # base64 body grows the clip by a third and is held whole
                     # in memory.
-                    inference_response = self.model_manager.infer_from_request_sync(
+                    inference_response = infer_action_recognition_request(
+                        self.model_manager,
                         # add_model above registers under the alias, which is
                         # model_id, so the lookup asks for that. Under Lambda
                         # request_model_id is the authorizer's endpoint and
                         # names nothing the manager holds.
-                        model_id,
-                        ActionRecognitionInferenceRequest(
+                        model_id=model_id,
+                        inference_request=ActionRecognitionInferenceRequest(
                             api_key=api_key,
                             model_id=model_id,
                             video=InferenceRequestVideo(
@@ -5036,6 +5043,7 @@ class HttpInterface(BaseInterface):
                             confidence=action_confidence,
                             include_candidates=include_candidates,
                         ),
+                        request=request,
                     )
                     logger.debug("Response ready.")
                     return orjson_response(inference_response)
