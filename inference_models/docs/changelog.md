@@ -79,6 +79,11 @@
 
 ### Fixed
 
+- Empty RLE instance-segmentation results retain the selected mask grid for
+  YOLOv5, YOLOv7, YOLOv8, YOLO26, YOLACT, and RF-DETR, including padding and
+  static crops. Output dimensions and HTTP coordinate metadata no longer
+  fall back to the original image size when no detections survive.
+
 - Origin-anchored static-crop masks now use a canvas representing the original
   image, matching crops with non-zero offsets. Dense and RLE results retain the
   crop's position when converted to image-resolution masks. Reduced canvases and

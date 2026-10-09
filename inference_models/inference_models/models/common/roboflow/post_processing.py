@@ -540,6 +540,69 @@ def resolve_unpadded_mask_grid(
     return max(1, unpadded_height), max(1, unpadded_width)
 
 
+def resolve_mask_output_size(
+    mask_height: int,
+    mask_width: int,
+    *,
+    padding: Tuple[int, int, int, int],
+    inference_size: ImageDimensions,
+    original_size: ImageDimensions,
+    size_after_pre_processing: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+    masks_resolution_factor: float = 1.0,
+) -> Tuple[int, int]:
+    """Resolve the final mask canvas dimensions without materializing a mask.
+
+    Args:
+        mask_height: Native mask height before removing network padding.
+        mask_width: Native mask width before removing network padding.
+        padding: Network padding as ``(left, top, right, bottom)``.
+        inference_size: Network dimensions corresponding to the native masks.
+        original_size: Original image dimensions before static cropping.
+        size_after_pre_processing: Image dimensions after static cropping.
+        static_crop_offset: Crop location and dimensions in the original image.
+        masks_resolution_factor: Mask-grid interpolation factor in ``[0, 1]``.
+
+    Returns:
+        Final ``(height, width)``, including rounded static-crop canvas placement.
+
+    Raises:
+        ValueError: If the resolution factor is outside the finite range [0, 1].
+    """
+    unpadded_height, unpadded_width = resolve_unpadded_mask_grid(
+        mask_height,
+        mask_width,
+        padding=padding,
+        inference_size=inference_size,
+    )
+    target_height, target_width = resolve_mask_target_size(
+        mask_height=unpadded_height,
+        mask_width=unpadded_width,
+        size_after_pre_processing=size_after_pre_processing,
+        masks_resolution_factor=masks_resolution_factor,
+    )
+    output_height, output_width = target_height, target_width
+    if (
+        static_crop_offset.offset_x > 0
+        or static_crop_offset.offset_y > 0
+        or size_after_pre_processing != original_size
+    ):
+        height_scale = target_height / size_after_pre_processing.height
+        width_scale = target_width / size_after_pre_processing.width
+        output_height = max(
+            1,
+            round(original_size.height * height_scale),
+            round(static_crop_offset.offset_y * height_scale) + target_height,
+        )
+        output_width = max(
+            1,
+            round(original_size.width * width_scale),
+            round(static_crop_offset.offset_x * width_scale) + target_width,
+        )
+
+    return output_height, output_width
+
+
 def _align_boxes_to_mask_grid(
     boxes: torch.Tensor,
     *,
@@ -638,36 +701,16 @@ def align_instance_segmentation_results(
         using the same rounded crop placement as the masks.
     """
     if image_bboxes.shape[0] == 0:
-        unpadded_height, unpadded_width = resolve_unpadded_mask_grid(
+        empty_height, empty_width = resolve_mask_output_size(
             masks.shape[1],
             masks.shape[2],
             padding=padding,
             inference_size=inference_size,
-        )
-        empty_target_height, empty_target_width = resolve_mask_target_size(
-            mask_height=unpadded_height,
-            mask_width=unpadded_width,
+            original_size=original_size,
             size_after_pre_processing=size_after_pre_processing,
+            static_crop_offset=static_crop_offset,
             masks_resolution_factor=masks_resolution_factor,
         )
-        empty_height, empty_width = empty_target_height, empty_target_width
-        if (
-            static_crop_offset.offset_x > 0
-            or static_crop_offset.offset_y > 0
-            or size_after_pre_processing != original_size
-        ):
-            height_scale = empty_target_height / size_after_pre_processing.height
-            width_scale = empty_target_width / size_after_pre_processing.width
-            empty_height = max(
-                1,
-                round(original_size.height * height_scale),
-                round(static_crop_offset.offset_y * height_scale) + empty_target_height,
-            )
-            empty_width = max(
-                1,
-                round(original_size.width * width_scale),
-                round(static_crop_offset.offset_x * width_scale) + empty_target_width,
-            )
         empty_masks = torch.empty(
             size=(0, empty_height, empty_width),
             dtype=torch.bool,

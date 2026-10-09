@@ -1482,3 +1482,75 @@ def test_native_grid_batch_does_not_mutate_model_boxes():
     torch.testing.assert_close(
         boxes, torch.tensor([[20, 10, 60, 30]], dtype=torch.float32)
     )
+
+
+@pytest.mark.parametrize("response_format", ["rle", "polygon"])
+@pytest.mark.parametrize("factor", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize("cropped", [False, True])
+def test_empty_rle_model_output_preserves_http_grid(response_format, factor, cropped):
+    from inference_models.entities import ImageDimensions
+    from inference_models.models.common.roboflow.model_packages import (
+        PreProcessingMetadata,
+        StaticCropOffset,
+    )
+    from inference_models.models.rfdetr.common import (
+        post_process_instance_segmentation_results_to_rle_masks,
+    )
+
+    image_size = (245, 245) if cropped else (200, 300)
+    crop_size = (162, 162) if cropped else image_size
+    offset = 83 if cropped else 0
+    native_size = 81 if cropped else 160
+    metadata = PreProcessingMetadata(
+        original_size=ImageDimensions(height=image_size[0], width=image_size[1]),
+        size_after_pre_processing=ImageDimensions(
+            height=crop_size[0], width=crop_size[1]
+        ),
+        inference_size=ImageDimensions(height=640, width=640),
+        scale_height=640 / crop_size[0],
+        scale_width=640 / crop_size[1],
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        static_crop_offset=StaticCropOffset(
+            offset_x=offset,
+            offset_y=offset,
+            crop_width=crop_size[1],
+            crop_height=crop_size[0],
+        ),
+    )
+    responses = []
+    for threshold in (0.1, 1.0):
+        detections = post_process_instance_segmentation_results_to_rle_masks(
+            bboxes=torch.tensor([[[0.5, 0.5, 0.5, 0.5]]]),
+            logits=torch.ones((1, 1, 1)),
+            masks=torch.ones((1, 1, native_size, native_size)),
+            pre_processing_meta=[metadata],
+            threshold=threshold,
+            num_classes=1,
+            classes_re_mapping=None,
+            masks_resolution_factor=factor,
+        )
+        response = _seg_adapter()._build_responses_from_detections(
+            detections,
+            [metadata],
+            allow_reduced_mask_resolution=True,
+            response_mask_format=response_format,
+        )[0]
+        responses.append(response)
+
+    populated, empty = responses
+    expected_size = (
+        {0.0: (123, 123), 0.5: (185, 185), 1.0: (245, 245)}[factor]
+        if cropped
+        else {0.0: (160, 160), 0.5: (180, 230), 1.0: (200, 300)}[factor]
+    )
+    assert len(populated.predictions) == 1
+    assert empty.predictions == []
+    assert (empty.image.height, empty.image.width) == expected_size
+    assert empty.image == populated.image
+    assert empty.original_image == populated.original_image
+    assert empty.mask_metadata == populated.mask_metadata
+    assert empty.mask_metadata.scale_x == image_size[1] / expected_size[1]
+    assert empty.mask_metadata.scale_y == image_size[0] / expected_size[0]
