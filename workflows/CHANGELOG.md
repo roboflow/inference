@@ -16,6 +16,7 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- V-JEPA streaming samples accept frames up to 50 ms after the requested source index, capped at half a sample interval. Predictions use the intended sample clock. Larger gaps skip affected windows with an error.
 - Action Recognition Model rejects missing samples only when the model declares that it requires regular sampling. Cosmos retains its previous behavior for FPS-limited streams.
 - Action Recognition Model uses explicit confidence and observed-duration capabilities for each model family.
 - Inference hosts can set `VJEPA2_1_ENABLED=False` to block V-JEPA loading through the Action Recognition Model block before weights load.

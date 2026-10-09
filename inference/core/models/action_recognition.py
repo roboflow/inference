@@ -27,6 +27,7 @@ def merge_window_segments(
     frame_limit: Optional[int] = None,
     sample_stride: Optional[float] = None,
     merge: bool = True,
+    sample_start_frame: Optional[float] = None,
 ) -> None:
     """Union one window's segments into ``timeline``, in place.
 
@@ -34,6 +35,21 @@ def merge_window_segments(
     the order the model saw them. ``class_filter`` drops classes the caller
     did not ask for. Classes outside ``id_vocabulary`` report ``-1``, which is
     what an open-vocabulary answer gets.
+
+    ``sample_start_frame`` anchors continuous spans to the intended sample
+    clock when streaming delivery selects a slightly later source frame.
+
+    Args:
+        timeline (List[ActionRecognitionPrediction]): Timeline updated in place.
+        frame_numbers (Sequence[int]): Selected source indices in sample order.
+        segments (List[Any]): Model spans in sampled-frame coordinates.
+        id_vocabulary (Optional[List[str]]): Model classes used to assign IDs.
+        stride (float): Maximum source-frame gap for merging discrete spans.
+        class_filter (Optional[List[str]]): Classes retained in the timeline.
+        frame_limit (Optional[int]): Exclusive source-frame endpoint.
+        sample_stride (Optional[float]): Source-frame interval for continuous spans.
+        merge (bool): Merge overlapping spans instead of appending each span.
+        sample_start_frame (Optional[float]): Intended origin for continuous spans.
     """
     sample_count = len(frame_numbers)
     if sample_count == 0:
@@ -51,22 +67,25 @@ def merge_window_segments(
             # Neural span heads return continuous, half-open sample coordinates.
             # The public timeline uses inclusive source-frame indices.
             step = stride if sample_stride is None else sample_stride
+            origin = (
+                frame_numbers[0] if sample_start_frame is None else sample_start_frame
+            )
             sample_limit = (
-                sample_count
-                if frame_limit is None
-                else (frame_limit - frame_numbers[0]) / step
+                sample_count if frame_limit is None else (frame_limit - origin) / step
             )
             start = max(0.0, min(float(segment.start_frame_idx), sample_limit))
             end = max(0.0, min(float(segment.end_frame_idx), sample_limit))
             limit = (
                 frame_limit
                 if frame_limit is not None
-                else math.ceil(frame_numbers[-1] + step)
+                else math.ceil(
+                    frame_numbers[-1] + step
+                    if sample_start_frame is None
+                    else origin + sample_count * step
+                )
             )
-            start_frame = max(
-                frame_numbers[0], math.floor(frame_numbers[0] + start * step)
-            )
-            end_frame = min(limit - 1, math.ceil(frame_numbers[0] + end * step) - 1)
+            start_frame = max(math.floor(origin), math.floor(origin + start * step))
+            end_frame = min(limit - 1, math.ceil(origin + end * step) - 1)
             if end <= start or end_frame < start_frame:
                 continue
             merge_stride = 1

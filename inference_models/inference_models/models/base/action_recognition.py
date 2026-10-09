@@ -71,6 +71,10 @@ class VideoSampling:
     ``requires_regular_sampling`` rejects incomplete streaming windows when
     the model requires a regular sample clock. Otherwise, streams retain
     available frames and map discrete spans through their actual source indices.
+    ``max_sample_lateness_seconds`` allows a later source frame after the
+    requested source index for a regular streaming sample. The block caps
+    this allowance at half a sample interval and retains the intended time
+    separately from the selected source index.
 
     ``max_frames`` is the budget one sample holds, which only a trained model
     has. A fine-tune records it, and a clip longer than the budget is sampled
@@ -91,6 +95,7 @@ class VideoSampling:
     end_aligned: bool = False
     fixed_sample_fps: bool = False
     requires_regular_sampling: bool = False
+    max_sample_lateness_seconds: float = 0.0
 
 
 class ActionRecognitionModel(ABC):

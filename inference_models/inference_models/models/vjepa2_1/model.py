@@ -329,6 +329,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
             end_aligned=True,
             fixed_sample_fps=True,
             requires_regular_sampling=True,
+            max_sample_lateness_seconds=0.05,
         )
 
     @torch.inference_mode()

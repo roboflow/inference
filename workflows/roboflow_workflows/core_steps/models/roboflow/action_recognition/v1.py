@@ -131,8 +131,15 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
 
 
 @dataclass
+class _SampledFrame:
+    intended_frame_number: float
+    source_frame_number: Optional[int]
+    frame: Any
+
+
+@dataclass
 class _ActionRecognitionBookkeeping:
-    sampled: List[Tuple[int, Any]] = field(default_factory=list)
+    sampled: List[_SampledFrame] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
     dropped_history: bool = False
@@ -493,6 +500,12 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         else:
             effective_sample_fps = min(float(video_sampling.sample_fps), source_fps)
         sampling_stride = source_fps / effective_sample_fps
+        allowed_lateness_seconds = video_sampling.max_sample_lateness_seconds
+        if not math.isfinite(allowed_lateness_seconds) or allowed_lateness_seconds < 0:
+            raise ValueError("Sample lateness must be nonnegative and finite.")
+        allowed_lateness_frames = source_fps * min(
+            allowed_lateness_seconds, 0.5 / effective_sample_fps
+        )
         window_frames = max(1, round(requested_window_seconds * source_fps))
         stride_frames = max(1, round(requested_stride_seconds * source_fps))
         cutoff_frame_number = frame_number - window_frames
@@ -522,28 +535,48 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 frame = frame_transform(frame)
             if video_sampling.requires_regular_sampling:
                 # Empty slots preserve the model clock without inventing missing pixels.
+                frame_used = False
                 while (
                     math.ceil(bookkeeping.next_sample_frame_number - 1e-9)
                     <= frame_number
                 ):
-                    expected_frame = math.ceil(
-                        bookkeeping.next_sample_frame_number - 1e-9
+                    intended_frame = bookkeeping.next_sample_frame_number
+                    expected_frame = math.ceil(intended_frame - 1e-9)
+                    within_tolerance = (
+                        frame_number - expected_frame <= allowed_lateness_frames + 1e-9
                     )
                     bookkeeping.sampled.append(
-                        (
-                            expected_frame,
-                            frame if expected_frame == frame_number else None,
+                        _SampledFrame(
+                            intended_frame_number=intended_frame,
+                            source_frame_number=(
+                                frame_number
+                                if within_tolerance and not frame_used
+                                else None
+                            ),
+                            frame=(
+                                frame if within_tolerance and not frame_used else None
+                            ),
                         )
                     )
+                    frame_used = frame_used or within_tolerance
                     bookkeeping.next_sample_frame_number += sampling_stride
             else:
                 if bookkeeping.next_sample_frame_number < frame_number - 1:
                     bookkeeping.next_sample_frame_number = float(frame_number)
                 while bookkeeping.next_sample_frame_number <= frame_number:
-                    bookkeeping.sampled.append((frame_number, frame))
+                    bookkeeping.sampled.append(
+                        _SampledFrame(
+                            intended_frame_number=float(frame_number),
+                            source_frame_number=frame_number,
+                            frame=frame,
+                        )
+                    )
                     bookkeeping.next_sample_frame_number += sampling_stride
 
-        while bookkeeping.sampled and bookkeeping.sampled[0][0] <= cutoff_frame_number:
+        while (
+            bookkeeping.sampled
+            and bookkeeping.sampled[0].intended_frame_number <= cutoff_frame_number
+        ):
             bookkeeping.sampled.pop(0)
         if video_sampling.max_frames is not None:
             # Rounded source-frame windows can contain one extra sampling timestamp.
@@ -615,13 +648,17 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
     ) -> str:
         if not bookkeeping.sampled:
             return ""
-        missing = [number for number, frame in bookkeeping.sampled if frame is None]
+        missing = [
+            math.ceil(sample.intended_frame_number - 1e-9)
+            for sample in bookkeeping.sampled
+            if sample.frame is None
+        ]
         if missing:
-            first_frame = bookkeeping.sampled[0][0]
+            first_frame = math.floor(bookkeeping.sampled[0].intended_frame_number)
             last_frame = (
                 frame_limit - 1
                 if frame_limit is not None
-                else bookkeeping.sampled[-1][0]
+                else math.ceil(bookkeeping.sampled[-1].intended_frame_number)
             )
             indices = ", ".join(str(number) for number in missing[:16])
             remainder = f" and {len(missing) - 16} more" if len(missing) > 16 else ""
@@ -630,7 +667,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 f"for window {first_frame}-{last_frame}. Inference skipped this window."
             )
         frames = self._prepare_frames_for_model(
-            [frame for _, frame in bookkeeping.sampled]
+            [sample.frame for sample in bookkeeping.sampled]
         )
         try:
             infer_kwargs = (
@@ -639,9 +676,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 else {}
             )
             if model.supports_observed_duration and frame_limit is not None:
-                duration_seconds = (frame_limit - bookkeeping.sampled[0][0]) / (
-                    sampling_stride * effective_sample_fps
-                )
+                duration_seconds = (
+                    frame_limit - bookkeeping.sampled[0].intended_frame_number
+                ) / (sampling_stride * effective_sample_fps)
                 infer_kwargs["duration_seconds"] = min(
                     duration_seconds, model.video_sampling.window_seconds
                 )
@@ -663,8 +700,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         logger.debug(
             "Action Recognition model call over sampled frames "
             "[%s, %s] returned %d pre-merge segment(s): %s",
-            bookkeeping.sampled[0][0],
-            bookkeeping.sampled[-1][0],
+            bookkeeping.sampled[0].source_frame_number,
+            bookkeeping.sampled[-1].source_frame_number,
             len(segments),
             [
                 (segment.start_frame_idx, segment.end_frame_idx, segment.class_name)
@@ -737,13 +774,16 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
     ) -> None:
         merge_window_segments(
             timeline=bookkeeping.timeline,
-            frame_numbers=[frame_number for frame_number, _ in bookkeeping.sampled],
+            frame_numbers=[
+                sample.source_frame_number for sample in bookkeeping.sampled
+            ],
             segments=segments,
             id_vocabulary=id_vocabulary,
             stride=stride,
             class_filter=block_filter,
             sample_stride=sample_stride,
             frame_limit=frame_limit,
+            sample_start_frame=bookkeeping.sampled[0].intended_frame_number,
         )
         self._evict_oldest_actions(bookkeeping=bookkeeping)
         bookkeeping.timeline.sort(
