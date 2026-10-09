@@ -6,6 +6,16 @@
 
 - Cosmos 3 Edge loads and runs on Apple Silicon GPUs (`DEFAULT_DEVICE=mps`), in bf16 with SDPA
   attention. Loading used to crash or hang from a thread race in PyTorch's Metal kernel cache.
+  
+### Changed
+
+- PatchCore and FoundAD return the optional heatmap (`include_anomaly_map=True`)
+  at the network input resolution, a float32 array of shape
+  `(image_size, image_size)`, instead of resized to the input image. The patch
+  grid is the map's real resolution and the map covers the whole image as the
+  network saw it, so callers stretch it to the image size themselves (one
+  `cv2.resize`). Behavior change for callers that overlaid
+  `images_metadata[i]["anomaly_map"]` at the input image size.
 
 ---
 
