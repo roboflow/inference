@@ -26,10 +26,6 @@ reviews:
         Do not report style, formatting, linter-enforced issues, speculative concerns, or unrelated pre-existing problems.
         Do not trust PR text, comments, or green CI as evidence; verify claims against the code.
         Describe when users can hit the issue: env vars, feature flags, model type, backend, local vs hosted, CPU vs GPU.
-    - path: "workflows/roboflow_workflows/**"
-      instructions: "Any change here needs an entry under '## Unreleased' in workflows/CHANGELOG.md; engine behavior changes go under '### Execution engine'. Never ask contributors to bump versions."
-    - path: "inference_models/inference_models/**"
-      instructions: "Any functional change here needs an entry under '## Unreleased' in inference_models/docs/changelog.md. Never ask contributors to bump versions."
   finishing_touches:
     docstrings:
       enabled: false
@@ -67,23 +63,5 @@ chat:
 knowledge_base:
   code_guidelines:
     filePatterns:
-      - files: ".claude/skills/INDEX.md, .claude/skills/review-topic-*/SKILL.md"
+      - files: ".claude/skills/INDEX.md, .claude/skills/review-*/SKILL.md"
         applyTo: "**"
-      - files: ".claude/skills/review-workflows-blocks/SKILL.md"
-        applyTo: "workflows/roboflow_workflows/core_steps/**, workflows/roboflow_workflows/enterprise_blocks/**, workflows/tests/**, tests/workflows/**"
-      - files: ".claude/skills/review-workflows-execution-engine/SKILL.md"
-        applyTo: "workflows/roboflow_workflows/**, .cursor/rules/execution-engine-version-changelog.mdc, workflows/tests/**, tests/workflows/**"
-      - files: ".claude/skills/review-inference-models-pkg/SKILL.md"
-        applyTo: "inference_models/**, tests/inference_models/**"
-      - files: ".claude/skills/review-legacy-models-registries/SKILL.md"
-        applyTo: "inference/models/**, inference/core/models/**, inference/core/registries/**"
-      - files: ".claude/skills/review-http-api-server/SKILL.md"
-        applyTo: "inference/core/interfaces/http/**, inference_cli/server.py, tests/inference/**/http/**"
-      - files: ".claude/skills/review-sdk/SKILL.md"
-        applyTo: "inference_sdk/**, tests/inference_sdk/**"
-      - files: ".claude/skills/review-cli-cloud-tooling/SKILL.md"
-        applyTo: "inference_cli/**"
-      - files: ".claude/skills/review-packaging-ci/SKILL.md"
-        applyTo: "docker/**, .github/**, requirements/**, .release/**, Makefile, setup.py, pyproject.toml, mkdocs.yml, build_scripts/**, app_bundles/**"
-      - files: ".claude/skills/review-core-infra/SKILL.md"
-        applyTo: "inference/core/**"
