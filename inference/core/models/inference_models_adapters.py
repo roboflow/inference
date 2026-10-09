@@ -44,6 +44,7 @@ from inference.core.entities.responses.inference import (
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
     LMMInferenceResponse,
+    MaskCoordinateMetadata,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
@@ -68,6 +69,7 @@ from inference.core.env import (
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
 from inference.core.exceptions import (
+    InvalidMaskDecodeArgument,
     ModelDeploymentNotSupportedError,
     PayloadTooLargeError,
     PostProcessingError,
@@ -121,6 +123,7 @@ from inference_models.configuration import (
     MAX_RFDETR_PIPELINE_DEPTH,
     get_rfdetr_pipeline_depth,
 )
+from inference_models.entities import ImageDimensions
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     effective_max_frame_side,
@@ -144,7 +147,11 @@ from inference_models.models.base.semantic_segmentation import (
 )
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
+from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
+    resolve_mask_frame_size,
+    scale_polygons_to_image,
+)
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -441,6 +448,44 @@ class InferenceModelsObjectDetectionAdapter(Model):
         )
 
 
+_MASK_DECODE_MODE_TO_RESOLUTION_FACTOR = {
+    "accurate": 1.0,
+    "fast": 0.0,
+}
+
+
+def _resolve_masks_resolution_factor(
+    *,
+    mask_decode_mode: Optional[str],
+    tradeoff_factor: Optional[float],
+) -> float:
+    """Collapse the request enum and factor onto one resolution factor.
+
+    ``accurate`` keeps masks at image resolution and is the default, matching
+    the published contract. ``fast`` leaves them on the model's own grid.
+    ``tradeoff`` interpolates between the two by ``tradeoff_factor``.
+    """
+    if mask_decode_mode is None:
+        return 1.0
+
+    if mask_decode_mode in _MASK_DECODE_MODE_TO_RESOLUTION_FACTOR:
+        return _MASK_DECODE_MODE_TO_RESOLUTION_FACTOR[mask_decode_mode]
+
+    if mask_decode_mode != "tradeoff":
+        raise InvalidMaskDecodeArgument(
+            f"Invalid mask_decode_mode: {mask_decode_mode}. "
+            "Must be one of ['accurate', 'fast', 'tradeoff']"
+        )
+
+    resolution_factor = 0.0 if tradeoff_factor is None else float(tradeoff_factor)
+    if not 0.0 <= resolution_factor <= 1.0:
+        raise InvalidMaskDecodeArgument(
+            f"Invalid tradeoff_factor: {resolution_factor}. Must be in [0.0, 1.0]"
+        )
+
+    return resolution_factor
+
+
 class InferenceModelsInstanceSegmentationAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
@@ -538,6 +583,14 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
+        allow_reduced_masks = kwargs.pop("allow_reduced_mask_resolution", False)
+        resolution_factor = _resolve_masks_resolution_factor(
+            mask_decode_mode=kwargs.pop("mask_decode_mode", None),
+            tradeoff_factor=kwargs.pop("tradeoff_factor", None),
+        )
+        kwargs["masks_resolution_factor"] = (
+            resolution_factor if allow_reduced_masks else 1.0
+        )
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
@@ -589,6 +642,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         return 1
 
     def predict(self, img_in, **kwargs):
+        allow_reduced_masks = kwargs.get("allow_reduced_mask_resolution", False)
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         if self._pipeline_depth <= 1:
             # Original path: forward on current frame, postprocess on
@@ -609,6 +663,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_next_pending_gpu_work()
         pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
         fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
+        fut._adapter_allow_reduced_mask_resolution = allow_reduced_masks
         stream_pipeline_context_id = kwargs.get(STREAM_PIPELINE_CONTEXT_ID_KWARG)
         if not isinstance(stream_pipeline_context_id, str):
             stream_pipeline_context_id = None
@@ -818,8 +873,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         fut._meta = preprocess_return_metadata  # type: ignore[attr-defined]
         fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
         detections_list = fut.result()
+        response_kwargs = dict(mapped_kwargs)
+        response_kwargs["allow_reduced_mask_resolution"] = getattr(
+            fut, "_adapter_allow_reduced_mask_resolution", False
+        )
         return self._build_responses_from_detections(
-            detections_list, preprocess_return_metadata, **mapped_kwargs
+            detections_list, preprocess_return_metadata, **response_kwargs
         )
 
     def _postprocess_sync(
@@ -829,13 +888,17 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
         return_in_rle = kwargs.get("response_mask_format") == "rle"
+        allow_reduced_masks = kwargs.get("allow_reduced_mask_resolution", False)
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         mapped_kwargs["defer_count_to_adapter"] = not return_in_rle
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
         )
         return self._build_responses_from_detections(
-            detections_list, preprocess_return_metadata, **kwargs
+            detections_list,
+            preprocess_return_metadata,
+            allow_reduced_mask_resolution=allow_reduced_masks,
+            **kwargs,
         )
 
     def _build_responses_from_detections(
@@ -998,13 +1061,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 xyxy = det.xyxy.detach().cpu().numpy()
                 confs = det.confidence.detach().cpu().numpy()
                 if isinstance(det.mask, torch.Tensor):
-                    masks = det.mask.detach().cpu().numpy()
+                    masks = det.mask.detach().cpu()
                     if return_in_rle:
                         polys_or_rles = [
                             torch_mask_to_coco_rle(mask=mask) for mask in masks
                         ]
                     else:
-                        polys_or_rles = masks2poly(masks)
+                        polys_or_rles = masks2poly(masks.numpy())
                 else:
                     if return_in_rle:
                         polys_or_rles = det.mask.to_coco_rle_masks()
@@ -1016,6 +1079,37 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             # thread-local pinned scratch buffers. Only scalar values and
             # polygon/RLE lists may be stored on responses below; do not return
             # those arrays or any view derived from them.
+            mask_size = getattr(det, "mask_size", None)
+            produced_against = resolve_mask_frame_size(preproc_metadata)
+            different_grid = mask_size is not None and tuple(mask_size) != (H, W)
+            # Async responses receive the already-resolved model factor.
+            native_grid = kwargs.get("allow_reduced_mask_resolution", False) or (
+                kwargs.get("masks_resolution_factor", 1.0) != 1.0
+            )
+            mask_metadata = None
+            original_image = None
+            output_height, output_width = H, W
+            box_scale_x = box_scale_y = 1.0
+            if native_grid and mask_size is not None:
+                output_height, output_width = int(mask_size[0]), int(mask_size[1])
+                original_image = InferenceResponseImage(width=W, height=H)
+                box_scale_x = output_width / W
+                box_scale_y = output_height / H
+                mask_metadata = MaskCoordinateMetadata(
+                    height=int(mask_size[0]),
+                    width=int(mask_size[1]),
+                    scale_x=W / mask_size[1],
+                    scale_y=H / mask_size[0],
+                )
+            if not return_in_rle and different_grid and not native_grid:
+                polys_or_rles = scale_polygons_to_image(
+                    polys_or_rles,
+                    mask_size=ImageDimensions(
+                        height=int(mask_size[0]), width=int(mask_size[1])
+                    ),
+                    image_size=produced_against,
+                )
+
             predictions: List[
                 Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
             ] = []
@@ -1023,10 +1117,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             for (x1, y1, x2, y2), mask_as_poly_or_rle, conf, class_id in zip(
                 xyxy, polys_or_rles, confs, class_ids
             ):
-                cx = (float(x1) + float(x2)) / 2.0
-                cy = (float(y1) + float(y2)) / 2.0
-                w = float(x2) - float(x1)
-                h = float(y2) - float(y1)
+                cx = (float(x1) + float(x2)) / 2.0 * box_scale_x
+                cy = (float(y1) + float(y2)) / 2.0 * box_scale_y
+                w = (float(x2) - float(x1)) * box_scale_x
+                h = (float(y2) - float(y1)) * box_scale_y
                 class_id_int = int(class_id)
                 class_name = (
                     self.class_names[class_id_int]
@@ -1093,14 +1187,22 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 responses.append(
                     InstanceSegmentationInferenceResponseDC(
                         predictions=predictions,
-                        image=InferenceResponseImageDC(width=W, height=H),
+                        image=InferenceResponseImageDC(
+                            width=output_width, height=output_height
+                        ),
+                        original_image=original_image,
+                        mask_metadata=mask_metadata,
                     )
                 )
             else:
                 responses.append(
                     InstanceSegmentationInferenceResponse(
                         predictions=predictions,
-                        image=InferenceResponseImage(width=W, height=H),
+                        image=InferenceResponseImage(
+                            width=output_width, height=output_height
+                        ),
+                        original_image=original_image,
+                        mask_metadata=mask_metadata,
                     )
                 )
         return responses
@@ -1143,7 +1245,10 @@ def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
         return rle_masks_to_polygons(masks=masks)
 
     segments = []
-    h, w = masks.image_size
+    # counts are encoded on the mask grid, which is not the image grid once a
+    # resolution factor below 1.0 is in play. Decoding on image_size makes
+    # pycocotools reinterpret the runs without error and yields garbage.
+    h, w = masks.mask_size or masks.image_size
     for counts in masks.masks:
         rle_dict = {"size": [h, w], "counts": counts}
         decoded_rle = np.ascontiguousarray(mask_utils.decode(rle_dict))
@@ -1891,6 +1996,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
+            rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
         fixed_input_hw = _fixed_input_hw_from_backend(self._model)

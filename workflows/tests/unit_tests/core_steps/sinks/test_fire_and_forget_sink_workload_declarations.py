@@ -1,7 +1,7 @@
-"""Fire-and-forget declarations of the Microsoft SQL Server, Event Writer and
-OPC UA Writer sinks.
+"""Fire-and-forget declarations of the Microsoft SQL Server, Event Writer,
+OPC UA Writer and MQTT Writer v2 sinks.
 
-All three dispatch their write in the background when ``fire_and_forget`` is
+All four return before the write is confirmed when ``fire_and_forget`` is
 true, so a failed write is not returned. Their actual declarations used to omit
 that caveat. They now declare it for a literal ``True``, omit it for a literal
 ``False``, and report a selector as unknown rather than guessing either way.
@@ -32,6 +32,12 @@ from roboflow_workflows.enterprise_blocks.sinks.microsoft_sql_server.v1 import (
 from roboflow_workflows.enterprise_blocks.sinks.microsoft_sql_server.v1 import (
     MicrosoftSQLServerSinkBlockV1,
 )
+from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v2 import (
+    FIRE_AND_FORGET_PER_REQUEST_RESTRICTION,
+)
+from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v2 import (
+    BlockManifest as MQTTWriterManifest,
+)
 from roboflow_workflows.enterprise_blocks.sinks.opc_writer.v1 import (
     BlockManifest as OPCWriterManifest,
 )
@@ -57,6 +63,7 @@ ENTERPRISE_PLUGIN = "roboflow_workflows.enterprise_blocks.loader"
 SQL_SERVER_TYPE = "roboflow_core/microsoft_sql_server_sink@v1"
 EVENT_WRITER_TYPE = "roboflow_enterprise/event_writer_sink@v1"
 OPC_WRITER_TYPE = "roboflow_enterprise/opc_writer_sink@v1"
+MQTT_WRITER_TYPE = "roboflow_enterprise/mqtt_writer_sink@v2"
 FIRE_AND_FORGET_CODE = "fire_and_forget_hides_persistence_failures"
 COOLDOWN_CODE = "cooldown_timer_resets_on_stateless_http"
 SELECTOR = "$inputs.fire_and_forget"
@@ -101,6 +108,18 @@ def _opc_writer_step(fire_and_forget: Any) -> Dict[str, Any]:
     }
 
 
+def _mqtt_writer_step(fire_and_forget: Any) -> Dict[str, Any]:
+    return {
+        "type": MQTT_WRITER_TYPE,
+        "name": STEP_NAME,
+        "host": "broker.example.invalid",
+        "port": 1883,
+        "topic": "line1/status",
+        "message": "ok",
+        "fire_and_forget": fire_and_forget,
+    }
+
+
 # (manifest class, step builder, restrictions known independently of the switch)
 BLOCKS = {
     SQL_SERVER_TYPE: (SQLServerManifest, _sql_server_step, []),
@@ -110,7 +129,12 @@ BLOCKS = {
         _opc_writer_step,
         [COOLDOWN_ACTUAL_RESTRICTION],
     ),
+    MQTT_WRITER_TYPE: (MQTTWriterManifest, _mqtt_writer_step, []),
 }
+
+# restrictions a literal ``True`` declares besides the shared caveat: the MQTT
+# Writer's client and queue live in the block instance HTTP rebuilds per request
+SWITCHED_EXTRAS = {MQTT_WRITER_TYPE: [FIRE_AND_FORGET_PER_REQUEST_RESTRICTION]}
 
 
 def _manifest(block_type: str, fire_and_forget: Any) -> Any:
@@ -125,6 +149,9 @@ def _expected_items(block_type: str, fire_and_forget: Any) -> List[Any]:
     expected = list(unconditional)
     if fire_and_forget is True:
         expected.append(FIRE_AND_FORGET_RESTRICTION)
+        expected.extend(SWITCHED_EXTRAS.get(block_type, []))
+    # discoveries order their items by code
+    expected.sort(key=lambda item: item.code)
 
     return expected
 
@@ -223,7 +250,9 @@ def test_the_host_view_matches_the_portable_view(
     assert host_view == portable_view
 
 
-@pytest.mark.parametrize("manifest_class", [SQLServerManifest, EventWriterManifest])
+@pytest.mark.parametrize(
+    "manifest_class", [SQLServerManifest, EventWriterManifest, MQTTWriterManifest]
+)
 def test_legacy_editor_restrictions_stay_unchanged(manifest_class: type) -> None:
     # the OPC UA Writer is pinned in test_industrial_workload_restrictions.py
     assert manifest_class.get_restrictions() == []

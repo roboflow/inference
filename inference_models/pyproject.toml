@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.39.1"
+version = "0.39.2rc5"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -47,16 +47,17 @@ dependencies = [
   "pyclipper>=1.3.0,<2.0.0",
   "shapely>=2.0.0,<3.0.0",
   # transitive-dependencies pinning
-  "hydra-core>=1.3.4",
+  "hydra-core>=1.3.7",
   "urllib3>=2.8.0,<3.0.0",
   "pillow>=12.3.0,<13.0.0",
   "GitPython>=3.1.59,<4.0.0",
-  "CairoSVG>=2.9.0,<3.0.0",
+  "CairoSVG>=2.9.1,<3.0.0",
   "fonttools>=4.60.2,<5.0.0",
   "Pygments>=2.20.0,<3.0.0",
   "idna>=3.15",
   "setuptools>=83.0.0",
-  "anyio>=4.14.2,<5.0.0"
+  "anyio>=4.14.2,<5.0.0",
+  "fsspec>=2026.6.0"
 ]
 
 [project.optional-dependencies]
@@ -73,14 +74,14 @@ torch-cu118 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
-  "Mako>=1.3.11",
+  "Mako>=1.4.2",
 ]
 torch-cu124 = [
   "sam3==0.1.4; sys_platform != 'darwin'",
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
-  "Mako>=1.3.11",
+  "Mako>=1.4.2",
 ]
 torch-cu126 = [
   "sam3==0.1.4; sys_platform != 'darwin'",
@@ -93,14 +94,14 @@ torch-cu128 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
-  "Mako>=1.3.11",
+  "Mako>=1.4.2",
 ]
 torch-cu130 = [
   "sam3==0.1.4; sys_platform != 'darwin'",
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<=2026.1.0; platform_system != 'darwin' and python_version >= '3.10'",
-  "Mako>=1.3.11",
+  "Mako>=1.4.2",
 ]
 torch-jp6-cu126 = [
   "sam3==0.1.4; sys_platform != 'darwin'",
@@ -109,7 +110,7 @@ torch-jp6-cu126 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0",
-  "Mako>=1.3.11",
+  "Mako>=1.4.2",
 ]
 onnx-cpu = [
   "onnxruntime>=1.15.1,<1.23.0",
@@ -121,14 +122,14 @@ onnx-cu118 = [
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin'",
   "onnx>=1.21.0",
   "protobuf>=5.29.6",
-  "Mako>=1.3.11",
+  "Mako>=1.4.2",
 ]
 onnx-cu12 = [
   "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system != 'darwin'",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin'",
   "onnx>=1.21.0",
   "protobuf>=5.29.6",
-  "Mako>=1.3.11",
+  "Mako>=1.4.2",
 ]
 onnx-jp6-cu126 = [
   "numpy<2.0.0; platform_system == 'Linux' and platform_machine == 'aarch64' and python_version >= '3.10' and python_version < '3.13'",
@@ -137,7 +138,7 @@ onnx-jp6-cu126 = [
   "pycuda>=2025.0.0,<2026.0.0; platform_system == 'Linux' and platform_machine == 'aarch64' and python_version >= '3.10'",
   "onnx>=1.21.0",
   "protobuf>=5.29.6",
-  "Mako>=1.3.11",
+  "Mako>=1.4.2",
 ]
 coreml = [
   "coremltools>=8.3,<10.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
@@ -146,7 +147,7 @@ trt10 = [
   "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
-  "Mako>=1.3.11",
+  "Mako>=1.4.2",
 ]
 test = [
   "pytest>=9.0.3",
