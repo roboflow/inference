@@ -75,6 +75,7 @@ from streamvision.webrtc_worker.utils import (
     get_cv2_rotation_code,
     get_video_fps,
     get_video_rotation,
+    get_video_total_frames,
     parse_video_file_chunk,
     process_frame,
     rotate_video_frame,
@@ -291,6 +292,7 @@ class VideoFrameProcessor:
         self._av_logging_set: bool = False
         self._received_frames = 0
         self._declared_fps = declared_fps
+        self._total_frames: Optional[int] = None
         self._fps_monitor = sv.FPSMonitor()
         self._stop_processing = False
         self._termination_reason: Optional[str] = None
@@ -725,6 +727,7 @@ class VideoFrameProcessor:
             stream_output,
             render_output,
             include_errors_on_frame,
+            self._total_frames,
         )
         try:
             result = await asyncio.shield(processing)
@@ -1373,6 +1376,9 @@ async def init_rtc_peer_connection_with_loop(
                             )
                         else:
                             # we are dealing with a video file,
+                            video_processor._total_frames = get_video_total_frames(
+                                video_path
+                            )
                             track = ThreadedVideoFileTrack(video_path)
                             video_processor.set_track(
                                 track=track, rotation_code=rotation_code

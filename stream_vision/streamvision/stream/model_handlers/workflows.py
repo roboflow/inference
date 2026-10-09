@@ -114,6 +114,7 @@ class WorkflowRunner:
                 fps=video_frame.fps,
                 measured_fps=video_frame.measured_fps,
                 comes_from_video_file=video_frame.comes_from_video_file,
+                total_frames=video_frame.total_frames,
             )
             for video_frame in video_frames
         ]
