@@ -17,6 +17,13 @@
 - V-JEPA supports overlapping windows, an end-aligned final HTTP window, and
   package or model-eval confidence thresholds. Same-class spans merge after
   filtering. Invalid frame inputs and request options raise `ModelInputError`.
+- PatchCore and FoundAD return the optional heatmap (`include_anomaly_map=True`)
+  at the network input resolution, a float32 array of shape
+  `(image_size, image_size)`, instead of resized to the input image. The patch
+  grid is the map's real resolution and the map covers the whole image as the
+  network saw it, so callers stretch it to the image size themselves (one
+  `cv2.resize`). Behavior change for callers that overlaid
+  `images_metadata[i]["anomaly_map"]` at the input image size.
 
 ---
 

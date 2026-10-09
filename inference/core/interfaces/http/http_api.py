@@ -4897,7 +4897,7 @@ class HttpInterface(BaseInterface):
                 ),
                 include_anomaly_map: Optional[bool] = Query(
                     default=False,
-                    description="Anomaly detection only: include the raw anomaly heatmap in original image coordinates",
+                    description="Anomaly detection only: include the raw anomaly heatmap at the network input resolution",
                 ),
                 source: Optional[str] = Query(
                     "external",
