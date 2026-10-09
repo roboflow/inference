@@ -13,6 +13,7 @@ The `inference-models` library supports a wide range of computer vision models a
 - **OCR & Document Parsing**: Extract text and structure from documents
 - **Interactive Segmentation**: Interactive and automatic segmentation
 - **Vision-Language Models**: Multi-modal understanding and generation
+- **Action Recognition**: Identify actions and their frame ranges in videos
 - **Depth Estimation**: Predict depth maps from images
 - **Specialized**: Gaze detection, face detection, and more
 
@@ -118,6 +119,14 @@ The `inference-models` library supports a wide range of computer vision models a
 | [Cosmos 3 Edge](cosmos3.md) | `torch` | OpenMDW 1.1 | N/A                           | ✅ | ✅ |
 | [Gemma 4](gemma4.md) | `hugging-face` | Gemma License | N/A                           | ✅ | ❌  |
 
+### Action Recognition
+
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [V-JEPA 2.1](vjepa2-1-action-recognition.md) | `torch` | MIT | N/A | ❌ | ✅ |
+
+V-JEPA loads your trained Roboflow package, not a public pretrained model ID.
+
 ### Depth Estimation
 
 | Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
@@ -139,4 +148,3 @@ The `inference-models` library supports a wide range of computer vision models a
 - Browse individual model pages for detailed documentation
 - See [Quick Overview](../getting-started/overview.md) for usage examples
 - Check [Installation Guide](../getting-started/installation.md) for backend setup
-
