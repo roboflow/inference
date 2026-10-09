@@ -1,4 +1,6 @@
 import json
+from copy import deepcopy
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,6 +13,84 @@ from inference.core.active_learning.post_processing import (
     encode_prediction,
 )
 from inference.core.exceptions import PredictionFormatNotSupported
+from inference.core.managers.active_learning import ActiveLearningManager
+
+
+@pytest.mark.parametrize("response_format", ["polygon", "rle", "empty"])
+@pytest.mark.parametrize("as_batch", [False, True])
+def test_reduced_grid_annotations_reach_active_learning_in_image_coordinates(
+    response_format, as_batch
+) -> None:
+    prediction = {
+        "image": {"height": 4, "width": 5},
+        "original_image": {"height": 40, "width": 100},
+        "mask_metadata": {
+            "coordinate_system": "mask_grid",
+            "height": 4,
+            "width": 5,
+            "scale_x": 20.0,
+            "scale_y": 10.0,
+        },
+        "predictions": [
+            {
+                "x": 2.0,
+                "y": 2.0,
+                "width": 2.0,
+                "height": 2.0,
+                "points": [
+                    {"x": 1.0, "y": 1.0},
+                    {"x": 1.0, "y": 2.0},
+                    {"x": 2.0, "y": 2.0},
+                    {"x": 2.0, "y": 1.0},
+                ],
+            }
+        ],
+    }
+    if response_format == "rle":
+        prediction["predictions"][0].pop("points")
+        prediction["predictions"][0]["rle"] = {
+            "size": [4, 5],
+            "counts": [5, 2, 2, 2, 9],
+        }
+    elif response_format == "empty":
+        prediction["predictions"] = []
+    original = deepcopy(prediction)
+
+    response = MagicMock()
+    response.dict.return_value = prediction
+    request = MagicMock(image="test-image", disable_preproc_auto_orient=False)
+    manager = ActiveLearningManager.__new__(ActiveLearningManager)
+    manager.get_task_type = MagicMock(return_value="instance-segmentation")
+    middleware = MagicMock()
+    manager._middlewares = {"test": middleware}
+
+    manager.register_datapoint(
+        prediction=[response] if as_batch else response,
+        model_id="test/1",
+        request=request,
+        middleware_key="test",
+    )
+    result = middleware.register_batch.call_args.kwargs["predictions"][0]
+
+    assert prediction == original
+    assert result["image"] == {
+        "height": 40,
+        "width": 100,
+    }
+    assert "mask_metadata" not in result
+    assert "original_image" not in result
+    if response_format != "empty":
+        detection = result["predictions"][0]
+        assert detection["x"] == 40
+        assert detection["y"] == 20
+        assert detection["width"] == 40
+        assert detection["height"] == 20
+        assert "rle" not in detection
+        assert {(p["x"], p["y"]) for p in detection["points"]} == {
+            (x, y) for x, y in [(20, 10), (20, 20), (40, 20), (40, 10)]
+        }
+    else:
+        assert result["predictions"] == []
 
 
 def test_encode_prediction_when_non_classification_task_prediction_is_given() -> None:
