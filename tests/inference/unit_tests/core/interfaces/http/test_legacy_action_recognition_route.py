@@ -222,14 +222,8 @@ def test_action_recognition_input_error_returns_400(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("typed_endpoint", [False, True])
-@pytest.mark.parametrize("disconnected", [False, True])
-def test_action_routes_propagate_request_control(
-    monkeypatch, typed_endpoint, disconnected
-):
-    from inference.core.interfaces.http import video_processing
-
+def test_action_routes_propagate_request_control(monkeypatch, typed_endpoint):
     interface, manager = _build_interface(monkeypatch, lambda_mode=False)
-    monkeypatch.setattr(video_processing.from_thread, "run", lambda *args: disconnected)
 
     def expire(model_id, request, *, processing_control):
         processing_control.deadline = 0
@@ -250,5 +244,159 @@ def test_action_routes_propagate_request_control(
                 f"/{PATH_MODEL_ID}", params={"image": "https://example.com/clip.mp4"}
             )
 
-    assert response.status_code == (499 if disconnected else 504)
-    assert manager.infer_from_request_sync.call_count == (0 if disconnected else 1)
+    assert response.status_code == 504
+    assert manager.infer_from_request_sync.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("typed_endpoint", [False, True])
+@pytest.mark.parametrize("scored", [False, True], ids=["cosmos", "vjepa"])
+async def test_disconnect_stops_next_window_and_cleans_up(
+    monkeypatch, tmp_path, typed_endpoint, scored
+):
+    """Deliver a real ASGI disconnect through HttpInterface's middleware stack."""
+    import json
+    from contextlib import contextmanager
+    from threading import Event
+    from urllib.parse import urlencode
+
+    import anyio
+    import httpx
+    from anyio import from_thread
+
+    from inference.core.interfaces.http.middlewares.disconnect import (
+        REQUEST_DISCONNECT_STATE_KEY,
+    )
+    from inference.core.models import inference_models_adapters as adapters
+    from inference_models.models.base.action_recognition import (
+        ActionRecognitionPrediction,
+        VideoSampling,
+    )
+
+    interface, manager = _build_interface(monkeypatch, lambda_mode=False)
+    adapter = adapters.InferenceModelsActionRecognitionAdapter.__new__(
+        adapters.InferenceModelsActionRecognitionAdapter
+    )
+    window_started = anyio.Event()
+    release_window = Event()
+    decoder_closed = Event()
+    files_cleaned = Event()
+    calls = []
+    clip_path = tmp_path / "request-video.mp4"
+
+    @contextmanager
+    def source(**kwargs):
+        clip_path.write_bytes(b"simulated video")
+        try:
+            yield str(clip_path)
+        finally:
+            clip_path.unlink()
+            files_cleaned.set()
+
+    def windows(**kwargs):
+        try:
+            for _ in range(3):
+                yield [None] * 4
+        finally:
+            decoder_closed.set()
+
+    def infer(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            from_thread.run_sync(window_started.set)
+            assert release_window.wait(
+                timeout=5
+            ), "Test did not release the active call"
+        return [ActionRecognitionPrediction(0, 3, "walk", 0.9 if scored else None)]
+
+    adapter._model = SimpleNamespace(
+        supports_confidence=scored,
+        supports_observed_duration=False,
+        confidence_threshold=0.5,
+        video_sampling=VideoSampling(window_seconds=1, sample_fps=4, min_frames=1),
+        class_names=["walk"],
+        resolved_model=None,
+        infer=infer,
+    )
+    monkeypatch.setattr(adapters, "video_source_path", source)
+    monkeypatch.setattr(adapters, "probe_video", lambda **kwargs: (4, 12))
+    monkeypatch.setattr(adapters, "read_frame_windows", windows)
+    manager.infer_from_request_sync.side_effect = (
+        lambda model_id, request, **kwargs: adapter.infer_from_request(
+            request, **kwargs
+        )
+    )
+    body = json.dumps(
+        {
+            "model_id": PATH_MODEL_ID,
+            "video": {"type": "url", "value": "https://example.com/clip.mp4"},
+        }
+    ).encode()
+    path = "/infer/action_recognition" if typed_endpoint else f"/{PATH_MODEL_ID}"
+    query = (
+        b""
+        if typed_endpoint
+        else urlencode({"image": "https://example.com/clip.mp4"}).encode()
+    )
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": query,
+        "root_path": "",
+        "headers": [(b"host", b"localhost"), (b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 9001),
+    }
+    sender, receiver = anyio.create_memory_object_stream(2)
+    # The typed route consumes both body chunks. The legacy route ignores its
+    # body; its watcher must drain these events and still observe disconnect.
+    await sender.send({"type": "http.request", "body": body[:10], "more_body": True})
+    await sender.send({"type": "http.request", "body": body[10:], "more_body": False})
+    sent = []
+    completed = anyio.Event()
+
+    async def send(message):
+        sent.append(message)
+
+    async def run_request():
+        try:
+            await interface.app(scope, receiver.receive, send)
+        finally:
+            completed.set()
+
+    with anyio.fail_after(10):
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(run_request)
+            try:
+                await window_started.wait()
+                await sender.send({"type": "http.disconnect"})
+                state = scope["state"][REQUEST_DISCONNECT_STATE_KEY]
+                while not state.disconnected.is_set():
+                    await anyio.sleep(0.01)
+                assert len(calls) == 1
+            finally:
+                release_window.set()
+            await completed.wait()
+
+    assert len(calls) == 1
+    assert decoder_closed.is_set() and files_cleaned.is_set()
+    assert not clip_path.exists()
+    assert not any(message.get("status") == 200 for message in sent)
+    # Connection state belongs to the request, not the shared model. A fresh
+    # request must classify all windows successfully on the same server.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=interface.app), base_url="http://localhost"
+    ) as client:
+        response = await client.post(
+            "/infer/action_recognition",
+            content=body,
+            headers={"content-type": "application/json"},
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["windows_classified"] == 3
+    assert len(calls) == 4
