@@ -37,7 +37,8 @@ for contributor and maintainer responsibilities.
   DTOs retain the input dimensions and output-to-input coordinate mapping for
   opted-in HTTP responses. Response `image`, boxes, polygons and RLE masks all
   use the selected mask grid. Existing workflow blocks do not opt in and retain
-  their image-space contract.
+  their image-space contract. The `image` field continues to accept a single image
+  descriptor or a list for multi-image responses.
 
 - `ModelsConfiguration.use_inference_models`, defaulting to `True`. Hosts using
   the legacy backend must set it to `False` to retain non-tensor local legacy
