@@ -22,7 +22,6 @@ from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     ActionRecognitionPrediction,
     VideoSampling,
-    action_confidence_mask,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
@@ -449,7 +448,10 @@ class VJepaActionRecognition(ActionRecognitionModel):
         if not torch.isfinite(logits).all() or not torch.isfinite(intervals).all():
             raise FloatingPointError("V-JEPA produced nonfinite predictions")
         scores = logits[0, :count].float().sigmoid()
-        rows, columns = action_confidence_mask(scores, threshold).nonzero(as_tuple=True)
+        thresholds = torch.as_tensor(
+            threshold, dtype=torch.float32, device=scores.device
+        )
+        rows, columns = torch.ge(scores, thresholds).nonzero(as_tuple=True)
         spans = intervals[0, rows, columns].float().clamp(0, end_limit).cpu().tolist()
         confidences = scores[rows, columns].cpu().tolist()
         return [

@@ -2224,10 +2224,6 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 else None
             )
             if candidates is not None:
-                from inference_models.models.base.action_recognition import (
-                    action_confidence_mask,
-                )
-
                 estimate = self._model.estimate_candidate_count(
                     sum(len(window.frame_indices) for window in windows),
                     class_names=class_filter,
@@ -2339,12 +2335,12 @@ class InferenceModelsActionRecognitionAdapter(Model):
                         if per_class_thresholds is not None
                         else threshold
                     )
-                    keep = action_confidence_mask(
+                    keep = torch.ge(
                         torch.tensor(
                             [segment.confidence for segment in segments],
                             dtype=torch.float32,
                         ),
-                        segment_thresholds,
+                        torch.as_tensor(segment_thresholds, dtype=torch.float32),
                     ).tolist()
                     segments = [
                         segment for segment, accepted in zip(segments, keep) if accepted

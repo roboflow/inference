@@ -1,5 +1,4 @@
 import contextlib
-import importlib
 from types import SimpleNamespace
 from typing import List, Optional
 from unittest.mock import MagicMock, patch
@@ -67,32 +66,6 @@ def _request(class_filter=None):
         video=InferenceRequestVideo(type="base64", value="Zm9v"),
         class_filter=class_filter,
     )
-
-
-def test_unscored_adapter_loads_without_candidate_confidence_helper(monkeypatch):
-    action_recognition = importlib.import_module(
-        "inference_models.models.base.action_recognition"
-    )
-    adapters = importlib.import_module(MODULE)
-
-    with monkeypatch.context() as package:
-        package.delattr(action_recognition, "action_confidence_mask", raising=False)
-        importlib.reload(adapters)
-
-        model = _FakeModel(
-            responses=[[ActionRecognitionPrediction(0, 1, "walk")]],
-            class_names=["walk"],
-        )
-        request = _request()
-        request.confidence = 0.9
-        request.include_candidates = True
-        with _clip(frame_count=3, source_fps=10.0):
-            response = _adapter(model).infer_from_request(request)
-
-    assert len(response.timeline) == 1
-    assert response.candidates is None
-    assert response.confidence_threshold is None
-    assert len(model.calls) == 1
 
 
 @pytest.mark.parametrize("confidence", [0.9, "best"])
