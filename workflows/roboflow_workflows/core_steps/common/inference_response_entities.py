@@ -13,7 +13,7 @@ prediction-level classes referenced from `predictions`.
 """
 
 import base64
-from typing import Any, List, Optional, Union
+from typing import Any, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from roboflow_workflows.core_steps.common.segmentation_entities import (
@@ -121,6 +121,31 @@ class WithVisualizationResponse(BaseModel):
         return base64.b64encode(visualization).decode("utf-8")
 
 
+class MaskCoordinateMetadata(BaseModel):
+    """Describe the mask grid and its mapping to the response image.
+
+    Attributes:
+        coordinate_system (str): Coordinate frame for encoded RLE masks.
+        width (int): Width of the encoded mask grid.
+        height (int): Height of the encoded mask grid.
+        scale_x (float): Multiply mask x coordinates by this to obtain image x.
+        scale_y (float): Multiply mask y coordinates by this to obtain image y.
+    """
+
+    coordinate_system: Literal["mask_grid"] = Field(
+        default="mask_grid",
+        description="RLE masks use this grid; polygon points use image coordinates.",
+    )
+    width: int = Field(gt=0, description="Mask-grid width in pixels.", examples=[160])
+    height: int = Field(gt=0, description="Mask-grid height in pixels.", examples=[107])
+    scale_x: float = Field(
+        gt=0, description="Image width divided by mask width.", examples=[4.0]
+    )
+    scale_y: float = Field(
+        gt=0, description="Image height divided by mask height.", examples=[4.0]
+    )
+
+
 class InstanceSegmentationInferenceResponse(
     CvInferenceResponse, WithVisualizationResponse
 ):
@@ -136,3 +161,9 @@ class InstanceSegmentationInferenceResponse(
     predictions: List[
         Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
     ]
+    mask_metadata: Optional[MaskCoordinateMetadata] = Field(
+        default=None,
+        description="Present for opted-in RLE responses whose encoded mask grid "
+        "differs from the image. Describes the RLE grid and its mapping to image "
+        "coordinates. Bounding boxes and polygon points always use image coordinates.",
+    )

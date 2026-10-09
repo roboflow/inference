@@ -267,6 +267,16 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
         "1.0 selects image resolution. Intermediate values interpolate mask-grid "
         "dimensions; the legacy backend uses a different interpolation schedule.",
     )
+    allow_reduced_mask_resolution: bool = Field(
+        default=False,
+        examples=[True],
+        description="Opt into mask_decode_mode and tradeoff_factor on the "
+        "inference_models backend. Without this flag, masks stay at image "
+        "resolution. With it, RLE size can differ from image dimensions; "
+        "mask_metadata describes the RLE grid and its mapping to the image. "
+        "Polygon points and bounding boxes remain in image space. The legacy "
+        "backend retains its existing decoding behavior regardless of this flag.",
+    )
     response_mask_format: Literal["polygon", "rle"] = Field(
         default="polygon",
         examples=["rle"],
@@ -275,7 +285,8 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
         "require special decoding on the caller side - currently supported in `opt-in` mode when server is "
         "running with `USE_INFERENCE_MODELS=True` - otherwise it's ignored. "
         "RLE size records the encoded mask grid, which may differ from the image "
-        "dimensions; polygon coordinates are returned in image space.",
+        "dimensions when allow_reduced_mask_resolution=True, with mask_metadata "
+        "supplying the image mapping. Polygon points always use image coordinates.",
     )
     enforce_dense_masks_in_inference_models: Optional[bool] = Field(
         default=False,

@@ -4779,6 +4779,12 @@ class HttpInterface(BaseInterface):
                     "accurate",
                     description="One of 'accurate' or 'fast'. If 'accurate' the mask will be decoded using the original image size. If 'fast' the mask will be decoded using the original mask size. 'accurate' is slower but more accurate.",
                 ),
+                allow_reduced_mask_resolution: bool = Query(
+                    False,
+                    description="Opt into mask_decode_mode and tradeoff_factor on "
+                    "inference_models. Otherwise masks stay at image resolution. "
+                    "Legacy backend decoding is unchanged.",
+                ),
                 tradeoff_factor: Optional[float] = Query(
                     0.0,
                     description="The amount to tradeoff between 0='fast' and 1='accurate'",
@@ -4973,6 +4979,7 @@ class HttpInterface(BaseInterface):
                     args = {
                         "mask_decode_mode": mask_decode_mode,
                         "tradeoff_factor": tradeoff_factor,
+                        "allow_reduced_mask_resolution": allow_reduced_mask_resolution,
                     }
                     if response_mask_format:
                         args["response_mask_format"] = response_mask_format

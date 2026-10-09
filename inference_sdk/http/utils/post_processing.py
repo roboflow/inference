@@ -220,6 +220,13 @@ def adjust_prediction_to_client_scaling_factor(
             "width": round(prediction["image"]["width"] / scaling_factor),
             "height": round(prediction["image"]["height"] / scaling_factor),
         }
+    mask_metadata = prediction.get("mask_metadata")
+    if mask_metadata and mask_metadata.get("coordinate_system") == "mask_grid":
+        mask_metadata["scale_x"] = prediction["image"]["width"] / mask_metadata["width"]
+        mask_metadata["scale_y"] = (
+            prediction["image"]["height"] / mask_metadata["height"]
+        )
+
     if predictions_should_not_be_post_processed(prediction=prediction):
         return prediction
     if "points" in prediction["predictions"][0]:

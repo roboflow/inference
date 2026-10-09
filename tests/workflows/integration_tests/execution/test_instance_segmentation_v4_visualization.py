@@ -20,12 +20,12 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 @pytest.mark.skipif(
     not USE_INFERENCE_MODELS or ENABLE_TENSOR_DATA_REPRESENTATION,
-    reason="Reduced v5 masks require the non-tensor inference_models path",
+    reason="Compatibility coverage uses the non-tensor inference_models path",
 )
 @pytest.mark.parametrize(
     "mode,factor", [("accurate", 1.0), ("tradeoff", 0.5), ("fast", 0.0)]
 )
-def test_instance_segmentation_v5_with_visualization_blocks(
+def test_instance_segmentation_v4_with_visualization_blocks(
     model_manager: ModelManagerModelsProvider,
     dogs_image: np.ndarray,
     mode: str,
@@ -38,7 +38,7 @@ def test_instance_segmentation_v5_with_visualization_blocks(
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_instance_segmentation_model@v5",
+                "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
                 "name": "segment",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-seg-640",
@@ -103,10 +103,7 @@ def test_instance_segmentation_v5_with_visualization_blocks(
     assert len(raw_masks) == 2
     image_shape = dogs_image.shape[:2]
     for rle in raw_masks:
-        if mode == "accurate":
-            assert tuple(rle["size"]) == image_shape
-        else:
-            assert all(size < full for size, full in zip(rle["size"], image_shape))
+        assert tuple(rle["size"]) == image_shape
 
     result = results[0]
     detections = result["predictions"]

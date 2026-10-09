@@ -16,42 +16,30 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
+  the local `inference_models` backend. Local legacy execution continues to
+  honor `mask_decode_mode` and `tradeoff_factor` when `USE_INFERENCE_MODELS=False`.
+  Remote calls always request `accurate` / `1.0`, since the local backend setting
+  does not identify the remote server. Remote legacy workflows that previously
+  requested fast/tradeoff masks now receive accurate masks. `@v4` retains its
+  RLE response format.
+- The new instance-segmentation `@v5` block is deferred to a separate PR together
+  with reduced-grid Supervision conversion and downstream block support.
+  **Full tensor support will come in a separate PR.** Existing tensor variants
+  remain pinned to `accurate` / `1.0`.
+
 ### Added
 
-- `roboflow_core/roboflow_instance_segmentation_model@v5`. Identical to `@v4`
-  except that it forwards `mask_decode_mode` and `tradeoff_factor` to the
-  server, which now honours them. Versions up to `@v4` pin the outbound request
-  to `accurate` / `1.0` on the local `inference_models` backend. Local legacy
-  execution continues to honour these fields when `USE_INFERENCE_MODELS=False`.
-  Remote `@v1`–`@v4` requests always use `accurate` / `1.0`, because the local
-  backend setting does not identify the remote server. This changes remote
-  legacy workflows that previously requested reduced masks; use non-tensor
-  `@v5` to opt into adjustable mask resolution.
+- Optional `mask_metadata` on instance-segmentation response DTOs describes the
+  encoded mask grid and coordinate mapping for opted-in RLE HTTP responses.
+  Polygon points and bounding boxes retain image coordinates. Existing workflow
+  blocks do not opt in and retain their image-space contract.
 
-- `ModelsConfiguration.use_inference_models`, defaulting to `True`. Hosts that
-  serve instance segmentation through the legacy backend must set it to `False`
-  so local block versions up to `@v4` keep forwarding `mask_decode_mode` and
-  `tradeoff_factor`, which that backend honours. The server sets it from
-  `inference.core.env.USE_INFERENCE_MODELS`; the value cannot be read from the
-  environment here, since this package must not import `inference.*`.
-
-  The tensor-native siblings of every version, `@v5` included, are pinned
-  unconditionally - the reason there is downstream rather than the backend.
-  Nothing under `roboflow_workflows/` reads `InstanceDetections.mask_size`, and
-  the sites that rebuild `InstancesRLEMasks` drop it, so a reduced grid would
-  be reinterpreted as image-sized downstream. Reduced mask resolution is
-  therefore available in non-tensor mode only. **Full tensor support will come
-  in a separate PR**, including propagation of mask-grid metadata through the
-  tensor pipeline. Until then, tensor mode ignores `mask_decode_mode` and
-  `tradeoff_factor` and always requests `accurate` / `1.0`.
-
-### Fixed
-
-- Instance segmentation `@v4` remote execution retains its RLE response format
-  while pinning mask resolution, preserving holes and disconnected mask regions.
-- Non-tensor instance segmentation `@v5` re-encodes reduced RLE masks at the
-  image grid after conversion to Supervision, so downstream blocks receive
-  consistent dense and RLE representations.
+- `ModelsConfiguration.use_inference_models`, defaulting to `True`. Hosts using
+  the legacy backend must set it to `False` to retain local legacy decoding.
+  The server sets it from `inference.core.env.USE_INFERENCE_MODELS`.
 
 ## `0.2.4`
 

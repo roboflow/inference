@@ -995,14 +995,18 @@ class TestMaskDecodeModeMapping:
 
     def test_fast_maps_to_mask_resolution(self) -> None:
         # given / when
-        mapped = self._map(mask_decode_mode="fast")
+        mapped = self._map(mask_decode_mode="fast", allow_reduced_mask_resolution=True)
 
         # then
         assert mapped["masks_resolution_factor"] == 0.0
 
     def test_tradeoff_reads_the_factor(self) -> None:
         # given / when
-        mapped = self._map(mask_decode_mode="tradeoff", tradeoff_factor=0.25)
+        mapped = self._map(
+            mask_decode_mode="tradeoff",
+            tradeoff_factor=0.25,
+            allow_reduced_mask_resolution=True,
+        )
 
         # then
         assert mapped["masks_resolution_factor"] == 0.25
@@ -1018,11 +1022,16 @@ class TestMaskDecodeModeMapping:
     def test_source_keys_do_not_reach_the_model(self) -> None:
         # given / when
         # deeper pre/post stages do not accept arbitrary kwargs
-        mapped = self._map(mask_decode_mode="tradeoff", tradeoff_factor=0.5)
+        mapped = self._map(
+            mask_decode_mode="tradeoff",
+            tradeoff_factor=0.5,
+            allow_reduced_mask_resolution=True,
+        )
 
         # then
         assert "mask_decode_mode" not in mapped
         assert "tradeoff_factor" not in mapped
+        assert "allow_reduced_mask_resolution" not in mapped
 
     @pytest.mark.parametrize("bad_factor", [-0.1, 1.1])
     def test_out_of_range_factor_is_rejected(self, bad_factor: float) -> None:
@@ -1035,6 +1044,23 @@ class TestMaskDecodeModeMapping:
         # the legacy path raises for this; the two must agree
         with pytest.raises(InvalidMaskDecodeArgument):
             self._map(mask_decode_mode="nonsense")
+
+    @pytest.mark.parametrize("mode", ["fast", "tradeoff"])
+    @pytest.mark.parametrize("opt_in", [None, False])
+    def test_existing_requests_keep_image_resolution(self, mode, opt_in) -> None:
+        kwargs = {"mask_decode_mode": mode, "tradeoff_factor": 0.25}
+        if opt_in is not None:
+            kwargs["allow_reduced_mask_resolution"] = opt_in
+
+        mapped = self._map(**kwargs)
+
+        assert mapped["masks_resolution_factor"] == 1.0
+        assert "allow_reduced_mask_resolution" not in mapped
+
+    def test_internal_resolution_kwarg_does_not_bypass_opt_in(self) -> None:
+        mapped = self._map(masks_resolution_factor=0.25)
+
+        assert mapped["masks_resolution_factor"] == 1.0
 
 
 class TestRLEBackedPolygons:
@@ -1101,12 +1127,13 @@ class TestRLEBackedPolygons:
         assert polygon[:, 1].max() <= 80
 
 
+@pytest.mark.parametrize("opt_in", [False, True])
 @pytest.mark.parametrize("mask_format", ["dense", "rle"])
 @pytest.mark.parametrize("factor", [1.0, 0.5, 0.0])
 @pytest.mark.parametrize("offset", [(0, 0), (60, 40)])
 @pytest.mark.parametrize("response_format", ["polygon", "rle"])
 def test_crop_response_uses_the_frame_represented_by_mask(
-    mask_format: str, factor: float, offset: tuple, response_format: str
+    mask_format: str, factor: float, offset: tuple, response_format: str, opt_in: bool
 ) -> None:
     from inference_models.entities import ImageDimensions
     from inference_models.models.common.roboflow.model_packages import (
@@ -1168,8 +1195,19 @@ def test_crop_response_uses_the_frame_represented_by_mask(
     )
 
     response = _seg_adapter()._build_responses_from_detections(
-        [detections], [metadata], response_mask_format=response_format
+        [detections],
+        [metadata],
+        response_mask_format=response_format,
+        allow_reduced_mask_resolution=opt_in,
     )[0]
+
+    coordinate_metadata = response.mask_metadata
+    if response_format == "rle" and opt_in and factor != 1.0:
+        assert coordinate_metadata.height == detections.mask_size[0]
+        assert coordinate_metadata.width == detections.mask_size[1]
+        assert coordinate_metadata.coordinate_system == "mask_grid"
+    else:
+        assert coordinate_metadata is None
 
     if response_format == "rle":
         converted = sv.Detections.from_inference(response.model_dump(by_alias=True))
@@ -1197,3 +1235,90 @@ def test_crop_response_uses_the_frame_represented_by_mask(
     assert max(ys) == pytest.approx(50 + offset_y - pixel_size)
     assert prediction.x == pytest.approx(50 + offset_x)
     assert prediction.y == pytest.approx(30 + offset_y)
+
+
+@pytest.mark.parametrize("use_dc", [False, True])
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("response_format", ["polygon", "rle"])
+def test_deferred_response_preserves_coordinate_contract(
+    use_dc, empty, response_format
+):
+    adapter = _seg_adapter()
+    adapter._pipeline_depth = 2
+    count = 0 if empty else 1
+    detections = InstanceDetections(
+        xyxy=torch.tensor([[0, 0, 10, 20]], dtype=torch.int32)[:count],
+        confidence=torch.tensor([0.9])[:count],
+        class_id=torch.tensor([0])[:count],
+        mask=torch.ones((count, 5, 2), dtype=torch.bool),
+    )
+    future = SimpleNamespace(result=lambda: [detections])
+    response = adapter._finalize_future(
+        future,
+        _make_meta("mask-grid"),
+        {
+            "masks_resolution_factor": 0.25,
+            "response_mask_format": response_format,
+            "source": "workflow-execution" if use_dc else "api",
+        },
+    )[0]
+
+    serialized = (
+        response.to_dict()
+        if use_dc and response_format == "polygon"
+        else response.model_dump(exclude_none=True)
+    )
+    assert serialized["image"] == {"width": 10, "height": 20}
+    if response_format == "rle":
+        assert serialized["mask_metadata"] == {
+            "coordinate_system": "mask_grid",
+            "width": 2,
+            "height": 5,
+            "scale_x": 5.0,
+            "scale_y": 4.0,
+        }
+    else:
+        assert "mask_metadata" not in serialized
+    assert len(serialized["predictions"]) == count
+    if not empty and response_format == "polygon":
+        assert max(p["x"] for p in serialized["predictions"][0]["points"]) == 5
+        assert max(p["y"] for p in serialized["predictions"][0]["points"]) == 16
+
+
+@pytest.mark.parametrize("mask_format", ["dense", "rle"])
+def test_opted_in_polygons_share_box_coordinates_on_non_square_image(mask_format):
+    masks = torch.zeros((1, 160, 160), dtype=torch.bool)
+    masks[:, 48:72, 48:72] = True
+    mask = masks
+    if mask_format == "rle":
+        from inference_models.entities import ImageDimensions
+
+        rle = mask_utils.encode(np.asfortranarray(masks[0].numpy().astype(np.uint8)))
+        mask = InstancesRLEMasks(
+            image_size=ImageDimensions(height=800, width=1000),
+            masks=[rle["counts"]],
+            mask_size=(160, 160),
+        )
+    detections = InstanceDetections(
+        xyxy=torch.tensor([[300, 240, 450, 360]], dtype=torch.float32),
+        confidence=torch.tensor([0.9]),
+        class_id=torch.tensor([0]),
+        mask=mask,
+    )
+    metadata = SimpleNamespace(original_size=SimpleNamespace(width=1000, height=800))
+
+    response = _seg_adapter()._build_responses_from_detections(
+        [detections], [metadata], allow_reduced_mask_resolution=True
+    )[0]
+
+    prediction = response.predictions[0]
+    xs = [point.x for point in prediction.points]
+    ys = [point.y for point in prediction.points]
+    assert response.mask_metadata is None
+    assert (min(xs), min(ys), max(xs), max(ys)) == (300, 240, 443.75, 355)
+    converted = sv.Detections.from_inference(response.model_dump(by_alias=True))
+    np.testing.assert_array_equal(converted.xyxy, [[300, 240, 450, 360]])
+    np.testing.assert_allclose(
+        sv.mask_to_xyxy(converted.mask), [[300, 240, 443.75, 355]], atol=1
+    )
+    sv.MaskAnnotator().annotate(np.zeros((800, 1000, 3), dtype=np.uint8), converted)
