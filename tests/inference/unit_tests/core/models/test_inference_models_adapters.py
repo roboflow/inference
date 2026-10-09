@@ -1187,7 +1187,8 @@ def test_crop_response_uses_the_frame_represented_by_mask(
             masks=[rle["counts"]],
             mask_size=tuple(rle["size"]),
         )
-    detections = InstanceDetections(
+    detections = InstanceDetections.from_image_coordinates(
+        image_size=tuple(original_size),
         xyxy=boxes,
         confidence=torch.tensor([0.9]),
         class_id=torch.tensor([0]),
@@ -1257,7 +1258,7 @@ def test_deferred_response_preserves_coordinate_contract(
     adapter._pipeline_depth = 2
     count = 0 if empty else 1
     detections = InstanceDetections(
-        xyxy=torch.tensor([[0, 0, 10, 20]], dtype=torch.int32)[:count],
+        xyxy=torch.tensor([[0, 0, 2, 5]], dtype=torch.float32)[:count],
         confidence=torch.tensor([0.9])[:count],
         class_id=torch.tensor([0])[:count],
         mask=torch.ones((count, 5, 2), dtype=torch.bool),
@@ -1288,6 +1289,9 @@ def test_deferred_response_preserves_coordinate_contract(
         "scale_y": 4.0,
     }
     assert len(serialized["predictions"]) == count
+    if not empty:
+        prediction = serialized["predictions"][0]
+        assert [prediction[k] for k in ("x", "y", "width", "height")] == [1, 2.5, 2, 5]
     if not empty and response_format == "polygon":
         assert max(p["x"] for p in serialized["predictions"][0]["points"]) == 1
         assert max(p["y"] for p in serialized["predictions"][0]["points"]) == 4
@@ -1307,7 +1311,8 @@ def test_opted_in_polygons_share_box_coordinates_on_non_square_image(mask_format
             masks=[rle["counts"]],
             mask_size=(160, 160),
         )
-    detections = InstanceDetections(
+    detections = InstanceDetections.from_image_coordinates(
+        image_size=(800, 1000),
         xyxy=torch.tensor([[300, 240, 450, 360]], dtype=torch.float32),
         confidence=torch.tensor([0.9]),
         class_id=torch.tensor([0]),
@@ -1367,7 +1372,8 @@ def test_response_geometry_uses_one_grid(opt_in, response_format, factor):
             masks_resolution_factor=kwargs["masks_resolution_factor"],
         )
         return [
-            InstanceDetections(
+            InstanceDetections.from_image_coordinates(
+                image_size=tuple(original_size),
                 xyxy=boxes,
                 confidence=torch.tensor([0.9]),
                 class_id=torch.tensor([0]),
@@ -1395,6 +1401,7 @@ def test_response_geometry_uses_one_grid(opt_in, response_format, factor):
         [prediction.x, prediction.y, prediction.width, prediction.height],
         np.array([375, 300, 150, 120])
         * [width / 1000, height / 800, width / 1000, height / 800],
+        atol=3e-5,
     )
     if opt_in:
         assert response.original_image.model_dump() == {"width": 1000, "height": 800}
@@ -1448,22 +1455,30 @@ def test_async_opt_in_survives_factor_one(response_format):
 def test_native_grid_batch_does_not_mutate_model_boxes():
     adapter = _seg_adapter()
     boxes = torch.tensor([[20, 10, 60, 30]], dtype=torch.float32)
-    det = InstanceDetections(
-        xyxy=boxes,
-        confidence=torch.tensor([0.9]),
-        class_id=torch.tensor([0]),
-        mask=torch.ones((1, 10, 20), dtype=torch.bool),
-    )
+    image_sizes = [(50, 100), (200, 200)]
+    detections = [
+        InstanceDetections.from_image_coordinates(
+            xyxy=boxes,
+            confidence=torch.tensor([0.9]),
+            class_id=torch.tensor([0]),
+            mask=torch.ones((1, 10, 20), dtype=torch.bool),
+            image_size=image_size,
+        )
+        for image_size in image_sizes
+    ]
+    original_grid_boxes = [det.xyxy.clone() for det in detections]
     metadata = [
-        SimpleNamespace(original_size=SimpleNamespace(width=100, height=50)),
-        SimpleNamespace(original_size=SimpleNamespace(width=200, height=200)),
+        SimpleNamespace(original_size=SimpleNamespace(width=width, height=height))
+        for height, width in image_sizes
     ]
     responses = adapter._build_responses_from_detections(
-        [det, det], metadata, allow_reduced_mask_resolution=True
+        detections, metadata, allow_reduced_mask_resolution=True
     )
     assert [r.predictions[0].x for r in responses] == [8, 4]
     assert [r.predictions[0].y for r in responses] == [4, 1]
     assert [r.mask_metadata.scale_x for r in responses] == [5, 10]
+    for det, original in zip(detections, original_grid_boxes):
+        torch.testing.assert_close(det.xyxy, original)
     torch.testing.assert_close(
         boxes, torch.tensor([[20, 10, 60, 30]], dtype=torch.float32)
     )

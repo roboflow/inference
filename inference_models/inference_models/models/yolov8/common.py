@@ -52,7 +52,7 @@ def prepare_dense_masks(
             masks_resolution_factor=masks_resolution_factor,
         )
         final_results.append(
-            InstanceDetections(
+            InstanceDetections.from_image_coordinates(
                 xyxy=aligned_boxes[:, :4].round().int(),
                 class_id=aligned_boxes[:, 5].int(),
                 confidence=aligned_boxes[:, 4],
@@ -116,7 +116,7 @@ def prepare_rle_masks(
         if len(aligned_boxes) > 0:
             aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
             final_results.append(
-                InstanceDetections(
+                InstanceDetections.from_image_coordinates(
                     xyxy=aligned_boxes_tensor[:, :4].round().int(),
                     class_id=aligned_boxes_tensor[:, 5].int(),
                     confidence=aligned_boxes_tensor[:, 4],
@@ -127,7 +127,7 @@ def prepare_rle_masks(
             )
         else:
             final_results.append(
-                InstanceDetections(
+                InstanceDetections.from_image_coordinates(
                     xyxy=torch.empty(
                         (0, 4), dtype=torch.int32, device=image_bboxes.device
                     ),

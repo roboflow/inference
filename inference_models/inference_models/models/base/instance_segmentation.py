@@ -135,9 +135,10 @@ class _DirectInferenceFuture:
 
 @dataclass
 class InstanceDetections:
-    """Instance masks and boxes with independent image and mask dimensions.
+    """Instance masks and boxes sharing the encoded mask coordinate grid.
 
     Attributes:
+        xyxy: Bounding boxes in ``mask_size`` coordinates.
         image_size: Original image ``(height, width)``. Older callers may omit it.
         mask_size: Encoded mask grid ``(height, width)``.
         mask_frame_size: Image-space extent represented by the mask grid. Model
@@ -168,6 +169,58 @@ class InstanceDetections:
             self.mask_size = self.mask.mask_size
         elif self.mask is not None and hasattr(self.mask, "shape"):
             self.mask_size = (int(self.mask.shape[1]), int(self.mask.shape[2]))
+
+    @classmethod
+    def from_image_coordinates(
+        cls,
+        *,
+        xyxy: torch.Tensor,
+        class_id: torch.Tensor,
+        confidence: torch.Tensor,
+        mask: Union[torch.Tensor, InstancesRLEMasks],
+        image_size: Tuple[int, int],
+        mask_frame_size: Optional[Tuple[int, int]] = None,
+    ) -> "InstanceDetections":
+        """Build a model result with boxes on the final mask grid.
+
+        Args:
+            xyxy: Boxes aligned to original-image coordinates.
+            class_id: Per-instance class identifiers.
+            confidence: Per-instance confidence scores.
+            mask: Aligned dense or RLE masks, including any crop canvas.
+            image_size: Original image dimensions as ``(height, width)``.
+            mask_frame_size: Image-space extent represented by the masks.
+                Defaults to the original image dimensions.
+
+        Returns:
+            Detections whose boxes and masks use the same coordinate grid.
+            Reduced-grid boxes retain fractional coordinates. Input tensors
+            are not modified.
+        """
+        detections = cls(
+            xyxy=xyxy,
+            class_id=class_id,
+            confidence=confidence,
+            mask=mask,
+            image_size=image_size,
+            mask_frame_size=mask_frame_size,
+        )
+        frame_height, frame_width = mask_frame_size or image_size
+        mask_height, mask_width = detections.mask_size
+        if (mask_height, mask_width) != (frame_height, frame_width):
+            scale = torch.tensor(
+                [
+                    mask_width / frame_width,
+                    mask_height / frame_height,
+                    mask_width / frame_width,
+                    mask_height / frame_height,
+                ],
+                dtype=torch.float32,
+                device=xyxy.device,
+            )
+            detections.xyxy = xyxy.to(dtype=torch.float32) * scale
+
+        return detections
 
     def _image_size(self) -> Tuple[int, int]:
         """Resolve the image grid these detections describe.
@@ -237,6 +290,7 @@ class InstanceDetections:
         Converts the PyTorch tensor-based instance segmentation results to Supervision's
         NumPy-based format. This includes both bounding boxes and segmentation masks,
         enabling use of Supervision's mask annotators and analysis tools.
+        Both boxes and masks are restored to original-image coordinates.
 
         Returns:
             sv.Detections: Supervision Detections object with:
@@ -308,8 +362,23 @@ class InstanceDetections:
                 canvas = np.zeros((len(mask), image_height, image_width), dtype=bool)
                 canvas[:, :frame_height, :frame_width] = mask
                 mask = canvas
+        xyxy = self.xyxy.cpu().numpy()
+        if self.mask_size is not None:
+            frame_height, frame_width = self.mask_frame_size or self._image_size()
+            mask_height, mask_width = self.mask_size
+            if (mask_height, mask_width) != (frame_height, frame_width):
+                xyxy = xyxy * np.array(
+                    [
+                        frame_width / mask_width,
+                        frame_height / mask_height,
+                        frame_width / mask_width,
+                        frame_height / mask_height,
+                    ],
+                    dtype=np.float32,
+                )
+
         detections = sv.Detections(
-            xyxy=self.xyxy.cpu().numpy(),
+            xyxy=xyxy,
             class_id=self.class_id.cpu().numpy(),
             confidence=self.confidence.cpu().numpy(),
             mask=mask,

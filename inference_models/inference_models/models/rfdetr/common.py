@@ -235,7 +235,7 @@ def post_process_instance_segmentation_results(
             static_crop_offset=image_meta.static_crop_offset,
             masks_resolution_factor=masks_resolution_factor,
         )
-        detections = InstanceDetections(
+        detections = InstanceDetections.from_image_coordinates(
             xyxy=aligned_boxes.round().int(),
             confidence=confidence,
             class_id=top_classes.int(),
@@ -404,7 +404,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
         aligned_boxes_tensor = torch.empty(
             (0, 4), dtype=torch.int32, device=image_bboxes.device
         )
-    return InstanceDetections(
+    detections = InstanceDetections.from_image_coordinates(
         xyxy=aligned_boxes_tensor.round().int(),
         confidence=confidence,
         class_id=top_classes.int(),
@@ -412,6 +412,8 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
         image_size=tuple(image_meta.original_size),
         mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
     )
+
+    return detections
 
 
 def post_process_instance_segmentation_results_to_rle_masks(

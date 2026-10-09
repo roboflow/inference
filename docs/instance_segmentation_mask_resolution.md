@@ -86,10 +86,22 @@ retains its original RLE representation and output grid.
 
 ## Compatibility and follow-up work
 
-Direct `inference_models` calls keep their `masks_resolution_factor` interface
-and existing image-space box contract. The HTTP output-coordinate transformation
-happens at the response boundary. The legacy model backend retains its existing
-decode-mode behavior and ignores the new opt-in flag.
+Direct `inference_models` calls use `masks_resolution_factor` without the HTTP
+opt-in. Their `InstanceDetections.xyxy` boxes and dense or RLE masks share the
+encoded `mask_size` grid, before any HTTP adapter runs. Boxes retain fractional
+coordinates when the grids differ. `image_size` retains the original dimensions;
+`mask_frame_size` records the image-space extent represented by the mask grid.
+The HTTP adapter preserves the model's selected-grid boxes without scaling twice.
+
+`InstanceDetections.to_supervision()` restores both boxes and masks to original
+image coordinates for annotation. Callers reading `.xyxy` directly from reduced
+results must now interpret those boxes in `mask_size` coordinates. For manually
+constructed detections, supply boxes on the mask grid and retain `image_size`,
+or use `InstanceDetections.from_image_coordinates(...)` to convert image-space
+boxes at construction. Factor `1.0` keeps the existing image-space behavior.
+
+The legacy model backend retains its existing decode-mode behavior and ignores
+the new opt-in flag.
 
 Values from 0 to 1 interpolate model-grid and image-grid dimensions. A lower
 factor does not always mean a smaller grid or faster execution. `accurate`

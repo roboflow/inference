@@ -23,6 +23,15 @@
 
 ### Changed
 
+- Direct instance-segmentation model results now return `xyxy` boxes in the same
+  `mask_size` coordinate grid as dense or RLE masks. Scaling happens in
+  `inference_models`, and the HTTP adapter no longer repeats it. Boxes retain
+  fractional coordinates when the grids differ; factor `1.0` is unchanged.
+  Direct consumers of reduced results must interpret `.xyxy` in mask-grid
+  coordinates. `InstanceDetections.to_supervision()` restores both boxes and
+  masks to image coordinates. Manually constructed detections should supply
+  mask-grid boxes, or use `InstanceDetections.from_image_coordinates(...)` with
+  image-space boxes and the original `image_size`.
 - Server requests using `inference_models` require
   `allow_reduced_mask_resolution=true` to apply `mask_decode_mode` and
   `tradeoff_factor`. Without this opt-in, masks retain image resolution.
@@ -40,7 +49,7 @@
   Direct `inference_models` callers use `masks_resolution_factor` without the HTTP
   opt-in. Reduced-grid workflow support is deferred to a separate PR.
 - RLE export and `InstanceDetections` iteration declare the encoded mask grid in
-  COCO `size`. `InstanceDetections.to_supervision()` resizes masks to image
+  COCO `size`. `InstanceDetections.to_supervision()` restores boxes and masks to image
   resolution for annotation; manually constructed reduced dense detections must
   supply `image_size` because it cannot be inferred from the reduced tensor.
 - The RF-DETR fused Triton post-processor supports factor `1.0` only. Other
