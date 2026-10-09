@@ -20,7 +20,7 @@ import importlib
 import inspect
 import json
 from enum import Enum
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Tuple, Union, get_args, get_origin
 
 # (name, "module.path:Qualified.attribute") - order matches _FROZEN_CONTRACTS
 _CONTRACT_PATHS: Tuple[Tuple[str, str], ...] = (
@@ -89,6 +89,37 @@ def _stable_default_repr(default: object, fn: Callable) -> str:
     )
 
 
+def _stable_annotation(annotation, *, nested=False) -> str:
+    """Render unions independently of typing's import-order-dependent caches."""
+    origin = get_origin(annotation)
+    if origin is Union:
+        members = get_args(annotation)
+        if len(members) == 2 and type(None) in members:
+            member = next(member for member in members if member is not type(None))
+            return f"typing.Optional[{_stable_annotation(member, nested=True)}]"
+
+        rendered = sorted(_stable_annotation(member, nested=True) for member in members)
+        return f"typing.Union[{', '.join(rendered)}]"
+
+    if isinstance(annotation, list):
+        rendered = [_stable_annotation(member, nested=True) for member in annotation]
+        return f"[{', '.join(rendered)}]"
+
+    arguments = get_args(annotation)
+    if arguments:
+        prefix = str(annotation).split("[", 1)[0]
+        rendered = [_stable_annotation(member, nested=True) for member in arguments]
+        return f"{prefix}[{', '.join(rendered)}]"
+
+    if nested and isinstance(annotation, type):
+        prefix = (
+            "" if annotation.__module__ == "builtins" else annotation.__module__ + "."
+        )
+        return prefix + annotation.__qualname__
+
+    return str(annotation)
+
+
 def _stable_signature(fn: Callable) -> str:
     sig = inspect.signature(fn)
     parts = []
@@ -110,7 +141,7 @@ def _stable_signature(fn: Callable) -> str:
         elif param.kind is inspect.Parameter.VAR_KEYWORD:
             piece = f"**{piece}"
         if param.annotation is not inspect.Parameter.empty:
-            piece += f": {param.annotation}"
+            piece += f": {_stable_annotation(param.annotation)}"
         if param.default is not inspect.Parameter.empty:
             default_repr = _stable_default_repr(param.default, fn)
             piece += f" = {default_repr}"
@@ -120,7 +151,7 @@ def _stable_signature(fn: Callable) -> str:
         parts.append("/")
     rendered = f"({', '.join(parts)})"
     if sig.return_annotation is not inspect.Signature.empty:
-        rendered += f" -> {sig.return_annotation}"
+        rendered += f" -> {_stable_annotation(sig.return_annotation)}"
     return rendered
 
 
