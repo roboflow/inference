@@ -1043,3 +1043,40 @@ def test_batched_interpolation_tables_preserve_reference_weights(
     two_taps = values[:, 1] != 0
     assert torch.all(indices[two_taps, 0] < indices[two_taps, 1])
     assert torch.all(indices[~two_taps, 1] == 0)
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or triton_postprocess.triton is None,
+    reason="CUDA and Triton are required",
+)
+@pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
+def test_ignored_classes_on_inactive_query_consume_global_topk_slots(factor):
+    device = torch.device("cuda")
+    bboxes, _, masks = _single_detection_inputs(device)
+    scores = torch.tensor([[0.01, 0.02, 0.8], [0.99, 0.9, 0.1]], device=device)
+    mapping = _class_mapping(device, num_classes=3)
+    mapping.class_mapping[:] = torch.tensor([-1, -1, 42], device=device)
+    # Both global top-2 slots are ignored classes on query 1. Query 0's valid
+    # 0.8 candidate must not be returned, although it passes the confidence cut.
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks(
+        image_bboxes=bboxes,
+        image_logits=scores,
+        image_masks=masks,
+        image_meta=_metadata(),
+        threshold=0.4,
+        num_classes=3,
+        classes_re_mapping=mapping,
+        masks_resolution_factor=factor,
+    )
+    actual = post_process_single_instance_segmentation_result_to_rle_masks_triton(
+        image_bboxes=bboxes,
+        image_scores=scores,
+        image_masks=masks,
+        image_meta=_metadata(),
+        threshold=0.4,
+        classes_re_mapping=mapping,
+        masks_resolution_factor=factor,
+    )
+    assert actual is not None
+    assert len(actual) == len(expected) == 0
+    assert actual.mask_size == expected.mask_size

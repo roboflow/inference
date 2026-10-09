@@ -613,6 +613,9 @@ def _instance_detections_from_sparse_records(
     caller should retry or fall back to the reference implementation.
     """
     image_size = image_size or (height, width)
+    if np.any(metadata_host[:, 7] > 0.5):
+        return None
+
     active_ranks = np.flatnonzero(metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return InstanceDetections(
@@ -627,7 +630,7 @@ def _instance_detections_from_sparse_records(
             image_size=image_size,
             mask_frame_size=image_size,
         )
-    if np.any(metadata_host[active_ranks, 7:9] > 0.5):
+    if np.any(metadata_host[active_ranks, 8] > 0.5):
         return None
     records_host = records.cpu().numpy()
     total_runs = int(records_host[0, 0])
@@ -911,11 +914,12 @@ def _should_retry_sparse_topk_metadata(
     max_total_runs: int,
 ) -> bool:
     """Return whether first-pass sparse metadata needs query-class expansion."""
+    if np.any(metadata_host[:, 7] > 0.5):
+        return True
+
     active_ranks = np.flatnonzero(metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0 or np.any(metadata_host[active_ranks, 8] > 0.5):
         return False
-    if np.any(metadata_host[active_ranks, 7] > 0.5):
-        return True
 
     records_host = records.cpu().numpy()
     total_runs = int(records_host[0, 0])
@@ -1180,8 +1184,8 @@ if triton is not None:
             BLOCK_CLASSES: Power-of-two tile width covering ``num_classes``.
             METADATA_STRIDE: Number of float32 fields per metadata row.
             FLAG_MULTICLASS: When true, writes ``metadata[rank, 7] = 1`` if more
-                than one mapped class for this query exceeds ``threshold`` so
-                the caller can rerun the top-k query-class path.
+                than one mapped class or any ignored class exceeds threshold,
+                so the caller can apply global top-k before class filtering.
         """
         rank = tl.program_id(0)
         meta_base = rank * METADATA_STRIDE
@@ -1204,6 +1208,14 @@ if triton is not None:
         valid_classes = class_active & (mapped_classes >= 0)
         passing_classes = valid_classes & (class_scores > threshold)
         passing_class_count = tl.sum(tl.where(passing_classes, 1, 0), axis=0)
+        # Ignored classes still consume slots in the reference's global top-k.
+        # Include inactive queries in this retry decision as well.
+        ignored_passing = (
+            class_active & (mapped_classes < 0) & (class_scores > threshold)
+        )
+        needs_global_selection = (passing_class_count > 1) | (
+            tl.sum(ignored_passing.to(tl.int32), axis=0) > 0
+        )
         # Select over valid mapped classes, not just passing classes. The
         # threshold is applied after selection so inactive metadata rows still
         # carry a stable class/score shape.
@@ -1240,7 +1252,7 @@ if triton is not None:
         # with program zero's initialization on large grids.
         tl.store(
             metadata + meta_base + 7,
-            (FLAG_MULTICLASS and passing_class_count > 1).to(tl.float32),
+            (FLAG_MULTICLASS and needs_global_selection).to(tl.float32),
         )
         tl.store(metadata + meta_base + 8, 0.0)
         tl.store(metadata + meta_base + 9, query_index.to(tl.float32))
