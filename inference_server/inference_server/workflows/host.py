@@ -1032,6 +1032,7 @@ class ServerRoboflowPlatformClient:
         tags: Optional[List[str]] = None,
         inference_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        annotation_follows: bool = False,
     ) -> dict:
         _refuse_when_offline(operation="register image")
         params = [("api_key", api_key), ("batch", batch_name)]

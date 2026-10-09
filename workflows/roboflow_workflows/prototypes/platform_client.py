@@ -72,6 +72,7 @@ class RoboflowPlatformClient(Protocol):
         tags: Optional[List[str]] = None,
         inference_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        annotation_follows: bool = False,
     ) -> dict: ...
 
     def annotate_image_at_roboflow(
@@ -194,6 +195,7 @@ class OfflineRoboflowPlatformClient:
         tags: Optional[List[str]] = None,
         inference_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        annotation_follows: bool = False,
     ) -> dict:
         raise _roboflow_api_unavailable()
 

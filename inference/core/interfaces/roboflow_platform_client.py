@@ -85,6 +85,7 @@ class ServerRoboflowPlatformClient:
         tags: Optional[List[str]] = None,
         inference_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        annotation_follows: bool = False,
     ) -> dict:
         return roboflow_api.register_image_at_roboflow(
             api_key=api_key,
@@ -95,6 +96,7 @@ class ServerRoboflowPlatformClient:
             tags=tags,
             inference_id=inference_id,
             metadata=metadata,
+            annotation_follows=annotation_follows,
         )
 
     def annotate_image_at_roboflow(

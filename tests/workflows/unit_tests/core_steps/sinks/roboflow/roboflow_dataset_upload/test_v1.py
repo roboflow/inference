@@ -2,13 +2,16 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from typing import Optional
 from unittest import mock
 from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
+import requests.exceptions
 import supervision as sv
 from fastapi import BackgroundTasks
+from requests_mock import Mocker
 from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload import v1, v1_tensor
 from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     BatchCreationFrequency,
@@ -27,8 +30,11 @@ from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor impor
     execute_registration as tensor_execute_registration,
 )
 
+from inference.core import roboflow_api
 from inference.core.cache import MemoryCache
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+from inference.core.env import API_BASE_URL, ENABLE_TENSOR_DATA_REPRESENTATION
+from inference.core.interfaces.roboflow_platform_client import SERVER_PLATFORM_CLIENT
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
@@ -1363,6 +1369,92 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
         * 3
     )
     assert len(background_tasks.tasks) == 0, "Async tasks not to be added"
+
+
+@pytest.mark.parametrize(
+    "first_attempt_fails, prediction, expect_error",
+    [
+        (True, {"top": "car", "predictions": []}, True),
+        (True, None, False),
+        (False, {"top": "car", "predictions": []}, False),
+    ],
+)
+@mock.patch.object(v1, "return_strategy_credit")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
+def test_run_sink_when_upload_retry_reports_duplicate(
+    use_credit_of_matching_strategy_mock: MagicMock,
+    return_strategy_credit_mock: MagicMock,
+    requests_mock: Mocker,
+    monkeypatch: pytest.MonkeyPatch,
+    first_attempt_fails: bool,
+    prediction: Optional[dict],
+    expect_error: bool,
+) -> None:
+    # given
+    monkeypatch.setattr(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", True)
+    duplicate = {"json": {"duplicate": True, "id": "roboflow_id"}}
+    upload_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/my_project/upload"),
+        response_list=(
+            [{"exc": requests.exceptions.ReadTimeout}, duplicate]
+            if first_attempt_fails
+            else [duplicate]
+        ),
+    )
+    annotate_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/my_project/annotate/roboflow_id"),
+        json={"success": True},
+    )
+    api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    cache = MemoryCache()
+    cache.set(
+        key=f"workflows:api_key_to_workspace:{api_key_hash}", value="my_workspace"
+    )
+    use_credit_of_matching_strategy_mock.return_value = "my_strategy"
+    data_collector_block = RoboflowDatasetUploadBlockV1(
+        cache=cache,
+        api_key=api_key,
+        background_tasks=None,
+        thread_pool_executor=None,
+        platform_client=SERVER_PLATFORM_CLIENT,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((128, 128, 3), dtype=np.uint8),
+    )
+
+    # when
+    result = data_collector_block.run(
+        images=Batch(content=[image], indices=[(0,)]),
+        predictions=Batch(content=[prediction], indices=[(0,)]),
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=[],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    # then
+    assert upload_mock.call_count == (2 if first_attempt_fails else 1)
+    assert annotate_mock.call_count == 0
+    assert len(result) == 1
+    if expect_error:
+        assert result[0]["error_status"] is True
+        assert "may already have been uploaded" in result[0]["message"]
+        assert "annotation was not uploaded" in result[0]["message"]
+    else:
+        assert result[0] == {"error_status": False, "message": "Duplicated image"}
+    return_strategy_credit_mock.assert_called_once()
 
 
 @mock.patch.object(v1, "execute_registration")

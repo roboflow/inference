@@ -57,6 +57,10 @@ THINK_EXTRACT_PATTERN = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
 
 
 def _get_cosmos3_attn_implementation(device: torch.device) -> str:
+    if device and device.type == "mps":
+        # Eager materialises a heads x tokens x tokens score matrix per layer; a
+        # 64-frame window is ~4.8k tokens, and fused SDPA prefills it ~2x faster.
+        return "sdpa"
     if (
         is_flash_attn_2_available()
         and device
@@ -120,7 +124,26 @@ def _resolve_default_dtype(device: torch.device) -> torch.dtype:
         if torch.cuda.is_bf16_supported():
             return torch.bfloat16
         return torch.float16
+    if device.type == "mps":
+        # Same precision as CUDA serving. fp16 is no faster on Apple GPUs and the
+        # squared-ReLU activations can overflow its range.
+        return torch.bfloat16
     return torch.float32
+
+
+def _load_base_model(model_name_or_path: str, *, device: torch.device, **kwargs):
+    # transformers loads weights on a thread pool, and concurrent casts onto MPS
+    # race in PyTorch's Metal kernel cache (hang or SIGSEGV), so stage on CPU.
+    stage_on_cpu = device.type == "mps"
+    model = AutoModelForImageTextToText.from_pretrained(
+        model_name_or_path,
+        device_map="cpu" if stage_on_cpu else device,
+        **kwargs,
+    )
+    if stage_on_cpu:
+        model = model.to(device)
+
+    return model
 
 
 class Cosmos3EdgeReasoner:
@@ -153,14 +176,14 @@ class Cosmos3EdgeReasoner:
             # base checkpoint (weights, tokenizer, chat template, processor configs)
             # under base/, the same layout as the other fine-tuned VLMs.
             base_model_path = os.path.join(model_name_or_path, "base")
-            model = AutoModelForImageTextToText.from_pretrained(
+            model = _load_base_model(
                 base_model_path,
-                device_map=device,
+                device=device,
                 dtype=dtype,
+                attn_implementation=attn_implementation,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
             )
             processor = AutoProcessor.from_pretrained(
                 base_model_path,
@@ -202,14 +225,14 @@ class Cosmos3EdgeReasoner:
                 package_dir=model_name_or_path,
             )
         else:
-            model = AutoModelForImageTextToText.from_pretrained(
+            model = _load_base_model(
                 model_name_or_path,
-                device_map=device,
+                device=device,
                 dtype=dtype,
+                attn_implementation=attn_implementation,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
             ).eval()
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,

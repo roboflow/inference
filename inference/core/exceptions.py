@@ -176,6 +176,10 @@ class RoboflowAPIImageUploadRejectionError(RoboflowAPIRequestError):
     pass
 
 
+class RoboflowAPIImageUploadUncertainError(RoboflowAPIRequestError):
+    pass
+
+
 class RoboflowAPIIAnnotationRejectionError(RoboflowAPIRequestError):
     pass
 

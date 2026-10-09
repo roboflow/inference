@@ -112,6 +112,12 @@ jobs:
             "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]" \
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
+          # pip skips wheels matching installed release versions. Test this checkout.
+          pip install --force-reinstall --no-deps \
+            "${{ github.workspace }}"/dist/roboflow_workflows-*.whl \
+            "${{ github.workspace }}"/dist/streamvision-*.whl \
+            "${{ github.workspace }}"/dist/inference_sdk-*.whl \
+            "${{ github.workspace }}"/dist/inference_models-*.whl
 
       - name: 🧪 E2E Tests - WebRTC SDK (real server)
         timeout-minutes: 15

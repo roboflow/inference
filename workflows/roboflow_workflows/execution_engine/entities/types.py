@@ -81,6 +81,7 @@ provided in a form of dictionary presented below, if `video_metadata` is intende
         "measured_fps": 20.05,
         "frame_number": 24,
         "frame_timestamp": "2024-08-21T11:13:44.313999", 
+        "total_frames": 1440,  # optional - only for video files with known length
     }  
 }
 ```
@@ -134,6 +135,7 @@ The kind has different internal end external representation. As input we support
     "measured_fps": 20.05,
     "frame_number": 24,
     "frame_timestamp": "2024-08-21T11:13:44.313999", 
+    "total_frames": 1440,
 }   
 ```
 Internally, [`VideoMetadata`](/workflows/internal_data_types/#videometadata) is used. If you are a
@@ -827,6 +829,9 @@ in form of [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detect
 
 The masks are stored in `sv.Detections.data["rle_mask"]` as a numpy array of RLE dictionaries
 in COCO format: `{"size": [H, W], "counts": "encoded_string"}`.
+
+`size` describes the grid the counts were encoded on. The instance-segmentation
+model blocks retain image-resolution masks. Reduced-grid workflow support is deferred.
 
 When visualization blocks need numpy masks, they decode RLE on-demand using pycocotools.
 

@@ -370,13 +370,22 @@ def get_model_descriptor_from_kwargs(
 def get_model_resource_details_from_kwargs(
     func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """Resolve model metadata with request-origin usage attribution.
+
+    Args:
+        func_kwargs (Dict[str, Any]): Bound model call arguments and request payload.
+
+    Returns:
+        Dict[str, Any]: Model metadata using the caller's source when available,
+        falling back to the model call's source outside a tagged request.
+    """
     resource_details = {}
     # A model decorator nested under an HTTP handler never sees the query
     # string, so a tag that arrived there reaches it only as request context.
     source = (
-        _meaningful_source(_lookup_in_func_kwargs(func_kwargs, "source"))
+        usage_source_tags.get().get("source")
+        or _meaningful_source(_lookup_in_func_kwargs(func_kwargs, "source"))
         or _source_tag_on_bound_requests(func_kwargs, "source")
-        or usage_source_tags.get().get("source")
     )
     if source is not None:
         resource_details["source"] = source

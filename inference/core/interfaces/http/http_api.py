@@ -2491,7 +2491,38 @@ class HttpInterface(BaseInterface):
                 # neither.
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
+                request_source: Optional[str] = Query(
+                    None,
+                    alias="source",
+                    description="The source of the inference request",
+                ),
+                request_source_info: Optional[str] = Query(
+                    None,
+                    alias="source_info",
+                    description="The detailed source information of the inference request",
+                ),
             ) -> WorkflowInferenceResponse:
+                """Fetch and execute a saved workflow with request usage attribution.
+
+                Args:
+                    workspace_name (str): Workspace containing the saved workflow.
+                    workflow_id (str): Identifier of the saved workflow to execute.
+                    workflow_request (PredefinedWorkflowInferenceRequest):
+                        Workflow inputs and execution options.
+                    background_tasks (BackgroundTasks): Tasks for deferred execution
+                        outside serverless environments.
+                    countinference (Optional[bool]): Caller billing intent, read by
+                        the usage collector.
+                    service_secret (Optional[str]): Internal service credential used
+                        by the usage collector to validate billing intent.
+                    request_source (Optional[str]): Usage source from the ``source``
+                        query parameter.
+                    request_source_info (Optional[str]): Detailed usage attribution
+                        from the ``source_info`` query parameter.
+
+                Returns:
+                    WorkflowInferenceResponse: Workflow outputs and execution metadata.
+                """
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 workflow_request.api_key = api_key_override(workflow_request.api_key)
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
@@ -2550,7 +2581,36 @@ class HttpInterface(BaseInterface):
                 # neither.
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
+                request_source: Optional[str] = Query(
+                    None,
+                    alias="source",
+                    description="The source of the inference request",
+                ),
+                request_source_info: Optional[str] = Query(
+                    None,
+                    alias="source_info",
+                    description="The detailed source information of the inference request",
+                ),
             ) -> WorkflowInferenceResponse:
+                """Execute an inline workflow with request usage attribution.
+
+                Args:
+                    workflow_request (WorkflowSpecificationInferenceRequest):
+                        Workflow inputs and execution options.
+                    background_tasks (BackgroundTasks): Tasks for deferred execution
+                        outside serverless environments.
+                    countinference (Optional[bool]): Caller billing intent, read by
+                        the usage collector.
+                    service_secret (Optional[str]): Internal service credential used
+                        by the usage collector to validate billing intent.
+                    request_source (Optional[str]): Usage source from the ``source``
+                        query parameter.
+                    request_source_info (Optional[str]): Detailed usage attribution
+                        from the ``source_info`` query parameter.
+
+                Returns:
+                    WorkflowInferenceResponse: Workflow outputs and execution metadata.
+                """
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
@@ -4787,6 +4847,12 @@ class HttpInterface(BaseInterface):
                     "accurate",
                     description="One of 'accurate' or 'fast'. If 'accurate' the mask will be decoded using the original image size. If 'fast' the mask will be decoded using the original mask size. 'accurate' is slower but more accurate.",
                 ),
+                allow_reduced_mask_resolution: bool = Query(
+                    False,
+                    description="Opt into mask_decode_mode and tradeoff_factor on "
+                    "inference_models. Otherwise masks stay at image resolution. "
+                    "Legacy backend decoding is unchanged.",
+                ),
                 tradeoff_factor: Optional[float] = Query(
                     0.0,
                     description="The amount to tradeoff between 0='fast' and 1='accurate'",
@@ -4835,7 +4901,7 @@ class HttpInterface(BaseInterface):
                 ),
                 include_anomaly_map: Optional[bool] = Query(
                     default=False,
-                    description="Anomaly detection only: include the raw anomaly heatmap in original image coordinates",
+                    description="Anomaly detection only: include the raw anomaly heatmap at the network input resolution",
                 ),
                 source: Optional[str] = Query(
                     "external",
@@ -4981,6 +5047,7 @@ class HttpInterface(BaseInterface):
                     args = {
                         "mask_decode_mode": mask_decode_mode,
                         "tradeoff_factor": tradeoff_factor,
+                        "allow_reduced_mask_resolution": allow_reduced_mask_resolution,
                     }
                     if response_mask_format:
                         args["response_mask_format"] = response_mask_format

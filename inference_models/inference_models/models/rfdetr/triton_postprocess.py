@@ -225,6 +225,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     classes_re_mapping: Optional[ClassesReMapping],
     max_detections: Optional[int] = None,
     defer_postprocess_sync: bool = False,
+    masks_resolution_factor: float = 1.0,
 ) -> Optional[InstanceDetections]:
     """Run the sparse Triton RF-DETR RLE postprocess path for one image.
 
@@ -248,6 +249,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         image_masks=image_masks,
         image_meta=image_meta,
         threshold=threshold,
+        masks_resolution_factor=masks_resolution_factor,
         classes_re_mapping=classes_re_mapping,
     )
     if unsupported_reason is not None:
@@ -925,10 +927,15 @@ def _unsupported_triton_postprocess_reason(
     image_meta: PreProcessingMetadata,
     threshold: Union[float, torch.Tensor],
     classes_re_mapping: Optional[ClassesReMapping],
+    masks_resolution_factor: float = 1.0,
 ) -> Optional[str]:
     """Explain why the Triton path should not run, or ``None`` when supported."""
     if triton is None:
         return "triton_unavailable"
+    if masks_resolution_factor != 1.0:
+        # the fused kernel interpolates straight to the image; it cannot honour
+        # a reduced target, so defer rather than silently ignore the request
+        return "mask_resolution_factor_unsupported"
     if classes_re_mapping is None:
         return "class_remapping_required"
     if isinstance(threshold, torch.Tensor):

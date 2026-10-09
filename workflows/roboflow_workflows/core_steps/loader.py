@@ -600,6 +600,9 @@ from roboflow_workflows.core_steps.models.foundation.lmm_classifier.v1 import (
 from roboflow_workflows.core_steps.models.foundation.meta_vlm.v1 import MetaVlmBlockV1
 from roboflow_workflows.core_steps.models.foundation.meta_vlm.v2 import MetaVlmBlockV2
 from roboflow_workflows.core_steps.models.foundation.meta_vlm.v3 import MetaVlmBlockV3
+from roboflow_workflows.core_steps.models.foundation.mistral_vlm.v1 import (
+    MistralVlmBlockV1,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.foundation.moondream2.v1 import (
@@ -1958,6 +1961,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         MetaVlmBlockV1,
         MetaVlmBlockV2,
         MetaVlmBlockV3,
+        MistralVlmBlockV1,
         GoogleGemmaBlockV1,
         GoogleGemmaBlockV2,
         GoogleGemmaBlockV3,
