@@ -7,9 +7,10 @@ required ``workspace`` field is deliberately NOT emitted as a dependent
 resource — it scopes the API call, but the dependency is the project.
 """
 
-from inference.roboflow_workflows_plugin.integrations.visual_search.v1 import (
+from roboflow_workflows.core_steps.integrations.roboflow.visual_search.v1 import (
     BlockManifest as VisualSearchV1Manifest,
 )
+
 from inference.core.workflows.prototypes.block import roboflow_platform_project
 
 

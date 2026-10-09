@@ -1,6 +1,7 @@
 """Unit tests for SAM3Torch interactive (PVS) prompt handling."""
 
 import importlib
+import inspect
 import sys
 from threading import RLock
 from types import ModuleType
@@ -123,6 +124,51 @@ def test_predict_for_single_image_accepts_flat_single_box(
     assert call_kwargs["box"] == [0, 0, 4, 4]
     assert prediction.masks.shape == (1, 8, 8)
     assert prediction.scores.shape == (1,)
+
+
+def test_predict_for_single_image_binarizes_strictly_positive_logits_by_default(
+    sam3_torch_module: ModuleType,
+) -> None:
+    # given
+    model = _build_model_with_mocked_predictor(sam3_torch_module, num_prompts=1)
+    logits = np.full((3, 8, 8), -1.0)
+    logits[:, 0, 0] = 0.0
+    logits[:, 1, 1] = 0.5
+    model._model.predict_inst.return_value = (
+        logits,
+        np.array([0.5, 0.9, 0.7]),
+        np.random.rand(3, 16, 16),
+    )
+
+    # when
+    prediction = model._predict_for_single_image(
+        embeddings=_example_embeddings(),
+        original_image_size=(8, 8),
+        boxes=[0, 0, 4, 4],
+    )
+
+    # then
+    assert prediction.masks.dtype == torch.bool
+    assert prediction.masks[0, 0, 0].item() is False
+    assert prediction.masks[0, 1, 1].item() is True
+
+
+def test_segmentation_methods_return_dense_masks_by_default(
+    sam3_torch_module: ModuleType,
+) -> None:
+    visual = inspect.signature(sam3_torch_module.SAM3Torch.segment_with_visual_prompts)
+    text = inspect.signature(sam3_torch_module.SAM3Torch.segment_with_text_prompts)
+
+    assert visual.parameters["mask_format"].default == "dense"
+    assert visual.parameters["mask_format"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert text.parameters["mask_format"].default == "dense"
+
+
+def test_new_sam3_parameters_are_keyword_only(sam3_torch_module: ModuleType) -> None:
+    embed = inspect.signature(sam3_torch_module.SAM3Torch.embed_images)
+
+    assert embed.parameters["return_embeddings"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert embed.parameters["return_embeddings"].default is True
 
 
 def test_predict_for_single_image_selects_best_proposal_per_prompt(

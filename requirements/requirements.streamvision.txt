@@ -1,2 +1,2 @@
 # keep in sync with stream_vision/pyproject.toml version
-streamvision[webrtc,workflows]==0.1.0
+streamvision[webrtc,workflows]==0.1.1rc2

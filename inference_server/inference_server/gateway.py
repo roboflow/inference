@@ -1,0 +1,723 @@
+"""ModelManagerGateway — wraps a ModelManager in-process.
+
+The built-in "direct" gateway resolved by ``gateway_resolver``. No SHM, no
+ZMQ. Calls `inference_model_manager.ModelManager` methods directly.
+
+Sync ModelManager methods (load / unload / stats) are wrapped via
+`run_in_executor` so the gateway interface stays async on both impls
+(ModelManagerGateway and MMPGateway).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextvars
+import logging
+import re
+import time
+from typing import Any, Optional
+
+from fastapi import Request
+
+from inference_model_manager.errors import INPUT_ERROR_PREFIX
+from inference_model_manager.model_manager import ModelManager
+from inference_models.errors import (
+    BaseInferenceModelsError,
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageRestrictedError,
+)
+from inference_server import configuration
+from inference_server.errors import PayloadTooLargeError, ServerBusyError
+from inference_server.middlewares.model_load import record_model_load
+from inference_server.routing import (
+    capability_load_kwargs,
+    routed_model_id,
+    routing_key,
+)
+
+logger = logging.getLogger(__name__)
+
+# Lifecycle error codes mirroring the MMP wire protocol's lifecycle codes
+# — the same tuples MMPGateway callers translate.
+_ERR_LOAD_FAILED = 5
+_ERR_NOT_LOADED = 6
+
+# MMPGateway.load() waits 30s when no explicit timeout is given (its
+# _lifecycle_req default); direct load() mirrors that.
+_LOAD_DEFAULT_TIMEOUT_S = 30.0
+
+# Backend.inflight_begin / ModelManager.submit refuse a drained backend with
+# this phrase.
+_NOT_ACCEPTING_MARKER = "not accepting requests"
+
+_MAX_REMEMBERED_LOAD_FAILURES = 256
+_URL = re.compile(r"""([a-zA-Z][a-zA-Z0-9+.-]*)://([^\s"<>]*)""")
+_AUTHORIZATION_VALUE = re.compile(
+    r"""((?<![A-Za-z0-9])authorization[ \t]*(?:=|:|%3D)[ \t]*)(?!["'])[^\r\n]+""",
+    re.IGNORECASE,
+)
+_SECRET_VALUE = re.compile(
+    r"""(?<![A-Za-z0-9])
+    (?P<name>api_key|apikey|api-key|service_secret|access_token|token|secret
+    |password|signature)
+    (?P<name_quote>["']?)
+    (?P<separator>[ \t]*(?:=|:|%3D)[ \t]*)
+    (?:(?P<quote>["'])[^"']*(?P=quote)|[^\s&,;}"']+)""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+class ReloadAfterEvictionError(RuntimeError):
+    pass
+
+
+def _translate_manager_infer_error(exc: Exception) -> Exception:
+    """Map manager/backend failures onto the MMPGateway exception surface."""
+    if type(exc).__name__ == "ModelInputError":
+        return ValueError(str(exc))
+    if isinstance(exc, RuntimeError) and str(exc).startswith(INPUT_ERROR_PREFIX):
+        return ValueError(str(exc)[len(INPUT_ERROR_PREFIX) :])
+    if isinstance(exc, ValueError) and "slot capacity" in str(exc):
+        return PayloadTooLargeError(str(exc))
+    if isinstance(exc, TimeoutError) and "No free SHM slots" in str(exc):
+        return ServerBusyError(str(exc))
+    return exc
+
+
+def _model_route_lost(exc: Exception) -> bool:
+    """Whether the model vanished under a request that had passed ensure_loaded.
+
+    Inference takes its in-flight lease inside process(), so capacity churn
+    between ensure_loaded() and that lease shows up either as a missing route
+    (KeyError) or as a backend already drained out of service.
+    """
+    if isinstance(exc, KeyError):
+        return True
+    return isinstance(exc, RuntimeError) and _NOT_ACCEPTING_MARKER in str(exc)
+
+
+def _redact_url(match: re.Match) -> str:
+    scheme, rest = match.group(1), match.group(2)
+    authority = re.split(r"[/?#]", rest, maxsplit=1)[0]
+    if rest in (authority, authority + "/"):
+        return match.group(0)
+
+    host = re.sub(r":\d*$", "", authority.rpartition("@")[2])
+
+    redacted_url = f"{scheme}://{host}/***"
+
+    return redacted_url
+
+
+def _redact_secret_value(match: re.Match) -> str:
+    quote = match.group("quote") or ""
+    prefix = match.group("name") + match.group("name_quote") + match.group("separator")
+
+    return f"{prefix}{quote}***{quote}"
+
+
+def _redact_secrets(text: str) -> str:
+    without_urls = _URL.sub(_redact_url, text)
+    without_authorization = _AUTHORIZATION_VALUE.sub(r"\1***", without_urls)
+    redacted = _SECRET_VALUE.sub(_redact_secret_value, without_authorization)
+
+    return redacted
+
+
+def _load_failure(error: Optional[BaseException]) -> tuple:
+    """Lifecycle tuple of a failed load, describing the error in JSON-ready values."""
+    help_url = getattr(error, "help_url", None)
+    status_code = getattr(error, "status_code", None)
+    alternatives = getattr(error, "alternatives_errors", None) or []
+    restricted = isinstance(error, ModelPackageRestrictedError) or (
+        isinstance(error, ModelPackageAlternativesExhaustedError)
+        and any(
+            isinstance(alternative, ModelPackageRestrictedError)
+            for alternative in alternatives
+        )
+    )
+    detail = {
+        "error_type": type(error).__name__,
+        "message": _redact_secrets(
+            Exception.__str__(error)
+            if isinstance(error, BaseInferenceModelsError)
+            else str(error)
+        ),
+        "help_url": help_url if isinstance(help_url, str) else None,
+        "status_code": status_code if isinstance(status_code, int) else None,
+        "restricted": restricted,
+    }
+
+    return ("error", _ERR_LOAD_FAILED, detail)
+
+
+def _try_pin(pin: Any, model_id: str) -> bool:
+    """False when the model was gone before the pin landed."""
+    try:
+        pin(model_id)
+        return True
+    except KeyError:
+        return False
+
+
+class ModelManagerGateway:
+    """Gateway duck-surface implementation over an in-process ModelManager.
+
+    Lifecycle:
+        gateway = ModelManagerGateway()
+        ...                            # use as the resolved gateway
+        await gateway.shutdown()       # delegates to manager.shutdown()
+    """
+
+    def __init__(
+        self,
+        manager: Optional[ModelManager] = None,
+        *,
+        load_kwargs: Optional[dict] = None,
+        load_wait_s: Optional[float] = None,
+        infer_timeout_s: Optional[float] = None,
+    ) -> None:
+        self.manager = manager if manager is not None else ModelManager()
+        self.load_kwargs = dict(load_kwargs) if load_kwargs else {}
+        self.load_wait_s = (
+            load_wait_s if load_wait_s is not None else configuration.LOAD_WAIT_S
+        )
+        self.infer_timeout_s = (
+            infer_timeout_s
+            if infer_timeout_s is not None
+            else configuration.INFER_TIMEOUT_S
+        )
+        self.n_slots = getattr(self.manager, "n_slots", None)
+        # Per-model load dedup — two concurrent first requests must not both
+        # call manager.load (2x VRAM / load time).
+        self._load_locks: dict[str, asyncio.Lock] = {}
+        # In-flight executor loads shared between load() and ensure_loaded()
+        # so a timed-out load() keeps loading and later calls await the same
+        # future instead of double-loading.
+        self._pending_loads: dict[str, asyncio.Future] = {}
+        # api_key/device the model last loaded with, for a mid-request
+        # reload to reuse instead of falling back to anonymous defaults.
+        self._load_context: dict[str, tuple[str, str]] = {}
+        self._load_failures: dict[str, tuple] = {}
+        self._shutting_down = False
+
+    # ------------------------------------------------------------------
+    # Lifecycle (lifespan)
+    # ------------------------------------------------------------------
+
+    async def start(self) -> None:
+        """No-op — manager is constructed externally and passed in."""
+
+    async def shutdown(self) -> None:
+        """Shut down the underlying ModelManager.
+
+        Runs off the manager's own pool on purpose: manager.shutdown() joins
+        that pool, which would deadlock if submitted to it.
+        """
+        self._shutting_down = True
+        self._load_failures.clear()
+        await asyncio.get_running_loop().run_in_executor(None, self.manager.shutdown)
+        self._load_failures.clear()
+
+    # ------------------------------------------------------------------
+    # Gateway duck surface
+    # ------------------------------------------------------------------
+
+    @property
+    def _model_executor(self):
+        """The manager's own worker pool. Model work must not escape onto the
+        loop's default executor, which is unrelated to the manager's limits."""
+        return getattr(self.manager, "executor", None)
+
+    def _load_sync(
+        self,
+        key: str,
+        api_key: str,
+        device: Optional[str] = None,
+        pinned: bool = False,
+    ) -> None:
+        kwargs: dict = dict(self.load_kwargs)
+        if device:
+            kwargs["device"] = device
+        if pinned:
+            # The manager pins under the same lock acquisition that registers
+            # the backend — no window in which a concurrent load can evict a
+            # model this call is about to protect.
+            kwargs["pinned"] = True
+        model_id = routed_model_id(key)
+        if model_id != key:
+            # Multi-instance routing key: register under the key, fetch the
+            # weights named by the bare model id (mirrors the MMP).
+            kwargs["model_id_or_path"] = model_id
+            kwargs.update(capability_load_kwargs(key))
+        self.manager.load(key, api_key, **kwargs)
+
+    async def _acquire_load_future(
+        self,
+        key: str,
+        api_key: str,
+        device: Optional[str] = None,
+        pinned: bool = False,
+    ) -> Optional[asyncio.Future]:
+        """None when the model is present and healthy; else the shared load.
+
+        Everything happens under the per-model lock: presence check, dead
+        backend replacement (the MMP watches worker death and reloads —
+        without this, a crashed worker keeps answering model_ready and
+        poisons the route), and load-future creation. Serializing the
+        unload here means a stale unload can never remove a freshly loaded
+        replacement.
+        """
+        lock = self._load_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            return self._acquire_load_future_locked(key, api_key, device, pinned)
+
+    def _acquire_load_future_locked(
+        self,
+        key: str,
+        api_key: str,
+        device: Optional[str],
+        pinned: bool = False,
+    ) -> Optional[asyncio.Future]:
+        future = self._pending_loads.get(key)
+        if future is not None and not future.done():
+            return future
+        drop_dead = False
+        if key in self.manager:
+            is_healthy = getattr(self.manager, "is_healthy", None)
+            if is_healthy is None or is_healthy(key):
+                return None
+            logger.warning(
+                "ModelManagerGateway: backend for '%s' is dead — reloading", key
+            )
+            drop_dead = True
+        model_id = routed_model_id(key)
+        request_context = contextvars.copy_context()
+
+        def _reload() -> None:
+            if drop_dead:
+                try:
+                    self.manager.unload(key)
+                except Exception:
+                    logger.warning(
+                        "ModelManagerGateway: dead-backend unload failed",
+                        exc_info=True,
+                    )
+            load_started = time.perf_counter()
+            self._load_sync(key, api_key, device, pinned)
+            load_time_s = time.perf_counter() - load_started
+            request_context.run(
+                record_model_load, model_id, cold_start=True, load_time_s=load_time_s
+            )
+
+        # Unload+load run as ONE executor job registered before the lock
+        # releases: no await window a cancelled caller could exploit, and
+        # followers join the same future covering the whole replacement.
+        future = asyncio.get_running_loop().run_in_executor(
+            self._model_executor, _reload
+        )
+        self._load_context[key] = (api_key, device or "")
+        self._pending_loads[key] = future
+        self._load_failures.pop(key, None)
+
+        def _forget(_f: asyncio.Future) -> None:
+            # A finished future stays registered until this callback runs on
+            # the next loop tick; the lookup above already skips it, and the
+            # identity check keeps a stale callback from dropping a newer load.
+            if self._pending_loads.get(key) is future:
+                del self._pending_loads[key]
+                if not _f.cancelled() and _f.exception() is not None:
+                    self._remember_load_failure(key, _load_failure(_f.exception()))
+
+        future.add_done_callback(_forget)
+        return future
+
+    async def _await_load(
+        self,
+        future: asyncio.Future,
+        timeout_s: Optional[float],
+        deadline_result: Optional[tuple],
+    ) -> Optional[tuple]:
+        """Await a shared load; None on success, a lifecycle tuple otherwise.
+
+        deadline_result is returned when OUR deadline fires; None re-raises
+        the deadline as asyncio.TimeoutError (MMPGateway.load(timeout_s)
+        semantics). shield: a cancelled caller must not abort a load other
+        requests (and the MMP contract) expect to keep running.
+        """
+        try:
+            if timeout_s is not None:
+                await asyncio.wait_for(asyncio.shield(future), timeout=timeout_s)
+            else:
+                await asyncio.shield(future)
+        except asyncio.CancelledError:
+            raise
+        except (asyncio.TimeoutError, TimeoutError):
+            if future.done() and future.exception() is None:
+                # The load completed on the deadline boundary — success.
+                return None
+            if not future.done():
+                # Our deadline; the executor load keeps running and callers
+                # poll again.
+                if deadline_result is None:
+                    raise
+                return deadline_result
+            # A TimeoutError from inside the load itself (worker start
+            # timeout etc.) is a load failure, not our deadline.
+            logger.warning(
+                "ModelManagerGateway: load failed", exc_info=future.exception()
+            )
+            return _load_failure(future.exception())
+        except Exception as error:
+            logger.warning("ModelManagerGateway: load failed", exc_info=True)
+            return _load_failure(error)
+        return None
+
+    def _remember_load_failure(self, key: str, failure: tuple) -> None:
+        if self._shutting_down:
+            return
+
+        self._load_failures.pop(key, None)
+        self._load_failures[key] = failure
+        while len(self._load_failures) > _MAX_REMEMBERED_LOAD_FAILURES:
+            del self._load_failures[next(iter(self._load_failures))]
+
+    def last_load_failure(self, model_id: str, instance: str = "") -> Optional[tuple]:
+        """Report the failure of the latest load of a model.
+
+        Lets a caller that polls ``ensure_loaded`` learn about a load that
+        failed between two of its calls, instead of starting the load again.
+
+        Args:
+            model_id: Model the load was started for.
+            instance: Instance part of the routing key.
+
+        Returns:
+            The failure tuple of the latest load when that load failed and no
+            load of the model was started since, otherwise None.
+        """
+        failure = self._load_failures.get(routing_key(model_id, instance))
+
+        return failure
+
+    async def ensure_loaded(
+        self,
+        model_id: str,
+        instance: str = "",
+        api_key: str = "",
+        device: str = "",
+    ) -> tuple:
+        key = routing_key(model_id, instance)
+        future = await self._acquire_load_future(key, api_key, device or None)
+        if future is None:
+            return ("model_ready",)
+
+        failure = await self._await_load(
+            future,
+            self.load_wait_s,
+            deadline_result=("load_timeout", int(self.load_wait_s)),
+        )
+        if failure is not None:
+            return failure
+        return ("model_ready",)
+
+    async def _pinned_load(
+        self, model_id: str, api_key: str, timeout_s: float
+    ) -> Optional[tuple]:
+        """Run or join a pinned load; None once the model is loaded."""
+        future = await self._acquire_load_future(model_id, api_key, pinned=True)
+        if future is None:
+            return None
+        return await self._await_load(future, timeout_s, deadline_result=None)
+
+    async def load(
+        self,
+        model_id: str,
+        api_key: str = "",
+        timeout_s: Optional[float] = None,
+        pinned: bool = True,
+    ) -> tuple:
+        effective_timeout = (
+            timeout_s if timeout_s is not None else _LOAD_DEFAULT_TIMEOUT_S
+        )
+        if not pinned:
+            future = await self._acquire_load_future(model_id, api_key)
+            if future is None:
+                return ("ok",)
+            failure = await self._await_load(
+                future, effective_timeout, deadline_result=None
+            )
+            return failure or ("ok",)
+
+        failure = await self._pinned_load(model_id, api_key, effective_timeout)
+        if failure is not None:
+            return failure
+        pin = getattr(self.manager, "pin", None)
+        if pin is None:
+            return ("ok",)
+        if _try_pin(pin, model_id):
+            return ("ok",)
+        # Already loaded, or joined an unpinned in-flight load, and the model
+        # was evicted before the pin landed. Reload once — reporting ok for an
+        # absent model leaves /ready failing forever.
+        logger.warning(
+            "ModelManagerGateway: '%s' was evicted before it could be pinned "
+            "— reloading once",
+            model_id,
+        )
+        failure = await self._pinned_load(model_id, api_key, effective_timeout)
+        if failure is not None:
+            return failure
+        if _try_pin(pin, model_id):
+            return ("ok",)
+        return ("error", _ERR_LOAD_FAILED)
+
+    async def unload(self, model_id: str) -> tuple:
+        self._load_failures.pop(model_id, None)
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                self._model_executor, lambda: self.manager.unload(model_id)
+            )
+        except KeyError:
+            return ("error", _ERR_NOT_LOADED)
+        except Exception:
+            logger.warning("ModelManagerGateway.unload failed", exc_info=True)
+            return ("error", _ERR_LOAD_FAILED)
+        return ("ok",)
+
+    async def infer(
+        self,
+        *,
+        model_id: str,
+        image: Any = None,
+        action: Optional[str] = None,
+        instance: str = "",
+        params: Optional[dict] = None,
+        request: Optional[Request] = None,
+    ) -> Any:
+        return await self._infer(
+            model_id=model_id,
+            image=image,
+            action=action,
+            instance=instance,
+            params=params,
+            request=request,
+        )
+
+    async def infer_with_duration(
+        self,
+        *,
+        model_id: str,
+        image: Any = None,
+        action: Optional[str] = None,
+        instance: str = "",
+        params: Optional[dict] = None,
+        request: Optional[Request] = None,
+    ) -> tuple[Any, Optional[float]]:
+        """Run ``infer`` and report the model-side duration of this call.
+
+        Optional extension of the gateway surface; callers fall back to their
+        own timing when a gateway does not provide it.
+
+        Args:
+            model_id: Model id to route to.
+            image: Raw image payload, or None for a params-only call.
+            action: Action name, None for the model default.
+            instance: Model instance, empty for the sole instance.
+            params: Action parameters.
+            request: Ignored in-process.
+
+        Returns:
+            The result and the seconds spent decoding inputs and running the
+            model including pre/post-processing, excluding queueing and
+            transport; None when the model ran out of process or the call was
+            pipelined.
+
+        Raises:
+            Exception: Whatever ``infer`` raises; when the model ran, the
+                exception carries the seconds spent as ``model_duration_s``.
+        """
+        timing: dict = {}
+        try:
+            result = await self._infer(
+                model_id=model_id,
+                image=image,
+                action=action,
+                instance=instance,
+                params=params,
+                request=request,
+                timing=timing,
+            )
+        except Exception as error:
+            if "model_s" in timing:
+                try:
+                    error.model_duration_s = timing["model_s"]
+                except Exception:
+                    pass
+            raise
+        model_s = timing.get("model_s")
+
+        return result, model_s
+
+    async def _infer(
+        self,
+        *,
+        model_id: str,
+        image: Any = None,
+        action: Optional[str] = None,
+        instance: str = "",
+        params: Optional[dict] = None,
+        request: Optional[Request] = None,
+        timing: Optional[dict] = None,
+    ) -> Any:
+        # `request` is ignored in-process: no client-disconnect race
+        # (process_async runs in executor; cancellation propagates via the
+        # asyncio task).
+        key = routing_key(model_id, instance)
+        call_kwargs = dict(params) if params else {}
+        # Empty payload = params-only request; the model resolves inputs from
+        # params (mirrors the MMP worker contract for zero-byte slots).
+        if image is not None:
+            call_kwargs["images"] = (
+                None
+                if isinstance(image, (bytes, bytearray, memoryview)) and not image
+                else image
+            )
+
+        timing_kwargs = {"timing": timing} if timing is not None else {}
+
+        async def _process() -> Any:
+            # serialize=False: L1 output serializers expect the RAW
+            # prediction — the MMP wire carries raw pickles, so the
+            # direct gateway must match. wire_marshalling: direct
+            # backends get the worker-equivalent decode/rle/numpy/unwrap
+            # handling (no-op on subprocess backends — the worker does it).
+            return await self.manager.process_async(
+                key,
+                action=action,
+                serialize=False,
+                wire_marshalling=True,
+                **timing_kwargs,
+                **call_kwargs,
+            )
+
+        async def _run() -> Any:
+            try:
+                try:
+                    return await _process()
+                except (KeyError, RuntimeError) as exc:
+                    if not _model_route_lost(exc):
+                        raise
+                    # Capacity churn took the model between ensure_loaded()
+                    # and the in-flight lease — reload and replay once rather
+                    # than failing a request that was admitted.
+                    logger.warning(
+                        "ModelManagerGateway: '%s' went away mid-request "
+                        "— reloading and retrying once",
+                        key,
+                    )
+                    api_key, device = self._load_context.get(key, ("", ""))
+                    status = await self.ensure_loaded(
+                        model_id, instance, api_key, device
+                    )
+                    if status[0] == "load_timeout":
+                        raise ServerBusyError(f"reload timed out for '{key}'")
+                    if status[0] == "error":
+                        raise ReloadAfterEvictionError("reload after eviction failed")
+                    return await _process()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                translated = _translate_manager_infer_error(exc)
+                if translated is exc:
+                    raise
+                raise translated from exc
+
+        return await asyncio.wait_for(_run(), timeout=self.infer_timeout_s)
+
+    async def stats(self) -> dict:
+        stats = await asyncio.get_running_loop().run_in_executor(
+            None, self.manager.stats
+        )
+        # Routers consume the neutral "models" id-keyed dict; the manager
+        # reports a list — rekey it.
+        stats["models"] = {
+            entry["model_id"]: entry
+            for entry in stats.get("models") or []
+            if entry.get("model_id")
+        }
+        if self.n_slots is not None:
+            stats["n_slots"] = self.n_slots
+        return stats
+
+    async def interface(self, model_id: str) -> dict:
+        stats = await self.stats()
+        info = stats["models"].get(model_id)
+        if info is None:
+            raise RuntimeError(f"model '{model_id}' is not loaded")
+        return {"model_id": model_id, "actions": info.get("actions", {})}
+
+    async def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        """Whether the model runs a depth>1 stream pipeline.
+
+        Args:
+            model_id: Routing key of the model.
+
+        Returns:
+            True when the model is loaded and pipelined.
+        """
+        supported = await self._run_on_model_executor(
+            self.manager.model_supports_stream_pipeline, model_id
+        )
+
+        return supported
+
+    async def get_model_pipeline_depth(self, model_id: str) -> int:
+        """The model's stream pipeline depth.
+
+        Args:
+            model_id: Routing key of the model.
+
+        Returns:
+            The depth, 1 when the model is not loaded or not pipelined.
+        """
+        depth = await self._run_on_model_executor(
+            self.manager.get_model_pipeline_depth, model_id
+        )
+
+        return depth
+
+    async def flush_model_stream_pipeline(self, model_id: str) -> Optional[list]:
+        """Drain the model's in-flight pipeline frames.
+
+        Args:
+            model_id: Routing key of the model.
+
+        Returns:
+            The finished predictions of the in-flight frames, oldest first, or
+            None when the model is not pipelined.
+        """
+        flushed = await self._run_on_model_executor(
+            self.manager.flush_model_stream_pipeline, model_id
+        )
+
+        return flushed
+
+    async def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        """Stop the model's pipeline worker; a no-op when it has none.
+
+        Args:
+            model_id: Routing key of the model.
+        """
+        await self._run_on_model_executor(
+            self.manager.shutdown_model_stream_pipeline, model_id
+        )
+
+        return None
+
+    async def _run_on_model_executor(self, method: Any, model_id: str) -> Any:
+        result = await asyncio.get_running_loop().run_in_executor(
+            self._model_executor, lambda: method(model_id)
+        )
+
+        return result

@@ -4,6 +4,28 @@
 
 ### Added
 
+- `SAM3Torch.segment_with_visual_prompts(...)` accepts `mask_format="rle"` to return
+  COCO RLE dictionaries (`masks`, `scores`) instead of dense `SAM3Prediction` objects;
+  the default stays `"dense"`.
+- `SAM3Torch.embed_images(..., return_embeddings=False)` populates the embeddings cache
+  without returning the embedding tensors (`SAM3ImageEmbeddings.embeddings` is `None`).
+- A `vllm` backend proxies Qwen3-VL, Qwen3.5 and Qwen3.8 VLM requests to a vLLM HTTP
+  sidecar and registers LoRA adapters there. It is selected only when `VLLM_PROXY_ENABLED`
+  is set; the `VLLM_*` settings are validated by `validate_vllm_proxy_settings()` when the
+  proxy is selected, so an invalid value never breaks importing the package.
+- `AutoModel.from_pretrained(..., preloaded_model_dependencies=...)` reuses already loaded
+  dependency models (validated against the dependency's model id and package id) instead
+  of loading them again. `AutoModel.from_pretrained(..., disabled_backends=...)` excludes
+  backends from auto-negotiation; the `DISABLED_INFERENCE_MODELS_BACKENDS` environment
+  variable is exposed as `configuration.DISABLED_INFERENCE_MODELS_BACKENDS` but is not
+  applied unless passed; listing `"disabled_backends"` in `forwarded_kwargs` applies the
+  exclusions to dependency models too. Both parameters are keyword-only and default to the
+  previous behaviour.
+- `ModelPackageMetadata.memory_profile` carries the package's `MemoryProfile` (peak VRAM
+  per batch size, `vram_for_batch(...)`) from the Roboflow API.
+- `InstanceSegmentationModel.max_batch_size` reports the model's batch limit.
+- SAM and SAM2 accept plain Python lists for point, label, box and mask prompts.
+- OWLv2 `infer_from_reference_examples(...)` accepts reference examples as dictionaries.
 - Configurable mask resolution through `masks_resolution_factor` in `[0.0, 1.0]`
   for YOLOv5, YOLOv7, YOLOv8, YOLO26, YOLACT, and RF-DETR instance segmentation.
   Supported implementations forward the factor through dense and RLE
@@ -23,6 +45,10 @@
 
 ### Changed
 
+- TensorRT models import `tensorrt_lean` when it is installed and fall back to `tensorrt`.
+- Boolean environment variables also accept `1/0`, `t/f`, `yes/no`, `y/n`, `on/off` and an
+  empty value (`false`).
+- `InvalidEnvVariable` is also a `ValueError`.
 - Server requests using `inference_models` require
   `allow_reduced_mask_resolution=true` to apply `mask_decode_mode` and
   `tradeoff_factor`. Without this opt-in, masks retain image resolution.
@@ -61,6 +87,9 @@
 
 ### Fixed
 
+- GLM-OCR table recognition sent the formula-recognition prompt.
+- `get_onnxruntime_info()` reports a missing runtime instead of raising when the
+  `onnxruntime` module is present but incomplete.
 - Origin-anchored static-crop masks now use a canvas representing the original
   image, matching crops with non-zero offsets. Dense and RLE results retain the
   crop's position when converted to image-resolution masks. Reduced canvases and
@@ -68,6 +97,7 @@
 
 - Cosmos 3 Edge loads and runs on Apple Silicon GPUs (`DEFAULT_DEVICE=mps`), in bf16 with SDPA
   attention. Loading used to crash or hang from a thread race in PyTorch's Metal kernel cache.
+
 
 ---
 
@@ -157,6 +187,10 @@
 - Reference RF-DETR NumPy preprocessing swaps BGR/RGB channels after resizing,
   preserving pixel values while avoiding a full-resolution channel copy.
 - Removed the unused `threaded-exact-v1` RF-DETR preprocessor and its worker-count options.
+
+### Removed
+
+- `inference_models.utils.performance` and its `performance_profiler` are gone (opt-in profiler, no replacement).
 
 ### Fixed
 

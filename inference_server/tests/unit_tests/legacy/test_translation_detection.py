@@ -1,0 +1,262 @@
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+from inference_server.legacy.bridge import Route
+from inference_server.legacy.entities import (
+    InstanceSegmentationInferenceRequest,
+    KeypointsDetectionInferenceRequest,
+    ObjectDetectionInferenceRequest,
+)
+from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.legacy.translation import (
+    build_task_params,
+    ensure_request_supported,
+    masks2poly,
+    repack_prediction,
+)
+
+IMG = {"type": "base64", "value": "x"}
+ROUTE = Route(
+    model_id="ds/1",
+    registry_id="ds/1",
+    task_type="object-detection",
+    action="infer",
+    class_names=["cat", "dog"],
+)
+
+
+def _det(xyxy, conf, cls):
+    return SimpleNamespace(
+        xyxy=np.array(xyxy, dtype=float),
+        confidence=np.array(conf),
+        class_id=np.array(cls),
+    )
+
+
+def test_build_params_object_detection():
+    req = ObjectDetectionInferenceRequest(
+        model_id="ds/1",
+        image=IMG,
+        confidence=0.6,
+        iou_threshold=0.4,
+        max_detections=10,
+        class_agnostic_nms=True,
+    )
+    assert build_task_params("object-detection", "infer", req, ROUTE) == {
+        "confidence": 0.6,
+        "iou_threshold": 0.4,
+        "max_detections": 10,
+        "class_agnostic_nms": True,
+    }
+
+
+def test_build_params_passes_best_confidence_through():
+    req = ObjectDetectionInferenceRequest(model_id="ds/1", image=IMG, confidence="best")
+    assert build_task_params("object-detection", "infer", req, ROUTE)["confidence"] == (
+        "best"
+    )
+
+
+def test_build_params_forwards_disable_preproc_flags_only_when_true():
+    req = ObjectDetectionInferenceRequest(
+        model_id="ds/1",
+        image=IMG,
+        disable_preproc_contrast=True,
+        disable_preproc_grayscale=False,
+        disable_preproc_static_crop=True,
+    )
+    params = build_task_params("object-detection", "infer", req, ROUTE)
+    assert params["disable_preproc_contrast"] is True
+    assert params["disable_preproc_static_crop"] is True
+    assert "disable_preproc_grayscale" not in params
+    assert "disable_preproc_auto_orient" not in params
+
+    plain = ObjectDetectionInferenceRequest(model_id="ds/1", image=IMG)
+    assert not any(
+        key.startswith("disable_preproc")
+        for key in build_task_params("object-detection", "infer", plain, ROUTE)
+    )
+
+
+@pytest.mark.parametrize(
+    "extra, expected",
+    [
+        ({}, None),
+        ({"keypoint_confidence": 0.0}, 0.0),
+        ({"keypoint_confidence": 0.5}, 0.5),
+    ],
+)
+def test_build_params_forwards_keypoint_threshold_only_when_sent(extra, expected):
+    req = KeypointsDetectionInferenceRequest(model_id="ds/1", image=IMG, **extra)
+    params = build_task_params("keypoint-detection", "infer", req, ROUTE)
+    if expected is None:
+        assert "key_points_threshold" not in params
+    else:
+        assert params["key_points_threshold"] == expected
+
+
+def test_ensure_request_supported_accepts_disable_preproc_flags():
+    req = InstanceSegmentationInferenceRequest(
+        model_id="ds/1",
+        image=IMG,
+        disable_preproc_contrast=True,
+        disable_preproc_grayscale=True,
+        disable_preproc_static_crop=True,
+    )
+    ensure_request_supported("ds/1", req, ROUTE)
+
+
+def test_ensure_request_supported_keeps_auto_orient_unsupported():
+    req = ObjectDetectionInferenceRequest(
+        model_id="ds/1", image=IMG, disable_preproc_auto_orient=True
+    )
+    with pytest.raises(LegacyHTTPError) as error:
+        ensure_request_supported("ds/1", req, ROUTE)
+    assert error.value.status_code == 501
+    assert error.value.message == (
+        "disable_preproc_auto_orient is not supported for model 'ds/1'."
+    )
+
+
+def test_ignored_detection_options_are_accepted_and_logged_once(caplog):
+    req = InstanceSegmentationInferenceRequest(
+        model_id="ds/1",
+        image=IMG,
+        mask_decode_mode="fast",
+        tradeoff_factor=0.5,
+        max_candidates=100,
+        fix_batch_size=True,
+    )
+    with caplog.at_level("DEBUG", logger="inference_server.legacy.translation"):
+        ensure_request_supported("ds/1", req, ROUTE)
+    assert len(caplog.records) == 1
+    for name in (
+        "mask_decode_mode",
+        "tradeoff_factor",
+        "max_candidates",
+        "fix_batch_size",
+    ):
+        assert name in caplog.text
+
+
+def test_default_detection_options_log_nothing(caplog):
+    req = InstanceSegmentationInferenceRequest(model_id="ds/1", image=IMG)
+    with caplog.at_level("DEBUG", logger="inference_server.legacy.translation"):
+        ensure_request_supported("ds/1", req, ROUTE)
+    assert caplog.records == []
+
+
+def test_repack_object_detection_matches_legacy_shape():
+    req = ObjectDetectionInferenceRequest(model_id="ds/1", image=IMG)
+    resp = repack_prediction(
+        "object-detection",
+        "infer",
+        [_det([[10, 20, 30, 60]], [0.9], [1])],
+        (100, 50),
+        ROUTE,
+        req,
+    )
+    dumped = resp.model_dump(by_alias=True, exclude_none=True)
+    pred = dumped["predictions"][0]
+    assert dumped["image"] == {"width": 100, "height": 50}
+    assert (pred["x"], pred["y"], pred["width"], pred["height"]) == (
+        20.0,
+        40.0,
+        20.0,
+        40.0,
+    )
+    assert (
+        pred["class"] == "dog" and pred["class_id"] == 1 and pred["confidence"] == 0.9
+    )
+    assert "detection_id" in pred and "class_confidence" not in pred
+
+
+def test_repack_object_detection_applies_class_filter():
+    req = ObjectDetectionInferenceRequest(
+        model_id="ds/1", image=IMG, class_filter=["cat"]
+    )
+    resp = repack_prediction(
+        "object-detection",
+        "infer",
+        _det([[0, 0, 1, 1], [0, 0, 2, 2]], [0.9, 0.8], [1, 0]),
+        (4, 4),
+        ROUTE,
+        req,
+    )
+    assert [p.class_name for p in resp.predictions] == ["cat"]
+
+
+def test_repack_instance_segmentation_polygon_and_rle():
+    mask = np.zeros((2, 4, 4), dtype=bool)
+    mask[0, 1:3, 1:3] = True
+    mask[1, 0:2, 0:2] = True
+    pred = SimpleNamespace(
+        xyxy=np.array([[1, 1, 3, 3], [0, 0, 2, 2]], dtype=float),
+        confidence=np.array([0.9, 0.7]),
+        class_id=np.array([0, 1]),
+        mask=mask,
+    )
+    route = Route(
+        model_id="ds/1",
+        registry_id="ds/1",
+        task_type="instance-segmentation",
+        action="infer",
+        class_names=["cat", "dog"],
+    )
+    poly = repack_prediction(
+        "instance-segmentation",
+        "infer",
+        pred,
+        (4, 4),
+        route,
+        InstanceSegmentationInferenceRequest(model_id="ds/1", image=IMG),
+    )
+    assert poly.predictions[0].mask_format == "polygon"
+    assert len(poly.predictions[0].points) >= 3
+    rle = repack_prediction(
+        "instance-segmentation",
+        "infer",
+        pred,
+        (4, 4),
+        route,
+        InstanceSegmentationInferenceRequest(
+            model_id="ds/1", image=IMG, response_mask_format="rle"
+        ),
+    )
+    assert rle.predictions[0].mask_format == "rle"
+    assert isinstance(rle.predictions[0].rle["counts"], str)
+
+
+def test_repack_keypoints_from_wire_shape():
+    kp = SimpleNamespace(
+        xy=np.array([[[1.0, 2.0], [3.0, 4.0]]]),
+        class_id=np.array([0]),
+        confidence=np.array([[0.9, 0.0]]),
+    )
+    det = _det([[0, 0, 10, 10]], [0.8], [0])
+    route = Route(
+        model_id="ds/1",
+        registry_id="ds/1",
+        task_type="keypoint-detection",
+        action="infer",
+        class_names=["person"],
+        key_points_classes=[["nose", "eye"]],
+    )
+    resp = repack_prediction(
+        "keypoint-detection",
+        "infer",
+        ([kp], [det]),
+        (10, 10),
+        route,
+        KeypointsDetectionInferenceRequest(model_id="ds/1", image=IMG),
+    )
+    assert [k.class_name for k in resp.predictions[0].keypoints] == ["nose"]
+
+
+def test_masks2poly_returns_contours():
+    m = np.zeros((1, 6, 6), dtype=np.uint8)
+    m[0, 1:5, 1:5] = 1
+    polys = masks2poly(m)
+    assert len(polys) == 1 and polys[0].shape[1] == 2

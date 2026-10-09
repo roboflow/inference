@@ -37,6 +37,18 @@ from inference.core.logger import logger
 ALLOWED_EU_REGIONS = {"eu", "eu-west", "eu-north", "eu-south"}
 
 
+def _resolve_modal_spawner():
+    import importlib.metadata as md
+
+    for ep in md.entry_points(group="inference.webrtc_spawner"):
+        if ep.name == "modal":
+            return ep.load()
+    raise ImportError(
+        "Hosted WebRTC requires the Roboflow enterprise runtime "
+        "(and the modal package)."
+    )
+
+
 async def start_worker(
     webrtc_request: WebRTCWorkerRequest,
 ) -> WebRTCWorkerResult:
@@ -53,9 +65,6 @@ async def start_worker(
 
     if WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         try:
-            from inference.core.interfaces.webrtc_worker.modal import (
-                spawn_rtc_peer_connection_modal,
-            )
             from inference.core.interfaces.webrtc_worker.utils import (
                 get_total_concurrent_sessions,
                 is_over_quota,
@@ -121,9 +130,10 @@ async def start_worker(
             webrtc_request.requested_region = WEBRTC_MODAL_REQUIRED_REGION
 
         loop = asyncio.get_event_loop()
+        spawner = _resolve_modal_spawner()
         result = await loop.run_in_executor(
             None,
-            spawn_rtc_peer_connection_modal,
+            spawner,
             webrtc_request,
         )
         return result

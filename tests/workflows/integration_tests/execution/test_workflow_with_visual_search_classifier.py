@@ -8,17 +8,6 @@ from inference.core.env import (
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
-# Under ENABLE_TENSOR_DATA_REPRESENTATION the loader swaps in the v1_tensor
-# sibling, which binds its own copies of the roboflow_api helpers - patch the
-# module that actually runs.
-_VISUAL_SEARCH_CLASSIFIER_MODULE = (
-    "inference.roboflow_workflows_plugin.integrations."
-    "visual_search_classifier.v1_tensor"
-    if ENABLE_TENSOR_DATA_REPRESENTATION
-    else "inference.roboflow_workflows_plugin.integrations."
-    "visual_search_classifier.v1"
-)
-
 WORKFLOW_WITH_VISUAL_SEARCH_CLASSIFIER = {
     "version": "1.0",
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
@@ -54,39 +43,37 @@ WORKFLOW_WITH_VISUAL_SEARCH_CLASSIFIER = {
 
 
 def test_workflow_with_visual_search_classifier_and_property_definition() -> None:
+    platform_client = mock.MagicMock()
+    platform_client.get_roboflow_workspace.return_value = "my-workspace"
+    platform_client.search_project_images_at_roboflow.return_value = {
+        "results": [
+            {
+                "id": "img-1",
+                "url": "https://example.com/reference.jpg",
+                "score": 1.64,
+                "labels": [
+                    {"class": "pass", "class_id": 2},
+                    {"class": "review", "class_id": 5},
+                ],
+            }
+        ]
+    }
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_WITH_VISUAL_SEARCH_CLASSIFIER,
-        init_parameters={"workflows_core.api_key": "api-key"},
+        init_parameters={
+            "workflows_core.api_key": "api-key",
+            "workflows_core.platform_client": platform_client,
+        },
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
-    with mock.patch(
-        f"{_VISUAL_SEARCH_CLASSIFIER_MODULE}.get_roboflow_workspace",
-        return_value="my-workspace",
-    ) as workspace_mock, mock.patch(
-        f"{_VISUAL_SEARCH_CLASSIFIER_MODULE}.search_project_images_at_roboflow"
-    ) as search_mock:
-        search_mock.return_value = {
-            "results": [
-                {
-                    "id": "img-1",
-                    "url": "https://example.com/reference.jpg",
-                    "score": 1.64,
-                    "labels": [
-                        {"class": "pass", "class_id": 2},
-                        {"class": "review", "class_id": 5},
-                    ],
-                }
-            ]
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": np.zeros((8, 12, 3), dtype=np.uint8),
         }
+    )
 
-        result = execution_engine.run(
-            runtime_parameters={
-                "image": np.zeros((8, 12, 3), dtype=np.uint8),
-            }
-        )
-
-    workspace_mock.assert_called_once_with(api_key="api-key")
+    platform_client.get_roboflow_workspace.assert_called_once_with(api_key="api-key")
     assert result[0]["top_class"] == ["pass", "review"]
     visual_search_output = result[0]["visual_search_output"]
     assert "classification_predictions" not in visual_search_output

@@ -3,11 +3,23 @@ permissions:
   contents: read
 on:
   workflow_dispatch:
+    inputs:
+      mmp-configuration:
+        description: "Legacy MMP adapter configuration"
+        type: choice
+        default: mmp
+        options:
+          - mmp
+          - bundled-subprocess
+          - bundled-direct
 
 jobs:
   build:
     if: ${{ !github.event.act }}
     runs-on: [self-hosted, jetson, jetpack-6.0.0]
+    env:
+      LEGACY_MMP_ADAPTER_MODE: ${{ startsWith(github.event.inputs.mmp-configuration || 'mmp', 'bundled-') && 'bundled' || 'mmp' }}
+      LEGACY_MMP_ADAPTER_BUNDLED_BACKEND: ${{ github.event.inputs.mmp-configuration == 'bundled-direct' && 'direct' || 'subprocess' }}
 
     steps:
       - name: Set up QEMU

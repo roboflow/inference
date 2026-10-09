@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Optional
+from typing import Any, Callable, Optional
 
 import torch
 
@@ -22,6 +22,11 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     )
     .strip("[")
     .strip("]")
+)
+DISABLED_INFERENCE_MODELS_BACKENDS = set(
+    parse_comma_separated_values(
+        values=os.getenv("DISABLED_INFERENCE_MODELS_BACKENDS", "")
+    )
 )
 # CoreMLExecutionProvider options applied to models that opt in (currently RF-DETR). NeuralNetwork is ORT's
 # default format but lacks LayerNorm/GELU/GridSample support, so transformer graphs fall back to CPU and end up
@@ -736,3 +741,89 @@ ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV_NAME = (
     "ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND"
 )
 DEFAULT_ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND = False
+
+
+def _parse_vllm_proxy_enabled() -> bool:
+    return get_boolean_from_env(variable_name="VLLM_PROXY_ENABLED", default=False)
+
+
+def _parse_vllm_request_timeout_s() -> float:
+    return get_float_from_env(variable_name="VLLM_REQUEST_TIMEOUT_S", default=120.0)
+
+
+def _parse_vllm_max_lora_rank() -> int:
+    return get_integer_from_env(variable_name="VLLM_MAX_LORA_RANK", default=64)
+
+
+def _parse_vllm_max_registered_adapters() -> int:
+    return get_integer_from_env(
+        variable_name="VLLM_MAX_REGISTERED_ADAPTERS", default=64
+    )
+
+
+def _parse_vllm_vision_lora_norm_threshold() -> float:
+    return get_float_from_env(
+        variable_name="VLLM_VISION_LORA_NORM_THRESHOLD", default=0.0
+    )
+
+
+def _vllm_setting_or_raw_value(parser: Callable[[], Any], variable_name: str) -> Any:
+    try:
+        return parser()
+    except InvalidEnvVariable:
+        return os.environ[variable_name]
+
+
+VLLM_PROXY_ENABLED = _vllm_setting_or_raw_value(
+    _parse_vllm_proxy_enabled, "VLLM_PROXY_ENABLED"
+)
+VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://127.0.0.1:8000")
+VLLM_REQUEST_TIMEOUT_S = _vllm_setting_or_raw_value(
+    _parse_vllm_request_timeout_s, "VLLM_REQUEST_TIMEOUT_S"
+)
+VLLM_MAX_LORA_RANK = _vllm_setting_or_raw_value(
+    _parse_vllm_max_lora_rank, "VLLM_MAX_LORA_RANK"
+)
+VLLM_MAX_REGISTERED_ADAPTERS = _vllm_setting_or_raw_value(
+    _parse_vllm_max_registered_adapters, "VLLM_MAX_REGISTERED_ADAPTERS"
+)
+VLLM_VISION_LORA_NORM_THRESHOLD = _vllm_setting_or_raw_value(
+    _parse_vllm_vision_lora_norm_threshold, "VLLM_VISION_LORA_NORM_THRESHOLD"
+)
+VLLM_DORA_POLICY = os.getenv("VLLM_DORA_POLICY", "reject").strip().lower()
+VLLM_SERVED_BASE_VARIANT = os.getenv("VLLM_SERVED_BASE_VARIANT", "qwen3_5-0.8b")
+VLLM_SERVED_BASE_NAME = os.getenv("VLLM_SERVED_BASE_NAME", VLLM_SERVED_BASE_VARIANT)
+VLLM_ADAPTER_KEY_TEMPLATE = os.getenv(
+    "VLLM_ADAPTER_KEY_TEMPLATE",
+    "base_model.model.model.language_model.layers.{suffix}",
+)
+
+
+def validate_vllm_proxy_settings() -> None:
+    """Validate the vLLM proxy settings once the proxy implementation is selected.
+
+    Importing the package never fails on these settings; malformed values are
+    kept as their raw strings until the proxy is used.
+
+    Raises:
+        InvalidEnvVariable: If a `VLLM_*` value is malformed, or if the proxy is
+            enabled while `OFFLINE_MODE` is active.
+    """
+    if isinstance(VLLM_PROXY_ENABLED, str):
+        _parse_vllm_proxy_enabled()
+    if OFFLINE_MODE and VLLM_PROXY_ENABLED:
+        raise InvalidEnvVariable(
+            message=(
+                "VLLM_PROXY_ENABLED is not supported while OFFLINE_MODE is enabled. "
+                "Disable the vLLM HTTP proxy or restart without OFFLINE_MODE."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    for value, parser in (
+        (VLLM_REQUEST_TIMEOUT_S, _parse_vllm_request_timeout_s),
+        (VLLM_MAX_LORA_RANK, _parse_vllm_max_lora_rank),
+        (VLLM_MAX_REGISTERED_ADAPTERS, _parse_vllm_max_registered_adapters),
+        (VLLM_VISION_LORA_NORM_THRESHOLD, _parse_vllm_vision_lora_norm_threshold),
+    ):
+        if isinstance(value, str):
+            parser()

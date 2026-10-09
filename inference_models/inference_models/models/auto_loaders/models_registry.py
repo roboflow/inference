@@ -308,6 +308,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.qwen3vl.qwen3vl_hf",
         class_name="Qwen3VLHF",
     ),
+    ("qwen3vl", VLM_TASK, BackendType.VLLM): LazyClass(
+        module_name="inference_models.models.vllm_proxy.qwen3vl_vllm",
+        class_name="Qwen3VLVLLMProxy",
+    ),
     ("cosmos-3-edge", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
         class_name="Cosmos3EdgeReasoner",
@@ -339,9 +343,17 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",
         class_name="Qwen35HF",
     ),
+    ("qwen3_5", VLM_TASK, BackendType.VLLM): LazyClass(
+        module_name="inference_models.models.vllm_proxy.qwen3_5_vllm",
+        class_name="Qwen35VLLMProxy",
+    ),
     ("qwen3_8", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3_8.qwen3_8_hf",
         class_name="Qwen38HF",
+    ),
+    ("qwen3_8", VLM_TASK, BackendType.VLLM): LazyClass(
+        module_name="inference_models.models.vllm_proxy.qwen3_8_vllm",
+        class_name="Qwen38VLLMProxy",
     ),
     ("gemma-4", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.gemma4.gemma4_hf",

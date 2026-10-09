@@ -2,12 +2,14 @@ import hashlib
 import json
 import os.path
 from copy import copy, deepcopy
+from dataclasses import replace
 from threading import Lock, RLock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
 from PIL import Image
+from pycocotools import mask as coco_mask_utils
 from sam3 import build_sam3_image_model
 from sam3.eval.postprocessors import PostProcessImage
 from sam3.model.sam3_image_processor import Sam3Processor
@@ -195,6 +197,8 @@ class SAM3Torch:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         use_embeddings_cache: bool = True,
         image_hashes: Optional[Union[str, List[str]]] = None,
+        *,
+        return_embeddings: bool = True,
         **kwargs,
     ) -> List[SAM3ImageEmbeddings]:
         if not self._sam3_allow_client_generated_hash_ids and image_hashes is not None:
@@ -273,6 +277,10 @@ class SAM3Torch:
                     key=embeddings.image_hash, embeddings=embeddings
                 )
 
+        if not return_embeddings:
+            return [
+                replace(embeddings, embeddings=None) for embeddings in result_embeddings
+            ]
         return result_embeddings
 
     @torch.inference_mode()
@@ -319,8 +327,15 @@ class SAM3Torch:
         load_from_mask_input_cache: bool = False,
         save_to_mask_input_cache: bool = False,
         use_embeddings_cache: bool = True,
+        *,
+        mask_format: str = "dense",
         **kwargs,
-    ) -> List[SAM3Prediction]:
+    ) -> List[Union[SAM3Prediction, Dict]]:
+        if mask_format not in ("dense", "rle"):
+            raise ModelInputError(
+                message=f"Unsupported mask_format: {mask_format}. Use 'dense' or 'rle'.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
         if images is None and embeddings is None and image_hashes is None:
             raise ModelInputError(
                 message="Attempted to use SAM3 model segment_with_visual_prompts(...) method not providing valid input - "
@@ -436,6 +451,8 @@ class SAM3Torch:
 
             predictions.append(prediction)
 
+        if mask_format == "rle":
+            return [_prediction_to_rle_dict(p) for p in predictions]
         return predictions
 
     @torch.inference_mode()
@@ -636,6 +653,35 @@ class SAM3Torch:
             results.append(image_results)
 
         return results
+
+
+def _prediction_to_rle_dict(prediction: SAM3Prediction) -> Dict:
+    masks = prediction.masks
+    if isinstance(masks, torch.Tensor):
+        masks = masks.detach().cpu().numpy()
+    masks = np.asarray(masks)
+    if masks.ndim == 4 and masks.shape[1] == 1:
+        masks = masks[:, 0, ...]
+    elif masks.ndim == 2:
+        masks = masks[None, ...]
+    rle_masks = []
+    for mask in masks:
+        binary = mask if mask.dtype == np.bool_ else mask >= 0
+        rle = coco_mask_utils.encode(np.asfortranarray(binary.astype(np.uint8)))
+        rle_masks.append(
+            {
+                "format": "rle",
+                "size": rle["size"],
+                "counts": rle["counts"].decode("utf-8"),
+            }
+        )
+    scores = prediction.scores
+    if isinstance(scores, torch.Tensor):
+        scores = scores.detach().cpu().numpy()
+    return {
+        "masks": rle_masks,
+        "scores": [float(s) for s in np.asarray(scores).reshape(-1)],
+    }
 
 
 def decode_sam_version(config_path: str) -> str:

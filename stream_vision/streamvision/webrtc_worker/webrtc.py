@@ -711,17 +711,18 @@ class VideoFrameProcessor:
             frame = rotate_video_frame(frame, self._rotation_code)
 
         loop = asyncio.get_running_loop()
+        measured_fps = (
+            self._fps_monitor.fps
+            if len(self._fps_monitor.all_timestamps) > 1
+            else self._declared_fps
+        )
         processing = loop.run_in_executor(
             None,
             process_frame,
             frame,
             frame_id,
             self._declared_fps,
-            (
-                self._fps_monitor.fps
-                if len(self._fps_monitor.all_timestamps) > 1
-                else self._declared_fps
-            ),
+            measured_fps,
             self._file_processing,
             self._inference_pipeline,
             stream_output,

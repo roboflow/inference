@@ -306,6 +306,9 @@ RUN mkdir -p /opt/pillow_simd && if [ "${TARGETARCH}" = "amd64" ]; then \
       python3 docker/scripts/verify_pillow_simd.py; \
     fi
 
+RUN python3 -m pip install --no-cache-dir --no-deps './inference_models[torch-cu124,onnx-cu12]' && \
+    python3 -m pip install --no-cache-dir ./inference_model_manager ./inference_server
+
 RUN find /usr/local/lib/python3.10 -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
         -prune -exec rm -rf {} + && \

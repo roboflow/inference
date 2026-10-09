@@ -1,6 +1,7 @@
 import hashlib
+import json
 import os
-from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 
 import requests
 
@@ -80,6 +81,96 @@ def merge_megapixel_buckets(
     return merged
 
 
+RESOURCE_DETAILS_KEY = "resource_details"
+MODELS_KEY = "models"
+CUSTOM_PYTHON_KEY = "custom_python"
+
+
+def _model_identity(entry: Dict[str, Any]) -> Any:
+    return entry.get("model_id")
+
+
+def _custom_python_identity(entry: Dict[str, Any]) -> Tuple[Any, Any]:
+    return entry.get("block_type"), entry.get("step_name")
+
+
+_BILLABLE_LISTS: Tuple[
+    Tuple[str, Callable[[Dict[str, Any]], Any], Tuple[str, ...]], ...
+] = (
+    (MODELS_KEY, _model_identity, ("frames", "execution_duration")),
+    (CUSTOM_PYTHON_KEY, _custom_python_identity, ("execution_duration",)),
+)
+
+
+def _decoded_details(resource_details: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(resource_details, str):
+        try:
+            resource_details = json.loads(resource_details)
+        except ValueError:
+            return None
+    if not isinstance(resource_details, dict):
+        return None
+    return resource_details
+
+
+def _is_entry_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(entry, dict) for entry in value)
+
+
+def _merge_entries(
+    entries: List[Dict[str, Any]],
+    *,
+    identity: Callable[[Dict[str, Any]], Any],
+    summed_fields: Tuple[str, ...],
+) -> List[Dict[str, Any]]:
+    merged: Dict[Any, Dict[str, Any]] = {}
+    for entry in entries:
+        key = identity(entry)
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = dict(entry)
+            continue
+        combined = {**existing, **entry}
+        for field in summed_fields:
+            if existing.get(field) is None and entry.get(field) is None:
+                continue
+            combined[field] = (existing.get(field) or 0) + (entry.get(field) or 0)
+        merged[key] = combined
+    return list(merged.values())
+
+
+def merge_resource_details(left: Any, right: Any) -> Any:
+    left_details = _decoded_details(left)
+    right_details = _decoded_details(right)
+    if left_details is None or right_details is None:
+        return right
+    merged = dict(right_details)
+    changed = False
+    for key, identity, summed_fields in _BILLABLE_LISTS:
+        left_entries = left_details.get(key)
+        right_entries = right_details.get(key)
+        if not _is_entry_list(left_entries):
+            continue
+        if right_entries is None:
+            right_entries = []
+        if not _is_entry_list(right_entries):
+            continue
+        try:
+            merged[key] = _merge_entries(
+                [*left_entries, *right_entries],
+                identity=identity,
+                summed_fields=summed_fields,
+            )
+        except TypeError:
+            continue
+        changed = True
+    if not changed:
+        return right
+    if isinstance(right, str):
+        return json.dumps(merged)
+    return merged
+
+
 def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
     merged = {}
     if d1 and d2 and d1.get("resource_id") != d2.get("resource_id"):
@@ -99,6 +190,10 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
         merged["megapixel_buckets"] = merge_megapixel_buckets(
             d1.get("megapixel_buckets"),
             d2.get("megapixel_buckets"),
+        )
+    if RESOURCE_DETAILS_KEY in d1 and RESOURCE_DETAILS_KEY in d2:
+        merged[RESOURCE_DETAILS_KEY] = merge_resource_details(
+            d1[RESOURCE_DETAILS_KEY], d2[RESOURCE_DETAILS_KEY]
         )
     return {**d1, **d2, **merged}
 

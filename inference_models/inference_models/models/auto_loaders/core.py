@@ -16,6 +16,7 @@ from typing import (
     Callable,
     Dict,
     Generator,
+    Iterable,
     List,
     Optional,
     Set,
@@ -29,6 +30,7 @@ from filelock import FileLock
 from rich.console import Console
 from rich.text import Text
 
+from inference_models import configuration
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     FILE_LOCK_ACQUIRE_TIMEOUT,
@@ -49,6 +51,7 @@ from inference_models.errors import (
     ModelPackageAlternativesExhaustedError,
     ModelRetrievalError,
     NoModelPackagesAvailableError,
+    PreloadedDependencyMismatchError,
     RetryError,
     UnauthorizedModelAccessError,
     UntrustedFileError,
@@ -85,6 +88,7 @@ from inference_models.models.auto_loaders.entities import (
     BackendType,
     InferenceModelConfig,
     ModelArchitecture,
+    SuppliedDependency,
     TaskType,
 )
 from inference_models.models.auto_loaders.model_cache_paths import (
@@ -235,6 +239,22 @@ def _resolve_effective_api_key(
     ):
         return ROBOFLOW_API_KEY
     return api_key
+
+
+def _resolve_vllm_proxy_class(model_metadata: ModelMetadata) -> Optional[type]:
+    """Return the vLLM proxy class registered for the model, if any."""
+    if not model_implementation_exists(
+        model_architecture=model_metadata.model_architecture,
+        task_type=model_metadata.task_type,
+        backend=BackendType.VLLM,
+    ):
+        return None
+    proxy_class = resolve_model_class(
+        model_architecture=model_metadata.model_architecture,
+        task_type=model_metadata.task_type,
+        backend=BackendType.VLLM,
+    )
+    return proxy_class
 
 
 def _swap_describe_provider_when_offline(weights_provider: str) -> str:
@@ -1547,6 +1567,9 @@ class AutoModel:
             ContentAddressedArtifactCache
         ] = None,
         required_capabilities: Optional[List[str]] = None,
+        *,
+        preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]] = None,
+        disabled_backends: Optional[Iterable[str]] = None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -1688,6 +1711,16 @@ class AutoModel:
             required_capabilities: Required operations, such as ["image_embeddings"].
                 Selects a compatible package for this model version.
 
+            preloaded_model_dependencies: Already loaded dependency models keyed by
+                dependency name. Each entry must match the dependency declared in
+                the model metadata (model id and package id); matching entries are
+                reused instead of being loaded again.
+
+            disabled_backends: Backend names excluded from auto-negotiation when
+                `backend` is not given and the model is not a local path. Not applied
+                by default; pass `configuration.DISABLED_INFERENCE_MODELS_BACKENDS`
+                to honour the `DISABLED_INFERENCE_MODELS_BACKENDS` environment variable.
+
             **kwargs: Additional model-specific parameters passed to the model's
                 `from_pretrained()` method. Varies by model type. For image embeddings,
                 output_type selects "feature_vector" (default) or "logits" and determines
@@ -1789,6 +1822,13 @@ class AutoModel:
         if not isinstance(model_id_or_path, str):
             _validate_remote_model_id(model_id=model_id_or_path)
         model_path_exists = os.path.exists(model_id_or_path)
+        if backend is None and disabled_backends and not model_path_exists:
+            excluded_backends = set(disabled_backends)
+            backend = sorted(
+                backend_type.value
+                for backend_type in BackendType
+                if backend_type.value not in excluded_backends
+            )
         if not model_path_exists:
             _validate_remote_model_id(model_id=model_id_or_path)
             api_key = _resolve_effective_api_key(
@@ -1858,6 +1898,36 @@ class AutoModel:
             # that still may end up with ambiguous behavior - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
+            prefetched_model_metadata: Optional[ModelMetadata] = None
+            if configuration.VLLM_PROXY_ENABLED:
+                configuration.validate_vllm_proxy_settings()
+                try:
+                    prefetched_model_metadata = get_model_from_provider(
+                        provider=weights_provider,
+                        model_id=model_id_or_path,
+                        api_key=api_key,
+                        weights_provider_extra_query_params=weights_provider_extra_query_params,
+                        weights_provider_extra_headers=weights_provider_extra_headers,
+                    )
+                except (
+                    UnauthorizedModelAccessError,
+                    ForbiddenModelAccessError,
+                ) as error:
+                    model_access_manager.on_model_access_forbidden(
+                        model_id=model_id_or_path, api_key=api_key
+                    )
+                    raise error
+                vllm_proxy_class = _resolve_vllm_proxy_class(
+                    model_metadata=prefetched_model_metadata
+                )
+                if vllm_proxy_class is not None:
+                    return vllm_proxy_class.from_model_metadata(
+                        model_id=model_id_or_path,
+                        metadata=prefetched_model_metadata,
+                        api_key=api_key,
+                        weights_provider_extra_headers=weights_provider_extra_headers,
+                        **model_init_kwargs,
+                    )
             dependency_models_params = dependency_models_params or {}
             if forwarded_kwargs is None:
                 forwarded_kwargs = (
@@ -1866,6 +1936,8 @@ class AutoModel:
             forwarded_kwargs_values = {
                 name: kwargs[name] for name in forwarded_kwargs if name in kwargs
             }
+            if "disabled_backends" in forwarded_kwargs and disabled_backends:
+                forwarded_kwargs_values["disabled_backends"] = disabled_backends
             runtime_x_ray = x_ray_runtime_environment()
             runtime_compatibility = _runtime_compatibility_content(
                 runtime_x_ray=runtime_x_ray
@@ -1948,6 +2020,7 @@ class AutoModel:
                     model_init_kwargs=dict(model_init_kwargs),
                     api_key=api_key,
                     allow_loading_dependency_models=allow_loading_dependency_models,
+                    preloaded_model_dependencies=preloaded_model_dependencies,
                     forwarded_kwargs_values=forwarded_kwargs_values,
                     verbose=verbose,
                     weights_provider=weights_provider,
@@ -1969,13 +2042,16 @@ class AutoModel:
             warm_up_metadata: Optional[ModelMetadata] = None
             if OFFLINE_MODE_WARM_UP and weights_provider == "roboflow":
                 try:
-                    warm_up_metadata = get_model_from_provider(
-                        provider=weights_provider,
-                        model_id=model_id_or_path,
-                        api_key=api_key,
-                        weights_provider_extra_query_params=weights_provider_extra_query_params,
-                        weights_provider_extra_headers=weights_provider_extra_headers,
-                    )
+                    if prefetched_model_metadata is not None:
+                        warm_up_metadata = prefetched_model_metadata
+                    else:
+                        warm_up_metadata = get_model_from_provider(
+                            provider=weights_provider,
+                            model_id=model_id_or_path,
+                            api_key=api_key,
+                            weights_provider_extra_query_params=weights_provider_extra_query_params,
+                            weights_provider_extra_headers=weights_provider_extra_headers,
+                        )
                 except Exception as error:
                     LOGGER.warning(
                         "Warm-up metadata pre-fetch failed for %s (%s); the "
@@ -2004,6 +2080,8 @@ class AutoModel:
             try:
                 if warm_up_metadata is not None:
                     model_metadata = warm_up_metadata
+                elif prefetched_model_metadata is not None:
+                    model_metadata = prefetched_model_metadata
                 else:
                     model_metadata = get_model_from_provider(
                         provider=weights_provider,
@@ -2024,7 +2102,10 @@ class AutoModel:
                         help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                     )
                 if (
-                    model_metadata.model_dependencies
+                    _has_unsupplied_dependency(
+                        model_metadata.model_dependencies,
+                        preloaded_model_dependencies,
+                    )
                     and not allow_loading_dependency_models
                 ):
                     raise CorruptedModelPackageError(
@@ -2108,6 +2189,14 @@ class AutoModel:
             model_dependencies_directories = {}
             dependency_models_params = dependency_models_params or {}
             for model_dependency in model_dependencies:
+                preloaded_instance = resolve_preloaded_dependency(
+                    model_dependency, preloaded_model_dependencies
+                )
+                if preloaded_instance is not None:
+                    model_dependencies_instances[model_dependency.name] = (
+                        preloaded_instance
+                    )
+                    continue
                 dependency_params = dict(
                     dependency_models_params.get(model_dependency.name, {})
                 )
@@ -2275,6 +2364,41 @@ def _verified_auto_cache_package_dir(
     return package_dir
 
 
+def _has_unsupplied_dependency(
+    model_dependencies: Optional[List[ModelDependency]],
+    preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]],
+) -> bool:
+    if not model_dependencies:
+        return False
+    supplied_names = set(preloaded_model_dependencies or {})
+    return any(d.name not in supplied_names for d in model_dependencies)
+
+
+def resolve_preloaded_dependency(
+    model_dependency: ModelDependency,
+    preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]],
+) -> Optional[AnyModel]:
+    if not preloaded_model_dependencies:
+        return None
+    supplied = preloaded_model_dependencies.get(model_dependency.name)
+    if supplied is None:
+        return None
+    if (
+        supplied.model_id != model_dependency.model_id
+        or supplied.model_package_id != model_dependency.model_package_id
+    ):
+        raise PreloadedDependencyMismatchError(
+            message=(
+                f"Supplied preloaded dependency '{model_dependency.name}' does not match the model "
+                f"metadata dependency (expected model_id={model_dependency.model_id}, "
+                f"model_package_id={model_dependency.model_package_id}; got "
+                f"model_id={supplied.model_id}, model_package_id={supplied.model_package_id})."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidparametererror",
+        )
+    return supplied.instance
+
+
 def attempt_loading_model_with_auto_load_cache(
     use_auto_resolution_cache: bool,
     auto_resolution_cache: AutoResolutionCache,
@@ -2300,6 +2424,8 @@ def attempt_loading_model_with_auto_load_cache(
     weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     point_model_directory: Optional[Callable[[str], None]] = None,
     content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
+    *,
+    preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]] = None,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
         return None
@@ -2375,6 +2501,10 @@ def attempt_loading_model_with_auto_load_cache(
                 "loading is disabled for this request.",
                 model_name_or_path,
             )
+        if (
+            _has_unsupplied_dependency(model_dependencies, preloaded_model_dependencies)
+            and not allow_loading_dependency_models
+        ):
             return None
         package_config = parse_model_config(
             config_path=os.path.join(
@@ -2389,6 +2519,12 @@ def attempt_loading_model_with_auto_load_cache(
         model_dependencies_instances = {}
         dependency_models_params = dependency_models_params or {}
         for model_dependency in model_dependencies:
+            preloaded_instance = resolve_preloaded_dependency(
+                model_dependency, preloaded_model_dependencies
+            )
+            if preloaded_instance is not None:
+                model_dependencies_instances[model_dependency.name] = preloaded_instance
+                continue
             dependency_params = dict(
                 dependency_models_params.get(model_dependency.name, {})
             )
@@ -2506,6 +2642,8 @@ def attempt_loading_model_with_auto_load_cache(
     except CorruptedModelPackageError as error:
         invalidate_cache_entry(str(error))
         return None
+    except PreloadedDependencyMismatchError:
+        raise
     except Exception as error:
         LOGGER.warning(
             f"Encountered error {error} of type {type(error)} when attempted to load model using "
@@ -2767,7 +2905,7 @@ def attempt_loading_matching_model_packages(
                 task_type=task_type,
                 model_package=model_package,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-                model_init_kwargs=model_init_kwargs,
+                model_init_kwargs=dict(model_init_kwargs),
                 auto_resolution_cache=auto_resolution_cache,
                 auto_negotiation_hash=auto_negotiation_hash,
                 model_dependencies=model_dependencies,

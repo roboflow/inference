@@ -83,7 +83,7 @@ class ModelMetadataHandlerNotImplementedError(ModelRetrievalError):
     pass
 
 
-class InvalidEnvVariable(BaseInferenceModelsError):
+class InvalidEnvVariable(BaseInferenceModelsError, ValueError):
     pass
 
 
@@ -176,6 +176,10 @@ class MissingDependencyError(BaseInferenceModelsError):
 
 
 class InvalidParameterError(BaseInferenceModelsError):
+    pass
+
+
+class PreloadedDependencyMismatchError(InvalidParameterError):
     pass
 
 

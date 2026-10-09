@@ -14,11 +14,28 @@ We map at read-time; ``class.__module__`` stays canonical so pickling and
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 _CANONICAL_ROOT = "roboflow_workflows"
 _ENTERPRISE_CANONICAL = "roboflow_workflows.enterprise_blocks"
 _CORE_LEGACY = "inference.core.workflows"
 _ENTERPRISE_LEGACY = "inference.enterprise.workflows.enterprise_blocks"
+
+# Inference 1.6.1-1.7.2 shipped the Roboflow-platform blocks (dataset upload,
+# custom metadata, model monitoring, vision events, visual search, ...) from a
+# separate ``inference.roboflow_workflows_plugin`` package. That package is
+# gone and is NOT importable any more; the mapping exists only so that
+# WORKFLOW_DISABLED_BLOCK_PATTERNS written against it keep matching.
+_PLATFORM_BLOCKS_PLUGIN_PREFIXES = (
+    (
+        "roboflow_workflows.core_steps.sinks.roboflow.",
+        "inference.roboflow_workflows_plugin.sinks.",
+    ),
+    (
+        "roboflow_workflows.core_steps.integrations.roboflow.",
+        "inference.roboflow_workflows_plugin.integrations.",
+    ),
+)
 
 
 def to_legacy_module(module_name: str) -> str:
@@ -30,6 +47,15 @@ def to_legacy_module(module_name: str) -> str:
     if module_name == _CANONICAL_ROOT or module_name.startswith(_CANONICAL_ROOT + "."):
         return _CORE_LEGACY + module_name[len(_CANONICAL_ROOT) :]
     return module_name
+
+
+def to_historic_plugin_module(module_name: str) -> Optional[str]:
+    """Return the 1.6.1-1.7.2 plugin-package path of a Roboflow-platform block
+    module, or ``None`` for any other module. For disable-pattern matching only."""
+    for canonical_prefix, plugin_prefix in _PLATFORM_BLOCKS_PLUGIN_PREFIXES:
+        if module_name.startswith(canonical_prefix):
+            return plugin_prefix + module_name[len(canonical_prefix) :]
+    return None
 
 
 def get_logger(module_name: str) -> logging.Logger:

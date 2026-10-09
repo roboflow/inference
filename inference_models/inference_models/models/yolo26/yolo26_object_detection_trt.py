@@ -47,7 +47,10 @@ from inference_models.models.common.trt import (
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt_lean as trt
+    except ImportError:
+        import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLO26 model with TRT backend on GPU requires pycuda installation, which is brought with "

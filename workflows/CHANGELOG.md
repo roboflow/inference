@@ -24,23 +24,9 @@ for contributor and maintainer responsibilities.
   Blocks can compute playback progress as `frame_number / total_frames` (e.g. a
   timeline overlay). Image inputs may include it under `video_metadata`.
 
-### Changed
-
-- Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
-  the local `inference_models` backend. Non-tensor local legacy execution
-  continues to honor `mask_decode_mode` and `tradeoff_factor` when
-  `USE_INFERENCE_MODELS=False`.
-  Remote calls always request `accurate` / `1.0`, since the local backend setting
-  does not identify the remote server. Remote legacy workflows that previously
-  requested fast/tradeoff masks now receive accurate masks. `@v4` retains its
-  RLE response format.
-- The new instance-segmentation `@v5` block is deferred to a separate PR together
-  with reduced-grid Supervision conversion and downstream block support.
-  **Full tensor support will come in a separate PR.** Existing tensor variants
-  remain pinned to `accurate` / `1.0`.
-
 ### Added
 
+- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
 - Optional `original_image` and `mask_metadata` on instance-segmentation response
   DTOs retain the input dimensions and output-to-input coordinate mapping for
   opted-in HTTP responses. Response `image`, boxes, polygons and RLE masks all
@@ -62,6 +48,26 @@ for contributor and maintainer responsibilities.
   - Selector-supplied `retain`, `fail_fast` and `fire_and_forget` are coerced the way the manifest validates them (for example `"false"` is False; v1 treats any non-empty string as True), and so are `port` and `qos` (for example `"1883.0"`, which v1 rejects); booleans are still rejected as a port or QoS.
   - While the broker stays unreachable or keeps answering "unavailable", the background reconnect loop logs the first failure as an error and later attempts at debug level until a connection succeeds, instead of an error about once per second.
   - Closing the block (when a pipeline stops) is bounded even when it races a background reconnect: a connection the broker accepts after the close began is disconnected at once, and the close never waits for acknowledgements or for the broker; messages not yet acknowledged are dropped, though packets already queued may still be sent before the disconnect. A close during an in-flight reconnect first waits for that connection attempt (TCP bounded by `timeout`, a TLS handshake by the 15 s keepalive, DNS by the OS resolver).
+
+### Changed
+
+- `execution_engine.v1.executor.core` no longer imports the opt-in `inference_models.utils.performance` profiler; step execution timing is unaffected, only the instrumentation is gone.
+- Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
+  the local `inference_models` backend. Non-tensor local legacy execution
+  continues to honor `mask_decode_mode` and `tradeoff_factor` when
+  `USE_INFERENCE_MODELS=False`.
+  Remote calls always request `accurate` / `1.0`, since the local backend setting
+  does not identify the remote server. Remote legacy workflows that previously
+  requested fast/tradeoff masks now receive accurate masks. `@v4` retains its
+  RLE response format.
+- The new instance-segmentation `@v5` block is deferred to a separate PR together
+  with reduced-grid Supervision conversion and downstream block support.
+  **Full tensor support will come in a separate PR.** Existing tensor variants
+  remain pinned to `accurate` / `1.0`.
+- `PlatformClient.register_image_at_roboflow` takes an optional `annotation_follows`
+  (default `False`). Dataset Upload `@v1` sets it when an annotation upload follows,
+  so a host that retries uploads can fail an upload whose retry reports a duplicate
+  instead of silently dropping the annotation.
 
 ### Fixed
 
@@ -151,6 +157,7 @@ Bundled execution engine: `1.16.0`.
 - Persistent sessions for the MQTT Reader: an optional `client_id` (unique per broker, for example the pipeline name from a workflow input) connects with that id and a non-clean session, so the broker keeps the subscription and queues QoS 1/2 messages while the block is away and delivers the backlog when the same id reconnects, after a pipeline or process restart included. Requires `qos` 1 or 2 (a run with `client_id` and `qos` 0 reports an error); the publisher must also publish at QoS 1 or higher. Meant for `InferencePipeline`s; `sequential` works through the backlog one message per run. Left empty, the behaviour is unchanged.
 - TLS for the MQTT Reader and MQTT Writer: an `encryption` dropdown (`none`, default, or `tls`) encrypts the connection and verifies the broker's certificate against the system trust store; `ca_certificate_path` (shown for TLS only) points at a PEM bundle for a private CA and requires `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`. The port is not switched automatically and verification cannot be disabled.
 - Operator policy for the MQTT Reader and MQTT Writer broker address: `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (comma-separated `host[:port]` allowlist, no DNS) and `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` (default `True`; when `False` the workflow's host and port are ignored and the first allowlist entry is used). Defaults preserve existing behaviour.
+- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
 
 ### Changed
 
@@ -213,6 +220,14 @@ Bundled execution engine: `1.15.2`.
 - Python 3.13 support (`requires-python` is now `>=3.10,<3.14`).
 - OpenAI v7 detection and instance-segmentation accept optional `output_classes`, keeping visual
   prompts in `classes` while constraining and decoding model output with stable labels.
+---
+
+## `0.2.0`
+
+### Added
+
+- `roboflow_workflows.http_contract`: HTTP request/response entities and framework-free describe/error helpers, moved from `inference.core` (which now re-exports them).
+
 ---
 
 ## `0.1.2`
