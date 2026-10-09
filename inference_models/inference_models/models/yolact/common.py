@@ -8,6 +8,7 @@ from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks,
     crop_masks_to_boxes,
+    finalize_instance_segmentation_boxes,
     resolve_mask_frame_size,
 )
 
@@ -46,8 +47,12 @@ def prepare_dense_masks(
             masks_resolution_factor=masks_resolution_factor,
         )
         final_results.append(
-            InstanceDetections.from_image_coordinates(
-                xyxy=aligned_boxes[:, :4].round().int(),
+            InstanceDetections(
+                xyxy=finalize_instance_segmentation_boxes(
+                    aligned_boxes[:, :4],
+                    mask_size=tuple(aligned_masks.shape[1:]),
+                    image_size=image_meta.original_size,
+                ),
                 class_id=aligned_boxes[:, 5].int(),
                 confidence=aligned_boxes[:, 4],
                 mask=aligned_masks,
@@ -105,8 +110,12 @@ def prepare_rle_masks(
         if len(aligned_boxes) > 0:
             aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
             final_results.append(
-                InstanceDetections.from_image_coordinates(
-                    xyxy=aligned_boxes_tensor[:, :4].round().int(),
+                InstanceDetections(
+                    xyxy=finalize_instance_segmentation_boxes(
+                        aligned_boxes_tensor[:, :4],
+                        mask_size=instances_masks.mask_size,
+                        image_size=image_meta.original_size,
+                    ),
                     class_id=aligned_boxes_tensor[:, 5].int(),
                     confidence=aligned_boxes_tensor[:, 4],
                     mask=instances_masks,
@@ -116,7 +125,7 @@ def prepare_rle_masks(
             )
         else:
             final_results.append(
-                InstanceDetections.from_image_coordinates(
+                InstanceDetections(
                     xyxy=torch.empty(
                         (0, 4), dtype=torch.int32, device=image_bboxes.device
                     ),

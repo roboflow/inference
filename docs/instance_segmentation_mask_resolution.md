@@ -88,17 +88,22 @@ retains its original RLE representation and output grid.
 
 Direct `inference_models` calls use `masks_resolution_factor` without the HTTP
 opt-in. Their `InstanceDetections.xyxy` boxes and dense or RLE masks share the
-encoded `mask_size` grid, before any HTTP adapter runs. Boxes retain fractional
-coordinates when the grids differ. `image_size` retains the original dimensions;
+encoded `mask_size` grid, before any HTTP adapter runs. Boxes map directly from
+network coordinates to the resized mask grid, using the same rounded static-crop
+offsets as mask canvas placement. There is no intermediate conversion to rounded
+image-space boxes. Boxes retain float32 fractional coordinates when the grids
+differ; image-grid boxes keep the existing final integer rounding.
+`image_size` retains the original dimensions;
 `mask_frame_size` records the image-space extent represented by the mask grid.
 The HTTP adapter preserves the model's selected-grid boxes without scaling twice.
 
 `InstanceDetections.to_supervision()` restores both boxes and masks to original
 image coordinates for annotation. Callers reading `.xyxy` directly from reduced
 results must now interpret those boxes in `mask_size` coordinates. For manually
-constructed detections, supply boxes on the mask grid and retain `image_size`,
-or use `InstanceDetections.from_image_coordinates(...)` to convert image-space
-boxes at construction. Factor `1.0` keeps the existing image-space behavior.
+constructed detections, supply boxes on the mask grid and retain `image_size`.
+Factor `1.0` keeps the existing image-space behavior. Reduced-box values can
+differ from earlier responses because intermediate image-space rounding is no
+longer applied.
 
 The legacy model backend retains its existing decode-mode behavior and ignores
 the new opt-in flag.

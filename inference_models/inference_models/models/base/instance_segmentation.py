@@ -170,58 +170,6 @@ class InstanceDetections:
         elif self.mask is not None and hasattr(self.mask, "shape"):
             self.mask_size = (int(self.mask.shape[1]), int(self.mask.shape[2]))
 
-    @classmethod
-    def from_image_coordinates(
-        cls,
-        *,
-        xyxy: torch.Tensor,
-        class_id: torch.Tensor,
-        confidence: torch.Tensor,
-        mask: Union[torch.Tensor, InstancesRLEMasks],
-        image_size: Tuple[int, int],
-        mask_frame_size: Optional[Tuple[int, int]] = None,
-    ) -> "InstanceDetections":
-        """Build a model result with boxes on the final mask grid.
-
-        Args:
-            xyxy: Boxes aligned to original-image coordinates.
-            class_id: Per-instance class identifiers.
-            confidence: Per-instance confidence scores.
-            mask: Aligned dense or RLE masks, including any crop canvas.
-            image_size: Original image dimensions as ``(height, width)``.
-            mask_frame_size: Image-space extent represented by the masks.
-                Defaults to the original image dimensions.
-
-        Returns:
-            Detections whose boxes and masks use the same coordinate grid.
-            Reduced-grid boxes retain fractional coordinates. Input tensors
-            are not modified.
-        """
-        detections = cls(
-            xyxy=xyxy,
-            class_id=class_id,
-            confidence=confidence,
-            mask=mask,
-            image_size=image_size,
-            mask_frame_size=mask_frame_size,
-        )
-        frame_height, frame_width = mask_frame_size or image_size
-        mask_height, mask_width = detections.mask_size
-        if (mask_height, mask_width) != (frame_height, frame_width):
-            scale = torch.tensor(
-                [
-                    mask_width / frame_width,
-                    mask_height / frame_height,
-                    mask_width / frame_width,
-                    mask_height / frame_height,
-                ],
-                dtype=torch.float32,
-                device=xyxy.device,
-            )
-            detections.xyxy = xyxy.to(dtype=torch.float32) * scale
-
-        return detections
-
     def _image_size(self) -> Tuple[int, int]:
         """Resolve the image grid these detections describe.
 

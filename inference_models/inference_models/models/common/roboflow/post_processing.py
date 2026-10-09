@@ -540,6 +540,67 @@ def resolve_unpadded_mask_grid(
     return max(1, unpadded_height), max(1, unpadded_width)
 
 
+def _align_boxes_to_mask_grid(
+    boxes: torch.Tensor,
+    *,
+    padding: Tuple[int, int, int, int],
+    scale_width: float,
+    scale_height: float,
+    size_after_pre_processing: ImageDimensions,
+    target_size: Tuple[int, int],
+    canvas_size: Tuple[int, int],
+    canvas_offset: Tuple[int, int],
+) -> torch.Tensor:
+    """Map network boxes directly to the resized mask and its canvas placement."""
+    target_height, target_width = target_size
+    if target_size != tuple(size_after_pre_processing):
+        boxes = boxes.float()
+        scale_width *= size_after_pre_processing.width / target_width
+        scale_height *= size_after_pre_processing.height / target_height
+
+    pad_left, pad_top, _, _ = padding
+    offset_x, offset_y = canvas_offset
+    canvas_height, canvas_width = canvas_size
+    pad = boxes.new_tensor([pad_left, pad_top, pad_left, pad_top])
+    scale = boxes.new_tensor([scale_width, scale_height, scale_width, scale_height])
+    maximum = boxes.new_tensor(
+        [canvas_width, canvas_height, canvas_width, canvas_height]
+    )
+    boxes[:, :4].sub_(pad).div_(scale)
+    if offset_x or offset_y:
+        offset = boxes.new_tensor([offset_x, offset_y, offset_x, offset_y])
+        boxes[:, :4].add_(offset)
+
+    boxes[:, :4].clamp_(min=torch.zeros_like(maximum), max=maximum)
+
+    return boxes
+
+
+def finalize_instance_segmentation_boxes(
+    boxes: torch.Tensor,
+    *,
+    mask_size: Tuple[int, int],
+    image_size: ImageDimensions,
+) -> torch.Tensor:
+    """Preserve fractional mask-grid boxes and legacy image-grid rounding.
+
+    Args:
+        boxes: Aligned ``xyxy`` boxes already on the final mask grid.
+        mask_size: Encoded mask dimensions as ``(height, width)``.
+        image_size: Original image dimensions.
+
+    Returns:
+        Integer boxes when the mask and image grids match, rounded once in
+        that final grid. Otherwise, float32 boxes without quantization.
+    """
+    if tuple(mask_size) == tuple(image_size):
+        final_boxes = boxes.round().int()
+    else:
+        final_boxes = boxes.float()
+
+    return final_boxes
+
+
 def align_instance_segmentation_results(
     image_bboxes: torch.Tensor,
     masks: torch.Tensor,
@@ -554,6 +615,28 @@ def align_instance_segmentation_results(
     mask_chunk_size: int = INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE,
     masks_resolution_factor: float = 1.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Align network boxes and dense masks onto the same output grid.
+
+    Args:
+        image_bboxes: Network-space boxes in the first four columns. Other
+            columns are retained; the input may be modified in place.
+        masks: Per-instance mask logits on the model grid.
+        padding: Network-input padding as ``(left, top, right, bottom)``.
+        scale_width: Horizontal image-to-network resize ratio.
+        scale_height: Vertical image-to-network resize ratio.
+        original_size: Original image dimensions, before any static crop.
+        size_after_pre_processing: Image dimensions after static cropping.
+        inference_size: Network input dimensions corresponding to the masks.
+        static_crop_offset: Location and dimensions of the static crop.
+        binarization_threshold: Threshold applied after resizing the masks.
+        mask_chunk_size: Maximum masks resized together.
+        masks_resolution_factor: Interpolation between model and image grids.
+
+    Returns:
+        Boxes and boolean masks on the final mask canvas. Boxes map directly
+        from network coordinates without intermediate image-space rounding,
+        using the same rounded crop placement as the masks.
+    """
     if image_bboxes.shape[0] == 0:
         unpadded_height, unpadded_width = resolve_unpadded_mask_grid(
             masks.shape[1],
@@ -591,18 +674,8 @@ def align_instance_segmentation_results(
             device=image_bboxes.device,
         )
         return image_bboxes, empty_masks
+
     pad_left, pad_top, pad_right, pad_bottom = padding
-    offsets = torch.tensor(
-        [pad_left, pad_top, pad_left, pad_top],
-        device=image_bboxes.device,
-    )
-    image_bboxes[:, :4].sub_(offsets)
-    scale = torch.as_tensor(
-        [scale_width, scale_height, scale_width, scale_height],
-        dtype=image_bboxes.dtype,
-        device=image_bboxes.device,
-    )
-    image_bboxes[:, :4].div_(scale)
     n, mh, mw = masks.shape
     mask_h_scale = mh / inference_size.height
     mask_w_scale = mw / inference_size.width
@@ -664,6 +737,7 @@ def align_instance_segmentation_results(
             interpolation=functional.InterpolationMode.BILINEAR,
         ).gt_(binarization_threshold)
     masks = binarized_masks
+    canvas_offset_x = canvas_offset_y = 0
     if (
         static_crop_offset.offset_x > 0
         or static_crop_offset.offset_y > 0
@@ -701,29 +775,17 @@ def align_instance_segmentation_results(
             canvas_offset_y : canvas_offset_y + masks.shape[1],
             canvas_offset_x : canvas_offset_x + masks.shape[2],
         ] = masks
-        static_crop_offsets = torch.as_tensor(
-            [
-                static_crop_offset.offset_x,
-                static_crop_offset.offset_y,
-                static_crop_offset.offset_x,
-                static_crop_offset.offset_y,
-            ],
-            dtype=image_bboxes.dtype,
-            device=image_bboxes.device,
-        )
-        image_bboxes[:, :4].add_(static_crop_offsets)
         masks = mask_canvas
-    xyxy_max = torch.as_tensor(
-        [
-            original_size.width,
-            original_size.height,
-            original_size.width,
-            original_size.height,
-        ],
-        dtype=image_bboxes.dtype,
-        device=image_bboxes.device,
+    image_bboxes = _align_boxes_to_mask_grid(
+        image_bboxes,
+        padding=padding,
+        scale_width=scale_width,
+        scale_height=scale_height,
+        size_after_pre_processing=size_after_pre_processing,
+        target_size=(target_height, target_width),
+        canvas_size=tuple(masks.shape[1:]),
+        canvas_offset=(canvas_offset_x, canvas_offset_y),
     )
-    image_bboxes[:, :4].clamp_(min=torch.zeros_like(xyxy_max), max=xyxy_max)
     return image_bboxes, masks
 
 
@@ -740,60 +802,36 @@ def align_instance_segmentation_results_to_rle_masks(
     binarization_threshold: float = 0.0,
     masks_resolution_factor: float = 1.0,
 ) -> Generator[Tuple[torch.Tensor, dict], None, None]:
-    """
-    Generator variant of align_instance_segmentation_results.
+    """Align boxes and encode one mask at a time on their shared output grid.
 
-    Yields (bbox, mask) pairs one at a time. Only one full-resolution mask
-    exists in memory at any given moment, so the caller can immediately
-    RLE-encode it and drop the dense tensor before the next one is produced.
+    Args:
+        image_bboxes: Network-space boxes in the first four columns. Other
+            columns are retained; the input may be modified in place.
+        masks: Per-instance mask logits on the model grid.
+        padding: Network-input padding as ``(left, top, right, bottom)``.
+        scale_width: Horizontal image-to-network resize ratio.
+        scale_height: Vertical image-to-network resize ratio.
+        original_size: Original image dimensions, before any static crop.
+        size_after_pre_processing: Image dimensions after static cropping.
+        inference_size: Network input dimensions corresponding to the masks.
+        static_crop_offset: Location and dimensions of the static crop.
+        binarization_threshold: Threshold applied after resizing the masks.
+        masks_resolution_factor: Interpolation between model and image grids.
 
-    NOTE: image_bboxes is modified in-place (same behaviour as the batched
-    version). Pass a .clone() if that's not acceptable.
+    Yields:
+        A box and COCO RLE mask sharing the final mask canvas. Boxes map
+        directly from network coordinates with no intermediate rounding.
+        Only one resized dense mask is materialized at a time.
     """
     if image_bboxes.shape[0] == 0:
         return None
 
     pad_left, pad_top, pad_right, pad_bottom = padding
-    offsets = torch.tensor(
-        [pad_left, pad_top, pad_left, pad_top],
-        device=image_bboxes.device,
-    )
-    image_bboxes[:, :4].sub_(offsets)
-    scale = torch.as_tensor(
-        [scale_width, scale_height, scale_width, scale_height],
-        dtype=image_bboxes.dtype,
-        device=image_bboxes.device,
-    )
-    image_bboxes[:, :4].div_(scale)
-
     needs_canvas = (
         static_crop_offset.offset_x > 0
         or static_crop_offset.offset_y > 0
         or size_after_pre_processing != original_size
     )
-    if needs_canvas:
-        static_crop_offsets = torch.as_tensor(
-            [
-                static_crop_offset.offset_x,
-                static_crop_offset.offset_y,
-                static_crop_offset.offset_x,
-                static_crop_offset.offset_y,
-            ],
-            dtype=image_bboxes.dtype,
-            device=image_bboxes.device,
-        )
-        image_bboxes[:, :4].add_(static_crop_offsets)
-    xyxy_max = torch.as_tensor(
-        [
-            original_size.width,
-            original_size.height,
-            original_size.width,
-            original_size.height,
-        ],
-        dtype=image_bboxes.dtype,
-        device=image_bboxes.device,
-    )
-    image_bboxes[:, :4].clamp_(min=torch.zeros_like(xyxy_max), max=xyxy_max)
     n, mh, mw = masks.shape
     mask_h_scale = mh / inference_size.height
     mask_w_scale = mw / inference_size.width
@@ -853,6 +891,18 @@ def align_instance_segmentation_results_to_rle_masks(
     )
     canvas_width = max(
         1, round(original_size.width * canvas_w_scale), offset_x + target_w
+    )
+    image_bboxes = _align_boxes_to_mask_grid(
+        image_bboxes,
+        padding=padding,
+        scale_width=scale_width,
+        scale_height=scale_height,
+        size_after_pre_processing=size_after_pre_processing,
+        target_size=(target_h, target_w),
+        canvas_size=(
+            (canvas_height, canvas_width) if needs_canvas else (target_h, target_w)
+        ),
+        canvas_offset=(offset_x, offset_y) if needs_canvas else (0, 0),
     )
     num_instances = image_bboxes.shape[0]
     for i in range(num_instances):

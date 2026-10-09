@@ -1187,7 +1187,7 @@ def test_crop_response_uses_the_frame_represented_by_mask(
             masks=[rle["counts"]],
             mask_size=tuple(rle["size"]),
         )
-    detections = InstanceDetections.from_image_coordinates(
+    detections = InstanceDetections(
         image_size=tuple(original_size),
         xyxy=boxes,
         confidence=torch.tensor([0.9]),
@@ -1311,9 +1311,9 @@ def test_opted_in_polygons_share_box_coordinates_on_non_square_image(mask_format
             masks=[rle["counts"]],
             mask_size=(160, 160),
         )
-    detections = InstanceDetections.from_image_coordinates(
+    detections = InstanceDetections(
         image_size=(800, 1000),
-        xyxy=torch.tensor([[300, 240, 450, 360]], dtype=torch.float32),
+        xyxy=torch.tensor([[48, 48, 72, 72]], dtype=torch.float32),
         confidence=torch.tensor([0.9]),
         class_id=torch.tensor([0]),
         mask=mask,
@@ -1372,7 +1372,7 @@ def test_response_geometry_uses_one_grid(opt_in, response_format, factor):
             masks_resolution_factor=kwargs["masks_resolution_factor"],
         )
         return [
-            InstanceDetections.from_image_coordinates(
+            InstanceDetections(
                 image_size=tuple(original_size),
                 xyxy=boxes,
                 confidence=torch.tensor([0.9]),
@@ -1457,8 +1457,8 @@ def test_native_grid_batch_does_not_mutate_model_boxes():
     boxes = torch.tensor([[20, 10, 60, 30]], dtype=torch.float32)
     image_sizes = [(50, 100), (200, 200)]
     detections = [
-        InstanceDetections.from_image_coordinates(
-            xyxy=boxes,
+        InstanceDetections(
+            xyxy=boxes * torch.tensor([20 / image_size[1], 10 / image_size[0]] * 2),
             confidence=torch.tensor([0.9]),
             class_id=torch.tensor([0]),
             mask=torch.ones((1, 10, 20), dtype=torch.bool),

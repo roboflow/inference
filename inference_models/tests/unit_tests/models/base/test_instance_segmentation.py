@@ -296,7 +296,9 @@ def test_empty_reduced_dense_masks_keep_original_dimensions() -> None:
 @pytest.mark.parametrize("mask_format", ["dense", "rle"])
 @pytest.mark.parametrize("grid", [(200, 300), (37, 61), (400, 600)])
 @pytest.mark.parametrize("empty", [False, True])
-def test_image_boxes_and_masks_share_final_grid(mask_format, grid, empty) -> None:
+def test_mask_grid_boxes_round_trip_through_supervision(
+    mask_format, grid, empty
+) -> None:
     image_size = (200, 300)
     count = 0 if empty else 1
     image_boxes = torch.tensor([[61, 43, 142, 97]], dtype=torch.int32)[:count]
@@ -314,40 +316,24 @@ def test_image_boxes_and_masks_share_final_grid(mask_format, grid, empty) -> Non
     else:
         mask = dense
 
-    result = InstanceDetections.from_image_coordinates(
-        xyxy=image_boxes,
+    scale = torch.tensor([grid[1] / 300, grid[0] / 200] * 2)
+    grid_boxes = image_boxes.float() * scale
+    result = InstanceDetections(
+        xyxy=grid_boxes,
         class_id=torch.zeros(count, dtype=torch.int32),
         confidence=torch.ones(count),
         mask=mask,
         image_size=image_size,
     )
 
-    scale = torch.tensor([grid[1] / 300, grid[0] / 200] * 2)
     torch.testing.assert_close(result.xyxy.float(), original_boxes.float() * scale)
     torch.testing.assert_close(image_boxes, original_boxes)
     assert result.mask_size == grid
     copied = replace(result)
     torch.testing.assert_close(copied.xyxy, result.xyxy)
-    if grid == image_size:
-        assert result.xyxy is image_boxes
-    else:
-        assert result.xyxy.is_floating_point()
+    assert result.xyxy is grid_boxes
     restored = result.to_supervision()
     np.testing.assert_allclose(restored.xyxy, original_boxes.numpy(), atol=1e-5)
     assert restored.mask.shape == (count, *image_size)
     if count:
         torch.testing.assert_close(next(iter(result))[0], result.xyxy[0])
-
-
-def test_image_box_factory_uses_crop_extent_for_manual_local_masks() -> None:
-    result = InstanceDetections.from_image_coordinates(
-        xyxy=torch.tensor([[20, 10, 80, 50]], dtype=torch.int32),
-        class_id=torch.tensor([0]),
-        confidence=torch.tensor([0.9]),
-        mask=torch.zeros((1, 20, 30), dtype=torch.bool),
-        image_size=(200, 300),
-        mask_frame_size=(100, 150),
-    )
-
-    torch.testing.assert_close(result.xyxy, torch.tensor([[4.0, 2.0, 16.0, 10.0]]))
-    np.testing.assert_allclose(result.to_supervision().xyxy, [[20, 10, 80, 50]])

@@ -27,18 +27,20 @@
   `mask_size` coordinate grid as dense or RLE masks for YOLOv5, YOLOv7, YOLOv8,
   YOLO26, YOLACT, and RF-DETR. Previously, reduced masks and image-space boxes
   used different coordinate systems until the HTTP adapter scaled the boxes.
-  Scaling now happens in `inference_models`, using the actual mask-to-image
-  dimension ratios, including static-crop canvases. Boxes use floating-point
-  coordinates when the grids differ; factor `1.0` retains its existing behavior.
+  Boxes now map directly from network coordinates onto the resized mask grid
+  inside `inference_models`, without an intermediate image-space conversion.
+  Static crops use the same rounded canvas offsets for boxes and masks.
+  Boxes retain float32 fractional coordinates when the grids differ, avoiding
+  intermediate image-space rounding and float16 overflow on large images.
+  Factor `1.0` retains its existing final integer rounding and image-space behavior.
   The HTTP adapter no longer repeats the scaling, preserving the existing
   opted-in and default HTTP coordinate contracts.
   **Direct-call compatibility:** callers reading `.xyxy` from reduced results
   must now interpret those boxes in `mask_size` coordinates. Use
   `InstanceDetections.to_supervision()` to restore both boxes and masks to
   original-image coordinates. Manually constructed detections should supply
-  mask-grid boxes and retain `image_size`, or use
-  `InstanceDetections.from_image_coordinates(...)` with image-space boxes and
-  the original `image_size`.
+  mask-grid boxes and retain `image_size`. Reduced-box values can differ from
+  earlier responses because intermediate image-space rounding is removed.
 - Server requests using `inference_models` require
   `allow_reduced_mask_resolution=true` to apply `mask_decode_mode` and
   `tradeoff_factor`. Without this opt-in, masks retain image resolution.
