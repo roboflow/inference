@@ -498,7 +498,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         cutoff_frame_number = frame_number - window_frames
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
-        if bookkeeping.next_sample_frame_number <= cutoff_frame_number:
+        if (
+            video_sampling.requires_regular_sampling
+            and bookkeeping.next_sample_frame_number <= cutoff_frame_number
+        ):
             expired_positions = (
                 math.floor(
                     (cutoff_frame_number - bookkeeping.next_sample_frame_number)
@@ -517,15 +520,28 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 )
             else:
                 frame = frame_transform(frame)
-            # Empty slots preserve the model clock without inventing missing pixels.
-            while (
-                math.ceil(bookkeeping.next_sample_frame_number - 1e-9) <= frame_number
-            ):
-                expected_frame = math.ceil(bookkeeping.next_sample_frame_number - 1e-9)
-                bookkeeping.sampled.append(
-                    (expected_frame, frame if expected_frame == frame_number else None)
-                )
-                bookkeeping.next_sample_frame_number += sampling_stride
+            if video_sampling.requires_regular_sampling:
+                # Empty slots preserve the model clock without inventing missing pixels.
+                while (
+                    math.ceil(bookkeeping.next_sample_frame_number - 1e-9)
+                    <= frame_number
+                ):
+                    expected_frame = math.ceil(
+                        bookkeeping.next_sample_frame_number - 1e-9
+                    )
+                    bookkeeping.sampled.append(
+                        (
+                            expected_frame,
+                            frame if expected_frame == frame_number else None,
+                        )
+                    )
+                    bookkeeping.next_sample_frame_number += sampling_stride
+            else:
+                if bookkeeping.next_sample_frame_number < frame_number - 1:
+                    bookkeeping.next_sample_frame_number = float(frame_number)
+                while bookkeeping.next_sample_frame_number <= frame_number:
+                    bookkeeping.sampled.append((frame_number, frame))
+                    bookkeeping.next_sample_frame_number += sampling_stride
 
         while bookkeeping.sampled and bookkeeping.sampled[0][0] <= cutoff_frame_number:
             bookkeeping.sampled.pop(0)

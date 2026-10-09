@@ -16,7 +16,7 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
-- Action Recognition Model rejects windows with missing required samples and reports their source-frame indices. Complete windows resume inference.
+- Action Recognition Model rejects missing samples only when the model declares that it requires regular sampling. Cosmos retains its previous behavior for FPS-limited streams.
 - Action Recognition Model uses explicit confidence and observed-duration capabilities for each model family.
 - Inference hosts can set `VJEPA2_1_ENABLED=False` to block V-JEPA loading through the Action Recognition Model block before weights load.
 - Action-recognition response schemas retain frame indices, class fields, and optional confidence for HTTP clients and Workflows.

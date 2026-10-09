@@ -68,6 +68,10 @@ class VideoSampling:
     the model at their own size and rate. Reading a model below what it
     expects costs the detail the answer is made of.
 
+    ``requires_regular_sampling`` rejects incomplete streaming windows when
+    the model requires a regular sample clock. Otherwise, streams retain
+    available frames and map discrete spans through their actual source indices.
+
     ``max_frames`` is the budget one sample holds, which only a trained model
     has. A fine-tune records it, and a clip longer than the budget is sampled
     below ``sample_fps`` so the frames still span it. It stays ``None`` for a
@@ -86,6 +90,7 @@ class VideoSampling:
     overlap_frames: int = 0
     end_aligned: bool = False
     fixed_sample_fps: bool = False
+    requires_regular_sampling: bool = False
 
 
 class ActionRecognitionModel(ABC):

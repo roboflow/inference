@@ -196,6 +196,7 @@ def _run(
     stride_seconds=0.5,
     sample_fps=2.0,
     min_frames=1,
+    requires_regular_sampling=False,
 ):
     # The temporal contract travels with the model.
     if block._model is not None:
@@ -203,6 +204,7 @@ def _run(
             window_seconds=window_seconds,
             sample_fps=sample_fps,
             min_frames=min_frames,
+            requires_regular_sampling=requires_regular_sampling,
         )
     return block.run(
         images=[frame],
@@ -642,10 +644,10 @@ def test_dropped_frame_gap_rejects_window_and_recovers_after_gap_expires():
         ]
     )
 
-    _run(block, _make_frame(10))
-    _run(block, _make_frame(12))
+    _run(block, _make_frame(10), requires_regular_sampling=True)
+    _run(block, _make_frame(12), requires_regular_sampling=True)
     calls_before_gap = len(model.calls)
-    result = _run(block, _make_frame(100))
+    result = _run(block, _make_frame(100), requires_regular_sampling=True)
 
     assert len(model.calls) == calls_before_gap
     assert "Missing required samples" in result["error_status"]
@@ -658,20 +660,24 @@ def test_dropped_frame_gap_rejects_window_and_recovers_after_gap_expires():
             "class_id": -1,
         },
     ]
-    _run(block, _make_frame(101))
-    result = _run(block, _make_frame(102))
+    _run(block, _make_frame(101), requires_regular_sampling=True)
+    result = _run(block, _make_frame(102), requires_regular_sampling=True)
     assert not result["error_status"]
     assert len(model.calls) == calls_before_gap + 1
     assert result["timeline"][-1].start_frame_idx == 100
 
 
-@pytest.mark.parametrize("scored", [False, True])
-def test_processing_paced_gap_never_reaches_either_model_family(scored):
+@pytest.mark.parametrize("requires_regular_sampling", [False, True])
+def test_processing_paced_gap_follows_declared_sampling_policy(
+    requires_regular_sampling,
+):
     block, model = _make_block()
-    model.supports_confidence = scored
-    model.supports_observed_duration = scored
     model.video_sampling = VideoSampling(
-        window_seconds=4, sample_fps=4, min_frames=1, max_frames=16
+        window_seconds=4,
+        sample_fps=4,
+        min_frames=1,
+        max_frames=16,
+        requires_regular_sampling=requires_regular_sampling,
     )
     outputs = []
     for number in [0, 8, 15, 23, 90, 98, 105, 113, 120]:
@@ -683,9 +689,46 @@ def test_processing_paced_gap_never_reaches_either_model_family(scored):
             )
         )
 
-    assert model.calls == []
-    assert "source-frame indices 30, 38, 45" in outputs[-1]["error_status"]
-    assert "window 8-120" in outputs[-1]["error_status"]
+    if requires_regular_sampling:
+        assert model.calls == []
+        assert "source-frame indices 30, 38, 45" in outputs[-1]["error_status"]
+        assert "window 8-120" in outputs[-1]["error_status"]
+    else:
+        assert len(model.calls) == 1
+        assert not outputs[-1]["error_status"]
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize("delivery_stride", [1, 2])
+def test_cosmos_fps_limited_stream_preserves_calls_and_source_indices(
+    tensor, delivery_stride
+):
+    block, model = _make_block(
+        responses=[[_model_segment("walk")] for _ in range(4)],
+        tensor=tensor,
+    )
+    for number in range(0, 64 * 30 + 1, delivery_stride):
+        result = block.run(
+            images=[
+                _make_frame(
+                    number,
+                    fps=30,
+                    tensor_rgb_color=[20, 10, number % 255] if tensor else None,
+                )
+            ],
+            model_id="cosmos-3-edge",
+        )[0]
+
+    assert len(model.calls) == 4
+    assert not result["error_status"]
+    first_sample = 8
+    assert result["timeline"][0].start_frame_idx == first_sample
+    assert result["timeline"][0].end_frame_idx == first_sample
+    first_pixels = model.calls[0]["frames"][0]
+    if tensor:
+        assert first_pixels[2, 0, 0] == first_sample
+    else:
+        assert first_pixels[0, 0, 2] == first_sample
 
 
 def test_merges_same_class_across_windows_when_gap_is_at_most_stride():

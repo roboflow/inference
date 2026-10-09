@@ -328,6 +328,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
             overlap_frames=post["overlap_frames"],
             end_aligned=True,
             fixed_sample_fps=True,
+            requires_regular_sampling=True,
         )
 
     @torch.inference_mode()
