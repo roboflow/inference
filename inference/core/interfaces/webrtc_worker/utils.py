@@ -8,6 +8,7 @@ from streamvision.webrtc_worker.utils import (  # noqa: F401
     get_frame_from_workflow_output,
     get_video_fps,
     get_video_rotation,
+    get_video_total_frames,
     overlay_text_on_np_frame,
     parse_video_file_chunk,
     process_frame,
