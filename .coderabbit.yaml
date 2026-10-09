@@ -17,6 +17,8 @@ reviews:
   in_progress_fortune: false
   poem: false
   enable_prompt_for_ai_agents: false
+  auto_review:
+    enabled: false
   path_filters:
     - "!**/uv.lock"
   path_instructions:
@@ -59,6 +61,7 @@ reviews:
       enabled: false
 chat:
   art: false
+  auto_reply: false
   allow_non_org_members: false
 knowledge_base:
   code_guidelines:
