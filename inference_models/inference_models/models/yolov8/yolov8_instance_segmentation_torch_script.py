@@ -189,6 +189,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
         masks_smoothing_enabled: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
         masks_binarization_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
         mask_format: InstanceSegmentationMaskFormat = "dense",
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:
@@ -227,6 +228,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                 pre_processing_meta=pre_processing_meta,
                 masks_smoothing_enabled=masks_smoothing_enabled,
                 masks_binarization_threshold=masks_binarization_threshold,
+                masks_resolution_factor=masks_resolution_factor,
             )
         return prepare_rle_masks(
             nms_results=nms_results,
@@ -234,4 +236,5 @@ class YOLOv8ForInstanceSegmentationTorchScript(
             pre_processing_meta=pre_processing_meta,
             masks_smoothing_enabled=masks_smoothing_enabled,
             masks_binarization_threshold=masks_binarization_threshold,
+            masks_resolution_factor=masks_resolution_factor,
         )
