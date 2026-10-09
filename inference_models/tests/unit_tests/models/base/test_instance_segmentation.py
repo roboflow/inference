@@ -1,4 +1,9 @@
+from dataclasses import replace
+
+import numpy as np
+import pytest
 import torch
+from pycocotools import mask as mask_utils
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
@@ -149,7 +154,7 @@ def test_to_supervision_restores_the_image_grid() -> None:
     # given
     # masks produced at a quarter of the image resolution
     detections = InstanceDetections(
-        xyxy=torch.tensor([[0, 0, 80, 80]], dtype=torch.float32),
+        xyxy=torch.tensor([[0, 0, 20, 20]], dtype=torch.float32),
         class_id=torch.zeros((1,), dtype=torch.int64),
         confidence=torch.ones((1,), dtype=torch.float32),
         mask=InstancesRLEMasks(
@@ -174,7 +179,7 @@ def test_supervision_annotator_accepts_the_result() -> None:
 
     scene = np.zeros((80, 80, 3), dtype=np.uint8)
     detections = InstanceDetections(
-        xyxy=torch.tensor([[0, 0, 80, 80]], dtype=torch.float32),
+        xyxy=torch.tensor([[0, 0, 20, 20]], dtype=torch.float32),
         class_id=torch.zeros((1,), dtype=torch.int64),
         confidence=torch.ones((1,), dtype=torch.float32),
         mask=InstancesRLEMasks(
@@ -191,7 +196,7 @@ def test_supervision_annotator_accepts_the_result() -> None:
 def test_iteration_declares_the_encoded_grid() -> None:
     # given
     detections = InstanceDetections(
-        xyxy=torch.tensor([[0, 0, 80, 80]], dtype=torch.float32),
+        xyxy=torch.tensor([[0, 0, 20, 20]], dtype=torch.float32),
         class_id=torch.zeros((1,), dtype=torch.int64),
         confidence=torch.ones((1,), dtype=torch.float32),
         mask=InstancesRLEMasks(
@@ -241,7 +246,7 @@ def test_reduced_dense_masks_can_annotate_original_image() -> None:
     mask = torch.zeros((1, 20, 30), dtype=torch.bool)
     mask[:, 5:10, 8:14] = True
     detections = InstanceDetections(
-        xyxy=torch.tensor([[80, 50, 140, 100]], dtype=torch.float32),
+        xyxy=torch.tensor([[8, 5, 14, 10]], dtype=torch.float32),
         class_id=torch.tensor([0]),
         confidence=torch.tensor([0.9]),
         mask=mask,
@@ -253,6 +258,7 @@ def test_reduced_dense_masks_can_annotate_original_image() -> None:
 
     assert detections.mask.shape == (1, 200, 300)
     assert detections.mask[0, 50:100, 80:140].all()
+    np.testing.assert_allclose(detections.xyxy, [[80, 50, 140, 100]])
     assert detections.mask.sum() == 50 * 60
     assert annotated.any()
 
@@ -261,7 +267,7 @@ def test_origin_crop_is_resized_then_padded_not_stretched() -> None:
     mask = torch.zeros((1, 20, 30), dtype=torch.bool)
     mask[:, 2:10, 4:16] = True
     detections = InstanceDetections(
-        xyxy=torch.tensor([[20, 10, 80, 50]], dtype=torch.float32),
+        xyxy=torch.tensor([[4, 2, 16, 10]], dtype=torch.float32),
         class_id=torch.tensor([0]),
         confidence=torch.tensor([0.9]),
         mask=mask,
@@ -271,6 +277,7 @@ def test_origin_crop_is_resized_then_padded_not_stretched() -> None:
 
     assert detections.mask.shape == (1, 200, 300)
     assert detections.mask[0, 10:50, 20:80].all()
+    np.testing.assert_allclose(detections.xyxy, [[20, 10, 80, 50]])
     assert detections.mask.sum() == 40 * 60
 
 
@@ -284,3 +291,49 @@ def test_empty_reduced_dense_masks_keep_original_dimensions() -> None:
     ).to_supervision()
 
     assert detections.mask.shape == (0, 200, 300)
+
+
+@pytest.mark.parametrize("mask_format", ["dense", "rle"])
+@pytest.mark.parametrize("grid", [(200, 300), (37, 61), (400, 600)])
+@pytest.mark.parametrize("empty", [False, True])
+def test_mask_grid_boxes_round_trip_through_supervision(
+    mask_format, grid, empty
+) -> None:
+    image_size = (200, 300)
+    count = 0 if empty else 1
+    image_boxes = torch.tensor([[61, 43, 142, 97]], dtype=torch.int32)[:count]
+    original_boxes = image_boxes.clone()
+    dense = torch.zeros((count, *grid), dtype=torch.bool)
+    if mask_format == "rle":
+        mask = InstancesRLEMasks.from_coco_rle_masks(
+            image_size=image_size,
+            mask_size=grid,
+            masks=[
+                mask_utils.encode(np.asfortranarray(single.numpy(), dtype=np.uint8))
+                for single in dense
+            ],
+        )
+    else:
+        mask = dense
+
+    scale = torch.tensor([grid[1] / 300, grid[0] / 200] * 2)
+    grid_boxes = image_boxes.float() * scale
+    result = InstanceDetections(
+        xyxy=grid_boxes,
+        class_id=torch.zeros(count, dtype=torch.int32),
+        confidence=torch.ones(count),
+        mask=mask,
+        image_size=image_size,
+    )
+
+    torch.testing.assert_close(result.xyxy.float(), original_boxes.float() * scale)
+    torch.testing.assert_close(image_boxes, original_boxes)
+    assert result.mask_size == grid
+    copied = replace(result)
+    torch.testing.assert_close(copied.xyxy, result.xyxy)
+    assert result.xyxy is grid_boxes
+    restored = result.to_supervision()
+    np.testing.assert_allclose(restored.xyxy, original_boxes.numpy(), atol=1e-5)
+    assert restored.mask.shape == (count, *image_size)
+    if count:
+        torch.testing.assert_close(next(iter(result))[0], result.xyxy[0])

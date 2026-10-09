@@ -1,6 +1,5 @@
 import os
 
-import cv2
 import numpy as np
 import pytest
 import requests
@@ -17,6 +16,14 @@ USE_INFERENCE_MODELS = os.getenv("USE_INFERENCE_MODELS", "false").lower() == "tr
 API_KEY = os.environ.get("API_KEY")
 PORT = os.environ.get("PORT", 9001)
 BASE_URL = os.environ.get("BASE_URL", "http://localhost")
+
+
+def _resize_mask_nearest(mask: ndarray, height: int, width: int) -> ndarray:
+    # Nearest-neighbour upscale (same index rule as cv2.INTER_NEAREST) without
+    # depending on OpenCV, which is not installed in the integration-test env.
+    rows = np.arange(height) * mask.shape[0] // height
+    cols = np.arange(width) * mask.shape[1] // width
+    return mask[rows[:, None], cols].astype(bool)
 
 
 @pytest.mark.skipif(
@@ -104,12 +111,7 @@ def test_mask_resolution_round_trip_through_server(
     )
     np.testing.assert_array_equal(detections.class_id, reference.class_id)
     restored_masks = np.stack(
-        [
-            cv2.resize(
-                mask.astype(np.uint8), (720, 1280), interpolation=cv2.INTER_NEAREST
-            ).astype(bool)
-            for mask in detections.mask
-        ]
+        [_resize_mask_nearest(mask, height=1280, width=720) for mask in detections.mask]
     )
     intersection = np.logical_and(restored_masks, reference.mask).sum(axis=(1, 2))
     union = np.logical_or(restored_masks, reference.mask).sum(axis=(1, 2))

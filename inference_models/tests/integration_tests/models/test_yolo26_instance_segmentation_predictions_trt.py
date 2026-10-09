@@ -530,6 +530,18 @@ def test_mask_resolution_and_crop_round_trip(
     else:
         assert dense.mask_size != scene.shape[:2]
     assert rle.mask_size == dense.mask_size
+
+    grid_scale = np.array(
+        [dense.mask_size[1] / scene.shape[1], dense.mask_size[0] / scene.shape[0]] * 2
+    )
+    np.testing.assert_allclose(
+        dense.xyxy.cpu().numpy(),
+        expected_boxes * grid_scale,
+        atol=2 * max(grid_scale),
+        rtol=0,
+    )
+    if dense.mask_size != scene.shape[:2]:
+        assert dense.xyxy.is_floating_point()
     assert detections.mask.shape == (1, *scene.shape[:2])
     # Reuse the full-resolution area baseline in test_trt_package_numpy.
     expected_area = 16400

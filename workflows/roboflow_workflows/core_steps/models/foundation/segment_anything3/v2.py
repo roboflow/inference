@@ -39,6 +39,7 @@ from roboflow_workflows.environment import (
     SAM3_EXEC_MODE,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -470,7 +471,54 @@ class SegmentAnything3BlockV2(WorkflowBlock):
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
+        """Run per-image SAM3 requests with bounded SDK concurrency.
+
+        Args:
+            images: Images in workflow batch order.
+            model_id: SAM3 model identifier.
+            class_names: Text prompts in class order.
+            confidence: Default minimum prediction confidence.
+            per_class_confidence: Optional confidence overrides in prompt order.
+            apply_nms: Whether the server suppresses overlapping masks.
+            nms_iou_threshold: Mask overlap threshold for suppression.
+
+        Returns:
+            Predictions aligned with the input image order.
+        """
         ensure_builtin_remote_execution_allowed("SAM3 remote execution")
+        results: List[dict] = []
+        group_size = max(1, WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS)
+        for start in range(0, len(images), group_size):
+            # Finish conversion and release response data before the next group.
+            # An HTTP failure propagates here, preventing any later dispatch.
+            results.extend(
+                self._run_remote_batch(
+                    images=images[start : start + group_size],
+                    model_id=model_id,
+                    class_names=class_names,
+                    confidence=confidence,
+                    per_class_confidence=per_class_confidence,
+                    apply_nms=apply_nms,
+                    nms_iou_threshold=nms_iou_threshold,
+                )
+            )
+        return results
+
+    def _run_remote_batch(
+        self,
+        images: Batch[WorkflowImageData],
+        model_id: str,
+        class_names: Optional[List[str]],
+        confidence: float,
+        per_class_confidence: Optional[List[float]] = None,
+        apply_nms: bool = True,
+        nms_iou_threshold: float = 0.9,
+    ) -> BlockResult:
+        """Request and convert one concurrency-sized group of images."""
+        ensure_builtin_remote_execution_allowed("SAM3 remote execution")
+        if len(images) == 0:
+            return []
+
         predictions = []
         if class_names is None:
             class_names = []
@@ -487,30 +535,42 @@ class SegmentAnything3BlockV2(WorkflowBlock):
             api_key=self._api_key,
         )
         client.configure(
-            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+            InferenceConfiguration(
+                api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+                # The endpoint segments exactly one image per request.
+                max_batch_size=1,
+                max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            )
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
-        for single_image in images:
+        http_prompts: List[dict] = []
+        for idx, class_name in enumerate(class_names):
+            prompt_data = {"type": "text", "text": class_name}
+            if per_class_confidence is not None:
+                prompt_data["output_prob_thresh"] = per_class_confidence[idx]
+            http_prompts.append(prompt_data)
+
+        responses = client.sam3_concept_segment(
+            inference_input=[single_image.base64_image for single_image in images],
+            prompts=http_prompts,
+            model_id=model_id,
+            output_prob_thresh=confidence,
+            nms_iou_threshold=nms_iou_threshold if apply_nms else None,
+        )
+        # A single-image batch comes back as a bare dict.
+        if not isinstance(responses, list):
+            responses = [responses]
+        if len(responses) != len(images):
+            raise ValueError(
+                f"SAM3 returned {len(responses)} responses for {len(images)} images"
+            )
+
+        for single_image, resp_json in zip(images, responses):
             prompt_class_ids: List[Optional[int]] = []
             prompt_class_names: List[Optional[str]] = []
             prompt_detection_ids: List[Optional[str]] = []
-
-            http_prompts: List[dict] = []
-            for idx, class_name in enumerate(class_names):
-                prompt_data = {"type": "text", "text": class_name}
-                if per_class_confidence is not None:
-                    prompt_data["output_prob_thresh"] = per_class_confidence[idx]
-                http_prompts.append(prompt_data)
-
-            resp_json = client.sam3_concept_segment(
-                inference_input=single_image.base64_image,
-                prompts=http_prompts,
-                model_id=model_id,
-                output_prob_thresh=confidence,
-                nms_iou_threshold=nms_iou_threshold if apply_nms else None,
-            )
 
             class_predictions: List[InstanceSegmentationPrediction] = []
             for prompt_result in resp_json.get("prompt_results", []):

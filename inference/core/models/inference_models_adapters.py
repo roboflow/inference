@@ -1081,14 +1081,15 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             if native_grid and mask_size is not None:
                 output_height, output_width = int(mask_size[0]), int(mask_size[1])
                 original_image = InferenceResponseImage(width=W, height=H)
-                box_scale_x = output_width / W
-                box_scale_y = output_height / H
                 mask_metadata = MaskCoordinateMetadata(
                     height=int(mask_size[0]),
                     width=int(mask_size[1]),
                     scale_x=W / mask_size[1],
                     scale_y=H / mask_size[0],
                 )
+            if different_grid and not native_grid:
+                box_scale_x = produced_against.width / mask_size[1]
+                box_scale_y = produced_against.height / mask_size[0]
             if not return_in_rle and different_grid and not native_grid:
                 polys_or_rles = scale_polygons_to_image(
                     polys_or_rles,
