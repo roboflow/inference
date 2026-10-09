@@ -81,6 +81,7 @@ provided in a form of dictionary presented below, if `video_metadata` is intende
         "measured_fps": 20.05,
         "frame_number": 24,
         "frame_timestamp": "2024-08-21T11:13:44.313999", 
+        "total_frames": 1440,  # optional - only for video files with known length
     }  
 }
 ```
@@ -134,6 +135,7 @@ The kind has different internal end external representation. As input we support
     "measured_fps": 20.05,
     "frame_number": 24,
     "frame_timestamp": "2024-08-21T11:13:44.313999", 
+    "total_frames": 1440,
 }   
 ```
 Internally, [`VideoMetadata`](/workflows/internal_data_types/#videometadata) is used. If you are a

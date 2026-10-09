@@ -887,7 +887,13 @@ class VideoSource:
                 self._initialise_selected_video()
             if self._frame_accounting is not None:
                 self._frame_accounting.new_generation()
-            self._video_consumer.reset(source_properties=self._source_properties)
+            self._video_consumer.reset(
+                source_properties=self._source_properties,
+                initial_seek=any(
+                    str(key).lower().startswith("pos_")
+                    for key in self._video_source_properties
+                ),
+            )
             if self._source_properties.is_file:
                 self._set_file_mode_consumption_strategies()
             else:
@@ -1165,6 +1171,8 @@ class VideoConsumer:
         self._desired_fps = desired_fps
         self._declared_source_fps = None
         self._is_source_video_file = None
+        self._source_total_frames: Optional[int] = None
+        self._initial_seek = False
         self._timestamp_created: Optional[datetime] = None
         self._status_update_handlers = status_update_handlers
         self._next_frame_from_video_to_accept = 1
@@ -1174,7 +1182,21 @@ class VideoConsumer:
     def buffer_filling_strategy(self) -> Optional[BufferFillingStrategy]:
         return self._buffer_filling_strategy
 
-    def reset(self, source_properties: SourceProperties) -> None:
+    def reset(
+        self, source_properties: SourceProperties, *, initial_seek: bool = False
+    ) -> None:
+        """Prepare the consumer for a fresh start of the video source.
+
+        Frame numbering continues across resets, so the source frame count is
+        withheld once it no longer matches the frame position.
+
+        Args:
+            source_properties: Properties of the (re)opened source.
+            initial_seek: Whether the source was opened at a seek position.
+        """
+        self._initial_seek = initial_seek
+        if self._frame_counter > 0 or initial_seek:
+            self._source_total_frames = None
         if source_properties.is_file:
             self._set_file_mode_buffering_strategies()
         else:
@@ -1205,6 +1227,12 @@ class VideoConsumer:
             self._is_source_video_file = source_properties.is_file
             self._declared_source_fps = source_properties.fps
             self._timestamp_created = source_properties.timestamp_created
+            if (
+                source_properties.is_file
+                and source_properties.total_frames > 0
+                and not self._initial_seek
+            ):
+                self._source_total_frames = source_properties.total_frames
 
         if self._timestamp_created:
             frame_timestamp = self._timestamp_created + timedelta(
@@ -1341,6 +1369,7 @@ class VideoConsumer:
                 declared_source_fps=declared_source_fps,
                 measured_source_fps=measured_source_fps,
                 comes_from_video_file=is_source_video_file,
+                total_frames=self._source_total_frames,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
             return self._process_stream_frame_dropping_oldest(
@@ -1452,6 +1481,7 @@ class VideoConsumer:
             decoding_pace_monitor=self._decoding_pace_monitor,
             source_id=source_id,
             comes_from_video_file=is_video_file,
+            total_frames=self._source_total_frames,
         )
 
 
@@ -1571,6 +1601,7 @@ def decode_video_frame_to_buffer(
     declared_source_fps: Optional[float] = None,
     measured_source_fps: Optional[float] = None,
     comes_from_video_file: Optional[bool] = None,
+    total_frames: Optional[int] = None,
 ) -> bool:
     success, image = video.retrieve()
     accounting_handlers = getattr(buffer, "_frame_accounting_handlers", ())
@@ -1592,6 +1623,7 @@ def decode_video_frame_to_buffer(
         measured_fps=measured_source_fps,
         source_id=source_id,
         comes_from_video_file=comes_from_video_file,
+        total_frames=total_frames,
     )
     buffer.put(video_frame)
     if accounting_handlers:
