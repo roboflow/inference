@@ -16,9 +16,68 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- `VideoMetadata` carries an optional `total_frames`: the frame count of the
+  source video file, or `None` for live streams, files that don't report it,
+  realtime WebRTC uploads, and after a source restart or initial seek.
+  Blocks can compute playback progress as `frame_number / total_frames` (e.g. a
+  timeline overlay). Image inputs may include it under `video_metadata`.
+
+### Changed
+
+- Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
+  the local `inference_models` backend. Non-tensor local legacy execution
+  continues to honor `mask_decode_mode` and `tradeoff_factor` when
+  `USE_INFERENCE_MODELS=False`.
+  Remote calls always request `accurate` / `1.0`, since the local backend setting
+  does not identify the remote server. Remote legacy workflows that previously
+  requested fast/tradeoff masks now receive accurate masks. `@v4` retains its
+  RLE response format.
+- The new instance-segmentation `@v5` block is deferred to a separate PR together
+  with reduced-grid Supervision conversion and downstream block support.
+  **Full tensor support will come in a separate PR.** Existing tensor variants
+  remain pinned to `accurate` / `1.0`.
+
+### Added
+
+- Optional `original_image` and `mask_metadata` on instance-segmentation response
+  DTOs retain the input dimensions and output-to-input coordinate mapping for
+  opted-in HTTP responses. Response `image`, boxes, polygons and RLE masks all
+  use the selected mask grid. Existing workflow blocks do not opt in and retain
+  their image-space contract. The `image` field continues to accept a single image
+  descriptor or a list for multi-image responses.
+
+- `ModelsConfiguration.use_inference_models`, defaulting to `True`. Hosts using
+  the legacy backend must set it to `False` to retain non-tensor local legacy
+  decoding.
+  The server sets it from `inference.core.env.USE_INFERENCE_MODELS`.
+
+- MQTT Writer v2 (`roboflow_enterprise/mqtt_writer_sink@v2`): v1 plus an optional `fire_and_forget` (default `False`) and outage hardening; v1 is unchanged.
+  - With `fire_and_forget` a run queues the message and returns without waiting for the send or the broker's acknowledgement, and after the first run it never waits for a reconnect, so a disconnected broker no longer stalls each frame by up to `timeout`. If the first connection attempt fails, the client is kept and retries in the background instead of reconnecting synchronously on every frame. Success means queued, not delivered.
+  - While the broker is disconnected a QoS 0 message is dropped and a QoS 1/2 message is queued and sent after reconnect, both reported with `error_status` set; these repeating failures are logged when they start or change and once on recovery, not on every run.
+  - The step declares the `fire_and_forget_hides_persistence_failures` and `connection_and_state_rebuilt_per_request` restrictions when the switch is on (over the HTTP API every request builds a fresh block, so each request is a first run and a message still queued when the request ends is dropped), and reports a selector-driven switch as unknown.
+  - In either mode the block refuses a new publish once 1000 QoS 1/2 messages await acknowledgement or 1000 packets wait to be sent (paho buffers both without limit by default), and reports it as a queue-full error; after a reconnect up to about 2000 packets can be buffered briefly. The limits count messages, not bytes.
+  - The background reconnect backs off exponentially: the first retry waits half of `timeout` (at least 0.1 s), each further one doubles that, up to twice `timeout` (at least 1 s), plus the time each attempt takes, so a tiny `timeout` cannot retry a dead broker in a busy loop.
+  - Selector-supplied `retain`, `fail_fast` and `fire_and_forget` are coerced the way the manifest validates them (for example `"false"` is False; v1 treats any non-empty string as True), and so are `port` and `qos` (for example `"1883.0"`, which v1 rejects); booleans are still rejected as a port or QoS.
+  - While the broker stays unreachable or keeps answering "unavailable", the background reconnect loop logs the first failure as an error and later attempts at debug level until a connection succeeds, instead of an error about once per second.
+  - Closing the block (when a pipeline stops) is bounded even when it races a background reconnect: a connection the broker accepts after the close began is disconnected at once, and the close never waits for acknowledgements or for the broker; messages not yet acknowledged are dropped, though packets already queued may still be sent before the disconnect. A close during an in-flight reconnect first waits for that connection attempt (TCP bounded by `timeout`, a TLS handshake by the 15 s keepalive, DNS by the OS resolver).
+
 ### Fixed
 
 - SAM3 v1/v2/v3 remote SDK execution, with NumPy or tensor predictions, now honors `WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS` across the input batch while sending one image per HTTP request. Each concurrency-sized group is converted before dispatching the next, bounding response buffering and stopping later groups after an HTTP failure. Results retain input order, formats and class mapping; empty batches issue no requests. Local execution and the inference-proxy transport are unchanged.
+- Tracker blocks log the missing-FPS fallback only when creating a tracker for a video, including tensor variants.
+
+## `0.2.4-post1`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-haiku-5-5` model option.
+- Mistral AI block (`roboflow_core/mistral_vlm@v1`): runs Mistral Large 4 (`mistralai/mistral-large-4-0`) via OpenRouter with the vlm-exam request contract (image-first user message, reasoning off by default with a `high` option, `max_tokens` unset by default) and in-block decoding of detections and classifications.
+- VLM detection box format `xyxy_0_999`: `box_2d` integers normalized to 0-999, Mistral's documented grounding convention. Used by the Mistral AI block and selectable as `detection_format` on the OpenRouter block (`openrouter@v3`).
+- The shared OpenRouter executor accepts `max_tokens=None`: the direct path omits the parameter so the provider default applies, the Roboflow-proxied path sends the proxy ceiling (16384) because the proxy requires the field and otherwise applies a 500-token default.
 
 ## `0.2.4`
 
@@ -47,6 +106,8 @@ Bundled execution engine: `1.16.1`.
 - Predictions whose polygon has fewer than 3 points are dropped before `supervision` parses the response, in model blocks, OCR blocks and detections passed as workflow inputs. The result is unchanged: the prediction is left out and the others keep their masks. `supervision` 0.30 on its own would keep it as a box and remove the masks of every detection in the response.
 
 ### Fixed
+
+- Detections Stitch (`roboflow_core/detections_stitch@v1`): segmentation masks are stitched as crop-scoped compact masks (`supervision.CompactMask`) and only the detections that survive overlap filtering are materialised at reference resolution. Previously every crop mask was first re-allocated as a full-size dense array, merged, then filtered, which needed about `N x H x W` bytes before any filtering: a 1080p frame sliced 12 ways with ~25 masks per slice took ~3 GiB inside this block and OOM-killed an 8 GiB video worker. Outputs keep the same boxes, order and dense masks, with one numerical correction: mask IoU is now computed from exact pixel counts instead of `float32` arithmetic, so a pair whose IoU equals `iou_threshold` is decided by the documented comparison. With `nms`, IoU equal to the threshold no longer suppresses (30 of 100 pixels at `0.3` used to round to `0.30000001` and drop a detection); with `nmm`, IoU equal to the threshold now merges (70 of 100 pixels at `0.7` used to round to `0.69999999` and keep both). A mix of crops with and without masks now raises a clear `ValueError` instead of failing inside `Detections.merge`.
 
 - CLIP v1 and CLIP Comparison v1/v2 blocks, including tensor variants, now report
   a model's text-context-length validation error as `RuntimeInputError`, allowing

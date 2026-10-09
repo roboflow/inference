@@ -10,7 +10,8 @@ Cosmos 3 Edge is NVIDIA's compact physical-AI reasoner: a 4B vision-language mod
 - **Fine-tuning** - Roboflow multimodal projects fine-tune it as `cosmos3-edge-vlm`
 
 !!! warning "GPU Required"
-    Cosmos 3 Edge loads in bf16 and needs a CUDA GPU; CPU inference is not practical.
+    Cosmos 3 Edge loads in bf16 and needs a CUDA GPU or an Apple Silicon GPU
+    (`DEFAULT_DEVICE=mps`); CPU inference is not practical.
 
 !!! info "License & Attribution"
     **License**: NVIDIA Open Model License (OpenMDW 1.1)<br>**Source**: [HuggingFace](https://huggingface.co/nvidia/Cosmos3-Edge)

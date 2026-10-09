@@ -126,16 +126,16 @@ class TrackerBlockBase(WorkflowBlock):
         the tracker instance is cached for the lifetime of the video stream.
         """
         metadata = image.video_metadata
-        fps = metadata.fps
-        if not fps:
-            fps = 30
-            logger.warning(
-                f"fps not available in VideoMetadata for {self.__class__.__name__}, "
-                "defaulting to 30 fps for tracker initialisation"
-            )
         video_id = metadata.video_identifier
 
         if video_id not in self._trackers:
+            fps = metadata.fps
+            if not fps:
+                fps = 30
+                logger.warning(
+                    f"fps not available in VideoMetadata for {self.__class__.__name__}, "
+                    "defaulting to 30 fps for tracker initialisation"
+                )
             self._trackers[video_id] = self._create_tracker(fps=fps, **tracker_kwargs)
 
         tracker = self._trackers[video_id]

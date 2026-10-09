@@ -1190,6 +1190,21 @@ if USE_INFERENCE_MODELS:
             InferenceModelsSemanticSegmentationAdapter
         )
 
+    # RF-DETR semantic segmentation is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    for variant in [
+        "rfdetr",
+        "rfdetr-sem-nano",
+        "rfdetr-sem-small",
+        "rfdetr-sem-medium",
+        "rfdetr-sem-large",
+        "rfdetr-sem-xlarge",
+        "rfdetr-sem-2xlarge",
+    ]:
+        ROBOFLOW_MODEL_TYPES[("semantic-segmentation", variant)] = (
+            InferenceModelsSemanticSegmentationAdapter
+        )
+
     # YOLO26 depth estimation is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
     if DEPTH_ESTIMATION_ENABLED:
