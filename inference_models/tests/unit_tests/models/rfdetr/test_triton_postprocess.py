@@ -1005,3 +1005,41 @@ def test_triton_global_topk_keeps_more_than_four_classes_per_query(factor, defer
         actual = get_deferred_postprocess_finalizer(actual)()
     assert len(actual) == 7
     _assert_detections_equal(actual, expected)
+
+
+@pytest.mark.parametrize("axis", ["height", "width"])
+@pytest.mark.parametrize("source_size, target_size", [(1, 7), (8, 8), (8, 63)])
+def test_batched_interpolation_tables_preserve_reference_weights(
+    axis, source_size, target_size
+):
+    indices, values = _get_interpolation_weights(
+        src_size=source_size,
+        output_size=target_size,
+        device=torch.device("cpu"),
+        axis=axis,
+    )
+    basis_shape = (
+        (source_size, 1, source_size, 1)
+        if axis == "height"
+        else (source_size, 1, 1, source_size)
+    )
+    output_shape = (target_size, 1) if axis == "height" else (1, target_size)
+    resized = (
+        torch.nn.functional.interpolate(
+            torch.eye(source_size).reshape(basis_shape),
+            size=output_shape,
+            mode="bilinear",
+            align_corners=False,
+            antialias=True,
+        )
+        .reshape(source_size, target_size)
+        .T
+    )
+    # Reconstruct every coefficient, including the zero-padded second tap at
+    # boundaries/native grids, to catch changes to interpolation or tap order.
+    reconstructed = torch.zeros_like(resized)
+    reconstructed.scatter_add_(1, indices.long(), values)
+    torch.testing.assert_close(reconstructed, resized, rtol=0, atol=0)
+    two_taps = values[:, 1] != 0
+    assert torch.all(indices[two_taps, 0] < indices[two_taps, 1])
+    assert torch.all(indices[~two_taps, 1] == 0)

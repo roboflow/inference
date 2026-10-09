@@ -129,14 +129,15 @@ def _get_interpolation_weights(
         raise ValueError("Expected antialiased bilinear interpolation to use 2 taps")
     indices = torch.zeros((output_size, 2), dtype=torch.int32, device=device)
     values = torch.zeros((output_size, 2), dtype=torch.float32, device=device)
-    for output_index in range(output_size):
-        source_indices = nonzero[output_index].nonzero(as_tuple=True)[0]
-        indices[output_index, : source_indices.numel()] = source_indices.to(
-            dtype=torch.int32
-        )
-        values[output_index, : source_indices.numel()] = weights[
-            output_index, source_indices
-        ]
+    # nonzero returns coordinates in row-major order. With at most two taps,
+    # the second coordinate in a row is exactly its second interpolation tap.
+    # Pack all rows together to avoid a GPU synchronization and several tiny
+    # launches per output coordinate on the first request for a new grid.
+    output_indices, source_indices = nonzero.nonzero(as_tuple=True)
+    tap_indices = torch.zeros_like(output_indices)
+    tap_indices[1:] = (output_indices[1:] == output_indices[:-1]).long()
+    indices[output_indices, tap_indices] = source_indices.to(dtype=torch.int32)
+    values[output_indices, tap_indices] = weights[output_indices, source_indices]
 
     cached_value = (indices, values)
     with _INTERPOLATION_WEIGHT_CACHE_LOCK:
