@@ -5,8 +5,12 @@ import cv2
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_sv_detections,
+)
 from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY_IN_SV_DETECTIONS,
 )
@@ -220,6 +224,22 @@ def crop_image(
     background_color: Union[str, Tuple[int, int, int]],
     detection_id_key: str = DETECTION_ID_KEY,
 ) -> List[Dict[str, any]]:
+    """Crop each detection and express its prediction in the crop's frame.
+
+    Args:
+        image: Source image, including its parent and root lineage.
+        detections: Predictions defining the crop regions.
+        mask_opacity: Background-removal strength for instance masks.
+        background_color: RGB color to use for background removal.
+        detection_id_key: Metadata key identifying each detection and crop.
+
+    Returns:
+        One crop and crop-local prediction per detection, with updated image
+        dimensions and lineage. Empty regions have ``None`` outputs.
+
+    Raises:
+        ValueError: If the detection identifier metadata is missing.
+    """
     if len(detections) == 0:
         return []
     if detection_id_key not in detections.data:
@@ -284,10 +304,15 @@ def crop_image(
                 ORIENTED_BOX_COORDINATES
             ] - np.array([x_min, y_min])
 
+        # Geometry and lineage must describe the same crop-local frame.
+        # Keep unrelated per-detection metadata and the input prediction intact.
+        translated_detection = attach_parents_coordinates_to_sv_detections(
+            detections=translated_detection, image=result
+        )
+        translated_detection[IMAGE_DIMENSIONS_KEY] = np.array([cropped_image.shape[:2]])
         crops.append(
             {
                 "crops": result,
-                # preserve all masks, keypoints, and metadata if present
                 "predictions": translated_detection,
             }
         )

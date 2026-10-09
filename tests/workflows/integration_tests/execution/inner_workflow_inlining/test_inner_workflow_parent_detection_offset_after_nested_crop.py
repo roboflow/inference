@@ -232,10 +232,13 @@ def _assert_offset_detection_lists_equal(
     b_list: list,
 ) -> None:
     """``detection_offset`` issues new UUIDs; compare geometry and class metadata only."""
-    assert len(a_list) == len(b_list)
-    for det_a, det_b in zip(a_list, b_list):
+    # Each prediction fills its crop, so padding is clipped to the crop bounds.
+    expected_boxes = [[30, 30, 90, 90], [210, 20, 290, 100], [400, 10, 500, 110]]
+    assert len(a_list) == len(b_list) == len(expected_boxes)
+    for det_a, det_b, expected_box in zip(a_list, b_list, expected_boxes):
         assert isinstance(det_a, sv.Detections) and isinstance(det_b, sv.Detections)
         assert len(det_a) == len(det_b)
+        np.testing.assert_allclose(det_a.xyxy[0], expected_box, rtol=0, atol=1e-3)
         np.testing.assert_allclose(
             det_a.xyxy.astype(np.float32),
             det_b.xyxy.astype(np.float32),
@@ -334,13 +337,13 @@ def _native_class_name(det: NativeDetections, index: int) -> str:
 
 
 def _assert_crop_predictions_equal_native(crop_preds: list) -> None:
-    # Native parity of the numpy crop-only comparison: each crop yields one detection at
-    # the crop's local origin. Detections has no __getitem__, so detection_id reads from
-    # bboxes_metadata and class_name from image_metadata.
+    # JsonField outputs default to root-image coordinates. Each forwarded crop
+    # prediction therefore recovers its source box, rather than the crop origin.
+    # Native IDs and class names are stored in the metadata dictionaries.
     expected = [
-        ("mock-d0", "x", 0, 0.99, [0, 0, 60, 60]),
-        ("mock-d1", "y", 1, 0.95, [0, 0, 80, 80]),
-        ("mock-d2", "z", 2, 0.90, [0, 0, 100, 100]),
+        ("mock-d0", "x", 0, 0.99, [30, 30, 90, 90]),
+        ("mock-d1", "y", 1, 0.95, [210, 20, 290, 100]),
+        ("mock-d2", "z", 2, 0.90, [400, 10, 500, 110]),
     ]
     assert isinstance(crop_preds, list)
     assert len(crop_preds) == 3
@@ -364,16 +367,22 @@ def _assert_offset_detection_lists_equal_native(
 ) -> None:
     """Native parity of _assert_offset_detection_lists_equal.
 
-    ``detection_offset`` issues new UUIDs, so geometry and class metadata are compared
-    nested-vs-flat only. Native ``Detections`` has no value ``__eq__`` / ``.data`` —
-    xyxy is a torch tensor and class names resolve through ``image_metadata``.
+    ``detection_offset`` issues new UUIDs, so only geometry and class metadata are
+    compared. Root geometry is also checked against independently expected boxes.
+    Native ``Detections`` has no value ``__eq__`` / ``.data``; xyxy is a torch tensor
+    and class names resolve through ``image_metadata``.
     """
-    assert len(a_list) == len(b_list)
-    for det_a, det_b in zip(a_list, b_list):
+    # Each prediction fills its crop, so padding is clipped to the crop bounds.
+    expected_boxes = [[30, 30, 90, 90], [210, 20, 290, 100], [400, 10, 500, 110]]
+    assert len(a_list) == len(b_list) == len(expected_boxes)
+    for det_a, det_b, expected_box in zip(a_list, b_list, expected_boxes):
         assert isinstance(det_a, NativeDetections) and isinstance(
             det_b, NativeDetections
         )
         assert len(det_a) == len(det_b)
+        np.testing.assert_allclose(
+            det_a.xyxy[0].cpu().numpy(), expected_box, rtol=0, atol=1e-3
+        )
         np.testing.assert_allclose(
             det_a.xyxy.cpu().numpy().astype(np.float32),
             det_b.xyxy.cpu().numpy().astype(np.float32),

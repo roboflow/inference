@@ -21,8 +21,15 @@ from roboflow_workflows.core_steps.common.tensor_native import (
 )
 from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -249,6 +256,22 @@ def crop_image(
     background_color: Union[str, Tuple[int, int, int]],
     detection_id_key: str = DETECTION_ID_KEY,
 ) -> List[Dict[str, Any]]:
+    """Crop each detection and express its prediction in the crop's frame.
+
+    Args:
+        image: Source image, including its parent and root lineage.
+        predictions: Native detections or a keypoint/detection pair.
+        mask_opacity: Background-removal strength for instance masks.
+        background_color: RGB color to use for background removal.
+        detection_id_key: Metadata key identifying each detection and crop.
+
+    Returns:
+        One crop and crop-local prediction per detection, with updated image
+        dimensions and lineage. Empty regions have ``None`` outputs.
+
+    Raises:
+        ValueError: If the detection identifier metadata is missing.
+    """
     bbox_detections = _bbox_carrier(predictions)
     if bbox_detections is None or len(bbox_detections) == 0:
         return []
@@ -309,14 +332,56 @@ def crop_image(
             x_max=x_max,
             y_max=y_max,
         )
+        carriers = (
+            translated_prediction
+            if isinstance(translated_prediction, tuple)
+            else (translated_prediction,)
+        )
+        for carrier in carriers:
+            carrier.image_metadata = _image_metadata_for_crop(
+                carrier.image_metadata, crop=cropped
+            )
         crops.append(
             {
                 "crops": cropped,
-                # preserve all masks, keypoints, and metadata if present
                 "predictions": translated_prediction,
             }
         )
     return crops
+
+
+def _image_metadata_for_crop(
+    image_metadata: Optional[dict], *, crop: WorkflowImageData
+) -> dict:
+    """Refresh spatial metadata without materializing or altering crop pixels."""
+    height, width = crop._read_shape_without_materialization()
+    parent = crop.parent_metadata
+    root = crop.workflow_root_ancestor_metadata
+    metadata = dict(image_metadata or {})
+    metadata.update(
+        {
+            IMAGE_DIMENSIONS_KEY: [height, width],
+            PARENT_ID_KEY: parent.parent_id,
+            PARENT_COORDINATES_KEY: [
+                parent.origin_coordinates.left_top_x,
+                parent.origin_coordinates.left_top_y,
+            ],
+            PARENT_DIMENSIONS_KEY: [
+                parent.origin_coordinates.origin_height,
+                parent.origin_coordinates.origin_width,
+            ],
+            ROOT_PARENT_ID_KEY: root.parent_id,
+            ROOT_PARENT_COORDINATES_KEY: [
+                root.origin_coordinates.left_top_x,
+                root.origin_coordinates.left_top_y,
+            ],
+            ROOT_PARENT_DIMENSIONS_KEY: [
+                root.origin_coordinates.origin_height,
+                root.origin_coordinates.origin_width,
+            ],
+        }
+    )
+    return metadata
 
 
 def _crop_region(
