@@ -372,6 +372,8 @@ LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 COSMOS3_ENABLED = str2bool(os.getenv("COSMOS3_ENABLED", True))
 
+VJEPA2_1_ENABLED = str2bool(os.getenv("VJEPA2_1_ENABLED", True))
+
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
 QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
@@ -425,6 +427,15 @@ VIDEO_DOWNLOAD_TIMEOUT_SECONDS = float(
 # a clip is a model call, so this bounds the time one request can hold the
 # server, which the size cap alone does not. -1 removes the limit.
 MAX_VIDEO_DURATION_SECONDS = float(os.getenv("MAX_VIDEO_DURATION_SECONDS", "600"))
+ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS = float(
+    os.getenv("ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS", "600")
+)
+MAX_ACTION_RECOGNITION_CANDIDATES = int(
+    os.getenv("MAX_ACTION_RECOGNITION_CANDIDATES", "250000")
+)
+MAX_ACTION_RECOGNITION_RESPONSE_BYTES = int(
+    os.getenv("MAX_ACTION_RECOGNITION_RESPONSE_BYTES", str(64 * 1024 * 1024))
+)
 
 MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
     os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")

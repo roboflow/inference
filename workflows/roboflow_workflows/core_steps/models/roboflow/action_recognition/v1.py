@@ -62,6 +62,7 @@ from roboflow_workflows.prototypes.block import (
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.utils.action_recognition import merge_window_segments
 
+from inference_models.entities import Confidence
 from inference_models.models.base.action_recognition import WHOLE_VIDEO_MODE
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
@@ -118,6 +119,10 @@ The class vocabulary is optional. Leave it empty to report every class the
 model carries, or list classes to report a subset of them. When a model call
 fails, error_status carries the error text for that frame and the stream
 continues.
+
+If required samples are missing, the block skips that window and reports
+their source-frame indices in error_status. Later complete windows resume
+inference. Source frames intentionally skipped by sampling are not missing.
 """
 
 
@@ -126,8 +131,15 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
 
 
 @dataclass
+class _SampledFrame:
+    intended_frame_number: float
+    source_frame_number: Optional[int]
+    frame: Any
+
+
+@dataclass
 class _ActionRecognitionBookkeeping:
-    sampled: List[Tuple[int, Any]] = field(default_factory=list)
+    sampled: List[_SampledFrame] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
     dropped_history: bool = False
@@ -135,8 +147,8 @@ class _ActionRecognitionBookkeeping:
     last_fire_frame_number: Optional[int] = None
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
-    signature: Tuple[Tuple[str, ...], float, float] = field(
-        default_factory=lambda: ((), 0.0, 0.0)
+    signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence]] = field(
+        default_factory=lambda: ((), 0.0, 0.0, None)
     )
 
 
@@ -178,11 +190,20 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
+    confidence: Union[
+        Optional[Confidence], Selector(kind=[FLOAT_KIND, STRING_KIND])
+    ] = Field(
+        default=None,
+        description=(
+            'Candidate threshold before merging. "best" uses model-eval thresholds, '
+            '"default" or empty uses the model built-in, or pass a float.'
+        ),
+    )
     stride_seconds: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
         default=None,
         description=(
             "Time between classification calls. Leave empty to classify "
-            "consecutive windows without overlap. A smaller stride slides "
+            "windows with the model's recorded overlap. A smaller stride slides "
             "overlapping windows for finer range boundaries at the cost of "
             "more model calls."
         ),
@@ -191,6 +212,8 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_window_inputs(self) -> "BlockManifest":
+        if isinstance(self.confidence, (int, float)) and not 0 <= self.confidence <= 1:
+            raise ValueError("Confidence must be between zero and one")
         if isinstance(self.stride_seconds, (int, float)) and (
             self.stride_seconds <= 0 or not math.isfinite(self.stride_seconds)
         ):
@@ -358,7 +381,21 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         model_id: str,
         class_filter: Optional[List[str]] = None,
         stride_seconds: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
     ) -> BlockResult:
+        """Process video frames using detection's confidence modes.
+
+        Args:
+            images: Batch of frames carrying video metadata.
+            model_id: Action-recognition model identifier.
+            class_filter: Optional subset of model classes.
+            stride_seconds: Time between model calls.
+            confidence: Numeric override, "best" recommendations, or the
+                built-in default with "default" or None.
+
+        Returns:
+            A timeline and error status for each input frame.
+        """
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
@@ -386,6 +423,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                     id_vocabulary=id_vocabulary,
                     video_sampling=video_sampling,
                     stride_seconds=stride_seconds,
+                    confidence=confidence,
                 )
             )
         return results
@@ -398,11 +436,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         id_vocabulary: Optional[List[str]],
         video_sampling: VideoSampling,
         stride_seconds: Optional[float],
+        confidence: Optional[Confidence] = None,
     ) -> dict:
         metadata = image.video_metadata
         requested_window_seconds = float(video_sampling.window_seconds)
         requested_stride_seconds = (
             requested_window_seconds
+            - getattr(video_sampling, "overlap_frames", 0) / video_sampling.sample_fps
             if stride_seconds is None
             else float(stride_seconds)
         )
@@ -413,6 +453,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             tuple(block_filter or ()),
             requested_window_seconds,
             requested_stride_seconds,
+            confidence,
         )
         video_id = metadata.video_identifier
         frame_number = metadata.frame_number
@@ -459,31 +500,88 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         else:
             effective_sample_fps = min(float(video_sampling.sample_fps), source_fps)
         sampling_stride = source_fps / effective_sample_fps
+        allowed_lateness_seconds = video_sampling.max_sample_lateness_seconds
+        if not math.isfinite(allowed_lateness_seconds) or allowed_lateness_seconds < 0:
+            raise ValueError("Sample lateness must be nonnegative and finite.")
+        allowed_lateness_frames = source_fps * min(
+            allowed_lateness_seconds, 0.5 / effective_sample_fps
+        )
         window_frames = max(1, round(requested_window_seconds * source_fps))
         stride_frames = max(1, round(requested_stride_seconds * source_fps))
+        cutoff_frame_number = frame_number - window_frames
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
-        if frame_number >= bookkeeping.next_sample_frame_number:
-            frame = self._cap_frame_side(
-                frame=self._extract_frame(image=image),
-                max_side=effective_max_frame_side(video_sampling),
+        if (
+            video_sampling.requires_regular_sampling
+            and bookkeeping.next_sample_frame_number <= cutoff_frame_number
+        ):
+            expired_positions = (
+                math.floor(
+                    (cutoff_frame_number - bookkeeping.next_sample_frame_number)
+                    / sampling_stride
+                )
+                + 1
             )
-            # Frames can arrive with gaps. A timestamp stranded in a gap has
-            # no frame of its own, and copying this one under each would
-            # flood the buffer, so the cursor snaps past them first.
-            if bookkeeping.next_sample_frame_number < frame_number - 1:
-                bookkeeping.next_sample_frame_number = float(frame_number)
-            # Advance on the float grid; integer anchoring rounds every step
-            # up and drags the real sample rate below sample_fps. Several
-            # timestamps landing on one frame each take it, which is the
-            # repeat training fed a source slower than the recorded rate.
-            while bookkeeping.next_sample_frame_number <= frame_number:
-                bookkeeping.sampled.append((frame_number, frame))
-                bookkeeping.next_sample_frame_number += sampling_stride
+            bookkeeping.next_sample_frame_number += expired_positions * sampling_stride
+        if frame_number >= math.ceil(bookkeeping.next_sample_frame_number - 1e-9):
+            frame = self._extract_frame(image=image)
+            frame_transform = getattr(model, "frame_storage_transform", None)
+            if frame_transform is None:
+                frame = self._cap_frame_side(
+                    frame=frame,
+                    max_side=effective_max_frame_side(video_sampling),
+                )
+            else:
+                frame = frame_transform(frame)
+            if video_sampling.requires_regular_sampling:
+                # Empty slots preserve the model clock without inventing missing pixels.
+                frame_used = False
+                while (
+                    math.ceil(bookkeeping.next_sample_frame_number - 1e-9)
+                    <= frame_number
+                ):
+                    intended_frame = bookkeeping.next_sample_frame_number
+                    expected_frame = math.ceil(intended_frame - 1e-9)
+                    within_tolerance = (
+                        frame_number - expected_frame <= allowed_lateness_frames + 1e-9
+                    )
+                    bookkeeping.sampled.append(
+                        _SampledFrame(
+                            intended_frame_number=intended_frame,
+                            source_frame_number=(
+                                frame_number
+                                if within_tolerance and not frame_used
+                                else None
+                            ),
+                            frame=(
+                                frame if within_tolerance and not frame_used else None
+                            ),
+                        )
+                    )
+                    frame_used = frame_used or within_tolerance
+                    bookkeeping.next_sample_frame_number += sampling_stride
+            else:
+                if bookkeeping.next_sample_frame_number < frame_number - 1:
+                    bookkeeping.next_sample_frame_number = float(frame_number)
+                while bookkeeping.next_sample_frame_number <= frame_number:
+                    bookkeeping.sampled.append(
+                        _SampledFrame(
+                            intended_frame_number=float(frame_number),
+                            source_frame_number=frame_number,
+                            frame=frame,
+                        )
+                    )
+                    bookkeeping.next_sample_frame_number += sampling_stride
 
-        cutoff_frame_number = frame_number - window_frames
-        while bookkeeping.sampled and bookkeeping.sampled[0][0] <= cutoff_frame_number:
+        while (
+            bookkeeping.sampled
+            and bookkeeping.sampled[0].intended_frame_number <= cutoff_frame_number
+        ):
             bookkeeping.sampled.pop(0)
+        if video_sampling.max_frames is not None:
+            # Rounded source-frame windows can contain one extra sampling timestamp.
+            while len(bookkeeping.sampled) > video_sampling.max_frames:
+                bookkeeping.sampled.pop(0)
 
         error_status = ""
         if bookkeeping.last_fire_frame_number is None:
@@ -506,6 +604,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 id_vocabulary=id_vocabulary,
                 effective_sample_fps=effective_sample_fps,
                 sampling_stride=sampling_stride,
+                confidence=confidence,
+                frame_limit=frame_number + 1,
             )
 
         bookkeeping.last_frame_number = frame_number
@@ -543,17 +643,50 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         id_vocabulary: Optional[List[str]],
         effective_sample_fps: float,
         sampling_stride: float,
+        confidence: Optional[Confidence] = None,
+        frame_limit: Optional[int] = None,
     ) -> str:
         if not bookkeeping.sampled:
             return ""
+        missing = [
+            math.ceil(sample.intended_frame_number - 1e-9)
+            for sample in bookkeeping.sampled
+            if sample.frame is None
+        ]
+        if missing:
+            first_frame = math.floor(bookkeeping.sampled[0].intended_frame_number)
+            last_frame = (
+                frame_limit - 1
+                if frame_limit is not None
+                else math.ceil(bookkeeping.sampled[-1].intended_frame_number)
+            )
+            indices = ", ".join(str(number) for number in missing[:16])
+            remainder = f" and {len(missing) - 16} more" if len(missing) > 16 else ""
+            return (
+                f"Missing required samples at source-frame indices {indices}{remainder} "
+                f"for window {first_frame}-{last_frame}. Inference skipped this window."
+            )
         frames = self._prepare_frames_for_model(
-            [frame for _, frame in bookkeeping.sampled]
+            [sample.frame for sample in bookkeeping.sampled]
         )
         try:
+            infer_kwargs = (
+                {"confidence": confidence}
+                if model.supports_confidence and confidence not in (None, "default")
+                else {}
+            )
+            if model.supports_observed_duration and frame_limit is not None:
+                duration_seconds = (
+                    frame_limit - bookkeeping.sampled[0].intended_frame_number
+                ) / (sampling_stride * effective_sample_fps)
+                infer_kwargs["duration_seconds"] = min(
+                    duration_seconds, model.video_sampling.window_seconds
+                )
             segments = model.infer(
                 frames=frames,
                 class_names=block_filter,
                 fps=effective_sample_fps,
+                **infer_kwargs,
             )
         except Exception as error:
             logger.warning(
@@ -567,8 +700,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         logger.debug(
             "Action Recognition model call over sampled frames "
             "[%s, %s] returned %d pre-merge segment(s): %s",
-            bookkeeping.sampled[0][0],
-            bookkeeping.sampled[-1][0],
+            bookkeeping.sampled[0].source_frame_number,
+            bookkeeping.sampled[-1].source_frame_number,
             len(segments),
             [
                 (segment.start_frame_idx, segment.end_frame_idx, segment.class_name)
@@ -584,6 +717,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
             stride=max(1, math.ceil(sampling_stride)),
+            sample_stride=sampling_stride,
+            frame_limit=frame_limit,
         )
         return ""
 
@@ -634,14 +769,21 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         stride: float,
+        sample_stride: Optional[float] = None,
+        frame_limit: Optional[int] = None,
     ) -> None:
         merge_window_segments(
             timeline=bookkeeping.timeline,
-            frame_numbers=[frame_number for frame_number, _ in bookkeeping.sampled],
+            frame_numbers=[
+                sample.source_frame_number for sample in bookkeeping.sampled
+            ],
             segments=segments,
             id_vocabulary=id_vocabulary,
             stride=stride,
             class_filter=block_filter,
+            sample_stride=sample_stride,
+            frame_limit=frame_limit,
+            sample_start_frame=bookkeeping.sampled[0].intended_frame_number,
         )
         self._evict_oldest_actions(bookkeeping=bookkeeping)
         bookkeeping.timeline.sort(

@@ -92,6 +92,8 @@ nav:
           - SmolVLM: models/smolvlm.md
           - Moondream2: models/moondream2.md
           - Cosmos 3 Edge: models/cosmos3.md
+      - Action Recognition:
+          - V-JEPA 2.1: models/vjepa2-1-action-recognition.md
       - Embeddings:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md
