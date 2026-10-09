@@ -964,6 +964,10 @@ def _unsupported_triton_postprocess_reason(
     """Explain why the Triton path should not run, or ``None`` when supported."""
     if triton is None:
         return "triton_unavailable"
+    if masks_resolution_factor != 1.0:
+        # the fused kernel interpolates straight to the image; it cannot honour
+        # a reduced target, so defer rather than silently ignore the request
+        return "mask_resolution_factor_unsupported"
     if classes_re_mapping is None:
         return "class_remapping_required"
     if isinstance(threshold, torch.Tensor):

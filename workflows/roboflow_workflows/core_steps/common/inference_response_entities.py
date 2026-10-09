@@ -167,10 +167,10 @@ class InstanceSegmentationInferenceResponse(
     predictions: List[
         Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
     ]
-    image: InferenceResponseImage = Field(
+    image: Union[List[InferenceResponseImage], InferenceResponseImage] = Field(
         description="Dimensions of the coordinate frame shared by bounding boxes, "
         "polygon points and RLE masks. With opt-in this is the selected mask grid; "
-        "otherwise it is the original image.",
+        "otherwise it is the original image. Multi-image responses may provide a list.",
     )
     original_image: Optional[InferenceResponseImage] = Field(
         default=None,
