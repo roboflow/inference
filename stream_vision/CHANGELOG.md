@@ -4,6 +4,10 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Added
+
+- `VideoFrame.total_frames` carries the source video file's frame count (`None` for streams, unknown counts, realtime WebRTC uploads, and after a source restart or initial seek). `InferencePipeline` workflow runs and WebRTC video-file uploads pass it into workflow `VideoMetadata.total_frames`.
+
 ### Fixed
 
 - WebRTC sessions await peer/transport cleanup on cancellation and setup failures, finish in-flight inference, and join workflow thread pools before returning. Normal connection closure is no longer logged as fatal.

@@ -23,6 +23,24 @@
 
 ### Changed
 
+- Direct instance-segmentation model results now return `xyxy` boxes in the same
+  `mask_size` coordinate grid as dense or RLE masks for YOLOv5, YOLOv7, YOLOv8,
+  YOLO26, YOLACT, and RF-DETR. Previously, reduced masks and image-space boxes
+  used different coordinate systems until the HTTP adapter scaled the boxes.
+  Boxes now map directly from network coordinates onto the resized mask grid
+  inside `inference_models`, without an intermediate image-space conversion.
+  Static crops use the same rounded canvas offsets for boxes and masks.
+  Boxes retain float32 fractional coordinates when the grids differ, avoiding
+  intermediate image-space rounding and float16 overflow on large images.
+  Factor `1.0` retains its existing final integer rounding and image-space behavior.
+  The HTTP adapter no longer repeats the scaling, preserving the existing
+  opted-in and default HTTP coordinate contracts.
+  **Direct-call compatibility:** callers reading `.xyxy` from reduced results
+  must now interpret those boxes in `mask_size` coordinates. Use
+  `InstanceDetections.to_supervision()` to restore both boxes and masks to
+  original-image coordinates. Manually constructed detections should supply
+  mask-grid boxes and retain `image_size`. Reduced-box values can differ from
+  earlier responses because intermediate image-space rounding is removed.
 - Server requests using `inference_models` require
   `allow_reduced_mask_resolution=true` to apply `mask_decode_mode` and
   `tradeoff_factor`. Without this opt-in, masks retain image resolution.
@@ -40,17 +58,18 @@
   Direct `inference_models` callers use `masks_resolution_factor` without the HTTP
   opt-in. Reduced-grid workflow support is deferred to a separate PR.
 - RLE export and `InstanceDetections` iteration declare the encoded mask grid in
-  COCO `size`. `InstanceDetections.to_supervision()` resizes masks to image
-  resolution for annotation; manually constructed reduced dense detections must
-  supply `image_size` because it cannot be inferred from the reduced tensor.
+  COCO `size`. Manually constructed reduced dense detections must supply
+  `image_size` for image-space conversion because it cannot be inferred from the
+  reduced tensor.
 - The RF-DETR fused Triton RLE post-processor now honors `masks_resolution_factor`
   for native and upsampled mask grids, including multiclass and deferred streaming
-  results. Boxes retain image coordinates, while RLE and empty results carry the
-  selected mask-grid dimensions. Antialiased downsampling and previously unsupported
-  transforms use the reference post-processor. Multiclass results respect RF-DETR's
-  query-count cap even when `max_detections` is larger. Multiclass and deferred
-  selection use global top-k before remapping, without a four-class-per-query
-  cutoff, and encode each selected query mask once.
+  results. Boxes and masks share the selected grid, with float32 fractional boxes
+  when that grid differs from the image and final integer rounding otherwise.
+  Empty and deferred results preserve the same grid and box dtype. Antialiased
+  downsampling and previously unsupported transforms use the reference path.
+  Multiclass results respect RF-DETR's query-count cap even when `max_detections`
+  is larger. Multiclass and deferred selection use global top-k before remapping,
+  without a four-class-per-query cutoff, and encode each selected query mask once.
 - The `inference_models` adapter now rejects unknown `mask_decode_mode` values
   with `InvalidMaskDecodeArgument`; it previously ignored the mode. The legacy
   backend already rejected invalid modes. Validation also runs without opt-in.
@@ -64,6 +83,11 @@
   `images_metadata[i]["anomaly_map"]` at the input image size.
 
 ### Fixed
+
+- Empty RLE instance-segmentation results retain the selected mask grid for
+  YOLOv5, YOLOv7, YOLOv8, YOLO26, YOLACT, and RF-DETR, including padding and
+  static crops. Output dimensions and HTTP coordinate metadata no longer
+  fall back to the original image size when no detections survive.
 
 - Origin-anchored static-crop masks now use a canvas representing the original
   image, matching crops with non-zero offsets. Dense and RLE results retain the

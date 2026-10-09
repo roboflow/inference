@@ -905,6 +905,7 @@ def test_triton_mask_grid_matches_reference_on_cuda(factor, image_size, mode) ->
     assert actual.image_size == actual.mask_frame_size == image_size
     assert actual.mask.image_size == image_size
     assert actual.mask_size == actual.mask.mask_size == target
+    assert actual.xyxy.dtype == (torch.int32 if target == image_size else torch.float32)
     if mode not in ("empty", "deferred_empty"):
         _assert_detections_equal(actual, expected)
     else:
@@ -1136,3 +1137,82 @@ def test_triton_2xlarge_strided_queries_match_reference(factor, deferred):
         actual = get_deferred_postprocess_finalizer(actual)()
     assert len(actual) == 3
     _assert_detections_equal(actual, expected)
+
+
+@pytest.mark.parametrize("shared_queries", [False, True])
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("grid", [(5, 7), (65, 97)])
+def test_sparse_boxes_round_only_on_the_image_grid(shared_queries, empty, grid):
+    metadata = np.zeros((1, triton_postprocess._HEADER_SIZE), dtype=np.float32)
+    metadata[0, :7] = [not empty, 0, 0.9, 1.25, 2.75, 5.5, 6.25]
+    records = np.zeros((1, 3), dtype=np.int32)
+    kwargs = dict(max_total_runs=0, height=grid[0], width=grid[1], image_size=(65, 97))
+    if shared_queries:
+        actual = triton_postprocess._instance_detections_from_sparse_query_records(
+            class_metadata_host=metadata, records_host=records, **kwargs
+        )
+    else:
+        actual = triton_postprocess._instance_detections_from_sparse_records(
+            metadata_host=metadata, records=torch.from_numpy(records), **kwargs
+        )
+    assert actual is not None
+    expected = torch.tensor([[1.25, 2.75, 5.5, 6.25]])[: 0 if empty else 1]
+    if grid == (65, 97):
+        expected = expected.round().int()
+    torch.testing.assert_close(actual.xyxy, expected, rtol=0, atol=0)
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or triton_postprocess.triton is None,
+    reason="CUDA and Triton are required",
+)
+@pytest.mark.parametrize("factor", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("mode", ["single", "multiclass", "deferred", "empty"])
+@pytest.mark.parametrize("image_size", [(63, 95), (8, 8)])
+def test_triton_fractional_boxes_match_final_grid_reference(
+    factor, dtype, mode, image_size
+):
+    from inference_models.models.base.async_handoff import (
+        get_deferred_postprocess_finalizer,
+    )
+
+    device = torch.device("cuda")
+    bboxes, logits, masks = _single_detection_inputs(device)
+    bboxes[0] = torch.tensor([0.501, 0.493, 0.503, 0.489], device=device)
+    bboxes = bboxes.to(dtype=dtype)
+    metadata = _metadata(height=image_size[0], width=image_size[1])
+    metadata.inference_size = ImageDimensions(height=624, width=624)
+    metadata.nonsquare_intermediate_size = ImageDimensions(height=480, width=624)
+    metadata.scale_width = 624 / image_size[1]
+    metadata.scale_height = 480 / image_size[0]
+    if mode in ("multiclass", "deferred"):
+        logits[0, 1] = 3.0
+    elif mode == "empty":
+        logits.fill_(-4.0)
+    kwargs = dict(
+        image_bboxes=bboxes,
+        image_masks=masks,
+        image_meta=metadata,
+        threshold=0.4,
+        classes_re_mapping=_class_mapping(device),
+        masks_resolution_factor=factor,
+    )
+    scores = logits.sigmoid()
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks(
+        image_logits=scores, num_classes=2, **kwargs
+    )
+    actual = post_process_single_instance_segmentation_result_to_rle_masks_triton(
+        image_scores=scores, defer_postprocess_sync=mode == "deferred", **kwargs
+    )
+    assert actual is not None
+    if mode == "deferred":
+        assert actual.xyxy.dtype == expected.xyxy.dtype
+        actual = get_deferred_postprocess_finalizer(actual)()
+    assert actual.mask_size == expected.mask_size
+    torch.testing.assert_close(actual.xyxy.cpu(), expected.xyxy.cpu(), rtol=0, atol=0)
+    _assert_detections_equal(actual, expected)
+    restored = actual.to_supervision()
+    reference_restored = expected.to_supervision()
+    np.testing.assert_array_equal(restored.xyxy, reference_restored.xyxy)
+    np.testing.assert_array_equal(restored.mask, reference_restored.mask)

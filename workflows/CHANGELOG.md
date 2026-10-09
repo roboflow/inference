@@ -16,6 +16,14 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- `VideoMetadata` carries an optional `total_frames`: the frame count of the
+  source video file, or `None` for live streams, files that don't report it,
+  realtime WebRTC uploads, and after a source restart or initial seek.
+  Blocks can compute playback progress as `frame_number / total_frames` (e.g. a
+  timeline overlay). Image inputs may include it under `video_metadata`.
+
 ### Changed
 
 - Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
@@ -57,6 +65,7 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- SAM3 v1/v2/v3 remote SDK execution, with NumPy or tensor predictions, now honors `WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS` across the input batch while sending one image per HTTP request. Each concurrency-sized group is converted before dispatching the next, bounding response buffering and stopping later groups after an HTTP failure. Results retain input order, formats and class mapping; empty batches issue no requests. Local execution and the inference-proxy transport are unchanged.
 - Tracker blocks log the missing-FPS fallback only when creating a tracker for a video, including tensor variants.
 
 ## `0.2.4-post1`

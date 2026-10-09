@@ -41,6 +41,7 @@ from inference_models.models.base.instance_segmentation import InstanceDetection
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
+    finalize_instance_segmentation_boxes,
     resolve_mask_target_size,
 )
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
@@ -235,8 +236,8 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     are supported. Returns ``None`` when the caller should use the reference
     PyTorch/RLE implementation instead.
 
-    Masks use the grid selected by ``masks_resolution_factor``; boxes and
-    image metadata remain in original-image coordinates. Unsupported transforms
+    Boxes and masks use the grid selected by ``masks_resolution_factor``;
+    image metadata retains original-image dimensions. Unsupported transforms
     and antialiased downsampling use the reference path.
 
     The fast path first emits one candidate per query. If any query has more
@@ -303,6 +304,13 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         size_after_pre_processing=image_meta.size_after_pre_processing,
         masks_resolution_factor=masks_resolution_factor,
     )
+    denorm_size = image_meta.nonsquare_intermediate_size or image_meta.inference_size
+    box_scale_width, box_scale_height = image_meta.scale_width, image_meta.scale_height
+    reduced_grid = (output_height, output_width) != image_size
+    if reduced_grid:
+        box_scale_width *= image_width / output_width
+        box_scale_height *= image_height / output_height
+
     confidence_threshold = float(threshold)
 
     # Precompute resize tables outside the hot kernel. The tables are tiny
@@ -328,6 +336,12 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
             class_mapping=class_mapping,
             confidence_threshold=confidence_threshold,
             image_size=image_size,
+            box_transform=(
+                denorm_size.width,
+                denorm_size.height,
+                box_scale_width,
+                box_scale_height,
+            ),
             output_height=output_height,
             output_width=output_width,
             y_idx=y_idx,
@@ -367,11 +381,17 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         num_queries,
         num_classes,
         class_mapping.shape[0],
-        image_height,
-        image_width,
+        output_height,
+        output_width,
+        denorm_size.width,
+        denorm_size.height,
+        box_scale_width,
+        box_scale_height,
+        reduced_grid,
         BLOCK_CLASSES=triton.next_power_of_2(num_classes),
         METADATA_STRIDE=_HEADER_SIZE,
         FLAG_MULTICLASS=True,
+        enable_fp_fusion=False,
     )
     _positive_source_bounds_kernel[
         (
@@ -445,6 +465,12 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         class_mapping=class_mapping,
         confidence_threshold=confidence_threshold,
         image_size=image_size,
+        box_transform=(
+            denorm_size.width,
+            denorm_size.height,
+            box_scale_width,
+            box_scale_height,
+        ),
         output_height=output_height,
         output_width=output_width,
         y_idx=y_idx,
@@ -465,6 +491,7 @@ def _post_process_ranked_query_masks(
     class_mapping: torch.Tensor,
     confidence_threshold: float,
     image_size: Tuple[int, int],
+    box_transform: Tuple[int, int, float, float],
     output_height: int,
     output_width: int,
     y_idx: torch.Tensor,
@@ -477,7 +504,6 @@ def _post_process_ranked_query_masks(
     """Select global top-k classes, but interpolate each selected query only once."""
     num_queries, num_classes = image_scores.shape
     mask_height, mask_width = image_masks.shape[-2:]
-    image_height, image_width = image_size
     # Match the reference's global selection before remapping/filtering. A
     # per-query class cap drops valid detections at low confidence thresholds.
     top_scores, top_indices = torch.topk(image_scores.flatten(), num_queries)
@@ -506,10 +532,13 @@ def _post_process_ranked_query_masks(
         num_queries,
         num_classes,
         class_mapping.shape[0],
-        image_height,
-        image_width,
+        output_height,
+        output_width,
+        *box_transform,
+        (output_height, output_width) != image_size,
         BLOCK_QUERIES=triton.next_power_of_2(num_queries),
         METADATA_STRIDE=_HEADER_SIZE,
+        enable_fp_fusion=False,
     )
     _positive_source_bounds_kernel[
         (
@@ -620,7 +649,9 @@ def _instance_detections_from_sparse_records(
     active_ranks = np.flatnonzero(metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return InstanceDetections(
-            xyxy=torch.empty((0, 4), dtype=torch.int32),
+            xyxy=finalize_instance_segmentation_boxes(
+                torch.empty((0, 4)), mask_size=(height, width), image_size=image_size
+            ),
             confidence=torch.empty((0,), dtype=torch.float32),
             class_id=torch.empty((0,), dtype=torch.int32),
             mask=InstancesRLEMasks.from_coco_rle_masks(
@@ -650,7 +681,11 @@ def _instance_detections_from_sparse_records(
     if max_detections is not None:
         active_ranks = active_ranks[:max_detections]
     records_host = records_host[1 : total_runs + 1] if total_runs else None
-    boxes = torch.from_numpy(metadata_host[active_ranks, 3:7].copy()).round().int()
+    boxes = finalize_instance_segmentation_boxes(
+        torch.from_numpy(metadata_host[active_ranks, 3:7].copy()),
+        mask_size=(height, width),
+        image_size=image_size,
+    )
     confidence = torch.from_numpy(metadata_host[active_ranks, 2].copy())
     class_id = torch.from_numpy(metadata_host[active_ranks, 1].copy()).int()
 
@@ -720,7 +755,9 @@ def _instance_detections_from_sparse_query_records(
     active_ranks = np.flatnonzero(class_metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return InstanceDetections(
-            xyxy=torch.empty((0, 4), dtype=torch.int32),
+            xyxy=finalize_instance_segmentation_boxes(
+                torch.empty((0, 4)), mask_size=(height, width), image_size=image_size
+            ),
             confidence=torch.empty((0,), dtype=torch.float32),
             class_id=torch.empty((0,), dtype=torch.int32),
             mask=InstancesRLEMasks.from_coco_rle_masks(
@@ -761,8 +798,10 @@ def _instance_detections_from_sparse_query_records(
     else:
         records_host = None
         record_queries = None
-    boxes = (
-        torch.from_numpy(class_metadata_host[active_ranks, 3:7].copy()).round().int()
+    boxes = finalize_instance_segmentation_boxes(
+        torch.from_numpy(class_metadata_host[active_ranks, 3:7].copy()),
+        mask_size=(height, width),
+        image_size=image_size,
     )
     confidence = torch.from_numpy(class_metadata_host[active_ranks, 2].copy())
     class_id = torch.from_numpy(class_metadata_host[active_ranks, 1].copy()).int()
@@ -889,7 +928,9 @@ def _deferred_instance_detections_from_sparse_query_records(
             _release_pinned_host_buffer(records_host)
 
     detections = InstanceDetections(
-        xyxy=torch.empty((0, 4), dtype=torch.int32),
+        xyxy=finalize_instance_segmentation_boxes(
+            torch.empty((0, 4)), mask_size=(height, width), image_size=image_size
+        ),
         confidence=torch.empty((0,), dtype=torch.float32),
         class_id=torch.empty((0,), dtype=torch.int32),
         mask=InstancesRLEMasks.from_coco_rle_masks(
@@ -1132,6 +1173,31 @@ def _attach_uncompressed_counts(
 if triton is not None:
 
     @triton.jit
+    def _box_coordinate_on_mask_grid(
+        center,
+        extent,
+        network_size: tl.constexpr,
+        scale: tl.constexpr,
+        output_size: tl.constexpr,
+        lower: tl.constexpr,
+        reduced_grid: tl.constexpr,
+    ):
+        """Mirror reference arithmetic and dtype boundaries before final rounding."""
+        half_extent = (0.5 * extent).to(center.dtype)
+        if lower:
+            coordinate = (center - half_extent).to(center.dtype)
+        else:
+            coordinate = (center + half_extent).to(center.dtype)
+        coordinate = (coordinate * network_size).to(center.dtype)
+        if reduced_grid:
+            divisor = tl.full((), scale, tl.float32)
+            coordinate = tl.div_rn(coordinate.to(tl.float32), divisor)
+        else:
+            divisor = tl.full((), scale, center.dtype).to(tl.float32)
+            coordinate = tl.div_rn(coordinate.to(tl.float32), divisor).to(center.dtype)
+        return tl.minimum(tl.maximum(coordinate, 0.0), output_size).to(tl.float32)
+
+    @triton.jit
     def _select_best_query_metadata_kernel(
         scores,
         bboxes,
@@ -1144,6 +1210,11 @@ if triton is not None:
         class_mapping_size: tl.constexpr,
         output_height: tl.constexpr,
         output_width: tl.constexpr,
+        network_width: tl.constexpr,
+        network_height: tl.constexpr,
+        box_scale_width: tl.constexpr,
+        box_scale_height: tl.constexpr,
+        reduced_grid: tl.constexpr,
         BLOCK_CLASSES: tl.constexpr,
         METADATA_STRIDE: tl.constexpr,
         FLAG_MULTICLASS: tl.constexpr,
@@ -1178,10 +1249,13 @@ if triton is not None:
             num_classes: Number of model class columns in ``scores``.
             class_mapping_size: Number of entries available in
                 ``class_mapping``.
-            output_height: Original image height used to convert normalized box
-                coordinates to pixel coordinates.
-            output_width: Original image width used to convert normalized box
-                coordinates to pixel coordinates.
+            output_height: Final mask-grid height used to clip boxes.
+            output_width: Final mask-grid width used to clip boxes.
+            network_width: Network width for normalized box conversion.
+            network_height: Network height for normalized box conversion.
+            box_scale_width: Network-to-mask horizontal divisor.
+            box_scale_height: Network-to-mask vertical divisor.
+            reduced_grid: Preserve float32 precision when grids differ.
             BLOCK_CLASSES: Power-of-two tile width covering ``num_classes``.
             METADATA_STRIDE: Number of float32 fields per metadata row.
             FLAG_MULTICLASS: When true, writes ``metadata[rank, 7] = 1`` if more
@@ -1273,21 +1347,29 @@ if triton is not None:
             mask=is_valid_detection,
             other=0.0,
         )
-        x1 = tl.maximum(
-            0.0,
-            tl.minimum((cx - 0.5 * width) * output_width, output_width),
+        x1 = _box_coordinate_on_mask_grid(
+            cx, width, network_width, box_scale_width, output_width, True, reduced_grid
         )
-        y1 = tl.maximum(
-            0.0,
-            tl.minimum((cy - 0.5 * height) * output_height, output_height),
+        y1 = _box_coordinate_on_mask_grid(
+            cy,
+            height,
+            network_height,
+            box_scale_height,
+            output_height,
+            True,
+            reduced_grid,
         )
-        x2 = tl.maximum(
-            0.0,
-            tl.minimum((cx + 0.5 * width) * output_width, output_width),
+        x2 = _box_coordinate_on_mask_grid(
+            cx, width, network_width, box_scale_width, output_width, False, reduced_grid
         )
-        y2 = tl.maximum(
-            0.0,
-            tl.minimum((cy + 0.5 * height) * output_height, output_height),
+        y2 = _box_coordinate_on_mask_grid(
+            cy,
+            height,
+            network_height,
+            box_scale_height,
+            output_height,
+            False,
+            reduced_grid,
         )
         tl.store(metadata + meta_base + 3, x1)
         tl.store(metadata + meta_base + 4, y1)
@@ -1309,6 +1391,11 @@ if triton is not None:
         class_mapping_size: tl.constexpr,
         image_height: tl.constexpr,
         image_width: tl.constexpr,
+        network_width: tl.constexpr,
+        network_height: tl.constexpr,
+        box_scale_width: tl.constexpr,
+        box_scale_height: tl.constexpr,
+        reduced_grid: tl.constexpr,
         BLOCK_QUERIES: tl.constexpr,
         METADATA_STRIDE: tl.constexpr,
     ):
@@ -1346,22 +1433,50 @@ if triton is not None:
         height = tl.load(bboxes + query_index * 4 + 3)
         tl.store(
             metadata + rank * METADATA_STRIDE + 3,
-            tl.minimum(tl.maximum((cx - 0.5 * width) * image_width, 0.0), image_width),
+            _box_coordinate_on_mask_grid(
+                cx,
+                width,
+                network_width,
+                box_scale_width,
+                image_width,
+                True,
+                reduced_grid,
+            ),
         )
         tl.store(
             metadata + rank * METADATA_STRIDE + 4,
-            tl.minimum(
-                tl.maximum((cy - 0.5 * height) * image_height, 0.0), image_height
+            _box_coordinate_on_mask_grid(
+                cy,
+                height,
+                network_height,
+                box_scale_height,
+                image_height,
+                True,
+                reduced_grid,
             ),
         )
         tl.store(
             metadata + rank * METADATA_STRIDE + 5,
-            tl.minimum(tl.maximum((cx + 0.5 * width) * image_width, 0.0), image_width),
+            _box_coordinate_on_mask_grid(
+                cx,
+                width,
+                network_width,
+                box_scale_width,
+                image_width,
+                False,
+                reduced_grid,
+            ),
         )
         tl.store(
             metadata + rank * METADATA_STRIDE + 6,
-            tl.minimum(
-                tl.maximum((cy + 0.5 * height) * image_height, 0.0), image_height
+            _box_coordinate_on_mask_grid(
+                cy,
+                height,
+                network_height,
+                box_scale_height,
+                image_height,
+                False,
+                reduced_grid,
             ),
         )
 
