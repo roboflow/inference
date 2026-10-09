@@ -53,14 +53,11 @@ jobs:
       - name: 🛎️ Checkout
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         uses: actions/checkout@v6
-      - name: 📦 Cache Python packages
+      # Restoring the full uv cache alongside model assets can exhaust runner disk.
+      # Download dependencies per job and retain only the model-asset cache.
+      - name: Check disk space before restoring model assets
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-${{ matrix.python-version }}-
+        run: df -h .
       - name: 📦 Cache test assets
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         uses: actions/cache@v5
@@ -70,6 +67,13 @@ jobs:
           key: inference-models-test-assets-${{ matrix.extras.marker }}-${{ hashFiles('inference_models/tests/integration_tests/conftest.py', 'inference_models/tests/integration_tests/models/conftest.py') }}
           restore-keys: |
             inference-models-test-assets-${{ matrix.extras.marker }}-
+      - name: Check disk space after restoring model assets
+        if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
+        run: |
+          df -h .
+          if [ -d inference_models/tests/integration_tests/models/assets ]; then
+            du -sh inference_models/tests/integration_tests/models/assets
+          fi
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         uses: actions/setup-python@v6
@@ -85,7 +89,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
-          python -m uv pip install -e .[test,${{ matrix.extras.install }}] --python .venv
+          python -m uv pip install --no-cache -e ".[test,${{ matrix.extras.install }}]" --python .venv
+          df -h .
       - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         working-directory: inference_models
