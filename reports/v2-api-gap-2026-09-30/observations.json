@@ -1,0 +1,1545 @@
+{
+  "scope": "Offline app and contract probes; fake model execution and auth",
+  "source_module": "/Users/damiankosowski/Projects/codex/worktrees/579f/inference/inference_server/inference_server/app.py",
+  "versions": {
+    "fastapi": "0.115.14",
+    "httpx": "0.28.1",
+    "numpy": "2.2.6",
+    "scipy": "1.14.1",
+    "python-multipart": "0.0.32"
+  },
+  "registered_v2_routes": [
+    {
+      "path": "/v2/models/infer",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/v2/models/interface",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/v2/models/compatibility",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/v2/models",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/v2/models/load",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/v2/models/unload",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/v2/models",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "path": "/v2/server/health",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/v2/server/ready",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/v2/server/info",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/v2/server/metrics",
+      "methods": [
+        "GET"
+      ]
+    }
+  ],
+  "registered_handlers": [
+    [
+      "classification",
+      "infer"
+    ],
+    [
+      "depth-estimation",
+      "infer"
+    ],
+    [
+      "embedding",
+      "compare"
+    ],
+    [
+      "embedding",
+      "embed_images"
+    ],
+    [
+      "embedding",
+      "embed_text"
+    ],
+    [
+      "gaze-detection",
+      "infer"
+    ],
+    [
+      "instance-segmentation",
+      "infer"
+    ],
+    [
+      "interactive-instance-segmentation",
+      "embed"
+    ],
+    [
+      "interactive-instance-segmentation",
+      "embed_images"
+    ],
+    [
+      "interactive-instance-segmentation",
+      "segment"
+    ],
+    [
+      "interactive-instance-segmentation",
+      "segment_with_text_prompts"
+    ],
+    [
+      "interactive-instance-segmentation",
+      "segment_with_visual_prompts"
+    ],
+    [
+      "keypoint-detection",
+      "infer"
+    ],
+    [
+      "multi-label-classification",
+      "infer"
+    ],
+    [
+      "object-detection",
+      "infer"
+    ],
+    [
+      "open-vocabulary-object-detection",
+      "infer"
+    ],
+    [
+      "open-vocabulary-object-detection",
+      "infer_with_reference_examples"
+    ],
+    [
+      "passthrough",
+      "infer"
+    ],
+    [
+      "semantic-segmentation",
+      "infer"
+    ],
+    [
+      "structured-ocr",
+      "infer"
+    ],
+    [
+      "text-only-ocr",
+      "infer"
+    ],
+    [
+      "vlm",
+      "caption"
+    ],
+    [
+      "vlm",
+      "caption_image"
+    ],
+    [
+      "vlm",
+      "caption_image_region"
+    ],
+    [
+      "vlm",
+      "caption_region"
+    ],
+    [
+      "vlm",
+      "classify_region"
+    ],
+    [
+      "vlm",
+      "detect"
+    ],
+    [
+      "vlm",
+      "detect_objects"
+    ],
+    [
+      "vlm",
+      "encode"
+    ],
+    [
+      "vlm",
+      "encode_images"
+    ],
+    [
+      "vlm",
+      "ground_phrase"
+    ],
+    [
+      "vlm",
+      "ocr"
+    ],
+    [
+      "vlm",
+      "ocr_image"
+    ],
+    [
+      "vlm",
+      "ocr_region"
+    ],
+    [
+      "vlm",
+      "parse_document"
+    ],
+    [
+      "vlm",
+      "point"
+    ],
+    [
+      "vlm",
+      "prompt"
+    ],
+    [
+      "vlm",
+      "query"
+    ],
+    [
+      "vlm",
+      "recognize_formula"
+    ],
+    [
+      "vlm",
+      "recognize_table"
+    ],
+    [
+      "vlm",
+      "recognize_text"
+    ],
+    [
+      "vlm",
+      "segment_phrase"
+    ]
+  ],
+  "observations": [
+    {
+      "case": "route POST /v2/models/run",
+      "method": "POST",
+      "url": "/v2/models/run?model_id=audit/1",
+      "status": 405,
+      "content_type": "application/json",
+      "body": {
+        "detail": "Method Not Allowed"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/models/interface",
+      "method": "GET",
+      "url": "/v2/models/interface?model_id=audit/1",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_id": "audit/1",
+        "actions": {}
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/models/compatibility",
+      "method": "GET",
+      "url": "/v2/models/compatibility",
+      "status": 501,
+      "content_type": "application/json",
+      "body": {
+        "error_code": "NOT_IMPLEMENTED",
+        "description": "endpoint not yet implemented"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/models/loaded",
+      "method": "GET",
+      "url": "/v2/models/loaded",
+      "status": 404,
+      "content_type": "text/html; charset=utf-8",
+      "body": {
+        "text_preview": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/2epfngs7kyb-z.css\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks",
+        "total_characters": 8912
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route POST /v2/models/load",
+      "method": "POST",
+      "url": "/v2/models/load?model_id=audit/1",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_id": "audit/1",
+        "status": "loaded"
+      },
+      "inference_calls": 0,
+      "load_model_id": "audit/1"
+    },
+    {
+      "case": "route DELETE /v2/models/unload",
+      "method": "DELETE",
+      "url": "/v2/models/unload?model_id=audit/1",
+      "status": 405,
+      "content_type": "application/json",
+      "body": {
+        "detail": "Method Not Allowed"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route POST /v2/workflows/run",
+      "method": "POST",
+      "url": "/v2/workflows/run",
+      "status": 405,
+      "content_type": "application/json",
+      "body": {
+        "detail": "Method Not Allowed"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route POST /v2/workflows/interface",
+      "method": "POST",
+      "url": "/v2/workflows/interface",
+      "status": 405,
+      "content_type": "application/json",
+      "body": {
+        "detail": "Method Not Allowed"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route POST /v2/workflows/validate",
+      "method": "POST",
+      "url": "/v2/workflows/validate",
+      "status": 405,
+      "content_type": "application/json",
+      "body": {
+        "detail": "Method Not Allowed"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/workflows/system/blocks",
+      "method": "GET",
+      "url": "/v2/workflows/system/blocks",
+      "status": 404,
+      "content_type": "text/html; charset=utf-8",
+      "body": {
+        "text_preview": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/2epfngs7kyb-z.css\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks",
+        "total_characters": 8912
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/workflows/system/definition-schema",
+      "method": "GET",
+      "url": "/v2/workflows/system/definition-schema",
+      "status": 404,
+      "content_type": "text/html; charset=utf-8",
+      "body": {
+        "text_preview": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/2epfngs7kyb-z.css\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks",
+        "total_characters": 8912
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/workflows/system/engine-versions",
+      "method": "GET",
+      "url": "/v2/workflows/system/engine-versions",
+      "status": 404,
+      "content_type": "text/html; charset=utf-8",
+      "body": {
+        "text_preview": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/2epfngs7kyb-z.css\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks",
+        "total_characters": 8912
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/server/health",
+      "method": "GET",
+      "url": "/v2/server/health",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "status": "ok"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/server/ready",
+      "method": "GET",
+      "url": "/v2/server/ready",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "ready": true
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/server/info",
+      "method": "GET",
+      "url": "/v2/server/info",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "server": "inference-server",
+        "models_loaded": 0,
+        "models": {}
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/server/metrics",
+      "method": "GET",
+      "url": "/v2/server/metrics",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "models": {}
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route GET /v2/models",
+      "method": "GET",
+      "url": "/v2/models",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "models": {}
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route POST /v2/models/unload",
+      "method": "POST",
+      "url": "/v2/models/unload?model_id=audit/1",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_id": "audit/1",
+        "status": "unloaded"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "route DELETE /v2/models",
+      "method": "DELETE",
+      "url": "/v2/models",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "status": "all_unloaded",
+        "count": 0
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "default style and envelope",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "object-detection"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-object-detection-compact-v1",
+            "class_names": [
+              "cat"
+            ],
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "explicit rich detection",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=rich",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "object-detection"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-object-detection-rich-v1",
+            "detections": [
+              {
+                "left_top": [
+                  1,
+                  2
+                ],
+                "right_bottom": [
+                  3,
+                  4
+                ],
+                "confidence": 0.9,
+                "class_id": 0,
+                "class_name": "cat"
+              }
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "query URL image",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&image=https://example.com/a.jpg&confidence=0.5",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "object-detection"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-object-detection-compact-v1",
+            "class_names": [
+              "cat"
+            ],
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {
+        "confidence": 0.5
+      },
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "JSON base64 image",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "object-detection"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-object-detection-compact-v1",
+            "class_names": [
+              "cat"
+            ],
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "JSON URL image from proposal",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1",
+      "status": 400,
+      "content_type": "application/json",
+      "body": {
+        "error_code": "INVALID_IMAGE",
+        "description": "inputs.image[0] must be {\"type\": \"base64\", \"value\": \"...\"}"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "multipart repeated image",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "object-detection"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-object-detection-compact-v1",
+            "class_names": [
+              "cat"
+            ],
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ]
+          },
+          {
+            "type": "roboflow-object-detection-compact-v1",
+            "class_names": [
+              "cat"
+            ],
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ]
+          }
+        ]
+      },
+      "inference_calls": 2,
+      "forwarded_params": {
+        "confidence": 0.5
+      },
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "multipart named part reference",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1",
+      "status": 400,
+      "content_type": "application/json",
+      "body": {
+        "error_code": "EMPTY_BODY",
+        "description": "no image data provided"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "multipart response requested",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_format=multipart",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "object-detection"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-object-detection-compact-v1",
+            "class_names": [
+              "cat"
+            ],
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {
+        "response_format": "multipart"
+      },
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "repeated output filter",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&requested_output=first&requested_output=second",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "object-detection"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-object-detection-compact-v1",
+            "class_names": [
+              "cat"
+            ],
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {
+        "requested_output": "second"
+      },
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "model package selection",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&model_package_id=chosen-package",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "object-detection"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-object-detection-compact-v1",
+            "class_names": [
+              "cat"
+            ],
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "query API key only",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&api_key=offline-audit-key",
+      "status": 401,
+      "content_type": null,
+      "body": "Authorization: Bearer <api_key> header required",
+      "inference_calls": 0
+    },
+    {
+      "case": "body API key only",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1",
+      "status": 401,
+      "content_type": null,
+      "body": "Authorization: Bearer <api_key> header required",
+      "inference_calls": 0
+    },
+    {
+      "case": "JSON non-object",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1",
+      "status": 500,
+      "content_type": "text/plain; charset=utf-8",
+      "body": "Internal Server Error",
+      "inference_calls": 0
+    },
+    {
+      "case": "malformed multipart inputs",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "object-detection"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-object-detection-compact-v1",
+            "class_names": [
+              "cat"
+            ],
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer classification compact",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=compact",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "classification"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-classification-compact-v1",
+            "class_names": null,
+            "confidences": [
+              0.2,
+              0.8
+            ],
+            "top_classes_ids": [
+              1
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer classification rich",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=rich",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "classification"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-classification-rich-v1",
+            "candidates": [
+              {
+                "class_id": 1,
+                "confidence": 0.8
+              },
+              {
+                "class_id": 0,
+                "confidence": 0.2
+              }
+            ],
+            "top": [
+              {
+                "class_id": 1,
+                "confidence": 0.8
+              }
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer multi-label-classification compact",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=compact",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "multi-label-classification"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-classification-compact-v1",
+            "class_names": null,
+            "confidences": [
+              0.2,
+              0.8
+            ],
+            "detected_classes_ids": [
+              1
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer multi-label-classification rich",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=rich",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "multi-label-classification"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-classification-compact-v1",
+            "class_names": null,
+            "confidences": [
+              0.2,
+              0.8
+            ],
+            "detected_classes_ids": [
+              1
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer instance-segmentation compact",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=compact",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "instance-segmentation"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-instance-segmentation-compact-v1",
+            "class_names": null,
+            "xyxy": [
+              [
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "class_id": [
+              0
+            ],
+            "confidence": [
+              0.9
+            ],
+            "mask": [
+              [
+                [
+                  true,
+                  false
+                ],
+                [
+                  false,
+                  true
+                ]
+              ]
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer instance-segmentation rich",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=rich",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "instance-segmentation"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-instance-segmentation-rich-v1",
+            "detections": [
+              {
+                "left_top": [
+                  1,
+                  2
+                ],
+                "right_bottom": [
+                  3,
+                  4
+                ],
+                "confidence": 0.9,
+                "class_id": 0,
+                "mask": [
+                  [
+                    true,
+                    false
+                  ],
+                  [
+                    false,
+                    true
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer semantic-segmentation compact",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=compact",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "semantic-segmentation"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-semantic-segmentation-compact-v1",
+            "class_names": null,
+            "segmentation_map": [
+              [
+                0,
+                1
+              ]
+            ],
+            "confidence": [
+              [
+                0.9,
+                0.8
+              ]
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer semantic-segmentation rich",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=rich",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "semantic-segmentation"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-semantic-segmentation-compact-v1",
+            "class_names": null,
+            "segmentation_map": [
+              [
+                0,
+                1
+              ]
+            ],
+            "confidence": [
+              [
+                0.9,
+                0.8
+              ]
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer depth-estimation compact",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=compact",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "depth-estimation"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-depth-compact-v1",
+            "depth_map": [
+              [
+                0.1,
+                0.2
+              ]
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer depth-estimation rich",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=rich",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "depth-estimation"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-depth-compact-v1",
+            "depth_map": [
+              [
+                0.1,
+                0.2
+              ]
+            ]
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer text-only-ocr compact",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=compact",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "text-only-ocr"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-text-v1",
+            "text": "audit text"
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "serializer text-only-ocr rich",
+      "method": "POST",
+      "url": "/v2/models/infer?model_id=audit/1&response_style=rich",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {
+          "model_id": "audit/1",
+          "task": "text-only-ocr"
+        },
+        "usage": {},
+        "predictions": [
+          {
+            "type": "roboflow-text-v1",
+            "text": "audit text"
+          }
+        ]
+      },
+      "inference_calls": 1,
+      "forwarded_params": {},
+      "ensure_loaded_args": [
+        "audit/1",
+        "",
+        "<redacted>",
+        ""
+      ]
+    },
+    {
+      "case": "unloaded interface",
+      "method": "GET",
+      "url": "/v2/models/interface?model_id=audit/1",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_id": "audit/1",
+        "model_type": "object-detection",
+        "actions": {
+          "infer": {
+            "task": "object-detection",
+            "params": {
+              "images": {
+                "type": "image",
+                "required": true
+              },
+              "confidence": {
+                "type": "float",
+                "required": false
+              },
+              "iou_threshold": {
+                "type": "float",
+                "required": false
+              },
+              "max_detections": {
+                "type": "int",
+                "required": false
+              },
+              "class_agnostic_nms": {
+                "type": "bool",
+                "required": false
+              }
+            },
+            "output_schema": {
+              "type": "roboflow-object-detection-compact-v1"
+            }
+          }
+        }
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "unloaded interface filters",
+      "method": "GET",
+      "url": "/v2/models/interface?model_id=audit/1&response_style=rich&response_format=multipart&request_format=json_payload",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_id": "audit/1",
+        "model_type": "object-detection",
+        "actions": {
+          "infer": {
+            "task": "object-detection",
+            "params": {
+              "images": {
+                "type": "image",
+                "required": true
+              },
+              "confidence": {
+                "type": "float",
+                "required": false
+              },
+              "iou_threshold": {
+                "type": "float",
+                "required": false
+              },
+              "max_detections": {
+                "type": "int",
+                "required": false
+              },
+              "class_agnostic_nms": {
+                "type": "bool",
+                "required": false
+              }
+            },
+            "output_schema": {
+              "type": "roboflow-object-detection-compact-v1"
+            }
+          }
+        }
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "default gate load",
+      "method": "POST",
+      "url": "/v2/models/load?model_id=audit/1",
+      "status": 403,
+      "content_type": null,
+      "body": "control-plane routes disabled; set ENABLE_CONTROL_PLANE_ROUTES=true to enable",
+      "inference_calls": 0
+    },
+    {
+      "case": "default gate info",
+      "method": "GET",
+      "url": "/v2/server/info",
+      "status": 403,
+      "content_type": null,
+      "body": "control-plane routes disabled; set ENABLE_CONTROL_PLANE_ROUTES=true to enable",
+      "inference_calls": 0
+    },
+    {
+      "case": "public health",
+      "method": "GET",
+      "url": "/v2/server/health",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "status": "ok"
+      },
+      "inference_calls": 0
+    },
+    {
+      "case": "public ready",
+      "method": "GET",
+      "url": "/v2/server/ready",
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "ready": true
+      },
+      "inference_calls": 0
+    }
+  ]
+}
