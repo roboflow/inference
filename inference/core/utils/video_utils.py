@@ -3,7 +3,8 @@ import binascii
 import contextlib
 import os
 import tempfile
-from typing import Dict, Iterator, List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -28,6 +29,14 @@ from inference.core.utils.url_input import URLAddressNotAllowedError
 
 VIDEO_TYPE_URL = "url"
 VIDEO_TYPE_BASE64 = "base64"
+
+
+@dataclass
+class VideoDecodeState:
+    """Record how much source video the sequential decoder actually reads."""
+
+    frame_count: int = 0
+    reached_end: bool = False
 
 
 @contextlib.contextmanager
@@ -155,6 +164,10 @@ def read_frame_windows(
     path: str,
     windows: Sequence[Sequence[int]],
     max_frame_side: Optional[int] = None,
+    frame_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    decode_state: Optional[VideoDecodeState] = None,
+    window_end_frames: Optional[Sequence[int]] = None,
+    check_cancelled: Optional[Callable[[], None]] = None,
 ) -> Iterator[List[np.ndarray]]:
     """Read every window's frames in one pass, yielding a window at a time.
 
@@ -167,11 +180,30 @@ def read_frame_windows(
     model's answer moves with them. ``max_frame_side`` of ``None`` reads the
     frames at their own size, which is what a model that never trained on a
     frame side needs.
+
+    Args:
+        path: Local video path.
+        windows: Source-frame indices for each requested window.
+        max_frame_side: Optional longest-side cap applied during RGB conversion.
+        frame_transform: Optional model-owned transform applied once per decoded
+            RGB frame, before storing it for overlapping windows.
+        decode_state: Observed decoded count and whether decoding reached EOF.
+        window_end_frames: Exclusive source endpoints to read before yielding.
+            These include the real interval after a window's final sample.
+        check_cancelled: Request control called during decoding and before yields.
+
+    Yields:
+        Lists of prepared RGB frames in each window's requested order.
     """
     if not windows:
         return
     needed = {int(index) for window in windows for index in window}
     last_of = [max((int(i) for i in window), default=-1) for window in windows]
+    if window_end_frames is not None:
+        if len(window_end_frames) != len(windows):
+            raise ValueError("Each window needs one exclusive source endpoint")
+        last_of = [max(last, end - 1) for last, end in zip(last_of, window_end_frames)]
+    state = decode_state if decode_state is not None else VideoDecodeState()
     by_index: Dict[int, np.ndarray] = {}
     emitted = 0
 
@@ -184,14 +216,23 @@ def read_frame_windows(
             message = "Video could not be decoded."
             raise InputImageLoadError(message=message, public_message=message)
         position = 0
-        stop = max(needed) if needed else -1
+        stop = max(last_of, default=-1)
         while emitted < len(windows) and position <= stop:
+            if check_cancelled is not None and position % 32 == 0:
+                check_cancelled()
             read_succeeded, frame = capture.read()
             if not read_succeeded:
+                state.reached_end = True
                 break
+            state.frame_count = position + 1
             if position in needed:
-                by_index[position] = _to_rgb(frame=frame, max_side=max_frame_side)
+                rgb_frame = _to_rgb(frame=frame, max_side=max_frame_side)
+                if frame_transform is not None:
+                    rgb_frame = frame_transform(rgb_frame)
+                by_index[position] = rgb_frame
             while emitted < len(windows) and last_of[emitted] <= position:
+                if check_cancelled is not None:
+                    check_cancelled()
                 yield _window_frames(emitted)
                 emitted += 1
                 # Hold only what a window still to come asks for.

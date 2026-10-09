@@ -26,6 +26,15 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
+- V-JEPA streaming samples accept frames up to 50 ms after the requested source index, capped at half a sample interval. Predictions use the intended sample clock. Larger gaps skip affected windows with an error.
+- Action Recognition Model rejects missing samples only when the model declares that it requires regular sampling. Cosmos retains its previous behavior for FPS-limited streams.
+- Action Recognition Model uses explicit confidence and observed-duration capabilities for each model family.
+- Inference hosts can set `VJEPA2_1_ENABLED=False` to block V-JEPA loading through the Action Recognition Model block before weights load.
+- Action-recognition response schemas retain frame indices, class fields, and optional confidence for HTTP clients and Workflows.
+- Action Recognition Model ignores confidence overrides for unscored models, including Cosmos, instead of rejecting them.
+- Action Recognition Model keeps streaming sample counts and span durations within the model's recorded window at fractional source frame rates.
+- Action Recognition Model applies an optional model-owned frame transform before buffering. V-JEPA retains resized RGB uint8 frames; Cosmos keeps its existing resize behavior.
+- Action Recognition Model accepts `confidence="best"` for model-eval thresholds and `"default"` for the package default, like detection blocks. Numeric overrides and unscored Cosmos behavior stay unchanged.
 - Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
   the local `inference_models` backend. Non-tensor local legacy execution
   continues to honor `mask_decode_mode` and `tradeoff_factor` when
