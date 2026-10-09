@@ -1,0 +1,141 @@
+# aarch64 (sbsa) build of the slim GPU inference server, for Grace-Blackwell hosts.
+#
+# It follows docker/dockerfiles/Dockerfile.onnx.gpu.slim: same requirement files, same
+# roboflow-workflows / streamvision source builds, same entrypoint and model toggles.
+# Three departures are forced by the architecture:
+#
+#  1. BASE. The amd64 slim build uses nvcr.io/nvidia/cuda:12.4.1, which predates
+#     Grace-Blackwell. This is a single stage on nvcr.io/nvidia/pytorch:25.09-py3 (aarch64,
+#     CUDA 13.0, cuDNN 9.13, TensorRT 10.13), which already ships a torch/torchvision built
+#     for its CUDA, so the separate cu124 torch install step is not needed.
+#
+#  2. onnxruntime-gpu. requirements.gpu.txt pins a range with no aarch64 wheel on PyPI;
+#     1.29.0 is the first onnxruntime_gpu release published for aarch64. The pin is
+#     rewritten to ==1.29.0 in the build context copy below.
+#
+#  3. inference-models extras. `torch-cu124` would replace the base torch and `onnx-cu12`
+#     re-imposes an onnxruntime-gpu range with no aarch64 wheel. The package is installed
+#     without extras.
+#
+# Like the amd64 slim image, CLIP, SAM/SAM2/SAM3, DocTR, gaze, TrOCR and EasyOCR are off.
+FROM nvcr.io/nvidia/pytorch:25.09-py3@sha256:f3b4a33fd60d5e0358287bb44d57e91eda45e8f1681fef1bfd6c969371417130
+
+WORKDIR /app
+
+# Same apt set as upstream's slim runtime stage. build-essential/cmake are already in the
+# NGC base and are needed here: three requirements resolve to sdists on aarch64 and must be
+# compiled — pybase64 1.0.2, zxing-cpp 2.2.0 and paho-mqtt 1.6.1.
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    libxext6 \
+    libopencv-dev \
+    python3-pip \
+    git \
+    ffmpeg \
+    libgdal-dev \
+    libvips-dev \
+    wget \
+ && rm -rf /var/lib/apt/lists/*
+
+# THE apt SET ABOVE BREAKS `import torch`, AND THIS ONE LINE IS THE FIX.
+# libgdal-dev and libopencv-dev pull Ubuntu's libucx0, which installs
+# /usr/lib/aarch64-linux-gnu/libucs.so.0 (Apr 2024). NGC's torch links
+# /opt/hpcx/ucc/lib/libucc.so.1, which is built against hpcx's OWN libucs
+# (Sep 2025) and needs the symbol `ucs_config_doc_nop`. The Ubuntu copy wins the
+# search, does not export it, and `from torch._C import *` dies with
+#   ImportError: /opt/hpcx/ucc/lib/libucc.so.1: undefined symbol: ucs_config_doc_nop
+# Measured on the station: torch imports before the apt layer, fails after it, and
+# imports again with the hpcx ucx directory ahead of the system one. Prepend, do not
+# remove — libucc still has to resolve, it just has to resolve against its own libucs.
+ENV LD_LIBRARY_PATH=/opt/hpcx/ucx/lib:${LD_LIBRARY_PATH}
+
+COPY requirements/requirements.http.txt \
+     requirements/requirements.gpu.txt \
+     requirements/_requirements.txt \
+     requirements/requirements.cli.txt \
+     requirements/requirements.sdk.http.txt \
+     requirements/requirements.modal.txt \
+     ./
+
+# Rewrite the two unsatisfiable lines IN THE COPY, never in the checkout, so the amd64
+# build keeps its pins. sed exits 0 when nothing matches, so the greps fail the build if
+# requirements.gpu.txt changes shape and a rewrite silently stops applying.
+RUN sed -i -E 's/^onnxruntime-gpu.*/onnxruntime-gpu==1.29.0/' requirements.gpu.txt \
+ && sed -i -E 's/^inference-models\[[^]]*\]/inference-models/' requirements.gpu.txt \
+ && grep -qx 'onnxruntime-gpu==1.29.0' requirements.gpu.txt \
+ && grep -Eq '^inference-models([^[]|$)' requirements.gpu.txt \
+ && ! grep -Eq '^inference-models\[' requirements.gpu.txt \
+ && echo "--- requirements.gpu.txt as built ---" && cat requirements.gpu.txt
+
+RUN pip install --no-cache-dir --break-system-packages \
+    -r _requirements.txt \
+    -r requirements.http.txt \
+    -r requirements.gpu.txt \
+    -r requirements.cli.txt \
+    -r requirements.sdk.http.txt \
+    -r requirements.modal.txt \
+    "setuptools~=83.0.0" \
+ && rm -rf ~/.cache/pip
+
+# Build & install roboflow-workflows and streamvision from source, as the amd64 slim
+# image does; gpu_http.py and the HTTP API import both. The base torch satisfies their
+# torch constraints, so the resolver keeps it (the guard below checks that).
+COPY workflows workflows
+COPY stream_vision stream_vision
+RUN pip install --no-cache-dir --break-system-packages uv \
+ && python workflows/build_scripts/download_fonts.py \
+ && (cd workflows && uv build --out-dir /wheels) \
+ && (cd stream_vision && uv build --out-dir /wheels) \
+ && pip install --no-cache-dir --break-system-packages --find-links /wheels \
+    "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+ && pip install --no-cache-dir --break-system-packages --find-links /wheels \
+    "$(ls /wheels/streamvision-*.whl)[webrtc]" \
+ && rm -rf /wheels ~/.cache/pip
+
+# Guard: the requirement and workflows layers must not have replaced the base's torch.
+# A generic PyPI torch here would cost every Blackwell kernel and the failure would only
+# show up as a slow benchmark, not as an error.
+RUN python -c "\
+import torch; v = torch.__version__; \
+assert '.nv' in v, 'NGC torch was replaced by %s' % v; \
+print('torch', v, 'cuda', torch.version.cuda)"
+
+# Guard: onnxruntime must actually offer the CUDA execution provider. A GPU server that
+# quietly serves on CPU is THE failure mode of this port, and it is invisible until someone
+# reads a latency number. Assert the provider is present at BUILD time; the runtime proof
+# (that it is also selected, on a real device) is taken separately on the station.
+RUN python -c "\
+import onnxruntime as ort; \
+p = ort.get_available_providers(); \
+assert 'CUDAExecutionProvider' in p, 'NO CUDA EP — this is a CPU-only build: %s' % p; \
+print('onnxruntime', ort.__version__, p)"
+
+COPY inference inference
+COPY inference_sdk inference_sdk
+COPY inference_cli inference_cli
+
+ENV PYTHONPATH=/app
+
+COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
+
+ENV CORE_MODEL_CLIP_ENABLED=false
+ENV CORE_MODEL_PE_ENABLED=false
+ENV CORE_MODEL_SAM_ENABLED=false
+ENV CORE_MODEL_GAZE_ENABLED=false
+ENV CORE_MODEL_DOCTR_ENABLED=false
+ENV VERSION_CHECK_MODE=continuous
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
+ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
+ENV API_LOGGING_ENABLED=True
+ENV CORE_MODEL_TROCR_ENABLED=false
+ENV ENABLE_PROMETHEUS=True
+ENV CORE_MODEL_EASYOCR_ENABLED=False
+ENV CORE_MODEL_SAM3_ENABLED=False
+
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]
