@@ -954,3 +954,54 @@ def test_triton_native_and_large_source_grids(factor) -> None:
         size_after_pre_processing=metadata.original_size,
         masks_resolution_factor=factor,
     )
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or triton_postprocess.triton is None,
+    reason="CUDA and Triton are required",
+)
+@pytest.mark.parametrize("factor", [0.0, 0.25, 0.5, 1.0])
+@pytest.mark.parametrize("deferred", [False, True])
+def test_triton_global_topk_keeps_more_than_four_classes_per_query(factor, deferred):
+    from inference_models.models.base.async_handoff import (
+        get_deferred_postprocess_finalizer,
+    )
+
+    device = torch.device("cuda")
+    # The highest eight pairs all come from one query; an ignored class must
+    # still consume a global top-k slot before remapping is applied.
+    scores = torch.full((8, 10), 0.01, device=device)
+    scores[0] = torch.linspace(0.99, 0.80, 10, device=device)
+    bboxes = torch.tensor([[0.5, 0.5, 0.6, 0.4]], device=device).repeat(8, 1)
+    masks = torch.full((8, 8, 8), -2.0, device=device)
+    masks[0, 1:6, 2:7] = 3.0
+    mapping = _class_mapping(device, num_classes=10)
+    mapping.class_mapping[0] = -1
+    meta = _metadata(height=63, width=95)
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks(
+        image_bboxes=bboxes,
+        image_logits=scores,
+        image_masks=masks,
+        image_meta=meta,
+        threshold=0.005,
+        num_classes=10,
+        classes_re_mapping=mapping,
+        max_detections=100,
+        masks_resolution_factor=factor,
+    )
+    actual = post_process_single_instance_segmentation_result_to_rle_masks_triton(
+        image_bboxes=bboxes,
+        image_scores=scores,
+        image_masks=masks,
+        image_meta=meta,
+        threshold=0.005,
+        classes_re_mapping=mapping,
+        max_detections=100,
+        masks_resolution_factor=factor,
+        defer_postprocess_sync=deferred,
+    )
+    assert actual is not None
+    if deferred:
+        actual = get_deferred_postprocess_finalizer(actual)()
+    assert len(actual) == 7
+    _assert_detections_equal(actual, expected)

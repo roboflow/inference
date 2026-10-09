@@ -48,7 +48,9 @@
   results. Boxes retain image coordinates, while RLE and empty results carry the
   selected mask-grid dimensions. Antialiased downsampling and previously unsupported
   transforms use the reference post-processor. Multiclass results respect RF-DETR's
-  query-count cap even when `max_detections` is larger.
+  query-count cap even when `max_detections` is larger. Multiclass and deferred
+  selection use global top-k before remapping, without a four-class-per-query
+  cutoff, and encode each selected query mask once.
 - The `inference_models` adapter now rejects unknown `mask_decode_mode` values
   with `InvalidMaskDecodeArgument`; it previously ignored the mode. The legacy
   backend already rejected invalid modes. Validation also runs without opt-in.
