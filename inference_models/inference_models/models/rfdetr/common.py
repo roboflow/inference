@@ -18,8 +18,10 @@ from inference_models.models.common.roboflow.model_packages import PreProcessing
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks_batched,
+    finalize_instance_segmentation_boxes,
     rescale_image_detections,
     resolve_mask_frame_size,
+    resolve_mask_output_size,
 )
 from inference_models.models.optimization.triton_jit import (
     is_triton_jit_failure,
@@ -236,7 +238,11 @@ def post_process_instance_segmentation_results(
             masks_resolution_factor=masks_resolution_factor,
         )
         detections = InstanceDetections(
-            xyxy=aligned_boxes.round().int(),
+            xyxy=finalize_instance_segmentation_boxes(
+                aligned_boxes,
+                mask_size=tuple(aligned_masks.shape[1:]),
+                image_size=image_meta.original_size,
+            ),
             confidence=confidence,
             class_id=top_classes.int(),
             mask=aligned_masks,
@@ -398,16 +404,35 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
             image_meta.original_size.width,
         ),
         masks=rle_masks,
-        mask_size=tuple(rle_masks[0]["size"]) if rle_masks else None,
+        mask_size=(
+            tuple(rle_masks[0]["size"])
+            if rle_masks
+            else resolve_mask_output_size(
+                selected_masks.shape[1],
+                selected_masks.shape[2],
+                padding=padding,
+                inference_size=denorm_size,
+                original_size=image_meta.original_size,
+                size_after_pre_processing=image_meta.size_after_pre_processing,
+                static_crop_offset=image_meta.static_crop_offset,
+                masks_resolution_factor=masks_resolution_factor,
+            )
+        ),
     )
-    return InstanceDetections(
-        xyxy=aligned_boxes.round().int(),
+    detections = InstanceDetections(
+        xyxy=finalize_instance_segmentation_boxes(
+            aligned_boxes,
+            mask_size=instances_masks.mask_size,
+            image_size=image_meta.original_size,
+        ),
         confidence=confidence,
         class_id=top_classes.int(),
         mask=instances_masks,
         image_size=tuple(image_meta.original_size),
         mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
     )
+
+    return detections
 
 
 def post_process_instance_segmentation_results_to_rle_masks(
