@@ -19,6 +19,7 @@ from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks_batched,
     rescale_image_detections,
+    resolve_mask_frame_size,
 )
 from inference_models.models.optimization.triton_jit import (
     is_triton_jit_failure,
@@ -148,6 +149,7 @@ def post_process_instance_segmentation_results(
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
     max_detections: Optional[int] = None,
+    masks_resolution_factor: float = 1.0,
 ) -> List[InstanceDetections]:
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
     results = []
@@ -231,12 +233,15 @@ def post_process_instance_segmentation_results(
             size_after_pre_processing=image_meta.size_after_pre_processing,
             inference_size=denorm_size,
             static_crop_offset=image_meta.static_crop_offset,
+            masks_resolution_factor=masks_resolution_factor,
         )
         detections = InstanceDetections(
             xyxy=aligned_boxes.round().int(),
             confidence=confidence,
             class_id=top_classes.int(),
             mask=aligned_masks,
+            image_size=tuple(image_meta.original_size),
+            mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
         )
         results.append(detections)
     return results
@@ -252,6 +257,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
     classes_re_mapping: Optional[ClassesReMapping],
     max_detections: Optional[int] = None,
     defer_postprocess_sync: bool = False,
+    masks_resolution_factor: float = 1.0,
 ) -> InstanceDetections:
     global _TRITON_POSTPROC_JIT_DISABLED
 
@@ -268,6 +274,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
                     classes_re_mapping=classes_re_mapping,
                     max_detections=max_detections,
                     defer_postprocess_sync=defer_postprocess_sync,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
             )
         except Exception as exc:
@@ -294,6 +301,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
         num_classes=num_classes,
         classes_re_mapping=classes_re_mapping,
         max_detections=max_detections,
+        masks_resolution_factor=masks_resolution_factor,
     )
 
 
@@ -306,6 +314,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
     max_detections: Optional[int] = None,
+    masks_resolution_factor: float = 1.0,
 ) -> InstanceDetections:
     num_queries, num_logits_classes = image_logits.shape
     flat_scores = image_logits.reshape(-1)
@@ -381,6 +390,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
         size_after_pre_processing=image_meta.size_after_pre_processing,
         inference_size=denorm_size,
         static_crop_offset=image_meta.static_crop_offset,
+        masks_resolution_factor=masks_resolution_factor,
     )
     instances_masks = InstancesRLEMasks.from_coco_rle_masks(
         image_size=(
@@ -388,12 +398,15 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
             image_meta.original_size.width,
         ),
         masks=rle_masks,
+        mask_size=tuple(rle_masks[0]["size"]) if rle_masks else None,
     )
     return InstanceDetections(
         xyxy=aligned_boxes.round().int(),
         confidence=confidence,
         class_id=top_classes.int(),
         mask=instances_masks,
+        image_size=tuple(image_meta.original_size),
+        mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
     )
 
 
@@ -407,6 +420,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
     classes_re_mapping: Optional[ClassesReMapping],
     max_detections: Optional[int] = None,
     defer_postprocess_sync: bool = False,
+    masks_resolution_factor: float = 1.0,
 ) -> List[InstanceDetections]:
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
     device = bboxes.device
@@ -424,6 +438,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
                 classes_re_mapping=classes_re_mapping,
                 max_detections=max_detections,
                 defer_postprocess_sync=defer_postprocess_sync,
+                masks_resolution_factor=masks_resolution_factor,
             )
             for image_bboxes, image_logits, image_masks, image_meta in zip(
                 bboxes,
@@ -442,6 +457,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
             num_classes=num_classes,
             classes_re_mapping=classes_re_mapping,
             max_detections=max_detections,
+            masks_resolution_factor=masks_resolution_factor,
         )
         for image_bboxes, image_logits, image_masks, image_meta in zip(
             bboxes,

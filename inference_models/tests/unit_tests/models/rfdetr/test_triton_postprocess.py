@@ -415,6 +415,7 @@ def test_rfdetr_triton_postproc_unsupported_cases_use_reference_path(
     metadata = _metadata()
     threshold = 0.4
     classes_re_mapping = _class_mapping(device)
+    extra_kwargs = {}
     if case == "no_class_mapping":
         classes_re_mapping = None
     elif case == "tensor_threshold":
@@ -438,6 +439,7 @@ def test_rfdetr_triton_postproc_unsupported_cases_use_reference_path(
         threshold=threshold,
         num_classes=2,
         classes_re_mapping=classes_re_mapping,
+        **extra_kwargs,
     )[0]
 
     assert calls == 1
@@ -669,3 +671,74 @@ def test_rfdetr_triton_postproc_topk_retry_matches_reference_rle_path() -> None:
 
     assert actual is not None
     _assert_detections_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "factor,expected_supported", [(1.0, True), (0.5, False), (0.0, False)]
+)
+def test_reduced_mask_resolution_is_unsupported_by_the_fused_path(
+    monkeypatch,
+    factor: float,
+    expected_supported: bool,
+) -> None:
+    # given
+    # the fused kernel interpolates straight to the image size, so it cannot
+    # honour a reduced target; it must say so rather than silently ignore it.
+    # triton is absent on CPU CI, and that reason is checked first, so stand it
+    # in to reach the check under test
+    monkeypatch.setattr(triton_postprocess, "triton", object())
+    device = torch.device("cpu")
+    bboxes, logits, masks = _single_detection_inputs(device)
+
+    # when
+    reason = triton_postprocess._unsupported_triton_postprocess_reason(
+        image_bboxes=bboxes,
+        image_scores=logits,
+        image_masks=masks,
+        image_meta=_metadata(),
+        threshold=0.4,
+        classes_re_mapping=_class_mapping(device),
+        masks_resolution_factor=factor,
+    )
+
+    # then
+    if expected_supported:
+        assert reason != "mask_resolution_factor_unsupported"
+    else:
+        assert reason == "mask_resolution_factor_unsupported"
+
+
+@pytest.mark.parametrize("factor", [0.25, 0.5])
+def test_triton_dispatcher_forwards_the_resolution_factor(monkeypatch, factor) -> None:
+    # given
+    # the gate only fires if the dispatcher passes the factor down. Testing the
+    # gate function directly cannot detect a dispatcher that drops it.
+    monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_ENABLED", True)
+    seen = {}
+
+    def spy(*args, **kwargs):
+        seen.update(kwargs)
+        return None  # force the eager fallback
+
+    monkeypatch.setattr(
+        rfdetr_common,
+        "post_process_single_instance_segmentation_result_to_rle_masks_triton",
+        spy,
+    )
+    device = torch.device("cpu")
+    bboxes, logits, masks = _single_detection_inputs(device)
+
+    # when
+    post_process_instance_segmentation_results_to_rle_masks(
+        bboxes=bboxes.unsqueeze(0),
+        logits=logits.unsqueeze(0),
+        masks=masks.unsqueeze(0),
+        pre_processing_meta=[_metadata()],
+        threshold=0.4,
+        num_classes=2,
+        classes_re_mapping=_class_mapping(device),
+        masks_resolution_factor=factor,
+    )
+
+    # then
+    assert seen.get("masks_resolution_factor") == factor

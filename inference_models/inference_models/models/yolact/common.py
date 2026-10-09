@@ -8,6 +8,7 @@ from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks_batched,
     crop_masks_to_boxes,
+    resolve_mask_frame_size,
 )
 
 
@@ -15,6 +16,7 @@ def prepare_dense_masks(
     nms_results: List[torch.Tensor],
     all_proto_data: torch.Tensor,
     pre_processing_meta: List[PreProcessingMetadata],
+    masks_resolution_factor: float = 1.0,
 ) -> List[InstanceDetections]:
     final_results = []
     for image_bboxes, image_protos, image_meta in zip(
@@ -41,6 +43,7 @@ def prepare_dense_masks(
             inference_size=image_meta.inference_size,
             static_crop_offset=image_meta.static_crop_offset,
             binarization_threshold=0.5,
+            masks_resolution_factor=masks_resolution_factor,
         )
         final_results.append(
             InstanceDetections(
@@ -48,6 +51,8 @@ def prepare_dense_masks(
                 class_id=aligned_boxes[:, 5].int(),
                 confidence=aligned_boxes[:, 4],
                 mask=aligned_masks,
+                image_size=tuple(image_meta.original_size),
+                mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
             )
         )
     return final_results
@@ -57,6 +62,7 @@ def prepare_rle_masks(
     nms_results: List[torch.Tensor],
     all_proto_data: torch.Tensor,
     pre_processing_meta: List[PreProcessingMetadata],
+    masks_resolution_factor: float = 1.0,
 ) -> List[InstanceDetections]:
     final_results = []
     for image_bboxes, image_protos, image_meta in zip(
@@ -84,6 +90,7 @@ def prepare_rle_masks(
                 inference_size=image_meta.inference_size,
                 static_crop_offset=image_meta.static_crop_offset,
                 binarization_threshold=0.5,
+                masks_resolution_factor=masks_resolution_factor,
             )
         )
         instances_masks = InstancesRLEMasks.from_coco_rle_masks(
@@ -92,6 +99,7 @@ def prepare_rle_masks(
                 image_meta.original_size.width,
             ),
             masks=rle_masks,
+            mask_size=tuple(rle_masks[0]["size"]) if rle_masks else None,
         )
         final_results.append(
             InstanceDetections(
@@ -99,6 +107,8 @@ def prepare_rle_masks(
                 class_id=aligned_boxes[:, 5].int(),
                 confidence=aligned_boxes[:, 4],
                 mask=instances_masks,
+                image_size=tuple(image_meta.original_size),
+                mask_frame_size=tuple(resolve_mask_frame_size(image_meta)),
             )
         )
     return final_results

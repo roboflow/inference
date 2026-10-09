@@ -828,6 +828,9 @@ in form of [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detect
 The masks are stored in `sv.Detections.data["rle_mask"]` as a numpy array of RLE dictionaries
 in COCO format: `{"size": [H, W], "counts": "encoded_string"}`.
 
+`size` describes the grid the counts were encoded on. The instance-segmentation
+model blocks retain image-resolution masks. Reduced-grid workflow support is deferred.
+
 When visualization blocks need numpy masks, they decode RLE on-demand using pycocotools.
 
 Example:
