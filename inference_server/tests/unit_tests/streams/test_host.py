@@ -705,3 +705,16 @@ def test_host_module_does_not_import_the_app():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_importing_host_first_keeps_server_workflows_configuration():
+    env = {**os.environ, "PROJECT": "roboflow-staging"}
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import inference_server.streams.host"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr

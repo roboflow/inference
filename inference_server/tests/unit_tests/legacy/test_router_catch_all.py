@@ -485,6 +485,53 @@ def test_catch_all_image_query_parameter_is_fetched_by_url(
     assert [call[4] for call in gateway.calls if call[0] == "infer"] == [_jpeg()]
 
 
+def _keypoints_get_gateway():
+    keypoints = SimpleNamespace(
+        xy=np.array([[[1.0, 2.0], [3.0, 4.0]]]),
+        class_id=np.array([0]),
+        confidence=np.array([[0.9, 0.8]]),
+    )
+    detections = SimpleNamespace(
+        xyxy=np.array([[0, 0, 7, 5]], dtype=float),
+        confidence=np.array([0.8]),
+        class_id=np.array([0]),
+    )
+    return FakeGateway(
+        predictions={("ds/1", "infer"): ([keypoints], [detections])},
+        model_info={
+            "ds/1": {"class_names": ["person"], "key_points_classes": [["nose", "eye"]]}
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("", None),
+        ("&keypoint_confidence=0", 0.0),
+        ("&keypoint_confidence=0.5", 0.5),
+    ],
+)
+def test_catch_all_get_forwards_keypoint_threshold_only_when_sent(
+    legacy_client, fake_stat, monkeypatch, query, expected
+):
+    async def _fetch(urls, destination_policy=None):
+        return [_jpeg() for _ in urls], None
+
+    monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
+    fake_stat["ds/1"] = ("keypoint-detection", "infer")
+    gateway = _keypoints_get_gateway()
+
+    response = legacy_client(gateway).get(f"/ds/1?api_key=k&image={IMAGE_URL}{query}")
+
+    assert response.status_code == 200, response.text
+    params = next(call for call in gateway.calls if call[0] == "infer")[3]
+    if expected is None:
+        assert "key_points_threshold" not in params
+    else:
+        assert params["key_points_threshold"] == expected
+
+
 def test_catch_all_class_filter_is_not_applied_to_detections(legacy_client, fake_stat):
     fake_stat["ds/1"] = ("object-detection", "infer")
     detections = SimpleNamespace(

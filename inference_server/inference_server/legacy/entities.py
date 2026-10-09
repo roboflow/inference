@@ -498,7 +498,7 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
 
 class KeypointsDetectionInferenceRequest(ObjectDetectionInferenceRequest):
     keypoint_confidence: Optional[float] = Field(
-        default=0.0,
+        default=None,
         examples=[0.5],
         description="The confidence threshold used to filter out non visible keypoints",
     )

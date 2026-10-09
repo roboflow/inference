@@ -80,6 +80,23 @@ def test_build_params_forwards_disable_preproc_flags_only_when_true():
     )
 
 
+@pytest.mark.parametrize(
+    "extra, expected",
+    [
+        ({}, None),
+        ({"keypoint_confidence": 0.0}, 0.0),
+        ({"keypoint_confidence": 0.5}, 0.5),
+    ],
+)
+def test_build_params_forwards_keypoint_threshold_only_when_sent(extra, expected):
+    req = KeypointsDetectionInferenceRequest(model_id="ds/1", image=IMG, **extra)
+    params = build_task_params("keypoint-detection", "infer", req, ROUTE)
+    if expected is None:
+        assert "key_points_threshold" not in params
+    else:
+        assert params["key_points_threshold"] == expected
+
+
 def test_ensure_request_supported_accepts_disable_preproc_flags():
     req = InstanceSegmentationInferenceRequest(
         model_id="ds/1",

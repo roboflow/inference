@@ -966,8 +966,8 @@ async def legacy_infer_from_request(
             'model evaluation, or "default" to use the model\'s built-in default.'
         ),
     ),
-    keypoint_confidence: float = Query(
-        0.0,
+    keypoint_confidence: Optional[float] = Query(
+        None,
         description="The confidence threshold used to filter out keypoints that are not visible based on model confidence",
     ),
     format: str = Query(
