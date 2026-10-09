@@ -329,6 +329,22 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     )
 
 
+class AnomalyMapPayload(BaseModel):
+    """Raw anomaly heatmap at the network input resolution.
+
+    `data` is base64 of the row-major little-endian float32 values. The map covers
+    the whole image as the network saw it (resized to a square), so resizing it to
+    the image's width and height is a plain stretch. Values share the units of
+    `anomaly_score` and are unbounded above.
+    """
+
+    shape: List[int] = Field(description="[height, width] of the map")
+    dtype: Literal["float32"] = Field(description="Element type of the decoded `data`")
+    data: str = Field(
+        description="Base64 of the row-major little-endian float32 map values"
+    )
+
+
 class AnomalyDetectionResponse(ClassificationInferenceResponse):
     anomaly_score: float = Field(
         description="Raw anomaly score; larger means more anomalous"
@@ -337,9 +353,9 @@ class AnomalyDetectionResponse(ClassificationInferenceResponse):
         description="Decision threshold fitted on validation images"
     )
     is_anomalous: bool
-    anomaly_map: Optional[List[List[float]]] = Field(
+    anomaly_map: Optional[AnomalyMapPayload] = Field(
         default=None,
-        description="Raw local anomaly evidence in original image coordinates",
+        description="Raw local anomaly evidence at the network input resolution",
     )
 
 

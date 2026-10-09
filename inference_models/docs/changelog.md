@@ -4,65 +4,67 @@
 
 ### Added
 
-- `masks_resolution_factor` on instance-segmentation post-processing, in
-  `[0.0, 1.0]`. `1.0` (the default) resizes masks to the image as before;
-  `0.0` leaves them on the model's own grid; values between interpolate the
-  resize target. Threaded through all six instance-segmentation families on
-  both the dense and RLE paths, and through the ONNX, TorchScript and TensorRT
-  backends, plus RF-DETR CoreML. Accurate mode remains the default.
-- `mask_size` on `InstanceDetections` and `InstancesRLEMasks`, recording the
-  grid the masks live on. Each defaults to the value it effectively had before,
-  so existing construction is unaffected.
-- `scale_polygons_to_image`, lifting contour coordinates from mask space into
-  image space.
-- `InstanceDetections.image_size` and `mask_frame_size` preserve original image
-  dimensions and the image region represented by a mask, independently of its
-  encoded grid. Dense and RLE model results carry these through post-processing.
+- Configurable mask resolution through `masks_resolution_factor` in `[0.0, 1.0]`
+  for YOLOv5, YOLOv7, YOLOv8, YOLO26, YOLACT, and RF-DETR instance segmentation.
+  Supported implementations forward the factor through dense and RLE
+  post-processing, including ONNX, TorchScript, TensorRT, and RF-DETR PyTorch
+  and CoreML. `1.0` retains image-resolution masks; `0.0` uses the unpadded model
+  grid before crop-canvas placement; intermediate values interpolate the target.
+  Lower factors do not guarantee smaller masks or lower latency when the image
+  is smaller than the model grid. Non-finite and out-of-range factors are rejected.
+- `mask_size` on `InstanceDetections` and `InstancesRLEMasks` records the encoded
+  grid independently of the image dimensions. Omitted values are inferred from
+  the dense tensor shape or default to the RLE carrier's image size.
+  `InstanceDetections.image_size` and `mask_frame_size` retain the original image
+  dimensions and image-space extent of the mask. Model results carry these
+  dimensions through dense, RLE, and empty-detection paths.
+- `scale_polygons_to_image` maps contours from mask-grid coordinates to image
+  coordinates without resizing the mask or restoring lost contour detail.
 
 ### Changed
 
-- Server requests using `inference_models` now require
+- Server requests using `inference_models` require
   `allow_reduced_mask_resolution=true` to apply `mask_decode_mode` and
   `tradeoff_factor`. Without this opt-in, masks retain image resolution.
-  Polygon points and bounding boxes always share image coordinates, including
-  when contours are extracted from reduced masks. Opted-in RLE responses retain
-  the encoded mask grid; when it differs from the image, `mask_metadata`
-  supplies its dimensions and x/y scales to image coordinates. The SDK scales
-  polygon points and boxes together during client resizing, while preserving
-  encoded RLE data and updating its metadata. Server visualizations use the
-  returned image-space polygon points directly.
-  Direct `inference_models` callers continue to use `masks_resolution_factor`.
-  Reduced-grid workflow support is deferred to a separate PR.
+  The legacy backend retains its existing decoding behavior.
+  Polygon extraction uses the selected mask resolution, then scales the returned
+  points to image coordinates so they share the bounding boxes' coordinate frame.
+  Opted-in RLE responses retain the encoded mask grid; when it differs from the
+  image, `mask_metadata` supplies its dimensions and x/y scales to image coordinates.
+  The SDK scales polygon points and boxes together during client resizing, while
+  preserving encoded RLE data and updating its metadata. Server visualizations
+  use the returned image-space polygon points directly.
+  Direct `inference_models` callers use `masks_resolution_factor` without the HTTP
+  opt-in. Reduced-grid workflow support is deferred to a separate PR.
+- RLE export and `InstanceDetections` iteration declare the encoded mask grid in
+  COCO `size`. `InstanceDetections.to_supervision()` resizes masks to image
+  resolution for annotation; manually constructed reduced dense detections must
+  supply `image_size` because it cannot be inferred from the reduced tensor.
+- The RF-DETR fused Triton post-processor supports factor `1.0` only. Other
+  factors use the fallback post-processor so the requested resolution is honored.
+  Reduced-resolution Triton support and its benchmarking are deferred to a
+  separate PR.
+- The `inference_models` adapter now rejects unknown `mask_decode_mode` values
+  with `InvalidMaskDecodeArgument`; it previously ignored the mode. The legacy
+  backend already rejected invalid modes. Validation also runs without opt-in.
 
-- `InstancesRLEMasks.to_coco_rle_masks()` now declares the grid the counts were
-  encoded on rather than the image size. These agree unless a resolution factor
-  below `1.0` is used; when they differ, declaring the image size made
-  `pycocotools` reinterpret the runs without raising.
-- `InstanceDetections.to_supervision()` restores the image grid when masks are
-  reduced, since `sv.Detections.mask` is documented as matching the image and
-  its annotators index the scene with it.
-- `InstanceDetections.__iter__` emits the encoded grid in the COCO `size` field.
-- An unknown `mask_decode_mode` now raises `InvalidMaskDecodeArgument` on the
-  `inference_models` path, matching the legacy path, which previously accepted
-  any value.
+- PatchCore and FoundAD return the optional heatmap (`include_anomaly_map=True`)
+  at the network input resolution, a float32 array of shape
+  `(image_size, image_size)`, instead of resized to the input image. The patch
+  grid is the map's real resolution and the map covers the whole image as the
+  network saw it, so callers stretch it to the image size themselves (one
+  `cv2.resize`). Behavior change for callers that overlaid
+  `images_metadata[i]["anomaly_map"]` at the input image size.
 
 ### Fixed
 
-- Dense reduced masks now resize correctly in `to_supervision()`, including mask
-  annotation on the original image. All static-crop masks, including crops at
-  the origin, are placed on an original-image canvas before dense or RLE output.
-  RLE consumers can therefore restore reduced masks without stretching the crop.
-- Polygon responses for static crops with non-zero offsets use the original
-  image canvas as their coordinate frame, at full and reduced mask resolution.
-- RF-DETR CoreML now forwards `masks_resolution_factor` to post-processing.
-- Mask resize-target calculation rejects non-finite and out-of-range resolution
-  factors instead of silently clamping them.
-- Zero-detection results reported a mask shape the populated path would never
-  produce, because the empty branch resolved its target from the padded grid
-  while the populated path unpadded first. Empty crop results also follow the
-  populated path's canvas placement and rounding rules.
-- RF-DETR's Triton post-process dispatcher dropped the resolution factor, so
-  the fused path silently ignored it.
+- Origin-anchored static-crop masks now use a canvas representing the original
+  image, matching crops with non-zero offsets. Dense and RLE results retain the
+  crop's position when converted to image-resolution masks. Reduced canvases and
+  empty results follow the same coordinate convention.
+
+- Cosmos 3 Edge loads and runs on Apple Silicon GPUs (`DEFAULT_DEVICE=mps`), in bf16 with SDPA
+  attention. Loading used to crash or hang from a thread race in PyTorch's Metal kernel cache.
 
 ---
 

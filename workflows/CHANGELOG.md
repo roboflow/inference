@@ -19,8 +19,9 @@ for contributor and maintainer responsibilities.
 ### Changed
 
 - Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
-  the local `inference_models` backend. Local legacy execution continues to
-  honor `mask_decode_mode` and `tradeoff_factor` when `USE_INFERENCE_MODELS=False`.
+  the local `inference_models` backend. Non-tensor local legacy execution
+  continues to honor `mask_decode_mode` and `tradeoff_factor` when
+  `USE_INFERENCE_MODELS=False`.
   Remote calls always request `accurate` / `1.0`, since the local backend setting
   does not identify the remote server. Remote legacy workflows that previously
   requested fast/tradeoff masks now receive accurate masks. `@v4` retains its
@@ -38,8 +39,20 @@ for contributor and maintainer responsibilities.
   blocks do not opt in and retain their image-space contract.
 
 - `ModelsConfiguration.use_inference_models`, defaulting to `True`. Hosts using
-  the legacy backend must set it to `False` to retain local legacy decoding.
+  the legacy backend must set it to `False` to retain non-tensor local legacy
+  decoding.
   The server sets it from `inference.core.env.USE_INFERENCE_MODELS`.
+
+## `0.2.4-post1`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-haiku-5-5` model option.
+- Mistral AI block (`roboflow_core/mistral_vlm@v1`): runs Mistral Large 4 (`mistralai/mistral-large-4-0`) via OpenRouter with the vlm-exam request contract (image-first user message, reasoning off by default with a `high` option, `max_tokens` unset by default) and in-block decoding of detections and classifications.
+- VLM detection box format `xyxy_0_999`: `box_2d` integers normalized to 0-999, Mistral's documented grounding convention. Used by the Mistral AI block and selectable as `detection_format` on the OpenRouter block (`openrouter@v3`).
+- The shared OpenRouter executor accepts `max_tokens=None`: the direct path omits the parameter so the provider default applies, the Roboflow-proxied path sends the proxy ceiling (16384) because the proxy requires the field and otherwise applies a 500-token default.
 
 ## `0.2.4`
 
@@ -84,7 +97,6 @@ Bundled execution engine: `1.16.1`.
   registrations for the same model ID, including runtime-selected IDs, and verifies
   the corresponding capability-specific cache entries. Existing workflows need
   no migration.
-
 
 ## `0.2.3`
 

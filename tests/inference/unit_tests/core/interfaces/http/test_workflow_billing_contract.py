@@ -14,25 +14,42 @@ opt-out.
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from starlette.testclient import TestClient
 
 SERVICE_SECRET = "workflow-billing-contract-secret"
 
-# The workflow runs no real model; the block records a model-category usage row
-# the same way a model's decorated `infer` would, from inside a step worker.
+# The real provider constructs the typed request and BaseInference records usage;
+# only model computation is replaced, so no model artifacts are downloaded.
 FAKE_MODEL_BLOCK_CODE = """
 def run(self, value) -> BlockResult:
-    from inference.usage_tracking.collector import usage_collector
+    from inference.core.interfaces.workflows_models_provider import ModelManagerModelsProvider
+    from inference.core.models.base import BaseInference
 
-    class FakeModel:
+    class FakeModel(BaseInference):
         api_key = "__API_KEY__"
         model_id = "fake-project/1"
 
-        @usage_collector(category="model")
-        def infer(self, image, **kwargs):
-            return "ok"
+        def preprocess(self, image, **kwargs):
+            return image, {}
 
-    FakeModel().infer(value)
+        def predict(self, image, **kwargs):
+            return []
+
+        def postprocess(self, predictions, metadata, **kwargs):
+            return predictions
+
+    class FakeModelManager:
+        def infer_from_request_sync(self, model_id, request, **kwargs):
+            assert request.source == "workflow-execution"
+            return FakeModel().infer(**request.model_dump())
+
+    ModelManagerModelsProvider(FakeModelManager()).run_object_detection(
+        model_id="fake-project/1",
+        images=[{"type": "numpy", "value": value}],
+        api_key="__API_KEY__",
+        confidence=0.5,
+    )
     return {"result": True}
 """
 
@@ -198,6 +215,13 @@ def test_route_without_billing_parameters_stays_billable(monkeypatch):
         "workflow_block": True,
     }
     assert _preview_by_category(api_key)["workflow_block"] is False
+    model_rows = [
+        row for row in _rows_for_api_key(api_key).values() if row["category"] == "model"
+    ]
+    assert len(model_rows) == 1
+    assert (
+        json.loads(model_rows[0]["resource_details"])["source"] == "workflow-execution"
+    )
 
 
 def test_preview_flag_reaches_workflow_and_block_rows(monkeypatch):
@@ -354,3 +378,87 @@ def test_an_unbound_observer_records_no_workflow_row(monkeypatch):
     # then
     categories = {key.split(":", 1)[0] for key in _rows_for_api_key(api_key)}
     assert "workflows" not in categories
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/workflows/run",
+        "/infer/workflows",
+        "/test-workspace/workflows/test-workflow",
+        "/infer/workflows/test-workspace/test-workflow",
+    ],
+)
+@pytest.mark.parametrize("service_secret", [None, SERVICE_SECRET])
+def test_source_tags_reach_workflow_model_and_python_usage(
+    monkeypatch, path, service_secret
+):
+    """Keep origin rows separate without changing deployment or execution identity.
+
+    Args:
+        monkeypatch: Fixture replacing external workflow lookup and service settings.
+        path (str): Inline or saved workflow route, including legacy aliases.
+        service_secret (Optional[str]): Internal caller secret, or no secret.
+    """
+    import inference.core.interfaces.http.http_api as http_api
+    from inference.core.interfaces import workflows_execution_observer
+    from inference.usage_tracking import collector as collector_module
+
+    monkeypatch.setattr(
+        collector_module, "ROBOFLOW_INTERNAL_SERVICE_NAME", "async-serverless-gpu"
+    )
+    client = _build_test_client(monkeypatch)
+    for collector in (
+        http_api.usage_collector,
+        collector_module.usage_collector,
+        workflows_execution_observer.usage_collector,
+    ):
+        monkeypatch.setattr(collector, "_enqueue_usage_payload", MagicMock())
+        monkeypatch.setattr(
+            collector, "_usage", collector.empty_usage_dict(exec_session_id="test")
+        )
+    api_key = f"source-tags-{path.replace('/', '-')}-{bool(service_secret)}"
+    specification = _specification(api_key)
+    monkeypatch.setattr(
+        http_api, "get_workflow_specification", lambda **_: specification
+    )
+
+    for source in ("app", "custom-integration"):
+        params = {
+            "source": source,
+            "source_info": "workflow-evals",
+            "countinference": "true",
+        }
+        if service_secret is not None:
+            params["service_secret"] = service_secret
+
+        response = client.post(
+            path,
+            params=params,
+            json={
+                "api_key": api_key,
+                "specification": specification,
+                "inputs": {"value": 1},
+            },
+        )
+        assert response.status_code == 200, response.text
+
+    rows = _rows_for_api_key(api_key)
+    origins_by_category = {}
+    for key, row in rows.items():
+        category = key.split(":", 1)[0]
+        details = json.loads(row["resource_details"])
+        assert details["source_info"] == "workflow-evals", (category, details)
+        assert details["billable"] is True
+        assert row["roboflow_service_name"] == "async-serverless-gpu", (category, row)
+        assert row["processed_frames"] == 1, (category, row)
+        origins_by_category.setdefault(category, []).append(details["source"])
+
+    assert origins_by_category.keys() == {
+        "request",
+        "workflows",
+        "model",
+        "workflow_block",
+    }
+    for category, origins in origins_by_category.items():
+        assert sorted(origins) == ["app", "custom-integration"], (category, origins)
