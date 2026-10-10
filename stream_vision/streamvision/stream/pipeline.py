@@ -360,13 +360,11 @@ class InferencePipeline:
                 whenever pipeline ends
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
                 dictate max FPS of each video source.
-                The implementation details of this option has been changed in release `v0.26.0`. Prior to the release
-                this value, when applied to video files caused the processing to wait `1 / max_fps` seconds before next
-                frame is processed - the new implementation drops the intermediate frames, which seems to be more
-                aligned with peoples expectations.
-                New behaviour is now enabled in experimental mode, by setting environmental variable flag
-                `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True`. Please note that the new behaviour will
-                be the default one end of Q4 2024!
+                For streams, intermediate frames are dropped. For video files, by default every frame is
+                processed and the pipeline waits between frames to stay under `max_fps`, so the whole file is
+                processed at reduced speed. To drop intermediate frames of video files instead, set the
+                environmental variable `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True` (the `inference` CLI
+                sets it automatically).
             watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
                 inference pipeline - if not given null implementation (doing nothing) will be used.
             status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
