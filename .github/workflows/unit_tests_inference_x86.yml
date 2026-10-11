@@ -44,9 +44,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          # No restore-keys: restoring an older key and saving under a new one carries
-          # every superseded wheel forward, so the cache only ever grows.
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          # Workflow-specific key: many workflows install different package sets under
+          # the shared "<os>-pip-<python>-<hash>" key, so this job restored whichever
+          # set was saved first. No restore-keys, so the cache cannot grow without bound.
+          key: ${{ runner.os }}-pip-unit-tests-inference-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
