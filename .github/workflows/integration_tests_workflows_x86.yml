@@ -9,6 +9,7 @@ on:
       - "theme/**"
       - "theme_build/**"
       - "mkdocs.yml"
+      - "**.md"
   push:
     branches: [main]
     paths-ignore:
@@ -16,6 +17,7 @@ on:
       - "theme/**"
       - "theme_build/**"
       - "mkdocs.yml"
+      - "**.md"
   workflow_dispatch:
     inputs:
       python-version:
