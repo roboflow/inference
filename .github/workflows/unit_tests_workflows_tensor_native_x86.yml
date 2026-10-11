@@ -96,10 +96,9 @@ jobs:
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
           pip check
-      - name: Package unit and installed-wheel isolation tests
+      - name: Package unit tests
         working-directory: workflows
-        env:
-          WORKFLOWS_ISOLATION_FIND_LINKS: ${{ github.workspace }}/dist
-        run: |
-          WORKFLOWS_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)" \
-            python -m pytest -n auto --dist loadfile tests/isolation tests/unit_tests
+        # The installed-wheel isolation probe (WORKFLOWS_ISOLATION_WHEEL) is left to
+        # "UNIT TESTS - workflows": it clears ENABLE_TENSOR_DATA_REPRESENTATION and
+        # checks both tensor modes itself, so running it here repeated the same check.
+        run: python -m pytest -n auto --dist loadfile tests/isolation tests/unit_tests
