@@ -8,6 +8,15 @@ from roboflow_workflows.core_steps.classical_cv.sift_comparison.v1 import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _seed_opencv_rng() -> None:
+    # FlannBasedMatcher builds randomized kd-trees from OpenCV's global RNG, so
+    # the match count otherwise depends on how many FLANN calls already ran in
+    # this process (443 or 444 here). A fixed seed makes every test independent
+    # of test order and of which xdist worker runs it.
+    cv2.setRNGSeed(0)
+
+
 def test_sift_comparison_validation_when_valid_manifest_is_given() -> None:
     # given
     data = {
@@ -65,7 +74,5 @@ def test_sift_comparison_block(dogs_image: np.ndarray) -> None:
     )
 
     # then
-    # FLANN matching is approximate and its result depends on the process-wide
-    # random state left by earlier FLANN calls (442 to 445 across seeds).
-    assert abs(output["good_matches_count"] - 443) <= 3
+    assert output["good_matches_count"] == 443
     assert output["images_match"] is True
