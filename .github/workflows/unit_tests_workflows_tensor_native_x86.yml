@@ -102,4 +102,4 @@ jobs:
           WORKFLOWS_ISOLATION_FIND_LINKS: ${{ github.workspace }}/dist
         run: |
           WORKFLOWS_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)" \
-            python -m pytest -n auto --dist loadfile tests/unit_tests tests/isolation
+            python -m pytest -n auto --dist loadfile tests/isolation tests/unit_tests

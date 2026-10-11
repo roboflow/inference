@@ -74,7 +74,9 @@ def test_sift_comparison_block_with_descriptors(dogs_image: np.ndarray) -> None:
     )
 
     # then
-    assert output["good_matches_count"] == 443
+    # FLANN matching is approximate and its result depends on the process-wide
+    # random state left by earlier FLANN calls (442 to 445 across seeds).
+    assert abs(output["good_matches_count"] - 443) <= 3
     assert output["images_match"] is True
     assert output["visualization_1"] is None
     assert output["visualization_2"] is None
@@ -101,7 +103,9 @@ def test_sift_comparison_block_with_images(dogs_image: np.ndarray) -> None:
     )
 
     # then
-    assert output["good_matches_count"] == 443
+    # FLANN matching is approximate and its result depends on the process-wide
+    # random state left by earlier FLANN calls (442 to 445 across seeds).
+    assert abs(output["good_matches_count"] - 443) <= 3
     assert output["images_match"] is True
     assert output["visualization_1"] is None
     assert output["visualization_2"] is None
@@ -128,7 +132,9 @@ def test_sift_comparison_block_with_visualization(dogs_image: np.ndarray) -> Non
     )
 
     # then
-    assert output["good_matches_count"] == 443
+    # FLANN matching is approximate and its result depends on the process-wide
+    # random state left by earlier FLANN calls (442 to 445 across seeds).
+    assert abs(output["good_matches_count"] - 443) <= 3
     assert output["images_match"] is True
     assert output["visualization_1"] is not None
     assert output["visualization_2"] is not None
