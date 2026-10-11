@@ -25,7 +25,7 @@ jobs:
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
-      labels: depot-ubuntu-22.04-8
+      labels: depot-ubuntu-22.04-4
       group: public-depot
     timeout-minutes: 35
     strategy:
