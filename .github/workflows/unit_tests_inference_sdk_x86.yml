@@ -4,8 +4,18 @@ permissions:
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
   workflow_dispatch:
 
 concurrency:
