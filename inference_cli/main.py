@@ -3,6 +3,8 @@ from typing import Optional
 import typer
 from typing_extensions import Annotated
 
+from inference_sdk.http.errors import HTTPCallErrorError, HTTPClientError
+
 import inference_cli.lib
 from inference_cli.benchmark import benchmark_app
 from inference_cli.cloud import cloud_app
@@ -133,6 +135,20 @@ def infer(
             visualisation_config=visualisation_config,
             model_configuration=model_config,
         )
+    except HTTPCallErrorError as error:
+        # The server answered, so the request or the model is the problem, not reachability.
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
+    except HTTPClientError:
+        typer.echo(
+            f"Could not reach an inference server at {host}.\n"
+            "\n"
+            "`inference infer` sends requests to a server; it does not run the model in this\n"
+            "process. Start one locally with `inference server start` (needs Docker), or pass\n"
+            "--host to use a server you already have, for example\n"
+            "--host https://detect.roboflow.com for the hosted API."
+        )
+        raise typer.Exit(code=1)
     except Exception as error:
         typer.echo(f"Command failed. Cause: {error}")
         raise typer.Exit(code=1)
