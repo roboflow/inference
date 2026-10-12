@@ -10353,3 +10353,41 @@ def test_fixed_size_image_list_keeps_dense_preprocessing_behavior(images) -> Non
     ]
     assert torch.equal(torch.stack(processed_images), dense_batch)
     assert list_metadata == dense_metadata
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_histogram_equalization_for_torch_image_matches_numpy_image(
+    as_list: bool,
+) -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        contrast=Contrast(enabled=True, type=ContrastType.HISTOGRAM_EQUALIZATION)
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=64),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.random.default_rng(1).integers(0, 256, (64, 64, 3), dtype=np.uint8)
+    tensor_image = torch.from_numpy(image).permute(2, 0, 1)
+
+    # when
+    numpy_result, _ = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+    )
+    torch_result, _ = pre_process_network_input(
+        images=[tensor_image] if as_list else tensor_image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+    )
+
+    # then
+    assert torch.equal(torch_result, numpy_result)

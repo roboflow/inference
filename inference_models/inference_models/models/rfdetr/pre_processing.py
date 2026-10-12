@@ -353,6 +353,8 @@ def _pre_process_tensor(
         network_input_channels=network_input.input_channels,
         pre_processing_overrides=pre_processing_overrides,
     )
+    if not image.is_floating_point():
+        image = image.float() / 255
     size_after_pre_processing = ImageDimensions(
         width=image.shape[3], height=image.shape[2]
     )
