@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- Histogram equalization of torch-tensor inputs returns `uint8` values like the
+  numpy path instead of keeping float output. On the RF-DETR float `[0, 1]` path
+  the result is rescaled, which also stops adaptive equalization from crashing
+  and histogram equalization from returning out-of-range values.
+
 ## `0.39.3`
 
 ### Added
