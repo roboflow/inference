@@ -51,9 +51,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-package-install-inference-with-extras-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 📦 Installing `inference` package...
         run: |
           wheel_name=`ls ./dist/inference-*-py3-none-any.whl | head -n 1`
