@@ -548,6 +548,128 @@ class TestParamsOnlyWireMarshalling:
         assert self._process(["a", "b"], images=[object(), object()]) == ["a", "b"]
 
 
+class _ColorFormatInferModel(FakeModel):
+    def infer(self, images=None, input_color_format=None, **kwargs):
+        self.seen_kwargs = {"input_color_format": input_color_format, **kwargs}
+        return ["result"] * (len(images) if isinstance(images, list) else 1)
+
+
+class _ColorFormatPreProcessModel(FakeModel):
+    def infer(self, images=None, **kwargs):
+        self.seen_kwargs = kwargs
+        return ["result"] * (len(images) if isinstance(images, list) else 1)
+
+    def pre_process(self, images, input_color_format=None, **kwargs):
+        return images, None
+
+
+class _NoColorFormatModel(FakeModel):
+    def infer(self, images=None, **kwargs):
+        self.seen_kwargs = kwargs
+        return ["result"] * (len(images) if isinstance(images, list) else 1)
+
+
+class TestDecodedImageColorFormat:
+
+    def _process(self, model, decoded, **kwargs):
+        mm = ModelManager()
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("plain/1", api_key="")
+        backend = backends["plain/1"]
+        backend._fake_model = model
+        decoded_iter = iter(decoded)
+        backend._decode_input = lambda raw: next(decoded_iter)
+        mm.process(
+            "plain/1", action="infer", serialize=False, wire_marshalling=True, **kwargs
+        )
+
+        return model.seen_kwargs
+
+    def test_decoded_tensor_is_declared_rgb(self):
+        import torch
+
+        seen = self._process(
+            _ColorFormatInferModel("plain/1"),
+            [torch.zeros((3, 4, 4), dtype=torch.uint8)],
+            images=b"jpeg",
+        )
+
+        assert seen["input_color_format"] == "rgb"
+
+    def test_decoded_ndarray_is_declared_bgr(self):
+        seen = self._process(
+            _ColorFormatInferModel("plain/1"),
+            [np.zeros((4, 4, 3), dtype=np.uint8)],
+            images=b"jpeg",
+        )
+
+        assert seen["input_color_format"] == "bgr"
+
+    def test_declared_on_pre_process_only_is_still_set(self):
+        import torch
+
+        seen = self._process(
+            _ColorFormatPreProcessModel("plain/1"),
+            [torch.zeros((3, 4, 4), dtype=torch.uint8)] * 2,
+            images=[b"a", b"b"],
+        )
+
+        assert seen["input_color_format"] == "rgb"
+
+    def test_caller_supplied_format_is_preserved(self):
+        import torch
+
+        seen = self._process(
+            _ColorFormatInferModel("plain/1"),
+            [torch.zeros((3, 4, 4), dtype=torch.uint8)],
+            images=b"jpeg",
+            input_color_format="bgr",
+        )
+
+        assert seen["input_color_format"] == "bgr"
+
+    def test_model_without_the_param_is_not_given_it(self):
+        seen = self._process(
+            _NoColorFormatModel("plain/1"),
+            [np.zeros((4, 4, 3), dtype=np.uint8)],
+            images=b"jpeg",
+        )
+
+        assert "input_color_format" not in seen
+
+    def test_mixed_tensor_and_ndarray_batch_is_rejected(self):
+        import torch
+
+        model = _ColorFormatInferModel("plain/1")
+        decoded = [
+            torch.zeros((3, 4, 4), dtype=torch.uint8),
+            np.zeros((4, 4, 3), dtype=np.uint8),
+        ]
+
+        with pytest.raises(ValueError, match="input_color_format"):
+            self._process(model, decoded, images=[b"a", b"b"])
+
+        assert not hasattr(model, "seen_kwargs")
+
+    def test_mixed_batch_with_caller_supplied_format_is_left_to_the_caller(self):
+        import torch
+
+        decoded = [
+            torch.zeros((3, 4, 4), dtype=torch.uint8),
+            np.zeros((4, 4, 3), dtype=np.uint8),
+        ]
+
+        seen = self._process(
+            _ColorFormatInferModel("plain/1"),
+            decoded,
+            images=[b"a", b"b"],
+            input_color_format="rgb",
+        )
+
+        assert seen["input_color_format"] == "rgb"
+
+
 class TestModelManagerThreadSafety:
 
     def test_concurrent_loads(self, monkeypatch):

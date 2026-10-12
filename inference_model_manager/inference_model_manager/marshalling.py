@@ -1,11 +1,15 @@
 import dataclasses
+import functools
+import inspect
 import io
 import pickle
+import sys
 from typing import Any, Callable, List, Optional
 
 import numpy as np
 
 MODEL_CLOCK_KWARG = "model_clock"
+INPUT_COLOR_FORMAT_KWARG = "input_color_format"
 
 
 def to_bytes(raw_input: Any) -> bytes:
@@ -66,6 +70,69 @@ def tensors_to_numpy(result: Any) -> Any:
         return obj
 
     return _walk(result)
+
+
+def with_decoded_color_format(model: Any, method_name: str, kwargs: dict) -> dict:
+    """Declare the colour order of decoded images to a model that accepts it.
+
+    Decoders yield BGR HWC ndarrays or RGB device tensors. A caller-supplied
+    ``input_color_format`` always wins; models whose ``method_name`` or
+    ``pre_process`` does not name the parameter are left untouched.
+
+    Args:
+        model: Model the call is dispatched to.
+        method_name: Name of the model method the action invokes.
+        kwargs: Call kwargs with images already decoded; mutated in place.
+
+    Returns:
+        ``kwargs``, with ``input_color_format`` set when it could be derived.
+
+    Raises:
+        ValueError: If one batch mixes tensors and ndarrays.
+    """
+    if INPUT_COLOR_FORMAT_KWARG in kwargs:
+        return kwargs
+    if not _accepts_color_format(type(model), method_name):
+        return kwargs
+
+    images = kwargs.get("images")
+    batch = images if isinstance(images, list) else [images]
+    formats = {_decoded_color_format(image) for image in batch}
+    if {"rgb", "bgr"} <= formats:
+        raise ValueError(
+            "Decoded batch mixes RGB tensors and BGR arrays; send "
+            "input_color_format or a batch of one image type."
+        )
+    if len(formats) == 1 and None not in formats:
+        kwargs[INPUT_COLOR_FORMAT_KWARG] = formats.pop()
+
+    return kwargs
+
+
+@functools.lru_cache(maxsize=None)
+def _accepts_color_format(model_class: type, method_name: str) -> bool:
+    for name in (method_name, "pre_process"):
+        method = getattr(model_class, name, None)
+        if method is None:
+            continue
+        try:
+            parameters = inspect.signature(method).parameters
+        except (TypeError, ValueError):
+            continue
+        if INPUT_COLOR_FORMAT_KWARG in parameters:
+            return True
+
+    return False
+
+
+def _decoded_color_format(image: Any) -> Optional[str]:
+    if isinstance(image, np.ndarray):
+        return "bgr"
+    torch = sys.modules.get("torch")
+    if torch is not None and isinstance(image, torch.Tensor):
+        return "rgb"
+
+    return None
 
 
 def split_batched_result(

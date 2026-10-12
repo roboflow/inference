@@ -23,6 +23,7 @@ from inference_model_manager.marshalling import (
     sam3_text_scores_to_floats,
     split_batched_result,
     tensors_to_numpy,
+    with_decoded_color_format,
 )
 
 if TYPE_CHECKING:
@@ -620,6 +621,7 @@ class ModelManager:
                     kwargs, n_images = self._wire_marshal_inputs(backend, kwargs)
                 finally:
                     clock[0] += time.perf_counter() - decode_started
+                kwargs = with_decoded_color_format(backend.model, entry.method, kwargs)
 
             # Validate kwargs through registry (if entry exists)
             kwargs = _get_registry().validate(backend.model, action_name, kwargs)
