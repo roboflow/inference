@@ -590,3 +590,73 @@ def run(self, value) -> BlockResult:
     assert details["billable"] is count_inference
     assert usage_source_tags.get() == {}
     assert outbound_service_secret.get() is None
+
+
+@pytest.mark.parametrize("source_info", ["workflowEvals", "labelAssist"])
+@pytest.mark.parametrize("count_inference", [False, True])
+def test_legacy_route_keeps_service_name_for_sdk_forwarded_tags(
+    monkeypatch, source_info, count_inference
+):
+    """Keep deployment identity separate from SDK-forwarded feature attribution.
+
+    Args:
+        monkeypatch: Fixture replacing model execution and deployment settings.
+        source_info (str): Feature attribution forwarded from the workflow.
+        count_inference (bool): Whether the internal caller requests billable usage.
+    """
+    import inference.core.interfaces.http.http_api as http_api
+    from inference.core.entities.responses.inference import (
+        ObjectDetectionInferenceResponse,
+    )
+    from inference.usage_tracking import collector as collector_module
+    from inference_sdk.config import outbound_service_secret, usage_source_tags
+    from inference_sdk.http.entities import InferenceConfiguration
+
+    source_token = usage_source_tags.set({"source": "app", "source_info": source_info})
+    secret_token = outbound_service_secret.set(
+        SERVICE_SECRET if not count_inference else None
+    )
+    try:
+        params = InferenceConfiguration(
+            source="workflow-execution",
+            count_inference=count_inference,
+            service_secret=SERVICE_SECRET,
+        ).to_legacy_call_parameters()
+    finally:
+        outbound_service_secret.reset(secret_token)
+        usage_source_tags.reset(source_token)
+
+    assert params["source_info"] == source_info
+    assert params["service_secret"] == SERVICE_SECRET
+    monkeypatch.setattr(
+        collector_module, "ROBOFLOW_INTERNAL_SERVICE_NAME", "test-hosted-model"
+    )
+    model_manager = MagicMock()
+    model_manager.get_task_type.return_value = "object-detection"
+    model_manager.infer_from_request_sync.return_value = (
+        ObjectDetectionInferenceResponse(
+            image={"height": 2, "width": 2}, predictions=[]
+        )
+    )
+    client = _build_test_client(monkeypatch, model_manager=model_manager)
+    for collector in (http_api.usage_collector, collector_module.usage_collector):
+        monkeypatch.setattr(
+            collector, "_usage", collector.empty_usage_dict(exec_session_id="test")
+        )
+
+    response = client.post(
+        "/fake-project/1",
+        params={**params, "api_key": "legacy-key"},
+        content="base64_image",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    assert response.status_code == 200, response.text
+    row = _row_for_category("legacy-key", "request")
+    details = json.loads(row["resource_details"])
+    assert details["source"] == "app"
+    assert details["source_info"] == source_info
+    assert details["billable"] is count_inference
+    assert row["roboflow_service_name"] == "test-hosted-model"
+    model_request = model_manager.infer_from_request_sync.call_args.args[1]
+    assert model_request.source_info == source_info
