@@ -8,10 +8,11 @@ Decoders:
 
 from __future__ import annotations
 
+import functools
 import re
 import threading
 import zlib
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 import imagecodecs
 import numpy as np
@@ -154,6 +155,7 @@ def _jpeg_scan_data_offset(data: bytes | memoryview) -> int | None:
 
 
 _EXIF_ORIENTATION_TAG = 0x0112
+_TIFF_MAGICS = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
 # Orientations 5-8 store the image transposed: decoded width and height swap.
 EXIF_TRANSPOSING_ORIENTATIONS = frozenset((5, 6, 7, 8))
 
@@ -191,7 +193,7 @@ def reset_exif_orientation(data: bytes | memoryview) -> bytes:
         reset.
     """
     raw = bytes(data)
-    if raw[:4] in (b"II*\x00", b"MM\x00*"):
+    if raw[:4] in _TIFF_MAGICS:
         return raw
 
     span = _orientation_tiff_span(raw)
@@ -203,7 +205,7 @@ def reset_exif_orientation(data: bytes | memoryview) -> bytes:
     if field is None or _tiff_orientation(tiff) is None:
         return raw
 
-    value_offset, value_size, order = field
+    value_offset, value_size, order, _ = field
     patched = bytearray(raw)
     value_start = start + value_offset
     patched[value_start : value_start + value_size] = (1).to_bytes(value_size, order)
@@ -221,7 +223,7 @@ def _orientation_tiff_span(data: bytes | memoryview) -> tuple[int, int] | None:
         return _jpeg_exif_span(data)
     if head == b"\x89PNG\r\n\x1a\n":
         return _png_exif_span(data)
-    if head[:4] in (b"II*\x00", b"MM\x00*"):
+    if head[:4] in _TIFF_MAGICS:
         return 0, len(data)
     return None
 
@@ -237,7 +239,7 @@ def decoded_dims(data: bytes | memoryview, width: int, height: int) -> tuple[int
     ``_pending_orientation``), the decoder's output always ends up transposed
     exactly for orientations 5-8 of the stored image.
     """
-    if bytes(data[:4]) in (b"II*\x00", b"MM\x00*"):
+    if bytes(data[:4]) in _TIFF_MAGICS:
         stored = _tiff_ifd0(data, (_TIFF_WIDTH_TAG, _TIFF_HEIGHT_TAG))
         if _TIFF_WIDTH_TAG in stored and _TIFF_HEIGHT_TAG in stored:
             width, height = stored[_TIFF_WIDTH_TAG], stored[_TIFF_HEIGHT_TAG]
@@ -306,8 +308,19 @@ _TIFF_COMPRESSION_TAG = 0x0103
 _TIFF_PHOTOMETRIC_TAG = 0x0106
 _TIFF_COMPRESSION_OJPEG = 6
 _TIFF_COMPRESSION_JPEG = 7
+_TIFF_PHOTOMETRIC_RGB = 2
 _TIFF_PHOTOMETRIC_SEPARATED = 5  # CMYK
 _TIFF_PHOTOMETRIC_YCBCR = 6
+_TIFF_ROWS_PER_STRIP_TAG = 0x0116
+_TIFF_BITS_PER_SAMPLE_TAG = 0x0102
+_TIFF_SAMPLES_PER_PIXEL_TAG = 0x0115
+_TIFF_PLANAR_CONFIG_TAG = 0x011C
+_TIFF_TILE_WIDTH_TAG = 0x0142
+_TIFF_TILE_LENGTH_TAG = 0x0143
+_TIFF_EXTRA_SAMPLES_TAG = 0x0152
+_TIFF_PLANAR_SEPARATE = 2
+_TIFF_EXTRA_SAMPLE_ASSOCIATED_ALPHA = 1
+_TIFF_VALUE_SIZES = {3: 2, 4: 4, 16: 8}
 
 
 def _tiff_ifd0(tiff: bytes | memoryview, tags: tuple[int, ...]) -> dict[int, int]:
@@ -315,7 +328,7 @@ def _tiff_ifd0(tiff: bytes | memoryview, tags: tuple[int, ...]) -> dict[int, int
     fields = _tiff_ifd0_fields(tiff, tags)
     values = {
         tag: int.from_bytes(tiff[offset : offset + size], order)
-        for tag, (offset, size, order) in fields.items()
+        for tag, (offset, size, order, _) in fields.items()
     }
 
     return values
@@ -323,8 +336,9 @@ def _tiff_ifd0(tiff: bytes | memoryview, tags: tuple[int, ...]) -> dict[int, int
 
 def _tiff_ifd0_fields(
     tiff: bytes | memoryview, tags: tuple[int, ...]
-) -> dict[int, tuple[int, int, str]]:
-    """(offset, size, byte order) of SHORT/LONG values of ``tags`` in IFD0."""
+) -> dict[int, tuple[int, int, str, int]]:
+    """(offset, size, byte order, count) of the first SHORT/LONG/LONG8 value of
+    ``tags`` in IFD0 of a classic TIFF or BigTIFF block."""
     if len(tiff) < 8:
         return {}
     if tiff[:2] == b"II":
@@ -333,25 +347,37 @@ def _tiff_ifd0_fields(
         order = "big"
     else:
         return {}
-    if int.from_bytes(tiff[2:4], order) != 42:
+    version = int.from_bytes(tiff[2:4], order)
+    if version == 42:
+        ifd = int.from_bytes(tiff[4:8], order)
+        count_size, entry_size, inline = 2, 12, 4
+    elif version == 43 and len(tiff) >= 16 and int.from_bytes(tiff[4:6], order) == 8:
+        ifd = int.from_bytes(tiff[8:16], order)
+        count_size, entry_size, inline = 8, 20, 8
+    else:
         return {}
-    ifd = int.from_bytes(tiff[4:8], order)
-    if ifd + 2 > len(tiff):
+    if ifd + count_size > len(tiff):
         return {}
-    entries = int.from_bytes(tiff[ifd : ifd + 2], order)
-    found: dict[int, tuple[int, int, str]] = {}
+    entries = int.from_bytes(tiff[ifd : ifd + count_size], order)
+    found: dict[int, tuple[int, int, str, int]] = {}
     for index in range(entries):
-        entry = ifd + 2 + 12 * index
-        if entry + 12 > len(tiff):
+        entry = ifd + count_size + entry_size * index
+        if entry + entry_size > len(tiff):
             return {}
         tag = int.from_bytes(tiff[entry : entry + 2], order)
         if tag not in tags:
             continue
         value_type = int.from_bytes(tiff[entry + 2 : entry + 4], order)
-        if value_type == 3:  # SHORT
-            found[tag] = (entry + 8, 2, order)
-        elif value_type == 4:  # LONG
-            found[tag] = (entry + 8, 4, order)
+        size = _TIFF_VALUE_SIZES.get(value_type)
+        if size is None:
+            continue
+        count = int.from_bytes(tiff[entry + 4 : entry + 4 + inline], order)
+        value = entry + 4 + inline
+        if count * size > inline:
+            value = int.from_bytes(tiff[value : value + inline], order)
+            if value + size > len(tiff):
+                continue
+        found[tag] = (value, size, order, count)
     return found
 
 
@@ -388,7 +414,7 @@ def _pending_orientation(data: bytes | memoryview) -> int:
     orientation = exif_orientation(data)
     if (
         orientation != 1
-        and bytes(data[:4]) in (b"II*\x00", b"MM\x00*")
+        and bytes(data[:4]) in _TIFF_MAGICS
         and _tiff_read_by_libtiff_rgba(data)
     ):
         return _ORIENTATION_AFTER_LIBTIFF_FLIP.get(orientation, 1)
@@ -503,7 +529,7 @@ def _select_codec(head: bytes) -> str | None:
         return "webp"
     if head[:3] == b"GIF":
         return "gif"
-    if head[:4] in (b"II*\x00", b"MM\x00*"):
+    if head[:4] in _TIFF_MAGICS:
         return "tiff"
     if head[:2] == b"BM":
         return "bmp"
@@ -531,6 +557,196 @@ def _to_rgb_hwc(img: np.ndarray) -> np.ndarray:
     return img
 
 
+_OPENCV_TIFF_SCANLINE_BYTES = (1 << 30) * 95 // 100
+
+
+def _opencv_reads_tiff_scanlines(tiff: bytes | memoryview) -> bool:
+    """Whether OpenCV 4.8-4.12 decodes this TIFF to 8 bits scanline by scanline.
+
+    Mirrors the ``dst_bpp == 8`` branch of ``TiffDecoder::readData`` in
+    grfmt_tiff.cpp: a large, untiled, single-strip, contiguous 8/16-bit gray or
+    RGB image (RGBA only with associated alpha) is read scanline by scanline,
+    which keeps the high byte of 16-bit samples; everything else goes through
+    libtiff's RGBA reader.
+    """
+    fields = _tiff_ifd0_fields(
+        tiff,
+        (
+            _TIFF_WIDTH_TAG,
+            _TIFF_HEIGHT_TAG,
+            _TIFF_BITS_PER_SAMPLE_TAG,
+            _TIFF_PHOTOMETRIC_TAG,
+            _TIFF_SAMPLES_PER_PIXEL_TAG,
+            _TIFF_ROWS_PER_STRIP_TAG,
+            _TIFF_PLANAR_CONFIG_TAG,
+            _TIFF_TILE_WIDTH_TAG,
+            _TIFF_TILE_LENGTH_TAG,
+            _TIFF_EXTRA_SAMPLES_TAG,
+        ),
+    )
+    tags = {
+        tag: int.from_bytes(tiff[offset : offset + size], order)
+        for tag, (offset, size, order, _) in fields.items()
+    }
+    if _TIFF_TILE_WIDTH_TAG in tags or _TIFF_TILE_LENGTH_TAG in tags:
+        return False
+
+    width = tags.get(_TIFF_WIDTH_TAG, 0)
+    height = tags.get(_TIFF_HEIGHT_TAG, 0)
+    rows = tags.get(_TIFF_ROWS_PER_STRIP_TAG, 0)
+    if rows in (0, 0xFFFFFFFF):
+        rows = height
+    if width * rows * 4 < _OPENCV_TIFF_SCANLINE_BYTES:
+        return False
+
+    samples = tags.get(_TIFF_SAMPLES_PER_PIXEL_TAG, 1)
+    scanline = (
+        samples in (1, 3, 4)
+        and tags.get(_TIFF_BITS_PER_SAMPLE_TAG, 1) in (8, 16)
+        and rows == height
+        and tags.get(_TIFF_PHOTOMETRIC_TAG) in (0, 1, _TIFF_PHOTOMETRIC_RGB)
+        and tags.get(_TIFF_PLANAR_CONFIG_TAG, 1) != _TIFF_PLANAR_SEPARATE
+    )
+    if scanline and samples == 4:
+        extra = fields.get(_TIFF_EXTRA_SAMPLES_TAG)
+        scanline = (
+            extra is not None
+            and extra[3] == 1
+            and tags[_TIFF_EXTRA_SAMPLES_TAG] == _TIFF_EXTRA_SAMPLE_ASSOCIATED_ALPHA
+        )
+
+    return scanline
+
+
+def _boxes(data: bytes, start: int, end: int) -> Iterator[tuple[bytes, int, int]]:
+    """Yield (type, payload start, payload end) of the JP2 / ISO-BMFF boxes in
+    ``data[start:end]``, stopping at the first malformed box."""
+    offset = start
+    while offset + 8 <= end:
+        size = int.from_bytes(data[offset : offset + 4], "big")
+        header = 8
+        if size == 1:
+            if offset + 16 > end:
+                return
+            size = int.from_bytes(data[offset + 8 : offset + 16], "big")
+            header = 16
+        elif size == 0:
+            size = end - offset
+        if size < header or offset + size > end:
+            return
+        yield bytes(data[offset + 4 : offset + 8]), offset + header, offset + size
+        offset += size
+
+
+def _child_box(data: bytes, start: int, end: int, kind: bytes) -> tuple[int, int]:
+    """(payload start, payload end) of the first ``kind`` box, (0, 0) if none."""
+    for box_kind, payload_start, payload_end in _boxes(data, start, end):
+        if box_kind == kind:
+            return payload_start, payload_end
+    return 0, 0
+
+
+def _jpeg2k_precision(data: bytes) -> int:
+    """Highest component precision in the SIZ segment, 16 when unreadable."""
+    codestream = 0
+    if data[:4] != b"\xff\x4f\xff\x51":
+        codestream, _ = _child_box(data, 0, len(data), b"jp2c")
+    if data[codestream : codestream + 4] != b"\xff\x4f\xff\x51":
+        return 16
+    siz = codestream + 2
+    if siz + 40 > len(data):
+        return 16
+    components = int.from_bytes(data[siz + 38 : siz + 40], "big")
+    sizes = data[siz + 40 : siz + 40 + 3 * components : 3]
+    if not sizes:
+        return 16
+    precision = max((size & 0x7F) + 1 for size in sizes)
+
+    return precision
+
+
+def _avif_depth(data: bytes) -> int:
+    """Bit depth from the av1C property in meta/iprp/ipco, 16 when unreadable."""
+    meta_start, meta_end = _child_box(data, 0, len(data), b"meta")
+    # meta is a FullBox: 4 bytes of version and flags precede its children.
+    start, end = _child_box(data, meta_start + 4, meta_end, b"iprp")
+    start, end = _child_box(data, start, end, b"ipco")
+    start, end = _child_box(data, start, end, b"av1C")
+    if end - start < 3:
+        return 16
+    flags = data[start + 2]
+    if not flags & 0x40:
+        return 8
+    depth = 12 if flags & 0x20 else 10
+
+    return depth
+
+
+@functools.lru_cache(maxsize=None)
+def _reduction_table(rule: str, bits: int) -> np.ndarray:
+    values = np.arange(1 << 16)
+    if rule == "shift":
+        table = values >> max(bits - 8, 0)
+    elif rule == "round":
+        table = np.clip(np.rint(values / (1 << (bits - 8))), 0, 255)
+    else:
+        table = np.clip(np.rint(values * 255 / ((1 << bits) - 1)), 0, 255)
+    return table.astype(np.uint8)
+
+
+_REDUCTION_CHUNK_ELEMENTS = 1 << 16
+
+
+def _reduce(img: np.ndarray, table: np.ndarray) -> np.ndarray:
+    """Look ``img`` up in ``table`` a few rows at a time, so temporaries stay small."""
+    reduced = np.empty(img.shape, dtype=np.uint8)
+    row_elements = int(np.prod(img.shape[1:]))
+    rows = max(1, _REDUCTION_CHUNK_ELEMENTS // max(1, row_elements))
+    for start in range(0, img.shape[0], rows):
+        reduced[start : start + rows] = table[img[start : start + rows]]
+    return reduced
+
+
+def _opencv_depth_rule(
+    img: np.ndarray, codec: str | None, data: bytes
+) -> tuple[str, int]:
+    """(rule, bits) cv2.imdecode(IMREAD_COLOR) applies to 16-bit storage."""
+    if codec == "jpeg2k":
+        return "shift", _jpeg2k_precision(data)
+    if codec == "avif":
+        rule = "round" if img.ndim == 2 or img.shape[2] < 3 else "scale"
+        return rule, _avif_depth(data)
+    if (
+        codec == "tiff"
+        and _tiff_ifd0(data, (_TIFF_PHOTOMETRIC_TAG,)).get(_TIFF_PHOTOMETRIC_TAG)
+        == _TIFF_PHOTOMETRIC_RGB
+        and not _opencv_reads_tiff_scanlines(data)
+    ):
+        return "scale", 16
+    return "shift", 16
+
+
+def _to_uint8(img: np.ndarray, codec: str | None, data: bytes) -> np.ndarray:
+    """Reduce 8/16-bit integer samples to uint8 exactly as cv2.imdecode does.
+
+    Signed samples are read as their unsigned bit patterns. 16-bit storage
+    keeps its high byte (PNG, gray TIFF, TIFF read scanline by scanline),
+    except where OpenCV converts by the codec's real depth: libtiff's RGBA
+    reader rounds ``value / 257`` for RGB TIFFs, JPEG 2000 shifts by
+    ``precision - 8`` and AVIF scales from its 10/12-bit range. Other dtypes
+    are returned as is.
+    """
+    if img.dtype.kind == "i" and img.dtype.itemsize <= 2:
+        img = img.view(f"u{img.dtype.itemsize}")
+    if img.dtype != np.uint16:
+        return img
+
+    rule, bits = _opencv_depth_rule(img, codec, data)
+    reduced = _reduce(img, _reduction_table(rule, bits))
+
+    return reduced
+
+
 def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     """Decode compressed image bytes to RGB HWC uint8 via an explicit codec.
 
@@ -542,8 +758,12 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     raw = bytes(data)
     codec = _select_codec(raw)
     if codec is None:
-        return _to_rgb_hwc(imagecodecs.imread(raw))
-    image = _to_rgb_hwc(getattr(imagecodecs, f"{codec}_decode")(raw))
+        decoded = imagecodecs.imread(raw)
+        _guard_decoded(decoded, max_decoded_pixels())
+        return _to_rgb_hwc(_to_uint8(decoded, codec, raw))
+    decoded = getattr(imagecodecs, f"{codec}_decode")(raw)
+    _guard_decoded(decoded, max_decoded_pixels())
+    image = _to_rgb_hwc(_to_uint8(decoded, codec, raw))
     # imagecodecs ignores EXIF, except for the TIFFs libtiff converts to RGB;
     # cv2.imdecode (the previous server) honours it for JPEG, PNG and TIFF, so a
     # rotated phone photo must reach the model upright. exif_orientation

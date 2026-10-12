@@ -490,6 +490,431 @@ class TestTiffPreOrientedByLibtiff:
 
 
 # ---------------------------------------------------------------------------
+# Deeper than 8 bits — cv2.imdecode(IMREAD_COLOR) reduces samples to uint8
+# ---------------------------------------------------------------------------
+
+_DEEP_LAYOUTS = {"gray": 1, "gray_alpha": 2, "rgb": 3, "rgba": 4}
+
+
+def _deep_samples(channels: int, dtype: str) -> np.ndarray:
+    info = np.iinfo(dtype)
+    rng = np.random.default_rng(7)
+    samples = rng.integers(info.min, info.max, (256, 256, channels), endpoint=True)
+    samples.reshape(-1)[: info.max - info.min + 1] = np.arange(info.min, info.max + 1)
+    samples = samples.astype(dtype)
+    if channels == 1:
+        return samples[..., 0]
+    return samples
+
+
+def _deep_image(fmt: str, layout: str, dtype: str = "uint16") -> bytes:
+    import io
+
+    imagecodecs = pytest.importorskip("imagecodecs")
+    channels = _DEEP_LAYOUTS[layout]
+    samples = _deep_samples(channels, dtype)
+    if fmt == "PNG":
+        return bytes(imagecodecs.png_encode(samples))
+    tifffile = pytest.importorskip("tifffile")
+    buffer = io.BytesIO()
+    tifffile.imwrite(
+        buffer,
+        samples,
+        photometric="rgb" if channels >= 3 else "minisblack",
+        extrasamples=[1] if channels in (2, 4) else None,
+    )
+    return buffer.getvalue()
+
+
+_DEEP_DECODERS = {
+    "make_decoder": lambda data: make_decoder("imagecodecs")(data),
+    "_decode_ic": lambda data: np.ascontiguousarray(_decode_ic(data)[..., ::-1]),
+}
+
+
+class TestDeepSamplesMatchOpenCV:
+    @pytest.mark.parametrize("decoder", sorted(_DEEP_DECODERS))
+    @pytest.mark.parametrize("layout", sorted(_DEEP_LAYOUTS))
+    @pytest.mark.parametrize("fmt", ["PNG", "TIFF"])
+    def test_16_bit_pixels_equal_cv2_imdecode(self, fmt, layout, decoder):
+        cv2 = pytest.importorskip("cv2")
+        data = _deep_image(fmt, layout)
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+        result = _DEEP_DECODERS[decoder](data)
+
+        assert result.dtype == np.uint8
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("decoder", sorted(_DEEP_DECODERS))
+    @pytest.mark.parametrize("layout", ["gray", "rgb"])
+    @pytest.mark.parametrize("dtype", ["int8", "int16"])
+    def test_signed_tiff_pixels_equal_cv2_imdecode(self, dtype, layout, decoder):
+        cv2 = pytest.importorskip("cv2")
+        data = _deep_image("TIFF", layout, dtype)
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+        result = _DEEP_DECODERS[decoder](data)
+
+        assert result.dtype == np.uint8
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("decoder", sorted(_DEEP_DECODERS))
+    @pytest.mark.parametrize("layout", ["gray", "rgb", "rgba"])
+    @pytest.mark.parametrize("bits", [9, 10, 12, 16])
+    def test_jpeg2000_precision_equals_cv2_imdecode(self, bits, layout, decoder):
+        imagecodecs = pytest.importorskip("imagecodecs")
+        cv2 = pytest.importorskip("cv2")
+        samples = _deep_samples(_DEEP_LAYOUTS[layout], "uint16") >> (16 - bits)
+        data = bytes(
+            imagecodecs.jpeg2k_encode(
+                samples, level=0, bitspersample=bits, codecformat="jp2"
+            )
+        )
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+        result = _DEEP_DECODERS[decoder](data)
+
+        assert result.dtype == np.uint8
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("decoder", sorted(_DEEP_DECODERS))
+    @pytest.mark.parametrize("layout", ["gray", "rgb", "rgba"])
+    @pytest.mark.parametrize("bits", [10, 12])
+    def test_lossless_avif_depth_equals_cv2_imdecode(self, bits, layout, decoder):
+        expected, data = _deep_avif(bits, layout, quality=100)
+
+        result = _DEEP_DECODERS[decoder](data)
+
+        assert result.dtype == np.uint8
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("decoder", sorted(_DEEP_DECODERS))
+    @pytest.mark.parametrize("bits", [10, 12])
+    def test_lossy_avif_colour_is_within_one_of_cv2_imdecode(self, bits, decoder):
+        expected, data = _deep_avif(bits, "rgb", quality=80)
+
+        result = _DEEP_DECODERS[decoder](data)
+
+        assert result.dtype == np.uint8
+        difference = np.abs(result.astype(np.int16) - expected.astype(np.int16))
+        assert difference.max() <= 1
+
+    @pytest.mark.parametrize("decoder", sorted(_DEEP_DECODERS))
+    @pytest.mark.parametrize("layout", ["gray", "rgb"])
+    @pytest.mark.parametrize("byteorder", ["<", ">"])
+    def test_bigtiff_equals_cv2_imdecode(self, byteorder, layout, decoder):
+        import io
+
+        pytest.importorskip("imagecodecs")
+        tifffile = pytest.importorskip("tifffile")
+        cv2 = pytest.importorskip("cv2")
+        buffer = io.BytesIO()
+        tifffile.imwrite(
+            buffer,
+            _deep_samples(_DEEP_LAYOUTS[layout], "uint16"),
+            bigtiff=True,
+            byteorder=byteorder,
+            photometric="rgb" if layout == "rgb" else "minisblack",
+        )
+        data = buffer.getvalue()
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+        result = _DEEP_DECODERS[decoder](data)
+
+        assert result.dtype == np.uint8
+        np.testing.assert_array_equal(result, expected)
+
+
+def _deep_avif(bits: int, layout: str, *, quality: int) -> tuple[np.ndarray, bytes]:
+    pytest.importorskip("imagecodecs")
+    cv2 = pytest.importorskip("cv2")
+    samples = _deep_samples(_DEEP_LAYOUTS[layout], "uint16") >> (16 - bits)
+    params = [cv2.IMWRITE_AVIF_DEPTH, bits, cv2.IMWRITE_AVIF_QUALITY, quality]
+    try:
+        ok, encoded = cv2.imencode(".avif", samples, params)
+    except cv2.error:
+        ok = False
+    if not ok:
+        pytest.skip("cv2 has no AVIF encoder")
+    expected = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+
+    return expected, encoded.tobytes()
+
+
+def _jp2_with_decoy_siz() -> bytes:
+    imagecodecs = pytest.importorskip("imagecodecs")
+    samples = _deep_samples(3, "uint16") >> 6
+    data = bytes(
+        imagecodecs.jpeg2k_encode(samples, level=0, bitspersample=10, codecformat="jp2")
+    )
+    ftyp_end = 12 + int.from_bytes(data[12:16], "big")
+    decoy = b"\xff\x4f\xff\x51" + b"\x00" * 36 + b"\x00\x01\x01\x01\x01"
+    free = (8 + len(decoy)).to_bytes(4, "big") + b"free" + decoy
+
+    return data[:ftyp_end] + free + data[ftyp_end:]
+
+
+def _avif_with_av1c_brand() -> tuple[np.ndarray, bytes]:
+    cv2 = pytest.importorskip("cv2")
+    expected, data = _deep_avif(10, "rgb", quality=100)
+    ftyp_end = int.from_bytes(data[:4], "big")
+    patched = data[: ftyp_end - 4] + b"av1C" + data[ftyp_end:]
+    assert patched.find(b"av1C") < ftyp_end
+    expected = cv2.imdecode(np.frombuffer(patched, np.uint8), cv2.IMREAD_COLOR)
+
+    return expected, patched
+
+
+class TestDepthHeadersAreParsedNotSearched:
+    @pytest.mark.parametrize("decoder", sorted(_DEEP_DECODERS))
+    def test_jp2_decoy_siz_in_free_box_is_ignored(self, decoder):
+        cv2 = pytest.importorskip("cv2")
+        data = _jp2_with_decoy_siz()
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+        result = _DEEP_DECODERS[decoder](data)
+
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("decoder", sorted(_DEEP_DECODERS))
+    def test_avif_av1c_compatible_brand_is_ignored(self, decoder):
+        expected, data = _avif_with_av1c_brand()
+
+        result = _DEEP_DECODERS[decoder](data)
+
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            b"",
+            b"\x00\x00\x00\x0cjP  \r\n\x87\n",
+            b"\x00\x00\x00\x0cjP  \r\n\x87\n\x00\x00\x00\x01jp2c",
+            b"\x00\x00\x00\x0cjP  \r\n\x87\n\xff\xff\xff\xffjp2c",
+            b"\xff\x4f\xff\x51\x00",
+        ],
+    )
+    def test_malformed_jpeg2000_falls_back(self, data):
+        from inference_model_manager.backends.decode import _jpeg2k_precision
+
+        assert _jpeg2k_precision(data) == 16
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            b"",
+            b"\x00\x00\x00\x18ftypavif\x00\x00\x00\x00av1Cmif1",
+            b"\x00\x00\x00\x00meta",
+            b"\x00\x00\x00\x10meta\x00\x00\x00\x00\x00\x00\x00\x01",
+            b"\xff\xff\xff\xffmeta" + b"\x00" * 16,
+        ],
+    )
+    def test_malformed_avif_falls_back(self, data):
+        from inference_model_manager.backends.decode import _avif_depth
+
+        assert _avif_depth(data) == 16
+
+
+def _bigtiff_with_orientation(orientation: int, byteorder: str) -> bytes:
+    import io
+
+    tifffile = pytest.importorskip("tifffile")
+    buffer = io.BytesIO()
+    tifffile.imwrite(
+        buffer,
+        _deep_samples(3, "uint16")[:2, :3],
+        bigtiff=True,
+        byteorder=byteorder,
+        photometric="rgb",
+        extratags=[(0x0112, 3, 1, orientation, True)],
+    )
+
+    return buffer.getvalue()
+
+
+class TestBigTiffOrientation:
+    @pytest.mark.parametrize("decoder", sorted(_DEEP_DECODERS))
+    @pytest.mark.parametrize("orientation", range(1, 9))
+    @pytest.mark.parametrize("byteorder", ["<", ">"])
+    def test_pixels_equal_cv2_imdecode(self, byteorder, orientation, decoder):
+        pytest.importorskip("imagecodecs")
+        cv2 = pytest.importorskip("cv2")
+        data = _bigtiff_with_orientation(orientation, byteorder)
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+        result = _DEEP_DECODERS[decoder](data)
+
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("orientation", [1, 6])
+    def test_helpers_read_bigtiff(self, orientation):
+        from inference_model_manager.backends.decode import reset_exif_orientation
+
+        data = _bigtiff_with_orientation(orientation, "<")
+
+        assert exif_orientation(data) == orientation
+        assert decoded_dims(data, 3, 2) == ((2, 3) if orientation == 6 else (3, 2))
+        assert reset_exif_orientation(data) == data
+
+
+_TIFF_TYPES = {3: ("H", 2), 4: ("I", 4), 16: ("Q", 8)}
+
+
+def _tiff_header(tags: dict[int, tuple[int, list[int]]], *, big: bool = False) -> bytes:
+    import struct
+
+    count_format, entry_size, inline = ("Q", 20, 8) if big else ("H", 12, 4)
+    head = (
+        b"II+\x00\x08\x00\x00\x00" + struct.pack("<Q", 16)
+        if big
+        else (b"II*\x00" + struct.pack("<I", 8))
+    )
+    ifd_start = len(head)
+    data_start = (
+        ifd_start + struct.calcsize(count_format) + entry_size * len(tags) + inline
+    )
+    entries = b""
+    extra = b""
+    for tag in sorted(tags):
+        value_type, values = tags[tag]
+        code, size = _TIFF_TYPES[value_type]
+        packed = struct.pack(f"<{len(values)}{code}", *values)
+        if len(packed) > inline:
+            field = struct.pack("<Q" if big else "<I", data_start + len(extra))
+            extra += packed
+        else:
+            field = packed.ljust(inline, b"\x00")
+        count = struct.pack("<Q" if big else "<I", len(values))
+        entries += struct.pack("<HH", tag, value_type) + count + field
+    ifd = struct.pack(f"<{count_format}", len(tags)) + entries + b"\x00" * inline
+
+    return head + ifd + extra
+
+
+def _scanline_tags(**overrides: tuple[int, list[int]] | None) -> dict:
+    tags = {
+        256: (4, [16384]),
+        257: (4, [16384]),
+        258: (3, [16, 16, 16]),
+        262: (3, [2]),
+        277: (3, [3]),
+        278: (4, [16384]),
+        284: (3, [1]),
+    }
+    names = {
+        "width": 256,
+        "height": 257,
+        "bits": 258,
+        "photometric": 262,
+        "samples": 277,
+        "rows": 278,
+        "planar": 284,
+        "tile_width": 322,
+        "tile_length": 323,
+        "extra": 338,
+    }
+    for name, value in overrides.items():
+        if value is None:
+            tags.pop(names[name], None)
+        else:
+            tags[names[name]] = value
+
+    return tags
+
+
+class TestOpenCVTiffScanlineDispatch:
+    @pytest.mark.parametrize(
+        "overrides, expected",
+        [
+            ({}, True),
+            ({"rows": None}, True),
+            ({"rows": (4, [0xFFFFFFFF])}, True),
+            ({"rows": (4, [0])}, True),
+            ({"rows": (4, [8192])}, False),
+            ({"tile_width": (4, [256]), "tile_length": (4, [256])}, False),
+            ({"planar": (3, [2])}, False),
+            ({"photometric": (3, [1])}, True),
+            ({"photometric": (3, [0])}, True),
+            ({"photometric": (3, [6])}, False),
+            ({"bits": (3, [12, 12, 12])}, False),
+            ({"bits": (3, [8, 8, 8])}, True),
+            ({"samples": (3, [2])}, False),
+            ({"samples": (3, [4]), "bits": (3, [16] * 4)}, False),
+            ({"samples": (3, [4]), "bits": (3, [16] * 4), "extra": (3, [1])}, True),
+            ({"samples": (3, [4]), "bits": (3, [16] * 4), "extra": (3, [2])}, False),
+            ({"height": (4, [15565]), "rows": (4, [15565])}, True),
+            ({"height": (4, [15564]), "rows": (4, [15564])}, False),
+        ],
+    )
+    def test_predicate_mirrors_opencv(self, overrides, expected):
+        from inference_model_manager.backends.decode import (
+            _opencv_reads_tiff_scanlines,
+        )
+
+        header = _tiff_header(_scanline_tags(**overrides))
+
+        assert _opencv_reads_tiff_scanlines(header) is expected
+
+    def test_predicate_reads_bigtiff(self):
+        from inference_model_manager.backends.decode import (
+            _opencv_reads_tiff_scanlines,
+        )
+
+        tags = _scanline_tags(width=(16, [16384]), rows=(16, [16384]))
+
+        assert _opencv_reads_tiff_scanlines(_tiff_header(tags, big=True)) is True
+
+    @pytest.mark.parametrize("big", [False, True])
+    @pytest.mark.parametrize("rows, expected", [(16384, 0), (8192, 1)])
+    def test_rgb_sample_rounds_only_off_the_scanline_path(self, rows, expected, big):
+        from inference_model_manager.backends.decode import _to_uint8
+
+        header = _tiff_header(_scanline_tags(rows=(4, [rows])), big=big)
+        samples = np.full((1, 1, 3), 129, dtype=np.uint16)
+
+        result = _to_uint8(samples, "tiff", header)
+
+        np.testing.assert_array_equal(result, np.full((1, 1, 3), expected, np.uint8))
+
+
+class TestDeepReductionMemory:
+    def test_reduction_allocates_little_beyond_its_output(self):
+        import tracemalloc
+
+        from inference_model_manager.backends.decode import _to_uint8
+
+        samples = np.full((1024, 1024, 3), 40000, dtype=np.uint16)
+        header = _tiff_header(_scanline_tags(rows=(4, [8192])))
+        tracemalloc.start()
+        try:
+            result = _to_uint8(samples, "tiff", header)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+        assert result.dtype == np.uint8
+        assert peak < result.nbytes * 1.5
+
+    def test_oversized_deep_image_rejected_before_reduction(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        def _explode(*args, **kwargs):
+            raise AssertionError("reduced before the size gate")
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(
+            decode_mod.imagecodecs,
+            "webp_decode",
+            lambda data: np.zeros((64, 64, 3), dtype=np.uint16),
+        )
+        monkeypatch.setattr(decode_mod, "_to_uint8", _explode)
+
+        with pytest.raises(ValueError, match="megapixel"):
+            decode_mod._decode_ic(b"RIFF\x00\x00\x00\x00WEBPVP8 ")
+
+
+# ---------------------------------------------------------------------------
 # Decompression-bomb gate
 # ---------------------------------------------------------------------------
 
