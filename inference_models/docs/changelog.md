@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- Grayscale conversion of torch-tensor inputs honours the declared input colour
+  order and matches OpenCV exactly. Previously BGR tensors were treated as RGB
+  and results could differ from OpenCV by one. Single-channel tensors still pass
+  through unchanged.
+
 ## `0.39.3`
 
 ### Added
