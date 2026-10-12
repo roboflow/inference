@@ -48,9 +48,13 @@ EXTERNAL_SOURCE_SENTINEL = "external"
 # same way as billing suppression - so a nested model decorator, which is
 # handed only the typed request, can attribute its row to the caller. The
 # default is never mutated, only replaced by `set()`.
-usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
-    "usage_source_tags", default={}
-)
+try:
+    from inference_sdk.config import usage_source_tags
+except ImportError:
+    # Older SDK releases retain in-process attribution until they are upgraded.
+    usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
+        "usage_source_tags", default={}
+    )
 
 # Whether the current workflow run is a builder/editor preview. Bound by the
 # `usage_collector` wrapper from `usage_workflow_preview` on `run_workflow`,

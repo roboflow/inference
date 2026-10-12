@@ -64,7 +64,7 @@ class _DummyInstrumentator:
         self.stream_manager_client = stream_manager_client
 
 
-def _build_test_client(monkeypatch) -> TestClient:
+def _build_test_client(monkeypatch, model_manager=None) -> TestClient:
     import inference.core.interfaces.http.http_api as http_api
     from inference.core import roboflow_api
     from inference.core.interfaces import workflows_execution_observer
@@ -88,7 +88,7 @@ def _build_test_client(monkeypatch) -> TestClient:
         workflows_execution_observer.usage_collector,
     ):
         monkeypatch.setattr(collector, "_enqueue_usage_payload", MagicMock())
-    model_manager = MagicMock()
+    model_manager = model_manager if model_manager is not None else MagicMock()
     model_manager.pingback = None
     model_manager.num_errors = 0
     interface = http_api.HttpInterface(model_manager=model_manager)
@@ -471,3 +471,122 @@ def test_source_tags_reach_workflow_model_and_python_usage(
     }
     for category, origins in origins_by_category.items():
         assert sorted(origins) == ["app", "custom-integration"], (category, origins)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("source_info", [None, "workflowEvals", "labelAssist"])
+@pytest.mark.parametrize("count_inference", [False, True])
+def test_workflow_source_tags_cross_remote_model_http_boundary(
+    monkeypatch, requests_mock, legacy, source_info, count_inference
+):
+    """Attribute remote model usage using only metadata sent over HTTP.
+
+    Args:
+        monkeypatch: Fixture replacing model computation and external lookups.
+        requests_mock: HTTP adapter forwarding SDK requests to a second server.
+        legacy (bool): Use the legacy model route instead of API v1.
+        source_info (Optional[str]): Workflow request attribution, or no tags.
+        count_inference (bool): Whether the internal caller wants billable usage.
+    """
+    from urllib.parse import urlsplit
+
+    import numpy as np
+
+    from inference.core.entities.responses.inference import (
+        ObjectDetectionInferenceResponse,
+    )
+    from inference.core.models.base import BaseInference
+    from inference.usage_tracking.decorator_helpers import usage_source_tags
+    from inference_sdk.config import outbound_service_secret
+    from inference_sdk.http.entities import ModelDescription
+
+    api_key = f"remote-tags-{legacy}-{source_info}-{count_inference}"
+
+    class FakeModel(BaseInference):
+        model_id = "fake-project/1"
+
+        def preprocess(self, image, **kwargs):
+            return np.zeros((2, 2, 3), dtype=np.uint8), {}
+
+        def predict(self, image, **kwargs):
+            return []
+
+        def postprocess(self, predictions, metadata, **kwargs):
+            return ObjectDetectionInferenceResponse(
+                image={"height": 2, "width": 2}, predictions=[]
+            )
+
+    model = FakeModel()
+    model.api_key = api_key
+    model_manager = MagicMock()
+    model_manager.get_task_type.return_value = "object-detection"
+    model_manager.infer_from_request_sync.side_effect = (
+        lambda model_id, request, **kwargs: model.infer(**request.model_dump())
+    )
+    remote = _build_test_client(monkeypatch, model_manager=model_manager)
+    workflow = _build_test_client(monkeypatch)
+    monkeypatch.setattr(
+        "inference_sdk.http.client.load_static_inference_input",
+        lambda **kwargs: [("base64_image", None)],
+    )
+    monkeypatch.setattr(
+        "inference_sdk.http.client.InferenceHTTPClient.get_model_description",
+        lambda *args, **kwargs: ModelDescription(
+            model_id="fake-project/1", task_type="object-detection"
+        ),
+    )
+
+    def remote_response(request, context):
+        # A separate server cannot inherit the workflow's Python context.
+        source_token = usage_source_tags.set({})
+        secret_token = outbound_service_secret.set(None)
+        try:
+            response = remote.post(
+                urlsplit(request.url).path,
+                params=urlsplit(request.url).query,
+                content=request.body,
+                headers=dict(request.headers),
+            )
+        finally:
+            outbound_service_secret.reset(secret_token)
+            usage_source_tags.reset(source_token)
+        context.status_code = response.status_code
+        return response.json()
+
+    endpoint = "/fake-project/1" if legacy else "/infer/object_detection"
+    requests_mock.post(f"http://remote-model{endpoint}", json=remote_response)
+    specification = _specification(api_key)
+    specification["dynamic_blocks_definitions"][0]["code"][
+        "run_function_code"
+    ] = f"""
+def run(self, value) -> BlockResult:
+    from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+    client = InferenceHTTPClient(api_url="http://remote-model", api_key="{api_key}")
+    client.configure(InferenceConfiguration(source="workflow-execution"))
+    client.select_api_{'v0' if legacy else 'v1'}()
+    client.infer(value, model_id="fake-project/1")
+    return {{"result": True}}
+"""
+    params = {"countinference": str(count_inference), "service_secret": SERVICE_SECRET}
+    if source_info is not None:
+        params.update(source="app", source_info=source_info)
+
+    response = workflow.post(
+        "/workflows/run",
+        params=params,
+        json={
+            "api_key": api_key,
+            "specification": specification,
+            "inputs": {"value": 1},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert len(requests_mock.request_history) == 1
+    details = json.loads(_row_for_category(api_key, "model")["resource_details"])
+    assert details.get("source_info") == source_info
+    assert details["source"] == ("app" if source_info else "workflow-execution")
+    assert details["billable"] is count_inference
+    assert usage_source_tags.get() == {}
+    assert outbound_service_secret.get() is None
