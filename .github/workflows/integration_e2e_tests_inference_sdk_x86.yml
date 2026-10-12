@@ -51,9 +51,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-integration-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-tests-inference-sdk-${{ matrix.python-version }}-integration-${{ hashFiles('requirements/**') }}
 
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
@@ -92,9 +90,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-e2e-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock', 'inference_models/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-tests-inference-sdk-${{ matrix.python-version }}-e2e-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock', 'inference_models/pyproject.toml') }}
 
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
