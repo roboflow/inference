@@ -1,6 +1,5 @@
 from typing import List, Literal, Optional, Type, Union
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from pydantic import ConfigDict, Field
@@ -211,6 +210,10 @@ def _depth_to_visualization(
     origin_image: WorkflowImageData,
     normalized_depth: torch.Tensor,
 ) -> WorkflowImageData:
+    # matplotlib.pyplot takes ~0.2 s to import and is only needed for the colour
+    # map, so load it here rather than when the block module is imported.
+    import matplotlib.pyplot as plt
+
     depth_for_viz = (normalized_depth * 255.0).to(torch.uint8).detach().cpu().numpy()
     cmap = plt.get_cmap("viridis")
     colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)

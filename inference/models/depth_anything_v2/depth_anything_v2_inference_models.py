@@ -2,7 +2,6 @@ from typing import Any, List, Tuple, Union
 from uuid import uuid4
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
