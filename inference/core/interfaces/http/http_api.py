@@ -4909,11 +4909,8 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The source of the inference request",
                 ),
-                # Keep feature attribution out of the collector's legacy
-                # service-name override, as the SAM3 routes do.
-                request_source_info: Optional[str] = Query(
+                source_info: Optional[str] = Query(
                     "external",
-                    alias="source_info",
                     description="The detailed source information of the inference request",
                 ),
                 disable_model_monitoring: Optional[bool] = Query(
@@ -4935,8 +4932,6 @@ class HttpInterface(BaseInterface):
                     dataset_id (str): ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID
                     version_id (str): ID of a Roboflow dataset version corresponding to the model to use for inference OR model ID
                     api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
-                    request_source_info (Optional[str]): Usage attribution from the
-                        ``source_info`` query parameter.
                     # Other parameters described in the function signature...
 
                 Returns:
@@ -5096,7 +5091,7 @@ class HttpInterface(BaseInterface):
                     disable_active_learning=disable_active_learning,
                     active_learning_target_dataset=active_learning_target_dataset,
                     source=source,
-                    source_info=request_source_info,
+                    source_info=source_info,
                     usage_billable=countinference,
                     disable_model_monitoring=disable_model_monitoring,
                     **args,

@@ -111,7 +111,14 @@ def test_source_context_overrides_block_defaults_at_send_time(serializer) -> Non
 
     assert parameters["source"] == "app"
     assert parameters["source_info"] == "workflowEvals"
-    assert getattr(configuration, serializer)()["source_info"] == "block-default"
+    if serializer == "to_legacy_call_parameters":
+        assert parameters["source_info_origin"] == "context"
+    else:
+        assert "source_info_origin" not in parameters
+
+    direct_parameters = getattr(configuration, serializer)()
+    assert direct_parameters["source_info"] == "block-default"
+    assert "source_info_origin" not in direct_parameters
 
 
 def test_source_context_does_not_change_billing_suppression() -> None:

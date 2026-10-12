@@ -3436,7 +3436,10 @@ class InferenceHTTPClient:
         # send time) - the standard v0/v1 `infer()` methods serialize those
         # through `InferenceConfiguration` instead, and never call this.
         query_params: Dict[str, Any] = {}
-        query_params.update(usage_source_tags.get())
+        if usage_source_tags.get():
+            query_params.update(
+                self.__inference_configuration.to_source_parameters(include_origin=True)
+            )
         if (
             self.__client_mode is HTTPClientMode.V0
             and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER

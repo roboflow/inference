@@ -237,12 +237,16 @@ class InferenceConfiguration:
             f"Model task {task_type} is not supported by API v1 client."
         )
 
-    def to_source_parameters(self) -> Dict[str, str]:
+    def to_source_parameters(self, *, include_origin: bool = False) -> Dict[str, str]:
         """Resolve usage attribution for an outgoing request.
 
         The request's context overrides block defaults, matching the collector's
         in-process attribution. Outside that context, explicit SDK configuration
         is preserved.
+
+        Args:
+            include_origin (bool): Include query-only provenance so the legacy
+                route distinguishes inherited tags from direct service identity.
 
         Returns:
             Dict[str, str]: Configured source tags merged with request-origin tags.
@@ -250,7 +254,10 @@ class InferenceConfiguration:
         parameters = remove_empty_values(
             {"source": self.source, "source_info": self.source_info}
         )
-        parameters.update(usage_source_tags.get())
+        inherited_tags = usage_source_tags.get()
+        parameters.update(inherited_tags)
+        if include_origin and inherited_tags.get("source_info"):
+            parameters["source_info_origin"] = "context"
 
         return parameters
 
@@ -416,7 +423,7 @@ class InferenceConfiguration:
         billing_parameters = self.to_billing_query_parameters()
         if billing_parameters:
             parameters.update(billing_parameters)
-        parameters.update(self.to_source_parameters())
+        parameters.update(self.to_source_parameters(include_origin=True))
         return parameters
 
 

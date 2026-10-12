@@ -3570,6 +3570,7 @@ def test_core_model_requests_forward_source_context(
     assert request.json()["source"] == "app"
     assert request.json()["source_info"] == "workflowEvals"
     assert request.qs["source_info"] == ["workflowevals"]
+    assert request.qs["source_info_origin"] == ["context"]
     assert "countinference" not in request.qs
 
 
@@ -3590,7 +3591,10 @@ async def test_async_core_model_requests_forward_source_context(
         AsyncMock(return_value=[("base64_image", None)]),
     )
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-    url = f"http://some.com{endpoint}?source=app&source_info=workflowEvals"
+    url = (
+        f"http://some.com{endpoint}?source=app&source_info=workflowEvals"
+        "&source_info_origin=context"
+    )
     token = usage_source_tags.set({"source": "app", "source_info": "workflowEvals"})
     try:
         with aioresponses() as responses:

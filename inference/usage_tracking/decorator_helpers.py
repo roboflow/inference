@@ -104,8 +104,8 @@ def _source_tag_bound_to_handler(
 ) -> Optional[str]:
     """Resolve a source tag from a handler's arguments, however it was declared.
 
-    Handlers spell these three ways. Some declare them plainly. The legacy model
-    and SAM3 routes use ``request_``-prefixed names, deliberately, so
+    Handlers spell these three ways. The legacy route declares them plainly. Two
+    SAM3 routes use ``request_``-prefixed names, deliberately, so
     that the raw names stay out of ``func_kwargs`` where ``source_info`` would
     displace ``roboflow_service_name``. Every other route declares nothing at
     all, leaving the value reachable only through the request's query string.
