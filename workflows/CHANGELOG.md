@@ -16,6 +16,15 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- Workflow syntax errors no longer repeat the raw input of the step that failed
+  validation. The rendered `pydantic` error (the `inner_error_message` of an HTTP
+  `WorkflowSyntaxError` response, and the traceback the server logs) used to
+  include each failing step's literal field values, secrets such as a `password`
+  or credentials in a URL included. Error messages, locations and
+  `blocks_errors` are unchanged.
+
 ### Added
 
 - OPC UA Reader enterprise block (`roboflow_enterprise/opc_reader@v1`): subscribes to one variable on an OPC UA server and returns its latest `value` on every run, with `is_new`, `error_status` and `error_message`. The variable is located like in the OPC UA Writer (`hierarchical` browse path or `direct` string NodeId, which also covers the Roboflow edge OPC UA server's `ns=1;s=Folder.Tag` tags).
