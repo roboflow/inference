@@ -66,11 +66,10 @@ jobs:
             -v "${{ github.workspace }}/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
             "$image" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'
       # Reuse Depot's project cache for amd64; arm64 is built but not runtime-tested.
-      - name: Build and Push
-        if: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
+      - name: Build both platforms and optionally push
         uses: depot/build-push-action@v1
         with:
-          push: true
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
           project: grl7ffzxd7
           context: .
           tags: roboflow/roboflow-inference-server-cpu-slim:latest,roboflow/roboflow-inference-server-cpu-slim:${{env.VERSION}}
