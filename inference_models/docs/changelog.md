@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Letterbox resizing of lists of torch tensors computes the target size and
+  padding with the same arithmetic as single images and the numpy path.
+  Previously float32 arithmetic could make the resized size one pixel off.
+
 ## `0.39.3`
 
 ### Added
