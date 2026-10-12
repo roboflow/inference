@@ -1399,11 +1399,11 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_
     ]
     assert (
         requests_mock.request_history[0].query
-        == "api_key=my-api-key&confidence=0.5&disable_active_learning=false"
+        == "api_key=my-api-key&confidence=0.5&allow_reduced_mask_resolution=false&disable_active_learning=false"
     )
     assert (
         requests_mock.request_history[1].query
-        == "api_key=my-api-key&confidence=0.5&disable_active_learning=false"
+        == "api_key=my-api-key&confidence=0.5&allow_reduced_mask_resolution=false&disable_active_learning=false"
     )
 
 
@@ -1426,7 +1426,7 @@ async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection
 
     with aioresponses() as m:
         m.post(
-            f"{api_url}/coco/3?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
+            f"{api_url}/coco/3?api_key=my-api-key&confidence=0.5&allow_reduced_mask_resolution=False&disable_active_learning=False",
             payload={
                 "image": {"height": 480, "width": 640},
                 "predictions": [
@@ -1442,7 +1442,7 @@ async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection
             },
         )
         m.post(
-            f"{api_url}/coco/3?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
+            f"{api_url}/coco/3?api_key=my-api-key&confidence=0.5&allow_reduced_mask_resolution=False&disable_active_learning=False",
             payload={
                 "image": {"height": 480, "width": 640},
                 "predictions": [
@@ -1548,7 +1548,7 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visual
     }
     assert (
         requests_mock.last_request.query
-        == "api_key=my-api-key&confidence=0.5&format=image_and_json&disable_active_learning=false"
+        == "api_key=my-api-key&confidence=0.5&format=image_and_json&allow_reduced_mask_resolution=false&disable_active_learning=false"
     )
 
 
@@ -1578,7 +1578,7 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visual
     assert result == {"visualization": base64.b64encode(b"data").decode("utf-8")}
     assert (
         requests_mock.last_request.query
-        == "api_key=my-api-key&confidence=0.5&format=image&disable_active_learning=false"
+        == "api_key=my-api-key&confidence=0.5&format=image&allow_reduced_mask_resolution=false&disable_active_learning=false"
     )
 
 
@@ -1595,7 +1595,7 @@ async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection
     http_client.configure(inference_configuration=configuration)
     with aioresponses() as m:
         m.post(
-            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&disable_active_learning=False&format=image",
+            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&allow_reduced_mask_resolution=False&disable_active_learning=False&format=image",
             body=b"data",
             headers={"content-type": "image/jpeg"},
         )
@@ -1657,7 +1657,7 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection(
     }
     assert (
         requests_mock.last_request.query
-        == "api_key=my-api-key&confidence=0.5&disable_active_learning=false"
+        == "api_key=my-api-key&confidence=0.5&allow_reduced_mask_resolution=false&disable_active_learning=false"
     )
 
 
@@ -1675,7 +1675,7 @@ async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection
 
     with aioresponses() as m:
         m.post(
-            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
+            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&allow_reduced_mask_resolution=False&disable_active_learning=False",
             payload={
                 "image": {"height": 480, "width": 640},
                 "predictions": [

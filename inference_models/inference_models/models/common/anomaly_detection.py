@@ -221,6 +221,25 @@ def post_process_anomaly_scores(
     calibration: AnomalyCalibration,
     include_anomaly_map: bool,
 ) -> ClassificationPrediction:
+    """Turn raw anomaly scores into the shared classification prediction.
+
+    Args:
+        model_results (AnomalyRawPrediction): Raw image scores and local anomaly
+            maps for one batch, as produced by the model forward pass.
+        calibration (AnomalyCalibration): Threshold and scale saved with the model.
+        include_anomaly_map (bool): If True, each image's metadata carries its map.
+
+    Returns:
+        ClassificationPrediction over ``normal`` and ``anomalous``. ``class_id``
+        follows the saved threshold and ``confidence`` maps the threshold to
+        exactly 0.5. ``images_metadata[i]`` holds ``anomaly_score``,
+        ``anomaly_threshold``, ``is_anomalous`` and, when requested,
+        ``anomaly_map``: a float32 array of shape ``(image_size, image_size)``
+        in network input coordinates, covering the whole (square-resized) image.
+
+    Raises:
+        CorruptedModelPackageError: If the model produced non-finite values.
+    """
     scores = model_results.scores.double()
     if not torch.isfinite(scores).all() or not torch.isfinite(model_results.maps).all():
         raise CorruptedModelPackageError(
@@ -235,20 +254,17 @@ def post_process_anomaly_scores(
     )
     is_anomalous = scores >= calibration.threshold
     images_metadata = []
-    for index, size_hw in enumerate(model_results.original_sizes_hw):
+    for index in range(len(model_results.original_sizes_hw)):
         metadata = {
             "anomaly_score": scores[index].item(),
             "anomaly_threshold": calibration.threshold,
             "is_anomalous": bool(is_anomalous[index].item()),
         }
         if include_anomaly_map:
-            # Pillow resize keeps the map identical to the one produced in training.
-            network_map = model_results.maps[index].float().cpu().numpy()
-            metadata["anomaly_map"] = np.asarray(
-                Image.fromarray(network_map).resize(
-                    (size_hw[1], size_hw[0]), Image.Resampling.BILINEAR
-                )
-            )
+            # Network coordinates: the map covers the whole (square-resized) input, so
+            # resizing it to the image is a plain stretch left to the consumer. The
+            # patch grid is the map's real resolution; anything finer is interpolation.
+            metadata["anomaly_map"] = model_results.maps[index].float().cpu().numpy()
         images_metadata.append(metadata)
     return ClassificationPrediction(
         class_id=is_anomalous.long(),

@@ -18,6 +18,7 @@ from inference.core.models.inference_models_adapters import (
     InferenceModelsAnomalyDetectionAdapter,
     prepare_anomaly_detection_response,
 )
+from inference.core.utils.anomaly_map_encoding import decode_anomaly_map
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference_models import ClassificationPrediction
 from inference_sdk.http.entities import InferenceConfiguration
@@ -85,7 +86,7 @@ def test_http_serialization_keeps_anomaly_fields():
     def predict():
         return prepare_anomaly_detection_response(
             prediction(anomaly_map=np.ones((10, 20), dtype=np.float32)),
-            image_sizes=[(10, 20)],
+            image_sizes=[(300, 400)],
             class_names=CLASS_NAMES,
         )[0]
 
@@ -93,8 +94,12 @@ def test_http_serialization_keeps_anomaly_fields():
     assert body["anomaly_score"] == 2.0
     assert body["is_anomalous"] is True
     assert body["anomaly_threshold"] == 2.0
-    assert len(body["anomaly_map"]) == 10
-    assert len(body["anomaly_map"][0]) == 20
+    assert body["anomaly_map"]["shape"] == [10, 20]
+    assert body["anomaly_map"]["dtype"] == "float32"
+    # The map is served at network resolution, never at the image size.
+    assert np.array_equal(
+        decode_anomaly_map(body["anomaly_map"]), np.ones((10, 20), dtype=np.float32)
+    )
 
 
 def test_request_and_sdk_forward_optional_map_to_the_model():

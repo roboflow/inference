@@ -28,6 +28,7 @@ from inference.core.env import (
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
     USE_INFERENCE_MODELS,
+    VJEPA2_1_ENABLED,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -499,6 +500,17 @@ except:
     )
 
 try:
+    if VJEPA2_1_ENABLED and USE_INFERENCE_MODELS:
+        from inference.core.models.inference_models_adapters import (
+            InferenceModelsActionRecognitionAdapter,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("action-recognition", "vjepa2-1-vitb-384")] = (
+            InferenceModelsActionRecognitionAdapter
+        )
+        ROBOFLOW_MODEL_TYPES[("action-recognition", "vjepa2_1")] = (
+            InferenceModelsActionRecognitionAdapter
+        )
     # Cosmos 3 Edge has no legacy implementation — it is served exclusively
     # through the inference_models bridge adapter.
     if COSMOS3_ENABLED and USE_INFERENCE_MODELS:
@@ -1185,6 +1197,21 @@ if USE_INFERENCE_MODELS:
         "yolo26m-sem",
         "yolo26l-sem",
         "yolo26x-sem",
+    ]:
+        ROBOFLOW_MODEL_TYPES[("semantic-segmentation", variant)] = (
+            InferenceModelsSemanticSegmentationAdapter
+        )
+
+    # RF-DETR semantic segmentation is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    for variant in [
+        "rfdetr",
+        "rfdetr-sem-nano",
+        "rfdetr-sem-small",
+        "rfdetr-sem-medium",
+        "rfdetr-sem-large",
+        "rfdetr-sem-xlarge",
+        "rfdetr-sem-2xlarge",
     ]:
         ROBOFLOW_MODEL_TYPES[("semantic-segmentation", variant)] = (
             InferenceModelsSemanticSegmentationAdapter

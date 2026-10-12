@@ -308,6 +308,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.qwen3vl.qwen3vl_hf",
         class_name="Qwen3VLHF",
     ),
+    ("vjepa2_1", ACTION_RECOGNITION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.vjepa2_1.model",
+        class_name="VJepaActionRecognition",
+    ),
+    ("vjepa2-1-vitb-384", ACTION_RECOGNITION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.vjepa2_1.model",
+        class_name="VJepaActionRecognition",
+    ),
     ("cosmos-3-edge", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
         class_name="Cosmos3EdgeReasoner",
@@ -434,6 +442,18 @@ REGISTERED_MODELS: Dict[
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_trt",
         class_name="RFDetrForInstanceSegmentationTRT",
+    ),
+    ("rfdetr", SEMANTIC_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_pytorch",
+        class_name="RFDetrForSemanticSegmentationTorch",
+    ),
+    ("rfdetr", SEMANTIC_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_onnx",
+        class_name="RFDetrForSemanticSegmentationOnnx",
+    ),
+    ("rfdetr", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_trt",
+        class_name="RFDetrForSemanticSegmentationTRT",
     ),
     ("rfdetr", KEYPOINT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(

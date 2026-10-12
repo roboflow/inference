@@ -10,6 +10,9 @@ from roboflow_workflows.core_steps.models.foundation.google_gemini import (
     v5 as gemini_v5,
 )
 from roboflow_workflows.core_steps.models.foundation.meta_vlm import v2 as meta_vlm_v2
+from roboflow_workflows.core_steps.models.foundation.mistral_vlm import (
+    v1 as mistral_vlm_v1,
+)
 from roboflow_workflows.core_steps.models.foundation.openai import v6 as openai_v6
 from roboflow_workflows.core_steps.models.foundation.qwen_vlm import v3 as qwen_vlm_v3
 from roboflow_workflows.core_steps.models.foundation.spacexai import v2 as spacexai_v2
@@ -95,6 +98,12 @@ BLOCK_CONTRACTS = {
         zai_vlm_v1.REASONING_EFFORT_OPTIONS,
         zai_vlm_v1.MODEL_VERSION_METADATA,
         zai_vlm_v1.DEFAULT_REASONING_EFFORT,
+    ),
+    "mistral_vlm@v1": (
+        mistral_vlm_v1.MODEL_REASONING_LEVELS,
+        mistral_vlm_v1.REASONING_EFFORT_OPTIONS,
+        mistral_vlm_v1.MODEL_VERSION_METADATA,
+        mistral_vlm_v1.DEFAULT_REASONING_EFFORT,
     ),
 }
 

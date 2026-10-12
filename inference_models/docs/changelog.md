@@ -2,6 +2,114 @@
 
 ## Unreleased
 
+## `0.39.3`
+
+### Added
+
+- V-JEPA 2.1 action recognition for Roboflow-trained PyTorch packages. The loader
+  validates the saved input settings and uses the trained labels, normalization,
+  and sampling policy. Predictions include frame ranges and confidence scores.
+- `safetensors` as a runtime dependency for loading V-JEPA weights.
+
+- Configurable mask resolution through `masks_resolution_factor` in `[0.0, 1.0]`
+  for YOLOv5, YOLOv7, YOLOv8, YOLO26, YOLACT, and RF-DETR instance segmentation.
+  Supported implementations forward the factor through dense and RLE
+  post-processing, including ONNX, TorchScript, TensorRT, and RF-DETR PyTorch
+  and CoreML. `1.0` retains image-resolution masks; `0.0` uses the unpadded model
+  grid before crop-canvas placement; intermediate values interpolate the target.
+  Lower factors do not guarantee smaller masks or lower latency when the image
+  is smaller than the model grid. Non-finite and out-of-range factors are rejected.
+- `mask_size` on `InstanceDetections` and `InstancesRLEMasks` records the encoded
+  grid independently of the image dimensions. Omitted values are inferred from
+  the dense tensor shape or default to the RLE carrier's image size.
+  `InstanceDetections.image_size` and `mask_frame_size` retain the original image
+  dimensions and image-space extent of the mask. Model results carry these
+  dimensions through dense, RLE, and empty-detection paths.
+- `scale_polygons_to_image` maps contours from mask-grid coordinates to image
+  coordinates without resizing the mask or restoring lost contour detail.
+
+### Changed
+
+- Action-recognition models can prepare frames before HTTP or Workflows stores
+  them. V-JEPA resizes full frames to the saved square size without cropping.
+  Cosmos keeps its existing aspect-ratio-preserving resize.
+- V-JEPA supports overlapping windows, an end-aligned final HTTP window, and
+  package or model-eval confidence thresholds. Same-class spans merge after
+  filtering. Invalid frame inputs and request options raise `ModelInputError`.
+- Direct instance-segmentation model results now return `xyxy` boxes in the same
+  `mask_size` coordinate grid as dense or RLE masks for YOLOv5, YOLOv7, YOLOv8,
+  YOLO26, YOLACT, and RF-DETR. Previously, reduced masks and image-space boxes
+  used different coordinate systems until the HTTP adapter scaled the boxes.
+  Boxes now map directly from network coordinates onto the resized mask grid
+  inside `inference_models`, without an intermediate image-space conversion.
+  Static crops use the same rounded canvas offsets for boxes and masks.
+  Boxes retain float32 fractional coordinates when the grids differ, avoiding
+  intermediate image-space rounding and float16 overflow on large images.
+  Factor `1.0` retains its existing final integer rounding and image-space behavior.
+  The HTTP adapter no longer repeats the scaling, preserving the existing
+  opted-in and default HTTP coordinate contracts.
+  **Direct-call compatibility:** callers reading `.xyxy` from reduced results
+  must now interpret those boxes in `mask_size` coordinates. Use
+  `InstanceDetections.to_supervision()` to restore both boxes and masks to
+  original-image coordinates. Manually constructed detections should supply
+  mask-grid boxes and retain `image_size`. Reduced-box values can differ from
+  earlier responses because intermediate image-space rounding is removed.
+- Server requests using `inference_models` require
+  `allow_reduced_mask_resolution=true` to apply `mask_decode_mode` and
+  `tradeoff_factor`. Without this opt-in, masks retain image resolution.
+  The legacy backend retains its existing decoding behavior.
+  With opt-in, boxes, polygon points and RLE masks all use the selected mask
+  grid, reported in response `image`. `original_image` retains the input dimensions
+  and `mask_metadata` maps all output geometry back to them, including when both
+  grids have the same dimensions. Without opt-in, all outputs use image coordinates.
+  The SDK defaults the flag to `False`; during client downsizing it preserves an
+  opted-in output grid and geometry, updating only original-image dimensions and
+  mapping scales. Server visualizations project geometry onto the original image
+  without mutating returned predictions.
+  The active-learning manager projects a separate copy to image-space polygon
+  annotations before passing it to sampling and registration.
+  Direct `inference_models` callers use `masks_resolution_factor` without the HTTP
+  opt-in. Reduced-grid workflow support is deferred to a separate PR.
+- RLE export and `InstanceDetections` iteration declare the encoded mask grid in
+  COCO `size`. Manually constructed reduced dense detections must supply
+  `image_size` for image-space conversion because it cannot be inferred from the
+  reduced tensor.
+- The RF-DETR fused Triton RLE post-processor now honors `masks_resolution_factor`
+  for native and upsampled mask grids, including multiclass and deferred streaming
+  results. Boxes and masks share the selected grid, with float32 fractional boxes
+  when that grid differs from the image and final integer rounding otherwise.
+  Empty and deferred results preserve the same grid and box dtype. Antialiased
+  downsampling and previously unsupported transforms use the reference path.
+  Multiclass results respect RF-DETR's query-count cap even when `max_detections`
+  is larger. Multiclass and deferred selection use global top-k before remapping,
+  without a four-class-per-query cutoff, and encode each selected query mask once.
+- The `inference_models` adapter now rejects unknown `mask_decode_mode` values
+  with `InvalidMaskDecodeArgument`; it previously ignored the mode. The legacy
+  backend already rejected invalid modes. Validation also runs without opt-in.
+
+- PatchCore and FoundAD return the optional heatmap (`include_anomaly_map=True`)
+  at the network input resolution, a float32 array of shape
+  `(image_size, image_size)`, instead of resized to the input image. The patch
+  grid is the map's real resolution and the map covers the whole image as the
+  network saw it, so callers stretch it to the image size themselves (one
+  `cv2.resize`). Behavior change for callers that overlaid
+  `images_metadata[i]["anomaly_map"]` at the input image size.
+
+### Fixed
+
+- Empty RLE instance-segmentation results retain the selected mask grid for
+  YOLOv5, YOLOv7, YOLOv8, YOLO26, YOLACT, and RF-DETR, including padding and
+  static crops. Output dimensions and HTTP coordinate metadata no longer
+  fall back to the original image size when no detections survive.
+
+- Origin-anchored static-crop masks now use a canvas representing the original
+  image, matching crops with non-zero offsets. Dense and RLE results retain the
+  crop's position when converted to image-resolution masks. Reduced canvases and
+  empty results follow the same coordinate convention.
+
+- Cosmos 3 Edge loads and runs on Apple Silicon GPUs (`DEFAULT_DEVICE=mps`), in bf16 with SDPA
+  attention. Loading used to crash or hang from a thread race in PyTorch's Metal kernel cache.
+
 ---
 
 ## `0.39.1`

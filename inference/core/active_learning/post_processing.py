@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from typing import List, Tuple
 
 from inference.core.active_learning.entities import (
@@ -13,6 +14,7 @@ from inference.core.constants import (
     OBJECT_DETECTION_TASK,
 )
 from inference.core.exceptions import PredictionFormatNotSupported
+from inference.core.utils.rle_to_polygon import polygon_from_coco_counts
 
 
 def adjust_prediction_to_client_scaling_factor(
@@ -44,6 +46,43 @@ def adjust_prediction_to_client_scaling_factor(
                 scaling_factor=scaling_factor,
             )
         )
+    return prediction
+
+
+def project_mask_grid_to_original(prediction: dict) -> dict:
+    """Prepare reduced-grid predictions for image-space active learning consumers.
+
+    Args:
+        prediction: Serialized inference response.
+
+    Returns:
+        An independent image-space copy for opted-in responses, with RLE masks
+        converted to the same largest-contour polygons used by polygon responses.
+        Responses without output-grid metadata are returned unchanged.
+    """
+    metadata = prediction.get("mask_metadata")
+    original_image = prediction.get("original_image")
+    if not metadata or not original_image:
+        return prediction
+
+    prediction = deepcopy(prediction)
+    prediction["image"] = prediction.pop("original_image")
+    prediction.pop("mask_metadata")
+    for detection in prediction.get("predictions", []):
+        for key in ("x", "width"):
+            detection[key] *= metadata["scale_x"]
+        for key in ("y", "height"):
+            detection[key] *= metadata["scale_y"]
+        if "rle" in detection:
+            rle = detection.pop("rle")
+            polygon = polygon_from_coco_counts(
+                counts=rle["counts"], height=rle["size"][0], width=rle["size"][1]
+            )
+            detection["points"] = [{"x": float(x), "y": float(y)} for x, y in polygon]
+        for point in detection.get("points", []):
+            point["x"] *= metadata["scale_x"]
+            point["y"] *= metadata["scale_y"]
+
     return prediction
 
 

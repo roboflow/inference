@@ -135,6 +135,9 @@ class InferenceConfiguration:
         format: The format for the inference.
         mask_decode_mode: The mask decode mode for the inference.
         tradeoff_factor: The tradeoff factor for the inference.
+        allow_reduced_mask_resolution: Return boxes, polygon points and RLE masks
+            on the selected mask grid with inference_models. Defaults to False.
+            Legacy backend behavior is unchanged.
         max_candidates: The maximum number of candidates for the inference.
         max_detections: The maximum number of detections for the inference.
         iou_threshold: The intersection over union threshold for the inference.
@@ -183,6 +186,8 @@ class InferenceConfiguration:
     # and emits a one-time recommendation to move to the header transport.
     # Pass "legacy" explicitly to keep the old behaviour silently.
     api_key_transport: Optional[Union[str, ApiKeyTransport]] = None
+
+    allow_reduced_mask_resolution: bool = False
 
     def __post_init__(self) -> None:
         # Normalise the transport to the enum so the client can rely on
@@ -319,6 +324,7 @@ class InferenceConfiguration:
         parameters_specs = [
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
+            ("allow_reduced_mask_resolution", "allow_reduced_mask_resolution"),
             ("response_mask_format", "response_mask_format"),
         ]
         for internal_name, external_name in parameters_specs:
@@ -367,6 +373,7 @@ class InferenceConfiguration:
             ("visualize_labels", "labels"),
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
+            ("allow_reduced_mask_resolution", "allow_reduced_mask_resolution"),
             ("max_detections", "max_detections"),
             ("iou_threshold", "overlap"),
             ("stroke_width", "stroke"),
