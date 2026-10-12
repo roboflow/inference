@@ -95,6 +95,27 @@ class OPCTestServer:
         self.write("speed", 1.5)
         self.write("temperature", 20.0)
 
+    def drop_subscriptions(self) -> None:
+        """Delete every subscription while keeping the sessions, and answer the
+        outstanding Publish requests with BadNoSubscription, as a server does once a
+        session has no subscription left (the asyncua server only queues them)."""
+        self._call(self._drop_subscriptions())
+
+    async def _drop_subscriptions(self) -> None:
+        service = self._server.iserver.subscription_service
+        await service.delete_subscriptions(list(service.subscriptions))
+        for protocol in self._server.bserver.clients:
+            processor = protocol.processor
+            while processor._publish_requests:
+                request = processor._publish_requests.popleft()
+                fault = ua.ServiceFault()
+                fault.ResponseHeader.ServiceResult = ua.StatusCode(
+                    ua.StatusCodes.BadNoSubscription
+                )
+                processor.send_response(
+                    request.requesthdr.RequestHandle, request.seqhdr, fault
+                )
+
     def subscription_count(self) -> int:
         return len(self._server.iserver.subscription_service.subscriptions)
 
@@ -380,6 +401,38 @@ def test_value_with_bad_quality_is_flagged(opc_server):
         assert results[-1]["error_message"] == (
             "Value quality is not Good: BadCommunicationError"
         )
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(30)
+def test_subscription_dropped_by_server_is_flagged_then_restored(opc_server):
+    # given a healthy subscription
+    block = OPCReaderBlockV1()
+
+    try:
+        assert block.run(**reader_kwargs(opc_server))["value"] is False
+
+        # when the server drops the subscription but keeps the session alive
+        opc_server.drop_subscriptions()
+        opc_server.write("running", True)
+
+        # then the stale value is flagged instead of reported as healthy
+        results = []
+        assert wait_until(
+            lambda: results.append(block.run(**reader_kwargs(opc_server)))
+            or results[-1]["error_status"],
+            timeout=10,
+        )
+        assert results[-1]["value"] is False
+        assert "stopped delivering notifications" in results[-1]["error_message"]
+        # and the block re-subscribes and delivers the change
+        assert wait_until(
+            lambda: results.append(block.run(**reader_kwargs(opc_server)))
+            or (results[-1]["value"] is True and not results[-1]["error_status"]),
+            timeout=10,
+        )
+        assert opc_server.subscription_count() == 1
     finally:
         block.close()
 

@@ -854,9 +854,16 @@ class FakeAsyncClient:
     instances: List["FakeAsyncClient"] = []
     read_result: ua.DataValue = ua.DataValue(ua.Variant(True))
     disconnect_hangs = False
+    publish_loop_ended = False
 
     def __init__(self, url, timeout):
         self.url = url
+        # asyncua keeps the publish loop task here; done() mirrors whether it ended
+        self.uaclient = SimpleNamespace(
+            _publish_task=SimpleNamespace(
+                done=lambda: FakeAsyncClient.publish_loop_ended
+            )
+        )
         self.session_timeout = None
         self.socket_closed = False
         self.disconnected = False
@@ -895,6 +902,7 @@ def fake_clients(monkeypatch):
     FakeAsyncClient.instances = []
     FakeAsyncClient.read_result = ua.DataValue(ua.Variant(True))
     FakeAsyncClient.disconnect_hangs = False
+    FakeAsyncClient.publish_loop_ended = False
     monkeypatch.setattr(v1, "Client", FakeAsyncClient)
     yield FakeAsyncClient.instances
 
@@ -974,6 +982,31 @@ class TestSubscriptionWorker:
         assert state.connected is False
         assert state.has_value is False
         assert state.error.startswith("NODE ERROR: BadNodeIdUnknown")
+        assert fake_clients[0].disconnected is True
+
+    def test_publish_loop_ending_normally_counts_as_a_lost_subscription(
+        self, fake_clients, monkeypatch
+    ):
+        # asyncua ends its publish loop without an error on BadNoSubscription, so a
+        # healthy session alone does not prove notifications still arrive
+        monkeypatch.setattr(v1, "CONNECTION_CHECK_INTERVAL_SECONDS", 0.05)
+        monkeypatch.setattr(v1, "RECONNECT_INITIAL_DELAY_SECONDS", 0.05)
+        worker, state = self._direct_worker()
+        worker.start()
+        try:
+            assert state.settled.wait(timeout=5)
+            assert state.connected is True
+
+            FakeAsyncClient.publish_loop_ended = True
+            assert wait_for(lambda: not state.connected)
+            assert "stopped delivering notifications" in state.error
+
+            FakeAsyncClient.publish_loop_ended = False
+            assert wait_for(lambda: state.connected)
+        finally:
+            worker.stop()
+
+        assert len(fake_clients) >= 2
         assert fake_clients[0].disconnected is True
 
     def test_hung_disconnect_is_abandoned_within_the_shutdown_budget(

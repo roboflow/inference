@@ -597,12 +597,11 @@ class _SubscriptionWorker:
                         subscription_lost.wait(), CONNECTION_CHECK_INTERVAL_SECONDS
                     )
                 except asyncio.TimeoutError:
-                    # Raises the error that ended asyncua's watchdog or publish loop.
-                    await client.check_connection()
+                    await _ensure_notifications_flowing(client)
                     continue
                 # A dead watchdog also ends the subscription; prefer its error, which
                 # names the actual cause.
-                await client.check_connection()
+                await _ensure_notifications_flowing(client)
                 raise ConnectionError(
                     f"server ended the subscription ({handler.lost_status})"
                 )
@@ -656,6 +655,23 @@ class _SubscriptionWorker:
             logger.error(f"OPC UA Reader {self._url}: {message}")
         else:
             logger.debug(f"OPC UA Reader {self._url}: {message}")
+
+
+async def _ensure_notifications_flowing(client: Client) -> None:
+    """Raise if the session or the subscription's notification delivery has stopped.
+
+    `check_connection()` re-raises the error that ended asyncua's watchdog or publish
+    loop, but asyncua ends its publish loop *normally* on `BadNoSubscription` (the server
+    dropped the subscription) or when the server reports no subscription at all. The
+    session then stays healthy while no notification will ever arrive again, so a
+    finished publish loop counts as a lost subscription too.
+    """
+    await client.check_connection()
+    publish_task = getattr(getattr(client, "uaclient", None), "_publish_task", None)
+    if publish_task is not None and publish_task.done():
+        raise ConnectionError(
+            "the server stopped delivering notifications for the subscription"
+        )
 
 
 def _stop_worker(worker: _SubscriptionWorker) -> None:
