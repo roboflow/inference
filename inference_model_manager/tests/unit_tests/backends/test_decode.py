@@ -722,3 +722,380 @@ class TestPluginDecoderGate:
         with self._registered(lambda data: chw) as decode:
             assert decode(webp_bytes) is chw
 
+
+# ---------------------------------------------------------------------------
+# Truncated JPEG — cv2.imdecode refuses one, the decoder must too
+# ---------------------------------------------------------------------------
+
+
+def _complete_jpeg() -> bytes:
+    imagecodecs = pytest.importorskip("imagecodecs")
+    return bytes(imagecodecs.jpeg_encode(_make_rgb_array(64, 64)))
+
+
+def _scan_start(data: bytes) -> int:
+    return data.index(b"\xff\xda")
+
+
+def _with_thumbnail_segment(data: bytes) -> bytes:
+    """Main JPEG preceded by an APP1 Exif segment embedding a complete JPEG."""
+    imagecodecs = pytest.importorskip("imagecodecs")
+    thumbnail = bytes(imagecodecs.jpeg_encode(_make_rgb_array(8, 8)))
+    payload = b"Exif\x00\x00II\x2a\x00\x08\x00\x00\x00\x00\x00" + thumbnail
+    app1 = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+    return data[:2] + app1 + data[2:]
+
+
+def _progressive_jpeg() -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.fromarray(_make_rgb_array(64, 64)).save(
+        buffer, format="JPEG", progressive=True
+    )
+    return buffer.getvalue()
+
+
+def _restart_marker_jpeg() -> bytes:
+    cv2 = pytest.importorskip("cv2")
+    _, encoded = cv2.imencode(
+        ".jpg", _make_rgb_array(64, 64), [cv2.IMWRITE_JPEG_RST_INTERVAL, 1]
+    )
+    return encoded.tobytes()
+
+
+def _segment(marker: bytes, payload: bytes) -> bytes:
+    return marker + (len(payload) + 2).to_bytes(2, "big") + payload
+
+
+def _scan_cases() -> dict[str, tuple[bytes, bool]]:
+    progressive = _progressive_jpeg()
+    scans = [
+        i for i in range(len(progressive)) if progressive[i : i + 2] == b"\xff\xda"
+    ]
+    restart = _restart_marker_jpeg()
+    app1_with_eoi = _segment(b"\xff\xe1", b"Exif\x00\x00junk\xff\xd9junk")
+    comment_with_eoi = _segment(b"\xff\xfe", b"note \xff\xd9 note")
+    cases = {
+        "progressive_complete": (progressive, False),
+        "progressive_missing_eoi": (progressive[:-2], True),
+        "progressive_cut_before_second_scan": (progressive[: scans[1]], True),
+        "progressive_cut_in_second_scan": (progressive[: scans[1] + 30], True),
+        "missing_eoi_then_app1_holding_eoi": (progressive[:-2] + app1_with_eoi, True),
+        "missing_eoi_then_comment_holding_eoi": (
+            progressive[:-2] + comment_with_eoi,
+            True,
+        ),
+        "app1_after_scan_then_eoi": (
+            progressive[:-2] + app1_with_eoi + b"\xff\xd9",
+            False,
+        ),
+        "restart_markers_complete": (restart, False),
+        "restart_markers_missing_eoi": (restart[:-2], True),
+        "fill_bytes_before_eoi": (progressive[:-2] + b"\xff\xff\xff\xd9", False),
+        "progressive_trailing_bytes_after_eoi": (progressive + b"\xff\xd8junk", False),
+    }
+    return cases
+
+
+def _truncation_cases() -> dict[str, tuple[bytes, bool]]:
+    data = _complete_jpeg()
+    scan = _scan_start(data)
+    with_thumbnail = _with_thumbnail_segment(data)
+    cases = {
+        "complete": (data, False),
+        "cut_in_scan": (data[: scan + (len(data) - scan) // 2], True),
+        "cut_after_scan_header": (data[: scan + 20], True),
+        "cut_before_scan": (data[:scan], True),
+        "missing_eoi": (data[:-2], True),
+        "trailing_bytes_after_eoi": (data + b"\x00trailing", False),
+        "thumbnail_complete": (with_thumbnail, False),
+        "thumbnail_main_missing_eoi": (with_thumbnail[:-2], True),
+        "thumbnail_main_cut_in_scan": (
+            with_thumbnail[: len(with_thumbnail) - 40],
+            True,
+        ),
+        **_scan_cases(),
+    }
+    return cases
+
+
+class TestJpegIsTruncated:
+    @pytest.mark.parametrize("case", sorted(_truncation_cases()))
+    def test_detects_truncation(self, case):
+        from inference_model_manager.backends.decode import jpeg_is_truncated
+
+        data, truncated = _truncation_cases()[case]
+        assert jpeg_is_truncated(data) is truncated
+        assert jpeg_is_truncated(memoryview(data)) is truncated
+
+    @pytest.mark.parametrize("case", sorted(_truncation_cases()))
+    def test_agrees_with_cv2_imdecode(self, case):
+        from inference_model_manager.backends.decode import jpeg_is_truncated
+
+        cv2 = pytest.importorskip("cv2")
+        data, _ = _truncation_cases()[case]
+        decoded = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        assert jpeg_is_truncated(data) is (decoded is None)
+
+    def test_non_jpeg_is_never_truncated(self, png_bytes, webp_bytes):
+        from inference_model_manager.backends.decode import jpeg_is_truncated
+
+        assert jpeg_is_truncated(png_bytes) is False
+        assert jpeg_is_truncated(png_bytes[: len(png_bytes) // 2]) is False
+        assert jpeg_is_truncated(webp_bytes) is False
+        assert jpeg_is_truncated(b"") is False
+
+    @pytest.mark.parametrize("case", ["cut_in_scan", "missing_eoi"])
+    def test_decoder_rejects_truncated_jpeg_as_input_error(self, case):
+        data, _ = _truncation_cases()[case]
+        with pytest.raises(ValueError, match="truncated"):
+            make_decoder("imagecodecs")(data)
+
+    def test_plugin_decoder_never_sees_truncated_jpeg(self):
+        import inference_model_manager.backends.decode as decode_mod
+
+        data = _complete_jpeg()
+
+        def _explode(_data):
+            raise AssertionError("plugin decode must not run for a truncated JPEG")
+
+        decode_mod.register_decoder("fake-truncation", lambda device: _explode)
+        try:
+            decode = decode_mod.make_decoder("fake-truncation", device="cpu")
+            with pytest.raises(ValueError, match="truncated"):
+                decode(data[:-2])
+        finally:
+            decode_mod.DECODER_FACTORIES.pop("fake-truncation", None)
+
+    @pytest.mark.parametrize(
+        "case,truncated",
+        [
+            ("before_restart_marker", False),
+            ("before_end_of_data", True),
+            ("before_eoi", False),
+            ("before_comment_holding_eoi", True),
+            ("before_comment_then_eoi", False),
+        ],
+    )
+    def test_long_fill_runs_are_scanned_in_linear_time(self, case, truncated):
+        import time
+
+        from inference_model_manager.backends.decode import jpeg_is_truncated
+
+        fill = b"\xff" * (64 * 1024)
+        progressive = _progressive_jpeg()[:-2]
+        comment = _segment(b"\xff\xfe", b"note \xff\xd9 note")
+        restart = _restart_marker_jpeg()
+        first_restart = restart.index(b"\xff\xd0")
+        data = {
+            "before_restart_marker": (
+                restart[:first_restart] + fill + restart[first_restart:]
+            ),
+            "before_end_of_data": progressive + fill,
+            "before_eoi": progressive + fill + b"\xd9",
+            "before_comment_holding_eoi": progressive + fill + comment,
+            "before_comment_then_eoi": progressive + fill + comment + b"\xff\xd9",
+        }[case]
+
+        started = time.perf_counter()
+        result = jpeg_is_truncated(data)
+        elapsed = time.perf_counter() - started
+
+        assert result is truncated
+        assert elapsed < 0.1, f"{elapsed:.3f}s"
+
+    @pytest.mark.parametrize("complete", [False, True])
+    def test_large_view_is_scanned_without_copying(self, complete):
+        import tracemalloc
+
+        from inference_model_manager.backends.decode import jpeg_is_truncated
+
+        size = 16 * 1024 * 1024
+        head = _complete_jpeg()[:-2]
+        buffer = bytearray(head + bytes(size) + (b"\xff\xd9" if complete else b""))
+        view = memoryview(buffer)
+
+        tracemalloc.start()
+        try:
+            truncated = jpeg_is_truncated(view)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+        assert truncated is not complete
+        assert peak < 1024 * 1024
+
+    def test_complete_jpeg_with_trailing_bytes_still_decodes(self):
+        data = _complete_jpeg() + b"\x00trailing"
+        assert make_decoder("imagecodecs")(data).shape == (64, 64, 3)
+
+
+# ---------------------------------------------------------------------------
+# Resetting the EXIF orientation — cv2.IMREAD_IGNORE_ORIENTATION as bytes
+# ---------------------------------------------------------------------------
+
+
+def _orientation_tiff_block(orientation: int, byte_order: str) -> bytes:
+    order = "little" if byte_order == "II" else "big"
+    return (
+        byte_order.encode()
+        + (42).to_bytes(2, order)
+        + (8).to_bytes(4, order)
+        + (1).to_bytes(2, order)
+        + (0x0112).to_bytes(2, order)
+        + (3).to_bytes(2, order)
+        + (1).to_bytes(4, order)
+        + orientation.to_bytes(2, order)
+        + b"\x00\x00"
+        + b"\x00\x00\x00\x00"
+    )
+
+
+def _jpeg_with_tiff_block(tiff: bytes) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.fromarray(_upright_blocks()).save(buffer, format="JPEG", quality=95)
+    data = buffer.getvalue()
+    payload = b"Exif\x00\x00" + tiff
+    app1 = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+    return data[:2] + app1 + data[2:]
+
+
+def _tiff_with_orientation(orientation: int, byte_order: str) -> bytes:
+    import io
+
+    tifffile = pytest.importorskip("tifffile")
+    buffer = io.BytesIO()
+    tifffile.imwrite(
+        buffer,
+        _upright_blocks(),
+        byteorder="<" if byte_order == "II" else ">",
+        extratags=[(0x0112, 3, 1, orientation, True)],
+    )
+    return buffer.getvalue()
+
+
+def _oriented(fmt: str, orientation: int, byte_order: str) -> bytes:
+    if fmt == "JPEG":
+        return _jpeg_with_tiff_block(_orientation_tiff_block(orientation, byte_order))
+    if fmt == "PNG":
+        return _png_with_exif_chunk(_orientation_tiff_block(orientation, byte_order))
+    return _tiff_with_orientation(orientation, byte_order)
+
+
+def _png_crcs_valid(data: bytes) -> bool:
+    import zlib
+
+    offset = 8
+    while offset < len(data):
+        length = int.from_bytes(data[offset : offset + 4], "big")
+        end = offset + 8 + length
+        crc = int.from_bytes(data[end : end + 4], "big")
+        if zlib.crc32(data[offset + 4 : end]) != crc:
+            return False
+        offset = end + 4
+    return True
+
+
+class TestResetExifOrientation:
+    @pytest.mark.parametrize("byte_order", ["II", "MM"])
+    @pytest.mark.parametrize("orientation", [6, 8])
+    @pytest.mark.parametrize("fmt", ["JPEG", "PNG"])
+    def test_result_is_upright_tagged_and_decodes_as_stored(
+        self, fmt, orientation, byte_order
+    ):
+        from inference_model_manager.backends.decode import reset_exif_orientation
+
+        cv2 = pytest.importorskip("cv2")
+        data = _oriented(fmt, orientation, byte_order)
+        assert exif_orientation(data) == orientation
+
+        result = reset_exif_orientation(data)
+
+        assert exif_orientation(result) == 1
+        decoded = make_decoder("imagecodecs")(result)
+        as_stored = cv2.imdecode(
+            np.frombuffer(data, np.uint8),
+            cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION,
+        )
+        if fmt == "JPEG":
+            _assert_close(decoded, as_stored)
+        else:
+            np.testing.assert_array_equal(decoded, as_stored)
+            np.testing.assert_array_equal(decoded, _upright_blocks()[..., ::-1])
+
+    @pytest.mark.parametrize("byte_order", ["II", "MM"])
+    @pytest.mark.parametrize("orientation", [6, 8])
+    def test_tiff_stays_oriented_like_cv2(self, orientation, byte_order):
+        from inference_model_manager.backends.decode import reset_exif_orientation
+
+        cv2 = pytest.importorskip("cv2")
+        data = _oriented("TIFF", orientation, byte_order)
+
+        result = reset_exif_orientation(data)
+
+        assert result == data
+        as_stored = cv2.imdecode(
+            np.frombuffer(data, np.uint8),
+            cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION,
+        )
+        np.testing.assert_array_equal(make_decoder("imagecodecs")(result), as_stored)
+
+    @pytest.mark.parametrize("byte_order", ["II", "MM"])
+    @pytest.mark.parametrize("fmt", ["JPEG", "PNG"])
+    def test_only_the_tag_value_changes(self, fmt, byte_order):
+        from inference_model_manager.backends.decode import reset_exif_orientation
+
+        data = _oriented(fmt, 6, byte_order)
+
+        result = reset_exif_orientation(data)
+
+        assert len(result) == len(data)
+        changed = [i for i, (a, b) in enumerate(zip(data, result)) if a != b]
+        assert len(changed) >= 1
+        if fmt == "PNG":
+            assert _png_crcs_valid(result)
+            tag_byte, *crc_bytes = changed
+            crc_at = data.index(b"eXIf") + 4 + len(_orientation_tiff_block(6, "II"))
+            assert all(crc_at <= i < crc_at + 4 for i in crc_bytes)
+            changed = [tag_byte]
+        assert len(changed) == 1
+        assert data[changed[0]] == 6 and result[changed[0]] == 1
+
+    def test_pil_written_jpeg_exif_is_reset(self):
+        from inference_model_manager.backends.decode import reset_exif_orientation
+
+        data = _jpeg_with_orientation(_upright_blocks(), 6)
+
+        result = reset_exif_orientation(data)
+
+        assert exif_orientation(result) == 1
+        assert sum(a != b for a, b in zip(data, result)) == 1
+
+    def test_unoriented_inputs_are_returned_unchanged(self, jpeg_bytes, png_bytes):
+        from inference_model_manager.backends.decode import reset_exif_orientation
+
+        tiff = _orientation_tiff_block(6, "II")
+        bad_crc = _png_with_exif_chunk(tiff)
+        at = bad_crc.index(b"eXIf") + 4 + len(tiff)
+        bad_crc = bad_crc[:at] + bytes(4) + bad_crc[at + 4 :]
+        unchanged = [
+            jpeg_bytes,
+            png_bytes,
+            b"",
+            b"not an image",
+            _encode_with_orientation("WEBP", 6),
+            _jpeg_with_orientation(_upright_blocks(), 1),
+            _png_with_exif_chunk(b"Exif\x00\x00" + tiff),
+            bad_crc,
+            _jpeg_with_tiff_block(_orientation_tiff_block(9, "MM")),
+        ]
+        for data in unchanged:
+            assert reset_exif_orientation(data) == data
+            assert reset_exif_orientation(memoryview(data)) == data

@@ -91,6 +91,7 @@ from inference_server.legacy.entities import (
     Sam2EmbeddingResponse,
     Sam2SegmentationRequest,
     Sam2SegmentationResponse,
+    Sam3_3D_Objects_InferenceRequest,
     Sam3EmbeddingResponse,
     Sam3SegmentationRequest,
     Sam3SegmentationResponse,
@@ -400,6 +401,7 @@ async def model_add(
         api_key,
         row_key=row_key,
         path=request.scope["path"],
+        report_canonical_model_id=True,
     )
     bridge.record_request(route, row_key, request.scope["path"])
     return await _models_descriptions(bridge)
@@ -546,7 +548,13 @@ async def _infer_and_repack(
         getattr(inference_request, "visualize_predictions", False)
     )
     images, is_batch = as_image_list(inference_request.image)
-    payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
+    payloads = await load_request_images(
+        images,
+        ndarray_ok=bridge.accepts_ndarray,
+        keep_orientation=bool(
+            getattr(inference_request, "disable_preproc_auto_orient", False)
+        ),
+    )
     params = build_task_params(route.task_type, route.action, inference_request, route)
     started = time.perf_counter()
     predictions = await bridge.infer(
@@ -724,12 +732,14 @@ async def infer_embeddings(
 ) -> Response:
     api_key = resolve_api_key(request, api_key, inference_request.api_key)
     inference_request.api_key = api_key
-    task_type = await bridge.stat_task_type(inference_request.model_id, api_key)
+    instance = capability_instance([IMAGE_EMBEDDINGS], inference_request.output_type)
+    task_type = await bridge.stat_task_type(
+        inference_request.model_id, api_key, instance
+    )
     if task_type is not None and task_type not in IMAGE_EMBEDDING_TASK_TYPES:
         raise LegacyHTTPError(501, _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE)
 
     alias = request_alias_for(inference_request.model_id)
-    instance = capability_instance([IMAGE_EMBEDDINGS], inference_request.output_type)
     row_key = registration_key(inference_request.model_id, instance)
     route = await bridge.resolve(
         inference_request.model_id,
@@ -894,6 +904,15 @@ def _parse_legacy_class_filter(class_filter: Optional[str]) -> Optional[List[str
 @with_legacy_errors
 @report_request_usage
 async def infer_sam3_3d(request: Request) -> Response:
+    try:
+        sam3_3d_request = Sam3_3D_Objects_InferenceRequest.model_validate(
+            await request.json()
+        )
+    except ValueError:
+        sam3_3d_request = None
+    if sam3_3d_request is not None:
+        api_key = resolve_api_key(request, None, sam3_3d_request.api_key)
+        await get_bridge(request).record_model_access(sam3_3d_request.model_id, api_key)
     raise LegacyHTTPError(501, _TASK_UNAVAILABLE_MESSAGE.format(route="/sam3_3d/infer"))
 
 
@@ -904,7 +923,6 @@ async def infer_sam3_3d(request: Request) -> Response:
     ],
     summary="Owlv2 image prompting",
     description="Run the google owlv2 model to few-shot object detect",
-    response_model_exclude_none=True,
 )
 @with_legacy_errors
 @report_request_usage
@@ -1172,7 +1190,13 @@ async def _resolve_core_model(
 
 async def _load_images(inference_request, bridge: LegacyModelBridge):
     images, is_batch = as_image_list(inference_request.image)
-    payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
+    payloads = await load_request_images(
+        images,
+        ndarray_ok=bridge.accepts_ndarray,
+        keep_orientation=bool(
+            getattr(inference_request, "disable_preproc_auto_orient", False)
+        ),
+    )
     return payloads, is_batch
 
 
@@ -1283,7 +1307,8 @@ async def _run_ocr(
         else:
             response = repack_text_ocr_response(prediction, dims)
         response.time = elapsed
-        response.resolved_model = resolved_model_for(route)
+        if core != "pp_ocr":
+            response.resolved_model = resolved_model_for(route)
         responses.append(response)
     pingback.record_inference(route.registry_id, inference_request, responses)
     return orjson_response(responses if is_batch else responses[0], keep_parent_id=True)

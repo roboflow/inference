@@ -601,3 +601,49 @@ def test_embedding_endpoint_rejects_an_unknown_output_type(legacy_client, fake_s
     )
 
     assert r.status_code == 422
+
+
+def test_embedding_response_reports_the_legacy_registration_key(
+    legacy_client, fake_stat
+):
+    fake_stat["classifiers/4"] = ("classification", "infer")
+    gw = _gateway("classifiers/4", "logits", _envelope("logits", [0.5]))
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={
+            "model_id": "resnet101",
+            "api_key": "k",
+            "image": _image(),
+            "output_type": "logits",
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    assert (
+        r.headers["X-Model-Id"]
+        == "resnet101:capabilities=image_embeddings:output_type=logits"
+    )
+
+
+def test_embedding_request_for_an_unknown_model_reports_its_registration_key(
+    legacy_client, fake_stat
+):
+    r = legacy_client(FakeGateway()).post(
+        "/infer/embeddings",
+        json={"model_id": "missing/1", "api_key": "k", "image": _image()},
+    )
+
+    assert r.status_code in (401, 404), r.text
+    assert r.headers["X-Model-Id"] == "missing/1:capabilities=image_embeddings"
+
+
+def test_model_add_reports_the_canonical_model_id(legacy_client, fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+
+    r = legacy_client(FakeGateway()).post(
+        "/model/add", json={"model_id": "yolov8n-640", "api_key": "k"}
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.headers["X-Model-Id"] == "coco/3"

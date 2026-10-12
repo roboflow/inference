@@ -41,6 +41,7 @@ from inference_server.middlewares.headers import (
     MODEL_LOAD_TIME_HEADER,
     WORKFLOW_ID_HEADER,
 )
+from inference_server.routing import is_capability_instance, registration_key
 
 MODEL_LOAD_EVENTS: contextvars.ContextVar[Optional[List[Tuple[str, bool, float]]]] = (
     contextvars.ContextVar("model_load_events", default=None)
@@ -66,7 +67,9 @@ def set_requested_model_id(model_id: str, *, requested_model_id: str) -> None:
     REQUESTED_MODEL_ID.set((model_id, requested_model_id))
 
 
-def record_model_load(model_id: str, *, cold_start: bool, load_time_s: float) -> None:
+def record_model_load(
+    model_id: str, *, cold_start: bool, load_time_s: float, instance: str = ""
+) -> None:
     """Record that the current request made a model ready.
 
     Args:
@@ -74,6 +77,8 @@ def record_model_load(model_id: str, *, cold_start: bool, load_time_s: float) ->
             by ``set_requested_model_id``, the requested id is recorded.
         cold_start: Whether this request loaded the model.
         load_time_s: Seconds the load took.
+        instance: Instance the model was loaded under; a capability instance
+            is recorded under its registration key.
     """
     events = MODEL_LOAD_EVENTS.get()
     if events is None:
@@ -82,6 +87,8 @@ def record_model_load(model_id: str, *, cold_start: bool, load_time_s: float) ->
     requested = REQUESTED_MODEL_ID.get()
     if requested is not None and requested[0] == model_id:
         model_id = requested[1]
+    if is_capability_instance(instance):
+        model_id = registration_key(model_id, instance)
     events.append((model_id, cold_start, load_time_s))
 
 

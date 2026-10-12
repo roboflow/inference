@@ -23,6 +23,7 @@ from inference_server.configuration import (
     LEGACY_ROUTE_METADATA_TTL_S,
     MODEL_STAT_CACHE_SIZE,
     MODEL_STAT_CACHE_TTL_S,
+    MODELS_CACHE_AUTH_ENABLED,
 )
 from inference_server.errors import PayloadTooLargeError
 from inference_server.framework.entities import CommonRequestParams
@@ -61,8 +62,11 @@ from inference_server.middlewares.model_load import (
 from inference_server.prometheus import measure_inference
 from inference_server.routing import (
     has_capability_marker,
+    is_capability_instance,
     parse_registration_key,
     plain_model_id,
+    registration_key,
+    routed_instance,
     routing_key,
 )
 from inference_server.usage.rows import (
@@ -422,12 +426,22 @@ class LegacyModelBridge:
         path: str = "",
         alias: Optional[str] = None,
         instance: str = "",
+        report_canonical_model_id: bool = False,
     ) -> Route:
         model_registry_id = _plain_registry_id(model_id)
         registry_id = routing_key(model_registry_id, instance)
-        set_requested_model_id(model_registry_id, requested_model_id=model_id)
+        reported_model_id = registration_key(
+            model_registry_id if report_canonical_model_id else model_id, instance
+        )
+        if not report_canonical_model_id:
+            set_requested_model_id(model_registry_id, requested_model_id=model_id)
+        if not _cache_auth_applies():
+            _record_reported_model(reported_model_id)
         if model_registry_id.partition("/")[2] == STUB_VERSION_ID:
-            stub_route = await _resolve_stub(model_id, model_registry_id, api_key)
+            stub_stat = await _stat_stub(model_registry_id, api_key)
+            if _cache_auth_applies():
+                _record_reported_model(reported_model_id)
+            stub_route = _resolve_stub(model_id, model_registry_id, stub_stat)
 
             return stub_route
 
@@ -438,6 +452,8 @@ class LegacyModelBridge:
             except (Exception, asyncio.CancelledError):
                 self._hold_pending_request(row_key, path, alias)
                 raise
+        if _cache_auth_applies():
+            _record_reported_model(reported_model_id)
         route = self._routes.get(registry_id)
         if route is None:
             route = Route(
@@ -478,27 +494,48 @@ class LegacyModelBridge:
         return route
 
     async def stat_task_type(
-        self, model_id: str, api_key: Optional[str]
+        self, model_id: str, api_key: Optional[str], instance: str = ""
     ) -> Optional[str]:
         """Report a model's task type without loading it.
 
         Args:
             model_id: Model id as requested, alias included.
             api_key: Credential the registry checks access with.
+            instance: Capability instance the request will load the model under.
 
         Returns:
             The registry's task type, or None offline, where only a load can
             tell.
         """
         registry_id = _plain_registry_id(model_id)
+        reported_model_id = registration_key(model_id, instance)
+        if not _cache_auth_applies():
+            _record_reported_model(reported_model_id)
         if registry_id.partition("/")[2] == STUB_VERSION_ID:
             stat = await _stat_stub(registry_id, api_key)
         elif LEGACY_OFFLINE_MODE:
             return None
         else:
             stat = await self._stat(model_id, registry_id, api_key)
+        if _cache_auth_applies():
+            _record_reported_model(reported_model_id)
 
         return stat.task_type
+
+    async def record_model_access(self, model_id: str, api_key: Optional[str]) -> None:
+        """Record a model the request names without loading it.
+
+        Under cache authorization the model is recorded only once the registry
+        confirms the key's access; otherwise it is recorded right away.
+
+        Args:
+            model_id: Model id as requested, alias included.
+            api_key: Credential the registry checks access with.
+        """
+        if _cache_auth_applies():
+            await self.stat_task_type(model_id, api_key)
+        else:
+            _record_reported_model(registration_key(model_id))
 
     def _adopt_canonical(self, route: Route, stat: Optional[ModelStat]) -> Route:
         canonical = self._routes.get(route.registry_id)
@@ -520,7 +557,7 @@ class LegacyModelBridge:
         if events is None or recorded is None:
             return
 
-        model_id = requested_model_id_for(registry_id)
+        model_id = _reported_model_id_for(registry_id)
         for position, (event_model_id, cold_start, load_time_s) in enumerate(events):
             if not cold_start or event_model_id != model_id or position in recorded:
                 continue
@@ -528,9 +565,7 @@ class LegacyModelBridge:
             record_telemetry(telemetry.record_model_loaded, model_id, load_time_s)
 
     async def _ensure_loaded(self, route: Route, api_key: Optional[str]) -> None:
-        record_model_load(
-            plain_model_id(route.registry_id), cold_start=False, load_time_s=0.0
-        )
+        _record_reported_model(_reported_model_id_for(route.registry_id))
         deadline = time.monotonic() + LEGACY_LOAD_TIMEOUT_S
         while True:
             result = await self.gateway.ensure_loaded(
@@ -568,9 +603,15 @@ class LegacyModelBridge:
         row_key: Optional[str] = None,
         path: str = "",
         alias: Optional[str] = None,
+        report_canonical_model_id: bool = False,
     ) -> Route:
         route = await self.resolve(
-            model_id, api_key, row_key=row_key, path=path, alias=alias
+            model_id,
+            api_key,
+            row_key=row_key,
+            path=path,
+            alias=alias,
+            report_canonical_model_id=report_canonical_model_id,
         )
         try:
             try:
@@ -987,10 +1028,24 @@ class LegacyModelBridge:
         _apply_metadata(route, entry)
 
 
-async def _resolve_stub(
-    model_id: str, registry_id: str, api_key: Optional[str]
-) -> Route:
-    stat = await _stat_stub(registry_id, api_key)
+def _reported_model_id_for(registry_id: str) -> str:
+    instance = routed_instance(registry_id)
+    model_id = requested_model_id_for(registry_id)
+    if is_capability_instance(instance):
+        return registration_key(model_id, instance)
+
+    return model_id
+
+
+def _cache_auth_applies() -> bool:
+    return MODELS_CACHE_AUTH_ENABLED and not LEGACY_OFFLINE_MODE
+
+
+def _record_reported_model(reported_model_id: str) -> None:
+    record_model_load(reported_model_id, cold_start=False, load_time_s=0.0)
+
+
+def _resolve_stub(model_id: str, registry_id: str, stat: ModelStat) -> Route:
     if stat.task_type not in _STUB_TASK_TYPES:
         raise LegacyHTTPError(500, SERVICE_MISCONFIGURATION_MESSAGE)
 

@@ -147,6 +147,159 @@ async def test_resolve_unknown_model_is_404(fake_stat):
 
 
 @pytest.mark.asyncio
+async def test_resolve_records_requested_model_before_registry_lookup(fake_stat):
+    from inference_server.middlewares.model_load import MODEL_LOAD_EVENTS
+
+    events = []
+    MODEL_LOAD_EVENTS.set(events)
+
+    with pytest.raises(LookupError):
+        await LegacyModelBridge(FakeGateway()).resolve("nope/1", None)
+
+    assert [model_id for model_id, _, _ in events] == ["nope/1"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_records_requested_model_when_stub_resolution_fails(fake_stat):
+    from inference_server.middlewares.model_load import MODEL_LOAD_EVENTS
+
+    events = []
+    MODEL_LOAD_EVENTS.set(events)
+
+    with pytest.raises(LegacyHTTPError) as error:
+        await LegacyModelBridge(FakeGateway()).resolve("proj/0", None)
+
+    assert error.value.status_code == 400
+    assert [model_id for model_id, _, _ in events] == ["proj/0"]
+
+
+def _load_events():
+    from inference_server.middlewares.model_load import MODEL_LOAD_EVENTS
+
+    events = []
+    MODEL_LOAD_EVENTS.set(events)
+
+    return events
+
+
+@pytest.mark.asyncio
+async def test_load_can_report_the_canonical_model_id(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    events = _load_events()
+
+    await LegacyModelBridge(FakeGateway()).load(
+        "yolov8n-640", "k", report_canonical_model_id=True
+    )
+
+    assert {model_id for model_id, _, _ in events} == {"coco/3"}
+
+
+@pytest.mark.asyncio
+async def test_load_reports_the_requested_model_id_by_default(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    events = _load_events()
+
+    await LegacyModelBridge(FakeGateway()).load("yolov8n-640", "k")
+
+    assert {model_id for model_id, _, _ in events} == {"yolov8n-640"}
+
+
+@pytest.mark.asyncio
+async def test_rejected_key_still_records_the_model_without_cache_auth(fake_stat):
+    fake_stat["ds/1"] = UnauthorizedModelAccessError("denied")
+    events = _load_events()
+
+    with pytest.raises(Exception):
+        await LegacyModelBridge(FakeGateway()).resolve("ds/1", "bad")
+
+    assert [model_id for model_id, _, _ in events] == ["ds/1"]
+
+
+@pytest.mark.asyncio
+async def test_cache_auth_records_the_model_only_after_access_is_confirmed(
+    fake_stat, monkeypatch
+):
+    monkeypatch.setattr(bridge_mod, "MODELS_CACHE_AUTH_ENABLED", True)
+    fake_stat["ds/1"] = UnauthorizedModelAccessError("denied")
+    events = _load_events()
+
+    with pytest.raises(Exception):
+        await LegacyModelBridge(FakeGateway()).resolve("ds/1", "bad")
+
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_cache_auth_records_unknown_and_stub_models_only_after_the_stat(
+    fake_stat, monkeypatch
+):
+    monkeypatch.setattr(bridge_mod, "MODELS_CACHE_AUTH_ENABLED", True)
+    events = _load_events()
+
+    with pytest.raises(LookupError):
+        await LegacyModelBridge(FakeGateway()).resolve("nope/1", "k")
+    with pytest.raises(LegacyHTTPError):
+        await LegacyModelBridge(FakeGateway()).resolve("proj/0", None)
+
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_cache_auth_records_a_model_that_fails_after_access_is_confirmed(
+    fake_stat, monkeypatch
+):
+    monkeypatch.setattr(bridge_mod, "MODELS_CACHE_AUTH_ENABLED", True)
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway()
+    gw.ensure_results = [("error", 5)]
+    events = _load_events()
+
+    with pytest.raises(Exception):
+        await LegacyModelBridge(gw).resolve("ds/1", "k")
+
+    assert {model_id for model_id, _, _ in events} == {"ds/1"}
+
+
+@pytest.mark.asyncio
+async def test_cache_auth_is_not_applied_offline(fake_stat, monkeypatch):
+    monkeypatch.setattr(bridge_mod, "MODELS_CACHE_AUTH_ENABLED", True)
+    monkeypatch.setattr(bridge_mod, "LEGACY_OFFLINE_MODE", True)
+    events = _load_events()
+
+    await LegacyModelBridge(FakeGateway()).resolve("ds/1", "k")
+
+    assert {model_id for model_id, _, _ in events} == {"ds/1"}
+
+
+@pytest.mark.asyncio
+async def test_capability_instance_is_recorded_under_its_registration_key(fake_stat):
+    fake_stat["ds/1"] = ("classification", "infer")
+    events = _load_events()
+
+    await LegacyModelBridge(FakeGateway()).resolve(
+        "ds/1", "k", instance="capabilities=image_embeddings;output_type=logits"
+    )
+
+    assert {model_id for model_id, _, _ in events} == {
+        "ds/1:capabilities=image_embeddings:output_type=logits"
+    }
+
+
+@pytest.mark.asyncio
+async def test_stat_task_type_records_the_model_before_the_stat_fails(fake_stat):
+    events = _load_events()
+
+    with pytest.raises(LookupError):
+        await LegacyModelBridge(FakeGateway()).stat_task_type(
+            "nope/1", "k", instance="capabilities=image_embeddings"
+        )
+
+    assert [model_id for model_id, _, _ in events] == [
+        "nope/1:capabilities=image_embeddings"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_describe_lists_models_loaded_outside_the_bridge(fake_stat):
     gw = FakeGateway(
         model_info={

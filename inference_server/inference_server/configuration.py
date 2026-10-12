@@ -316,6 +316,9 @@ DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS = get_boolean_from_env(
     "DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS", default=False
 )
 OFFLINE_MODE = get_boolean_from_env("OFFLINE_MODE", default=False)
+MODELS_CACHE_AUTH_ENABLED = get_boolean_from_env(
+    "MODELS_CACHE_AUTH_ENABLED", default=False
+)
 LEGACY_OFFLINE_MODE = _MODELS_OFFLINE_MODE
 DISABLE_INFERENCE_CACHE = get_boolean_from_env("DISABLE_INFERENCE_CACHE", default=False)
 ACTIVE_LEARNING_ENABLED = get_boolean_from_env("ACTIVE_LEARNING_ENABLED", default=True)

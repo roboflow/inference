@@ -84,11 +84,6 @@ IMAGE_EMBEDDING_OVERRIDE_FIELDS = (
 
 
 def ensure_request_supported(model_id: str, request: Any, route: Route) -> None:
-    if getattr(request, "disable_preproc_auto_orient", False):
-        raise LegacyHTTPError(
-            501,
-            f"disable_preproc_auto_orient is not supported for model '{model_id}'.",
-        )
     ignored = {
         name: getattr(request, name, default)
         for name, default in _IGNORED_DETECTION_OPTIONS

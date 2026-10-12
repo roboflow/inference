@@ -813,3 +813,57 @@ async def test_loaded_model_is_refused_to_a_key_without_access(fake_handler_entr
     assert fake_handler_entry["handler"].await_count == 1
     assert proxy.ensure_loaded.await_count == 1
     assert calls == [("m", "key-a"), ("m", "key-b"), ("m", "key-b")]
+
+
+class _DecodingManager:
+    """Decodes images the way a direct backend does before running a model."""
+
+    def __init__(self):
+        from inference_model_manager.backends.decode import make_decoder
+
+        self._decode = make_decoder("imagecodecs", device="cpu")
+
+    async def process_async(self, model_id, **kwargs):
+        return [self._decode(image) for image in kwargs["images"]]
+
+
+def _jpeg_bytes() -> bytes:
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    pixels = np.random.default_rng(0).integers(0, 255, (64, 64, 3), dtype=np.uint8)
+    buffer = io.BytesIO()
+    Image.fromarray(pixels).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cut", ["in_scan", "missing_eoi"])
+async def test_truncated_jpeg_is_an_input_error(fake_handler_entry, cut):
+    data = _jpeg_bytes()
+    scan = data.index(b"\xff\xda")
+    truncated = data[: scan + 40] if cut == "in_scan" else data[:-2]
+    gateway = ModelManagerGateway(_DecodingManager())
+
+    async def handler(action, input_data, proxy, hooks):
+        return await gateway.infer(model_id="m", image=input_data["images"])
+
+    fake_handler_entry["handler"].side_effect = handler
+    fake_handler_entry["parser"].return_value = {"images": [truncated], "params": {}}
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 400
+    assert json.loads(r.body)["error_code"] == "INVALID_PARAM"
+
+    fake_handler_entry["parser"].return_value = {"images": [data], "params": {}}
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 200

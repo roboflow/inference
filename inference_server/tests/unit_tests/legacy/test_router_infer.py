@@ -212,17 +212,49 @@ def test_bearer_header_used_when_body_key_missing(legacy_client, fake_stat):
     assert ("ensure_loaded", "ds/1", "H") in gw.calls
 
 
-def test_unsupported_legacy_param_is_501(legacy_client, fake_stat):
+def _oriented_jpeg(w, h, orientation):
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h)).save(buf, format="JPEG", exif=exif)
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    "flag,expected_size", [(True, (8, 6)), (False, (6, 8)), (None, (6, 8))]
+)
+def test_disable_preproc_auto_orient_keeps_the_stored_orientation(
+    legacy_client, fake_stat, flag, expected_size
+):
+    from inference_model_manager.backends.decode import exif_orientation
+
     fake_stat["ds/1"] = ("object-detection", "infer")
-    r = legacy_client(FakeGateway()).post(
-        "/infer/object_detection",
-        json={
-            "model_id": "ds/1",
-            "image": {"type": "base64", "value": _jpeg_b64()},
-            "disable_preproc_auto_orient": True,
-        },
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _det()},
+        model_info={"ds/1": {"class_names": ["cat"]}},
     )
-    assert r.status_code == 501
+    rotated = _oriented_jpeg(8, 6, 6)
+    image = {"type": "base64", "value": base64.b64encode(rotated).decode()}
+    body = {"model_id": "ds/1", "api_key": "k", "image": [image, image]}
+    if flag is not None:
+        body["disable_preproc_auto_orient"] = flag
+
+    r = legacy_client(gw).post("/infer/object_detection", json=body)
+
+    assert r.status_code == 200, r.text
+    width, height = expected_size
+    assert [item["image"] for item in r.json()] == [
+        {"width": width, "height": height}
+    ] * 2
+    sent = [c[4] for c in gw.calls if c[0] == "infer"]
+    assert sent
+    for data in sent:
+        images = data if isinstance(data, list) else [data]
+        for encoded in images:
+            assert len(encoded) == len(rotated)
+            assert exif_orientation(encoded) == (1 if flag else 6)
+            if not flag:
+                assert encoded == rotated
 
 
 def test_infer_forwards_disable_preproc_flags_to_the_model(legacy_client, fake_stat):

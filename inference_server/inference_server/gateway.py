@@ -31,6 +31,7 @@ from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.middlewares.model_load import record_model_load
 from inference_server.routing import (
     capability_load_kwargs,
+    routed_instance,
     routed_model_id,
     routing_key,
 )
@@ -307,7 +308,11 @@ class ModelManagerGateway:
             self._load_sync(key, api_key, device, pinned)
             load_time_s = time.perf_counter() - load_started
             request_context.run(
-                record_model_load, model_id, cold_start=True, load_time_s=load_time_s
+                record_model_load,
+                model_id,
+                cold_start=True,
+                load_time_s=load_time_s,
+                instance=routed_instance(key),
             )
 
         # Unload+load run as ONE executor job registered before the lock

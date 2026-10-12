@@ -734,6 +734,32 @@ class TrainingImage(BaseModel):
     )
 
 
+class Sam3_3D_Objects_InferenceRequest(BaseRequest):
+    """SAM3D inference request for 3D object generation."""
+
+    image: InferenceRequestImage = Field(
+        description="The input image to be used for 3D generation.",
+    )
+    mask_input: Any = Field(
+        description="Mask input in any supported format: "
+        "polygon [x1,y1,x2,y2,...], binary mask (base64), RLE dict, or list of these.",
+    )
+    model_id: Optional[str] = Field(
+        default="sam3-3d-objects", description="The model ID for SAM3_3D."
+    )
+    output_meshes: Optional[bool] = True
+    output_scene: Optional[bool] = True
+    with_mesh_postprocess: Optional[bool] = True
+    with_texture_baking: Optional[bool] = True
+    use_distillations: Optional[bool] = False
+
+    @validator("model_id", always=True, allow_reuse=True)
+    def validate_model_id(cls, value):
+        if value is not None:
+            return value
+        return "sam3-3d-objects"
+
+
 class OwlV2InferenceRequest(BaseRequest):
     """Request for OwlV2 inference.
 

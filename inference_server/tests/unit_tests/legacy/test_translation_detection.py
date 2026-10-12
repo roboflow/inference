@@ -108,16 +108,11 @@ def test_ensure_request_supported_accepts_disable_preproc_flags():
     ensure_request_supported("ds/1", req, ROUTE)
 
 
-def test_ensure_request_supported_keeps_auto_orient_unsupported():
+def test_ensure_request_supported_accepts_disable_preproc_auto_orient():
     req = ObjectDetectionInferenceRequest(
         model_id="ds/1", image=IMG, disable_preproc_auto_orient=True
     )
-    with pytest.raises(LegacyHTTPError) as error:
-        ensure_request_supported("ds/1", req, ROUTE)
-    assert error.value.status_code == 501
-    assert error.value.message == (
-        "disable_preproc_auto_orient is not supported for model 'ds/1'."
-    )
+    ensure_request_supported("ds/1", req, ROUTE)
 
 
 def test_ignored_detection_options_are_accepted_and_logged_once(caplog):

@@ -560,6 +560,32 @@ def test_concurrent_alias_and_canonical_operations_share_one_load(fake_stat):
     assert details[0]["t"] >= 0.2
 
 
+def test_cold_capability_load_reports_only_the_capability_identity(fake_stat):
+    fake_stat["classifiers/4"] = ("classification", "infer")
+    bridge = LegacyModelBridge(ModelManagerGateway(_Manager()))
+    inner = FastAPI()
+
+    @inner.get("/probe")
+    async def _probe():
+        await bridge.resolve(
+            "resnet101",
+            "k",
+            instance="capabilities=image_embeddings;output_type=logits",
+        )
+        return {"ok": True}
+
+    inner.add_middleware(ModelLoadHeadersMiddleware)
+
+    response = TestClient(inner).get("/probe")
+
+    legacy_key = "resnet101:capabilities=image_embeddings:output_type=logits"
+    assert response.status_code == 200
+    assert response.headers["X-Model-Id"] == legacy_key
+    assert response.headers["X-Model-Cold-Start"] == "true"
+    details = json.loads(response.headers["X-Model-Load-Details"])
+    assert [entry["m"] for entry in details] == [legacy_key]
+
+
 def test_failed_load_still_reports_the_requested_model_id(legacy_client, fake_stat):
     fake_stat["coco/3"] = ("object-detection", "infer")
     gateway = FakeGateway()

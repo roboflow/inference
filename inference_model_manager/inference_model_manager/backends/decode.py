@@ -8,6 +8,7 @@ Decoders:
 
 from __future__ import annotations
 
+import re
 import threading
 import zlib
 from typing import Any, Callable
@@ -72,6 +73,86 @@ def _jpeg_header_pixels(data: bytes | memoryview) -> int:
     return 0
 
 
+def jpeg_is_truncated(data: bytes | memoryview) -> bool:
+    """Tell whether ``data`` is a JPEG cut short, which cv2.imdecode refuses.
+
+    A JPEG is complete only when its end-of-image marker follows the first
+    start-of-scan segment. The stream is walked marker by marker: segments
+    carry their length and are skipped whole, so an end-of-image marker
+    inside metadata (an EXIF thumbnail, a comment) does not count; scan data
+    byte-stuffs 0xFF and is crossed up to the next real marker. Bytes after
+    the end-of-image marker are allowed. The buffer is never copied.
+
+    Args:
+        data: Encoded image bytes.
+
+    Returns:
+        True for a JPEG whose stream ends before its end-of-image marker,
+        False for a complete JPEG and for every other format.
+    """
+    if bytes(data[:3]) != b"\xff\xd8\xff":
+        return False
+
+    scan_data = _jpeg_scan_data_offset(data)
+    if scan_data is None:
+        return True
+
+    truncated = not _jpeg_reaches_eoi(data, scan_data)
+
+    return truncated
+
+
+# Last 0xFF before a real marker (not 00, RSTn or fill); `\xff+` is quadratic.
+_SCAN_MARKER = re.compile(rb"\xff[^\x00\xd0-\xd7\xff]")
+
+
+def _jpeg_reaches_eoi(data: bytes | memoryview, offset: int) -> bool:
+    """Whether the stream from scan data at ``offset`` reaches its EOI marker."""
+    size = len(data)
+    while True:
+        match = _SCAN_MARKER.search(data, offset)
+        if match is None:
+            return False
+        offset = match.end()
+        marker = data[offset - 1]
+        if marker == 0xD9:
+            return True
+        if marker in (0x01, 0xD8):
+            continue
+        if offset + 2 > size:
+            return False
+        segment_length = int.from_bytes(data[offset : offset + 2], "big")
+        if segment_length < 2:
+            return False
+        offset += segment_length
+
+
+def _jpeg_scan_data_offset(data: bytes | memoryview) -> int | None:
+    """Offset right after the first SOS segment header, None if there is none."""
+    size = len(data)
+    offset = 2
+    while offset + 3 < size:
+        if data[offset] != 0xFF:
+            offset += 1
+            continue
+        marker = data[offset + 1]
+        if marker == 0xFF:
+            offset += 1
+            continue
+        if marker in (0x01, 0xD8) or 0xD0 <= marker <= 0xD7:
+            offset += 2
+            continue
+        if marker == 0xD9:
+            return None
+        segment_length = int.from_bytes(data[offset + 2 : offset + 4], "big")
+        if segment_length < 2:
+            return None
+        if marker == 0xDA:
+            return offset + 2 + segment_length
+        offset += 2 + segment_length
+    return None
+
+
 _EXIF_ORIENTATION_TAG = 0x0112
 # Orientations 5-8 store the image transposed: decoded width and height swap.
 EXIF_TRANSPOSING_ORIENTATIONS = frozenset((5, 6, 7, 8))
@@ -86,14 +167,63 @@ def exif_orientation(data: bytes | memoryview) -> int:
     the tag. Only headers and metadata are read. Malformed EXIF is ignored,
     as OpenCV does.
     """
+    span = _orientation_tiff_span(data)
+    if span is None:
+        return 1
+    start, end = span
+    return _tiff_orientation(bytes(data[start:end])) or 1
+
+
+def reset_exif_orientation(data: bytes | memoryview) -> bytes:
+    """Rewrite the EXIF Orientation the decoder applies to ``data`` as 1.
+
+    Decoding the result yields what cv2.imdecode with IMREAD_IGNORE_ORIENTATION
+    yields from ``data``: JPEG and PNG as stored, TIFF still oriented, because
+    OpenCV's TIFF reader orients regardless of that flag. Only the tag value
+    ``exif_orientation`` reads is patched, in its own byte order and width;
+    the CRC of a PNG eXIf chunk is recomputed. Everything else is copied.
+
+    Args:
+        data: Encoded image bytes.
+
+    Returns:
+        The patched copy, or the bytes unchanged when there is nothing to
+        reset.
+    """
+    raw = bytes(data)
+    if raw[:4] in (b"II*\x00", b"MM\x00*"):
+        return raw
+
+    span = _orientation_tiff_span(raw)
+    if span is None:
+        return raw
+    start, end = span
+    tiff = raw[start:end]
+    field = _tiff_ifd0_fields(tiff, (_EXIF_ORIENTATION_TAG,)).get(_EXIF_ORIENTATION_TAG)
+    if field is None or _tiff_orientation(tiff) is None:
+        return raw
+
+    value_offset, value_size, order = field
+    patched = bytearray(raw)
+    value_start = start + value_offset
+    patched[value_start : value_start + value_size] = (1).to_bytes(value_size, order)
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        crc = zlib.crc32(patched[start - 4 : end])
+        patched[end : end + 4] = crc.to_bytes(4, "big")
+
+    return bytes(patched)
+
+
+def _orientation_tiff_span(data: bytes | memoryview) -> tuple[int, int] | None:
+    """(start, end) of the TIFF block whose Orientation the decoder honours."""
     head = bytes(data[:8])
     if head[:3] == b"\xff\xd8\xff":
-        return _jpeg_orientation(data)
+        return _jpeg_exif_span(data)
     if head == b"\x89PNG\r\n\x1a\n":
-        return _png_orientation(data)
+        return _png_exif_span(data)
     if head[:4] in (b"II*\x00", b"MM\x00*"):
-        return _tiff_orientation(data) or 1
-    return 1
+        return 0, len(data)
+    return None
 
 
 def decoded_dims(data: bytes | memoryview, width: int, height: int) -> tuple[int, int]:
@@ -116,39 +246,38 @@ def decoded_dims(data: bytes | memoryview, width: int, height: int) -> tuple[int
     return width, height
 
 
-def _jpeg_orientation(data: bytes | memoryview) -> int:
-    """Orientation from the APP1 Exif block, walking segments up to the scan."""
+def _jpeg_exif_span(data: bytes | memoryview) -> tuple[int, int] | None:
+    """TIFF block of the first APP1 Exif segment with a valid Orientation,
+    walking segments up to the scan."""
     size = len(data)
     offset = 2
     while offset + 3 < size:
         if data[offset] != 0xFF:
-            return 1
+            return None
         marker = data[offset + 1]
         if marker == 0xFF:
             offset += 1
             continue
         # Start of scan / end of image: the metadata segments are behind us.
         if marker in (0xDA, 0xD9):
-            return 1
+            return None
         segment_length = int.from_bytes(data[offset + 2 : offset + 4], "big")
         if segment_length < 2:
-            return 1
+            return None
         payload_start = offset + 4
         payload_end = min(offset + 2 + segment_length, size)
         if marker == 0xE1 and bytes(data[payload_start : payload_start + 6]) == (
             b"Exif\x00\x00"
         ):
-            orientation = _tiff_orientation(
-                bytes(data[payload_start + 6 : payload_end])
-            )
-            if orientation is not None:
-                return orientation
+            span = (payload_start + 6, payload_end)
+            if _tiff_orientation(bytes(data[span[0] : span[1]])) is not None:
+                return span
         offset += 2 + segment_length
-    return 1
+    return None
 
 
-def _png_orientation(data: bytes | memoryview) -> int:
-    """Orientation from the first eXIf chunk, 1 when absent or invalid.
+def _png_exif_span(data: bytes | memoryview) -> tuple[int, int] | None:
+    """TIFF block of the first eXIf chunk, None when absent or invalid.
 
     libpng (behind cv2.imdecode) honours eXIf before or after the image data,
     requires the payload to start with the TIFF byte-order mark (no
@@ -161,14 +290,14 @@ def _png_orientation(data: bytes | memoryview) -> int:
         chunk_type = bytes(data[offset + 4 : offset + 8])
         payload_end = offset + 8 + length
         if chunk_type == b"IEND" or payload_end + 4 > size:
-            return 1
+            return None
         if chunk_type == b"eXIf":
             crc = int.from_bytes(data[payload_end : payload_end + 4], "big")
             if zlib.crc32(data[offset + 4 : payload_end]) != crc:
-                return 1
-            return _tiff_orientation(bytes(data[offset + 8 : payload_end])) or 1
+                return None
+            return offset + 8, payload_end
         offset = payload_end + 4
-    return 1
+    return None
 
 
 _TIFF_WIDTH_TAG = 0x0100
@@ -183,6 +312,19 @@ _TIFF_PHOTOMETRIC_YCBCR = 6
 
 def _tiff_ifd0(tiff: bytes | memoryview, tags: tuple[int, ...]) -> dict[int, int]:
     """SHORT/LONG values of ``tags`` in IFD0 of a TIFF block; malformed → {}."""
+    fields = _tiff_ifd0_fields(tiff, tags)
+    values = {
+        tag: int.from_bytes(tiff[offset : offset + size], order)
+        for tag, (offset, size, order) in fields.items()
+    }
+
+    return values
+
+
+def _tiff_ifd0_fields(
+    tiff: bytes | memoryview, tags: tuple[int, ...]
+) -> dict[int, tuple[int, int, str]]:
+    """(offset, size, byte order) of SHORT/LONG values of ``tags`` in IFD0."""
     if len(tiff) < 8:
         return {}
     if tiff[:2] == b"II":
@@ -197,7 +339,7 @@ def _tiff_ifd0(tiff: bytes | memoryview, tags: tuple[int, ...]) -> dict[int, int
     if ifd + 2 > len(tiff):
         return {}
     entries = int.from_bytes(tiff[ifd : ifd + 2], order)
-    found: dict[int, int] = {}
+    found: dict[int, tuple[int, int, str]] = {}
     for index in range(entries):
         entry = ifd + 2 + 12 * index
         if entry + 12 > len(tiff):
@@ -207,9 +349,9 @@ def _tiff_ifd0(tiff: bytes | memoryview, tags: tuple[int, ...]) -> dict[int, int
             continue
         value_type = int.from_bytes(tiff[entry + 2 : entry + 4], order)
         if value_type == 3:  # SHORT
-            found[tag] = int.from_bytes(tiff[entry + 8 : entry + 10], order)
+            found[tag] = (entry + 8, 2, order)
         elif value_type == 4:  # LONG
-            found[tag] = int.from_bytes(tiff[entry + 8 : entry + 12], order)
+            found[tag] = (entry + 8, 4, order)
     return found
 
 
@@ -318,13 +460,13 @@ def guard_decoder(decode: Callable[[bytes], Any]) -> Callable[[bytes], Any]:
 
     Returns:
         The same decoder, refusing images over the decode limit before and
-        after decoding exactly as the backends do.
+        after decoding, and truncated JPEGs, exactly as the backends do.
     """
     return _guarded(decode)
 
 
 def _guarded(decode: Callable[[bytes], Any]) -> Callable[[bytes], Any]:
-    """Wrap a decoder with the decompression-bomb gate.
+    """Wrap a decoder with the decompression-bomb and truncated-JPEG gates.
 
     Every decoder reaching a backend goes through here, so a plugin decoder
     registered through the entry-point group is gated exactly like the
@@ -333,6 +475,10 @@ def _guarded(decode: Callable[[bytes], Any]) -> Callable[[bytes], Any]:
 
     def _decode(data: bytes) -> Any:
         limit = _guard_encoded(data)
+        if jpeg_is_truncated(data):
+            raise ValueError(
+                "JPEG data is truncated: no end-of-image marker after the scan"
+            )
         image = decode(data)
         _guard_decoded(image, limit)
         return image

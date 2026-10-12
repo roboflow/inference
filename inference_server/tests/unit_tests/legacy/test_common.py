@@ -205,3 +205,38 @@ def test_as_image_list():
         False,
     )
     assert as_image_list([1, 2]) == ([1, 2], True)
+
+
+def _oriented_jpeg(w, h, orientation):
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h)).save(buf, format="JPEG", exif=exif)
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_load_request_images_can_keep_the_stored_orientation(monkeypatch):
+    from inference_model_manager.backends.decode import exif_orientation
+
+    rotated = _oriented_jpeg(8, 6, 6)
+
+    async def _fetch(urls, destination_policy=None):
+        return [rotated for _ in urls], None
+
+    monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
+    array = np.zeros((4, 3, 3), dtype=np.uint8)
+    images = [
+        {"type": "base64", "value": base64.b64encode(rotated).decode()},
+        {"type": "url", "value": "https://example.com/a.jpg"},
+        {"type": "numpy_object", "value": array},
+    ]
+
+    kept = await load_request_images(images, ndarray_ok=True, keep_orientation=True)
+    default = await load_request_images(images, ndarray_ok=True)
+
+    assert [(p.width, p.height) for p in kept] == [(8, 6), (8, 6), (3, 4)]
+    assert [exif_orientation(p.data) for p in kept[:2]] == [1, 1]
+    assert kept[2].data is array
+    assert [(p.width, p.height) for p in default] == [(6, 8), (6, 8), (3, 4)]
+    assert [p.data for p in default[:2]] == [rotated, rotated]

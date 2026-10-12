@@ -231,6 +231,35 @@ def test_pp_ocr_resolves_versioned_model_id(legacy_client, fake_stat):
     assert r.json()["result"] == "ocr"
 
 
+def test_pp_ocr_response_has_no_resolved_model_while_other_ocr_models_do(
+    legacy_client, fake_stat
+):
+    fake_stat["pp-ocrv6-det/small"] = ("object-detection", "infer")
+    fake_stat["pp-ocrv6-rec/small"] = ("text-only-ocr", "infer")
+    gw = FakeGateway(
+        predictions={
+            ("doctr/default", "infer"): (["a"], [_ocr_det(["a"])]),
+            ("trocr/trocr-base-printed", "infer"): ["a"],
+            ("pp_ocr/small-small", "infer"): (["a"], [_ocr_det(["a"])]),
+        },
+        model_info={
+            "doctr/default": {"actions": {"infer": {}}},
+            "trocr/trocr-base-printed": {"actions": {"infer": {}}},
+            "pp_ocr/small-small": {"actions": {"infer": {}}},
+        },
+    )
+    client = legacy_client(gw)
+
+    responses = {
+        path: client.post(path, json={"image": _image()}).json()
+        for path in ("/doctr/ocr", "/ocr/trocr", "/ocr/pp-ocr")
+    }
+
+    assert "resolved_model" not in responses["/ocr/pp-ocr"]
+    assert "resolved_model" in responses["/doctr/ocr"]
+    assert "resolved_model" in responses["/ocr/trocr"]
+
+
 def _ocr_det(texts):
     return SimpleNamespace(
         xyxy=np.array([[0, 0, 2, 2]] * len(texts), dtype=float),
@@ -373,6 +402,30 @@ def test_owlv2_few_shot_calls_infer_with_reference_examples(
         "confidence": 0.95,
     }
     assert isinstance(call[4], bytes)
+
+
+def test_owlv2_response_keeps_null_fields(monkeypatch, fake_stat):
+    detections = _det()
+    detections.image_metadata = {"class_names": ["cat"]}
+    gw = FakeGateway(
+        predictions={(_OWLV2_MODEL_ID, "infer_with_reference_examples"): detections},
+        model_info={
+            _OWLV2_MODEL_ID: {"actions": {"infer_with_reference_examples": {}}}
+        },
+    )
+
+    r = _owlv2_client(monkeypatch, fake_stat, gw).post(
+        "/owlv2/infer", json=_owlv2_body()
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["visualization"] is None
+    assert body["frame_id"] is None
+    assert "class_confidence" in body["predictions"][0]
+    assert body["predictions"][0]["class_confidence"] is None
+    assert "parent_id" in body["predictions"][0]
+    assert body["predictions"][0]["parent_id"] is None
 
 
 def test_owlv2_reference_url_is_fetched_through_the_server_fetcher(
@@ -615,6 +668,105 @@ def test_optional_stubs_register_only_with_their_flags(monkeypatch):
     paths = route_paths(app)
     assert {"/sam3_3d/infer", "/owlv2/infer"} <= paths
     assert TestClient(app).post("/sam3_3d/infer", json={}).status_code == 501
+
+
+def _sam3_3d_client(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from inference_server.legacy.router import include_legacy_routers
+    from inference_server.middlewares.model_load import ModelLoadHeadersMiddleware
+
+    from inference_server.legacy.bridge import LegacyModelBridge
+
+    monkeypatch.setattr("inference_server.configuration.SAM3_3D_OBJECTS_ENABLED", True)
+    app = FastAPI()
+    app.state.legacy_bridge = LegacyModelBridge(FakeGateway())
+    include_legacy_routers(app)
+    app.add_middleware(ModelLoadHeadersMiddleware)
+
+    return TestClient(app)
+
+
+_SAM3_3D_BODY = {"image": {"type": "base64", "value": "x"}, "mask_input": []}
+
+
+def test_sam3_3d_stub_with_cache_auth_records_only_after_access_is_confirmed(
+    monkeypatch, fake_stat
+):
+    from inference_models.errors import UnauthorizedModelAccessError
+
+    monkeypatch.setattr(
+        "inference_server.legacy.bridge.MODELS_CACHE_AUTH_ENABLED", True
+    )
+    client = _sam3_3d_client(monkeypatch)
+
+    fake_stat["sam3-3d-objects"] = UnauthorizedModelAccessError("denied")
+    denied = client.post("/sam3_3d/infer", json=_SAM3_3D_BODY)
+    fake_stat["sam3-3d-objects"] = ("object-detection", "infer")
+    allowed = client.post("/sam3_3d/infer", json=_SAM3_3D_BODY)
+
+    assert denied.status_code != 501
+    assert "X-Model-Id" not in denied.headers
+    assert allowed.status_code == 501
+    assert allowed.headers["X-Model-Id"] == "sam3-3d-objects"
+
+
+def test_sam3_3d_stub_reports_default_model_id_header(monkeypatch):
+    client = _sam3_3d_client(monkeypatch)
+
+    response = client.post(
+        "/sam3_3d/infer",
+        json={"image": {"type": "base64", "value": "x"}, "mask_input": []},
+    )
+
+    assert response.status_code == 501
+    assert response.headers["X-Model-Id"] == "sam3-3d-objects"
+
+
+def test_sam3_3d_stub_reports_requested_model_id_header(monkeypatch):
+    client = _sam3_3d_client(monkeypatch)
+
+    response = client.post(
+        "/sam3_3d/infer",
+        json={
+            "image": {"type": "base64", "value": "x"},
+            "mask_input": [],
+            "model_id": "custom-3d",
+        },
+    )
+
+    assert response.headers["X-Model-Id"] == "custom-3d"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"image": {"type": "base64", "value": "x"}},
+        {"image": None, "mask_input": []},
+        {"image": "x", "mask_input": []},
+        {"image": {"value": "x"}, "mask_input": []},
+        {
+            "image": {"type": "base64", "value": "x"},
+            "mask_input": [],
+            "model_id": ["bad"],
+        },
+        {
+            "image": {"type": "base64", "value": "x"},
+            "mask_input": [],
+            "output_meshes": "maybe",
+        },
+        [],
+    ],
+)
+def test_sam3_3d_stub_omits_model_id_header_for_incomplete_body(monkeypatch, body):
+    client = _sam3_3d_client(monkeypatch)
+
+    response = client.post("/sam3_3d/infer", json=body)
+
+    assert response.status_code == 501
+    assert "X-Model-Id" not in response.headers
 
 
 def test_decided_out_routes_document_reason(monkeypatch):

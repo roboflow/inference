@@ -1133,3 +1133,53 @@ def test_overlapping_decodes_leave_the_warning_filters_untouched(monkeypatch):
         ndarray_ok=False,
     )
     assert accepted.data == _png()
+
+
+def _truncated_jpegs():
+    rng = np.random.default_rng(0)
+    buffer = io.BytesIO()
+    pixels = rng.integers(0, 255, (64, 64, 3), dtype=np.uint8)
+    Image.fromarray(pixels).save(buffer, format="JPEG")
+    data = buffer.getvalue()
+    scan = data.index(b"\xff\xda")
+
+    return {
+        "cut_in_scan": data[: scan + (len(data) - scan) // 2],
+        "missing_eoi": data[:-2],
+    }
+
+
+@pytest.mark.parametrize("case", ["cut_in_scan", "missing_eoi"])
+def test_truncated_jpeg_answers_like_a_corrupt_image(legacy_client, fake_stat, case):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _detection_gateway()
+    client = legacy_client(gateway)
+    truncated = base64.b64encode(_truncated_jpegs()[case]).decode()
+
+    corrupt = _post_image(client, {"type": "base64", "value": NOT_AN_IMAGE_B64})
+    response = _post_image(client, {"type": "base64", "value": truncated})
+
+    assert response.status_code == corrupt.status_code == 400
+    assert (
+        response.json() == corrupt.json() == {"message": f"{PREFIX}{MALFORMED_BASE64}"}
+    )
+    assert _inferred_images(gateway) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["cut_in_scan", "missing_eoi"])
+async def test_truncated_jpeg_from_url_answers_like_legacy(monkeypatch, case):
+    truncated = _truncated_jpegs()[case]
+
+    async def _fetch(urls, destination_policy=None):
+        return [truncated], None
+
+    monkeypatch.setattr("inference_server.legacy.common.fetch_images_from_urls", _fetch)
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await load_request_images(
+            [{"type": "url", "value": "https://example.com/a.jpg"}], ndarray_ok=False
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.message == f"{PREFIX}{URL_NOT_IMAGE}"

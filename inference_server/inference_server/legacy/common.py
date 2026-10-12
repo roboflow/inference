@@ -19,7 +19,9 @@ from fastapi import Request, Response
 from inference_model_manager.backends.decode import (
     decoded_dims,
     guard_decoder,
+    jpeg_is_truncated,
     max_decoded_pixels,
+    reset_exif_orientation,
 )
 from inference_models.errors import ModelInputError
 from PIL import Image
@@ -136,6 +138,9 @@ def image_dims(
             width, height = image.size
     except Exception as error:
         raise image_load_error(not_image_message) from error
+    if jpeg_is_truncated(data):
+        raise image_load_error(not_image_message)
+
     # The decoder applies EXIF orientation; report the size of what it yields.
     width, height = decoded_dims(data, width, height)
     return int(width), int(height)
@@ -181,7 +186,23 @@ def decode_inline_image(image: Any, *, ndarray_ok: bool) -> ImagePayload:
     return payload
 
 
-async def load_request_images(images: list, *, ndarray_ok: bool) -> list[ImagePayload]:
+async def load_request_images(
+    images: list, *, ndarray_ok: bool, keep_orientation: bool = False
+) -> list[ImagePayload]:
+    """Load request images into payloads for the gateway like the legacy server.
+
+    Args:
+        images: Image declarations of one request.
+        ndarray_ok: Whether the gateway accepts NumPy arrays as image data.
+        keep_orientation: Whether the images are used as stored, ignoring
+            their EXIF orientation, as ``disable_preproc_auto_orient`` asks.
+
+    Returns:
+        One payload per image, in request order.
+
+    Raises:
+        LegacyHTTPError: If an image cannot be loaded.
+    """
     limit_error = too_many_images(len(images))
     if limit_error is not None:
         raise _error_from_response(limit_error)
@@ -208,7 +229,20 @@ async def load_request_images(images: list, *, ndarray_ok: bool) -> list[ImagePa
         for position, data in zip(url_positions, fetched):
             width, height = image_dims(data)
             payloads[position] = ImagePayload(data, width, height)
+    if keep_orientation:
+        payloads = [_ignore_orientation(payload) for payload in payloads]
     return payloads
+
+
+def _ignore_orientation(payload: ImagePayload) -> ImagePayload:
+    data = payload.data
+    if not isinstance(data, bytes) or data[:6] == _NPY_MAGIC:
+        return payload
+
+    data = reset_exif_orientation(data)
+    width, height = image_dims(data)
+
+    return ImagePayload(data, width, height)
 
 
 async def fetch_url_images(
