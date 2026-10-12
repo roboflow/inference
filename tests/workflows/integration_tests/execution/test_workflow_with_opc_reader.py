@@ -203,8 +203,9 @@ def test_runs_after_the_first_do_not_wait_for_the_server(opc_server):
             block.run(**reader_kwargs(opc_server))
         elapsed = time.perf_counter() - started
 
-        # then: 100 runs read memory only, far below one round trip each
-        assert elapsed < 0.05
+        # then: 100 runs never wait for the server. The bound is loose enough for a
+        # loaded CI runner; a single run that waited would take up to `timeout` (5 s)
+        assert elapsed < 1.0
     finally:
         block.close()
 
@@ -440,7 +441,8 @@ def test_outage_repeats_last_value_without_waiting_then_resubscribes(opc_server)
         assert during_outage["is_new"] is False
         assert during_outage["error_status"] is True
         assert "reconnecting in the background" in during_outage["error_message"]
-        assert outage_run_seconds < 0.01
+        # a run that waited for the reconnect would take up to `timeout` (5 s here)
+        assert outage_run_seconds < 0.5
 
         # when the server comes back with a different value
         opc_server.start()
@@ -479,7 +481,8 @@ def test_unreachable_server_is_reported_and_later_runs_do_not_wait():
         assert first["value"] is None
         assert "CONNECTION ERROR" in first["error_message"]
         assert second["error_status"] is True
-        assert second_run_seconds < 0.01
+        # a run that waited for the server would take up to `timeout` (2 s by default)
+        assert second_run_seconds < 0.5
     finally:
         block.close()
 

@@ -717,16 +717,19 @@ class TestRun:
             "error_status": True,
             "error_message": NOT_CONNECTED_WITHIN_TIMEOUT,
         }
-        assert 0.1 <= elapsed < 0.5
+        assert 0.1 <= elapsed < 2.0
 
     def test_runs_after_the_first_never_wait(self, block, workers):
         FakeWorker.on_start = staticmethod(lambda state: None)
         block.run(**run_kwargs(timeout=0.1))
 
-        started = time.monotonic()
+        class NeverWaited(threading.Event):
+            def wait(self, timeout=None):
+                raise AssertionError("a run after the first waited for the server")
+
+        workers[0].state.settled = NeverWaited()
         result = block.run(**run_kwargs(timeout=0.1))
 
-        assert time.monotonic() - started < 0.05
         assert result["error_status"] is True
 
     def test_first_connection_failure_is_reported_without_waiting(self, block, workers):
