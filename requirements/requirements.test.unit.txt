@@ -12,3 +12,4 @@ uvicorn<=0.22.0
 aioresponses>=0.7.6
 supervision>=0.26
 pycocotools>=2.0.10
+pytest-xdist>=3.0.0
