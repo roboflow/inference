@@ -36,6 +36,9 @@ INFERENCE_MODELS_COREML_COMPUTE_UNITS = os.getenv(
 INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED", default=True
 )
+INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV", default=False
+)
 DEFAULT_DEVICE_STR = os.getenv(
     "DEFAULT_DEVICE",
     ("cuda" if torch.cuda.is_available() else "cpu"),

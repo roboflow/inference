@@ -280,6 +280,15 @@ model compiles it (about 20 s for RF-DETR) and later loads take well under a sec
 roughly 4x the model's size on disk and is never written for offline or read-only packages.
 Default: `true`
 
+### Pre-processing
+
+**`INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV`**
+Resize uint8 tensor inputs exactly like `cv2.resize` (`INTER_LINEAR`) in stretch, letterbox and
+fit-longer-edge pre-processing, so a tensor gives the same predictions as a NumPy image with the same
+pixels. CUDA tensors use a Triton kernel when Triton is installed and an exact torch fallback otherwise.
+Float tensors are not affected.
+Default: `false`
+
 ## Prediction Parameter Defaults
 
 These environment variables control the default values for prediction parameters across all models. Individual models may override these defaults. See [Prediction Parameters](prediction-parameters.md) for detailed information about each parameter.

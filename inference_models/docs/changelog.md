@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- `INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV` (default `false`). When enabled,
+  stretch, letterbox and fit-longer-edge pre-processing resize uint8 tensor
+  inputs bit-identically to `cv2.resize`, so tensor and NumPy inputs with the
+  same pixels give the same predictions. CPU tensors use `cv2.resize`; CUDA
+  tensors use an exact torch implementation and switch to a Triton kernel once
+  it compiles and matches it bit-for-bit. Without Triton they stay on torch.
+  Float tensors and the disabled flag keep the bilinear `interpolate` resize.
+
 ## `0.39.3`
 
 ### Added
