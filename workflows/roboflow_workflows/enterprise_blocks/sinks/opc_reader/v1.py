@@ -131,10 +131,9 @@ and `password`; a `url` containing `user:password@` is rejected.
 Each block instance holds one OPC UA session of its own (separate from the OPC UA Writer's
 pooled sessions). Sessions ask the server for a 60 second timeout
 (`OPC_SESSION_TIMEOUT_SECONDS`) so one left behind by a crashed process is reclaimed
-quickly. The session is closed when the block is closed or garbage collected, and on a
-normal interpreter exit. Stopping an InferencePipeline does not close blocks by itself: a
-stopped pipeline that is still referenced keeps its session (and keeps reconnecting)
-until it is released or the process exits.
+quickly. The session is closed when the InferencePipeline running the workflow is
+joined after it ends (end of stream, `terminate()` or an error), when the block is closed
+or garbage collected, and on a normal interpreter exit.
 
 ### Where it runs
 The subscription and the latest value live in the block instance. An InferencePipeline

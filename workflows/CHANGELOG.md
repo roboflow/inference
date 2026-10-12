@@ -24,13 +24,20 @@ for contributor and maintainer responsibilities.
   include each failing step's literal field values, secrets such as a `password`
   or credentials in a URL included. Error messages, locations and
   `blocks_errors` are unchanged.
+- `ExecutionEngine.close()` releases what the workflow's blocks hold between runs:
+  it calls `close()` on every initialised block that defines one (for example the
+  background connections of the OPC UA Reader, MQTT Reader and Kafka Consumer). A
+  block that fails to close is logged and does not stop the others; repeated calls
+  are safe. `streamvision` calls it when an `InferencePipeline` is joined, so a
+  stopped pipeline that is still referenced no longer keeps those connections
+  until it is garbage collected.
 
 ### Added
 
 - OPC UA Reader enterprise block (`roboflow_enterprise/opc_reader@v1`): subscribes to one variable on an OPC UA server and returns its latest `value` on every run, with `is_new`, `error_status` and `error_message`. The variable is located like in the OPC UA Writer (`hierarchical` browse path or `direct` string NodeId, which also covers the Roboflow edge OPC UA server's `ns=1;s=Folder.Tag` tags).
   - The first run connects, reads the value and creates an OPC UA subscription (`publishing_interval_ms`, default 100); later runs return the latest pushed value from memory and never wait for the server, so the block suits 30-60 fps video. Only the first run waits, up to `timeout`.
   - While the connection is down, runs repeat the last value with `error_status` set and the block reconnects and re-subscribes in the background with exponential backoff; the outage is logged once at its start and once on recovery. A value whose OPC UA quality is not Good is returned with `error_status` set and the status name. A crashed server is reported after up to about 1 s plus `timeout`, the OPC UA client's watchdog interval and request timeout.
-  - Credentials go in `user_name` and `password` (a `url` containing `user:password@` is rejected, since the `url` field is not masked in the editor like `password`; use a secret selector for `password` to keep it out of the workflow definition). Rejected credentials are reported and not retried; an unknown namespace or node is retried every 10 s; a server at its session limit is retried after the OPC UA Writer's jittered session-exhaustion backoff. Sessions request the writer's 60 s session timeout (`OPC_SESSION_TIMEOUT_SECONDS`) and are closed when the block is closed, garbage collected, or the interpreter exits.
+  - Credentials go in `user_name` and `password` (a `url` containing `user:password@` is rejected, since the `url` field is not masked in the editor like `password`; use a secret selector for `password` to keep it out of the workflow definition). Rejected credentials are reported and not retried; an unknown namespace or node is retried every 10 s; a server at its session limit is retried after the OPC UA Writer's jittered session-exhaustion backoff. Sessions request the writer's 60 s session timeout (`OPC_SESSION_TIMEOUT_SECONDS`) and are closed when the pipeline running the workflow is joined after it ends, when the block is closed or garbage collected, or when the interpreter exits.
   - Each block instance holds its own session, separate from the OPC UA Writer's pool. Over the HTTP API every request builds a fresh instance, so each request opens a session, reads the current value and closes it. Not available on the Roboflow hosted platform.
 
 ## `0.2.6`

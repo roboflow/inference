@@ -656,3 +656,87 @@ def test_workflow_with_opc_reader_keeps_the_subscription_across_runs(opc_server)
         "error_status": False,
         "error_message": None,
     }
+
+
+WORKFLOW_OPC_READER_ON_VIDEO = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "opc_url"},
+        {"type": "WorkflowParameter", "name": "opc_namespace"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_enterprise/opc_reader@v1",
+            "name": "line_running",
+            "url": "$inputs.opc_url",
+            "namespace": "$inputs.opc_namespace",
+            "object_name": "Line1",
+            "variable_name": "LineRunning",
+            "publishing_interval_ms": 50,
+        }
+    ],
+    "outputs": [
+        {"type": "JsonField", "name": "opc", "selector": "$steps.line_running.*"}
+    ],
+}
+
+
+def write_video(path, frames: int) -> str:
+    import cv2
+    import numpy as np
+
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 30, (64, 48))
+    for index in range(frames):
+        writer.write(np.full((48, 64, 3), index % 255, dtype=np.uint8))
+    writer.release()
+    return str(path)
+
+
+def reader_threads() -> int:
+    return sum(
+        1
+        for thread in threading.enumerate()
+        if thread.name == "opc-ua-reader" and thread.is_alive()
+    )
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.parametrize("ending", ["end_of_stream", "terminate"])
+def test_stopped_pipeline_releases_the_reader_while_still_referenced(
+    opc_server, tmp_path, ending
+):
+    # given
+    from inference import InferencePipeline
+
+    video = write_video(
+        tmp_path / "clip.mp4", frames=30 if ending == "end_of_stream" else 3000
+    )
+    subscriptions_before = opc_server.subscription_count()
+    threads_before = reader_threads()
+    predictions = []
+    pipeline = InferencePipeline.init_with_workflow(
+        video_reference=video,
+        workflow_specification=WORKFLOW_OPC_READER_ON_VIDEO,
+        workflows_parameters={"opc_url": opc_server.url, "opc_namespace": NAMESPACE},
+        on_prediction=lambda prediction, video_frame: predictions.append(prediction),
+        max_fps=30,
+    )
+
+    # when (results dispatched on a background thread, so the test can terminate)
+    pipeline.start(use_main_thread=False)
+    if ending == "terminate":
+        assert wait_until(lambda: len(predictions) >= 5, timeout=30)
+        assert opc_server.subscription_count() == subscriptions_before + 1
+        pipeline.terminate()
+    pipeline.join()
+
+    # then the reader ran, and stopping released it although `pipeline` is still
+    # referenced, so garbage collection cannot be what closed it
+    assert predictions[0]["opc"]["value"] is False
+    assert predictions[0]["opc"]["error_status"] is False
+    assert wait_until(
+        lambda: opc_server.subscription_count() == subscriptions_before, timeout=10
+    )
+    assert reader_threads() == threads_before
+    assert pipeline is not None
