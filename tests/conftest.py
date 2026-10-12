@@ -14,6 +14,9 @@ ASSETS_DIR = os.path.abspath(
 )
 
 os.environ["TELEMETRY_USE_PERSISTENT_QUEUE"] = "False"
+# Keep the process-wide usage collector from reporting usage for fake test API
+# keys to the live API. Port 9 on loopback refuses connections immediately.
+os.environ.setdefault("METRICS_COLLECTOR_BASE_URL", "http://127.0.0.1:9")
 os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = (
     "[CUDAExecutionProvider,CPUExecutionProvider]"
 )

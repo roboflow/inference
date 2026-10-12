@@ -4,8 +4,20 @@ permissions:
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   workflow_dispatch:
 
 concurrency:
@@ -39,9 +51,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-integration-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-tests-inference-sdk-${{ matrix.python-version }}-integration-${{ hashFiles('requirements/**') }}
 
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
@@ -80,9 +90,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-e2e-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock', 'inference_models/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-tests-inference-sdk-${{ matrix.python-version }}-e2e-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock', 'inference_models/pyproject.toml') }}
 
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
@@ -107,6 +115,12 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" \
             "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" \
             "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]" \
+            "${{ github.workspace }}"/dist/inference_sdk-*.whl \
+            "${{ github.workspace }}"/dist/inference_models-*.whl
+          # pip skips wheels matching installed release versions. Test this checkout.
+          pip install --force-reinstall --no-deps \
+            "${{ github.workspace }}"/dist/roboflow_workflows-*.whl \
+            "${{ github.workspace }}"/dist/streamvision-*.whl \
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
 

@@ -16,6 +16,9 @@ from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader.v1 import MQTTReader
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v1 import (
     MQTTWriterSinkBlockV1,
 )
+from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v2 import (
+    MQTTWriterSinkBlockV2,
+)
 from roboflow_workflows.enterprise_blocks.sinks.opc_writer.v1 import (
     OPCWriterSinkBlockV1,
 )
@@ -44,6 +47,7 @@ def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
     return [
         OPCWriterSinkBlockV1,
         MQTTWriterSinkBlockV1,
+        MQTTWriterSinkBlockV2,
         MQTTReaderBlockV1,
         PLCBlockV1,
         PLCReaderBlockV1,

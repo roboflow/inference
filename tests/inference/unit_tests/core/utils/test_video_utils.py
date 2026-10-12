@@ -10,6 +10,7 @@ import pytest
 
 from inference.core.exceptions import InputImageLoadError, PayloadTooLargeError
 from inference.core.utils.video_utils import (
+    VideoDecodeState,
     probe_video,
     read_frame_windows,
     read_frames,
@@ -34,12 +35,30 @@ def _frame_numbers(frames) -> list:
     return [int(frame[0, 0, 2]) for frame in frames]
 
 
-def test_each_window_gets_the_frames_it_asked_for(clip) -> None:
-    windows = [[0, 2, 4], [10, 12], [20, 25, 29]]
+@pytest.mark.parametrize("prepare_frames", [False, True])
+def test_each_window_gets_the_frames_it_asked_for(clip, prepare_frames) -> None:
+    windows = [[0, 2, 4], [2, 4, 10, 12], [20, 25, 29]]
+    prepared_numbers = []
 
-    result = list(read_frame_windows(path=clip, windows=windows))
+    def prepare(frame):
+        prepared_numbers.append(int(frame[0, 0, 2]))
+        return frame[:8, :8].copy()
+
+    result = list(
+        read_frame_windows(
+            path=clip,
+            windows=windows,
+            frame_transform=prepare if prepare_frames else None,
+        )
+    )
 
     assert [_frame_numbers(window) for window in result] == windows
+    if prepare_frames:
+        assert prepared_numbers == sorted(
+            {index for window in windows for index in window}
+        )
+        assert all(frame.shape == (8, 8, 3) for window in result for frame in window)
+        assert result[0][1] is result[1][0]
 
 
 def test_the_clip_is_walked_once_for_every_window(clip, monkeypatch) -> None:
@@ -64,6 +83,22 @@ def test_a_window_past_the_end_comes_back_short(clip) -> None:
 
     assert _frame_numbers(result[0]) == [0, 1]
     assert result[1] == []
+
+
+def test_decoder_observes_eof_after_the_final_requested_sample(clip):
+    state = VideoDecodeState()
+    result = list(
+        read_frame_windows(
+            path=clip,
+            windows=[[0, 10, 20]],
+            decode_state=state,
+            window_end_frames=[31],
+        )
+    )
+
+    assert _frame_numbers(result[0]) == [0, 10, 20]
+    assert state.reached_end
+    assert state.frame_count == 30
 
 
 def test_frames_are_capped_only_when_a_side_is_given(clip) -> None:

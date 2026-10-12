@@ -248,6 +248,52 @@ def test_complete_registry_matches_original_inventory(
         assert registry[key].registry_path == expected[key]
 
 
+@pytest.mark.parametrize("use_adapters", [False, True])
+@pytest.mark.parametrize("use_proxy", [False, True])
+def test_every_inventory_key_has_a_lazy_reference(monkeypatch, use_adapters, use_proxy):
+    """Keep all eager-registry keys deferred, including newly merged models.
+
+    Args:
+        monkeypatch: Pytest patch fixture.
+        use_adapters: Whether to select inference-models adapters.
+        use_proxy: Whether to select vLLM proxies.
+    """
+    from inference.models import vllm_proxy
+
+    inventory = json.loads(
+        Path(__file__).with_name("registry_inventory.json").read_text()
+    )
+    for flag, enabled in inventory["flags"].items():
+        monkeypatch.setattr(env, flag, enabled)
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", use_adapters)
+    monkeypatch.setattr(vllm_proxy, "VLLM_PROXY_ENABLED", use_proxy)
+    monkeypatch.setattr(
+        lazy.importlib,
+        "import_module",
+        Mock(side_effect=AssertionError("Registry construction imported a model")),
+    )
+    registry = runpy.run_path(utils.__file__)["ROBOFLOW_MODEL_TYPES"]
+    expected = {
+        tuple(key)
+        for keys in inventory["cases"][
+            f"adapters={use_adapters},proxy={use_proxy}"
+        ].values()
+        for key in keys
+    }
+    # Inspect unresolved entries: public iteration probes optional availability.
+    assert set(registry._entries) == expected
+    for key, reference in registry._entries.items():
+        assert isinstance(
+            reference, (lazy._LazyModelClass, lazy._AdapterModelClass)
+        ), key
+        while isinstance(reference, lazy._AdapterModelClass):
+            assert isinstance(reference.adapter, lazy._LazyModelClass), key
+            reference = reference.fallback
+
+        # Adapter-only models have no legacy fallback.
+        assert reference is None or isinstance(reference, lazy._LazyModelClass), key
+
+
 @pytest.mark.parametrize(
     "flag",
     sorted(
@@ -293,6 +339,7 @@ def test_disabled_optional_flags_do_not_register_keys(
             "QWEN_3_5_ENABLED",
             "QWEN_3_8_ENABLED",
             "GLM_OCR_ENABLED",
+            "VJEPA2_1_ENABLED",
         }
         return
 

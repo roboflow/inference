@@ -1,5 +1,5 @@
 {
-  "source_revision": "fdd13b32c6f55f91d0a800277564bb40067c533b",
+  "source_revision": "3f976fe6421d0e4a6d8c53c4622d49d3b4b2f734",
   "cases": {
     "adapters=False,proxy=False": {
       "inference.models:DinoV3Classification": [
@@ -1940,6 +1940,14 @@
         [
           "action-recognition",
           "cosmos3-edge"
+        ],
+        [
+          "action-recognition",
+          "vjepa2-1-vitb-384"
+        ],
+        [
+          "action-recognition",
+          "vjepa2_1"
         ]
       ],
       "inference.core.models.inference_models_adapters:InferenceModelsClassificationAdapter": [
@@ -3111,6 +3119,34 @@
         ],
         [
           "semantic-segmentation",
+          "rfdetr"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-2xlarge"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-large"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-medium"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-nano"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-small"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-xlarge"
+        ],
+        [
+          "semantic-segmentation",
           "yolo26"
         ],
         [
@@ -3196,6 +3232,14 @@
         [
           "action-recognition",
           "cosmos3-edge"
+        ],
+        [
+          "action-recognition",
+          "vjepa2-1-vitb-384"
+        ],
+        [
+          "action-recognition",
+          "vjepa2_1"
         ]
       ],
       "inference.core.models.inference_models_adapters:InferenceModelsClassificationAdapter": [
@@ -4367,6 +4411,34 @@
         ],
         [
           "semantic-segmentation",
+          "rfdetr"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-2xlarge"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-large"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-medium"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-nano"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-small"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-sem-xlarge"
+        ],
+        [
+          "semantic-segmentation",
           "yolo26"
         ],
         [
@@ -4470,6 +4542,7 @@
     "QWEN_3_ENABLED": true,
     "SAM3_3D_OBJECTS_ENABLED": false,
     "SMOLVLM2_ENABLED": true,
-    "CORE_MODELS_ENABLED": true
+    "CORE_MODELS_ENABLED": true,
+    "VJEPA2_1_ENABLED": true
   }
 }

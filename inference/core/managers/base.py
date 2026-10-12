@@ -9,6 +9,9 @@ from fastapi.encoders import jsonable_encoder
 from inference.core.cache import model_monitoring as model_monitoring_cache_module
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.action_recognition import (
+    ActionRecognitionInferenceRequest,
+)
 from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
@@ -548,7 +551,15 @@ class ModelManager:
         model = self._get_model_reference(model_id=model_id)
         if isinstance(request, ImageEmbeddingRequest):
             return model.infer_embeddings_from_request(request)
-        return model.infer_from_request(request)
+        elif (
+            isinstance(request, ActionRecognitionInferenceRequest)
+            and "processing_control" in kwargs
+        ):
+            return model.infer_from_request(
+                request, processing_control=kwargs["processing_control"]
+            )
+        else:
+            return model.infer_from_request(request)
 
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
         """Run native model inference with cache lookup and telemetry.

@@ -15,7 +15,7 @@ import warnings
 from functools import lru_cache
 from pathlib import Path
 
-SOURCE_REVISION = "fdd13b32c6f55f91d0a800277564bb40067c533b"
+SOURCE_REVISION = "3f976fe6421d0e4a6d8c53c4622d49d3b4b2f734"
 _INVENTORY = Path(__file__).with_name("registry_inventory.json")
 
 

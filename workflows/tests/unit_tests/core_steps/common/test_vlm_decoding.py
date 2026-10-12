@@ -205,6 +205,11 @@ def test_small_utils() -> None:
             id="xyxy_0_1000-bbox-alias",
         ),
         pytest.param(
+            "xyxy_0_999",
+            {"box_2d": [99.9, 249.75, 499.5, 749.25], "label": "cat"},
+            id="xyxy_0_999",
+        ),
+        pytest.param(
             "yxyx_0_1000",
             {"box_2d": [250, 100, 750, 500], "label": "cat"},
             id="yxyx_0_1000",
@@ -301,6 +306,24 @@ def test_decode_object_detections_clamps_out_of_range_coordinates() -> None:
     assert detections.xyxy.tolist() == [
         [0.0, 0.0, float(IMAGE_WIDTH), float(IMAGE_HEIGHT)]
     ]
+
+
+def test_decode_object_detections_xyxy_0_999_scales_by_999_not_1000() -> None:
+    # 1998x999 image: every 0-999 coordinate maps onto exactly 2x / 1x pixels,
+    # so a 0-1000 decoder would land 0.1% short on the far corner.
+    image = _build_image(width=1998, height=999)
+
+    error_status, detections = decode_object_detections(
+        raw_output='[{"box_2d": [100, 250, 999, 1200], "label": "cat"}]',
+        box_format="xyxy_0_999",
+        image=image,
+        classes=["cat"],
+        inference_id="inference-id",
+    )
+
+    assert error_status is False
+    assert detections.xyxy.tolist() == [[200.0, 250.0, 1998.0, 999.0]]
+    assert detections.confidence.tolist() == [1.0]
 
 
 # ---------------------------------------------------------------------------

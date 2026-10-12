@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+import torch
 
 from inference.core.entities.requests.action_recognition import (
     ActionRecognitionInferenceRequest,
@@ -20,6 +21,11 @@ MODULE = "inference.core.models.inference_models_adapters"
 
 class _FakeModel:
     resolved_model: Optional[SimpleNamespace] = None
+    supports_confidence = False
+    supports_observed_duration = False
+
+    def estimate_candidate_count(self, sampled_frames, *, class_names=None):
+        return None
 
     def __init__(self, responses, class_names=None, sampling=None):
         self.responses = list(responses)
@@ -62,6 +68,67 @@ def _request(class_filter=None):
     )
 
 
+@pytest.mark.parametrize("confidence", [0.9, "best"])
+def test_candidates_preserve_timeline_at_float32_threshold_boundaries(confidence):
+    class ScoredModel(_FakeModel):
+        supports_confidence = True
+        confidence_threshold = 0.9
+        recommended_parameters = SimpleNamespace(
+            confidence=0.9, per_class_confidence={"walk": 0.9, "run": 0.9}
+        )
+
+        def infer(self, frames, class_names=None, fps=None, **kwargs):
+            self.calls.append(kwargs)
+            scores = torch.tensor([0.9, 0.9 - 1e-6], dtype=torch.float32)
+            threshold = 0.0 if kwargs.get("confidence") == 0.0 else 0.9
+            return [
+                ActionRecognitionPrediction(0, 1, label, score.item(), True)
+                for label, score in zip(self.class_names, scores)
+                if score >= threshold
+            ]
+
+    responses = []
+    for include_candidates in (False, True):
+        model = ScoredModel([], class_names=["walk", "run"])
+        request = _request()
+        request.confidence = confidence
+        request.include_candidates = include_candidates
+        with _clip(frame_count=3, source_fps=10.0):
+            responses.append(_adapter(model).infer_from_request(request))
+        assert len(model.calls) == 1
+
+    assert responses[0].timeline == responses[1].timeline
+    assert len(responses[0].timeline) == 1
+    assert responses[0].timeline[0].class_name == "walk"
+    assert len(responses[1].candidates) == 2
+
+
+@pytest.mark.parametrize("known_estimate", [False, True])
+def test_candidate_overflow_fails_before_response_or_known_oversized_inference(
+    monkeypatch, known_estimate
+):
+    from inference.core.exceptions import PayloadTooLargeError
+    from inference.core.models import inference_models_adapters as adapters
+
+    model = _FakeModel(
+        responses=[[ActionRecognitionPrediction(0, 1, "walk", 0.9, True)] * 2],
+        class_names=["walk"],
+    )
+    model.supports_confidence = True
+    model.confidence_threshold = 0.5
+    model.estimate_candidate_count = lambda *args, **kwargs: (
+        2 if known_estimate else None
+    )
+    monkeypatch.setattr(adapters, "MAX_ACTION_RECOGNITION_CANDIDATES", 1)
+    request = _request()
+    request.include_candidates = True
+
+    with _clip(frame_count=3, source_fps=10), pytest.raises(PayloadTooLargeError):
+        _adapter(model).infer_from_request(request)
+
+    assert len(model.calls) == (0 if known_estimate else 1)
+
+
 @contextlib.contextmanager
 def _clip(frame_count: int, source_fps: float):
     frame = np.zeros((8, 8, 3), dtype=np.uint8)
@@ -69,8 +136,9 @@ def _clip(frame_count: int, source_fps: float):
         f"{MODULE}.probe_video", return_value=(source_fps, frame_count)
     ), patch(
         f"{MODULE}.read_frame_windows",
-        side_effect=lambda path, windows, max_frame_side: (
-            [frame] * len(window) for window in windows
+        side_effect=lambda path, windows, max_frame_side=None, frame_transform=None, **kwargs: (
+            [frame_transform(frame) if frame_transform else frame] * len(window)
+            for window in windows
         ),
     ):
         source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
@@ -78,14 +146,19 @@ def _clip(frame_count: int, source_fps: float):
         yield
 
 
-def test_window_segments_map_to_clip_frame_indices() -> None:
+@pytest.mark.parametrize("prepare_frames", [False, True])
+def test_window_segments_map_to_clip_frame_indices(prepare_frames) -> None:
     model = _FakeModel(
         responses=[[ActionRecognitionPrediction(0, 15, "walk")]],
         class_names=["walk", "run"],
         sampling=VideoSampling(window_seconds=8.0, sample_fps=2.0, min_frames=4),
     )
+    prepared = MagicMock(side_effect=lambda frame: frame)
+    if prepare_frames:
+        model.frame_storage_transform = prepared
     with _clip(frame_count=100, source_fps=10.0):
         response = _adapter(model).infer_from_request(_request())
+    assert prepared.call_count == (2 if prepare_frames else 0)
     # 10 s against an 8 s window: one whole window plus the 2 s tail.
     assert response.windows_classified == 2
     assert response.source_fps == 10.0
@@ -217,7 +290,9 @@ def test_windows_classified_counts_calls_not_plans() -> None:
         f"{MODULE}.probe_video", return_value=(10.0, 80)
     ), patch(
         f"{MODULE}.read_frame_windows",
-        side_effect=lambda path, windows, max_frame_side: ([frame] for _ in windows),
+        side_effect=lambda path, windows, max_frame_side, **kwargs: (
+            [frame] for _ in windows
+        ),
     ):
         source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
         source_path.return_value.__exit__ = MagicMock(return_value=False)
@@ -237,6 +312,52 @@ def test_an_open_vocabulary_label_reports_no_class_id() -> None:
         response = _adapter(model).infer_from_request(_request())
 
     assert response.timeline[0].class_id == -1
+
+
+@pytest.mark.parametrize("reported_count", [31, 120])
+@pytest.mark.parametrize("include_candidates", [False, True])
+def test_early_decode_end_clips_timeline_candidates_and_metadata(
+    reported_count, include_candidates
+):
+    class ScoredModel(_FakeModel):
+        supports_confidence = True
+        supports_observed_duration = True
+        confidence_threshold = 0.5
+
+        def infer(self, frames, class_names=None, fps=None, **kwargs):
+            self.calls.append(kwargs)
+            return [ActionRecognitionPrediction(0, 16, "walk", 0.9, True)]
+
+    model = ScoredModel(
+        [],
+        ["walk"],
+        VideoSampling(
+            window_seconds=4,
+            sample_fps=4,
+            min_frames=1,
+            max_frames=16,
+            fixed_sample_fps=True,
+        ),
+    )
+    frame = np.zeros((8, 8, 3), dtype=np.uint8)
+    capture = MagicMock()
+    capture.isOpened.return_value = True
+    capture.read.side_effect = [(True, frame)] * 30 + [(False, None)]
+    request = _request()
+    request.include_candidates = include_candidates
+
+    with patch(f"{MODULE}.video_source_path") as source_path, patch(
+        f"{MODULE}.probe_video", return_value=(30.0, reported_count)
+    ), patch("inference.core.utils.video_utils.cv2.VideoCapture", return_value=capture):
+        source_path.return_value.__enter__.return_value = "/tmp/clip"
+        response = _adapter(model).infer_from_request(request)
+
+    assert model.calls[0]["duration_seconds"] == 1.0
+    assert response.frame_count == 30
+    assert response.timeline[0].end_frame_idx == 29
+    if include_candidates:
+        assert response.candidates[0].end_frame_idx == 29
+    capture.release.assert_called_once()
 
 
 def test_the_wire_shape_names_the_class_field_class() -> None:
@@ -328,11 +449,56 @@ def test_a_negative_duration_cap_removes_the_limit(monkeypatch):
 def _side_handed_to_the_reader(model) -> object:
     with patch(f"{MODULE}.video_source_path") as source_path, patch(
         f"{MODULE}.probe_video", return_value=(10.0, 100)
-    ), patch(f"{MODULE}.read_frame_windows", return_value=iter([])) as reader:
+    ), patch(
+        f"{MODULE}.read_frame_windows", return_value=(item for item in [])
+    ) as reader:
         source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
         source_path.return_value.__exit__ = MagicMock(return_value=False)
         _adapter(model).infer_from_request(_request())
     return reader.call_args.kwargs["max_frame_side"]
+
+
+def test_cancellation_after_one_window_closes_decoder_and_source(monkeypatch):
+    from inference.core.models import inference_models_adapters as adapters
+    from inference.core.utils.video_processing import (
+        VideoProcessingCancelledError,
+        VideoProcessingControl,
+    )
+
+    state = {"cancelled": False, "source_closed": False}
+
+    @contextlib.contextmanager
+    def source(**kwargs):
+        try:
+            yield "/tmp/clip"
+        finally:
+            state["source_closed"] = True
+
+    class CancellingModel(_FakeModel):
+        def infer(self, frames, **kwargs):
+            self.calls.append(kwargs)
+            state["cancelled"] = True
+            return []
+
+    model = CancellingModel([], ["walk"], VideoSampling(window_seconds=4, sample_fps=4))
+    capture = MagicMock()
+    capture.isOpened.return_value = True
+    capture.read.return_value = (True, np.zeros((8, 8, 3), dtype=np.uint8))
+    control = VideoProcessingControl(
+        timeout_seconds=60, is_disconnected=lambda: state["cancelled"]
+    )
+    monkeypatch.setattr(adapters, "video_source_path", source)
+    monkeypatch.setattr(adapters, "probe_video", lambda **kwargs: (4.0, 128))
+
+    with patch(
+        "inference.core.utils.video_utils.cv2.VideoCapture", return_value=capture
+    ):
+        with pytest.raises(VideoProcessingCancelledError):
+            _adapter(model).infer_from_request(_request(), processing_control=control)
+
+    assert len(model.calls) == 1
+    assert state["source_closed"]
+    capture.release.assert_called_once()
 
 
 def test_an_untrained_model_is_read_at_the_1080p_ceiling() -> None:
@@ -347,8 +513,12 @@ def test_a_trained_model_without_a_declared_side_is_read_whole() -> None:
     assert _side_handed_to_the_reader(model) is None
 
 
-def test_load_action_recognition_model_passes_the_zero_shot_id_through() -> None:
+def test_load_action_recognition_model_passes_the_zero_shot_id_through(
+    monkeypatch,
+) -> None:
     from inference.core.models import inference_models_adapters as adapters
+
+    monkeypatch.setattr(adapters, "VJEPA2_1_ENABLED", True)
 
     with patch.object(adapters, "AutoModel") as auto_model, patch.object(
         adapters,
@@ -363,3 +533,46 @@ def test_load_action_recognition_model_passes_the_zero_shot_id_through() -> None
         auto_model.from_pretrained.call_args.kwargs["model_id_or_path"]
         == "nvidia/cosmos-3-edge-action-recognition"
     )
+
+
+@pytest.mark.parametrize(
+    "enabled, model_type, blocked",
+    [
+        (True, "vjepa2-1-vitb-384", False),
+        (True, "vjepa2_1", False),
+        (False, "vjepa2-1-vitb-384", True),
+        (False, "vjepa2_1", True),
+        (False, "cosmos-3-edge", False),
+    ],
+)
+def test_shared_loader_honors_vjepa_enablement(
+    monkeypatch, enabled, model_type, blocked
+) -> None:
+    from inference.core.exceptions import ModelDeploymentNotSupportedError
+    from inference.core.models import inference_models_adapters as adapters
+    from inference.core.registries import roboflow
+
+    monkeypatch.setattr(adapters, "VJEPA2_1_ENABLED", enabled)
+    with patch.object(
+        roboflow, "get_model_type", return_value=("action-recognition", model_type)
+    ) as metadata, patch.object(adapters, "AutoModel") as auto_model, patch.object(
+        adapters,
+        "_as_action_recognition_model",
+        side_effect=lambda model, model_id: model,
+    ):
+        if blocked:
+            with pytest.raises(ModelDeploymentNotSupportedError, match="disabled"):
+                adapters.load_action_recognition_model("project/2", api_key="key")
+            auto_model.from_pretrained.assert_not_called()
+        else:
+            adapters.load_action_recognition_model("project/2", api_key="key")
+            auto_model.from_pretrained.assert_called_once()
+        if enabled:
+            metadata.assert_not_called()
+        else:
+            metadata.assert_called_once_with(
+                model_id="project/2",
+                api_key="key",
+                countinference=None,
+                service_secret=None,
+            )
