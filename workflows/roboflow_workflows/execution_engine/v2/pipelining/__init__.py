@@ -1,8 +1,10 @@
 """Bounded pipelining of V2 runs (opt-in; serial execution stays the default).
 
-    options.py   PipelineOptions: max_in_flight and overload policy
+    options.py   PipelineOptions: P pulse teams, W workers per team, overload
+                 policy and a pending-operator-pulse count safeguard
     stages.py    stage gates, coordination of one run, counters
-    workers.py   fixed worker pool without a queue, run-owned threads
+    workers.py   reusable run-owned worker teams without a task queue
+    teams.py     ready graph units and dependency-driven branch progress
     passive.py   session.pipeline(): bounded submissions of passive runs
 
 Only ``options`` is imported eagerly, so ``plan`` can name ``PipelineOptions``

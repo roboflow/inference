@@ -924,8 +924,11 @@ class InFlightWork:
     """Admitted, unfinished work of a session counted per control version.
 
     Drivers ``enter`` a source pulse at admission and a domain end when they
-    schedule it, and ``leave`` when it completed or was cancelled; operator
-    pulses run inside the work that fed them and need no entry of their own.
+    schedule it, and ``leave`` when it completed or was cancelled. Serially,
+    operator pulses run inside the work that fed them and need no entry of
+    their own. Pipelined, each emitted operator pulse is counted separately:
+    it enters at hand-off, under the snapshot it inherited, before the work
+    that emitted it leaves, and leaves when it completed or was cancelled.
     Work carrying reset epoch ``e`` calls ``wait_drained_below(e)`` before an
     operator entry and before it resets a static member (module docstring,
     rules 4 and 5).

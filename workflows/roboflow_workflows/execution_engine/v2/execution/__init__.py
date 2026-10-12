@@ -4,7 +4,8 @@
 
     run_session(session, inputs=...)
         prepare_inputs            defaults, V1 input forms, broadcasting, codecs
-        for step in plan.steps    plan order; one step at a time (steps.py)
+        execute_steps             plan order, one step at a time (steps.py);
+                                  a pipelined run with a team: by dependencies
         build_result              one entry per selected port (outputs.py)
 
     build_rows(result, serialize=...)   V1-shaped rows (outputs.py)
@@ -13,7 +14,9 @@ A passive pipeline (``pipelining.passive``) prepares inputs when a caller
 submits them and executes each submission with ``run_prepared`` on one of its
 workers. The algorithm is the same; the run's ``Coordination`` and ``Ticket``
 make its steps take their turn at shared stages, so different runs may be at
-different steps at once. Serially, ``SERIAL`` gates nothing.
+different steps at once. With ``max_workflow_parallelism`` above 1, the
+worker's team runs independent steps of one submission at once. Serially,
+``SERIAL`` gates nothing.
 
 A plan with event handlers or state machines runs them through the
 session's reaction runtime (``reactions.runtime``): passive runs support
@@ -43,7 +46,7 @@ from roboflow_workflows.execution_engine.v2.execution.outputs import (
 )
 from roboflow_workflows.execution_engine.v2.execution.steps import (
     RunState,
-    execute_step,
+    execute_steps,
 )
 from roboflow_workflows.execution_engine.v2.pipelining.stages import (
     SERIAL,
@@ -215,8 +218,7 @@ def _run(
             run.record("run_started", run_id=run_id, session_id=session.session_id)
             if not session.plan.controls.is_empty:
                 run.record("controls", **controls.view().describe())
-            for step in session.plan.steps:
-                execute_step(run, step)
+            execute_steps(run, session.plan.schedule())
             result = build_result(run)
         except RunAborted:
             if aborted is None:

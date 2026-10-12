@@ -130,10 +130,13 @@ def test_wait_from_a_handler_raises_and_stop_from_a_handler_works():
     feeds = {"cam_a": [0, threading.Event(), 1]}
     session = plan.create_session(resources={"probe": probe, "feeds": feeds})
     holder = {}
+    stored = threading.Event()
     original = probe.react
 
     def react(value, *, context, payload=None):
         original(value, context=context, payload=payload)
+        # The handler may run before the test thread stores the run.
+        assert stored.wait(WAIT)
         try:
             holder["run"].wait()
         except ContractError as error:
@@ -143,6 +146,7 @@ def test_wait_from_a_handler_raises_and_stop_from_a_handler_works():
 
     probe.react = react
     holder["run"] = run = session.start()
+    stored.set()
     assert run.wait(WAIT)
 
     assert len(caught) == 1 and "wait for itself" in str(caught[0])

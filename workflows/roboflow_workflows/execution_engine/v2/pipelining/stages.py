@@ -1,6 +1,8 @@
 """Stage gates: which pulse may call a stage next.
 
-A pipelined run executes each pulse on one worker, in plan order. Different
+A pipelined run executes each pulse on one worker team: in plan order with
+``max_workflow_parallelism`` W = 1, or on up to W threads in dependency
+order, so one pulse may be at several independent stages at once. Different
 pulses may be at different stages at once. A stage is one gated unit of
 work: a whole step call, one phase of a step, a group delivery or an
 operator push. Its gate admits one call at a time, in ticket order per
@@ -89,14 +91,17 @@ GAUGES: Tuple[str, ...] = (
     "live_states",
     "pending_operator_pulses",
     "overlapping_pulses",
+    "parallel_units",
 )
 """Current/peak counts a pipelined run tracks; all are counts, never bytes.
 
-executing                 workers running a pulse, submission or end task
+executing                 teams running a pulse, submission or end task
 queued                    admitted pulses not yet given to a worker
-live_states               RunStates alive, inline operator pulses included
+live_states               RunStates alive; one per busy team (pulses never nest)
 pending_operator_pulses   pulses an operator returned, not yet started
 overlapping_pulses        gated calls in progress at once; above 1 = overlap
+parallel_units            steps and deliveries running on team workers at
+                          once (only with max_workflow_parallelism above 1)
 """
 
 TOTALS: Tuple[str, ...] = ("end_tasks",)

@@ -20,15 +20,16 @@ Threads of one active run::
 
 A pulse runs its domain's route (``plan.route``) in plan order on one thread,
 delivers each registered group as soon as its steps ran, then feeds the
-operators consuming its domain; their returned pulses run depth first on the
-same thread (``pulses.py``). Pipelined, different pulses overlap at
-different stages; each stage (a step or one of its phases, a group delivery,
-an operator) admits one call at a time in sequence order per domain.
+operators consuming its domain. Serially their returned pulses run depth
+first on the same thread; pipelined, each one is dispatched as its own work
+on a free worker (``pulses.py``, ``pipeline.py``). Pipelined, different pulses
+overlap at different stages; each stage (a step or one of its phases, a group
+delivery, an operator) admits one call at a time in sequence order per domain.
 
 Admission is the acceptance boundary: a reader takes one of its source's
 ``admission_bound`` slots and the pulse is admitted. The slot is released
-after the pulse's handlers returned and the operators it fed returned and
-their immediate pulses ran; what an operator retains afterwards is bounded
+after the pulse's handlers returned and the operators it fed returned (and,
+serially, their immediate pulses ran); what an operator retains afterwards is bounded
 by the operator's own parameters, not by admission. Nothing waits for future
 data: an operator returns what it can decide now. Per source at most
 ``admission_bound`` pulses are admitted and one more emission is read but not
@@ -963,6 +964,7 @@ class ActiveRun:
             aborting=lambda: self.aborting,
             schedule_end=self._end_domain_later,
             reactions=self._reactions,
+            hand_off=None if pipeline is None else self._hand_off,
         )
         self._driver: _Driver = (
             _SerialDriver(self)
@@ -2008,6 +2010,18 @@ class ActiveRun:
 
     def _end_domain_later(self, domain: str, reason: TerminationReason) -> None:
         self._driver.end_domain_later(domain, reason)
+
+    def _hand_off(
+        self, slot: OperatorSlot, emitted: List[Any], controls: ControlSnapshot
+    ) -> Optional[ActiveRunError]:
+        """Pipelined only: queue an operator's returned pulses for dispatch.
+
+        Returns ``None``, or the run's failure when the driver refused them
+        (``PipelineOptions.max_pending_operator_pulses``).
+        """
+        overflow = self._driver.hand_off(slot, emitted, controls)
+
+        return overflow
 
     def _conclude(self) -> None:
         """Settle reactions, close every operator, notify, release the session.

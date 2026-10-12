@@ -20,7 +20,7 @@ source, one class declares everything and the catalogue only collects it::
 
         def push(self, arrivals): ...
 
-Lifecycle, on the processor thread of one active run::
+Lifecycle of one active run::
 
     operator = OperatorClass(name=..., params=..., inputs=...)   # per start()
     operator.push(arrivals)        # the inputs of one upstream pulse, together
@@ -29,9 +29,30 @@ Lifecycle, on the processor thread of one active run::
     operator.close()               # exactly once, also after a failure
 
 ``push``, ``end_input`` and ``finish`` return the pulses to emit now, in
-order. The runtime executes each emitted pulse before it continues, so an
-operator never waits for future data: whatever cannot be decided yet stays
-retained under the operator's own declared bounds.
+order. Serial runs call them on the processor thread and execute returned
+pulses inline before continuing. Pipelined runs serialize all three methods
+through the operator's shared call gate, but may call them from different
+worker threads: keep no thread-affine state. Pushes follow pulse sequence
+order within each upstream domain; independent domains have no global order.
+``end_input`` follows the seal and drain of its input's domain, and ``finish``
+runs once after all upstream domains ended. Cancellation/failure closes the
+operator without promising ``finish``.
+
+In a pipeline, returned pulses are handed to the dispatcher in the operator's
+emission order, then execute separately under the same ``max_in_flight`` team
+budget. The feeding pulse can finish before its emitted descendants. An
+incomplete collection retains values, not a team; never wait inside a method
+for a future arrival. Serial runs still execute emissions inline.
+
+``PipelineOptions.max_pending_operator_pulses`` (default 4096) limits the total
+returned-but-not-started operator pulses of an active pipeline. A call whose
+returned list would exceed it fails the run with ``ActiveRunError`` attributed
+to that operator (stage ``operator``); that call's pulses do not run. The list
+already exists before this check, so the limit counts pulses, not allocated
+bytes or retained operator state. A refused batch counts as emitted and
+cancelled. The ``pending_operator_pulses`` gauge starts counting at numbering,
+so its peak may briefly include that batch even though hand-off retained none
+of it. Serial runs and passive pipelines ignore the limit.
 """
 
 import inspect
@@ -436,8 +457,14 @@ class Operator:
         engine_compatibility: PEP 440 specifier, e.g. ``">=2.0,<3"``.
         metadata: Free-form UI and catalogue metadata.
 
-    An instance belongs to one active run and is used on its processor
-    thread only; a later ``start`` constructs a fresh one. It keeps no
+    An instance belongs to one active run; a later ``start`` constructs a
+    fresh one. In a serial run its methods run on the processor thread. In a
+    pipeline, ``push``, ``end_input`` and ``finish`` share an exclusive call
+    gate but have no fixed worker-thread affinity. Pushes are ordered within
+    each upstream domain; ``end_input`` follows that domain's drain, and
+    ``finish`` follows all upstream ends. Emissions then run as separately
+    admitted pulses, rather than inside the call. See the module contract for
+    cancellation and the pending-pulse limit. The instance keeps no
     ``RunState`` and retains only what its declared bounds allow.
 
     Args:

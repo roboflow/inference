@@ -11,18 +11,29 @@ operator pushes), in sequence order per domain::
         for step in route(domain):                 execute_step takes its turns
             execute_step; deliver every group now ready: in its turn,
                 record it if recorded, then its handler (callbacks lock)
+            (on a worker leading a team: steps and deliveries are units of
+            the route's schedule; a delivery follows its prerequisites)
         for operator in consumers_of(domain):      after the whole route
             turn at "$operators.<o>#push": push, number the returned pulses,
                 count them outstanding             (one operator call at a time)
-            run the returned pulses, depth first   (turn already released)
+                pipelined: hand them to the dispatcher, still in the turn
+            serial: run the returned pulses, depth first (turn released)
         abandon state; processed or cancelled; on_pulse_finished
         outstanding(domain) -= 1                   may end the domain
 
     end_domain(D)                                  once D is sealed and drained
         for operator in consumers_of(D):
-            end_input(each input of D)             operator exclusive; run pulses
+            end_input(each input of D)             operator exclusive; emit
             every upstream ended -> finish once    operator exclusive; sealed
         an operator sealed with nothing outstanding ends in turn
+
+Emitted pulses: serially they run inline, depth first, and the pulse that fed
+them waits for them and reports their failure. Pipelined, ``hand_off`` gives
+them to the dispatcher while the operator's stage is held, so each operator's
+pulses reach it in ordinal order; the feeding work then finishes and frees its
+team, and the dispatcher runs every emitted pulse as its own work
+(``run_emitted``). A pipelined pulse is processed once its route, deliveries
+and pushes finished; the pulses it fed report their own outcome.
 
 A domain is *sealed* when it can produce no further pulse (its reader is
 done, or its operator's ``finish`` returned) and *drained* when none of its
@@ -35,6 +46,7 @@ import inspect
 import threading
 import time
 from dataclasses import dataclass, field
+from functools import partial
 from typing import (
     Any,
     Callable,
@@ -84,6 +96,11 @@ from roboflow_workflows.execution_engine.v2.pipelining.stages import (
     PipelinedCoordination,
     RunAborted,
     StepStages,
+)
+from roboflow_workflows.execution_engine.v2.pipelining.teams import (
+    Team,
+    UnitGraph,
+    team_for,
 )
 from roboflow_workflows.execution_engine.v2.plan import (
     ExecutionSession,
@@ -181,6 +198,46 @@ class OperatorSlot:
         return f"$operators.{self.name}#push"
 
 
+_DELIVERY_FIRST = -1
+"""Priority of a delivery unit; step ranks are depth-first positions, from 0."""
+
+
+@dataclass(frozen=True)
+class _RouteGraph:
+    """Team units of one pulse's route: its steps, then its group deliveries.
+
+    Units ``0..n-1`` are the schedule's steps with their dependencies and
+    depth-first ranks. Unit ``n + j`` delivers the ``j``-th activated group
+    once the steps it needs settled. Deliveries go first: each has priority
+    ``_DELIVERY_FIRST``, below every step rank, so a ready delivery starts
+    before any ready step and a handler sees its group as soon as the group
+    is complete. Ready deliveries start in group order (ties go to the lower
+    unit).
+    """
+
+    predecessors: Tuple[Sequence[int], ...]
+    successors: Tuple[Sequence[int], ...]
+    priorities: Tuple[int, ...]
+
+    @classmethod
+    def of(
+        cls, schedule: UnitGraph, *, deliveries: Sequence[Tuple[int, ...]]
+    ) -> "_RouteGraph":
+        """Add one unit per delivery, given the step units each needs."""
+        steps = len(schedule.predecessors)
+        successors = [list(after) for after in schedule.successors]
+        for position, needs in enumerate(deliveries):
+            for step in needs:
+                successors[step].append(steps + position)
+        graph = cls(
+            predecessors=(*schedule.predecessors, *deliveries),
+            successors=(*successors, *([] for _ in deliveries)),
+            priorities=(*schedule.priorities, *[_DELIVERY_FIRST] * len(deliveries)),
+        )
+
+        return graph
+
+
 @dataclass(frozen=True)
 class _Outcome:
     """How a pulse, or the operator work it fed, ended.
@@ -207,7 +264,7 @@ class DomainProgress:
     """When each domain has ended: sealed and nothing outstanding, exactly once.
 
     ``outstanding`` counts admitted (sources) or returned (operators) pulses
-    that have not completed, inline operator work included. It grows before
+    that have not completed, wherever they run. It grows before
     the producer releases its own lock (a reader's admission, an operator's
     stage), so a domain is never seen drained while a pulse is on its way.
     """
@@ -325,6 +382,10 @@ class PulseExecutor:
         schedule_end: Ends a sealed, drained domain: inline when serial,
             as worker work when pipelined.
         reactions: The run's reaction runtime; ``None`` without handlers.
+        hand_off: Takes the pulses one operator call returned, with the
+            snapshot they run under, while the operator's stage is held
+            (pipelined); returns the run's failure instead when it refuses
+            them all (its pending bound). ``None`` runs them inline (serial).
     """
 
     def __init__(
@@ -341,6 +402,11 @@ class PulseExecutor:
         aborting: Callable[[], bool],
         schedule_end: Callable[[str, TerminationReason], None],
         reactions: Optional[Any] = None,
+        hand_off: Optional[
+            Callable[
+                [OperatorSlot, _Emitted, ControlSnapshot], Optional[ActiveRunError]
+            ]
+        ] = None,
     ):
         self.session = session
         self.reactions = reactions
@@ -355,6 +421,7 @@ class PulseExecutor:
         self._fail = fail
         self._aborting = aborting
         self._schedule_end = schedule_end
+        self._hand_off_to = hand_off
         self._counting = threading.Lock()
         self._gauges: Optional[PipelineCounters] = (
             coordination.counters
@@ -462,6 +529,7 @@ class PulseExecutor:
             with self._exclusive(slot):
                 slot.stopped = slot.stopped or reason == "stop"
                 emitted = self._call_operator(slot, "end_input", item.name)
+                emitted = self._hand_off(slot, emitted, controls=controls)
                 if position == len(inputs) - 1:
                     slot.ended.add(domain)
             if not self._run_emissions(slot, emitted, controls=controls).completed:
@@ -511,6 +579,7 @@ class PulseExecutor:
             slot.finish_called = True
             final: TerminationReason = "stop" if slot.stopped else "eof"
             emitted = self._call_operator(slot, "finish", final)
+            emitted = self._hand_off(slot, emitted, controls=controls)
             if emitted is not None:
                 slot.counters.finished = True
                 ended = self.progress.seal(slot.name, final)
@@ -585,9 +654,9 @@ class PulseExecutor:
         """Run one pulse of a source or an operator, then the operators it feeds.
 
         A failure raised here is attributed to this pulse, recorded as the
-        run's failure once and returned; a failure of work the pulse fed is
-        returned as it was recorded there. Either way ``on_pulse_finished``
-        of this pulse receives it. A pulse cut short by a failure elsewhere
+        run's failure once and returned; serially, a failure of an operator
+        pulse it fed inline is returned as it was recorded there. Either way
+        ``on_pulse_finished`` of this pulse receives it. A pulse cut short by a failure elsewhere
         (or a cancellation) is cancelled with no error.
         """
         run: Optional[RunState] = None
@@ -651,7 +720,8 @@ class PulseExecutor:
             with turn.call("push"):
                 self.count(slot.counters, "arrivals", len(arrivals))
                 emitted = self._call_operator(slot, "push", arrivals, fed_by=run.pulse)
-            # An operator pulse inherits the snapshot of the pulse that fed it.
+                # An operator pulse inherits the snapshot of the pulse that fed it.
+                emitted = self._hand_off(slot, emitted, controls=run.controls)
             outcome = self._run_emissions(slot, emitted, controls=run.controls)
             if not outcome.completed:
                 return outcome
@@ -725,6 +795,51 @@ class PulseExecutor:
         self._gauge("pending_operator_pulses", len(emitted))
 
         return emitted
+
+    def _hand_off(
+        self,
+        slot: OperatorSlot,
+        emitted: Optional[_Emitted],
+        *,
+        controls: ControlSnapshot,
+    ) -> Optional[_Emitted]:
+        """Give returned pulses to the dispatcher (operator's stage held).
+
+        Returns what is left to run inline: every pulse serially, none when
+        pipelined, ``None`` for a failed call. A refused hand-off is a failed
+        call of the operator: its pulses never start and count cancelled.
+        """
+        if emitted is None or self._hand_off_to is None:
+            return emitted
+        if not emitted:
+            return []
+
+        overflow = self._hand_off_to(slot, emitted, controls)
+        if overflow is not None:
+            self.count(slot.counters, "cancelled", len(emitted))
+            self._gauge("pending_operator_pulses", -len(emitted))
+            slot.error = overflow
+            self._fail(overflow)
+            return None
+
+        return []
+
+    def run_emitted(
+        self,
+        slot: OperatorSlot,
+        key: PulseKey,
+        emission: OperatorPulse,
+        *,
+        controls: ControlSnapshot,
+    ) -> None:
+        """Run one handed-off operator pulse: the pipelined dispatcher's work."""
+        self._gauge("pending_operator_pulses", -1)
+        self._run_operator_pulse(slot, key, emission, controls=controls)
+
+    def cancel_emitted(self, slot: OperatorSlot) -> None:
+        """A handed-off operator pulse never started: the run aborted."""
+        self.count(slot.counters, "cancelled")
+        self._gauge("pending_operator_pulses", -1)
 
     def _run_emissions(
         self,
@@ -817,6 +932,11 @@ class PulseExecutor:
         delivery = _Delivery(
             counters=counters, executed=executed, filtered=filtered, observed=observed
         )
+        team = team_for(self.coordination)
+        if team is not None:
+            completed = self._run_route_on_team(run, team, pending, delivery=delivery)
+            return completed
+
         self._deliver_ready(run, pending, delivery=delivery)
         for step in run.plan.route(run.pulse.source):
             if self._aborting():
@@ -825,6 +945,44 @@ class PulseExecutor:
             executed.add(step.path)
             self._deliver_ready(run, pending, delivery=delivery)
         completed = not pending
+
+        return completed
+
+    def _run_route_on_team(
+        self,
+        run: RunState,
+        team: Team,
+        pending: List[Tuple[Registered, StepStages]],
+        *,
+        delivery: "_Delivery",
+    ) -> bool:
+        """Run the route's steps and group deliveries as units of the worker's team.
+
+        A delivery needs its group's prerequisite steps (none for an
+        explicitly filtered pulse). Returns ``False`` when a failure
+        elsewhere stopped the pulse before every unit ran.
+        """
+        schedule = run.plan.schedule(run.pulse.source)
+        # Unit i runs units[i]: the schedule's steps, then one unit per delivery.
+        units: List[Callable[[], None]] = [
+            partial(execute_step, run, step) for step in schedule.steps
+        ]
+        units.extend(
+            partial(self._deliver, run, item, turn=turn, delivery=delivery)
+            for item, turn in pending
+        )
+        needs = [
+            (
+                ()
+                if delivery.filtered
+                else tuple(schedule.index[path] for path in item.prerequisites)
+            )
+            for item, _ in pending
+        ]
+        graph = _RouteGraph.of(schedule, deliveries=needs)
+        completed = team.run(
+            graph, execute=lambda unit: units[unit](), stop=self._aborting
+        )
 
         return completed
 

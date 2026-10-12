@@ -36,10 +36,16 @@
 
 Skipped invocations, denied ones included, run zero times and produce no
 placeholder values: their positions are filtered in every output.
+
+``execute_steps`` runs the steps of one run: in plan order, or, for a
+pipelined run on a worker that leads a team (``max_workflow_parallelism``
+above 1), on the team in dependency order (pipelining.teams). A skipped or
+omitted step still settles: its successors become ready like after a call.
 """
 
 import copy
 import dataclasses
+import threading
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -118,6 +124,7 @@ from roboflow_workflows.execution_engine.v2.pipelining.stages import (
     gates_each_phase,
     step_stage_units,
 )
+from roboflow_workflows.execution_engine.v2.pipelining.teams import team_for
 from roboflow_workflows.execution_engine.v2.plan import (
     ChildInputPort,
     ChildOutputPort,
@@ -133,6 +140,7 @@ from roboflow_workflows.execution_engine.v2.plan import (
     PulseKey,
     Source,
     SourcePort,
+    StepSchedule,
 )
 from roboflow_workflows.execution_engine.v2.reactions.dispatch import (
     EventCause,
@@ -178,6 +186,12 @@ class RunState:
             steps are omitted, which outputs are wanted, which result fields
             are omitted and the controlled input values (``controls``).
             ``None`` for a hand-built run, which controls nothing.
+
+    Workers of a team may execute independent steps of one run at once.
+    Each step writes only its own ``outputs``/``decisions`` keys, and its
+    readers start after it settled. The lazy entries (``constants``,
+    ``child_inputs``, ``child_outputs``) are filled once, under a lock taken
+    only on a miss, so concurrent first readers share one entry.
     """
 
     session: ExecutionSession
@@ -199,6 +213,9 @@ class RunState:
     child_inputs: Dict[ChildInputPort, Entry] = field(default_factory=dict)
     child_outputs: Dict[ChildOutputPort, Entry] = field(default_factory=dict)
     trace: List[Dict[str, Any]] = field(default_factory=list)
+    _filling: threading.RLock = field(
+        default_factory=threading.RLock, init=False, repr=False, compare=False
+    )
 
     @property
     def plan(self) -> CompiledWorkflow:
@@ -249,12 +266,10 @@ class RunState:
                 )
             return self.ports[source]
         if isinstance(source, Constant):
-            if id(source) not in self.constants:
-                value = copy.deepcopy(source.value)
-                entry = scalar_entry(value, metadata=EntryMetadata())
-                # The Constant is kept alive with its copy, so its id stays unique.
-                self.constants[id(source)] = (source, entry)
-            return self.constants[id(source)][1]
+            cached = self.constants.get(id(source))
+            if cached is None:
+                cached = self._constant_entry(source)
+            return cached[1]
         if isinstance(source, ChildInputPort):
             return self._child_input_entry(source)
         if isinstance(source, ChildOutputPort):
@@ -269,6 +284,19 @@ class RunState:
 
         return self.outputs[(source.step, source.output)]
 
+    def _constant_entry(self, source: Constant) -> Tuple[Constant, Entry]:
+        """Materialize a constant's private copy once per run."""
+        with self._filling:
+            cached = self.constants.get(id(source))
+            if cached is None:
+                value = copy.deepcopy(source.value)
+                entry = scalar_entry(value, metadata=EntryMetadata())
+                # The Constant is kept alive with its copy, so its id stays unique.
+                cached = (source, entry)
+                self.constants[id(source)] = cached
+
+        return cached
+
     def _child_input_entry(self, port: ChildInputPort) -> Entry:
         """Prepare a nested workflow input once per run (decision 021).
 
@@ -279,6 +307,16 @@ class RunState:
         returned, keeping identity, layout, metadata and filtered positions.
         An outer child input is prepared first, so deep chains decode once.
         """
+        cached = self.child_inputs.get(port)
+        if cached is not None:
+            return cached
+
+        with self._filling:
+            entry = self._fill_child_input(port)
+
+        return entry
+
+    def _fill_child_input(self, port: ChildInputPort) -> Entry:
         if port in self.child_inputs:
             return self.child_inputs[port]
 
@@ -314,6 +352,16 @@ class RunState:
         Admitted genuine empty groups stay empty. Without gates the source entry itself
         is returned.
         """
+        cached = self.child_outputs.get(port)
+        if cached is not None:
+            return cached
+
+        with self._filling:
+            entry = self._fill_child_output(port)
+
+        return entry
+
+    def _fill_child_output(self, port: ChildOutputPort) -> Entry:
         if port in self.child_outputs:
             return self.child_outputs[port]
 
@@ -446,6 +494,36 @@ class _Call:
     indices: Tuple[Index, ...]
     arguments: Mapping[str, Any]
     batched: bool
+
+
+def execute_steps(run: RunState, schedule: StepSchedule) -> None:
+    """Run every step of a schedule for one run.
+
+    Serially, and on a worker without a team, the steps run one after
+    another in plan order. A pipelined run on a worker leading a team runs
+    independent steps on its workers at once; ``execute_step`` is unchanged.
+
+    Args:
+        run: State of the current run.
+        schedule: ``plan.schedule()`` for a passive run, or the route of the
+            pulse's domain.
+
+    Raises:
+        StepExecutionError: The first step failure; after it no step starts
+            and running steps finish.
+        RunAborted: When the run's pipelined coordination aborts.
+    """
+    team = team_for(run.coordination)
+    if team is None:
+        for step in schedule.steps:
+            execute_step(run, step)
+        return
+
+    team.run(
+        schedule,
+        execute=lambda unit: execute_step(run, schedule.steps[unit]),
+        stop=lambda: False,
+    )
 
 
 def execute_step(run: RunState, step: PlannedStep) -> None:

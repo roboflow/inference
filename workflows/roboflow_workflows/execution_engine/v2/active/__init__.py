@@ -14,7 +14,8 @@ at different stages, each stage in sequence order per domain.
 
 ``execution`` holds the per-pulse primitives (``begin_pulse``,
 ``execute_pulse``, ``build_group_result``); ``pulses`` runs one pulse with
-its deliveries and operator work, the same in both modes; ``runtime`` holds
+its deliveries and operator pushes in both modes (emitted pulses inline
+serially, handed to the dispatcher when pipelined); ``runtime`` holds
 the readers, the serial processor, ``ActiveRun`` and its lifecycle;
 ``pipeline`` holds the pipelined driver, imported only by pipelined runs.
 The public V2 API imports these lightweight modules; source acquisition

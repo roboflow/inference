@@ -33,13 +33,10 @@ import dataclasses
 import importlib
 from typing import Any, Mapping, Optional
 
+from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.compilation.compiler import (
     compile_composition,
-)
-from roboflow_workflows.execution_engine.v2.compilation.demand import (
-    DemandPlan,
-    apply_demand,
 )
 from roboflow_workflows.execution_engine.v2.compilation.composition import (
     Composition,
@@ -56,11 +53,17 @@ from roboflow_workflows.execution_engine.v2.compilation.definition import (
     SUPPORTED_VERSION,
     WorkflowReference,
 )
+from roboflow_workflows.execution_engine.v2.compilation.demand import (
+    DemandPlan,
+    apply_demand,
+)
 from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
     WorkflowCompileError,
 )
 from roboflow_workflows.execution_engine.v2.plan import CompiledWorkflow, CompileOptions
+
+logger = get_logger(__name__)
 
 DYNAMIC_BLOCKS_MODULE = "roboflow_workflows.execution_engine.v2.dynamic_blocks"
 RECORDING_COMPILATION_MODULE = (
@@ -100,7 +103,9 @@ def compile_workflow(
 
     Returns:
         The validated plan. Its warnings list mutation conflicts (under the
-        default ``warn`` policy) and dropped dynamic duplicates. A root
+        default ``warn`` policy) and dropped dynamic duplicates. Successful
+        public compilation also logs each diagnostic once in its plan scope.
+        Warnings add no ordering between conflicting payload accesses. A root
         ``recording`` declaration sets ``plan.recording``; a root
         ``retrospective`` declaration is compiled beside the plan into
         ``plan.retrospective``. ``plan.demand`` records which steps the
@@ -121,7 +126,29 @@ def compile_workflow(
         reference_resolver=reference_resolver,
     )
 
+    _log_compile_warnings(plan)
+
     return plan
+
+
+def _log_compile_warnings(plan: CompiledWorkflow) -> None:
+    """Surface final diagnostics once, including separately compiled stages."""
+    pending = [("workflow", plan)]
+    visited = set()
+    while pending:
+        location, current = pending.pop()
+        if id(current) in visited:
+            continue
+
+        visited.add(id(current))
+        for warning in dict.fromkeys(current.warnings):
+            logger.warning("%s: %s", location, warning)
+        if current.reactions is not None:
+            for handler in current.reactions.handlers:
+                name = "/".join(handler.path)
+                pending.append((f"{location} handler {name!r}", handler.plan))
+        if current.retrospective is not None and current.retrospective.plan is not None:
+            pending.append((f"{location} retrospective", current.retrospective.plan))
 
 
 def compile_definition(

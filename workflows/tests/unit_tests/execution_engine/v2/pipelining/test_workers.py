@@ -148,6 +148,49 @@ def test_unexpected_work_error_is_kept_and_the_worker_survives() -> None:
     pool.shutdown()
 
 
+def test_returned_work_runs_next_on_the_same_busy_worker() -> None:
+    counters = PipelineCounters()
+    pool = WorkerPool(1, name="test", owner=OwnedThreads(), counters=counters)
+    started, release = threading.Event(), threading.Event()
+    ran: List[str] = []
+
+    def last() -> None:
+        ran.append(threading.current_thread().name)
+
+    def first() -> Callable:
+        ran.append(threading.current_thread().name)
+        started.set()
+        release.wait(TIMEOUT)
+        return last
+
+    assert pool.try_submit(first)
+    assert started.wait(TIMEOUT)
+    assert not pool.wait_free(timeout=0.01)  # busy until its follow-up ends
+    release.set()
+    assert pool.wait_idle(TIMEOUT)
+
+    assert ran == ["test-0", "test-0"]
+    assert counters.snapshot()["peak"]["executing"] == 1
+    assert counters.current("executing") == 0
+    pool.shutdown()
+
+
+def test_an_error_ends_the_follow_up_chain_and_frees_the_worker() -> None:
+    pool = WorkerPool(1, name="test", owner=OwnedThreads())
+    ran = threading.Event()
+
+    def broken() -> Callable:
+        raise ValueError("driver bug")
+
+    assert pool.try_submit(lambda: broken)
+    assert pool.wait_idle(TIMEOUT)
+
+    assert isinstance(pool.unexpected, ValueError)
+    assert pool.submit(ran.set, timeout=TIMEOUT)
+    assert ran.wait(TIMEOUT)
+    pool.shutdown()
+
+
 def test_invalid_size_is_rejected() -> None:
     for size in (0, True, 1.5):
         with pytest.raises(ContractError, match="size"):

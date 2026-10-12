@@ -8,48 +8,101 @@
       latest  never wait: replace S's one pending emission (the replaced
               one counts dropped); nothing is admitted yet
 
+    worker --hand_off--> emitted[O]: pulses operator O returned, in ordinal
+              order (appended while O's stage is held); refused, failing the
+              run, when they would exceed max_pending_operator_pulses
+
     dispatcher (one thread), repeatedly:
       wait for work, then for a free worker (it is the pool's only submitter)
-      take, in this order:
-        1. a domain end (pulses.end_domain), queued when a domain is sealed
+      take the work of the lowest control version; on a tie, in this order:
+        1. the head of an emitted[O] (pulses.run_emitted): deepest operator
+           domain first, then earliest hand-off
+        2. a domain end (pulses.end_domain), queued when a domain is sealed
            and drained
-        2. the next source, round robin:
+        3. the next source, round robin:
              block   its oldest queued pulse
              latest  its pending emission, admitted now, if S has a free slot
 
-    worker: the pulse with its deliveries and inline operator pulses
-            (pulses.PulseExecutor), then release S's slot
+    worker: one pulse with its deliveries and operator pushes, or one
+            emitted pulse, or one domain end (pulses.PulseExecutor); a source
+            pulse then releases S's slot. It then takes the next unit
+            itself, as the dispatcher would, and stays busy; the dispatcher
+            places further waiting units on idle workers. With
+            max_workflow_parallelism W > 1 the worker leads a team of W
+            threads running independent steps and deliveries of the pulse
 
-A pulse is admitted at most ``admission_bound`` times per source and runs on
-at most ``max_in_flight`` workers; inline operator pulses run on the worker
-that emitted them, so live run states stay below ``max_in_flight`` times one
-plus the longest operator chain. Nothing queues inside the worker pool.
+Every pulse, source or emitted, runs on one of ``max_in_flight`` workers, so
+at most that many run states are live. The work that fed an operator never
+waits for the pulses it emitted: it finishes and frees its worker first, so a
+single worker makes progress. Only heads of ``emitted[O]`` are taken, so a
+later pulse of O never holds a worker while an earlier one waits without one.
+An emitted pulse keeps the snapshot of the work that emitted it and is counted
+in flight from the hand-off, so it never runs behind newer work (controls,
+rules 2 and 4).
 
-Completion: every reader finished, nothing queued, pending or running. Then
-the workers are joined, operators closed and ``on_run_finished`` called. On a
-failure or ``cancel()`` the dispatcher cancels what was admitted but not
-started, waits until no work runs, closes the operators (releasing what they
-retained) and then waits for the readers, which close their sources.
+Emissions are never dropped. They win every tie and never carry a newer
+version than a queued source pulse, so no fresh source pulse starts while one
+waits: readers then block (``block``) or replace (``latest``). Among emitted
+heads the deepest operator domain (furthest from the sources) goes first, so
+a chain delivers the descendants of one pulse before it expands the next
+sibling: pending work grows with the fan-out of each level, not with their
+product. ``max_pending_operator_pulses`` bounds what is still pending: the
+hand-off checks it together with the append, under the driver's lock. A call
+whose pulses would exceed it fails the run, attributed to its operator; none
+of them is retained, and the feeding work never waits for capacity (with one
+worker it would wait forever). The bound counts pulses, not bytes: a list an
+operator returned is allocated before the runtime sees it.
+
+A pulse is admitted at most ``admission_bound`` times per source. Nothing
+queues inside the worker pool. The run owns ``max_in_flight *
+max_workflow_parallelism`` worker threads plus the dispatcher and one reader
+per source.
+
+Completion: every reader finished, nothing queued, emitted, pending or
+running. Then the workers are joined, operators closed and
+``on_run_finished`` called. On a failure or ``cancel()`` the dispatcher
+cancels what was admitted or emitted but not started, waits until no work
+runs, closes the operators (releasing what they retained) and then waits for
+the readers, which close their sources.
 
 A graph update pauses the driver: ``block`` readers holding a slot wait
 before admitting, ``latest`` readers keep replacing their pending emission
-(still counted dropped) but nothing pending is promoted, queued pulses and
-domain ends still dispatch, and the dispatcher reports the boundary once
-nothing is queued or running. A source that ends meanwhile is sealed at
+(still counted dropped) but nothing pending is promoted, queued pulses,
+emitted pulses and domain ends still dispatch, and the dispatcher reports the
+boundary once nothing is queued, emitted or running. A source that ends meanwhile is sealed at
 ``resume``, so the run cannot finish across the boundary.
 """
 
 import threading
 from collections import deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Deque, Dict, List, Optional, Tuple
+from functools import partial
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Deque,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
-from roboflow_workflows.execution_engine.v2.active.pulses import SourcePulse, attributed
+from roboflow_workflows.execution_engine.v2.active.pulses import (
+    OperatorSlot,
+    SourcePulse,
+    attributed,
+)
 from roboflow_workflows.execution_engine.v2.controls import ControlSnapshot
 from roboflow_workflows.execution_engine.v2.data import Timestamp
-from roboflow_workflows.execution_engine.v2.operators import TerminationReason
+from roboflow_workflows.execution_engine.v2.errors import ActiveRunError
+from roboflow_workflows.execution_engine.v2.operators import (
+    OperatorPulse,
+    TerminationReason,
+)
 from roboflow_workflows.execution_engine.v2.pipelining.options import PipelineOptions
 from roboflow_workflows.execution_engine.v2.pipelining.workers import WorkerPool
+from roboflow_workflows.execution_engine.v2.plan import CompiledWorkflow, PulseKey
 from roboflow_workflows.execution_engine.v2.sources import Emission
 
 if TYPE_CHECKING:
@@ -61,7 +114,8 @@ if TYPE_CHECKING:
 
 __all__ = ["PipelinedDriver"]
 
-Work = Callable[[], None]
+# Returns the unit its worker runs next (``WorkerPool`` work).
+Work = Callable[[], Optional["Work"]]
 
 
 @dataclass(frozen=True)
@@ -71,6 +125,28 @@ class _End:
     domain: str
     reason: TerminationReason
     controls: ControlSnapshot
+
+
+@dataclass(frozen=True)
+class _Emitted:
+    """An operator pulse handed off for dispatch, with the snapshot it inherited.
+
+    Args:
+        slot: The operator that returned it.
+        key: Its identity; ``key.sequence`` is its ordinal in the operator.
+        emission: What the operator returned.
+        controls: Snapshot of the work whose call returned it.
+        depth: Depth of the operator's domain (``_domain_depths``); deeper
+            heads run first.
+        order: Hand-off order across operators, for ties between their heads.
+    """
+
+    slot: OperatorSlot
+    key: PulseKey
+    emission: OperatorPulse
+    controls: ControlSnapshot
+    depth: int
+    order: int
 
 
 @dataclass
@@ -123,6 +199,12 @@ class PipelinedDriver:
         self._rotation: List[str] = list(self._ingress)
         self._next_source = 0
         self._ends: Deque[_End] = deque()
+        # Per operator, in ordinal order; only heads are dispatched.
+        self._emitted: Dict[str, Deque[_Emitted]] = {}
+        self._pending_emitted = 0
+        self._handed_off = 0
+        self._depths_plan: Optional[CompiledWorkflow] = None
+        self._depths: Dict[str, int] = {}
         self._running = 0
         self._operators_released = False
         self._paused = False
@@ -144,6 +226,7 @@ class PipelinedDriver:
             name=f"workflows-v2-worker-{self._run.run_id[:8]}",
             owner=self._run._owned,
             counters=self._counters,
+            team_size=self._options.max_workflow_parallelism,
         )
         try:
             self._dispatcher.start()
@@ -212,6 +295,64 @@ class PipelinedDriver:
             self._in_flight.enter(controls.version)
             self._ends.append(_End(domain, reason, controls))
             self._condition.notify_all()
+
+    def hand_off(
+        self,
+        slot: OperatorSlot,
+        emitted: Sequence[Tuple[PulseKey, OperatorPulse]],
+        controls: ControlSnapshot,
+    ) -> Optional[ActiveRunError]:
+        """Queue the pulses one operator call returned, or refuse them all.
+
+        The caller holds the operator's stage. Each queued pulse is counted
+        in flight under ``controls`` before the calling work finishes, so a
+        reset epoch drains on it (controls, rule 4). The bound is checked
+        under the same lock as the append, so concurrent hand-offs never
+        exceed it together.
+
+        Returns:
+            ``None`` once queued. The run's failure, attributed to the
+            operator, when the pulses would exceed
+            ``max_pending_operator_pulses``; nothing was queued then.
+        """
+        limit = self._options.max_pending_operator_pulses
+        with self._condition:
+            pending = self._pending_emitted
+            if pending + len(emitted) > limit:
+                overflow = ActiveRunError(
+                    f"returned {len(emitted)} pulse(s) while {pending} operator "
+                    f"pulse(s) wait to start, more than PipelineOptions "
+                    f"max_pending_operator_pulses={limit}",
+                    stage="operator",
+                    operator=slot.name,
+                )
+                return overflow
+
+            depth = self._depth(slot.name)
+            queue = self._emitted.setdefault(slot.name, deque())
+            for key, emission in emitted:
+                self._in_flight.enter(controls.version)
+                queue.append(
+                    _Emitted(slot, key, emission, controls, depth, self._handed_off)
+                )
+                self._handed_off += 1
+            self._pending_emitted += len(emitted)
+            # Only the dispatcher waits for work. With every worker busy it
+            # could not place these; a finishing worker takes them itself or
+            # wakes it (``_settle``).
+            if self._running < self._options.max_in_flight:
+                self._condition.notify_all()
+
+        return None
+
+    def _depth(self, operator: str) -> int:
+        """Domain depth of ``operator`` in the current plan (condition held)."""
+        plan = self._run.session.plan
+        if plan is not self._depths_plan:
+            self._depths_plan = plan
+            self._depths = _domain_depths(plan)
+
+        return self._depths.get(operator, 0)
 
     def wake(self) -> None:
         with self._condition:
@@ -311,9 +452,13 @@ class PipelinedDriver:
         if self._run.aborting:
             return False
 
-        eligible = bool(self._ends) or any(
-            ingress.queued or self._latest_ready(ingress)
-            for ingress in self._ingress.values()
+        eligible = (
+            bool(self._ends)
+            or any(self._emitted.values())
+            or any(
+                ingress.queued or self._latest_ready(ingress)
+                for ingress in self._ingress.values()
+            )
         )
 
         return eligible
@@ -350,6 +495,7 @@ class PipelinedDriver:
             not self._paused
             and self._running == 0
             and not self._ends
+            and not any(self._emitted.values())
             and all(
                 not ingress.reading and not ingress.queued and ingress.pending is None
                 for ingress in self._ingress.values()
@@ -359,18 +505,28 @@ class PipelinedDriver:
         return exhausted
 
     def _take_work(self) -> Optional[Work]:
-        """Pop the next unit of work and count it running (condition held)."""
+        """Pop the next unit of work and count it running (condition held).
+
+        Called by the dispatcher for a free worker and by a worker that just
+        finished a unit (``_settle``), with the same selection.
+        """
         if not self._has_work():
             return None
 
         self._running += 1
         # Lowest control version first (controls.py, rule 2), so work admitted
         # under an older version is never left queued behind newer work that
-        # may wait for it; ties keep the order ends first, then rotation.
-        oldest = self._oldest_queued_version()
+        # may wait for it; ties: emitted pulses, then ends, then rotation.
+        head = self._next_emitted()
+        oldest = self._oldest_queued_version(head)
+        if head is not None and head.controls.version == oldest:
+            emitted = self._emitted[head.slot.name].popleft()
+            self._pending_emitted -= 1
+            return partial(self._run_emitted, emitted)
+
         if self._ends and self._ends[0].controls.version == oldest:
             end = self._ends.popleft()
-            return lambda: self._run_end(end)
+            return partial(self._run_end, end)
 
         for offset in range(len(self._rotation)):
             position = (self._next_source + offset) % len(self._rotation)
@@ -382,25 +538,46 @@ class PipelinedDriver:
             pulse = self._next_pulse(ingress)
             if pulse is not None:
                 self._next_source = (position + 1) % len(self._rotation)
-                return lambda: self._run_pulse(ingress, pulse)
+                return partial(self._run_pulse, ingress, pulse)
 
-        raise RuntimeError("eligible work disappeared while the dispatcher held it")
+        self._running -= 1  # nothing was taken
+        raise RuntimeError("eligible work disappeared while the condition was held")
 
-    def _oldest_queued_version(self) -> int:
-        """Lowest control version among queued ends and pulses (condition held).
+    def _oldest_queued_version(self, head: Optional[_Emitted]) -> int:
+        """Lowest control version among emitted pulses, ends and queued pulses.
 
-        A pending ``latest`` emission is admitted at dispatch and takes the
-        current version, which no queued work exceeds.
+        Condition held. ``head`` is ``_next_emitted()``, whose version is the
+        lowest of the emitted pulses. A pending ``latest`` emission is
+        admitted at dispatch and takes the current version, which no queued
+        work exceeds.
         """
-        versions = [self._ends[0].controls.version] if self._ends else []
-        versions.extend(
+        versions = [
             ingress.queued[0].controls.version
             for ingress in self._ingress.values()
             if ingress.queued
-        )
-        oldest = min(versions) if versions else self._run.session.controls.version
+        ]
+        if head is not None:
+            versions.append(head.controls.version)
+        if self._ends:
+            versions.append(self._ends[0].controls.version)
+        oldest = min(versions, default=self._run.session.controls.version)
 
         return oldest
+
+    def _next_emitted(self) -> Optional[_Emitted]:
+        """The head of an operator's emitted pulses to run next (condition held).
+
+        Lowest version, then deepest domain (descendants before siblings
+        expand further), then earliest hand-off; ``None`` when none waits.
+        """
+        heads = [queue[0] for queue in self._emitted.values() if queue]
+        head = min(
+            heads,
+            key=lambda item: (item.controls.version, -item.depth, item.order),
+            default=None,
+        )
+
+        return head
 
     def _next_pulse(self, ingress: _Ingress) -> Optional[SourcePulse]:
         """The source's next pulse to run, admitting a pending one (condition held)."""
@@ -428,9 +605,15 @@ class PipelinedDriver:
         self._executor.seal(name, self._run._termination(name))
 
     def _cancel_unstarted(self) -> None:
-        """Cancel admitted pulses and domain ends that never started (condition held)."""
+        """Cancel admitted and emitted work that never started (condition held)."""
         while self._ends:
             self._in_flight.leave(self._ends.popleft().controls.version)
+        for queue in self._emitted.values():
+            while queue:
+                emitted = queue.popleft()
+                self._pending_emitted -= 1
+                self._in_flight.leave(emitted.controls.version)
+                self._executor.cancel_emitted(emitted.slot)
         for ingress in self._ingress.values():
             while ingress.queued:
                 self._in_flight.leave(ingress.queued.popleft().controls.version)
@@ -470,26 +653,119 @@ class PipelinedDriver:
     # exception reaching here is an engine defect, which must fail the run
     # rather than stay in the pool's ``unexpected``.
 
-    def _run_pulse(self, ingress: _Ingress, pulse: SourcePulse) -> None:
-        try:
-            self._executor.run_source_pulse(pulse, counters=ingress.slot.counters)
-        except Exception as raised:
-            self._run._fail(attributed(raised, stage="observer"))
-        finally:
-            self._in_flight.leave(pulse.controls.version)
-            with self._condition:
-                self._finish_admitted(ingress)
-                self._running -= 1
-                self._condition.notify_all()
+    def _run_pulse(self, ingress: _Ingress, pulse: SourcePulse) -> Optional[Work]:
+        following = self._run_unit(
+            partial(
+                self._executor.run_source_pulse, pulse, counters=ingress.slot.counters
+            ),
+            controls=pulse.controls,
+            ingress=ingress,
+        )
 
-    def _run_end(self, end: "_End") -> None:
-        try:
+        return following
+
+    def _run_emitted(self, emitted: _Emitted) -> Optional[Work]:
+        following = self._run_unit(
+            partial(
+                self._executor.run_emitted,
+                emitted.slot,
+                emitted.key,
+                emitted.emission,
+                controls=emitted.controls,
+            ),
+            controls=emitted.controls,
+        )
+
+        return following
+
+    def _run_end(self, end: "_End") -> Optional[Work]:
+        def run() -> None:
             self._counters.count("end_tasks")
             self._executor.end_domain(end.domain, end.reason, controls=end.controls)
-        except Exception as raised:
-            self._run._fail(attributed(raised, stage="observer"))
+
+        following = self._run_unit(run, controls=end.controls)
+
+        return following
+
+    def _run_unit(
+        self,
+        run: Callable[[], None],
+        *,
+        controls: ControlSnapshot,
+        ingress: Optional[_Ingress] = None,
+    ) -> Optional[Work]:
+        """Run one unit on this worker, settle it and return the worker's next unit.
+
+        Args:
+            run: The unit itself.
+            controls: Snapshot the unit was counted in flight under.
+            ingress: The source whose admitted pulse this is, if any.
+        """
+        proceed = False
+        try:
+            try:
+                run()
+            except Exception as raised:
+                self._run._fail(attributed(raised, stage="observer"))
+            # Do not take a successor while an exception escapes: its callable
+            # would be discarded, leaving the work counted as running.
+            proceed = True
         finally:
-            self._in_flight.leave(end.controls.version)
-            with self._condition:
-                self._running -= 1
+            # Also when the unit or the report of its failure raises: the
+            # unit always leaves in flight and frees its slot and worker.
+            following = self._settle(controls, ingress=ingress, proceed=proceed)
+
+        return following
+
+    def _settle(
+        self,
+        controls: ControlSnapshot,
+        *,
+        ingress: Optional[_Ingress],
+        proceed: bool,
+    ) -> Optional[Work]:
+        """Release a finished unit; with ``proceed``, take the worker's next unit.
+
+        It takes the unit the dispatcher would take next (same lock, same
+        selection, ``_take_work``). That saves the round trip through the
+        dispatcher and the pool, two thread wakeups per unit. The worker is
+        never freed in between, so the dispatcher stays the pool's only
+        submitter and at most ``max_in_flight`` units run. When more work
+        waits and a worker is idle, the dispatcher is woken to place it.
+        With no successor, wake it so drain, update or abort can finish.
+        """
+        self._in_flight.leave(controls.version)
+        following = None
+        defect = None
+        with self._condition:
+            if ingress is not None:
+                self._finish_admitted(ingress)
+            self._running -= 1
+            if proceed:
+                try:
+                    following = self._take_work()
+                except Exception as raised:
+                    defect = raised
+            if following is None or (
+                self._running < self._options.max_in_flight and self._has_work()
+            ):
                 self._condition.notify_all()
+        if defect is not None:
+            # Outside the condition: the run's lock is taken before it.
+            self._run._fail(attributed(defect, stage="observer"))
+
+        return following
+
+
+def _domain_depths(plan: CompiledWorkflow) -> Dict[str, int]:
+    """Depth of every operator domain: one more than its deepest upstream domain.
+
+    Sources have depth 0. Plan operators are in topological order, so every
+    upstream operator is numbered before the operators it feeds.
+    """
+    depths: Dict[str, int] = {}
+    for name, planned in plan.operators.items():
+        upstream = (depths.get(domain, 0) for domain in planned.upstream_domains)
+        depths[name] = 1 + max(upstream, default=0)
+
+    return depths

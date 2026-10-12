@@ -57,8 +57,8 @@ does not imply that every example runs in a plain Python environment.
 | [32 — Processing reset](32-processing-reset/README.md) | Rebuild downstream processing while sources remain connected. | CPU fixtures; optional Thor qualification |
 | [33 — Interactive webcam updates](33-webcam-graph-update/README.md) | Toggle boxes/tails and switch detector models from the terminal. | Mac camera and cached models |
 | [34 — Local alpha integration](34-local-alpha/README.md) | Packaged sources, detection, tracking and drawing with events, replay and updates. | CPU fixtures; separate Thor qualification |
-
 | [35 — Thor alpha qualification](35-thor-alpha-qualification/README.md) | Packaged detection, optional tracking and drawing with managed video sources, measured windows and cleanup checks. | Thor, existing RTSP streams and a cached TensorRT package |
+| [36 — Threading](36-threading/README.md) | Compare batch size, pulses in flight and parallel branches; inspect operator emissions, live updates, drain and cancellation. | CPU fixtures |
 
 V2 is an opt-in Python capability alongside V1. These examples do not change
 the server, SDK or stream-manager default engine selection.

@@ -34,8 +34,13 @@ another step that may see the same payload without an ordering dependency
 between the two. Payloads are shared through the same source, the same child
 input over a constant, or an output declaring ``source=`` a field bound to it.
 Other child inputs pass their source's payload on. In an active definition,
-mutating a workflow input conflicts on its own: every pulse shares it. The
-policy comes from ``CompileOptions.mutation_conflicts``.
+mutating a workflow input conflicts on its own: every pulse shares it. An
+output group reading the payload conflicts with a mutator of its pulse that
+its dependencies do not wait for. The policy comes from
+``CompileOptions.mutation_conflicts``. Under the default warning policy,
+conflicts remain in ``CompiledWorkflow.warnings`` and are logged by successful
+public compilation. A warning adds no dependency: conflicting accesses may
+overlap, including independent branches at W > 1.
 
 Active definitions: declared sources are planned first (``compilation.sources``)
 and their ports are ordinary value sources with the port's scoped layout. Each
@@ -319,6 +324,7 @@ def compile_composition(
     mutation_warnings = _check_mutations(
         steps,
         operators=operators,
+        groups=output_groups,
         ancestors=_ancestor_closure(nodes, order=order),
         boundaries=boundaries.records,
         options=options,
@@ -1485,15 +1491,20 @@ def _check_mutations(
     steps: Tuple[PlannedStep, ...],
     *,
     operators: Mapping[str, PlannedOperator],
+    groups: Tuple[PlannedOutputGroup, ...],
     ancestors: Mapping[StepPath, Set[StepPath]],
     boundaries: Mapping[BoundaryPort, Union[PlannedChildInput, PlannedChildOutput]],
     options: CompileOptions,
     active: bool,
 ) -> Tuple[str, ...]:
-    """Report in-place mutations another step or a later pulse may observe.
+    """Report in-place mutations another step, a group or a later pulse may observe.
 
     Two steps conflict when they may see one payload without an ordering
-    dependency. An operator reads its inputs after the whole pulse of their
+    dependency. An output group is a reader too: it is delivered once its
+    ``dependencies`` finished, without waiting for any other step of the
+    pulse, so a mutator outside their ancestry may change a payload while the
+    group's handler reads it. A mutator of another domain never sees the
+    group's pulse data. An operator reads its inputs after the whole pulse of their
     domain, so every step downstream of it is ordered after every step of its
     upstream domains. A payload that reached a step through an operator port
     may also be retained or emitted again by that operator (overlapping
@@ -1601,6 +1612,51 @@ def _check_mutations(
                 mutated=mutated,
             )
 
+    for group in groups:
+        awaited = set(group.dependencies).union(
+            *(ancestors[path] for path in group.dependencies)
+        )
+        fields = [
+            (
+                output,
+                _payload_origins(
+                    output.source,
+                    steps=by_path,
+                    operators=operators,
+                    boundaries=boundaries,
+                ),
+            )
+            for output in group.outputs
+        ]
+        for mutator, mutated, origins in leaves:
+            if (
+                mutated.field not in mutator.spec.mutates
+                or mutator.domain not in (None, group.source)
+                or mutator.path in awaited
+            ):
+                continue
+            # Shared workflow inputs and operator ports are reported above for
+            # every mutation of them; only other shared origins add a conflict.
+            unreported = {
+                origin
+                for origin in origins
+                if not isinstance(origin, InputPort) and not is_operator_port(origin)
+            }
+            for output, field_origins in fields:
+                if not unreported & field_origins:
+                    continue
+                report(
+                    f"{format_step_path(mutator.path)} "
+                    f"{_field_text(mutated.field_path)} ({mutated.selector}) is "
+                    f"mutated in place, and output group {group.name!r} field "
+                    f"{output.name!r} ({output.selector}) may deliver the same "
+                    "payload while it runs: the group is delivered once its own "
+                    "dependencies finished, without waiting for "
+                    f"{format_step_path(mutator.path)}",
+                    mutator=mutator,
+                    mutated=mutated,
+                )
+
     return tuple(warnings)
 
 
@@ -1645,6 +1701,17 @@ def _payload_origins(
         if isinstance(source.value, (str, bytes, int, float, bool, type(None))):
             return set()
         return {("constant", id(source.value))}
+
+    if isinstance(source, StepPort) and source.output == "*":
+        every: Set[Any] = set()
+        for name in steps[source.step].outputs:
+            every |= _payload_origins(
+                StepPort(step=source.step, output=name),
+                steps=steps,
+                operators=operators,
+                boundaries=boundaries,
+            )
+        return every
 
     origins: Set[Any] = {source}
     if is_operator_port(source):

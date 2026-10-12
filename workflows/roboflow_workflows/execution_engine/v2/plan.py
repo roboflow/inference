@@ -59,6 +59,12 @@ lists the groups anchored on it. No step or group joins two sources until an
 alignment operator exists. ``ExecutionSession.start`` drives such a plan; it
 delegates to ``roboflow_workflows.execution_engine.v2.active.runtime``.
 
+Scheduling: every plan precomputes a ``StepSchedule`` per run unit, read with
+``schedule()`` (all steps) or ``schedule(domain)`` (that domain's route). It
+records each step's direct dependencies by index and a depth-first priority,
+so a runtime running independent branches at once never re-walks bindings,
+gates or child boundaries.
+
 Implementations: every compiled step records the ``ImplementationChoice`` made
 for ``CompileOptions.target`` (``targets``) and its ``execution``: ``phases``
 only when ``block_execution="phases"`` and the selected implementation has a
@@ -705,7 +711,10 @@ class PlannedStep:
         control_targets: For control blocks, target selector (as the block
             sees it) to every step it governs; a nested workflow target maps
             to all of that workflow's steps.
-        dependencies: Paths of steps this step depends on (data and control).
+        dependencies: Paths of earlier steps this step depends on (data and
+            control), each in the step's domain or static. The compiler
+            records every one; a hand-built step may omit those its bindings
+            and gates imply (``StepSchedule``).
         domain: Name of the source whose pulses trigger this step, reached
             through its data, gates or nested boundaries; ``None`` for a
             static step, which runs once per admitted pulse of every source.
@@ -1443,6 +1452,37 @@ class PlannedOutputGroup:
 
 
 @dataclass(frozen=True)
+class StepSchedule:
+    """The dependency graph of one run unit: all steps, or one domain's route.
+
+    Steps are addressed by their index in ``steps``. Edges are direct
+    dependencies: producers of bound values (past child boundaries),
+    controllers of gates on the step or on a child output it reads, and the
+    step's recorded ``dependencies``. Built once per plan by
+    ``CompiledWorkflow``; read it with ``CompiledWorkflow.schedule``.
+
+    Args:
+        steps: The unit's steps in plan order.
+        predecessors: Per step, indices of its direct dependencies, ascending;
+            always lower than the step's own index.
+        successors: Per step, indices of the steps depending on it directly,
+            by ascending priority.
+        priorities: Per step, its depth-first rank: the position at which one
+            worker that always continues the path it just advanced would run
+            it. Lower runs sooner; a permutation of the indices.
+        roots: Indices of steps without dependencies, by ascending priority.
+        index: Step path to index.
+    """
+
+    steps: Tuple[PlannedStep, ...]
+    predecessors: Tuple[Tuple[int, ...], ...]
+    successors: Tuple[Tuple[int, ...], ...]
+    priorities: Tuple[int, ...]
+    roots: Tuple[int, ...]
+    index: Mapping[StepPath, int]
+
+
+@dataclass(frozen=True)
 class PulseKey:
     """Identity of one emission of one pulse domain within one active run.
 
@@ -1631,7 +1671,9 @@ class CompiledWorkflow:
             static, come from itself or a later operator, or whose recorded
             domains differ from the derived ones, or a step whose
             implementation was selected for another target or whose execution
-            mode does not follow ``options.block_execution``.
+            mode does not follow ``options.block_execution``, or a recorded
+            step dependency that repeats, is not earlier or belongs to
+            another domain.
     """
 
     inputs: Mapping[str, PlannedInput]
@@ -1656,6 +1698,9 @@ class CompiledWorkflow:
     demand: Optional["DemandPlan"] = None
     controls: ControlPlan = field(default_factory=lambda: ControlPlan.EMPTY)
     _axis_origins: Mapping[str, AxisOrigin] = field(
+        init=False, repr=False, compare=False
+    )
+    _schedules: Mapping[Optional[str], StepSchedule] = field(
         init=False, repr=False, compare=False
     )
 
@@ -1683,6 +1728,7 @@ class CompiledWorkflow:
         _check_demand(self)
         _check_controls(self)
         object.__setattr__(self, "_axis_origins", _collect_axis_origins(self))
+        object.__setattr__(self, "_schedules", _build_schedules(self))
 
     @property
     def is_active(self) -> bool:
@@ -1804,10 +1850,27 @@ class CompiledWorkflow:
         Raises:
             ContractError: When the plan declares no such domain.
         """
-        self.domain_ports(domain)
-        steps = tuple(step for step in self.steps if step.domain in (domain, None))
+        steps = self.schedule(domain).steps
 
         return steps
+
+    def schedule(self, domain: Optional[str] = None) -> StepSchedule:
+        """Return the precomputed dependency graph of one run unit.
+
+        Args:
+            domain: ``None`` for every step of the plan (one passive run), or
+                a declared source or operator name for its ``route``.
+
+        Returns:
+            The unit's steps with their direct dependencies and priorities.
+
+        Raises:
+            ContractError: When the plan declares no such domain.
+        """
+        if domain not in self._schedules:
+            self.domain_ports(domain)
+
+        return self._schedules[domain]
 
     def groups_of(self, domain: str) -> Tuple[PlannedOutputGroup, ...]:
         """Return the output groups anchored on ``domain``, in order.
@@ -2086,6 +2149,20 @@ def _check_plan_references(plan: CompiledWorkflow) -> None:
             )
         for gate in step.gates:
             _check_gate(gate, governed=step.path, steps=earlier, location=location)
+        if len(set(step.dependencies)) != len(step.dependencies):
+            raise ContractError(f"{location} repeats a recorded dependency")
+        for path in step.dependencies:
+            dependency = earlier.get(path)
+            if dependency is None:
+                raise ContractError(
+                    f"{location}: dependency {format_step_path(path)} must be an "
+                    "earlier step of the plan"
+                )
+            if dependency.domain not in (None, step.domain):
+                raise ContractError(
+                    f"{location} in domain {step.domain!r} depends on "
+                    f"{format_step_path(path)} of domain {dependency.domain!r}"
+                )
         for paths in step.control_targets.values():
             for path in paths:
                 if path not in all_steps or path in earlier or path == step.path:
@@ -3153,6 +3230,87 @@ def _collect_axis_origins(plan: CompiledWorkflow) -> Mapping[str, AxisOrigin]:
     frozen_origins = MappingProxyType(origins)
 
     return frozen_origins
+
+
+def _build_schedules(plan: CompiledWorkflow) -> Mapping[Optional[str], StepSchedule]:
+    """One schedule for every step and one per domain route."""
+    boundaries = {item.port: item for item in plan.child_inputs + plan.child_outputs}
+    dependencies = {
+        step.path: _direct_dependencies(step, boundaries=boundaries)
+        for step in plan.steps
+    }
+    schedules = {None: _schedule(plan.steps, dependencies=dependencies)}
+    for domain in plan.domains:
+        route = tuple(step for step in plan.steps if step.domain in (domain, None))
+        schedules[domain] = _schedule(route, dependencies=dependencies)
+    frozen_schedules = MappingProxyType(schedules)
+
+    return frozen_schedules
+
+
+def _direct_dependencies(
+    step: PlannedStep, *, boundaries: Mapping[BoundaryPort, "Boundary"]
+) -> Set[StepPath]:
+    """Producers and controllers a step waits for, plus its recorded paths."""
+    found = set(step.dependencies)
+    found.update(gate.controller for gate in step.gates)
+    for binding in step.bindings:
+        source = binding.source
+        while isinstance(source, (ChildInputPort, ChildOutputPort)):
+            boundary = boundaries[source]
+            if isinstance(boundary, PlannedChildOutput):
+                found.update(gate.controller for gate in boundary.gates)
+            source = boundary.source
+        if isinstance(source, StepPort):
+            found.add(source.step)
+
+    return found
+
+
+def _schedule(
+    steps: Tuple[PlannedStep, ...], *, dependencies: Mapping[StepPath, Set[StepPath]]
+) -> StepSchedule:
+    index = {step.path: position for position, step in enumerate(steps)}
+    predecessors = tuple(
+        tuple(sorted(index[path] for path in dependencies[step.path])) for step in steps
+    )
+    following: List[List[int]] = [[] for _ in steps]
+    for position, before in enumerate(predecessors):
+        for predecessor in before:
+            following[predecessor].append(position)
+
+    # One worker continuing the path it just advanced: newly ready successors
+    # go on top of a stack, the first in plan order on top.
+    priorities = [0] * len(steps)
+    remaining = [len(before) for before in predecessors]
+    stack = [
+        position for position in reversed(range(len(steps))) if not remaining[position]
+    ]
+    rank = 0
+    while stack:
+        position = stack.pop()
+        priorities[position] = rank
+        rank += 1
+        for successor in reversed(following[position]):
+            remaining[successor] -= 1
+            if not remaining[successor]:
+                stack.append(successor)
+
+    def by_priority(positions: Iterable[int]) -> Tuple[int, ...]:
+        return tuple(sorted(positions, key=priorities.__getitem__))
+
+    schedule = StepSchedule(
+        steps=steps,
+        predecessors=predecessors,
+        successors=tuple(by_priority(after) for after in following),
+        priorities=tuple(priorities),
+        roots=by_priority(
+            position for position, before in enumerate(predecessors) if not before
+        ),
+        index=MappingProxyType(index),
+    )
+
+    return schedule
 
 
 class ExecutionObserver:

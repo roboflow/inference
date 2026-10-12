@@ -1254,6 +1254,20 @@ class Block(ExecutionContextReader):
     ``run`` may compose ``@phase`` methods, which the engine can also execute
     from their declared graph (see ``phases``).
 
+    Concurrency: pipelined execution serializes calls of each step's stage
+    in pulse sequence order within a domain. An ordinary ``run`` step has one
+    call stage; a phased implementation has one stage per phase, so eligible
+    different phases of that instance can overlap across pulses when
+    ``phase_overlap=True``. ``False`` serializes its whole invocation, including
+    futures. Different steps and pulses may execute concurrently; W > 1 also
+    permits independent graph units of one pulse to overlap. W does not
+    parallelize members within a step's batch and does not apply to ordinary
+    serial ``session.run()``. These gates belong to one pipeline/run, not to
+    arbitrary shared Python objects across sessions. Caller-owned resources
+    shared by steps or sessions must support the concurrency they encounter.
+    Mutation warnings do not add ordering between conflicting accesses; use
+    ``CompileOptions(mutation_conflicts="error")`` to reject those workflows.
+
     ``run`` receives one keyword argument per ``Params`` field and returns a
     mapping of output name to value, or a ``Select`` for control blocks. A
     step that actually receives batches (see ``PlannedStep.delivers_batches``)

@@ -10,8 +10,10 @@
                           prepare_inputs (errors raise here, no ticket used);
                           wait for an idle worker (bounded, no queue);
                           ticket ("$passive", n) in submission order
-    worker                run_prepared(...): the serial run, step by step,
-                          taking its turn at every stage gate
+    worker                run_prepared(...): the run, step by step, taking
+                          its turn at every stage gate; with
+                          max_workflow_parallelism W > 1 the worker's team
+                          of W threads runs independent steps at once
     close()               no new submissions; wait for running ones; join;
                           then release the session
 
@@ -125,7 +127,8 @@ class PassivePipeline:
 
     Args:
         session: Session whose block instances every run shares.
-        options: Pipeline options; ``max_in_flight`` workers are started.
+        options: Pipeline options; ``max_in_flight`` workers are started,
+            each with ``max_workflow_parallelism - 1`` team helpers.
 
     Attributes:
         counters: Gauges and per-stage counts. ``executing`` and
@@ -152,6 +155,7 @@ class PassivePipeline:
             name=f"v2-pipeline-{session.session_id[:8]}",
             owner=self._owned,
             counters=self.counters,
+            team_size=options.max_workflow_parallelism,
         )
 
     def __enter__(self) -> "PassivePipeline":
