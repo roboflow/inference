@@ -24,6 +24,7 @@ from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks,
     crop_masks_to_boxes,
+    finalize_instance_segmentation_boxes,
     post_process_nms_fused_model_output,
     rescale_image_detections,
     rescale_key_points_detections,
@@ -1479,3 +1480,121 @@ def test_mask_resolution_target_rejects_invalid_factor(factor: float) -> None:
             size_after_pre_processing=ImageDimensions(height=200, width=300),
             masks_resolution_factor=factor,
         )
+
+
+@pytest.mark.parametrize("mask_format", ["dense", "rle"])
+@pytest.mark.parametrize("padding", [(0, 0, 0, 0), (16, 32, 8, 4), (-4, -8, -4, -8)])
+def test_reduced_boxes_keep_subpixel_precision_on_the_mask_grid(
+    mask_format, padding
+) -> None:
+    boxes = torch.tensor([[100.3, 100.3, 102.4, 104.2, 0.9, 2.0]])
+    pad_left, pad_top, pad_right, pad_bottom = padding
+    inference_h = 640 + pad_top + pad_bottom
+    inference_w = 640 + pad_left + pad_right
+    boxes[:, :4] += torch.tensor([pad_left, pad_top, pad_left, pad_top])
+    kwargs = dict(
+        image_bboxes=boxes.clone(),
+        masks=torch.ones((1, inference_h // 4, inference_w // 4)),
+        padding=padding,
+        scale_width=0.64,
+        scale_height=0.8,
+        original_size=ImageDimensions(height=800, width=1000),
+        size_after_pre_processing=ImageDimensions(height=800, width=1000),
+        inference_size=ImageDimensions(height=inference_h, width=inference_w),
+        static_crop_offset=StaticCropOffset(
+            offset_x=0, offset_y=0, crop_width=1000, crop_height=800
+        ),
+        masks_resolution_factor=0.0,
+    )
+    if mask_format == "dense":
+        actual, masks = align_instance_segmentation_results(**kwargs)
+        assert masks.shape == (1, 160, 160)
+    else:
+        box, mask = next(align_instance_segmentation_results_to_rle_masks(**kwargs))
+        actual = box.unsqueeze(0)
+        assert mask["size"] == [160, 160]
+
+    torch.testing.assert_close(
+        actual[:, :4], torch.tensor([[25.075, 25.075, 25.6, 26.05]]), atol=1e-5, rtol=0
+    )
+    torch.testing.assert_close(actual[:, 4:], boxes[:, 4:])
+
+
+@pytest.mark.parametrize("mask_format", ["dense", "rle"])
+def test_reduced_half_precision_boxes_do_not_overflow_in_image_space(
+    mask_format,
+) -> None:
+    kwargs = dict(
+        image_bboxes=torch.tensor([[256, 256, 512, 512]], dtype=torch.float16),
+        masks=torch.ones((1, 160, 160)),
+        padding=(0, 0, 0, 0),
+        scale_width=640 / 200000,
+        scale_height=640 / 200000,
+        original_size=ImageDimensions(height=200000, width=200000),
+        size_after_pre_processing=ImageDimensions(height=200000, width=200000),
+        inference_size=ImageDimensions(height=640, width=640),
+        static_crop_offset=StaticCropOffset(
+            offset_x=0, offset_y=0, crop_width=200000, crop_height=200000
+        ),
+        masks_resolution_factor=0.0,
+    )
+    if mask_format == "dense":
+        actual, _ = align_instance_segmentation_results(**kwargs)
+    else:
+        box, _ = next(align_instance_segmentation_results_to_rle_masks(**kwargs))
+        actual = box.unsqueeze(0)
+
+    torch.testing.assert_close(actual, torch.tensor([[64.0, 64.0, 128.0, 128.0]]))
+
+
+@pytest.mark.parametrize("mask_format", ["dense", "rle"])
+@pytest.mark.parametrize(
+    "factor,offset,size", [(0.0, 42, 123), (0.5, 63, 185), (1.0, 83, 245)]
+)
+def test_boxes_use_the_same_rounded_crop_placement_as_masks(
+    mask_format, factor, offset, size
+) -> None:
+    kwargs = dict(
+        image_bboxes=torch.tensor([[0.0, 0.0, 162.0, 162.0]]),
+        masks=torch.ones((1, 81, 81)),
+        padding=(0, 0, 0, 0),
+        scale_width=1.0,
+        scale_height=1.0,
+        original_size=ImageDimensions(height=245, width=245),
+        size_after_pre_processing=ImageDimensions(height=162, width=162),
+        inference_size=ImageDimensions(height=162, width=162),
+        static_crop_offset=StaticCropOffset(
+            offset_x=83, offset_y=83, crop_width=162, crop_height=162
+        ),
+        masks_resolution_factor=factor,
+    )
+    if mask_format == "dense":
+        actual, masks = align_instance_segmentation_results(**kwargs)
+        mask = masks[0].numpy()
+    else:
+        box, encoded = next(align_instance_segmentation_results_to_rle_masks(**kwargs))
+        actual = box.unsqueeze(0)
+        mask = mask_utils.decode(encoded)
+
+    torch.testing.assert_close(
+        actual, torch.tensor([[offset, offset, size, size]], dtype=torch.float32)
+    )
+    assert mask.shape == (size, size)
+    assert mask[offset:, offset:].all()
+    assert mask.sum() == (size - offset) ** 2
+
+
+@pytest.mark.parametrize("grid", [(200, 300), (100, 150), (400, 600)])
+@pytest.mark.parametrize("empty", [False, True])
+def test_box_rounding_occurs_only_on_the_final_image_grid(grid, empty) -> None:
+    boxes = torch.tensor([[0.5, 1.5, 2.5, 3.5]])[: 0 if empty else 1]
+    original = boxes.clone()
+    actual = finalize_instance_segmentation_boxes(
+        boxes, mask_size=grid, image_size=ImageDimensions(height=200, width=300)
+    )
+    if grid == (200, 300):
+        expected = torch.tensor([[0, 2, 2, 4]], dtype=torch.int32)[: len(boxes)]
+    else:
+        expected = original
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(boxes, original)

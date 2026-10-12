@@ -312,6 +312,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.vllm_proxy.qwen3vl_vllm",
         class_name="Qwen3VLVLLMProxy",
     ),
+    ("vjepa2_1", ACTION_RECOGNITION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.vjepa2_1.model",
+        class_name="VJepaActionRecognition",
+    ),
+    ("vjepa2-1-vitb-384", ACTION_RECOGNITION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.vjepa2_1.model",
+        class_name="VJepaActionRecognition",
+    ),
     ("cosmos-3-edge", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
         class_name="Cosmos3EdgeReasoner",

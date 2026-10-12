@@ -1690,9 +1690,9 @@ class TestCleanup:
         mock_client.loop_stop.assert_called_once()
 
     def test_del_swallows_a_failing_close_and_logs_it(self, block):
-        with patch.object(
-            MQTTWriterSinkBlockV2, "close", side_effect=RuntimeError("boom")
-        ):
+        # patch the instance, not the class: a class-wide patch also hits any
+        # stale block the GC finalizes meanwhile, logging "boom" twice
+        with patch.object(block, "close", side_effect=RuntimeError("boom")):
             with patch.object(v2, "logger") as mock_logger:
                 block.__del__()
 

@@ -1188,6 +1188,7 @@ def test_crop_response_uses_the_frame_represented_by_mask(
             mask_size=tuple(rle["size"]),
         )
     detections = InstanceDetections(
+        image_size=tuple(original_size),
         xyxy=boxes,
         confidence=torch.tensor([0.9]),
         class_id=torch.tensor([0]),
@@ -1257,7 +1258,7 @@ def test_deferred_response_preserves_coordinate_contract(
     adapter._pipeline_depth = 2
     count = 0 if empty else 1
     detections = InstanceDetections(
-        xyxy=torch.tensor([[0, 0, 10, 20]], dtype=torch.int32)[:count],
+        xyxy=torch.tensor([[0, 0, 2, 5]], dtype=torch.float32)[:count],
         confidence=torch.tensor([0.9])[:count],
         class_id=torch.tensor([0])[:count],
         mask=torch.ones((count, 5, 2), dtype=torch.bool),
@@ -1288,6 +1289,9 @@ def test_deferred_response_preserves_coordinate_contract(
         "scale_y": 4.0,
     }
     assert len(serialized["predictions"]) == count
+    if not empty:
+        prediction = serialized["predictions"][0]
+        assert [prediction[k] for k in ("x", "y", "width", "height")] == [1, 2.5, 2, 5]
     if not empty and response_format == "polygon":
         assert max(p["x"] for p in serialized["predictions"][0]["points"]) == 1
         assert max(p["y"] for p in serialized["predictions"][0]["points"]) == 4
@@ -1308,7 +1312,8 @@ def test_opted_in_polygons_share_box_coordinates_on_non_square_image(mask_format
             mask_size=(160, 160),
         )
     detections = InstanceDetections(
-        xyxy=torch.tensor([[300, 240, 450, 360]], dtype=torch.float32),
+        image_size=(800, 1000),
+        xyxy=torch.tensor([[48, 48, 72, 72]], dtype=torch.float32),
         confidence=torch.tensor([0.9]),
         class_id=torch.tensor([0]),
         mask=mask,
@@ -1368,6 +1373,7 @@ def test_response_geometry_uses_one_grid(opt_in, response_format, factor):
         )
         return [
             InstanceDetections(
+                image_size=tuple(original_size),
                 xyxy=boxes,
                 confidence=torch.tensor([0.9]),
                 class_id=torch.tensor([0]),
@@ -1395,6 +1401,7 @@ def test_response_geometry_uses_one_grid(opt_in, response_format, factor):
         [prediction.x, prediction.y, prediction.width, prediction.height],
         np.array([375, 300, 150, 120])
         * [width / 1000, height / 800, width / 1000, height / 800],
+        atol=3e-5,
     )
     if opt_in:
         assert response.original_image.model_dump() == {"width": 1000, "height": 800}
@@ -1448,22 +1455,102 @@ def test_async_opt_in_survives_factor_one(response_format):
 def test_native_grid_batch_does_not_mutate_model_boxes():
     adapter = _seg_adapter()
     boxes = torch.tensor([[20, 10, 60, 30]], dtype=torch.float32)
-    det = InstanceDetections(
-        xyxy=boxes,
-        confidence=torch.tensor([0.9]),
-        class_id=torch.tensor([0]),
-        mask=torch.ones((1, 10, 20), dtype=torch.bool),
-    )
+    image_sizes = [(50, 100), (200, 200)]
+    detections = [
+        InstanceDetections(
+            xyxy=boxes * torch.tensor([20 / image_size[1], 10 / image_size[0]] * 2),
+            confidence=torch.tensor([0.9]),
+            class_id=torch.tensor([0]),
+            mask=torch.ones((1, 10, 20), dtype=torch.bool),
+            image_size=image_size,
+        )
+        for image_size in image_sizes
+    ]
+    original_grid_boxes = [det.xyxy.clone() for det in detections]
     metadata = [
-        SimpleNamespace(original_size=SimpleNamespace(width=100, height=50)),
-        SimpleNamespace(original_size=SimpleNamespace(width=200, height=200)),
+        SimpleNamespace(original_size=SimpleNamespace(width=width, height=height))
+        for height, width in image_sizes
     ]
     responses = adapter._build_responses_from_detections(
-        [det, det], metadata, allow_reduced_mask_resolution=True
+        detections, metadata, allow_reduced_mask_resolution=True
     )
     assert [r.predictions[0].x for r in responses] == [8, 4]
     assert [r.predictions[0].y for r in responses] == [4, 1]
     assert [r.mask_metadata.scale_x for r in responses] == [5, 10]
+    for det, original in zip(detections, original_grid_boxes):
+        torch.testing.assert_close(det.xyxy, original)
     torch.testing.assert_close(
         boxes, torch.tensor([[20, 10, 60, 30]], dtype=torch.float32)
     )
+
+
+@pytest.mark.parametrize("response_format", ["rle", "polygon"])
+@pytest.mark.parametrize("factor", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize("cropped", [False, True])
+def test_empty_rle_model_output_preserves_http_grid(response_format, factor, cropped):
+    from inference_models.entities import ImageDimensions
+    from inference_models.models.common.roboflow.model_packages import (
+        PreProcessingMetadata,
+        StaticCropOffset,
+    )
+    from inference_models.models.rfdetr.common import (
+        post_process_instance_segmentation_results_to_rle_masks,
+    )
+
+    image_size = (245, 245) if cropped else (200, 300)
+    crop_size = (162, 162) if cropped else image_size
+    offset = 83 if cropped else 0
+    native_size = 81 if cropped else 160
+    metadata = PreProcessingMetadata(
+        original_size=ImageDimensions(height=image_size[0], width=image_size[1]),
+        size_after_pre_processing=ImageDimensions(
+            height=crop_size[0], width=crop_size[1]
+        ),
+        inference_size=ImageDimensions(height=640, width=640),
+        scale_height=640 / crop_size[0],
+        scale_width=640 / crop_size[1],
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        static_crop_offset=StaticCropOffset(
+            offset_x=offset,
+            offset_y=offset,
+            crop_width=crop_size[1],
+            crop_height=crop_size[0],
+        ),
+    )
+    responses = []
+    for threshold in (0.1, 1.0):
+        detections = post_process_instance_segmentation_results_to_rle_masks(
+            bboxes=torch.tensor([[[0.5, 0.5, 0.5, 0.5]]]),
+            logits=torch.ones((1, 1, 1)),
+            masks=torch.ones((1, 1, native_size, native_size)),
+            pre_processing_meta=[metadata],
+            threshold=threshold,
+            num_classes=1,
+            classes_re_mapping=None,
+            masks_resolution_factor=factor,
+        )
+        response = _seg_adapter()._build_responses_from_detections(
+            detections,
+            [metadata],
+            allow_reduced_mask_resolution=True,
+            response_mask_format=response_format,
+        )[0]
+        responses.append(response)
+
+    populated, empty = responses
+    expected_size = (
+        {0.0: (123, 123), 0.5: (185, 185), 1.0: (245, 245)}[factor]
+        if cropped
+        else {0.0: (160, 160), 0.5: (180, 230), 1.0: (200, 300)}[factor]
+    )
+    assert len(populated.predictions) == 1
+    assert empty.predictions == []
+    assert (empty.image.height, empty.image.width) == expected_size
+    assert empty.image == populated.image
+    assert empty.original_image == populated.original_image
+    assert empty.mask_metadata == populated.mask_metadata
+    assert empty.mask_metadata.scale_x == image_size[1] / expected_size[1]
+    assert empty.mask_metadata.scale_y == image_size[0] / expected_size[0]

@@ -40,6 +40,10 @@ from inference_models.models.base.async_handoff import (
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
+from inference_models.models.common.roboflow.post_processing import (
+    finalize_instance_segmentation_boxes,
+    resolve_mask_target_size,
+)
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 
 try:
@@ -63,8 +67,6 @@ _MAX_EXACT_FLAT_INDEX = 1 << 24
 _SPARSE_MAX_ROI_WIDTH = 512
 _SPARSE_BLOCK_COLS = 8
 _SPARSE_MAX_TOTAL_RUNS = INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS
-_SPARSE_MAX_CLASSES_PER_QUERY = 4
-_SPARSE_TOPK_MAX_TOTAL_RUNS = _SPARSE_MAX_TOTAL_RUNS * _SPARSE_MAX_CLASSES_PER_QUERY
 # RF-DETR Seg 2XLarge emits 192x192 masks with 300 queries and COCO class
 # logits. The sparse path supports that shape by scanning source-mask support
 # in fixed tiles instead of one giant Triton vector.
@@ -128,14 +130,15 @@ def _get_interpolation_weights(
         raise ValueError("Expected antialiased bilinear interpolation to use 2 taps")
     indices = torch.zeros((output_size, 2), dtype=torch.int32, device=device)
     values = torch.zeros((output_size, 2), dtype=torch.float32, device=device)
-    for output_index in range(output_size):
-        source_indices = nonzero[output_index].nonzero(as_tuple=True)[0]
-        indices[output_index, : source_indices.numel()] = source_indices.to(
-            dtype=torch.int32
-        )
-        values[output_index, : source_indices.numel()] = weights[
-            output_index, source_indices
-        ]
+    # nonzero returns coordinates in row-major order. With at most two taps,
+    # the second coordinate in a row is exactly its second interpolation tap.
+    # Pack all rows together to avoid a GPU synchronization and several tiny
+    # launches per output coordinate on the first request for a new grid.
+    output_indices, source_indices = nonzero.nonzero(as_tuple=True)
+    tap_indices = torch.zeros_like(output_indices)
+    tap_indices[1:] = (output_indices[1:] == output_indices[:-1]).long()
+    indices[output_indices, tap_indices] = source_indices.to(dtype=torch.int32)
+    values[output_indices, tap_indices] = weights[output_indices, source_indices]
 
     cached_value = (indices, values)
     with _INTERPOLATION_WEIGHT_CACHE_LOCK:
@@ -233,15 +236,36 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     are supported. Returns ``None`` when the caller should use the reference
     PyTorch/RLE implementation instead.
 
+    Boxes and masks use the grid selected by ``masks_resolution_factor``;
+    image metadata retains original-image dimensions. Unsupported transforms
+    and antialiased downsampling use the reference path.
+
     The fast path first emits one candidate per query. If any query has more
     than one class above threshold, the first pass asks for a retry and the
-    second pass emits up to ``_SPARSE_MAX_CLASSES_PER_QUERY`` query-class
-    candidates per query.
+    second pass selects the global top-k query-class candidates and shares
+    sparse masks between classes referring to the same query.
 
     When ``defer_postprocess_sync`` is set, the function enqueues the metadata,
     sparse RLE, and DtoH copies, then returns a placeholder whose finalizer does
     CPU assembly later. That is used by the streaming pipeline to keep the next
     frame's GPU work moving while Python handles previous detections.
+
+    Args:
+        image_bboxes: Normalized query boxes in cxcywh format.
+        image_scores: Sigmoid probabilities for each query and class.
+        image_masks: Per-query mask logits on the model grid.
+        image_meta: Preprocessing geometry for this image.
+        threshold: Confidence cutoff; tensor cutoffs use the reference path.
+        classes_re_mapping: Mapping from model classes to public class IDs.
+        max_detections: Optional limit applied after global query-class selection.
+        defer_postprocess_sync: Return an asynchronous handoff for CPU assembly.
+        masks_resolution_factor: Native-to-image mask-grid interpolation factor.
+
+    Returns:
+        Detections or a deferred placeholder, or None for reference fallback.
+
+    Raises:
+        ValueError: The resolution factor is not finite or outside [0, 1].
     """
     unsupported_reason = _unsupported_triton_postprocess_reason(
         image_bboxes=image_bboxes,
@@ -262,14 +286,31 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
 
     image_scores = image_scores.contiguous()
     image_bboxes = image_bboxes.contiguous()
-    image_masks = image_masks.contiguous()
+    # Both mask kernels consume explicit strides. Keeping the model's view
+    # avoids copying every query mask before selecting detections.
     class_mapping = classes_re_mapping.class_mapping.contiguous()
     num_queries, num_classes = image_scores.shape
-    if max_detections is None:
-        max_detections = num_queries
+    # The reference selects at most num_queries query/class pairs before
+    # applying max_detections, including in the multiclass retry path.
+    max_detections = (
+        num_queries if max_detections is None else min(max_detections, num_queries)
+    )
     mask_height, mask_width = image_masks.shape[-2:]
-    output_height = image_meta.original_size.height
-    output_width = image_meta.original_size.width
+    image_height, image_width = image_meta.original_size
+    image_size = (image_height, image_width)
+    output_height, output_width = resolve_mask_target_size(
+        mask_height=mask_height,
+        mask_width=mask_width,
+        size_after_pre_processing=image_meta.size_after_pre_processing,
+        masks_resolution_factor=masks_resolution_factor,
+    )
+    denorm_size = image_meta.nonsquare_intermediate_size or image_meta.inference_size
+    box_scale_width, box_scale_height = image_meta.scale_width, image_meta.scale_height
+    reduced_grid = (output_height, output_width) != image_size
+    if reduced_grid:
+        box_scale_width *= image_width / output_width
+        box_scale_height *= image_height / output_height
+
     confidence_threshold = float(threshold)
 
     # Precompute resize tables outside the hot kernel. The tables are tiny
@@ -288,118 +329,29 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     )
 
     if defer_postprocess_sync:
-        # Deferred pipeline mode separates class metadata from query mask RLE:
-        # every class candidate can reuse the one sparse mask generated for its
-        # source query, so GPU work remains bounded by the number of queries.
-        topk_metadata_rows = num_queries * _SPARSE_MAX_CLASSES_PER_QUERY
-        query_metadata = torch.empty(
-            (num_queries, _HEADER_SIZE),
-            dtype=torch.float32,
-            device=image_scores.device,
-        )
-        class_metadata = torch.empty(
-            (topk_metadata_rows, _HEADER_SIZE),
-            dtype=torch.float32,
-            device=image_scores.device,
-        )
-        records = torch.empty(
-            (_SPARSE_MAX_TOTAL_RUNS + 1, 3),
-            dtype=torch.int32,
-            device=image_scores.device,
-        )
-        source_bounds = _allocate_source_bounds(
-            rows=num_queries,
-            mask_height=mask_height,
-            mask_width=mask_width,
-            device=image_scores.device,
-        )
-        _select_topk_query_class_metadata_kernel[(num_queries,)](
-            image_scores,
-            image_bboxes,
-            class_mapping,
-            class_metadata,
-            query_metadata,
-            records,
-            confidence_threshold,
-            num_queries,
-            num_classes,
-            class_mapping.shape[0],
-            output_height,
-            output_width,
-            BLOCK_CLASSES=triton.next_power_of_2(num_classes),
-            METADATA_STRIDE=_HEADER_SIZE,
-            MAX_CLASSES_PER_QUERY=_SPARSE_MAX_CLASSES_PER_QUERY,
-            FLAG_WRITE_QUERY_METADATA=True,
-            FLAG_OVERFLOW_CLASSES=False,
-        )
-        _positive_source_bounds_kernel[
-            (
-                num_queries,
-                triton.cdiv(
-                    mask_height * mask_width,
-                    _SPARSE_SOURCE_BOUNDS_BLOCK_PIXELS,
-                ),
-            )
-        ](
-            image_masks,
-            query_metadata,
-            source_bounds,
-            mask_height,
-            mask_width,
-            image_masks.stride(0),
-            image_masks.stride(1),
-            image_masks.stride(2),
-            BLOCK_PIXELS=_SPARSE_SOURCE_BOUNDS_BLOCK_PIXELS,
-            METADATA_STRIDE=_HEADER_SIZE,
-        )
-        _sparse_atomic_rle_from_metadata_kernel[
-            (num_queries, triton.cdiv(_SPARSE_MAX_ROI_WIDTH, _SPARSE_BLOCK_COLS))
-        ](
-            image_masks,
-            source_bounds,
-            y_idx,
-            y_weight,
-            x_idx,
-            x_weight,
-            query_metadata,
-            records,
-            num_queries,
-            mask_height,
-            mask_width,
-            output_height,
-            output_width,
-            image_masks.stride(0),
-            image_masks.stride(1),
-            image_masks.stride(2),
-            BLOCK_OUT_H=triton.next_power_of_2(output_height),
-            BLOCK_OUT_W=triton.next_power_of_2(output_width),
-            BLOCK_ROI_H=_BLOCK_ROI_H,
-            MAX_ROI_WIDTH=_SPARSE_MAX_ROI_WIDTH,
-            MAX_TOTAL_RUNS=_SPARSE_MAX_TOTAL_RUNS,
-            METADATA_STRIDE=_HEADER_SIZE,
-            BLOCK_COLS=_SPARSE_BLOCK_COLS,
-        )
-        outputs_consumed_event = torch.cuda.Event()
-        outputs_consumed_event.record(torch.cuda.current_stream(image_scores.device))
-        class_metadata_host = _acquire_pinned_host_buffer(class_metadata)
-        records_host = _acquire_pinned_host_buffer(records)
-        # Pinned buffers let the DtoH copies follow the postprocess kernel on
-        # the CUDA stream while Python starts preparing later frames.
-        class_metadata_host.copy_(class_metadata, non_blocking=True)
-        records_host.copy_(records, non_blocking=True)
-        done_event = torch.cuda.Event()
-        done_event.record(torch.cuda.current_stream(image_scores.device))
-        return _deferred_instance_detections_from_sparse_query_records(
-            class_metadata_host=class_metadata_host,
-            records_host=records_host,
-            keepalive_tensors=(query_metadata, class_metadata, source_bounds, records),
-            done_event=done_event,
-            outputs_consumed_event=outputs_consumed_event,
-            max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
-            height=output_height,
-            width=output_width,
+        result = _post_process_ranked_query_masks(
+            image_bboxes=image_bboxes,
+            image_scores=image_scores,
+            image_masks=image_masks,
+            class_mapping=class_mapping,
+            confidence_threshold=confidence_threshold,
+            image_size=image_size,
+            box_transform=(
+                denorm_size.width,
+                denorm_size.height,
+                box_scale_width,
+                box_scale_height,
+            ),
+            output_height=output_height,
+            output_width=output_width,
+            y_idx=y_idx,
+            y_weight=y_weight,
+            x_idx=x_idx,
+            x_weight=x_weight,
             max_detections=max_detections,
+            defer_postprocess_sync=defer_postprocess_sync,
         )
+        return result
 
     # First pass: keep the common case small by selecting only the best class
     # for each query and emitting sparse RLE runs for those query masks.
@@ -431,9 +383,15 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         class_mapping.shape[0],
         output_height,
         output_width,
+        denorm_size.width,
+        denorm_size.height,
+        box_scale_width,
+        box_scale_height,
+        reduced_grid,
         BLOCK_CLASSES=triton.next_power_of_2(num_classes),
         METADATA_STRIDE=_HEADER_SIZE,
         FLAG_MULTICLASS=True,
+        enable_fp_fusion=False,
     )
     _positive_source_bounds_kernel[
         (
@@ -487,6 +445,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
         height=output_height,
         width=output_width,
+        image_size=image_size,
         max_detections=max_detections,
     )
     if result is not None:
@@ -498,33 +457,76 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     ):
         return None
 
-    # Retry only when the first pass detected multiple passing classes for a
-    # query. This preserves RF-DETR's flat top-k query-class semantics without
-    # paying the expanded metadata/RLE cost on the usual one-class-per-query
-    # path.
-    topk_metadata_rows = num_queries * _SPARSE_MAX_CLASSES_PER_QUERY
-    metadata = torch.empty(
-        (topk_metadata_rows, _HEADER_SIZE),
-        dtype=torch.float32,
-        device=image_scores.device,
+    # Retry with global top-k metadata and one mask per selected source query.
+    result = _post_process_ranked_query_masks(
+        image_bboxes=image_bboxes,
+        image_scores=image_scores,
+        image_masks=image_masks,
+        class_mapping=class_mapping,
+        confidence_threshold=confidence_threshold,
+        image_size=image_size,
+        box_transform=(
+            denorm_size.width,
+            denorm_size.height,
+            box_scale_width,
+            box_scale_height,
+        ),
+        output_height=output_height,
+        output_width=output_width,
+        y_idx=y_idx,
+        y_weight=y_weight,
+        x_idx=x_idx,
+        x_weight=x_weight,
+        max_detections=max_detections,
+        defer_postprocess_sync=defer_postprocess_sync,
     )
+    return result
+
+
+def _post_process_ranked_query_masks(
+    *,
+    image_bboxes: torch.Tensor,
+    image_scores: torch.Tensor,
+    image_masks: torch.Tensor,
+    class_mapping: torch.Tensor,
+    confidence_threshold: float,
+    image_size: Tuple[int, int],
+    box_transform: Tuple[int, int, float, float],
+    output_height: int,
+    output_width: int,
+    y_idx: torch.Tensor,
+    y_weight: torch.Tensor,
+    x_idx: torch.Tensor,
+    x_weight: torch.Tensor,
+    max_detections: int,
+    defer_postprocess_sync: bool,
+) -> Optional[InstanceDetections]:
+    """Select global top-k classes, but interpolate each selected query only once."""
+    num_queries, num_classes = image_scores.shape
+    mask_height, mask_width = image_masks.shape[-2:]
+    # Match the reference's global selection before remapping/filtering. A
+    # per-query class cap drops valid detections at low confidence thresholds.
+    top_scores, top_indices = torch.topk(image_scores.flatten(), num_queries)
+    query_metadata = torch.empty(
+        (num_queries, _HEADER_SIZE), dtype=torch.float32, device=image_scores.device
+    )
+    class_metadata = torch.empty_like(query_metadata)
     records = torch.empty(
-        (_SPARSE_TOPK_MAX_TOTAL_RUNS + 1, 3),
-        dtype=torch.int32,
-        device=image_scores.device,
+        (_SPARSE_MAX_TOTAL_RUNS + 1, 3), dtype=torch.int32, device=image_scores.device
     )
     source_bounds = _allocate_source_bounds(
-        rows=topk_metadata_rows,
+        rows=num_queries,
         mask_height=mask_height,
         mask_width=mask_width,
         device=image_scores.device,
     )
-    _select_topk_query_class_metadata_kernel[(num_queries,)](
-        image_scores,
+    _selected_query_class_metadata_kernel[(num_queries,)](
+        top_scores,
+        top_indices,
         image_bboxes,
         class_mapping,
-        metadata,
-        metadata,
+        class_metadata,
+        query_metadata,
         records,
         confidence_threshold,
         num_queries,
@@ -532,20 +534,23 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         class_mapping.shape[0],
         output_height,
         output_width,
-        BLOCK_CLASSES=triton.next_power_of_2(num_classes),
+        *box_transform,
+        (output_height, output_width) != image_size,
+        BLOCK_QUERIES=triton.next_power_of_2(num_queries),
         METADATA_STRIDE=_HEADER_SIZE,
-        MAX_CLASSES_PER_QUERY=_SPARSE_MAX_CLASSES_PER_QUERY,
-        FLAG_WRITE_QUERY_METADATA=False,
-        FLAG_OVERFLOW_CLASSES=True,
+        enable_fp_fusion=False,
     )
     _positive_source_bounds_kernel[
         (
-            topk_metadata_rows,
-            triton.cdiv(mask_height * mask_width, _SPARSE_SOURCE_BOUNDS_BLOCK_PIXELS),
+            num_queries,
+            triton.cdiv(
+                mask_height * mask_width,
+                _SPARSE_SOURCE_BOUNDS_BLOCK_PIXELS,
+            ),
         )
     ](
         image_masks,
-        metadata,
+        query_metadata,
         source_bounds,
         mask_height,
         mask_width,
@@ -556,10 +561,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         METADATA_STRIDE=_HEADER_SIZE,
     )
     _sparse_atomic_rle_from_metadata_kernel[
-        (
-            topk_metadata_rows,
-            triton.cdiv(_SPARSE_MAX_ROI_WIDTH, _SPARSE_BLOCK_COLS),
-        )
+        (num_queries, triton.cdiv(_SPARSE_MAX_ROI_WIDTH, _SPARSE_BLOCK_COLS))
     ](
         image_masks,
         source_bounds,
@@ -567,9 +569,9 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         y_weight,
         x_idx,
         x_weight,
-        metadata,
+        query_metadata,
         records,
-        topk_metadata_rows,
+        num_queries,
         mask_height,
         mask_width,
         output_height,
@@ -581,17 +583,42 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         BLOCK_OUT_W=triton.next_power_of_2(output_width),
         BLOCK_ROI_H=_BLOCK_ROI_H,
         MAX_ROI_WIDTH=_SPARSE_MAX_ROI_WIDTH,
-        MAX_TOTAL_RUNS=_SPARSE_TOPK_MAX_TOTAL_RUNS,
+        MAX_TOTAL_RUNS=_SPARSE_MAX_TOTAL_RUNS,
         METADATA_STRIDE=_HEADER_SIZE,
         BLOCK_COLS=_SPARSE_BLOCK_COLS,
     )
-    metadata_host = metadata.cpu().numpy()
-    return _instance_detections_from_sparse_records(
-        metadata_host=metadata_host,
-        records=records,
-        max_total_runs=_SPARSE_TOPK_MAX_TOTAL_RUNS,
+    if not defer_postprocess_sync:
+        result = _instance_detections_from_sparse_query_records(
+            class_metadata_host=class_metadata.cpu().numpy(),
+            records_host=records.cpu().numpy(),
+            max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
+            height=output_height,
+            width=output_width,
+            image_size=image_size,
+            max_detections=max_detections,
+        )
+        return result
+
+    outputs_consumed_event = torch.cuda.Event()
+    outputs_consumed_event.record(torch.cuda.current_stream(image_scores.device))
+    class_metadata_host = _acquire_pinned_host_buffer(class_metadata)
+    records_host = _acquire_pinned_host_buffer(records)
+    # Pinned buffers let the DtoH copies follow the postprocess kernel on
+    # the CUDA stream while Python starts preparing later frames.
+    class_metadata_host.copy_(class_metadata, non_blocking=True)
+    records_host.copy_(records, non_blocking=True)
+    done_event = torch.cuda.Event()
+    done_event.record(torch.cuda.current_stream(image_scores.device))
+    return _deferred_instance_detections_from_sparse_query_records(
+        class_metadata_host=class_metadata_host,
+        records_host=records_host,
+        keepalive_tensors=(query_metadata, class_metadata, source_bounds, records),
+        done_event=done_event,
+        outputs_consumed_event=outputs_consumed_event,
+        max_total_runs=_SPARSE_MAX_TOTAL_RUNS,
         height=output_height,
         width=output_width,
+        image_size=image_size,
         max_detections=max_detections,
     )
 
@@ -603,6 +630,8 @@ def _instance_detections_from_sparse_records(
     height: int,
     width: int,
     max_detections: Optional[int] = None,
+    *,
+    image_size: Optional[Tuple[int, int]] = None,
 ) -> Optional[InstanceDetections]:
     """Convert sparse device records into ``InstanceDetections``.
 
@@ -613,16 +642,25 @@ def _instance_detections_from_sparse_records(
     ``None`` means the sparse device result is incomplete or overflowed and the
     caller should retry or fall back to the reference implementation.
     """
+    image_size = image_size or (height, width)
+    if np.any(metadata_host[:, 7] > 0.5):
+        return None
+
     active_ranks = np.flatnonzero(metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return InstanceDetections(
-            xyxy=torch.empty((0, 4), dtype=torch.int32),
+            xyxy=finalize_instance_segmentation_boxes(
+                torch.empty((0, 4)), mask_size=(height, width), image_size=image_size
+            ),
             confidence=torch.empty((0,), dtype=torch.float32),
             class_id=torch.empty((0,), dtype=torch.int32),
             mask=InstancesRLEMasks.from_coco_rle_masks(
-                image_size=(height, width),
+                image_size=image_size,
+                mask_size=(height, width),
                 masks=[],
             ),
+            image_size=image_size,
+            mask_frame_size=image_size,
         )
     if np.any(metadata_host[active_ranks, 8] > 0.5):
         return None
@@ -643,7 +681,11 @@ def _instance_detections_from_sparse_records(
     if max_detections is not None:
         active_ranks = active_ranks[:max_detections]
     records_host = records_host[1 : total_runs + 1] if total_runs else None
-    boxes = torch.from_numpy(metadata_host[active_ranks, 3:7].copy()).round().int()
+    boxes = finalize_instance_segmentation_boxes(
+        torch.from_numpy(metadata_host[active_ranks, 3:7].copy()),
+        mask_size=(height, width),
+        image_size=image_size,
+    )
     confidence = torch.from_numpy(metadata_host[active_ranks, 2].copy())
     class_id = torch.from_numpy(metadata_host[active_ranks, 1].copy()).int()
 
@@ -675,7 +717,8 @@ def _instance_detections_from_sparse_records(
         rle_masks.append(_rle_from_counts(counts=counts, height=height, width=width))
 
     instances_masks = InstancesRLEMasks.from_coco_rle_masks(
-        image_size=(height, width),
+        image_size=image_size,
+        mask_size=(height, width),
         masks=rle_masks,
     )
     # The pipeline RLE-to-polygon path consumes uncompressed counts directly, so
@@ -686,6 +729,8 @@ def _instance_detections_from_sparse_records(
         confidence=confidence,
         class_id=class_id,
         mask=instances_masks,
+        image_size=image_size,
+        mask_frame_size=image_size,
     )
 
 
@@ -696,24 +741,32 @@ def _instance_detections_from_sparse_query_records(
     height: int,
     width: int,
     max_detections: Optional[int] = None,
+    *,
+    image_size: Optional[Tuple[int, int]] = None,
 ) -> Optional[InstanceDetections]:
     """Assemble detections when class rows share query-level RLE records.
 
-    Deferred pipeline mode emits up to four class candidates per query, but the
-    mask is identical for those class rows. The GPU therefore writes RLE records
+    Multiple selected classes can refer to one query, but the mask is identical
+    for those class rows. The GPU therefore writes RLE records
     once per query and this CPU helper fans that query mask out to the selected
     class detections.
     """
+    image_size = image_size or (height, width)
     active_ranks = np.flatnonzero(class_metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return InstanceDetections(
-            xyxy=torch.empty((0, 4), dtype=torch.int32),
+            xyxy=finalize_instance_segmentation_boxes(
+                torch.empty((0, 4)), mask_size=(height, width), image_size=image_size
+            ),
             confidence=torch.empty((0,), dtype=torch.float32),
             class_id=torch.empty((0,), dtype=torch.int32),
             mask=InstancesRLEMasks.from_coco_rle_masks(
-                image_size=(height, width),
+                image_size=image_size,
+                mask_size=(height, width),
                 masks=[],
             ),
+            image_size=image_size,
+            mask_frame_size=image_size,
         )
     if np.any(class_metadata_host[active_ranks, 8] > 0.5):
         return None
@@ -745,8 +798,10 @@ def _instance_detections_from_sparse_query_records(
     else:
         records_host = None
         record_queries = None
-    boxes = (
-        torch.from_numpy(class_metadata_host[active_ranks, 3:7].copy()).round().int()
+    boxes = finalize_instance_segmentation_boxes(
+        torch.from_numpy(class_metadata_host[active_ranks, 3:7].copy()),
+        mask_size=(height, width),
+        image_size=image_size,
     )
     confidence = torch.from_numpy(class_metadata_host[active_ranks, 2].copy())
     class_id = torch.from_numpy(class_metadata_host[active_ranks, 1].copy()).int()
@@ -779,7 +834,8 @@ def _instance_detections_from_sparse_query_records(
         rle_masks.append(_rle_from_counts(counts=counts, height=height, width=width))
 
     instances_masks = InstancesRLEMasks.from_coco_rle_masks(
-        image_size=(height, width),
+        image_size=image_size,
+        mask_size=(height, width),
         masks=rle_masks,
     )
     # The pipeline RLE-to-polygon path consumes uncompressed counts directly, so
@@ -790,6 +846,8 @@ def _instance_detections_from_sparse_query_records(
         confidence=confidence,
         class_id=class_id,
         mask=instances_masks,
+        image_size=image_size,
+        mask_frame_size=image_size,
     )
 
 
@@ -826,6 +884,8 @@ def _deferred_instance_detections_from_sparse_query_records(
     height: int,
     width: int,
     max_detections: Optional[int],
+    *,
+    image_size: Optional[Tuple[int, int]] = None,
 ) -> InstanceDetections:
     """Return a placeholder detection object with deferred CPU finalization.
 
@@ -834,6 +894,8 @@ def _deferred_instance_detections_from_sparse_query_records(
     before synchronizing on ``done_event`` and converting sparse records to
     ``InstanceDetections``.
     """
+
+    image_size = image_size or (height, width)
 
     def finalize() -> InstanceDetections:
         """Synchronize the DtoH copies and build the real detections."""
@@ -848,6 +910,7 @@ def _deferred_instance_detections_from_sparse_query_records(
                 max_total_runs=max_total_runs,
                 height=height,
                 width=width,
+                image_size=image_size,
                 max_detections=max_detections,
             )
             if result is None:
@@ -865,13 +928,18 @@ def _deferred_instance_detections_from_sparse_query_records(
             _release_pinned_host_buffer(records_host)
 
     detections = InstanceDetections(
-        xyxy=torch.empty((0, 4), dtype=torch.int32),
+        xyxy=finalize_instance_segmentation_boxes(
+            torch.empty((0, 4)), mask_size=(height, width), image_size=image_size
+        ),
         confidence=torch.empty((0,), dtype=torch.float32),
         class_id=torch.empty((0,), dtype=torch.int32),
         mask=InstancesRLEMasks.from_coco_rle_masks(
-            image_size=(height, width),
+            image_size=image_size,
+            mask_size=(height, width),
             masks=[],
         ),
+        image_size=image_size,
+        mask_frame_size=image_size,
     )
     attach_deferred_postprocess_handoff(
         detections=detections,
@@ -888,9 +956,13 @@ def _should_retry_sparse_topk_metadata(
     max_total_runs: int,
 ) -> bool:
     """Return whether first-pass sparse metadata needs query-class expansion."""
+    if np.any(metadata_host[:, 7] > 0.5):
+        return True
+
     active_ranks = np.flatnonzero(metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0 or np.any(metadata_host[active_ranks, 8] > 0.5):
         return False
+
     records_host = records.cpu().numpy()
     total_runs = int(records_host[0, 0])
     if int(records_host[0, 1]) == 0 or total_runs < 0 or total_runs > max_total_runs:
@@ -905,6 +977,7 @@ def _supports_triton_postprocess_path(
     image_meta: PreProcessingMetadata,
     threshold: Union[float, torch.Tensor],
     classes_re_mapping: Optional[ClassesReMapping],
+    masks_resolution_factor: float = 1.0,
 ) -> bool:
     """Return ``True`` when the sparse Triton path can represent this input."""
     return (
@@ -915,6 +988,7 @@ def _supports_triton_postprocess_path(
             image_meta=image_meta,
             threshold=threshold,
             classes_re_mapping=classes_re_mapping,
+            masks_resolution_factor=masks_resolution_factor,
         )
         is None
     )
@@ -932,10 +1006,6 @@ def _unsupported_triton_postprocess_reason(
     """Explain why the Triton path should not run, or ``None`` when supported."""
     if triton is None:
         return "triton_unavailable"
-    if masks_resolution_factor != 1.0:
-        # the fused kernel interpolates straight to the image; it cannot honour
-        # a reduced target, so defer rather than silently ignore the request
-        return "mask_resolution_factor_unsupported"
     if classes_re_mapping is None:
         return "class_remapping_required"
     if isinstance(threshold, torch.Tensor):
@@ -979,6 +1049,24 @@ def _unsupported_triton_postprocess_reason(
         or image_meta.size_after_pre_processing.width != output_width
     ):
         return "resize_metadata_unsupported"
+    target_height, target_width = resolve_mask_target_size(
+        mask_height=mask_height,
+        mask_width=mask_width,
+        size_after_pre_processing=image_meta.size_after_pre_processing,
+        masks_resolution_factor=masks_resolution_factor,
+    )
+    if (
+        target_height > 4096
+        or target_width > 4096
+        or target_height * target_width
+        > INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS
+        or target_height * target_width >= _MAX_EXACT_FLAT_INDEX
+    ):
+        return "input_size_exceeds_triton_limits"
+    if target_height < mask_height or target_width < mask_width:
+        # Antialiased downsampling needs more than the kernel's two taps per
+        # axis. Keep the reference resize instead of failing in table creation.
+        return "mask_downsampling_unsupported"
     if image_scores.device.type != "cuda":
         return "cuda_device_required"
     if (
@@ -1085,6 +1173,31 @@ def _attach_uncompressed_counts(
 if triton is not None:
 
     @triton.jit
+    def _box_coordinate_on_mask_grid(
+        center,
+        extent,
+        network_size: tl.constexpr,
+        scale: tl.constexpr,
+        output_size: tl.constexpr,
+        lower: tl.constexpr,
+        reduced_grid: tl.constexpr,
+    ):
+        """Mirror reference arithmetic and dtype boundaries before final rounding."""
+        half_extent = (0.5 * extent).to(center.dtype)
+        if lower:
+            coordinate = (center - half_extent).to(center.dtype)
+        else:
+            coordinate = (center + half_extent).to(center.dtype)
+        coordinate = (coordinate * network_size).to(center.dtype)
+        if reduced_grid:
+            divisor = tl.full((), scale, tl.float32)
+            coordinate = tl.div_rn(coordinate.to(tl.float32), divisor)
+        else:
+            divisor = tl.full((), scale, center.dtype).to(tl.float32)
+            coordinate = tl.div_rn(coordinate.to(tl.float32), divisor).to(center.dtype)
+        return tl.minimum(tl.maximum(coordinate, 0.0), output_size).to(tl.float32)
+
+    @triton.jit
     def _select_best_query_metadata_kernel(
         scores,
         bboxes,
@@ -1097,6 +1210,11 @@ if triton is not None:
         class_mapping_size: tl.constexpr,
         output_height: tl.constexpr,
         output_width: tl.constexpr,
+        network_width: tl.constexpr,
+        network_height: tl.constexpr,
+        box_scale_width: tl.constexpr,
+        box_scale_height: tl.constexpr,
+        reduced_grid: tl.constexpr,
         BLOCK_CLASSES: tl.constexpr,
         METADATA_STRIDE: tl.constexpr,
         FLAG_MULTICLASS: tl.constexpr,
@@ -1131,15 +1249,18 @@ if triton is not None:
             num_classes: Number of model class columns in ``scores``.
             class_mapping_size: Number of entries available in
                 ``class_mapping``.
-            output_height: Original image height used to convert normalized box
-                coordinates to pixel coordinates.
-            output_width: Original image width used to convert normalized box
-                coordinates to pixel coordinates.
+            output_height: Final mask-grid height used to clip boxes.
+            output_width: Final mask-grid width used to clip boxes.
+            network_width: Network width for normalized box conversion.
+            network_height: Network height for normalized box conversion.
+            box_scale_width: Network-to-mask horizontal divisor.
+            box_scale_height: Network-to-mask vertical divisor.
+            reduced_grid: Preserve float32 precision when grids differ.
             BLOCK_CLASSES: Power-of-two tile width covering ``num_classes``.
             METADATA_STRIDE: Number of float32 fields per metadata row.
-            FLAG_MULTICLASS: When true, writes ``records[0, 1] = 1`` if more
-                than one mapped class for this query exceeds ``threshold`` so
-                the caller can rerun the top-k query-class path.
+            FLAG_MULTICLASS: When true, writes ``metadata[rank, 7] = 1`` if more
+                than one mapped class or any ignored class exceeds threshold,
+                so the caller can apply global top-k before class filtering.
         """
         rank = tl.program_id(0)
         meta_base = rank * METADATA_STRIDE
@@ -1162,8 +1283,14 @@ if triton is not None:
         valid_classes = class_active & (mapped_classes >= 0)
         passing_classes = valid_classes & (class_scores > threshold)
         passing_class_count = tl.sum(tl.where(passing_classes, 1, 0), axis=0)
-        if FLAG_MULTICLASS and passing_class_count > 1:
-            tl.store(records + 1, 1)
+        # Ignored classes still consume slots in the reference's global top-k.
+        # Include inactive queries in this retry decision as well.
+        ignored_passing = (
+            class_active & (mapped_classes < 0) & (class_scores > threshold)
+        )
+        needs_global_selection = (passing_class_count > 1) | (
+            tl.sum(ignored_passing.to(tl.int32), axis=0) > 0
+        )
         # Select over valid mapped classes, not just passing classes. The
         # threshold is applied after selection so inactive metadata rows still
         # carry a stable class/score shape.
@@ -1196,7 +1323,12 @@ if triton is not None:
             metadata + meta_base + 2,
             tl.where(is_valid_detection, selected_score, 0.0),
         )
-        tl.store(metadata + meta_base + 7, 0.0)
+        # Each program owns its retry flag; sharing the records header races
+        # with program zero's initialization on large grids.
+        tl.store(
+            metadata + meta_base + 7,
+            (FLAG_MULTICLASS and needs_global_selection).to(tl.float32),
+        )
         tl.store(metadata + meta_base + 8, 0.0)
         tl.store(metadata + meta_base + 9, query_index.to(tl.float32))
         tl.store(metadata + meta_base + 10, selected_index.to(tl.float32))
@@ -1215,21 +1347,29 @@ if triton is not None:
             mask=is_valid_detection,
             other=0.0,
         )
-        x1 = tl.maximum(
-            0.0,
-            tl.minimum((cx - 0.5 * width) * output_width, output_width),
+        x1 = _box_coordinate_on_mask_grid(
+            cx, width, network_width, box_scale_width, output_width, True, reduced_grid
         )
-        y1 = tl.maximum(
-            0.0,
-            tl.minimum((cy - 0.5 * height) * output_height, output_height),
+        y1 = _box_coordinate_on_mask_grid(
+            cy,
+            height,
+            network_height,
+            box_scale_height,
+            output_height,
+            True,
+            reduced_grid,
         )
-        x2 = tl.maximum(
-            0.0,
-            tl.minimum((cx + 0.5 * width) * output_width, output_width),
+        x2 = _box_coordinate_on_mask_grid(
+            cx, width, network_width, box_scale_width, output_width, False, reduced_grid
         )
-        y2 = tl.maximum(
-            0.0,
-            tl.minimum((cy + 0.5 * height) * output_height, output_height),
+        y2 = _box_coordinate_on_mask_grid(
+            cy,
+            height,
+            network_height,
+            box_scale_height,
+            output_height,
+            False,
+            reduced_grid,
         )
         tl.store(metadata + meta_base + 3, x1)
         tl.store(metadata + meta_base + 4, y1)
@@ -1237,8 +1377,9 @@ if triton is not None:
         tl.store(metadata + meta_base + 6, y2)
 
     @triton.jit
-    def _select_topk_query_class_metadata_kernel(
-        scores,
+    def _selected_query_class_metadata_kernel(
+        top_scores,
+        top_indices,
         bboxes,
         class_mapping,
         metadata,
@@ -1248,195 +1389,118 @@ if triton is not None:
         num_queries: tl.constexpr,
         num_classes: tl.constexpr,
         class_mapping_size: tl.constexpr,
-        output_height: tl.constexpr,
-        output_width: tl.constexpr,
-        BLOCK_CLASSES: tl.constexpr,
+        image_height: tl.constexpr,
+        image_width: tl.constexpr,
+        network_width: tl.constexpr,
+        network_height: tl.constexpr,
+        box_scale_width: tl.constexpr,
+        box_scale_height: tl.constexpr,
+        reduced_grid: tl.constexpr,
+        BLOCK_QUERIES: tl.constexpr,
         METADATA_STRIDE: tl.constexpr,
-        MAX_CLASSES_PER_QUERY: tl.constexpr,
-        FLAG_WRITE_QUERY_METADATA: tl.constexpr,
-        FLAG_OVERFLOW_CLASSES: tl.constexpr,
     ):
-        """Emit top passing query-class metadata rows for one RF-DETR query.
+        """Write globally selected class rows and a unique active row per query.
 
-        Launch grid:
-            ``(num_queries,)``. Each program scans all class scores for one
-            query and writes up to ``MAX_CLASSES_PER_QUERY`` rows. The current
-            implementation uses a static loop of four iterations, so
-            ``MAX_CLASSES_PER_QUERY`` is expected to be ``4``.
-
-        Args:
-            scores: CUDA float32 tensor with shape
-                ``[num_queries, num_classes]`` containing sigmoid class scores.
-            bboxes: CUDA float32 tensor with shape ``[num_queries, 4]`` in
-                normalized ``cx, cy, width, height`` format.
-            class_mapping: CUDA int tensor with class remap entries. Negative
-                mapped ids are ignored.
-            metadata: CUDA float32 tensor with shape
-                ``[num_queries * MAX_CLASSES_PER_QUERY, METADATA_STRIDE]``.
-                Row ``query_index * MAX_CLASSES_PER_QUERY + class_rank`` holds
-                the ``class_rank``-th highest passing class for that query.
-                Columns have the same layout as
-                ``_select_best_query_metadata_kernel``.
-            query_metadata: CUDA float32 tensor with shape
-                ``[num_queries, METADATA_STRIDE]`` when
-                ``FLAG_WRITE_QUERY_METADATA`` is true. In deferred pipeline
-                mode, class metadata is expanded but the RLE kernel should still
-                run once per query, so class rank 0 is also written to this
-                query-level buffer. When ``FLAG_WRITE_QUERY_METADATA`` is false,
-                callers pass ``metadata`` here and the argument is unused.
-            records: CUDA int32 tensor with shape ``[MAX_TOTAL_RUNS + 1, 3]``.
-                Program 0 resets ``records[0, 0]`` and ``records[0, 1]`` before
-                the RLE kernel appends runs.
-            threshold: Minimum class score required for a metadata row to be
-                marked active.
-            num_queries: Number of query rows in ``scores`` and ``bboxes``.
-            num_classes: Number of class columns in ``scores``.
-            class_mapping_size: Number of valid entries in ``class_mapping``.
-            output_height: Original image height used for xyxy box conversion.
-            output_width: Original image width used for xyxy box conversion.
-            BLOCK_CLASSES: Power-of-two tile width covering all class columns.
-            METADATA_STRIDE: Number of float32 fields per metadata row.
-            MAX_CLASSES_PER_QUERY: Number of metadata rows reserved per query.
-            FLAG_WRITE_QUERY_METADATA: When true, additionally writes the best
-                passing class row for each query into ``query_metadata`` for the
-                deferred pipeline RLE kernel.
-            FLAG_OVERFLOW_CLASSES: When true, writes ``records[0, 1] = 1`` if
-                more than ``MAX_CLASSES_PER_QUERY`` classes pass threshold; the
-                caller treats that as unsupported for exact top-k parity.
+        Each program owns one class row and one query row. Scanning the small
+        top-k index vector avoids races between classes sharing a source query.
+        Only selected, valid queries enter the sparse mask kernel.
         """
-        query_index = tl.program_id(0)
-        if query_index == 0:
-            tl.store(records + 0, 0)
+        rank = tl.program_id(0)
+        if rank == 0:
+            tl.store(records, 0)
             tl.store(records + 1, 0)
 
-        class_offsets = tl.arange(0, BLOCK_CLASSES)
-        class_active = class_offsets < num_classes
-        mapped_classes = tl.load(
-            class_mapping + class_offsets,
-            mask=class_active & (class_offsets < class_mapping_size),
+        score = tl.load(top_scores + rank)
+        selected_index = tl.load(top_indices + rank).to(tl.int32)
+        query_index = selected_index // num_classes
+        class_index = selected_index % num_classes
+        mapped_class = tl.load(
+            class_mapping + class_index,
+            mask=class_index < class_mapping_size,
             other=-1,
         ).to(tl.int32)
-        class_scores = tl.load(
-            scores + query_index * num_classes + class_offsets,
-            mask=class_active,
-            other=-1.0,
+        active = (score > threshold) & (mapped_class >= 0)
+        fields = tl.arange(0, METADATA_STRIDE)
+        tl.store(metadata + rank * METADATA_STRIDE + fields, 0.0)
+        tl.store(metadata + rank * METADATA_STRIDE, active.to(tl.float32))
+        tl.store(metadata + rank * METADATA_STRIDE + 1, mapped_class.to(tl.float32))
+        tl.store(metadata + rank * METADATA_STRIDE + 2, score)
+        tl.store(metadata + rank * METADATA_STRIDE + 9, query_index.to(tl.float32))
+        tl.store(metadata + rank * METADATA_STRIDE + 10, selected_index.to(tl.float32))
+        cx = tl.load(bboxes + query_index * 4)
+        cy = tl.load(bboxes + query_index * 4 + 1)
+        width = tl.load(bboxes + query_index * 4 + 2)
+        height = tl.load(bboxes + query_index * 4 + 3)
+        tl.store(
+            metadata + rank * METADATA_STRIDE + 3,
+            _box_coordinate_on_mask_grid(
+                cx,
+                width,
+                network_width,
+                box_scale_width,
+                image_width,
+                True,
+                reduced_grid,
+            ),
         )
-        passing_classes = (
-            class_active & (mapped_classes >= 0) & (class_scores > threshold)
+        tl.store(
+            metadata + rank * METADATA_STRIDE + 4,
+            _box_coordinate_on_mask_grid(
+                cy,
+                height,
+                network_height,
+                box_scale_height,
+                image_height,
+                True,
+                reduced_grid,
+            ),
         )
-        passing_class_count = tl.sum(tl.where(passing_classes, 1, 0), axis=0)
-        if FLAG_OVERFLOW_CLASSES and passing_class_count > MAX_CLASSES_PER_QUERY:
-            tl.store(records + 1, 1)
+        tl.store(
+            metadata + rank * METADATA_STRIDE + 5,
+            _box_coordinate_on_mask_grid(
+                cx,
+                width,
+                network_width,
+                box_scale_width,
+                image_width,
+                False,
+                reduced_grid,
+            ),
+        )
+        tl.store(
+            metadata + rank * METADATA_STRIDE + 6,
+            _box_coordinate_on_mask_grid(
+                cy,
+                height,
+                network_height,
+                box_scale_height,
+                image_height,
+                False,
+                reduced_grid,
+            ),
+        )
 
-        work_scores = tl.where(passing_classes, class_scores, -1.0)
-        for class_rank in tl.static_range(0, 4):
-            # Repeated max-and-mask avoids sorting all classes and keeps the
-            # register footprint bounded by the configured class block.
-            selected_score = tl.max(work_scores, axis=0)
-            selected_class = tl.max(
-                tl.where(
-                    work_scores == selected_score,
-                    class_offsets,
-                    -1,
-                ),
-                axis=0,
-            ).to(tl.int32)
-            mapped_class = tl.load(
-                class_mapping + selected_class,
-                mask=(selected_class >= 0) & (selected_class < class_mapping_size),
-                other=-1,
-            ).to(tl.int32)
-            is_valid_detection = (mapped_class >= 0) & (selected_score > threshold)
-            metadata_rank = query_index * MAX_CLASSES_PER_QUERY + class_rank
-            meta_base = metadata_rank * METADATA_STRIDE
-            selected_index = query_index * num_classes + selected_class
-
-            tl.store(
-                metadata + meta_base + 0,
-                tl.where(is_valid_detection, 1.0, 0.0),
-            )
-            tl.store(metadata + meta_base + 1, mapped_class.to(tl.float32))
-            tl.store(
-                metadata + meta_base + 2,
-                tl.where(is_valid_detection, selected_score, 0.0),
-            )
-            tl.store(metadata + meta_base + 7, 0.0)
-            tl.store(metadata + meta_base + 8, 0.0)
-            tl.store(metadata + meta_base + 9, query_index.to(tl.float32))
-            tl.store(metadata + meta_base + 10, selected_index.to(tl.float32))
-            tl.store(metadata + meta_base + 11, 0.0)
-            tl.store(metadata + meta_base + 12, 0.0)
-            tl.store(metadata + meta_base + 13, 0.0)
-            tl.store(metadata + meta_base + 14, 0.0)
-            tl.store(metadata + meta_base + 15, 0.0)
-
-            bbox_base = query_index * 4
-            cx = tl.load(bboxes + bbox_base, mask=is_valid_detection, other=0.0)
-            cy = tl.load(bboxes + bbox_base + 1, mask=is_valid_detection, other=0.0)
-            width = tl.load(
-                bboxes + bbox_base + 2,
-                mask=is_valid_detection,
-                other=0.0,
-            )
-            height = tl.load(
-                bboxes + bbox_base + 3,
-                mask=is_valid_detection,
-                other=0.0,
-            )
-            x1 = tl.maximum(
-                0.0,
-                tl.minimum((cx - 0.5 * width) * output_width, output_width),
-            )
-            y1 = tl.maximum(
-                0.0,
-                tl.minimum((cy - 0.5 * height) * output_height, output_height),
-            )
-            x2 = tl.maximum(
-                0.0,
-                tl.minimum((cx + 0.5 * width) * output_width, output_width),
-            )
-            y2 = tl.maximum(
-                0.0,
-                tl.minimum((cy + 0.5 * height) * output_height, output_height),
-            )
-            tl.store(metadata + meta_base + 3, x1)
-            tl.store(metadata + meta_base + 4, y1)
-            tl.store(metadata + meta_base + 5, x2)
-            tl.store(metadata + meta_base + 6, y2)
-            if FLAG_WRITE_QUERY_METADATA and class_rank == 0:
-                # The pipeline path wants best-query metadata for the RLE
-                # kernel while retaining expanded class metadata for CPU
-                # finalization.
-                query_meta_base = query_index * METADATA_STRIDE
-                tl.store(
-                    query_metadata + query_meta_base + 0,
-                    tl.where(is_valid_detection, 1.0, 0.0),
-                )
-                tl.store(
-                    query_metadata + query_meta_base + 1, mapped_class.to(tl.float32)
-                )
-                tl.store(
-                    query_metadata + query_meta_base + 2,
-                    tl.where(is_valid_detection, selected_score, 0.0),
-                )
-                tl.store(query_metadata + query_meta_base + 3, x1)
-                tl.store(query_metadata + query_meta_base + 4, y1)
-                tl.store(query_metadata + query_meta_base + 5, x2)
-                tl.store(query_metadata + query_meta_base + 6, y2)
-                tl.store(query_metadata + query_meta_base + 7, 0.0)
-                tl.store(query_metadata + query_meta_base + 8, 0.0)
-                tl.store(
-                    query_metadata + query_meta_base + 9, query_index.to(tl.float32)
-                )
-                tl.store(
-                    query_metadata + query_meta_base + 10, selected_index.to(tl.float32)
-                )
-                tl.store(query_metadata + query_meta_base + 11, 0.0)
-                tl.store(query_metadata + query_meta_base + 12, 0.0)
-                tl.store(query_metadata + query_meta_base + 13, 0.0)
-                tl.store(query_metadata + query_meta_base + 14, 0.0)
-                tl.store(query_metadata + query_meta_base + 15, 0.0)
-            work_scores = tl.where(class_offsets == selected_class, -1.0, work_scores)
+        offsets = tl.arange(0, BLOCK_QUERIES)
+        indices = tl.load(
+            top_indices + offsets, mask=offsets < num_queries, other=0
+        ).to(tl.int32)
+        scores = tl.load(top_scores + offsets, mask=offsets < num_queries, other=-1.0)
+        classes = indices % num_classes
+        mapped = tl.load(
+            class_mapping + classes,
+            mask=(offsets < num_queries) & (classes < class_mapping_size),
+            other=-1,
+        )
+        selected = (
+            (offsets < num_queries)
+            & (indices // num_classes == rank)
+            & (scores > threshold)
+            & (mapped >= 0)
+        )
+        query_active = tl.sum(selected.to(tl.int32), axis=0) > 0
+        tl.store(query_metadata + rank * METADATA_STRIDE + fields, 0.0)
+        tl.store(query_metadata + rank * METADATA_STRIDE, query_active.to(tl.float32))
+        tl.store(query_metadata + rank * METADATA_STRIDE + 9, rank.to(tl.float32))
 
     @triton.jit
     def _positive_source_bounds_kernel(
@@ -1576,8 +1640,8 @@ if triton is not None:
             num_queries: Number of query masks in ``masks``.
             mask_height: Height of each low-resolution RF-DETR mask.
             mask_width: Width of each low-resolution RF-DETR mask.
-            output_height: Original image height for the output RLE mask.
-            output_width: Original image width for the output RLE mask.
+            output_height: Requested mask-grid height for the output RLE mask.
+            output_width: Requested mask-grid width for the output RLE mask.
             mask_stride_q: Stride between query masks in ``masks``.
             mask_stride_h: Row stride for ``masks``.
             mask_stride_w: Column stride for ``masks``.

@@ -470,6 +470,11 @@ class TestActionRecognitionDispatch:
             "max_frame_side": None,
             "mode": "sliding_window",
             "max_frames": 16,
+            "requires_regular_sampling": False,
+            "max_sample_lateness_seconds": 0.0,
+            "fixed_sample_fps": False,
+            "overlap_frames": 0,
+            "end_aligned": False,
         }
 
         mm = ModelManager()

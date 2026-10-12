@@ -1,7 +1,31 @@
+import importlib
+from unittest.mock import patch
+
 import pytest
 
 from inference.core.env import USE_INFERENCE_MODELS
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
+
+
+@pytest.mark.skipif(
+    not USE_INFERENCE_MODELS, reason="Requires the inference-models bridge."
+)
+@pytest.mark.parametrize("enabled", [True, False])
+def test_vjepa_registry_respects_enablement(enabled) -> None:
+    from inference.core import env
+
+    utils = importlib.import_module("inference.models.utils")
+    original = env.VJEPA2_1_ENABLED
+    try:
+        with patch.object(env, "VJEPA2_1_ENABLED", enabled):
+            importlib.reload(utils)
+            for model_type in ("vjepa2-1-vitb-384", "vjepa2_1"):
+                assert (
+                    ("action-recognition", model_type) in utils.ROBOFLOW_MODEL_TYPES
+                ) == enabled
+    finally:
+        with patch.object(env, "VJEPA2_1_ENABLED", original):
+            importlib.reload(utils)
 
 
 @pytest.mark.skipif(

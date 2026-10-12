@@ -16,6 +16,22 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
+
+### Changed
+
+- `execution_engine.v1.executor.core` no longer imports the opt-in `inference_models.utils.performance` profiler; step execution timing is unaffected, only the instrumentation is gone.
+- `PlatformClient.register_image_at_roboflow` takes an optional `annotation_follows`
+  (default `False`). Dataset Upload `@v1` sets it when an annotation upload follows,
+  so a host that retries uploads can fail an upload whose retry reports a duplicate
+  instead of silently dropping the annotation.
+
+## `0.2.6`
+
+Bundled execution engine: `1.16.1`.
+
 ### Execution engine
 
 - `VideoMetadata` carries an optional `total_frames`: the frame count of the
@@ -24,9 +40,32 @@ for contributor and maintainer responsibilities.
   Blocks can compute playback progress as `frame_number / total_frames` (e.g. a
   timeline overlay). Image inputs may include it under `video_metadata`.
 
+### Changed
+
+- V-JEPA streaming samples accept frames up to 50 ms after the requested source index, capped at half a sample interval. Predictions use the intended sample clock. Larger gaps skip affected windows with an error.
+- Action Recognition Model rejects missing samples only when the model declares that it requires regular sampling. Cosmos retains its previous behavior for FPS-limited streams.
+- Action Recognition Model uses explicit confidence and observed-duration capabilities for each model family.
+- Inference hosts can set `VJEPA2_1_ENABLED=False` to block V-JEPA loading through the Action Recognition Model block before weights load.
+- Action-recognition response schemas retain frame indices, class fields, and optional confidence for HTTP clients and Workflows.
+- Action Recognition Model ignores confidence overrides for unscored models, including Cosmos, instead of rejecting them.
+- Action Recognition Model keeps streaming sample counts and span durations within the model's recorded window at fractional source frame rates.
+- Action Recognition Model applies an optional model-owned frame transform before buffering. V-JEPA retains resized RGB uint8 frames; Cosmos keeps its existing resize behavior.
+- Action Recognition Model accepts `confidence="best"` for model-eval thresholds and `"default"` for the package default, like detection blocks. Numeric overrides and unscored Cosmos behavior stay unchanged.
+- Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
+  the local `inference_models` backend. Non-tensor local legacy execution
+  continues to honor `mask_decode_mode` and `tradeoff_factor` when
+  `USE_INFERENCE_MODELS=False`.
+  Remote calls always request `accurate` / `1.0`, since the local backend setting
+  does not identify the remote server. Remote legacy workflows that previously
+  requested fast/tradeoff masks now receive accurate masks. `@v4` retains its
+  RLE response format.
+- The new instance-segmentation `@v5` block is deferred to a separate PR together
+  with reduced-grid Supervision conversion and downstream block support.
+  **Full tensor support will come in a separate PR.** Existing tensor variants
+  remain pinned to `accurate` / `1.0`.
+
 ### Added
 
-- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
 - Optional `original_image` and `mask_metadata` on instance-segmentation response
   DTOs retain the input dimensions and output-to-input coordinate mapping for
   opted-in HTTP responses. Response `image`, boxes, polygons and RLE masks all
@@ -49,28 +88,10 @@ for contributor and maintainer responsibilities.
   - While the broker stays unreachable or keeps answering "unavailable", the background reconnect loop logs the first failure as an error and later attempts at debug level until a connection succeeds, instead of an error about once per second.
   - Closing the block (when a pipeline stops) is bounded even when it races a background reconnect: a connection the broker accepts after the close began is disconnected at once, and the close never waits for acknowledgements or for the broker; messages not yet acknowledged are dropped, though packets already queued may still be sent before the disconnect. A close during an in-flight reconnect first waits for that connection attempt (TCP bounded by `timeout`, a TLS handshake by the 15 s keepalive, DNS by the OS resolver).
 
-### Changed
-
-- `execution_engine.v1.executor.core` no longer imports the opt-in `inference_models.utils.performance` profiler; step execution timing is unaffected, only the instrumentation is gone.
-- Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
-  the local `inference_models` backend. Non-tensor local legacy execution
-  continues to honor `mask_decode_mode` and `tradeoff_factor` when
-  `USE_INFERENCE_MODELS=False`.
-  Remote calls always request `accurate` / `1.0`, since the local backend setting
-  does not identify the remote server. Remote legacy workflows that previously
-  requested fast/tradeoff masks now receive accurate masks. `@v4` retains its
-  RLE response format.
-- The new instance-segmentation `@v5` block is deferred to a separate PR together
-  with reduced-grid Supervision conversion and downstream block support.
-  **Full tensor support will come in a separate PR.** Existing tensor variants
-  remain pinned to `accurate` / `1.0`.
-- `PlatformClient.register_image_at_roboflow` takes an optional `annotation_follows`
-  (default `False`). Dataset Upload `@v1` sets it when an annotation upload follows,
-  so a host that retries uploads can fail an upload whose retry reports a duplicate
-  instead of silently dropping the annotation.
-
 ### Fixed
 
+- Action Recognition Model preserves repeated samples when V-JEPA requests a higher sampling rate than the source FPS. Complete low-FPS streams run inference while genuinely missing source frames still invalidate affected windows.
+- SAM3 v1/v2/v3 remote SDK execution, with NumPy or tensor predictions, now honors `WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS` across the input batch while sending one image per HTTP request. Each concurrency-sized group is converted before dispatching the next, bounding response buffering and stopping later groups after an HTTP failure. Results retain input order, formats and class mapping; empty batches issue no requests. Local execution and the inference-proxy transport are unchanged.
 - Tracker blocks log the missing-FPS fallback only when creating a tracker for a video, including tensor variants.
 
 ## `0.2.4-post1`
