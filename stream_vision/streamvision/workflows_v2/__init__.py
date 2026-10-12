@@ -2,9 +2,13 @@
 
 Usage::
 
-    from streamvision.workflows_v2 import VideoStatistics, WORKFLOWS_V2_SOURCES
+    from roboflow_workflows.execution_engine.v2 import Catalogue, compile_workflow
+    from streamvision.workflows_v2 import VideoStatistics
 
-    catalogue = Catalogue(blocks, sources=[*WORKFLOWS_V2_SOURCES, ...])
+    catalogue = Catalogue.from_modules([
+        "roboflow_workflows.execution_engine.v2.blocks",
+        "streamvision.workflows_v2",
+    ])
     definition["sources"] = [
         {"type": "video/stream_set@v1", "name": "cams",
          "references": ["rtsp://cam-0/stream", "rtsp://cam-1/stream"],
@@ -21,6 +25,8 @@ Usage::
 ``streamvision`` never imports this package itself.
 """
 
+from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
+
 from streamvision.workflows_v2.reader import VideoSourceFailure, VideoStopError
 from streamvision.workflows_v2.sources import (
     VideoStream,
@@ -31,6 +37,20 @@ from streamvision.workflows_v2.statistics import MemberStatistics, VideoStatisti
 
 WORKFLOWS_V2_SOURCES = (VideoStream, VideoStreamSet)
 
+
+def create_catalogue() -> Catalogue:
+    """Expose the opt-in video sources through V2 module discovery.
+
+    Returns:
+        A catalogue containing ``video/stream`` and ``video/stream_set``.
+    """
+    catalogue = Catalogue(sources=WORKFLOWS_V2_SOURCES)
+
+    return catalogue
+
+
+WORKFLOWS_V2_CATALOGUE = create_catalogue
+
 __all__ = [
     "MemberStatistics",
     "VideoSourceFailure",
@@ -38,6 +58,8 @@ __all__ = [
     "VideoStopError",
     "VideoStream",
     "VideoStreamSet",
+    "WORKFLOWS_V2_CATALOGUE",
     "WORKFLOWS_V2_SOURCES",
+    "create_catalogue",
     "frame_to_image",
 ]

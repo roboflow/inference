@@ -6,6 +6,8 @@ This is the canonical changelog for the `streamvision` package.
 
 ### Added
 
+- The optional `streamvision.workflows_v2` module exposes `WORKFLOWS_V2_CATALOGUE` and `create_catalogue()` for explicit discovery through `Catalogue.from_modules`. Ordinary streamvision imports and legacy pipeline selection are unchanged.
+
 - `VideoSource.release_error` exposes the latest credential-redacted producer cleanup failure, retaining it across successful releases and restarts without changing existing status events or exception behavior.
 
 - Camera, stream and stream-manager runtime moved here from `inference.core.interfaces`.

@@ -14,7 +14,8 @@ equivalent declarations compare equal. Each difference becomes one
     breaking   anything a retained instance or the running graph could notice:
                a changed or removed step, source, operator, input, nested
                boundary, control, reaction, recording, catalogue provider or
-               compile target; new managed state; a new compile warning
+               kind, or compile target; new managed state; a new compile
+               warning
 
 Every change also says the least disruptive update that applies it
 (``requires``); a ``breaking`` change is one that requires more than
@@ -24,8 +25,8 @@ Every change also says the least disruptive update that applies it
     reset         only a reset applies it: every step, operator, handler and
                   engine-owned state starts fresh, sources stay
     unsupported   no update applies it: a changed, added or removed source,
-                  a changed input, recording, retrospective, or a catalogue
-                  provider a source resolved a resource from
+                  a changed input, recording or its codecs, retrospective,
+                  or a catalogue provider a source resolved a resource from
 
 ``PlanDiff.kind`` is the most demanding of them, in the same words. Inputs
 keep their declared schema across a reset in this version; that is a
@@ -46,13 +47,35 @@ under different parameters. Tune running graphs with controls instead.
 Values are compared structurally without ``==`` on unknown objects, so an
 array or tensor constant never decides equality through truth conversion:
 such values are equal only when they are the same object.
+
+A catalogue compares by what a compiled plan still reads from it: providers
+resolve resources, kinds (looked up by name) validate and convert values,
+and codecs write and replay recordings. Steps and sources carry their own
+classes. So a host may compile against a new but equivalent catalogue. A
+new unrelated kind or codec needs no reset. For a plan that records, every
+previously registered codec must remain unchanged so existing recordings
+can still be read; removal is unsupported even if no recording used it. A nested plan (a
+handler's or a retrospective's workflow) compares like the root plan. A
+retrospective's replay source is generated on every compile from the
+recorded group schema; it compares by what it declares.
 """
 
 import dataclasses
 import enum
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
+from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.controls import PlannedControl
 from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
@@ -61,8 +84,14 @@ from roboflow_workflows.execution_engine.v2.errors import (
 )
 from roboflow_workflows.execution_engine.v2.plan import (
     CompiledWorkflow,
+    PlannedSource,
     PlannedStep,
     requests_managed_state,
+)
+from roboflow_workflows.execution_engine.v2.recording.codecs import PayloadCodec
+from roboflow_workflows.execution_engine.v2.recording.replay import REPLAY_SOURCE_TYPE
+from roboflow_workflows.execution_engine.v2.recording.retrospective import (
+    CompiledRetrospective,
 )
 
 ADDED = "added"
@@ -506,32 +535,24 @@ def _compare_sections(
     old: CompiledWorkflow, new: CompiledWorkflow, *, changes: List[PlanChange]
 ) -> None:
     sections = (
-        ("reactions", old.reactions, new.reactions, RESET, ""),
-        (
-            "recording",
-            _recorded(old),
-            _recorded(new),
-            UNSUPPORTED,
-            _RECORDING_DETAIL,
-        ),
+        ("reactions", _same(old.reactions, new.reactions), RESET, ""),
+        ("recording", _same_recording(old, new), UNSUPPORTED, _RECORDING_DETAIL),
         (
             "retrospective",
-            old.retrospective,
-            new.retrospective,
+            _same_retrospective(old.retrospective, new.retrospective),
             UNSUPPORTED,
             _RECORDING_DETAIL,
         ),
         (
             "catalogue",
-            old.catalogue.providers,
-            new.catalogue.providers,
+            _same_catalogue(old.catalogue, new.catalogue),
             RESET,
             "",
         ),
-        ("target", old.options.target, new.options.target, RESET, ""),
+        ("target", _same(old.options.target, new.options.target), RESET, ""),
     )
-    for component, old_value, new_value, requires, detail in sections:
-        if not _same(old_value, new_value):
+    for component, same, requires, detail in sections:
+        if not same:
             changes.append(
                 PlanChange(
                     component,
@@ -597,15 +618,109 @@ def _compare_source_providers(
             )
 
 
-def _recorded(plan: CompiledWorkflow) -> Any:
-    # The definition digest changes with every edit; a later run records the
-    # new plan's digest. What is recorded and where must stay.
-    if plan.recording is None:
-        return None
+def _same_recording(
+    old: Union[CompiledWorkflow, CompiledRetrospective],
+    new: Union[CompiledWorkflow, CompiledRetrospective],
+) -> bool:
+    # A plan and a retrospective both carry the recording and the catalogue
+    # whose codecs write and replay it. The definition digest changes with
+    # every edit and a later run records the new one; what is recorded, where
+    # and with which codecs must stay.
+    if old.recording is None or new.recording is None:
+        return old.recording is new.recording
 
-    recorded = (plan.recording.directory, plan.recording.groups, plan.recording.schema)
+    old_recorded, new_recorded = (
+        (plan.recording.directory, plan.recording.groups, plan.recording.schema)
+        for plan in (old, new)
+    )
+    same = _same(old_recorded, new_recorded) and _same_codecs(
+        old.catalogue.codecs, new.catalogue.codecs
+    )
 
-    return recorded
+    return same
+
+
+def _same_codecs(
+    old: Mapping[str, PayloadCodec], new: Mapping[str, PayloadCodec]
+) -> bool:
+    # Recorded values identify their codec by name. Keep every old codec so
+    # existing recordings remain readable; new names may encode new types.
+    # Catalogue registration rejects a second codec for an existing type.
+    same = old.keys() <= new.keys() and all(
+        _same(codec, new[name]) for name, codec in old.items()
+    )
+
+    return same
+
+
+def _same_catalogue(old: Catalogue, new: Catalogue) -> bool:
+    # Codecs matter only to a plan that records (``_same_recording``). A kind
+    # only one catalogue registers is one the other plan never read: a plan
+    # compiles only with registered kinds.
+    same = _same(old.providers, new.providers) and _same_shared(old.kinds, new.kinds)
+
+    return same
+
+
+def _same_shared(old: Mapping[str, Any], new: Mapping[str, Any]) -> bool:
+    same = all(_same(old[name], new[name]) for name in old.keys() & new.keys())
+
+    return same
+
+
+def _same_plan(
+    old: CompiledWorkflow, new: CompiledWorkflow, *, ignore: frozenset = frozenset()
+) -> bool:
+    same = _same_fields(old, new, ignore=ignore | {"catalogue"}) and _same_catalogue(
+        old.catalogue, new.catalogue
+    )
+
+    return same
+
+
+def _same_retrospective(
+    old: Optional[CompiledRetrospective], new: Optional[CompiledRetrospective]
+) -> bool:
+    if old is None or new is None:
+        return old is new
+
+    if not _same_fields(old, new, ignore=frozenset({"recording", "plan"})):
+        return False
+
+    if not _same_recording(old, new):
+        return False
+
+    if old.plan is None or new.plan is None:
+        return old.plan is new.plan
+
+    old_sources, new_sources = old.plan.sources, new.plan.sources
+    same = (
+        _same_plan(old.plan, new.plan, ignore=frozenset({"sources"}))
+        and old_sources.keys() == new_sources.keys()
+        and all(
+            _same_replay_source(old_sources[name], new_sources[name])
+            for name in old_sources
+        )
+    )
+
+    return same
+
+
+def _same_replay_source(old: PlannedSource, new: PlannedSource) -> bool:
+    # Each compile generates the replay source class and its params model
+    # from the recorded group schema, which the retrospective compares.
+    if not old.spec.type == new.spec.type == REPLAY_SOURCE_TYPE:
+        same = _same(old, new)
+
+        return same
+
+    same = (
+        _same_fields(old, new, ignore=frozenset({"spec", "params"}))
+        and _same_fields(old.spec, new.spec, ignore=_GENERATED_SOURCE_CLASSES)
+        and _same_model_fields(old.params, new.params)
+    )
+
+    return same
 
 
 def _same_unordered(old: Sequence[Any], new: Sequence[Any]) -> bool:
@@ -639,6 +754,9 @@ _CONTROL_GRAPH_FIELDS = frozenset({"closure", "downstream", "state_classes"})
 _BLOCK_DOCUMENTATION = frozenset(
     {"aliases", "description", "metadata", "engine_compatibility"}
 )
+
+# Fields of the replay source contract that each compile generates anew.
+_GENERATED_SOURCE_CLASSES = frozenset({"source_class", "params_model"})
 
 _PARAMS_DETAIL = (
     "a block may cache state built from its parameters on the first call (e.g. "
@@ -728,8 +846,9 @@ def _same(a: Any, b: Any) -> bool:
     """Structural equality that never trusts ``==`` of an arbitrary object.
 
     Scalars and frozensets use ``==`` (frozenset elements are hashable plan
-    values); dataclasses, pydantic params, mappings, tuples and lists compare
-    by content; any other object is equal only to itself.
+    values); nested plans compare by content and catalogue (module docstring);
+    dataclasses, pydantic params, mappings, tuples and lists compare by
+    content; any other object is equal only to itself.
     """
     if a is b:
         return True
@@ -737,6 +856,8 @@ def _same(a: Any, b: Any) -> bool:
         return False
     if isinstance(a, _SCALARS):
         return a == b
+    if isinstance(a, CompiledWorkflow):
+        return _same_plan(a, b)
     if dataclasses.is_dataclass(a):
         return all(
             _same(getattr(a, item.name), getattr(b, item.name))
@@ -744,11 +865,7 @@ def _same(a: Any, b: Any) -> bool:
             if item.compare
         )
     if getattr(type(a), "model_fields", None) is not None:
-        # Pydantic models (block params): compare field values structurally.
-        return _same(vars(a), vars(b)) and _same(
-            getattr(a, "__pydantic_extra__", None),
-            getattr(b, "__pydantic_extra__", None),
-        )
+        return _same_model_fields(a, b)
     if isinstance(a, Mapping):
         return a.keys() == b.keys() and all(_same(a[key], b[key]) for key in a)
     if isinstance(a, (tuple, list)):
@@ -757,3 +874,13 @@ def _same(a: Any, b: Any) -> bool:
         return a == b
 
     return False
+
+
+def _same_model_fields(a: Any, b: Any) -> bool:
+    # Pydantic models (block params): compare field values structurally.
+    same = _same(vars(a), vars(b)) and _same(
+        getattr(a, "__pydantic_extra__", None),
+        getattr(b, "__pydantic_extra__", None),
+    )
+
+    return same

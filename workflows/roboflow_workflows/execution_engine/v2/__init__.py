@@ -5,15 +5,27 @@ then create an execution session. Compilation is structural; the session owns
 block instances and preserves their state across runs::
 
     plan = compile_workflow(definition, catalogue=catalogue)
-    session = plan.create_session(resources=resources)
-    rows = session.run(inputs).rows()
+    with plan.create_session(resources=resources) as session:
+        rows = session.run(inputs).rows()
 
 A definition that declares ``sources`` (class-owned ``Source`` plugins
 registered in the same catalogue) is active: the session opens the sources and
 delivers each ``OutputGroup`` to a registered handler once per pulse::
 
-    run = session.start(static_inputs, handlers={"frames": on_frames})
-    run.wait()
+    with plan.create_session(resources=resources) as session:
+        with session.start(static_inputs, handlers={"frames": on_frames}) as run:
+            run.wait()
+
+Video sources can be selected explicitly with the same plugin mechanism::
+
+    catalogue = Catalogue.from_modules([
+        "roboflow_workflows.execution_engine.v2.blocks",
+        "streamvision.workflows_v2",
+    ])
+
+This optional video module needs ``streamvision[workflows]``. The session context
+closes session-owned state; finish active runs and passive pipelines before
+leaving it. Caller-supplied model and service resources remain caller-owned.
 
 Root ``operators`` (class-owned ``Operator`` plugins, such as the built-in
 ``v2/align@v1`` and ``v2/window@v1``) turn pulses of sources into pulses of
@@ -122,9 +134,13 @@ from roboflow_workflows.execution_engine.v2.errors import (
     ControlError,
     DemandError,
     EventEmissionError,
+    GraphUpdateError,
     OperatorError,
     OperatorInputError,
     ReactionError,
+    ResourceError,
+    SessionClosedError,
+    StepExecutionError,
     WorkflowCompileError,
     WorkflowExecutionError,
     WorkflowInputError,
@@ -210,11 +226,6 @@ from roboflow_workflows.execution_engine.v2.targets import (
 )
 
 __all__ = [
-    "CONTEXT_POLICIES",
-    "MANAGED_STATE_RESOURCE",
-    "MISSING",
-    "SAME_PAYLOAD",
-    "SYSTEM_EVENTS",
     "ActiveRun",
     "ActiveRunError",
     "Arrival",
@@ -222,11 +233,12 @@ __all__ = [
     "Batch",
     "Block",
     "BlockParams",
+    "CONTEXT_POLICIES",
     "Catalogue",
     "CodecRegistry",
+    "CompileOptions",
     "CompiledRetrospective",
     "CompiledWorkflow",
-    "CompileOptions",
     "ContextPolicy",
     "ContractError",
     "ControlDefinitionError",
@@ -250,6 +262,7 @@ __all__ = [
     "ExecutionObserver",
     "ExecutionSession",
     "Factory",
+    "GraphUpdateError",
     "Group",
     "GroupHandler",
     "GroupResult",
@@ -259,6 +272,8 @@ __all__ = [
     "Index",
     "InputValue",
     "Kind",
+    "MANAGED_STATE_RESOURCE",
+    "MISSING",
     "MachineStamp",
     "ManagedState",
     "NoExecutionContextError",
@@ -266,8 +281,8 @@ __all__ = [
     "OperatorCounters",
     "OperatorDeclarationError",
     "OperatorError",
-    "OperatorInputError",
     "OperatorInput",
+    "OperatorInputError",
     "OperatorParams",
     "OperatorPort",
     "OperatorPulse",
@@ -310,14 +325,18 @@ __all__ = [
     "RecordingPlan",
     "RecordingSchemaError",
     "Ref",
+    "ResourceError",
     "ResultFiles",
     "RetrospectiveError",
     "RetrospectiveOutcome",
     "RunResult",
+    "SAME_PAYLOAD",
+    "SYSTEM_EVENTS",
     "SampleContext",
     "Select",
     "Selected",
     "Selection",
+    "SessionClosedError",
     "Source",
     "SourceCounters",
     "SourceDeclarationError",
@@ -328,6 +347,7 @@ __all__ = [
     "StateDefaults",
     "StateError",
     "StateScope",
+    "StepExecutionError",
     "StepRef",
     "Stop",
     "Target",
@@ -339,6 +359,7 @@ __all__ = [
     "UnsupportedQualityError",
     "UnsupportedTargetError",
     "UnusedQualityHint",
+    "UpdateReceipt",
     "WorkflowCompileError",
     "WorkflowExecutionError",
     "WorkflowInputError",
@@ -364,6 +385,7 @@ _RECORDING_MODULE = "roboflow_workflows.execution_engine.v2.recording"
 _RECORDING_ERRORS = f"{_RECORDING_MODULE}.errors"
 _MACHINES_MODULE = "roboflow_workflows.execution_engine.v2.reactions.machines"
 _LAZY = {
+    "UpdateReceipt": "roboflow_workflows.execution_engine.v2.updates.prepared",
     "MachineStamp": _MACHINES_MODULE,
     "TransitionCounters": _MACHINES_MODULE,
     "TransitionResult": _MACHINES_MODULE,

@@ -17,6 +17,7 @@ from roboflow_workflows.execution_engine.v2.blocks.boundaries import (
     NUMPY_ARRAY_KIND,
 )
 from roboflow_workflows.execution_engine.v2.blocks.control import ContinueIfBlock
+from roboflow_workflows.execution_engine.v2.blocks.detection import ObjectDetectionBlock
 from roboflow_workflows.execution_engine.v2.blocks.image import (
     CropBlock,
     HasBrightnessBlock,
@@ -68,29 +69,42 @@ from roboflow_workflows.execution_engine.v2.blocks.temporal import (
     BestFrameBlock,
     TopKBrightestBlock,
 )
+from roboflow_workflows.execution_engine.v2.blocks.tracking import (
+    ByteTrackerBlock,
+    TrackerCapacityError,
+)
+from roboflow_workflows.execution_engine.v2.blocks.visualization import (
+    BLOCKS as VISUALIZATION_BLOCKS,
+)
+from roboflow_workflows.execution_engine.v2.blocks.visualization import (
+    DETECTION_DRAWING_KIND,
+    BoxVisualizationBlock,
+    DetectionDrawing,
+    DetectionDrawingBlock,
+    DetectionVisualizationBlock,
+    DrawingBackendUnavailable,
+    InPlaceLabelVisualizationBlock,
+    LabelVisualizationBlock,
+)
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.operators.alignment import Align
 from roboflow_workflows.execution_engine.v2.operators.window import Window
 
 
 def create_catalogue() -> Catalogue:
-    """Collect the image and temporal blocks, the operators and native media kinds.
+    """Collect the opt-in V2 vision, temporal and managed-state blocks.
+
+    Models remain caller-owned resources. The generic V2 engine does not import
+    this catalogue; hosts select it explicitly. Triton is loaded only when its
+    drawing backend is requested.
 
     Returns:
-        Immutable catalogue with ``v2/crop``, ``v2/static_crop``,
-        ``v2/invert``, ``v2/mosaic``, ``v2/resize``, ``v2/has_brightness``,
-        ``v2/continue_if``, ``v2/best_frame``, ``v2/top_k_brightest`` and the
-        managed state blocks ``v2/state_get``, ``v2/state_set``,
-        ``v2/state_increment`` and ``v2/state_compare_and_set``; the
-        ``v2/align@v1`` and ``v2/window@v1`` operators; the ``image`` and
-        ``crop_summary`` kinds, all eleven native prediction/tensor kinds, the
-        ``instance_segmentation_view`` kind, and the built-in kinds these
-        blocks use. Wildcard media outputs and the
-        legacy ``numpy_array`` tensor label use explicit boundary policies.
-        Recording codecs store tensors, ``ImageData`` and the native
-        prediction carriers as raw binary data. A live ``SegmentationView``
-        has no codec: ``full_res()`` is its explicit dense boundary for
-        recording and the wire.
+        Catalogue with image transforms, caller-loaded batched object detection,
+        per-source tracking, detection painters, conditional and temporal blocks,
+        managed-state blocks, alignment/window operators and native media kinds.
+        Recording codecs preserve tensors, images and native predictions as raw
+        binary data. Prepared drawings and live segmentation views have no codec;
+        a segmentation view's ``full_res()`` is its explicit dense boundary.
     """
     catalogue = Catalogue(
         [
@@ -108,11 +122,15 @@ def create_catalogue() -> Catalogue:
             StateIncrementBlock,
             StateCompareAndSetBlock,
             StateMachineSetBlock,
+            ObjectDetectionBlock,
+            ByteTrackerBlock,
+            *VISUALIZATION_BLOCKS,
         ],
         operators=[Align, Window],
         kinds=[
             IMAGE_KIND,
             CROP_SUMMARY_KIND,
+            DETECTION_DRAWING_KIND,
             *NATIVE_KINDS,
             INSTANCE_SEGMENTATION_VIEW_KIND,
             MEDIA_WILDCARD_KIND,
@@ -127,44 +145,55 @@ def create_catalogue() -> Catalogue:
 WORKFLOWS_V2_CATALOGUE = create_catalogue
 
 __all__ = [
-    "BAR_CODE_DETECTION_KIND",
-    "CLASSIFICATION_PREDICTION_KIND",
-    "DETECTION_KIND",
-    "EMBEDDING_KIND",
-    "INSTANCE_SEGMENTATION_PREDICTION_KIND",
-    "INSTANCE_SEGMENTATION_VIEW_KIND",
-    "KEYPOINT_DETECTION_PREDICTION_KIND",
-    "NATIVE_KINDS",
-    "NATIVE_RECORDING_CODECS",
-    "MEDIA_WILDCARD_KIND",
-    "NUMPY_ARRAY_KIND",
-    "OBJECT_DETECTION_PREDICTION_KIND",
-    "QR_CODE_DETECTION_KIND",
-    "RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND",
-    "SEMANTIC_SEGMENTATION_PREDICTION_KIND",
-    "TENSOR_KIND",
-    "CROP_SUMMARY_KIND",
     "Align",
+    "BAR_CODE_DETECTION_KIND",
     "BestFrameBlock",
+    "BoxVisualizationBlock",
+    "ByteTrackerBlock",
+    "CLASSIFICATION_PREDICTION_KIND",
+    "CROP_SUMMARY_KIND",
     "ContinueIfBlock",
     "CropBlock",
+    "DETECTION_DRAWING_KIND",
+    "DETECTION_KIND",
+    "DetectionDrawing",
+    "DetectionDrawingBlock",
+    "DetectionVisualizationBlock",
+    "DrawingBackendUnavailable",
+    "EMBEDDING_KIND",
     "HasBrightnessBlock",
     "IMAGE_KIND",
+    "INSTANCE_SEGMENTATION_PREDICTION_KIND",
+    "INSTANCE_SEGMENTATION_VIEW_KIND",
     "ImageData",
+    "InPlaceLabelVisualizationBlock",
     "InvertBlock",
+    "KEYPOINT_DETECTION_PREDICTION_KIND",
+    "LabelVisualizationBlock",
+    "MEDIA_WILDCARD_KIND",
     "MaskGridGeometry",
-    "ResizeBlock",
-    "SegmentationView",
-    "select_predictions",
     "MosaicBlock",
+    "NATIVE_KINDS",
+    "NATIVE_RECORDING_CODECS",
+    "NUMPY_ARRAY_KIND",
+    "OBJECT_DETECTION_PREDICTION_KIND",
+    "ObjectDetectionBlock",
+    "QR_CODE_DETECTION_KIND",
+    "RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND",
+    "ResizeBlock",
+    "SEMANTIC_SEGMENTATION_PREDICTION_KIND",
+    "SegmentationView",
     "StateCompareAndSetBlock",
     "StateGetBlock",
     "StateIncrementBlock",
     "StateMachineSetBlock",
     "StateSetBlock",
     "StaticCropBlock",
+    "TENSOR_KIND",
     "TopKBrightestBlock",
-    "Window",
+    "TrackerCapacityError",
     "WORKFLOWS_V2_CATALOGUE",
+    "Window",
     "create_catalogue",
+    "select_predictions",
 ]

@@ -77,7 +77,7 @@ import importlib
 import threading
 import uuid
 from dataclasses import dataclass, field
-from types import MappingProxyType
+from types import MappingProxyType, TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -3581,6 +3581,46 @@ class ExecutionSession:
         )
 
         return run
+
+    def __enter__(self) -> "ExecutionSession":
+        """Enter a context that closes this session on exit.
+
+        Finish active runs and passive pipelines inside their own contexts
+        before leaving this one; the existing busy-session close rules apply.
+
+        Returns:
+            This open execution session.
+
+        Raises:
+            SessionClosedError: If the session has already been closed.
+        """
+        with self._use_lock:
+            self._raise_if_closed("enter a context")
+
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        """Close session-owned services, retaining the busy-session rules.
+
+        If the body raised while the session is still busy, ``ContractError``
+        propagates with the body exception as its context. Otherwise the body
+        exception propagates normally.
+
+        Args:
+            exc_type: Exception type raised by the context body, if any.
+            exc_value: Exception raised by the context body, if any.
+            traceback: Traceback of the body exception, if any.
+
+        Raises:
+            ContractError: If a run or pipeline still uses this session. The
+                session stays open; finish that work and close it explicitly.
+        """
+        self.close()
 
     def close(self) -> None:
         """Release session-owned services; safe to call more than once.
