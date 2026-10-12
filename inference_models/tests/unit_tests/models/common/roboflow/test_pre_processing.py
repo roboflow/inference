@@ -10353,3 +10353,45 @@ def test_fixed_size_image_list_keeps_dense_preprocessing_behavior(images) -> Non
     ]
     assert torch.equal(torch.stack(processed_images), dense_batch)
     assert list_metadata == dense_metadata
+
+
+@pytest.mark.parametrize(
+    "image_hw, target_hw",
+    [
+        ((90, 640), (448, 448)),
+        ((486, 480), (640, 640)),
+    ],
+)
+def test_pre_process_list_of_torch_images_with_letterbox_matches_numpy_image(
+    image_hw, target_hw
+) -> None:
+    # given
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=target_hw[0], width=target_hw[1]),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.LETTERBOX,
+        input_channels=3,
+    )
+    image = np.full((*image_hw, 3), 100, dtype=np.uint8)
+    tensor_image = torch.from_numpy(image).permute(2, 0, 1)
+
+    # when
+    numpy_result, numpy_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+    )
+    list_result, list_meta = pre_process_network_input(
+        images=[tensor_image],
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+    )
+
+    # then
+    assert list_meta == numpy_meta
+    assert torch.equal(list_result, numpy_result)

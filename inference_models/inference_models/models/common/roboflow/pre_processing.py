@@ -866,16 +866,6 @@ def handle_tensor_list_input_preparation_with_letterbox(
         dtype=torch.float32,
         device=target_device,
     )
-    original_shapes = torch.tensor(
-        [[img.shape[2], img.shape[3]] for img in images], dtype=torch.float32
-    )
-    scale_w = target_size.width / original_shapes[:, 1]
-    scale_h = target_size.height / original_shapes[:, 0]
-    scales = torch.minimum(scale_w, scale_h)
-    new_ws = (original_shapes[:, 1] * scales).int()
-    new_hs = (original_shapes[:, 0] * scales).int()
-    pad_tops = ((target_size.height - new_hs) / 2).int()
-    pad_lefts = ((target_size.width - new_ws) / 2).int()
     images_metadata = []
     for i in range(num_images):
         img = images[i]
@@ -890,7 +880,14 @@ def handle_tensor_list_input_preparation_with_letterbox(
         )
         if input_color_mode != network_input.color_mode:
             img = img[:, [2, 1, 0], :, :]
-        new_h_i, new_w_i = new_hs[i].item(), new_ws[i].item()
+        scale = min(
+            target_size.width / size_after_pre_processing.width,
+            target_size.height / size_after_pre_processing.height,
+        )
+        new_w_i = int(size_after_pre_processing.width * scale)
+        new_h_i = int(size_after_pre_processing.height * scale)
+        pad_top_i = int((target_size.height - new_h_i) / 2)
+        pad_left_i = int((target_size.width - new_w_i) / 2)
         if img.device.type == "cuda":
             img = img.float()
         img = torch.nn.functional.interpolate(
@@ -898,7 +895,6 @@ def handle_tensor_list_input_preparation_with_letterbox(
             size=[new_h_i, new_w_i],
             mode="bilinear",
         )
-        pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
         final_batch[
             i, :, pad_top_i : pad_top_i + new_h_i, pad_left_i : pad_left_i + new_w_i
         ] = img
@@ -912,8 +908,8 @@ def handle_tensor_list_input_preparation_with_letterbox(
             original_size=original_size,
             size_after_pre_processing=size_after_pre_processing,
             inference_size=target_size,
-            scale_width=scales[i].item(),
-            scale_height=scales[i].item(),
+            scale_width=scale,
+            scale_height=scale,
             static_crop_offset=static_crop_offsets[i],
         )
         images_metadata.append(image_metadata)
