@@ -3,7 +3,6 @@ import time
 import warnings
 from uuid import uuid4
 
-import matplotlib.pyplot as plt
 import numpy as np
 import psutil
 import torch
@@ -88,7 +87,12 @@ class DepthAnythingV2(TransformerModel):
                     raise ValueError("Depth map has no variation (min equals max)")
                 normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
 
-                # Create visualization
+                # Create visualization. matplotlib.pyplot takes ~0.2 s to import
+                # and is only needed for the colour map, so load it here rather
+                # than at module import, which `get_model` triggers for every
+                # model type.
+                import matplotlib.pyplot as plt
+
                 depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
                 cmap = plt.get_cmap("viridis")
                 colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)

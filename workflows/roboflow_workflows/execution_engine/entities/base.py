@@ -39,7 +39,6 @@ from roboflow_workflows.utils.images import (
     ensure_local_image_load_allowed,
     load_image_from_url,
 )
-from torchvision.io import ImageReadMode, decode_image, read_file
 from typing_extensions import Annotated, Literal
 
 
@@ -626,6 +625,11 @@ class WorkflowImageData:
         files) does. URLs are the one exception: their bytes come through the
         SSRF-guarded numpy loader today, so they keep a single numpy hop until a
         bytes-level guarded fetcher exists."""
+        # torchvision.io takes ~0.5 s to import and only this decode path needs
+        # it, so load it on first use instead of at module import, which every
+        # user of `Batch` (including `inference` usage tracking) pays for.
+        from torchvision.io import ImageReadMode, decode_image, read_file
+
         if self._base64_image:
             # Post-mutation this can only be a RE-DERIVED base64 (see the
             # matching note in numpy_image) - always valid to decode.

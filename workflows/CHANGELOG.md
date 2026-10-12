@@ -16,6 +16,15 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- `WorkflowImageData` imports `torchvision.io` only when it decodes a base64 or
+  file source straight into a tensor, instead of when
+  `roboflow_workflows.execution_engine.entities.base` is imported. Importing
+  that module, and anything that uses `Batch` from it, no longer pays about
+  0.5 s for `torchvision.io`. The Depth Estimation tensor block likewise loads
+  `matplotlib.pyplot` only when it renders a depth visualisation.
+
 ## `0.2.10`
 
 Bundled execution engine: `1.16.1`.
