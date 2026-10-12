@@ -125,6 +125,19 @@ class InferenceModelsSAM3Adapter(Model):
         nms_iou_threshold: Optional[float] = None,
         inference_start_timestamp: Optional[float] = None,
     ) -> Sam3SegmentationResponse:
+        """Segment one image while preserving the requested mask representation.
+
+        Args:
+            image: Input image accepted by the inference image loader.
+            prompts: Ordered text or visual prompts.
+            output_prob_thresh: Default confidence threshold.
+            format: Response representation: polygon, json, or rle.
+            nms_iou_threshold: Optional cross-prompt mask suppression threshold.
+            inference_start_timestamp: Optional start time from the request handler.
+
+        Returns:
+            Segmentation predictions grouped in prompt order with elapsed time.
+        """
         if inference_start_timestamp is None:
             inference_start_timestamp = perf_counter()
         np_image = load_image_rgb(image)
@@ -140,14 +153,29 @@ class InferenceModelsSAM3Adapter(Model):
         prompt_dicts = [_sam3_prompt_to_dict(p) for p in prompts]
 
         # segment_with_text_prompts returns List[per-image] of List[per-prompt] dicts
-        # with keys: prompt_index, masks (N,H,W ndarray), scores (list).
+        # Request compressed masks directly when the HTTP response is RLE.
+        # Polygon responses retain their existing dense-mask conversion.
         per_image_results = self._model.segment_with_text_prompts(
             images=[np_image],
             prompts=prompt_dicts,
             output_prob_thresh=float(min_threshold),
             max_detections=SAM3_MAX_DETECTIONS,
+            mask_format="rle" if format == "rle" else "dense",
         )
         per_prompt = per_image_results[0]
+
+        if format == "rle":
+            prompt_results = _rle_results_to_predictions(
+                per_prompt=per_prompt,
+                prompts=prompts,
+                default_threshold=output_prob_thresh,
+                nms_iou_threshold=nms_iou_threshold,
+            )
+            response = Sam3SegmentationResponse(
+                time=perf_counter() - inference_start_timestamp,
+                prompt_results=prompt_results,
+            )
+            return response
 
         # processed: prompt_idx -> {"masks": ndarray, "scores": list}
         processed: Dict[int, Dict[str, Any]] = {}
@@ -204,6 +232,48 @@ class InferenceModelsSAM3Adapter(Model):
             time=perf_counter() - inference_start_timestamp,
             prompt_results=prompt_results,
         )
+
+
+def _rle_results_to_predictions(
+    per_prompt: List[Dict[str, Any]],
+    prompts: List[Sam3Prompt],
+    default_threshold: float,
+    nms_iou_threshold: Optional[float],
+) -> List[Sam3PromptResult]:
+    """Filter and serialize model RLEs without expanding or re-encoding pixels."""
+    items = []
+    for idx, prompt in enumerate(prompts):
+        threshold = prompt.output_prob_thresh
+        if threshold is None and nms_iou_threshold is not None:
+            threshold = default_threshold
+        result = per_prompt[idx]
+        for rle, score in zip(result.get("masks", []), result.get("scores", [])):
+            # Match the dense path: without NMS, the backend's threshold floor
+            # and explicit per-prompt overrides determine which masks survive.
+            if threshold is not None and score < threshold:
+                continue
+            counts = rle["counts"]
+            if isinstance(counts, bytes):
+                counts = counts.decode("ascii")
+            items.append((idx, {**rle, "counts": counts}, float(score)))
+
+    if nms_iou_threshold is not None and items:
+        keep = _nms_greedy_pycocotools(
+            rles=[rle for _, rle, _ in items],
+            confidences=np.asarray([score for _, _, score in items]),
+            iou_threshold=nms_iou_threshold,
+        )
+        items = [item for item, kept in zip(items, keep) if kept]
+
+    results = [
+        Sam3PromptResult(prompt_index=idx, echo=_build_echo(idx, p), predictions=[])
+        for idx, p in enumerate(prompts)
+    ]
+    for idx, rle, score in items:
+        results[idx].predictions.append(
+            Sam3SegmentationPrediction(masks=rle, confidence=score, format="rle")
+        )
+    return results
 
 
 def _sam3_prompt_to_dict(p: Sam3Prompt) -> Dict[str, Any]:

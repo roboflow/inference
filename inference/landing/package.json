@@ -6,7 +6,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -19,30 +18,28 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.6",
-    "@playwright/test": "^1.48.0",
     "@headlessui/react": "^1.7.17",
     "@headlessui/tailwindcss": "^0.2.0",
+    "@playwright/test": "^1.48.0",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@types/react-syntax-highlighter": "^15.5.8",
     "autoprefixer": "latest",
     "classnames": "^2.3.2",
-    "eslint": "^10.8.0",
-    "eslint-config-next": "^16.2.12",
     "immutable": ">=5.1.8",
     "js-yaml": "^4.3.0",
     "postcss": "^8.5.18",
     "react-syntax-highlighter": "^16.1.1",
     "sass": "^1.68.0",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "tailwindcss": "latest",
     "typescript": "latest"
   },
   "overrides": {
     "next": {
       "postcss": "^8.5.18",
-      "sharp": "^0.35.0"
+      "sharp": "^0.35.5"
     },
     "brace-expansion": "^5.0.8"
   }

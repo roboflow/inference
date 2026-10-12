@@ -166,15 +166,17 @@ def test_score_at_threshold_is_anomalous_with_confidence_one_half() -> None:
     assert "anomaly_map" not in prediction.images_metadata[0]
 
 
-def test_anomaly_map_is_returned_in_original_image_coordinates() -> None:
+def test_anomaly_map_is_returned_at_network_resolution() -> None:
     calibration = AnomalyCalibration(threshold=2.0, scale=0.5)
+    raw = raw_prediction([1.0], size_hw=(10, 20))
 
-    prediction = post_process_anomaly_scores(
-        raw_prediction([1.0], size_hw=(10, 20)), calibration, include_anomaly_map=True
-    )
+    prediction = post_process_anomaly_scores(raw, calibration, include_anomaly_map=True)
 
-    assert prediction.images_metadata[0]["anomaly_map"].shape == (10, 20)
-    assert prediction.images_metadata[0]["anomaly_map"].dtype == np.float32
+    anomaly_map = prediction.images_metadata[0]["anomaly_map"]
+    # The map keeps the network's square geometry whatever the image size was.
+    assert anomaly_map.shape == (IMAGE_SIZE, IMAGE_SIZE)
+    assert anomaly_map.dtype == np.float32
+    assert np.array_equal(anomaly_map, raw.maps[0].numpy())
 
 
 def test_non_finite_scores_are_rejected() -> None:

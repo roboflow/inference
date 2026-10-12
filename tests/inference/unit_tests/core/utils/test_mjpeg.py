@@ -266,8 +266,11 @@ def test_mjpeg_does_not_autodetect_network_playlists(mjpeg_server, monkeypatch):
     original_connect = HTTPConnection._new_conn
 
     def connect(connection):
-        connections.append(connection.port)
-        assert connection.port == port
+        # The hook is process-wide, so background threads left by other tests
+        # (for example the usage collector posting to the API) pass through it
+        # too. The playlist only names 127.0.0.1 targets, so count just those.
+        if connection.host == "127.0.0.1":
+            connections.append(connection.port)
         return original_connect(connection)
 
     monkeypatch.setattr(HTTPConnection, "_new_conn", connect)
@@ -283,7 +286,7 @@ def test_mjpeg_does_not_autodetect_network_playlists(mjpeg_server, monkeypatch):
             player.video.stop()
 
     asyncio.run(receive())
-    assert len(connections) == 1
+    assert connections == [port]
     assert len(calls) == 1
 
 

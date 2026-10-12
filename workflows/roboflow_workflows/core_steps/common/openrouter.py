@@ -57,6 +57,12 @@ from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes, load_ima
 
 logger = get_logger(__name__)
 
+# Upper bound the Roboflow proxy accepts for `max_tokens` (observed live:
+# "Parameter 'max_tokens' must be an integer in [1, 16384]"). Sent when a
+# block leaves `max_tokens` unset, since omitting it makes the proxy apply
+# its own 500-token default.
+PROXY_MAX_TOKENS_CEILING = 16384
+
 # ---------------------------------------------------------------------------
 # Privacy level
 # ---------------------------------------------------------------------------
@@ -274,7 +280,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         openrouter_api_key: str,
         model: str,
         prompts: List[List[dict]],
-        max_tokens: int,
+        max_tokens: Optional[int],
         temperature: Optional[float],
         privacy_level: str,
         max_concurrent_requests: Optional[int],
@@ -310,7 +316,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         openrouter_api_key: str,
         model: str,
         prompts: List[List[dict]],
-        max_tokens: int,
+        max_tokens: Optional[int],
         temperature: Optional[float],
         privacy_level: str,
         max_concurrent_requests: Optional[int],
@@ -325,7 +331,10 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         on the returned :class:`OpenRouterResult` objects.
 
         ``temperature`` set to ``None`` omits the parameter so the provider
-        default applies. ``reasoning`` is an optional OpenRouter reasoning
+        default applies. ``max_tokens`` set to ``None`` does the same on the
+        direct path; the proxied path sends :data:`PROXY_MAX_TOKENS_CEILING`
+        instead because the proxy requires the field.
+        ``reasoning`` is an optional OpenRouter reasoning
         config object (e.g. ``{"effort": "low"}`` or ``{"enabled": False}``)
         forwarded verbatim; when the target model rejects the config, the
         request is retried once without it.
@@ -469,7 +478,7 @@ def _execute_proxied_openrouter_request(
     openrouter_api_key: str,
     model: str,
     messages: List[dict],
-    max_tokens: int,
+    max_tokens: Optional[int],
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
@@ -479,7 +488,11 @@ def _execute_proxied_openrouter_request(
         "openrouter_api_key": openrouter_api_key,
         "model": model,
         "messages": messages,
-        "max_tokens": max_tokens,
+        # The proxy requires the field (absent -> its own 500-token default,
+        # which truncates detection JSON) and rejects values above the cap.
+        "max_tokens": (
+            max_tokens if max_tokens is not None else PROXY_MAX_TOKENS_CEILING
+        ),
         "privacy_level": privacy_level,
     }
     if temperature is not None:
@@ -558,7 +571,7 @@ def _execute_direct_openrouter_request(
     api_key: str,
     model: str,
     messages: List[dict],
-    max_tokens: int,
+    max_tokens: Optional[int],
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
@@ -574,8 +587,9 @@ def _execute_direct_openrouter_request(
     request_kwargs: Dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "max_tokens": max_tokens,
     }
+    if max_tokens is not None:
+        request_kwargs["max_tokens"] = max_tokens
     if temperature is not None:
         request_kwargs["temperature"] = temperature
     try:

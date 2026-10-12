@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: depot-ubuntu-22.04-32
+    runs-on: depot-ubuntu-22.04-small
     timeout-minutes: 20
     permissions:
       contents: write
