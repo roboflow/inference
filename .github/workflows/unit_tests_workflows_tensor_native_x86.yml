@@ -34,9 +34,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-unit-tests-workflows-tensor-native-${{ matrix.python-version }}-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock') }}
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -96,10 +94,9 @@ jobs:
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
           pip check
-      - name: Package unit and installed-wheel isolation tests
+      - name: Package unit tests
         working-directory: workflows
-        env:
-          WORKFLOWS_ISOLATION_FIND_LINKS: ${{ github.workspace }}/dist
-        run: |
-          WORKFLOWS_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)" \
-            python -m pytest tests/unit_tests tests/isolation
+        # The installed-wheel isolation probe (WORKFLOWS_ISOLATION_WHEEL) is left to
+        # "UNIT TESTS - workflows": it clears ENABLE_TENSOR_DATA_REPRESENTATION and
+        # checks both tensor modes itself, so running it here repeated the same check.
+        run: python -m pytest -n auto --dist loadfile tests/isolation tests/unit_tests

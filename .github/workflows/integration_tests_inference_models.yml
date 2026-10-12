@@ -40,9 +40,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-integration-tests-inference-models-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 📦 Cache test model packages
         uses: actions/cache@v5
         with:
