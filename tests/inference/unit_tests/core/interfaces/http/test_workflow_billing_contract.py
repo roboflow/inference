@@ -67,6 +67,7 @@ class _DummyInstrumentator:
 def _build_test_client(monkeypatch) -> TestClient:
     import inference.core.interfaces.http.http_api as http_api
     from inference.core import roboflow_api
+    from inference.core.interfaces import workflows_execution_observer
     from inference.usage_tracking import collector as collector_module
 
     # The validating module and the forwarding module must agree on the secret.
@@ -78,6 +79,15 @@ def _build_test_client(monkeypatch) -> TestClient:
         "async_push_usage_payloads",
         AsyncMock(),
     )
+    # Each collector's background thread swaps `_usage` for an empty dict every
+    # flush interval. If that lands between the request and the assertions, the
+    # rows the test reads are gone, so hold the swap for the test's duration.
+    for collector in (
+        http_api.usage_collector,
+        collector_module.usage_collector,
+        workflows_execution_observer.usage_collector,
+    ):
+        monkeypatch.setattr(collector, "_enqueue_usage_payload", MagicMock())
     model_manager = MagicMock()
     model_manager.pingback = None
     model_manager.num_errors = 0
@@ -413,7 +423,6 @@ def test_source_tags_reach_workflow_model_and_python_usage(
         collector_module.usage_collector,
         workflows_execution_observer.usage_collector,
     ):
-        monkeypatch.setattr(collector, "_enqueue_usage_payload", MagicMock())
         monkeypatch.setattr(
             collector, "_usage", collector.empty_usage_dict(exec_session_id="test")
         )
