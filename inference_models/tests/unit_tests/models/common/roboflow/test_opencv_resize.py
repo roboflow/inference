@@ -325,6 +325,10 @@ def test_triton_resize_matches_eager_on_cuda(channels: int) -> None:
     for index, (source_hw, target_hw) in enumerate(pairs):
         image = _random_image(source_hw, channels=channels, seed=index)
         tensor = torch.from_numpy(image).cuda().permute(2, 0, 1).unsqueeze(0)
+        if not opencv_resize._fits_triton_kernel(
+            tensor, height=target_hw[0], width=target_hw[1]
+        ):
+            continue
         expected = resize_uint8_tensor_like_opencv_eager(
             tensor, height=target_hw[0], width=target_hw[1]
         )
@@ -357,3 +361,123 @@ def test_cuda_resize_switches_to_triton_and_stays_exact() -> None:
     # then
     assert opencv_resize._get_triton_resize(device_index) is not None
     assert torch.equal(result.cpu(), _opencv_resize(image, (640, 640)))
+
+
+@pytest.mark.parametrize(
+    "shape, target_hw, expected",
+    [
+        ((21845, 3, 2, 2), (1, 1), True),
+        ((21846, 3, 2, 2), (1, 1), False),
+        ((1, 3, 1, 1), (1, 65535 * 256), True),
+        ((1, 3, 1, 1), (1, 65535 * 256 + 1), False),
+        ((1, 3, 5, 5), (5, 5), False),
+        ((1, 2, 4, 4), (2, 2), False),
+        ((1, 3, 4, 4), (2, 2), True),
+        ((0, 3, 4, 4), (3, 3), False),
+    ],
+)
+def test_triton_kernel_is_used_only_within_its_limits(
+    shape: tuple, target_hw: tuple, expected: bool
+) -> None:
+    # given
+    image = torch.empty(shape, dtype=torch.uint8)
+
+    # when
+    result = opencv_resize._fits_triton_kernel(
+        image, height=target_hw[0], width=target_hw[1]
+    )
+
+    # then
+    assert result is expected
+
+
+def test_eager_resize_does_not_widen_unsampled_source_pixels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    image = torch.from_numpy(_random_image((400, 600), channels=3, seed=0))
+    image = image.permute(2, 0, 1).unsqueeze(0)
+    widened_sizes = []
+    original_to = torch.Tensor.to
+
+    def recording_to(tensor: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        widened_sizes.append(tensor.numel())
+        return original_to(tensor, *args, **kwargs)
+
+    monkeypatch.setattr(torch.Tensor, "to", recording_to)
+
+    # when
+    result = resize_uint8_tensor_like_opencv_eager(image, height=40, width=60)
+
+    # then
+    monkeypatch.undo()
+    assert max(widened_sizes) == 3 * 40 * 60
+    assert torch.equal(
+        result, _opencv_resize(image[0].permute(1, 2, 0).numpy(), (40, 60))
+    )
+
+
+@pytest.mark.skipif(
+    not (CUDA_AVAILABLE and TRITON_AVAILABLE), reason="CUDA with Triton not available"
+)
+def test_cuda_resize_beyond_triton_grid_limit_falls_back_to_eager() -> None:
+    # given
+    images = _random_image((2, 2), channels=3 * 21846, seed=0)
+    batch = torch.from_numpy(images).permute(2, 0, 1).reshape(21846, 3, 2, 2)
+    device_index = torch.cuda.current_device()
+    opencv_resize._get_triton_resize(device_index)
+    for thread in threading.enumerate():
+        if thread.name == f"opencv-resize-triton-{device_index}":
+            thread.join(timeout=300)
+
+    # when
+    result = resize_uint8_tensor_like_opencv(batch.cuda(), height=1, width=1)
+
+    # then
+    assert opencv_resize._get_triton_resize(device_index) is not None
+    assert torch.equal(
+        result.cpu(), resize_uint8_tensor_like_opencv(batch, height=1, width=1)
+    )
+
+
+@pytest.mark.skipif(not CUDA_AVAILABLE, reason="CUDA is not available")
+@pytest.mark.parametrize("use_triton", [False, True])
+def test_cached_coefficients_survive_eviction_while_used_on_another_stream(
+    use_triton: bool,
+) -> None:
+    # given
+    if use_triton and not TRITON_AVAILABLE:
+        pytest.skip("Triton is not available")
+    if use_triton:
+        from inference_models.models.common.roboflow.opencv_resize_triton import (
+            resize_uint8_tensor_like_opencv_triton as resize,
+        )
+    else:
+
+        def resize(image: torch.Tensor, height: int, width: int) -> torch.Tensor:
+            return resize_uint8_tensor_like_opencv_eager(
+                image, height=height, width=width
+            )
+
+    image = torch.from_numpy(_random_image((480, 486), channels=3, seed=0))
+    image = image.cuda().permute(2, 0, 1).unsqueeze(0)
+    opencv_resize._opencv_linear_coefficients.cache_clear()
+    expected = resize(image, 640, 643).cpu()
+    side_stream = torch.cuda.Stream()
+    torch.cuda.synchronize()
+
+    # when
+    with torch.cuda.stream(side_stream):
+        torch.cuda._sleep(200_000_000)
+        result = resize(image, 640, 643)
+    opencv_resize._opencv_linear_coefficients.cache_clear()
+    garbage = [
+        torch.zeros((size,), dtype=dtype, device="cuda")
+        for size in (643, 640)
+        for dtype in (torch.int64, torch.int64, torch.int32, torch.int32)
+    ]
+    torch.cuda.synchronize()
+
+    # then
+    assert len(garbage) == 8
+    assert torch.equal(result.cpu(), expected)

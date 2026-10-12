@@ -12,6 +12,8 @@ from inference_models.logger import LOGGER
 TritonResize = Callable[[torch.Tensor, int, int], torch.Tensor]
 
 _RESIZE_COEF_SCALE = 2048
+TRITON_RESIZE_BLOCK = 256
+_CUDA_MAX_GRID_YZ = 65535
 _TRITON_RESIZES: Dict[int, TritonResize] = {}
 _TRITON_STARTED: Set[int] = set()
 _TRITON_LOCK = threading.Lock()
@@ -49,7 +51,9 @@ def resize_uint8_tensor_like_opencv(
 
     if image.device.type == "cuda":
         triton_resize = _get_triton_resize(image.device.index)
-        if triton_resize is not None:
+        if triton_resize is not None and _fits_triton_kernel(
+            image, height=height, width=width
+        ):
             with torch.cuda.device(image.device):
                 resized = triton_resize(image, height, width)
             return resized
@@ -79,39 +83,84 @@ def resize_uint8_tensor_like_opencv_eager(
     if (source_height, source_width) == (height, width):
         return image
 
-    pixels = image.to(torch.int32)
-    channels = image.shape[1]
-    if (
-        source_width == 2 * width
-        and source_height == 2 * height
-        and channels not in (1, 3, 4)
-    ):
+    if _is_half_without_fast_path(image, height=height, width=width):
         sums = (
-            pixels[:, :, 0::2, 0::2]
-            + pixels[:, :, 0::2, 1::2]
-            + pixels[:, :, 1::2, 0::2]
-            + pixels[:, :, 1::2, 1::2]
+            image[:, :, 0::2, 0::2].to(torch.int32)
+            + image[:, :, 0::2, 1::2]
+            + image[:, :, 1::2, 0::2]
+            + image[:, :, 1::2, 1::2]
         )
         resized = torch.round(sums.to(torch.float32) / 4).to(torch.uint8)
         return resized
 
-    x0, x1, alpha0, alpha1 = _opencv_linear_coefficients(
-        source_width, width, True, image.device
+    x0, x1, alpha0, alpha1 = stream_safe_linear_coefficients(
+        source_width, width, clamp_fraction=True, device=image.device
     )
-    y0, y1, beta0, beta1 = _opencv_linear_coefficients(
-        source_height, height, False, image.device
+    y0, y1, beta0, beta1 = stream_safe_linear_coefficients(
+        source_height, height, clamp_fraction=False, device=image.device
     )
-    rows0 = pixels[:, :, y0, :]
-    rows1 = pixels[:, :, y1, :]
-    horizontal0 = rows0[..., x0] * alpha0 + rows0[..., x1] * alpha1
-    horizontal1 = rows1[..., x0] * alpha0 + rows1[..., x1] * alpha1
-    vertical = (
-        (((horizontal0 >> 4) * beta0[:, None]) >> 16)
-        + (((horizontal1 >> 4) * beta1[:, None]) >> 16)
-        + 2
-    ) >> 2
-    resized = vertical.clamp(0, 255).to(torch.uint8)
+    vertical = None
+    for rows, beta in ((y0[:, None], beta0), (y1[:, None], beta1)):
+        horizontal = image[:, :, rows, x0].to(torch.int32) * alpha0
+        horizontal += image[:, :, rows, x1].to(torch.int32) * alpha1
+        horizontal >>= 4
+        horizontal *= beta[:, None]
+        horizontal >>= 16
+        if vertical is None:
+            vertical = horizontal
+        else:
+            vertical += horizontal
+    vertical += 2
+    vertical >>= 2
+    resized = vertical.clamp_(0, 255).to(torch.uint8)
     return resized
+
+
+def stream_safe_linear_coefficients(
+    source_size: int, target_size: int, *, clamp_fraction: bool, device: torch.device
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Cached OpenCV ``INTER_LINEAR`` indices and fixed-point weights for one axis.
+
+    The cached tensors are shared by every caller, so on CUDA they are recorded on
+    the current stream to keep their memory alive after a cache eviction until the
+    work queued on that stream has finished.
+
+    Args:
+        source_size: Source length along the axis.
+        target_size: Output length along the axis.
+        clamp_fraction: Zero the weight of the second sample at the borders, as
+            OpenCV does horizontally.
+        device: Device of the returned tensors.
+
+    Returns:
+        First and second source indices (int64) and their weights (int32).
+    """
+    coefficients = _opencv_linear_coefficients(
+        source_size, target_size, clamp_fraction, device
+    )
+    if device.type == "cuda":
+        stream = torch.cuda.current_stream(device)
+        for tensor in coefficients:
+            tensor.record_stream(stream)
+    return coefficients
+
+
+def _is_half_without_fast_path(image: torch.Tensor, *, height: int, width: int) -> bool:
+    source_height, source_width = image.shape[2], image.shape[3]
+    is_half = source_width == 2 * width and source_height == 2 * height
+    return is_half and image.shape[1] not in (1, 3, 4)
+
+
+def _fits_triton_kernel(image: torch.Tensor, *, height: int, width: int) -> bool:
+    batch, channels, source_height, source_width = image.shape
+    if (source_height, source_width) == (height, width) or image.numel() == 0:
+        return False
+
+    if _is_half_without_fast_path(image, height=height, width=width):
+        return False
+
+    column_blocks = (width + TRITON_RESIZE_BLOCK - 1) // TRITON_RESIZE_BLOCK
+    return batch * channels <= _CUDA_MAX_GRID_YZ and column_blocks <= _CUDA_MAX_GRID_YZ
 
 
 @lru_cache(maxsize=128)

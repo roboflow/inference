@@ -3,11 +3,9 @@ import triton
 import triton.language as tl
 
 from inference_models.models.common.roboflow.opencv_resize import (
-    _opencv_linear_coefficients,
-    resize_uint8_tensor_like_opencv_eager,
+    TRITON_RESIZE_BLOCK,
+    stream_safe_linear_coefficients,
 )
-
-_BLOCK = 256
 
 
 @triton.jit(
@@ -77,6 +75,9 @@ def resize_uint8_tensor_like_opencv_triton(
 ) -> torch.Tensor:
     """Triton twin of ``resize_uint8_tensor_like_opencv_eager`` for CUDA tensors.
 
+    Only for resizes that change the size, are not an exact 2x reduction of an
+    image with other than 1, 3 or 4 channels, and fit the CUDA grid limits.
+
     Args:
         image: ``N x C x H x W`` uint8 CUDA tensor, any strides.
         height: Output height.
@@ -86,28 +87,16 @@ def resize_uint8_tensor_like_opencv_triton(
         ``N x C x height x width`` uint8 tensor equal to the eager result.
     """
     batch, channels, source_height, source_width = image.shape
-    is_identity = (source_height, source_width) == (height, width)
-    is_half_without_fast_path = (
-        source_width == 2 * width
-        and source_height == 2 * height
-        and channels not in (1, 3, 4)
+    x0, x1, alpha0, alpha1 = stream_safe_linear_coefficients(
+        source_width, width, clamp_fraction=True, device=image.device
     )
-    if is_identity or is_half_without_fast_path or image.numel() == 0:
-        resized = resize_uint8_tensor_like_opencv_eager(
-            image, height=height, width=width
-        )
-        return resized
-
-    x0, x1, alpha0, alpha1 = _opencv_linear_coefficients(
-        source_width, width, True, image.device
-    )
-    y0, y1, beta0, beta1 = _opencv_linear_coefficients(
-        source_height, height, False, image.device
+    y0, y1, beta0, beta1 = stream_safe_linear_coefficients(
+        source_height, height, clamp_fraction=False, device=image.device
     )
     output = torch.empty(
         (batch, channels, height, width), dtype=torch.uint8, device=image.device
     )
-    grid = (height, triton.cdiv(width, _BLOCK), batch * channels)
+    grid = (height, triton.cdiv(width, TRITON_RESIZE_BLOCK), batch * channels)
     _resize_kernel[grid](
         image,
         output,
@@ -123,6 +112,6 @@ def resize_uint8_tensor_like_opencv_triton(
         height,
         width,
         *image.stride(),
-        BLOCK=_BLOCK,
+        BLOCK=TRITON_RESIZE_BLOCK,
     )
     return output
