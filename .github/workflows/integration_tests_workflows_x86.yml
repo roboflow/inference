@@ -121,4 +121,8 @@ jobs:
           KAFKA_TEST_BOOTSTRAP_SERVERS: "localhost:9092"
         run: USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests --ignore=tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py --ignore=tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
       - name: 🧪 Integration Tests of Workflows (Modal, staging)
+        # This step does not read matrix.use-inference-models, so both legs ran the
+        # same tests. Run it once per Python version, on the "true" leg unless a
+        # manual dispatch selected only "false".
+        if: ${{ matrix.use-inference-models == 'true' || inputs.use-inference-models == 'false' }}
         run: PROJECT=roboflow-staging MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test python -m pytest tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
