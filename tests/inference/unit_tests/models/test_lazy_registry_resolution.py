@@ -15,32 +15,11 @@ from unittest.mock import Mock
 import pytest
 
 
-def test_registry_import_defers_model_implementations():
-    """Keep implementation imports out of a fresh registry process."""
-    probe = """
-import json
-import sys
-from inference.models.utils import ROBOFLOW_MODEL_TYPES
-assert ('object-detection', 'yolov8n') in ROBOFLOW_MODEL_TYPES
-prefixes = ('transformers', 'peft', 'inference.models.yolov8',
-            'inference.core.models.inference_models_adapters')
-print(json.dumps([name for name in sys.modules
-                  if any(name == p or name.startswith(p + '.') for p in prefixes)]))
-"""
-    process = subprocess.run(
-        [sys.executable, "-c", probe],
-        capture_output=True,
-        text=True,
-        check=True,
-        env={**os.environ, "DISABLE_VERSION_CHECK": "True"},
-    )
-    assert json.loads(process.stdout.strip().splitlines()[-1]) == []
-
-
 @pytest.mark.parametrize("use_adapters", [False, True])
 @pytest.mark.parametrize("use_proxy", [False, True])
 @pytest.mark.parametrize(
-    "sam3_enabled", [False, pytest.param(True, marks=pytest.mark.slow)]
+    "sam3_enabled",
+    [False, pytest.param(True, marks=[pytest.mark.slow, pytest.mark.sam3_extras])],
 )
 def test_every_registry_key_imports_its_real_class(
     monkeypatch, use_adapters, use_proxy, sam3_enabled
@@ -53,6 +32,7 @@ def test_every_registry_key_imports_its_real_class(
         use_proxy: Whether to select vLLM proxies.
         sam3_enabled: Enable SAM3 when its full dependency stack is installed.
     """
+    from inference import models
     from inference.core import env
     from inference.core.registries.lazy import _LazyModelRegistry
     from inference.models import utils, vllm_proxy
@@ -67,6 +47,15 @@ def test_every_registry_key_imports_its_real_class(
     monkeypatch.setattr(env, "SAM3_3D_OBJECTS_ENABLED", sam3_enabled)
     monkeypatch.setattr(env, "USE_INFERENCE_MODELS", use_adapters)
     monkeypatch.setattr(vllm_proxy, "VLLM_PROXY_ENABLED", use_proxy)
+    # The package export flags are captured before this test changes env flags.
+    monkeypatch.setattr(models, "CORE_MODELS_ENABLED", True)
+    for name in (
+        "SegmentAnything3",
+        "Sam3ForInteractiveImageSegmentation",
+        "SegmentAnything3_3D_Objects",
+    ):
+        module_path, _ = models.CORE_MODELS[name]
+        monkeypatch.setitem(models.CORE_MODELS, name, (module_path, sam3_enabled))
     registry = runpy.run_path(utils.__file__)["ROBOFLOW_MODEL_TYPES"]
     assert isinstance(registry, _LazyModelRegistry)
     expected = {
@@ -110,7 +99,10 @@ def test_every_registry_key_imports_its_real_class(
         module_path, class_name = path.split(":", 1)
         try:
             getattr(importlib.import_module(module_path), class_name)
-        except (ImportError, AttributeError):
+        except (ImportError, AttributeError) as error:
+            if sam3_enabled and key[1] in {"sam3", "sam3-large", "sam3-3d-objects"}:
+                pytest.fail(f"Full SAM3 extras unavailable for {key}: {error}")
+
             fallback = fallback_paths.get(key) if use_adapters else None
             if fallback is None or fallback == path:
                 continue

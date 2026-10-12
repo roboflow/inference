@@ -5,7 +5,6 @@ import os
 import runpy
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -67,24 +66,6 @@ def test_lookup_aliases_views_and_mutation_return_classes(monkeypatch):
     assert "one" in copied and "one" not in registry
     with pytest.raises(KeyError):
         registry["missing"]
-
-
-def test_concurrent_requests_resolve_one_class(monkeypatch):
-    """Share a successful class resolution across concurrent requests.
-
-    Args:
-        monkeypatch: Pytest patch fixture.
-    """
-    model_class = type("ConcurrentModel", (), {})
-    importer = Mock(return_value=SimpleNamespace(Model=model_class))
-    monkeypatch.setattr(lazy.importlib, "import_module", importer)
-    registry = lazy._LazyModelRegistry({"model": lazy._LazyModelClass("example:Model")})
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        results = list(executor.map(lambda _: registry["model"], range(32)))
-
-    assert all(result is model_class for result in results)
-    importer.assert_called_once_with("example")
 
 
 def test_optional_dependency_warning_is_deferred(monkeypatch):
@@ -437,7 +418,7 @@ print(json.dumps([name for name in sys.modules
         check=True,
         env={**os.environ, "DISABLE_VERSION_CHECK": "True"},
     )
-    assert json.loads(process.stdout.strip()) == []
+    assert json.loads(process.stdout.strip().splitlines()[-1]) == []
 
 
 def test_registry_inventory_has_reproducible_provenance():

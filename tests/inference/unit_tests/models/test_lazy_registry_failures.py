@@ -54,3 +54,36 @@ def test_failed_import_is_cached_across_aliases_and_copies(
 
     importer.assert_called_once_with("missing")
     assert len(caught) == 1
+
+
+@pytest.mark.parametrize("membership", [False, True])
+def test_cached_import_failure_keeps_a_bounded_traceback(monkeypatch, membership):
+    """Avoid retaining earlier request frames when a model stays unavailable.
+
+    Args:
+        monkeypatch: Pytest patch fixture.
+        membership: Whether to probe availability rather than request the model.
+    """
+    importer = Mock(side_effect=ModuleNotFoundError("missing dependency"))
+    monkeypatch.setattr(lazy.importlib, "import_module", importer)
+    reference = lazy._LazyModelClass("missing:Model", optional=True)
+    key = ("task", "missing")
+    registry = lazy._LazyModelRegistry({key: reference})
+    lengths = []
+    for _ in range(100):
+        if membership:
+            assert key not in registry
+        else:
+            with pytest.raises(KeyError):
+                registry[key]
+
+        traceback = reference._failure.__traceback__
+        length = 0
+        while traceback is not None:
+            length += 1
+            traceback = traceback.tb_next
+
+        lengths.append(length)
+
+    assert max(lengths[1:]) <= lengths[0]
+    importer.assert_called_once_with("missing")

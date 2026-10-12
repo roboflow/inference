@@ -70,7 +70,8 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
-        run: python -m pytest -n auto --dist loadfile tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
+        # The CPU dependency profile does not install SAM3/SAM3D extras.
+        run: python -m pytest -n auto --dist loadfile -m "not sam3_extras" tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5
         run: python -m pytest tests/development/profiling

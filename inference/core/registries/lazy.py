@@ -35,7 +35,7 @@ class _LazyModelClass:
     def _resolve(self) -> Any:
         with self._lock:
             if self._failure is not None:
-                raise self._failure
+                raise self._failure.with_traceback(None)
 
             if self._resolved is None:
                 try:
