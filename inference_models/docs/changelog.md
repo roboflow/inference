@@ -4,6 +4,16 @@
 
 ### Added
 
+- `INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV` (default `true`). The shared
+  Roboflow stretch, letterbox and fit-longer-edge preprocessor now resizes uint8
+  tensors with OpenCV-compatible values. CPU tensors use `cv2.resize`; CUDA
+  tensors target OpenCV's generic fixed-point `INTER_LINEAR` arithmetic, which
+  can differ from platform-specific OpenCV implementations. Triton activates
+  after matching the eager torch reference bit-for-bit; pending preparation,
+  unsupported inputs and recognized Triton JIT failures use that same reference.
+  Same-size tensors bypass resizing and Triton preparation. Set the flag to
+  `false` to retain the previous PyTorch bilinear resize. Float tensors, NumPy
+  preprocessing and RF-DETR's separate Pillow resize are unaffected by the flag.
 - `INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK` and
   `INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK` let a deployment that
   has no explicit `RFDetrExecutionPlan` reject RF-DETR stage fallback. Both
@@ -11,6 +21,10 @@
 
 ### Fixed
 
+- Histogram equalization of torch-tensor inputs returns `uint8` values like the
+  numpy path instead of keeping float output. On the RF-DETR float `[0, 1]` path
+  the result is rescaled, which also stops adaptive equalization from crashing
+  and histogram equalization from returning out-of-range values.
 - Letterbox resizing of lists of torch tensors computes the target size and
   padding with the same arithmetic as single images and the numpy path.
   Previously float32 arithmetic could make the resized size one pixel off.

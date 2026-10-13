@@ -5,7 +5,7 @@ answer: ``predictions``, ``error_status`` and ``inference_id`` outputs sit
 next to the raw ``output`` string, so no separate "VLM as Detector" /
 "VLM as Classifier" step is needed.
 
-OpenRouter-only. Four Muse models, using the vlm-exam request contract:
+OpenRouter-only. Five Muse models, using the vlm-exam request contract:
 image-first user message, no system role, reasoning always on, and the
 shared ``named_0_1000`` detection contract (flat ``x_min`` / ``y_min`` /
 ``x_max`` / ``y_max`` integers normalized to 0-1000). Llama Vision stays
@@ -72,7 +72,9 @@ from roboflow_workflows.prototypes.block import (
 )
 from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes
 
-# Spark `none` is HTTP 400. Glimmer has no `minimal`.
+# Spark and Wonder `none` is HTTP 400. Glimmer has no `minimal`.
+# Wonder probed live on 2026-10-13: `none` rejected ("Reasoning is
+# mandatory for this endpoint"), `minimal` through `xhigh` accepted.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     "Muse Spark 1.1": {
         "model_id": "meta/muse-spark-1.1",
@@ -90,6 +92,10 @@ MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
         "model_id": "meta/muse-glimmer-30b",
         "reasoning_levels": ["low", "medium", "high", "xhigh"],
     },
+    "Muse Wonder": {
+        "model_id": "meta/muse-wonder",
+        "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
+    },
 }
 
 MODEL_IDS = {label: variant["model_id"] for label, variant in MODEL_VARIANTS.items()}
@@ -104,7 +110,7 @@ MODEL_VERSION_METADATA = attach_reasoning_levels(
 )
 
 ModelVersion = Literal[tuple(MODEL_VARIANTS.keys())]
-DEFAULT_MODEL_VERSION = "Muse Spark 1.3"
+DEFAULT_MODEL_VERSION = "Muse Wonder"
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
@@ -116,8 +122,8 @@ REASONING_EFFORT_METADATA = {
     "minimal": {
         "name": "Minimal",
         "description": (
-            "Shortest reasoning pass. Supported by Muse Spark models only — "
-            "Muse Glimmer starts at low."
+            "Shortest reasoning pass. Supported by Muse Spark and Muse Wonder "
+            "— Muse Glimmer starts at low."
         ),
     },
     "low": {
@@ -412,7 +418,8 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 LONG_DESCRIPTION = f"""
 Run Meta Muse vision-language models via [OpenRouter](https://openrouter.ai/).
 
-Supported models: Muse Spark 1.1, Muse Spark 1.2, Muse Spark 1.3, and Muse Glimmer.
+Supported models: Muse Spark 1.1, Muse Spark 1.2, Muse Spark 1.3, Muse Glimmer,
+and Muse Wonder (the default).
 Llama 3.2 Vision stays on its own block.
 
 You can specify arbitrary text prompts or predefined ones. The block supports:
@@ -468,6 +475,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 "Muse",
                 "Spark",
                 "Glimmer",
+                "Wonder",
                 "OpenRouter",
             ],
             "is_vlm_block": True,
@@ -485,10 +493,11 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
         default=DEFAULT_MODEL_VERSION,
         description=(
-            "Muse model to run. Spark 1.1, Spark 1.2, Spark 1.3, and Glimmer "
-            "are the current image-capable Muse chat models on OpenRouter."
+            "Muse model to run. Spark 1.1, Spark 1.2, Spark 1.3, Glimmer, and "
+            "Wonder are the current image-capable Muse chat models on "
+            "OpenRouter. Wonder is the default."
         ),
-        examples=[DEFAULT_MODEL_VERSION, "Muse Glimmer"],
+        examples=[DEFAULT_MODEL_VERSION, "Muse Spark 1.3"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },
@@ -552,7 +561,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
             "Reasoning budget. Muse models reject disabled reasoning, so this "
             "is always sent as an effort. Low is the default used in the "
             "vlm-exam benches. Supported values differ per model (see the "
-            "model dropdown): 'minimal' is Spark-only."
+            "model dropdown): 'minimal' is not available on Glimmer."
         ),
         json_schema_extra={"values_metadata": REASONING_EFFORT_METADATA},
     )

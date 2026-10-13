@@ -9,6 +9,7 @@ from PIL.Image import Image
 from skimage import exposure
 from torchvision.transforms import functional
 
+from inference_models.configuration import INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.logger import LOGGER
@@ -24,6 +25,9 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     StaticCrop,
     StaticCropOffset,
+)
+from inference_models.models.common.roboflow.opencv_resize import (
+    resize_uint8_tensor_like_opencv,
 )
 
 
@@ -480,7 +484,9 @@ def apply_histogram_equalization_to_torch_image(image: torch.Tensor) -> torch.Te
     for single_image in image:
         single_image_numpy = np.transpose(single_image.cpu().numpy(), (1, 2, 0))
         single_image_numpy = single_image_numpy.astype(np.float32) / 255
-        image_equalized = exposure.equalize_hist(single_image_numpy) * 255
+        image_equalized = (exposure.equalize_hist(single_image_numpy) * 255).astype(
+            np.uint8
+        )
         results.append(torch.from_numpy(image_equalized).to(original_device))
     return torch.stack(results, dim=0).permute(0, 3, 1, 2)
 
@@ -490,6 +496,25 @@ CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH = {
     ContrastType.CONTRAST_STRETCHING: apply_contrast_stretching_to_torch_image,
     ContrastType.HISTOGRAM_EQUALIZATION: apply_histogram_equalization_to_torch_image,
 }
+
+
+def _resize_image_tensor(
+    image: torch.Tensor, *, height: int, width: int
+) -> torch.Tensor:
+    if INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV and image.dtype == torch.uint8:
+        image = resize_uint8_tensor_like_opencv(image, height=height, width=width)
+        if image.device.type == "cuda":
+            image = image.float()
+        return image
+
+    if image.device.type == "cuda":
+        image = image.float()
+    resized = torch.nn.functional.interpolate(
+        image,
+        size=[height, width],
+        mode="bilinear",
+    )
+    return resized
 
 
 def handle_tensor_input_preparation_with_stretch(
@@ -503,12 +528,8 @@ def handle_tensor_input_preparation_with_stretch(
     size_after_pre_processing = ImageDimensions(
         height=image.shape[2], width=image.shape[3]
     )
-    if image.device.type == "cuda":
-        image = image.float()
-    image = torch.nn.functional.interpolate(
-        image,
-        size=[target_size.height, target_size.width],
-        mode="bilinear",
+    image = _resize_image_tensor(
+        image, height=target_size.height, width=target_size.width
     )
     if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
@@ -556,13 +577,7 @@ def handle_torch_input_preparation_with_letterbox(
     new_height = int(original_height * scale)
     pad_top = int((target_size.height - new_height) / 2)
     pad_left = int((target_size.width - new_width) / 2)
-    if image.device.type == "cuda":
-        image = image.float()
-    image = torch.nn.functional.interpolate(
-        image,
-        [new_height, new_width],
-        mode="bilinear",
-    )
+    image = _resize_image_tensor(image, height=new_height, width=new_width)
     if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
     final_batch = torch.full(
@@ -718,12 +733,8 @@ def handle_torch_input_preparation_fitting_longer_edge(
         height=actual_target_height,
         width=actual_target_width,
     )
-    if image.device.type == "cuda":
-        image = image.float()
-    image = torch.nn.functional.interpolate(
-        image,
-        [actual_target_size.height, actual_target_size.width],
-        mode="bilinear",
+    image = _resize_image_tensor(
+        image, height=actual_target_size.height, width=actual_target_size.width
     )
     if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
@@ -853,12 +864,8 @@ def handle_tensor_list_input_preparation_with_stretch(
         )
         if input_color_mode != network_input.color_mode:
             img = img[:, [2, 1, 0], :, :]
-        if img.device.type == "cuda":
-            img = img.float()
-        img = torch.nn.functional.interpolate(
-            img,
-            size=[target_size.height, target_size.width],
-            mode="bilinear",
+        img = _resize_image_tensor(
+            img, height=target_size.height, width=target_size.width
         )
         if network_input.scaling_factor is not None:
             img = img / network_input.scaling_factor
@@ -925,13 +932,7 @@ def handle_tensor_list_input_preparation_with_letterbox(
         new_h_i = int(size_after_pre_processing.height * scale)
         pad_top_i = int((target_size.height - new_h_i) / 2)
         pad_left_i = int((target_size.width - new_w_i) / 2)
-        if img.device.type == "cuda":
-            img = img.float()
-        img = torch.nn.functional.interpolate(
-            img,
-            size=[new_h_i, new_w_i],
-            mode="bilinear",
-        )
+        img = _resize_image_tensor(img, height=new_h_i, width=new_w_i)
         final_batch[
             i, :, pad_top_i : pad_top_i + new_h_i, pad_left_i : pad_left_i + new_w_i
         ] = img
