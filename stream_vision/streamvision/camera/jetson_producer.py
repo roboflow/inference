@@ -327,6 +327,18 @@ def _v4l2_capture_chain(properties: Dict[str, Union[float, str]]) -> str:
         if number <= 0 or (caps_name != "framerate" and number.denominator != 1):
             raise ValueError(f"Invalid V4L2 {property_name}: {value!r}")
 
+        if caps_name == "framerate":
+            # Rounded UI rates must match the exact fractions advertised by UVC.
+            standard_rates = (
+                Fraction(24000, 1001),
+                Fraction(30000, 1001),
+                Fraction(60000, 1001),
+                Fraction(round(number)),
+            )
+            nearest = min(standard_rates, key=lambda rate: abs(rate - number))
+            if nearest > 0 and abs(nearest - number) <= Fraction(1, 1000):
+                number = nearest
+
         caps_value = (
             f"{number.numerator}/{number.denominator}"
             if caps_name == "framerate"
@@ -344,7 +356,7 @@ def _v4l2_capture_chain(properties: Dict[str, Union[float, str]]) -> str:
             f"{media}{suffix}"
             for media in ("video/x-raw", "image/jpeg", "video/x-h264", "video/x-h265")
         )
-        return f"{caps} ! decodebin ! "
+        return f'capsfilter caps="{caps}" ! decodebin ! '
 
     parsed = parse_fourcc(properties["fourcc"])
     if parsed is None:
@@ -600,6 +612,14 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
 
     @property
     def tensor_bridge_stats(self) -> Dict[str, int]:
+        """Return bridge diagnostics while native capture is active.
+
+        Returns:
+            Bridge counters, or an empty dictionary before startup/after release.
+        """
+        if self._native_pipeline is None or self._closed:
+            return {}
+
         return self._native_pipeline.stats()
 
     def _validate_hardware_decoder(self) -> None:

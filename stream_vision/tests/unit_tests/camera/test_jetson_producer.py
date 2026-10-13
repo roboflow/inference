@@ -347,13 +347,85 @@ def test_v4l2_unspecified_format_keeps_size_and_fractional_rate_on_each_media_ty
         video_source_properties={"FRAME_WIDTH": "1280", "FPS": 30000 / 1001},
     )
 
-    caps = pipeline.split(" ! ")[1].split(";")
+    caps_filter = pipeline.split(" ! ")[1]
+    assert caps_filter.startswith('capsfilter caps="')
+    assert caps_filter.endswith('"')
+    caps = caps_filter.removeprefix('capsfilter caps="').removesuffix('"').split(";")
     assert set(caps) == {
         f"{media},width=1280,framerate=30000/1001"
         for media in ("video/x-raw", "image/jpeg", "video/x-h264", "video/x-h265")
     }
     assert " ! decodebin ! queue" in pipeline
     assert "height=" not in pipeline
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [{"fps": 30}, {"frame_width": 1280, "frame_height": 720}],
+)
+def test_v4l2_unspecified_format_builds_real_gstreamer_pipeline(properties):
+    gi = pytest.importorskip("gi", reason="GStreamer Python bindings unavailable")
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst
+
+    Gst.init(None)
+    if not all(Gst.ElementFactory.find(name) for name in ("v4l2src", "decodebin")):
+        pytest.skip("GStreamer camera/decode plugins unavailable")
+
+    pipeline = build_gstreamer_pipeline(0, video_source_properties=properties)
+    # Parse the real capture/decode chain without Jetson-only conversion elements.
+    capture = pipeline.split(" ! queue", 1)[0]
+    parsed = Gst.parse_launch(f"{capture} ! fakesink")
+    try:
+        filters = parsed.iterate_recurse()
+        camera_caps = None
+        while True:
+            status, element = filters.next()
+            if status != Gst.IteratorResult.OK:
+                break
+
+            if element.get_factory().get_name() == "capsfilter":
+                camera_caps = element.get_property("caps")
+                break
+
+        assert camera_caps is not None
+        assert camera_caps.get_size() == 4
+        assert {camera_caps.get_structure(i).get_name() for i in range(4)} == {
+            "video/x-raw",
+            "image/jpeg",
+            "video/x-h264",
+            "video/x-h265",
+        }
+        expected = Gst.Caps.from_string(
+            "video/x-raw,framerate=30/1"
+            if "fps" in properties
+            else "video/x-raw,width=1280,height=720"
+        )
+        assert camera_caps.get_structure(0).is_equal(expected.get_structure(0))
+    finally:
+        parsed.set_state(Gst.State.NULL)
+
+
+@pytest.mark.parametrize("fourcc", [None, "MJPG"])
+@pytest.mark.parametrize(
+    "fps,rate",
+    [
+        (23.976, "24000/1001"),
+        (29.97, "30000/1001"),
+        (59.94, "60000/1001"),
+        (30000 / 1001, "30000/1001"),
+        (30, "30/1"),
+        (29.5, "59/2"),
+    ],
+)
+def test_v4l2_requested_rate_matches_advertised_camera_fraction(fourcc, fps, rate):
+    properties = {"fps": fps}
+    if fourcc is not None:
+        properties["fourcc"] = fourcc
+
+    pipeline = build_gstreamer_pipeline(0, video_source_properties=properties)
+
+    assert f"framerate={rate}" in pipeline
 
 
 @pytest.mark.parametrize(
@@ -417,6 +489,16 @@ def test_camera_is_opened_only_after_requested_properties_are_applied(monkeypatc
     assert opened[0].grab_calls == 2
     producer.release()
     assert opened[0].closed
+
+
+def test_camera_stats_are_safe_before_deferred_open_and_after_release(monkeypatch):
+    producer, opened = _camera_producer_with_fake_bridge(monkeypatch)
+
+    assert producer.tensor_bridge_stats == {}
+    assert not opened
+    producer.release()
+    assert producer.tensor_bridge_stats == {}
+    assert not opened
 
 
 def test_direct_camera_grab_without_properties_still_opens_default_pipeline(
