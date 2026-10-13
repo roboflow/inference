@@ -220,7 +220,8 @@ class StabilityAIClient:
         )
         if response.status_code != 200:
             raise StabilityAIError(
-                f"HTTP {response.status_code} from {path}: {_error_detail(response)}"
+                f"HTTP {response.status_code} from {path}: "
+                f"{_error_detail(response, api_key=api_key)}"
             )
 
         return response.content
@@ -809,7 +810,8 @@ def _request_image(
     try:
         payload = client.post(path, api_key=revealed.value, data=data, files=files)
     except Exception as error:
-        failure = revealed.scrub(f"{type(error).__name__}: {error}")
+        scrubbed = revealed.scrub(f"{type(error).__name__}: {error}")
+        failure = scrubbed[:ERROR_DETAIL_LIMIT]
     if failure is not None:
         raise StabilityAIError(f"{block}: Stability AI request failed: {failure}")
 
@@ -851,13 +853,16 @@ def _jpeg_host(array: np.ndarray) -> bytes:
     return encoded
 
 
-def _error_detail(response: Any) -> str:
+def _error_detail(response: Any, *, api_key: str) -> str:
     try:
         detail = str(response.json())
     except ValueError:
         detail = response.text
 
-    shortened = detail[:ERROR_DETAIL_LIMIT]
+    # Scrub the complete response first: slicing a key at the cutoff would
+    # leave a prefix that exact-match scrubbing can no longer recognize.
+    revealed = reveal_secrets(to_secret(api_key, name="api_key"))
+    shortened = revealed.scrub(detail)[:ERROR_DETAIL_LIMIT]
 
     return shortened
 

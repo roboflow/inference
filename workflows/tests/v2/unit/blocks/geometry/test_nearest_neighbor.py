@@ -1,11 +1,18 @@
 """Unit tests of ``v2/detections_nearest_neighbor@v1`` with hand-computed distances."""
 
+from copy import deepcopy
+from dataclasses import replace
+from datetime import datetime, timezone
+
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.geometry.nearest_neighbor import (
     DetectionsNearestNeighborBlock,
 )
+from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.data.errors import ContractError
+from roboflow_workflows.v2.data.frames import FrameRef
+from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import row_record, with_row_identity
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
@@ -211,3 +218,293 @@ def test_negative_max_distance_is_rejected():
                 "max_distance": -1,
             }
         )
+
+
+def frame_image():
+    return ImageData.from_tensor(
+        torch.zeros((3, 100, 200), dtype=torch.uint8), image_id="root"
+    )
+
+
+@pytest.mark.parametrize("other_frame", ["crop", "resize", "camera"])
+def test_known_different_local_frames_are_rejected(other_frame):
+    root = frame_image()
+    target_image = {
+        "crop": root.crop((100, 0, 200, 100)),
+        "resize": root.resize((50, 100)),
+        "camera": replace(root, image_id="other-camera"),
+    }[other_frame]
+    query = boxes_centred_at([(110, 10)])
+    target = boxes_centred_at([(10, 10) if other_frame == "crop" else (110, 10)])
+    query.image_metadata = root.prediction_metadata()
+    target.image_metadata = target_image.prediction_metadata()
+    query_before = deepcopy(query.image_metadata)
+    target_before = deepcopy(target.image_metadata)
+
+    with pytest.raises(ContractError, match="same local pixel frame"):
+        run(query, target, max_distance=5)
+
+    assert query.image_metadata == query_before
+    assert target.image_metadata == target_before
+    assert query.bboxes_metadata == [{"name": "row-0"}]
+
+
+@pytest.mark.parametrize("mapping_name", ["parent", "root"])
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("scale_xy", (2.0, 1.0)),
+        ("offset_xy", (1.0, 0.0)),
+        ("frame_id", "other"),
+        ("frame_size_hw", (100, 201)),
+    ],
+)
+def test_mapping_conflicts_are_detected_even_with_the_same_image_id(
+    mapping_name, field, value
+):
+    frame = FrameRef.from_image(frame_image())
+    mapping = replace(getattr(frame, mapping_name), **{field: value})
+    changed = replace(frame, **{mapping_name: mapping})
+    query, target = boxes_centred_at([(0, 0)]), boxes_centred_at([(0, 0)])
+    query.image_metadata = frame.prediction_metadata()
+    target.image_metadata = changed.prediction_metadata()
+
+    with pytest.raises(ContractError, match=rf"conflicting {mapping_name}\."):
+        run(query, target)
+
+
+@pytest.mark.parametrize(
+    "field, value", [("image_id", "other"), ("size_hw", (100, 201))]
+)
+def test_local_identity_and_size_conflicts_are_detected(field, value):
+    frame = FrameRef.from_image(frame_image())
+    query, target = boxes_centred_at([(0, 0)]), boxes_centred_at([(0, 0)])
+    query.image_metadata = frame.prediction_metadata()
+    target.image_metadata = replace(frame, **{field: value}).prediction_metadata()
+
+    with pytest.raises(ContractError, match=f"conflicting {field}"):
+        run(query, target)
+
+
+def test_known_source_conflict_is_detected_with_the_same_geometry_and_image_id():
+    video = VideoMetadata(
+        video_identifier="camera-a",
+        frame_number=3,
+        frame_timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    frame = replace(FrameRef.from_image(frame_image()), video_metadata=video)
+    other = replace(
+        frame, video_metadata=video.model_copy(update={"video_identifier": "camera-b"})
+    )
+    query, target = boxes_centred_at([(0, 0)]), boxes_centred_at([(0, 0)])
+    query.image_metadata = frame.prediction_metadata()
+    target.image_metadata = other.prediction_metadata()
+
+    with pytest.raises(ContractError, match="conflicting video_identifier"):
+        run(query, target)
+
+
+@pytest.mark.parametrize(
+    "limit, expected_distance, expected_rows",
+    [(4, None, []), (5, 5.0, [0]), (6, 5.0, [0, 1]), (None, 5.0, [0, 1])],
+)
+def test_equivalent_separate_frame_metadata_keeps_distances_ties_masks_and_identity(
+    limit, expected_distance, expected_rows
+):
+    query = boxes_centred_at([(0, 0)], masks=True)
+    target = boxes_centred_at([(3, 4), (6, 0), (6.1, 0)], masks=True)
+    image = ImageData.from_tensor(
+        torch.zeros((3, 30, 30), dtype=torch.uint8), image_id="same-frame"
+    )
+    frame = FrameRef.from_image(image)
+    query.image_metadata = frame.prediction_metadata()
+    target.image_metadata = frame.prediction_metadata()
+    assert query.image_metadata == target.image_metadata
+    assert query.image_metadata is not target.image_metadata
+    query, target = with_row_identity(query), with_row_identity(target)
+    metadata_before = deepcopy(query.image_metadata)
+
+    result = run(query, target, max_distance=limit)
+
+    assert distances(result["query_predictions"]) == [expected_distance]
+    assert result["query_predictions"] is not query
+    assert torch.equal(result["query_predictions"].xyxy, query.xyxy)
+    assert query.image_metadata == metadata_before
+    assert query.bboxes_metadata == [{"name": "row-0"}]
+    for key, original, indices in [
+        ("matched_query_detections", query, [0] * len(expected_rows)),
+        ("matched_target_detections", target, expected_rows),
+    ]:
+        matched = result[key]
+        assert type(matched) is type(original)
+        assert matched.xyxy.tolist() == original.xyxy[indices].tolist()
+        assert torch.equal(matched.mask, original.mask[indices])
+        assert row_record(matched).namespace == row_record(original).namespace
+        assert row_record(matched).host_ids() == indices
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        None,
+        {},
+        {"parent_id": None},
+        {"image_dimensions": [50, 100]},
+        {"root_parent_id": "root"},
+        {"root_parent_coordinates": [0, 0]},
+        {"scaling_relative_to_root_parent": None},
+        {"scaling_relative_to_root_parent": [0.5, 0.5]},
+    ],
+)
+def test_missing_and_partial_metadata_remains_unknown(metadata):
+    query, target = boxes_centred_at([(0, 0)]), boxes_centred_at([(3, 4)])
+    # Local pixels count twice in the root. An absent legacy scale is unknown,
+    # not the identity scale assumed by the complete-frame conversion reader.
+    query.image_metadata = frame_image().resize((50, 100)).prediction_metadata()
+    target.image_metadata = metadata
+
+    result = run(query, target, max_distance=5)
+
+    assert distances(result["query_predictions"]) == [5.0]
+
+
+def test_conflicting_partial_metadata_is_rejected():
+    query, target = boxes_centred_at([(0, 0)]), boxes_centred_at([(0, 0)])
+    query.image_metadata = {"root_parent_coordinates": [0, 0]}
+    target.image_metadata = {"root_parent_coordinates": [1, 0]}
+
+    with pytest.raises(ContractError, match="conflicting root.offset_xy"):
+        run(query, target)
+
+
+def test_typed_record_and_legacy_mirror_must_agree():
+    query, target = boxes_centred_at([(0, 0)]), boxes_centred_at([(0, 0)])
+    query.image_metadata = frame_image().prediction_metadata()
+    query.image_metadata["root_parent_coordinates"] = [1, 0]
+
+    with pytest.raises(ContractError, match="legacy root.offset_xy disagrees"):
+        run(query, target)
+
+
+@pytest.mark.parametrize("side", ["query", "target"])
+@pytest.mark.parametrize("point", ["CENTER", "KEYPOINT"])
+def test_tuple_keypoint_and_box_frames_must_agree_for_either_anchor(side, point):
+    boxes = boxes_centred_at([(0, 0)])
+    boxes.image_metadata = frame_image().prediction_metadata()
+    skeletons = KeyPoints(
+        xy=torch.zeros((1, 1, 2)),
+        class_id=torch.tensor([0]),
+        confidence=torch.ones((1, 1)),
+        image_metadata={
+            **frame_image().crop((100, 0, 200, 100)).prediction_metadata(),
+            "key_points_classes": [["nose"]],
+        },
+    )
+    other = boxes_centred_at([(0, 0)])
+    query, target = (
+        ((skeletons, boxes), other) if side == "query" else (other, (skeletons, boxes))
+    )
+
+    with pytest.raises(ContractError, match="same local pixel frame"):
+        run(query, target, **{f"{side}_point": point, f"{side}_keypoint_name": "nose"})
+
+
+def test_keypoint_anchor_frame_is_checked_when_boxes_have_no_frame():
+    boxes = boxes_centred_at([(0, 0)])
+    skeletons = KeyPoints(
+        xy=torch.zeros((1, 1, 2)),
+        class_id=torch.tensor([0]),
+        confidence=torch.ones((1, 1)),
+        image_metadata={
+            **frame_image().crop((100, 0, 200, 100)).prediction_metadata(),
+            "key_points_classes": [["nose"]],
+        },
+    )
+    target = boxes_centred_at([(0, 0)])
+    target.image_metadata = frame_image().prediction_metadata()
+
+    with pytest.raises(ContractError, match="same local pixel frame"):
+        run(
+            (skeletons, boxes),
+            target,
+            query_point="KEYPOINT",
+            query_keypoint_name="nose",
+        )
+
+
+def test_equivalent_keypoint_and_box_frames_keep_keypoints_and_rows():
+    query = boxes_centred_at([(50, 50)])
+    target = boxes_centred_at([(3, 8)])
+    metadata = frame_image().prediction_metadata()
+    query.image_metadata = deepcopy(metadata)
+    target.image_metadata = deepcopy(metadata)
+    query, target = with_row_identity(query), with_row_identity(target)
+    skeletons = KeyPoints(
+        xy=torch.tensor([[[3.0, 4.0]]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.ones((1, 1)),
+        image_metadata={**deepcopy(metadata), "key_points_classes": [["nose"]]},
+    )
+
+    result = run(
+        (skeletons, query), target, query_point="KEYPOINT", query_keypoint_name="nose"
+    )
+
+    assert result["query_predictions"][0] is skeletons
+    assert distances(result["query_predictions"][1]) == [4.0]
+    matched_keypoints, matched_boxes = result["matched_query_detections"]
+    assert torch.equal(matched_keypoints.xy, skeletons.xy)
+    assert row_record(matched_boxes).namespace == row_record(query).namespace
+    assert row_record(matched_boxes).host_ids() == [0]
+
+
+@pytest.mark.parametrize("empty_side", ["query", "target"])
+def test_empty_inputs_keep_no_pairs_even_with_different_frame_metadata(empty_side):
+    query = boxes_centred_at([] if empty_side == "query" else [(110, 10)])
+    target = boxes_centred_at([] if empty_side == "target" else [(10, 10)])
+    query.image_metadata = frame_image().prediction_metadata()
+    target.image_metadata = frame_image().crop((100, 0, 200, 100)).prediction_metadata()
+
+    result = run(query, target)
+
+    assert len(result["matched_query_detections"].xyxy) == 0
+    assert len(result["matched_target_detections"].xyxy) == 0
+    assert distances(result["query_predictions"]) == (
+        [] if empty_side == "query" else [None]
+    )
+
+
+@pytest.mark.parametrize("unknown_field", ["image_id", "video_metadata"])
+def test_unknown_typed_identity_or_source_does_not_prove_a_conflict(unknown_field):
+    video = VideoMetadata(
+        video_identifier="camera-a",
+        frame_number=3,
+        frame_timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    frame = replace(FrameRef.from_image(frame_image()), video_metadata=video)
+    query, target = boxes_centred_at([(0, 0)]), boxes_centred_at([(3, 4)])
+    query.image_metadata = frame.prediction_metadata()
+    target.image_metadata = replace(
+        frame, **{unknown_field: None}
+    ).prediction_metadata()
+
+    assert distances(run(query, target)["query_predictions"]) == [5.0]
+
+
+def test_disjoint_partial_frame_fields_do_not_prove_a_conflict():
+    query, target = boxes_centred_at([(0, 0)]), boxes_centred_at([(3, 4)])
+    query.image_metadata = {"parent_id": "known-image"}
+    target.image_metadata = {"root_parent_coordinates": [7, 9]}
+
+    assert distances(run(query, target)["query_predictions"]) == [5.0]
+
+
+def test_same_known_frame_and_row_identity_still_excludes_self_pairs():
+    people = boxes_centred_at([(0, 0), (3, 4)])
+    people.image_metadata.update(frame_image().prediction_metadata())
+
+    result = run(people, people)
+
+    assert distances(result["query_predictions"]) == [5.0, 5.0]
+    assert row_record(result["matched_query_detections"]).host_ids() == [0, 1]
+    assert row_record(result["matched_target_detections"]).host_ids() == [1, 0]

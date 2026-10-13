@@ -233,6 +233,177 @@ from roboflow_workflows.v2.data.predictions import (
     TENSOR_KIND,
 )
 from roboflow_workflows.v2.data.rows import PREDICTION_ROWS_KIND
+from roboflow_workflows.v2.blocks.analytics import BLOCKS as ANALYTICS_BLOCKS
+from roboflow_workflows.v2.blocks.analytics import (
+    LineCounterBlock,
+    TimeInZoneBlock,
+    PathDeviationBlock,
+    DetectionEventLogBlock,
+    OverlapFilterBlock,
+    BackgroundSubtractionBlock,
+    MotionDetectionBlock,
+)
+from roboflow_workflows.v2.blocks.language import BLOCKS as LANGUAGE_BLOCKS
+from roboflow_workflows.v2.blocks.language import (
+    OpenRouterBlock,
+    KimiOpenRouterBlock,
+    MetaVlmBlock,
+    ZaiVlmBlock,
+    GoogleGemmaBlock,
+    SpaceXAIBlock,
+    OpenAIBlock,
+    OpenAICompatibleBlock,
+    AnthropicClaudeBlock,
+    GoogleGeminiBlock,
+)
+from roboflow_workflows.v2.blocks.industrial import BLOCKS as INDUSTRIAL_BLOCKS
+from roboflow_workflows.v2.blocks.industrial import (
+    PlcReaderBlock,
+    PlcWriterBlock,
+    PostgreSQLSinkBlock,
+    SQLServerSinkBlock,
+    MQTTReaderBlock,
+    MQTTWriterBlock,
+    KafkaConsumerBlock,
+    KafkaProducerSinkBlock,
+    OPCWriterSinkBlock,
+    OnvifTrackingBlock,
+)
+from roboflow_workflows.v2.blocks.models.vlm import (
+    Qwen35VLBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.background_color import (
+    BackgroundColorVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.color import (
+    ColorVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.grid import (
+    GridVisualizationBlock,
+)
+from roboflow_workflows.v2.data.language import LANGUAGE_MODEL_OUTPUT_KIND
+from roboflow_workflows.v2.data.secrets import SECRET_KIND
+from roboflow_workflows.v2.blocks.codes import BLOCKS as CODES_BLOCKS
+from roboflow_workflows.v2.blocks.generation import BLOCKS as GENERATION_BLOCKS
+from roboflow_workflows.v2.blocks.secrets import BLOCKS as SECRETS_BLOCKS
+from roboflow_workflows.v2.blocks.sinks import BLOCKS as SINKS_BLOCKS
+from roboflow_workflows.v2.blocks.analytics.data_aggregator import (
+    DataAggregatorBlock,
+)
+from roboflow_workflows.v2.blocks.codes.detectors import (
+    BarcodeDetectorBlock,
+    QRCodeDetectorBlock,
+)
+from roboflow_workflows.v2.blocks.codes.generator import (
+    QRCodeGeneratorBlock,
+)
+from roboflow_workflows.v2.blocks.codes.ocr_stitch import (
+    StitchOCRDetectionsBlock,
+)
+from roboflow_workflows.v2.blocks.generation.stability import (
+    StabilityAIImageGenerationBlock,
+    StabilityAIInpaintingBlock,
+    StabilityAIOutpaintingBlock,
+)
+from roboflow_workflows.v2.blocks.geometry.calibration import (
+    CameraCalibrationBlock,
+)
+from roboflow_workflows.v2.blocks.geometry.contours import (
+    ContoursDetectionBlock,
+)
+from roboflow_workflows.v2.blocks.geometry.dynamic_zone import (
+    DynamicZoneBlock,
+)
+from roboflow_workflows.v2.blocks.geometry.geotag import (
+    GeotagDetectionBlock,
+)
+from roboflow_workflows.v2.blocks.geometry.nearest_neighbor import (
+    DetectionsNearestNeighborBlock,
+)
+from roboflow_workflows.v2.blocks.geometry.perspective import (
+    PerspectiveCorrectionBlock,
+)
+from roboflow_workflows.v2.blocks.geometry.sift import (
+    SiftBlock,
+)
+from roboflow_workflows.v2.blocks.geometry.sift_comparison import (
+    SiftComparisonBlock,
+)
+from roboflow_workflows.v2.blocks.geometry.template_matching import (
+    TemplateMatchingBlock,
+)
+from roboflow_workflows.v2.blocks.image.auto_rotate import (
+    AutoRotateOnEdgesBlock,
+)
+from roboflow_workflows.v2.blocks.image.camera_focus import (
+    CameraFocusBlock,
+)
+from roboflow_workflows.v2.blocks.image.dominant_color import (
+    DominantColorBlock,
+)
+from roboflow_workflows.v2.blocks.image.stitch_images import (
+    StitchImagesBlock,
+)
+from roboflow_workflows.v2.blocks.models.clip_comparison import (
+    ClipComparisonBlock,
+)
+from roboflow_workflows.v2.blocks.models.depth import (
+    DepthEstimationBlock,
+)
+from roboflow_workflows.v2.blocks.models.embeddings import (
+    ClipEmbeddingBlock,
+    PerceptionEncoderEmbeddingBlock,
+)
+from roboflow_workflows.v2.blocks.models.glm_ocr import (
+    GlmOcrBlock,
+)
+from roboflow_workflows.v2.blocks.models.ocr import (
+    OCRModelBlock,
+    EasyOCRBlock,
+    PPOCRBlock,
+)
+from roboflow_workflows.v2.blocks.models.vlm import (
+    SmolVLM2Block,
+)
+from roboflow_workflows.v2.blocks.secrets.environment_store import (
+    EnvironmentSecretsStoreBlock,
+)
+from roboflow_workflows.v2.blocks.sinks.email import (
+    EmailNotificationBlock,
+)
+from roboflow_workflows.v2.blocks.sinks.event_writer import (
+    EventWriterSinkBlock,
+)
+from roboflow_workflows.v2.blocks.sinks.local_file import (
+    LocalFileSinkBlock,
+)
+from roboflow_workflows.v2.blocks.sinks.s3 import (
+    S3SinkBlock,
+)
+from roboflow_workflows.v2.blocks.sinks.slack import (
+    SlackNotificationBlock,
+)
+from roboflow_workflows.v2.blocks.sinks.twilio import (
+    TwilioSmsNotificationBlock,
+)
+from roboflow_workflows.v2.blocks.sinks.webhook import (
+    WebhookSinkBlock,
+)
+from roboflow_workflows.v2.blocks.transforms.similarity import (
+    CosineSimilarityBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.icon import (
+    IconVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison import (
+    ModelComparisonVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.rich_label import (
+    RichLabelVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.text_display import (
+    TextDisplayBlock,
+)
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.operators.alignment import Align
 from roboflow_workflows.v2.engine.operators.window import Window
@@ -282,6 +453,10 @@ def create_catalogue() -> Catalogue:
             ImageBlurBlock,
             ImageThresholdBlock,
             MaskEdgeSnapBlock,
+            CameraFocusBlock,
+            StitchImagesBlock,
+            AutoRotateOnEdgesBlock,
+            DominantColorBlock,
             MorphologicalTransformationBlock,
             ContrastEnhancementBlock,
             ContrastEqualizationBlock,
@@ -308,7 +483,7 @@ def create_catalogue() -> Catalogue:
             BoTSORTTrackerBlock,
             TrackClassLockBlock,
             StabilizeDetectionsBlock,
-            VelocityBlock,
+            *ANALYTICS_BLOCKS,
             *GEOMETRY_BLOCKS,
             *TRANSFORM_BLOCKS,
             *COMBINE_BLOCKS,
@@ -319,6 +494,12 @@ def create_catalogue() -> Catalogue:
             *ANNOTATION_BLOCKS,
             *PLATFORM_BLOCKS,
             *MEASUREMENT_BLOCKS,
+            *SINKS_BLOCKS,
+            *SECRETS_BLOCKS,
+            *GENERATION_BLOCKS,
+            *CODES_BLOCKS,
+            *LANGUAGE_BLOCKS,
+            *INDUSTRIAL_BLOCKS,
         ],
         operators=[Align, Window],
         kinds=[
@@ -330,6 +511,8 @@ def create_catalogue() -> Catalogue:
             INSTANCE_SEGMENTATION_VIEW_KIND,
             MEDIA_WILDCARD_KIND,
             NUMPY_ARRAY_KIND,
+            LANGUAGE_MODEL_OUTPUT_KIND,
+            SECRET_KIND,
         ],
         codecs=NATIVE_RECORDING_CODECS,
         providers={"object_cache": Factory(ObjectCache)},
@@ -500,4 +683,80 @@ __all__ = [
     "PolygonZoneVisualizationBlock",
     "LineCounterVisualizationBlock",
     "ReferencePathVisualizationBlock",
+    "Qwen35VLBlock",
+    "OpenRouterBlock",
+    "KimiOpenRouterBlock",
+    "MetaVlmBlock",
+    "ZaiVlmBlock",
+    "GoogleGemmaBlock",
+    "SpaceXAIBlock",
+    "OpenAIBlock",
+    "OpenAICompatibleBlock",
+    "AnthropicClaudeBlock",
+    "GoogleGeminiBlock",
+    "LineCounterBlock",
+    "TimeInZoneBlock",
+    "PathDeviationBlock",
+    "DetectionEventLogBlock",
+    "OverlapFilterBlock",
+    "BackgroundSubtractionBlock",
+    "MotionDetectionBlock",
+    "PlcReaderBlock",
+    "PlcWriterBlock",
+    "PostgreSQLSinkBlock",
+    "SQLServerSinkBlock",
+    "MQTTReaderBlock",
+    "MQTTWriterBlock",
+    "KafkaConsumerBlock",
+    "KafkaProducerSinkBlock",
+    "OPCWriterSinkBlock",
+    "OnvifTrackingBlock",
+    "BackgroundColorVisualizationBlock",
+    "ColorVisualizationBlock",
+    "GridVisualizationBlock",
+    "LANGUAGE_MODEL_OUTPUT_KIND",
+    "SECRET_KIND",
+    "IconVisualizationBlock",
+    "RichLabelVisualizationBlock",
+    "ModelComparisonVisualizationBlock",
+    "ClipComparisonBlock",
+    "ClipEmbeddingBlock",
+    "PerceptionEncoderEmbeddingBlock",
+    "DepthEstimationBlock",
+    "CosineSimilarityBlock",
+    "GlmOcrBlock",
+    "OCRModelBlock",
+    "EasyOCRBlock",
+    "PPOCRBlock",
+    "SmolVLM2Block",
+    "CameraFocusBlock",
+    "StitchImagesBlock",
+    "AutoRotateOnEdgesBlock",
+    "StitchOCRDetectionsBlock",
+    "SiftBlock",
+    "PerspectiveCorrectionBlock",
+    "TemplateMatchingBlock",
+    "GeotagDetectionBlock",
+    "DetectionsNearestNeighborBlock",
+    "SiftComparisonBlock",
+    "CameraCalibrationBlock",
+    "DominantColorBlock",
+    "QRCodeGeneratorBlock",
+    "BarcodeDetectorBlock",
+    "QRCodeDetectorBlock",
+    "ContoursDetectionBlock",
+    "DynamicZoneBlock",
+    "StabilityAIImageGenerationBlock",
+    "StabilityAIInpaintingBlock",
+    "StabilityAIOutpaintingBlock",
+    "DataAggregatorBlock",
+    "EmailNotificationBlock",
+    "EnvironmentSecretsStoreBlock",
+    "LocalFileSinkBlock",
+    "S3SinkBlock",
+    "SlackNotificationBlock",
+    "TextDisplayBlock",
+    "TwilioSmsNotificationBlock",
+    "WebhookSinkBlock",
+    "EventWriterSinkBlock",
 ]

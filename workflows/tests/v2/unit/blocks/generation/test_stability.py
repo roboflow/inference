@@ -15,6 +15,7 @@ import pydantic
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.generation.stability import (
+    ERROR_DETAIL_LIMIT,
     GENERATION_ENDPOINTS,
     INPAINTING_ENDPOINT,
     OUTPAINTING_ENDPOINT,
@@ -585,3 +586,95 @@ def test_the_default_client_targets_the_v1_host() -> None:
     # then
     assert resource.name == "stability_ai_client"
     assert resource.default.base_url == "https://api.stability.ai"
+
+
+@pytest.mark.parametrize("adapter", ["generate", "inpaint", "outpaint"])
+@pytest.mark.parametrize("error_path", ["json-string", "json-object", "text", "raised"])
+@pytest.mark.parametrize("key_offset", [0, 480])
+def test_provider_error_redaction_before_cutoff(
+    monkeypatch: pytest.MonkeyPatch, adapter: str, error_path: str, key_offset: int
+) -> None:
+    import requests
+
+    # A full key at offset 480 used to become a visible prefix at the cutoff.
+    key = "sk-redaction-synthetic-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    body = (
+        "diagnostic: " + "x" * max(0, key_offset - 12) + key + " trailing detail" * 80
+    )
+    calls = []
+
+    class Response:
+        status_code = 401
+        text = body
+
+        def json(self):
+            if error_path == "text":
+                raise ValueError("not JSON")
+            return {"error": body} if error_path == "json-object" else body
+
+    def post(*args, **kwargs):
+        calls.append((args, kwargs))
+        return Response()
+
+    monkeypatch.setattr(requests, "post", post)
+    client = (
+        FakeClient(error=ConnectionError(body))
+        if error_path == "raised"
+        else StabilityAIClient()
+    )
+    image = _image()
+    secret = Secret(key, name="STABILITY_KEY")
+    with pytest.raises(StabilityAIError) as caught:
+        if adapter == "generate":
+            _generate(client, api_key=secret)
+        elif adapter == "inpaint":
+            _inpaint(client, image, _segmentation(image), api_key=secret)
+        else:
+            _outpaint(client, image, left=1, api_key=secret)
+
+    error = caught.value
+    message = str(error)
+    prefix = ": Stability AI request failed: "
+    assert "diagnostic:" in message
+    assert key not in message and key[:3] not in message
+    assert len(message.split(prefix, 1)[1]) <= ERROR_DETAIL_LIMIT
+    assert error.__cause__ is None and error.__context__ is None
+    if error_path == "raised":
+        assert "ConnectionError:" in message and len(client.calls) == 1
+        if key_offset == 0:
+            assert "<secret STABILITY_KEY>" in message
+    else:
+        assert "HTTP 401" in message and len(calls) == 1
+        assert calls[0][1]["headers"]["authorization"] == f"Bearer {key}"
+        if key_offset == 0:
+            assert "<secret api_key>" in message
+
+
+@pytest.mark.parametrize("json_body", [False, True])
+@pytest.mark.parametrize("key_length", [60, 600])
+def test_transport_redacts_complete_keys_before_bounding_detail(
+    monkeypatch: pytest.MonkeyPatch, json_body: bool, key_length: int
+) -> None:
+    import requests
+
+    key = "sk-direct-synthetic-" + "K" * key_length
+    body = "diagnostic: " + "x" * 468 + key + " tail" * 200
+
+    class Response:
+        status_code = 401
+        text = body
+
+        def json(self):
+            if json_body:
+                return body
+            raise ValueError("not JSON")
+
+    monkeypatch.setattr(requests, "post", lambda *a, **kw: Response())
+    with pytest.raises(StabilityAIError) as caught:
+        StabilityAIClient().post("/test", api_key=key, data={}, files={})
+
+    message = str(caught.value)
+    assert message.startswith("HTTP 401 from /test: diagnostic:")
+    assert key not in message and key[:3] not in message
+    assert len(message.removeprefix("HTTP 401 from /test: ")) <= ERROR_DETAIL_LIMIT
+    assert caught.value.__cause__ is None and caught.value.__context__ is None

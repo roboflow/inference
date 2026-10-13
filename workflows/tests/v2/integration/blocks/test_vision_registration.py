@@ -83,7 +83,6 @@ def test_default_discovery_public_exports_and_schemas(route):
         "v2/segment_anything_3d@v1",
         "v2/sam3_3d@v1",
         "v2/hosted_seg_preview@v1",
-        "v2/qwen3_5vl@v2",
     ):
         assert catalogue.find(identity) is None
 
@@ -183,9 +182,8 @@ def test_default_drawings_compose_with_explicit_current_real_producers(
     expected = blocks.create_catalogue().block_types
 
     def compile_default(definition, *, catalogue, **kwargs):
-        # Current producer registration remains outside this drawing cohort.
-        producers = (counters.LineCounterBlock.type, counters.TimeInZoneBlock.type)
-        assert catalogue.block_types == expected + producers
+        # The tail cohort registers the current real producers by default.
+        assert catalogue.block_types == expected
         assert catalogue.entry("v2/line_counter_visualization@v1").spec is spec_of(
             annotations.LineCounterVisualizationBlock
         )

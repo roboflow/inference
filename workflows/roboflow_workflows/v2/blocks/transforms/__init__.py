@@ -11,10 +11,15 @@ from roboflow_workflows.v2.blocks.transforms.per_class_confidence import (
     PerClassConfidenceFilterBlock,
 )
 
+from roboflow_workflows.v2.blocks.transforms.similarity import (
+    CosineSimilarityBlock,
+)
+
 BLOCKS = (
     DetectionsFilterBlock,
     DetectionsTransformationBlock,
     PerClassConfidenceFilterBlock,
+    CosineSimilarityBlock,
 )
 
 __all__ = [
@@ -22,4 +27,5 @@ __all__ = [
     "DetectionsFilterBlock",
     "DetectionsTransformationBlock",
     "PerClassConfidenceFilterBlock",
+    "CosineSimilarityBlock",
 ]

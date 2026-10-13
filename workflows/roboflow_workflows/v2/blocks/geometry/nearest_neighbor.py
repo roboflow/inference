@@ -19,6 +19,10 @@ prediction's ``key_points_classes`` for the row's class; a skeleton without
 that name, or with the keypoint's confidence at most 0, has no anchor and
 takes part in no pair.
 
+Distances, ``max_distance`` and the 1 px tie rule use one shared local pixel
+frame. Known frame conflicts are rejected; missing metadata stays unknown.
+Align crop, resize or different-camera predictions before matching.
+
 Limits as V1: 1000 rows per side, 10 000 pairs, 100 pairs when masks are
 present.
 
@@ -31,12 +35,19 @@ flattened per-box keypoint lists).
 """
 
 from dataclasses import replace
-from typing import Any, Dict, Literal, Optional, Tuple
+from typing import Any, Dict, Literal, Mapping, Optional, Tuple
 
 import torch
 from pydantic import Field, StrictInt, model_validator
 from roboflow_workflows.execution_engine.constants import NEAREST_TARGET_DISTANCE_KEY
 from roboflow_workflows.v2.data.errors import ContractError
+from roboflow_workflows.v2.data.frames import (
+    FRAME_RECORD_KEY,
+    FrameRef,
+    _frame_fields,
+    _legacy_frame_fields,
+    _same_value,
+)
 from roboflow_workflows.v2.data.kinds import INTEGER_KIND, STRING_KIND
 from roboflow_workflows.v2.data.prediction_ops import select_predictions
 from roboflow_workflows.v2.data.predictions import (
@@ -179,7 +190,8 @@ class DetectionsNearestNeighborBlock(Block):
 
         Raises:
             ContractError: On keypoints without boxes, an unknown anchor, more
-                than 1000 rows on a side or more pairs than the limit.
+                than 1000 rows on a side, incompatible known frames or more pairs
+                than the limit.
         """
         query_boxes = self._boxes(query_predictions, side="query")
         target_boxes = self._boxes(target_predictions, side="target")
@@ -189,6 +201,9 @@ class DetectionsNearestNeighborBlock(Block):
         target_anchors = anchor_points(
             target_predictions, point=target_point, keypoint_name=target_keypoint_name
         )
+        if len(query_boxes.xyxy) and len(target_boxes.xyxy):
+            _require_shared_local_frame(query_predictions, target_predictions)
+
         distances = (
             query_anchors[:, None, :]
             .sub(target_anchors.to(query_anchors.device)[None, :, :])
@@ -240,6 +255,54 @@ class DetectionsNearestNeighborBlock(Block):
             )
 
         return boxes
+
+
+def _require_shared_local_frame(query: Any, target: Any) -> None:
+    # Use the shared frame readers, preserving each missing field as unknown.
+    # Both tuple components must agree, including the one supplying anchors.
+    known = {}
+    for side, prediction in (("query", query), ("target", target)):
+        carriers = prediction if isinstance(prediction, tuple) else (prediction,)
+        for carrier in carriers:
+            metadata = carrier.image_metadata
+            if metadata is None:
+                continue
+
+            try:
+                if not isinstance(metadata, Mapping):
+                    raise ContractError("image_metadata must be a dict")
+
+                fields = _legacy_frame_fields(metadata)
+                record = metadata.get(FRAME_RECORD_KEY)
+                if record is not None:
+                    recorded = _frame_fields(FrameRef.from_record(record))
+                    for name, value in fields.items():
+                        if value is not None and not _same_value(
+                            value, recorded[name], exact_integers=True
+                        ):
+                            raise ContractError(
+                                f"legacy {name} disagrees with the frame record"
+                            )
+                    fields = recorded
+
+                for name, value in fields.items():
+                    if value is None:
+                        continue
+                    if name in known and not _same_value(
+                        value, known[name], exact_integers=True
+                    ):
+                        raise ContractError(
+                            f"conflicting {name}: {value!r} vs {known[name]!r}"
+                        )
+                    known.setdefault(name, value)
+            except ContractError as error:
+                raise ContractError(
+                    f"{DetectionsNearestNeighborBlock.type}: {side} prediction "
+                    f"frame metadata is incompatible: {error}. Align both "
+                    "predictions into the same local pixel frame before matching "
+                    "(including crops, resizes and camera sources); distances, "
+                    "max_distance and ties use that frame's pixels."
+                ) from error
 
 
 def anchor_points(

@@ -24,8 +24,15 @@ from roboflow_workflows.v2.blocks.geometry.template_matching import (
     TemplateMatchingBlock,
 )
 from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
+from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.predictions import OBJECT_DETECTION_PREDICTION_KIND
+from roboflow_workflows.v2.data.row_identity import with_row_identity
+from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.errors import StepExecutionError
+
+from inference_models.models.base.object_detection import Detections
 
 # Camera: 100 m up, 90 degree field of view over a 160 px wide image, so one
 # pixel is 200 / 160 = 1.25 m. Image centre (80, 50) is at latitude 0, longitude 0.
@@ -238,3 +245,63 @@ def test_sift_descriptors_compare_through_the_engine(seed_2, expected_match):
     assert (row["count"] >= 50) is expected_match
     assert row["descriptors"].shape[1] == 128
     assert row["keypoints"] is None
+
+
+@pytest.mark.parametrize("target_frame", ["crop", "camera"])
+def test_compiled_nearest_neighbor_rejects_incompatible_local_frames(target_frame):
+    root = ImageData.from_tensor(
+        torch.zeros((3, 100, 200), dtype=torch.uint8), image_id="root"
+    )
+    target_image = (
+        root.crop((100, 0, 200, 100))
+        if target_frame == "crop"
+        else ImageData.from_tensor(
+            torch.zeros_like(root.tensor_image), image_id="other-camera"
+        )
+    )
+    predictions = []
+    target_x = 10 if target_frame == "crop" else 110
+    for image, x in ((root, 110), (target_image, target_x)):
+        prediction = Detections(
+            xyxy=torch.tensor([[x - 1, 9, x + 1, 11]], dtype=torch.float32),
+            class_id=torch.tensor([0]),
+            confidence=torch.tensor([0.9]),
+            image_metadata=image.prediction_metadata(),
+        )
+        predictions.append(with_row_identity(prediction))
+    definition = {
+        "version": "2.0",
+        "inputs": [
+            {
+                "type": "WorkflowBatchInput",
+                "name": name,
+                "kind": [OBJECT_DETECTION_PREDICTION_KIND.name],
+            }
+            for name in ("query", "target")
+        ],
+        "steps": [
+            {
+                "type": DetectionsNearestNeighborBlock.type,
+                "name": "nearest",
+                "query_predictions": "$inputs.query",
+                "target_predictions": "$inputs.target",
+                "max_distance": 5,
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "query",
+                "selector": "$steps.nearest.query_predictions",
+                "coordinates_system": "own",
+            }
+        ],
+    }
+    session = compile_workflow(
+        definition, catalogue=Catalogue([DetectionsNearestNeighborBlock])
+    ).create_session()
+
+    with pytest.raises(StepExecutionError, match="same local pixel frame") as raised:
+        session.run({"query": [predictions[0]], "target": [predictions[1]]})
+
+    assert isinstance(raised.value.__cause__, ContractError)

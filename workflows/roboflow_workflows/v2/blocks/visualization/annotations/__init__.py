@@ -24,6 +24,9 @@ v2/trace_visualization@v1                     roboflow_core/trace_visualization@
 v2/polygon_zone_visualization@v1              roboflow_core/polygon_zone_visualization@v1
 v2/line_counter_visualization@v1              roboflow_core/line_counter_visualization@v1
 v2/reference_path_visualization@v1            roboflow_core/reference_path_visualization@v1
+v2/background_color_visualization@v1          roboflow_core/background_color_visualization@v1
+v2/color_visualization@v1                     roboflow_core/color_visualization@v1
+v2/grid_visualization@v1                      roboflow_core/grid_visualization@v1
 =============================================  ==============================================
 
 Each block runs once per image on the image's device and returns a new
@@ -37,8 +40,8 @@ V1 ``copy_image`` is rejected with either value; chain blocks with
 ``image: $steps.<previous>.image`` instead. Predictions of another frame of
 the same workflow input are mapped into the drawn image and clipped to it.
 
-Not in this slice (queued for later waves): background_color, color, grid,
-icon, model_comparison, rich_label and text_display visualizations (7 V1 families).
+Retained annotations are selected explicitly by this package; retired siblings
+are excluded from default discovery.
 
 ``create_catalogue()`` registers every block in ``BLOCKS``. The package
 ``roboflow_workflows.v2.blocks`` exports this package's
@@ -113,6 +116,29 @@ from roboflow_workflows.v2.blocks.visualization.annotations.zones import (
     ReferencePathVisualizationBlock,
 )
 
+from roboflow_workflows.v2.blocks.visualization.annotations.background_color import (
+    BackgroundColorVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.color import (
+    ColorVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.grid import (
+    GridVisualizationBlock,
+)
+
+from roboflow_workflows.v2.blocks.visualization.annotations.icon import (
+    IconVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison import (
+    ModelComparisonVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.rich_label import (
+    RichLabelVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.text_display import (
+    TextDisplayBlock,
+)
+
 BLOCKS = (
     BoundingBoxVisualizationBlock,
     LabelVisualizationBlock,
@@ -135,6 +161,13 @@ BLOCKS = (
     PolygonZoneVisualizationBlock,
     LineCounterVisualizationBlock,
     ReferencePathVisualizationBlock,
+    BackgroundColorVisualizationBlock,
+    ColorVisualizationBlock,
+    GridVisualizationBlock,
+    IconVisualizationBlock,
+    RichLabelVisualizationBlock,
+    ModelComparisonVisualizationBlock,
+    TextDisplayBlock,
 )
 
 __all__ = [
@@ -160,4 +193,11 @@ __all__ = [
     "PolygonZoneVisualizationBlock",
     "LineCounterVisualizationBlock",
     "ReferencePathVisualizationBlock",
+    "BackgroundColorVisualizationBlock",
+    "ColorVisualizationBlock",
+    "GridVisualizationBlock",
+    "IconVisualizationBlock",
+    "RichLabelVisualizationBlock",
+    "ModelComparisonVisualizationBlock",
+    "TextDisplayBlock",
 ]

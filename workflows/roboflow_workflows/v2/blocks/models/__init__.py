@@ -43,6 +43,32 @@ from roboflow_workflows.v2.blocks.models.remote_ocr import GoogleVisionOCRBlock
 from roboflow_workflows.v2.blocks.models.moondream import Moondream2Block
 from roboflow_workflows.v2.blocks.models.qwen_vlm import QwenVLMBlock
 
+from roboflow_workflows.v2.blocks.models.vlm import (
+    Qwen35VLBlock,
+)
+
+from roboflow_workflows.v2.blocks.models.clip_comparison import (
+    ClipComparisonBlock,
+)
+from roboflow_workflows.v2.blocks.models.depth import (
+    DepthEstimationBlock,
+)
+from roboflow_workflows.v2.blocks.models.embeddings import (
+    ClipEmbeddingBlock,
+    PerceptionEncoderEmbeddingBlock,
+)
+from roboflow_workflows.v2.blocks.models.glm_ocr import (
+    GlmOcrBlock,
+)
+from roboflow_workflows.v2.blocks.models.ocr import (
+    OCRModelBlock,
+    EasyOCRBlock,
+    PPOCRBlock,
+)
+from roboflow_workflows.v2.blocks.models.vlm import (
+    SmolVLM2Block,
+)
+
 BLOCKS = (
     Cosmos3EdgeBlock,
     Florence2Block,
@@ -62,6 +88,16 @@ BLOCKS = (
     SegmentAnything3Block,
     SegmentAnything3InteractiveBlock,
     SegmentAnything3VideoBlock,
+    Qwen35VLBlock,
+    ClipComparisonBlock,
+    ClipEmbeddingBlock,
+    PerceptionEncoderEmbeddingBlock,
+    DepthEstimationBlock,
+    GlmOcrBlock,
+    OCRModelBlock,
+    EasyOCRBlock,
+    PPOCRBlock,
+    SmolVLM2Block,
 )
 
 __all__ = [
@@ -89,4 +125,14 @@ __all__ = [
     "SegmentAnything3Block",
     "SegmentAnything3InteractiveBlock",
     "SegmentAnything3VideoBlock",
+    "Qwen35VLBlock",
+    "ClipComparisonBlock",
+    "ClipEmbeddingBlock",
+    "PerceptionEncoderEmbeddingBlock",
+    "DepthEstimationBlock",
+    "GlmOcrBlock",
+    "OCRModelBlock",
+    "EasyOCRBlock",
+    "PPOCRBlock",
+    "SmolVLM2Block",
 ]

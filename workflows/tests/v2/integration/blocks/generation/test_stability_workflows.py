@@ -15,6 +15,7 @@ import email.policy
 import http.server
 import json
 import threading
+import traceback
 from typing import Any, Dict, Iterator, List, Sequence, Tuple
 
 import cv2
@@ -22,7 +23,9 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.generation.stability import (
+    ERROR_DETAIL_LIMIT,
     StabilityAIClient,
+    StabilityAIError,
     StabilityAIImageGenerationBlock,
     StabilityAIInpaintingBlock,
     StabilityAIOutpaintingBlock,
@@ -292,7 +295,7 @@ def test_a_service_error_fails_the_step_without_the_key(service) -> None:
     # then
     message = str(caught.value)
     assert "HTTP 401" in message and "unauthorized" in message
-    assert "bad key <secret input>" in message
+    assert "bad key <secret api_key>" in message
     chain, error = [], caught.value
     while error is not None:
         chain.append(str(error))
@@ -369,3 +372,89 @@ def test_text_only_generation_sends_multipart_without_an_image(service) -> None:
     assert request["data"]["negative_prompt"] == "people"
     assert "image" not in request["files"]
     assert row["image"].size_hw == (32, 48)
+
+
+@pytest.mark.parametrize("adapter", ["generate", "inpaint", "outpaint"])
+@pytest.mark.parametrize("error_path", ["json-string", "json-object", "text", "raised"])
+@pytest.mark.parametrize("key_offset", [0, 480])
+def test_compiled_provider_error_redaction_before_cutoff(
+    monkeypatch: pytest.MonkeyPatch, adapter: str, error_path: str, key_offset: int
+) -> None:
+    import requests
+
+    # Exercise the real transport with in-process responses, without a server.
+    key = "sk-compiled-synthetic-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    body = "diagnostic: " + "x" * max(0, key_offset - 12) + key + " tail" * 200
+    calls = []
+
+    class Response:
+        status_code = 401
+        text = body
+
+        def json(self):
+            if error_path == "text":
+                raise ValueError("not JSON")
+            return {"error": body} if error_path == "json-object" else body
+
+    def post(*args, **kwargs):
+        calls.append((args, kwargs))
+        if error_path == "raised":
+            # Neither this exception nor its explicit cause may survive.
+            raise requests.ConnectionError(body) from ValueError(f"cause: {key}")
+        return Response()
+
+    monkeypatch.setattr(requests, "post", post)
+    if adapter == "generate":
+        steps = [
+            {
+                "type": StabilityAIImageGenerationBlock.type,
+                "name": adapter,
+                "prompt": "test",
+                "api_key": "$inputs.api_key",
+            }
+        ]
+    elif adapter == "inpaint":
+        steps = EDIT_STEPS[:2]
+    else:
+        steps = [{**EDIT_STEPS[2], "image": "$inputs.image"}]
+    session = _session(
+        "http://fake.invalid", steps, {"image": f"$steps.{adapter}.image"}
+    )
+
+    with pytest.raises(StepExecutionError) as caught:
+        session.run({"image": [_scene()], "api_key": key})
+
+    pending, chain, visited = [caught.value], [], set()
+    while pending:
+        error = pending.pop()
+        if id(error) in visited:
+            continue
+        visited.add(id(error))
+        chain.append(error)
+        pending.extend(
+            child for child in (error.__cause__, error.__context__) if child is not None
+        )
+    assert len(calls) == 1
+    assert calls[0][1]["headers"]["authorization"] == f"Bearer {key}"
+    assert calls[0][0][0].endswith(
+        "/generate/core" if adapter == "generate" else f"/edit/{adapter}"
+    )
+    assert "diagnostic:" in str(caught.value)
+    assert len(str(caught.value)) < 2 * ERROR_DETAIL_LIMIT
+    for error in chain:
+        assert key not in str(error) and key[:3] not in str(error)
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert key not in rendered and key[:3] not in rendered
+    leaves = [error for error in chain if isinstance(error, StabilityAIError)]
+    assert len(leaves) == 1
+    leaf = leaves[0]
+    assert leaf.__cause__ is None and leaf.__context__ is None
+    detail = str(leaf).split(": Stability AI request failed: ", 1)[1]
+    assert len(detail) <= ERROR_DETAIL_LIMIT
+    if error_path == "raised":
+        assert "ConnectionError:" in detail
+    else:
+        assert "HTTP 401" in detail
+    if key_offset == 0:
+        marker = "<secret input>" if error_path == "raised" else "<secret api_key>"
+        assert marker in detail

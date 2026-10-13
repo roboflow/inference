@@ -35,6 +35,7 @@ SECRET_RECORDING_CODEC = PayloadCodec(
 )
 
 __all__ = [
+    "BLOCKS",
     "EnvironmentAccessError",
     "EnvironmentSecrets",
     "EnvironmentSecretsStoreBlock",
@@ -42,3 +43,5 @@ __all__ = [
     "SecretSource",
     "StaticSecrets",
 ]
+
+BLOCKS = (EnvironmentSecretsStoreBlock,)

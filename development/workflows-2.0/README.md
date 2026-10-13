@@ -92,12 +92,20 @@ does not imply that every example runs in a plain Python environment.
 | [66 — Custom Python with tensors](66-custom-python-tensors/README.md) | Run local dynamic blocks on V2 images and predictions without conversion. | CPU fixtures |
 | [73 — Trace and heatmap](73-trace-and-heatmap/README.md) | Whole-frame source-bounded trace and heatmap drawings; resizing supported, cropping rejected before history mutation. | CPU fixtures |
 | [74 — Zone drawings](74-zone-drawings/README.md) | Polygon-zone, line-counter and reference-path drawings with shared counter geometry and per-image count selectors. | CPU fixtures |
+| [75 — Decorative drawings](75-decorative-drawings/README.md) | Background, recoloring and grid overlays through default V2 discovery. | CPU stand-ins; real services separately |
+| [79 — Motion](79-motion/README.md) | Per-source motion and background models on generated CPU scenes. | CPU stand-ins; real services separately |
 | [83 — Mask edge snap](83-mask-edge-snap/README.md) | Refine segmentation boundaries against image edges. | CPU fixtures |
+| [84 — Local VLM prompt](84-local-vlm-prompt/README.md) | Caller-owned Qwen3.5 prompt models; CPU stand-ins and separate real weights. | CPU stand-ins; real services separately |
 | [86 — Segment anything](86-segment-anything/README.md) | SAM2/SAM3 prompts, compact masks and selected classes through caller-owned models. | CPU fake models; real models separately |
+| [88 — Remote chat](88-remote-chat/README.md) | Active OpenAI-compatible text/image chat through explicit injected transports. | CPU stand-ins; real services separately |
+| [91 — OpenRouter vendors](91-openrouter-vendors/README.md) | Active Kimi, Meta and Zai outputs and native prediction composition. | CPU stand-ins; real services separately |
+| [92 — Vendor SDK chat](92-vendor-sdk-chat/README.md) | Anthropic and Gemini with host-owned SDK clients; separate real-provider calls. | CPU stand-ins; real services separately |
+| [93 — Compatible vendors](93-compatible-vendors/README.md) | Active Gemma and SpaceXAI wire formats through CPU fake transports. | CPU stand-ins; real services separately |
 | [94 — Platform metadata and search](94-platform-metadata-search/README.md) | Search reference images, classify a query and tag its inference result. | CPU fake ports; explicit host ports for platform calls |
 | [95 — Platform dataset upload](95-platform-dataset-upload/README.md) | Set asset attributes and submit bounded dataset uploads. | CPU fake ports; explicit host ports for platform calls |
 | [96 — Model monitoring](96-model-monitoring/README.md) | Collect inference summaries and report through a caller-owned port. | CPU fake port; explicit host port for platform calls |
 | [97 — Vision events](97-vision-events/README.md) | Submit vision events and collect event bundles through caller-owned ports. | CPU fake ports; explicit host ports for services and bundle storage |
+| [104 — ONVIF PTZ](104-onvif-ptz/README.md) | Host-owned camera controllers, explicit cleanup and disabled-path checks. | CPU stand-ins; real services separately |
 | [106 — Action recognition](106-action-recognition/README.md) | Classify bounded clips from two cameras with a caller-loaded local model. | CPU fake model; optional local model package |
 | [107 — SAM video and interactive](107-sam-video-and-interactive/README.md) | Explicit video frame budgets, episode identities and interactive prompts; concept peak-memory and real-backend qualification remain open. | CPU fake models; real models separately |
 | [109 — Florence-2](109-local-vlm-wave2/florence/README.md) | Run local Florence text and grounding tasks with explicit coordinate modes. | CPU stand-in; optional local model package |

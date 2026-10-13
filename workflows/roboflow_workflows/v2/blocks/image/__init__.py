@@ -31,6 +31,19 @@ from roboflow_workflows.v2.blocks.image.static_crops import (
 )
 from roboflow_workflows.v2.blocks.image.threshold import ImageThresholdBlock
 
+from roboflow_workflows.v2.blocks.image.auto_rotate import (
+    AutoRotateOnEdgesBlock,
+)
+from roboflow_workflows.v2.blocks.image.camera_focus import (
+    CameraFocusBlock,
+)
+from roboflow_workflows.v2.blocks.image.dominant_color import (
+    DominantColorBlock,
+)
+from roboflow_workflows.v2.blocks.image.stitch_images import (
+    StitchImagesBlock,
+)
+
 __all__ = [
     "AbsoluteStaticCropBlock",
     "ContrastEnhancementBlock",
@@ -51,4 +64,8 @@ __all__ = [
     "ResizeBlock",
     "StaticCropBlock",
     "MaskEdgeSnapBlock",
+    "CameraFocusBlock",
+    "StitchImagesBlock",
+    "AutoRotateOnEdgesBlock",
+    "DominantColorBlock",
 ]
