@@ -1,42 +1,45 @@
 """Blur an image: ``v2/image_blur@v1``.
 
 Port of V1 ``roboflow_core/image_blur@v1``. Every blur equals the OpenCV call
-V1 made, pixel for pixel. Common settings run in PyTorch on the image's
-device; the rest cross to the CPU and call that same OpenCV function there
-(``opencv_on_host``):
+V1 made, pixel for pixel. A CPU tensor always gets that OpenCV call. A tensor
+on another device (for example CUDA) is blurred there in PyTorch for the
+settings below; other settings cross to the CPU and call OpenCV there
+(``host.call_on_host``):
 
-=========  ==========================  ======================  ==================
-blur_type  OpenCV call (as V1)         on the image's device   on the CPU
-=========  ==========================  ======================  ==================
-average    ``blur``, k x k             odd k <= 15             even or larger k
-gaussian   ``GaussianBlur``, sigma 0   k in 1, 3, 5, 7         k >= 9
-median     ``medianBlur``              k <= 15                 k > 15
-bilateral  ``bilateralFilter``, 75/75  never                   always
-=========  ==========================  ======================  ==================
+=========  ==========================  =========================  ============
+blur_type  OpenCV call (as V1)         PyTorch, off-CPU tensor    OpenCV
+=========  ==========================  =========================  ============
+average    ``blur``, k x k             odd k <= 15                otherwise
+gaussian   ``GaussianBlur``, sigma 0   k in 1, 3, 5, 7            otherwise
+median     ``medianBlur``              k <= 15                    otherwise
+bilateral  ``bilateralFilter``, 75/75  never                      always
+=========  ==========================  =========================  ============
 
 ``gaussian`` and ``median`` first round ``kernel_size`` up to a positive odd
 number (``0 -> 1``, ``4 -> 5``), as V1 did. Borders follow OpenCV: mirrored
 without repeating the edge pixel for ``average`` and ``gaussian``, the edge
 pixel repeated for ``median``. A kernel whose half width reaches the image's
-height or width also runs on the CPU.
+height or width also uses OpenCV.
 
 Why these limits: within them the PyTorch arithmetic is exact. Window sums
 stay below ``2**24``, odd windows have no ``.5`` ties, and OpenCV's small
 Gaussian kernels are fixed dyadic fractions. Beyond them OpenCV's own rounding
-or algorithm choice cannot be reproduced exactly.
+or algorithm choice cannot be reproduced exactly. On the CPU the PyTorch
+version would only emulate, in float32, the 8-bit OpenCV routine already there.
 
 The result is the same image with new pixels: identity, mappings, source and
 time are kept, and the input tensor is not modified. Gray and RGB images both
 work; every blur treats channels independently or symmetrically.
 """
 
-from typing import Any, Callable, Dict, Literal
+from typing import Any, Dict, Literal
 
 import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
 from pydantic import Field, StrictInt
+from roboflow_workflows.v2.blocks.image.host import call_on_host
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import INTEGER_KIND, STRING_KIND
@@ -144,19 +147,17 @@ def blur(pixels: torch.Tensor, *, blur_type: str, kernel_size: int) -> torch.Ten
 
     if blur_type in ("gaussian", "median"):
         kernel_size = positive_odd(kernel_size)
-    if not _runs_on_device(pixels, blur_type=blur_type, kernel_size=kernel_size):
-        blurred = opencv_on_host(
+    if pixels.device.type == "cpu" or not torch_blur_is_exact(
+        pixels, blur_type=blur_type, kernel_size=kernel_size
+    ):
+        blurred = call_on_host(
             pixels,
             function=lambda array: _opencv_blur(
                 array, blur_type=blur_type, kernel_size=kernel_size
             ),
         )
-    elif blur_type == "average":
-        blurred = _average(pixels, kernel_size=kernel_size)
-    elif blur_type == "gaussian":
-        blurred = _gaussian(pixels, kernel_size=kernel_size)
     else:
-        blurred = _median(pixels, kernel_size=kernel_size)
+        blurred = torch_blur(pixels, blur_type=blur_type, kernel_size=kernel_size)
 
     return blurred
 
@@ -178,41 +179,20 @@ def positive_odd(kernel_size: int) -> int:
     return size
 
 
-def opencv_on_host(
-    pixels: torch.Tensor, *, function: Callable[[np.ndarray], np.ndarray]
-) -> torch.Tensor:
-    """Run an OpenCV reference function on the CPU, in V1's NumPy layout.
-
-    The explicit CPU boundary of this module. The tensor is copied to host
-    memory as ``(height, width)`` for one channel or ``(height, width, 3)`` in
-    BGR order for three, so the call sees exactly what V1 passed to OpenCV.
-    The result returns to the input's device in ``(channels, height, width)``
-    RGB layout. On CUDA, the copy to the host waits for queued work.
+def torch_blur_is_exact(
+    pixels: torch.Tensor, *, blur_type: str, kernel_size: int
+) -> bool:
+    """Tell whether ``torch_blur`` equals OpenCV for these settings.
 
     Args:
-        pixels: ``(channels, height, width)`` ``uint8`` tensor; not modified.
-        function: Maps the host array to a new array of the same layout.
+        pixels: ``(channels, height, width)`` image tensor.
+        blur_type: One of ``BLUR_TYPES``.
+        kernel_size: Window size, already rounded up to odd for ``gaussian``
+            and ``median``.
 
     Returns:
-        A new tensor of the same shape on the same device.
+        True within the limits in the module docstring's table.
     """
-    host = pixels.detach().cpu()
-    if host.shape[0] == 3:
-        host = host.flip(0)
-    array = np.ascontiguousarray(host.permute(1, 2, 0).numpy())
-    if array.shape[2] == 1:
-        array = array[:, :, 0]
-
-    processed = function(array).reshape(pixels.shape[1], pixels.shape[2], -1)
-    restored = torch.from_numpy(np.ascontiguousarray(processed)).permute(2, 0, 1)
-    if restored.shape[0] == 3:
-        restored = restored.flip(0)
-    on_device = restored.contiguous().to(pixels.device)
-
-    return on_device
-
-
-def _runs_on_device(pixels: torch.Tensor, *, blur_type: str, kernel_size: int) -> bool:
     if blur_type == "average":
         supported = kernel_size % 2 == 1 and kernel_size <= MAX_DEVICE_AVERAGE_KERNEL
     elif blur_type == "gaussian":
@@ -225,6 +205,33 @@ def _runs_on_device(pixels: torch.Tensor, *, blur_type: str, kernel_size: int) -
     fits = kernel_size // 2 < min(int(pixels.shape[1]), int(pixels.shape[2]))
 
     return supported and fits
+
+
+def torch_blur(
+    pixels: torch.Tensor, *, blur_type: str, kernel_size: int
+) -> torch.Tensor:
+    """Blur on the tensor's own device with PyTorch, equal to OpenCV.
+
+    ``blur`` uses this only off the CPU. It is exact only where
+    ``torch_blur_is_exact`` holds.
+
+    Args:
+        pixels: ``(channels, height, width)`` ``uint8`` tensor; not modified.
+        blur_type: ``"average"``, ``"gaussian"`` or ``"median"``.
+        kernel_size: Window size, already rounded up to odd for ``gaussian``
+            and ``median``.
+
+    Returns:
+        A new tensor of the same shape on the same device.
+    """
+    if blur_type == "average":
+        blurred = _average(pixels, kernel_size=kernel_size)
+    elif blur_type == "gaussian":
+        blurred = _gaussian(pixels, kernel_size=kernel_size)
+    else:
+        blurred = _median(pixels, kernel_size=kernel_size)
+
+    return blurred
 
 
 def _opencv_blur(array: np.ndarray, *, blur_type: str, kernel_size: int) -> np.ndarray:

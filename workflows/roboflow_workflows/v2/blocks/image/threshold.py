@@ -20,6 +20,10 @@ adaptive_mean       ``M`` if ``v > mean - 2`` else 0, over    one only        de
 adaptive_gaussian   as adaptive_mean, Gaussian-weighted mean  one only        CPU
 ==================  ========================================  ==============  ========
 
+A CPU tensor is the exception for ``adaptive_mean``: it gets OpenCV's own
+``adaptiveThreshold``, as V1 called it. Off the CPU a PyTorch version equal
+to it runs on the image's device.
+
 Convert an RGB image with ``v2/convert_grayscale@v1`` first for the three
 one-channel types. ``T`` and ``M`` outside ``0..255`` follow OpenCV: a ``T``
 below 0 or from 255 up fills or copies the image (``binary`` with ``T = 255``
@@ -27,8 +31,8 @@ is all zeros).
 
 Otsu's method reads one 256-bin histogram back to the host and scans it as
 OpenCV does. ``adaptive_gaussian`` crosses to the CPU and calls OpenCV
-there, because OpenCV's float32 Gaussian filter rounds differently on
-different CPUs and cannot be matched exactly.
+there (``host.call_on_host``), because OpenCV's float32 Gaussian filter
+rounds differently on different CPUs and cannot be matched exactly.
 
 The result is the same image with new pixels: identity, mappings, source and
 time are kept, and the input tensor is not modified.
@@ -41,10 +45,10 @@ import math
 from typing import Any, Dict, List, Literal
 
 import cv2
-import numpy as np
 import torch
 import torch.nn.functional as F
 from pydantic import Field, StrictInt
+from roboflow_workflows.v2.blocks.image.host import call_on_host
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import INTEGER_KIND, STRING_KIND
@@ -66,6 +70,10 @@ ONE_CHANNEL_TYPES = ("otsu", "adaptive_mean", "adaptive_gaussian")
 THRESHOLD_TYPES = FIXED_TYPES + ONE_CHANNEL_TYPES
 ADAPTIVE_BLOCK_SIZE = 11
 ADAPTIVE_OFFSET = 2
+ADAPTIVE_METHODS = {
+    "adaptive_mean": cv2.ADAPTIVE_THRESH_MEAN_C,
+    "adaptive_gaussian": cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+}
 # OpenCV's Otsu scan guards with the C float epsilon (2**-23).
 FLOAT_EPSILON = 2.0**-23
 
@@ -196,10 +204,21 @@ def threshold(
             thresh_value=otsu_threshold(counts.cpu().tolist()),
             max_value=max_value,
         )
-    elif threshold_type == "adaptive_mean":
-        thresholded = _adaptive_mean(pixels, max_value=max_value)
+    elif threshold_type == "adaptive_mean" and pixels.device.type != "cpu":
+        thresholded = torch_adaptive_mean(pixels, max_value=max_value)
     else:
-        thresholded = _adaptive_gaussian_on_host(pixels, max_value=max_value)
+        method = ADAPTIVE_METHODS[threshold_type]
+        thresholded = call_on_host(
+            pixels,
+            function=lambda plane: cv2.adaptiveThreshold(
+                plane,
+                max_value,
+                method,
+                cv2.THRESH_BINARY,
+                ADAPTIVE_BLOCK_SIZE,
+                ADAPTIVE_OFFSET,
+            ),
+        )
 
     return thresholded
 
@@ -301,9 +320,20 @@ def _degenerate_threshold(
     return filled
 
 
-def _adaptive_mean(pixels: torch.Tensor, *, max_value: int) -> torch.Tensor:
-    # OpenCV rounds the 11 x 11 mean to uint8 first. Sums of 121 values are
-    # exact in float32 and sum / 121 never ties, so rounding matches.
+def torch_adaptive_mean(pixels: torch.Tensor, *, max_value: int) -> torch.Tensor:
+    """Equal OpenCV's 11 x 11 adaptive mean threshold in PyTorch on the device.
+
+    ``threshold`` uses this only off the CPU. OpenCV rounds the mean to
+    ``uint8`` first. Sums of 121 values are exact in float32 and sum / 121
+    never ties, so the rounding matches.
+
+    Args:
+        pixels: ``(1, height, width)`` ``uint8`` tensor; not modified.
+        max_value: Value of passing pixels, clamped to ``0..255``.
+
+    Returns:
+        A new tensor of the same shape on the same device.
+    """
     fill = min(max(round(max_value), 0), 255)
     pad = ADAPTIVE_BLOCK_SIZE // 2
     padded = _replicate_pad(pixels.to(torch.float32).unsqueeze(0), pad=pad)
@@ -329,19 +359,3 @@ def _replicate_pad(planes: torch.Tensor, *, pad: int) -> torch.Tensor:
     padded = planes.index_select(-2, rows).index_select(-1, columns)
 
     return padded
-
-
-def _adaptive_gaussian_on_host(pixels: torch.Tensor, *, max_value: int) -> torch.Tensor:
-    # Explicit CPU boundary: OpenCV's own adaptive Gaussian threshold, as V1.
-    plane = np.ascontiguousarray(pixels.detach()[0].cpu().numpy())
-    thresholded = cv2.adaptiveThreshold(
-        plane,
-        max_value,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        ADAPTIVE_BLOCK_SIZE,
-        ADAPTIVE_OFFSET,
-    )
-    on_device = torch.from_numpy(thresholded).unsqueeze(0).to(pixels.device)
-
-    return on_device

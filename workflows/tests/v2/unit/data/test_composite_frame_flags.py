@@ -19,7 +19,7 @@ from roboflow_workflows.v2.data.image import (
 
 from inference_models.models.base.object_detection import Detections
 
-COMPOSITE_ROOT = "composite image \\(mosaic\\)"
+COMPOSITE_ROOT = "composite image, such as a stitched panorama"
 ROOT_BOX = [[11.0, 5.0, 15.0, 9.0]]
 ABSENT = object()
 ORDINARY_MARKERS = {

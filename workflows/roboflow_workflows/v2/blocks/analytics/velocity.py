@@ -137,7 +137,8 @@ class VelocityBlock(Block):
             source="predictions",
             description=(
                 "The input rows with velocity, speed, smoothed_velocity and "
-                "smoothed_speed in m/s in bboxes_metadata."
+                "smoothed_speed in bboxes_metadata, in px/s divided by "
+                "pixels_per_meter (m/s when calibrated; px/s at the default 1.0)."
             ),
         ),
     }

@@ -2,7 +2,8 @@
 
 The models accept the same JSON, field names and defaults as the current V1
 query language: 36 operations, 16 comparator spellings, 6 unary operators and
-5 structural types.
+5 structural types. V2 adds two detection properties: ``decoded_text`` and its
+alias ``data``, the text a barcode or QR code detector stores per row.
 """
 
 import re
@@ -53,6 +54,8 @@ DETECTION_PROPERTIES = (
     "angle",
     "area_px",
     "area_converted",
+    "decoded_text",
+    "data",
 )
 
 COMPARATOR_TYPES = (

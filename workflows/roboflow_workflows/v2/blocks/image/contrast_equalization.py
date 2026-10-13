@@ -22,8 +22,9 @@ a GPU), builds a 256-entry table with scikit-image's arithmetic and looks every
 pixel up on the device. Results equal V1 exactly.
 
 ``Adaptive Equalization`` depends on each pixel's position, so it crosses to
-the CPU and calls ``equalize_adapthist`` there in V1's NumPy layout (BGR for
-three channels; scikit-image equalizes the HSV brightness of a color image).
+the CPU and calls ``equalize_adapthist`` there in V1's NumPy layout
+(``host.call_on_host``: BGR for three channels; scikit-image equalizes the
+HSV brightness of a color image).
 A one-channel image is equalized as a single plane.
 
 The result is the same image with new pixels: identity, mappings, source and
@@ -36,6 +37,7 @@ from typing import Any, Dict, Literal
 import numpy as np
 import torch
 from pydantic import Field
+from roboflow_workflows.v2.blocks.image.host import call_on_host
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import STRING_KIND
@@ -58,8 +60,10 @@ ADAPTIVE_CLIP_LIMIT = 0.03
 class ContrastEqualizationBlock(Block):
     """Equalize the contrast of one image; see the module docstring.
 
-    Example: an image using only values ``100..150`` uses the whole
-    ``0..255`` range after ``"Histogram Equalization"``.
+    Example: an image with one pixel of each value ``100..150`` spreads to
+    ``5..255`` after ``"Histogram Equalization"``, as in V1. Each value moves
+    to 255 times the share of pixels at or below it, so the darkest of the 51
+    values becomes 255 / 51 = 5, not 0. ``"Contrast Stretching"`` reaches 0.
     """
 
     type = "v2/contrast_equalization@v1"
@@ -105,7 +109,7 @@ class ContrastEqualizationBlock(Block):
 
         pixels = image.tensor_image
         if equalization_type == "Adaptive Equalization":
-            equalized = _adaptive_equalization_on_host(pixels)
+            equalized = call_on_host(pixels, function=_equalize_adaptively)
         else:
             counts = torch.bincount(pixels.reshape(-1).long(), minlength=256)
             build_table = (
@@ -185,23 +189,10 @@ def _percentile_from_counts(counts: np.ndarray, *, percent: float) -> float:
     return percentile
 
 
-def _adaptive_equalization_on_host(pixels: torch.Tensor) -> torch.Tensor:
-    # Explicit CPU boundary: scikit-image's CLAHE on V1's layout and dtype.
-    host = pixels.detach().cpu()
-    if host.shape[0] == 3:
-        host = host.flip(0)
-    array = host.permute(1, 2, 0).numpy()
-    if array.shape[2] == 1:
-        array = array[:, :, 0]
-
+def _equalize_adaptively(array: np.ndarray) -> np.ndarray:
+    # V1's chain: scikit-image's CLAHE on a float32 copy scaled to 0..1.
     scaled = array.astype(np.float32) / 255
     equalized = exposure.equalize_adapthist(scaled, clip_limit=ADAPTIVE_CLIP_LIMIT)
-    planes = (
-        (equalized * 255).astype(np.uint8).reshape(array.shape[0], array.shape[1], -1)
-    )
-    restored = torch.from_numpy(planes).permute(2, 0, 1)
-    if restored.shape[0] == 3:
-        restored = restored.flip(0)
-    on_device = restored.contiguous().to(pixels.device)
+    planes = (equalized * 255).astype(np.uint8)
 
-    return on_device
+    return planes

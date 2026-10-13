@@ -3,10 +3,11 @@
 The oracle is the latest V1 block (``sv.HaloAnnotator``) run on the same
 rows; V1 test modules are not imported.
 
-Every ``kernel_size`` is exact, odd and even: ``box_blur`` rounds as
-``cv2.blur`` does. Dim colors are checked separately: there a 1-level glow
-pixel sets ``max(gray)``, so any rounding difference would change the image
-by up to ~160 levels.
+Odd and even ``kernel_size`` values are exact: the block blurs with
+``cv2.blur`` itself. Dim colors are checked separately: there a 1-level glow
+pixel sets ``max(gray)``, so any blur rounding difference would change the
+image by up to ~160 levels. Dim cases assert that their masks are not empty,
+except the explicit empty-mask case.
 
 One deliberate difference: sums above 255 saturate, where V1's ``uint8``
 cast wraps them. That case is checked against ``_saturating_v1_halo``, V1's
@@ -249,13 +250,31 @@ DIM_COLORS = ["#010203", "#000003", "#020202", "#040000", "#000100", "#010101"]
 @pytest.mark.parametrize("kernel_size", [2, 3, 4, 6, 8, 16, 40])
 @pytest.mark.parametrize("color", DIM_COLORS)
 def test_dim_colors_equal_v1(color: str, kernel_size: int) -> None:
+    # Includes the first reported dim cases: #010203, #020202 and #000003
+    # with kernels 4 and 40.
     pixels, mask = _gray_image_with_mask(17, 19)
+    assert mask.sum() == 8 * 9
 
     drawn, expected = _one_mask_halo_and_v1(
         pixels, mask, color, kernel_size=kernel_size
     )
 
     _assert_same_pixels(drawn, expected)
+
+
+@pytest.mark.parametrize("width", [23, 29])
+def test_a_dim_strip_with_kernel_22_equals_v1(width: int) -> None:
+    # Row 11 averages 1.5 per channel. cv2.blur rounds that to 1 in most of
+    # the row and to 2 in its last values, so max(gray) is 2, not 1: a glow
+    # pixel of gray 1 becomes 120, where a peak of 1 would give 40.
+    pixels = np.full((44, width, 3), 200, dtype=np.uint8)
+    mask = _mask_at(44, width, (0, 11, 0, width))
+    assert mask.sum() == 11 * width
+
+    drawn, expected = _one_mask_halo_and_v1(pixels, mask, "#030303", kernel_size=22)
+
+    _assert_same_pixels(drawn, expected)
+    assert expected[11, 0].tolist() == [120, 120, 120]
 
 
 def _mask_at(height: int, width: int, *spans: Tuple[int, int, int, int]) -> np.ndarray:

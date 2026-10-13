@@ -159,11 +159,11 @@ def tracker_ids_of(row_metadata: Sequence[Optional[dict]]) -> Optional[np.ndarra
         row_metadata: ``bboxes_metadata`` rows; a ``None`` row has no id.
 
     Returns:
-        ``(N,)`` int64 tracker ids on the host, or ``None`` when there are no
-        rows or a row has no id.
+        ``(N,)`` int64 tracker ids on the host (empty for no rows), or
+        ``None`` when a row has no id.
     """
     values = [(row or {}).get(TRACKER_ID_KEY) for row in row_metadata]
-    if not values or any(value is None for value in values):
+    if any(value is None for value in values):
         return None
 
     tracker_ids = np.asarray(values, dtype=np.int64)

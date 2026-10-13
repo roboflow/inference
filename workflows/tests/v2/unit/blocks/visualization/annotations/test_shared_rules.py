@@ -91,11 +91,13 @@ def test_tracker_ids_need_an_id_in_every_row() -> None:
     complete = tracker_ids_of([{"tracker_id": 2**62 + 1}, {"tracker_id": 3}])
     one_missing = tracker_ids_of([{"tracker_id": 1}, {}])
     none_row = tracker_ids_of([{"tracker_id": 1}, None])
+    no_rows = tracker_ids_of([])
 
     # then
     np.testing.assert_array_equal(complete, [2**62 + 1, 3])
     assert complete.dtype == np.int64
-    assert one_missing is None and none_row is None and tracker_ids_of([]) is None
+    assert one_missing is None and none_row is None
+    assert no_rows.shape == (0,) and no_rows.dtype == np.int64
 
 
 def test_draw_rows_read_tracker_ids_with_the_same_reader() -> None:

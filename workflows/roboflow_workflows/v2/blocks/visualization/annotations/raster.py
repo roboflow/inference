@@ -3,7 +3,11 @@
 =====================  ==================================  =================
 function               OpenCV call it follows              equality
 =====================  ==================================  =================
-box_blur               cv2.blur (BORDER_REFLECT_101)       exact (tested)
+box_blur               cv2.blur (BORDER_REFLECT_101)       20 kernels
+                                                           compared; may
+                                                           differ by 1 at
+                                                           row ends when
+                                                           k * k > 256
 grow_mask              cv2.dilate with an elliptic kernel  exact
 resize_nearest         cv2.resize INTER_NEAREST            exact
 resize_linear          cv2.resize INTER_LINEAR             sample positions
@@ -51,16 +55,17 @@ def box_blur(roi: torch.Tensor, kernel_size: int) -> torch.Tensor:
     The window of pixel ``i`` is ``[i - k // 2, i - k // 2 + k)``; pixels
     beyond the edge are mirrored without repeating it (reflect 101), as often
     as needed for small regions. Each window sum ``s`` over ``area = k * k``
-    pixels becomes the value ``cv2.blur`` gives (OpenCV 4.12; every sum of
-    every kernel 1 to 64 compared)::
+    pixels follows the rounding of ``cv2.blur`` (OpenCV 4.12, CPU; 20
+    kernel sizes compared, not every kernel)::
 
         area <= 256, a power of two   (s + area // 2 + 1) // area
         area <= 256, otherwise        (s + area // 2) // area    # half up
         area > 256                    round_half_even(float32(s) * float32(1 / area))
 
     So ``.5`` means round up for small kernels, and a small mean such as
-    ``1 / 4`` rounds up for kernel 2: a dim glow keeps OpenCV's 1-level
-    pixels.
+    ``1 / 4`` rounds up for kernel 2. The ``area > 256`` row approximates
+    OpenCV: ``cv2.blur`` rounds a few values at each row end with other
+    precision, depending on its CPU build, so they may differ by 1 level.
 
     Args:
         roi: ``(C, H, W)`` uint8 region.

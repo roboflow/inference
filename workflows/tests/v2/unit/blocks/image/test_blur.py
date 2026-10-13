@@ -13,7 +13,11 @@ import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks.image import blur as blur_module
-from roboflow_workflows.v2.blocks.image.blur import ImageBlurBlock
+from roboflow_workflows.v2.blocks.image.blur import (
+    ImageBlurBlock,
+    torch_blur,
+    torch_blur_is_exact,
+)
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
 
@@ -156,20 +160,94 @@ def test_images_smaller_than_the_kernel_equal_opencv(
     assert np.array_equal(blurred.numpy(), opencv_blur(pixels, blur_type, 5))
 
 
-@pytest.mark.parametrize(
-    "blur_type, kernel_size", [("average", 5), ("gaussian", 7), ("median", 15)]
-)
-def test_common_settings_stay_on_the_image_device(
+DEVICE_SETTINGS = [
+    ("average", 1),
+    ("average", 5),
+    ("average", 15),
+    ("gaussian", 1),
+    ("gaussian", 3),
+    ("gaussian", 7),
+    ("median", 1),
+    ("median", 3),
+    ("median", 15),
+]
+
+
+@pytest.mark.parametrize("channels", [1, 3])
+@pytest.mark.parametrize("blur_type, kernel_size", DEVICE_SETTINGS)
+@pytest.mark.parametrize("size_hw", [(31, 27), (16, 16), (8, 9)])
+def test_torch_blur_equals_opencv_where_exact(
+    channels: int, blur_type: str, kernel_size: int, size_hw: tuple
+) -> None:
+    # The off-CPU kernels, checked here on CPU tensors.
+    pixels = random_pixels(channels, size_hw[0], size_hw[1], seed=kernel_size)
+    if not torch_blur_is_exact(pixels, blur_type=blur_type, kernel_size=kernel_size):
+        pytest.skip("larger than the image: OpenCV handles it")
+
+    blurred = torch_blur(pixels, blur_type=blur_type, kernel_size=kernel_size)
+
+    expected = opencv_blur(pixels, blur_type, kernel_size)
+    assert np.array_equal(blurred.numpy(), expected)
+
+
+@pytest.mark.parametrize("blur_type, kernel_size", DEVICE_SETTINGS)
+def test_cpu_tensors_always_use_opencv(
     monkeypatch: pytest.MonkeyPatch, blur_type: str, kernel_size: int
 ) -> None:
     def refuse(*args, **kwargs):
-        raise AssertionError("crossed to the CPU")
+        raise AssertionError("used the PyTorch emulation on the CPU")
 
-    monkeypatch.setattr(blur_module, "opencv_on_host", refuse)
+    monkeypatch.setattr(blur_module, "torch_blur", refuse)
+    pixels = random_pixels(3, 20, 20, seed=2)
 
-    blurred = run_blur(random_pixels(3, 20, 20, seed=2), blur_type, kernel_size)
+    blurred = run_blur(pixels, blur_type, kernel_size)
 
-    assert blurred.shape == (3, 20, 20)
+    assert np.array_equal(blurred.numpy(), opencv_blur(pixels, blur_type, kernel_size))
+
+
+@pytest.mark.parametrize(
+    "blur_type, kernel_size, route",
+    [
+        ("average", 5, "torch"),
+        ("gaussian", 7, "torch"),
+        ("median", 15, "torch"),
+        ("median", 4, "torch"),  # rounded up to 5
+        ("average", 4, "opencv"),
+        ("gaussian", 9, "opencv"),
+        ("median", 17, "opencv"),
+        ("bilateral", 5, "opencv"),
+    ],
+)
+def test_off_cpu_tensors_blur_common_settings_on_their_device(
+    monkeypatch: pytest.MonkeyPatch, blur_type: str, kernel_size: int, route: str
+) -> None:
+    # A shape-only "meta" tensor stands in for a CUDA image: no device needed.
+    routes = []
+    monkeypatch.setattr(
+        blur_module, "torch_blur", lambda pixels, **kwargs: routes.append("torch")
+    )
+    monkeypatch.setattr(
+        blur_module, "call_on_host", lambda pixels, **kwargs: routes.append("opencv")
+    )
+    pixels = torch.empty((3, 20, 20), dtype=torch.uint8, device="meta")
+
+    blur_module.blur(pixels, blur_type=blur_type, kernel_size=kernel_size)
+
+    assert routes == [route]
+
+
+def test_off_cpu_kernel_wider_than_the_image_uses_opencv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    routes = []
+    monkeypatch.setattr(
+        blur_module, "call_on_host", lambda pixels, **kwargs: routes.append("opencv")
+    )
+    pixels = torch.empty((3, 4, 20), dtype=torch.uint8, device="meta")
+
+    blur_module.blur(pixels, blur_type="median", kernel_size=9)
+
+    assert routes == ["opencv"]
 
 
 def test_keeps_identity_geometry_and_metadata_and_leaves_the_input() -> None:

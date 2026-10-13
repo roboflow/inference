@@ -25,29 +25,27 @@ and mask and gets ``None`` metadata, where V1 failed the whole step.
 """
 
 from dataclasses import replace
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np
 import torch
-from pycocotools import mask as mask_utils
 from pydantic import Field
+from roboflow_workflows.v2.blocks.geometry._masks import (
+    Window,
+    mask_windows,
+    polygon_masks,
+)
 from roboflow_workflows.v2.blocks.geometry._rows import without_host_mirrors
 from roboflow_workflows.v2.blocks.geometry.mask_inputs import (
     INSTANCE_SEGMENTATION_VIEW_KIND,
     instance_predictions_of,
 )
 from roboflow_workflows.v2.data.predictions import INSTANCE_SEGMENTATION_PREDICTION_KIND
-from roboflow_workflows.v2.data.rle import decode_rle_masks
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
-
-from inference_models.models.base.types import InstancesRLEMasks
 
 RECT_KEYS = ("rect", "width", "height", "angle")
 MIN_POLYGON_POINTS = 3
-
-# (x0, y0) of a host mask window and the window itself.
-Window = Tuple[Tuple[int, int], np.ndarray]
 
 
 class BoundingRectBlock(Block):
@@ -92,13 +90,14 @@ class BoundingRectBlock(Block):
         if len(predictions.xyxy) == 0:
             return {"predictions": predictions}
 
-        windows = _mask_windows(predictions.mask)
+        windows = mask_windows(predictions.mask)
         rectangles = [_min_area_rectangle(window) for window in windows]
+        corners = [None if r is None else r["corners"] for r in rectangles]
         rows = predictions.bboxes_metadata or [None] * len(windows)
         fitted = replace(
             predictions,
             xyxy=_rectangle_boxes(predictions.xyxy, rectangles=rectangles),
-            mask=_rectangle_masks(predictions.mask, rectangles=rectangles),
+            mask=polygon_masks(predictions.mask, polygons=corners),
             bboxes_metadata=[
                 {**without_host_mirrors(row), **_rect_metadata(rectangle)}
                 for row, rectangle in zip(rows, rectangles)
@@ -107,34 +106,6 @@ class BoundingRectBlock(Block):
         result = {"predictions": fitted}
 
         return result
-
-
-def _mask_windows(mask: Any) -> List[Optional[Window]]:
-    # The smallest window holding each instance, on the host; None when empty.
-    if isinstance(mask, InstancesRLEMasks):
-        host_masks = decode_rle_masks(mask)
-        any_in_row = host_masks.any(axis=2)
-        any_in_column = host_masks.any(axis=1)
-    else:
-        host_masks = None
-        any_in_row = mask.any(dim=2).cpu().numpy()
-        any_in_column = mask.any(dim=1).cpu().numpy()
-
-    windows: List[Optional[Window]] = []
-    for instance, (rows, columns) in enumerate(zip(any_in_row, any_in_column)):
-        ys, xs = np.flatnonzero(rows), np.flatnonzero(columns)
-        if ys.size == 0:
-            windows.append(None)
-            continue
-
-        y0, y1, x0, x1 = int(ys[0]), int(ys[-1]) + 1, int(xs[0]), int(xs[-1]) + 1
-        if host_masks is None:
-            pixels = mask[instance, y0:y1, x0:x1].cpu().numpy()
-        else:
-            pixels = host_masks[instance, y0:y1, x0:x1]
-        windows.append(((x0, y0), pixels.astype(np.uint8)))
-
-    return windows
 
 
 def _min_area_rectangle(window: Optional[Window]) -> Optional[Dict[str, Any]]:
@@ -189,54 +160,3 @@ def _rectangle_boxes(
         boxes[row] = torch.tensor(box, dtype=boxes.dtype)
 
     return boxes
-
-
-def _rectangle_masks(mask: Any, *, rectangles: List[Optional[Dict[str, Any]]]) -> Any:
-    if isinstance(mask, InstancesRLEMasks):
-        return _rectangle_rle_masks(mask, rectangles=rectangles)
-
-    height, width = int(mask.shape[1]), int(mask.shape[2])
-    filled = mask.clone()
-    for row, rectangle in enumerate(rectangles):
-        if rectangle is None:
-            continue
-        (x0, y0), window = _filled_window(rectangle["corners"], size_hw=(height, width))
-        filled[row].zero_()
-        filled[row, y0 : y0 + window.shape[0], x0 : x0 + window.shape[1]] = (
-            torch.from_numpy(window).to(device=mask.device, dtype=mask.dtype)
-        )
-
-    return filled
-
-
-def _rectangle_rle_masks(
-    mask: InstancesRLEMasks, *, rectangles: List[Optional[Dict[str, Any]]]
-) -> InstancesRLEMasks:
-    height, width = mask.image_size
-    encoded = []
-    for row, rectangle in enumerate(rectangles):
-        if rectangle is None:
-            encoded.append(mask.masks[row])
-            continue
-        canvas = np.zeros((height, width), dtype=np.uint8)
-        (x0, y0), window = _filled_window(rectangle["corners"], size_hw=(height, width))
-        canvas[y0 : y0 + window.shape[0], x0 : x0 + window.shape[1]] = window
-        encoded.append(mask_utils.encode(np.asfortranarray(canvas))["counts"])
-
-    converted = InstancesRLEMasks(image_size=mask.image_size, masks=encoded)
-
-    return converted
-
-
-def _filled_window(corners: np.ndarray, *, size_hw: Tuple[int, int]) -> Window:
-    # Fill the corner polygon inside its own clipped bounding window; filling a
-    # shifted polygon on a window equals filling it on the full canvas.
-    height, width = size_hw
-    x0, y0 = (int(v) for v in np.clip(corners.min(axis=0), 0, [width, height]))
-    x1, y1 = (int(v) for v in np.clip(corners.max(axis=0) + 1, 0, [width, height]))
-    window = np.zeros((max(y1 - y0, 0), max(x1 - x0, 0)), dtype=np.uint8)
-    if window.size:
-        shifted = (corners - np.array([x0, y0])).astype(np.int32)
-        cv2.fillPoly(window, [shifted], color=(1,))
-
-    return (x0, y0), window

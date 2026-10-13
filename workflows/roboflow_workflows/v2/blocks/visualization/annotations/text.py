@@ -141,7 +141,7 @@ def detection_labels(
             + (len(sizes) - 1) * style.padding
             + 2 * style.padding
         )
-        x1, y1, x2, y2 = _background(
+        x1, y1, x2, y2 = background_rect(
             int(anchor[0]),
             int(anchor[1]),
             width=width,
@@ -270,8 +270,25 @@ def _text_size(text: str, *, style: TextStyle) -> Tuple[int, int]:
     return width, height
 
 
-def _background(x: int, y: int, *, width: int, height: int, position: str) -> Rect:
-    # sv.annotators.utils.resolve_text_background_xyxy
+def background_rect(x: int, y: int, *, width: int, height: int, position: str) -> Rect:
+    """Place a label background at its anchor, as ``sv`` does.
+
+    Ports ``sv.annotators.utils.resolve_text_background_xyxy``. Plain and rich
+    labels share it, so both place backgrounds identically.
+
+    Args:
+        x: Anchor x, in frame pixels.
+        y: Anchor y, in frame pixels.
+        width: Background width.
+        height: Background height.
+        position: One of ``POSITIONS`` or ``CENTER_OF_MASS``.
+
+    Returns:
+        The background ``(x1, y1, x2, y2)``.
+
+    Raises:
+        ValueError: If ``position`` is unknown.
+    """
     if position == "TOP_LEFT":
         return x, y - height, x + width, y
     if position == "TOP_RIGHT":

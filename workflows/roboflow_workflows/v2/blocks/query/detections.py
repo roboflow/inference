@@ -13,6 +13,9 @@ call (``DetectionTable``). Masks are never read, and a view is never upscaled
 to full resolution here. Size and centres are computed on the boxes' device in
 their own dtype, as V1 does, then copied, so values match V1 bit for bit.
 
+Row-metadata properties read ``bboxes_metadata[i][name]``. The V2-only
+``decoded_text`` reads the ``data`` key, where code detectors store the text.
+
 Row selection keeps the semantic row record (decision 015): ``take_rows`` and
 ``SegmentationView.select`` gather its ids with the rows.
 """
@@ -43,6 +46,8 @@ Boxes = Union[Detections, InstanceDetections]
 # Per-box host copies of xyxy/class_id/confidence; stale once those change.
 HOST_MIRROR_KEYS = ("_host_xyxy", "_host_class_id", "_host_confidence")
 _IMAGE_METADATA_PROPERTIES = ("image_dimensions", "prediction_type")
+# Property name -> row metadata key, for names that differ from their key.
+_ROW_METADATA_KEYS = {"decoded_text": "data"}
 _BOX_COLUMNS = {"x_min": 0, "y_min": 1, "x_max": 2, "y_max": 3}
 _CORNERS = {
     "top_left": ("x_min", "y_min"),
@@ -341,6 +346,7 @@ class DetectionRow:
         """Return one property of this detection, as V1 ExtractDetectionProperty does."""
         table = self.table
         index = self.index
+        name = _ROW_METADATA_KEYS.get(name, name)
         if name in _BOX_COLUMNS or name in ("confidence", "class_id", "size"):
             return table.column(name)[index]
         if name == "class_name":
@@ -408,7 +414,7 @@ def detections_property(value: Any, name: str) -> list:
         return _anchors(table.boxes.xyxy, name)
     if name in _IMAGE_METADATA_PROPERTIES:
         return [table.image_metadata.get(name)] * table.count
-    if not table.has_values(name):
+    if not table.has_values(_ROW_METADATA_KEYS.get(name, name)):
         raise OperationFailure(
             f"property `{name}` is not a box property and no row, column or "
             "keypoint field carries it"

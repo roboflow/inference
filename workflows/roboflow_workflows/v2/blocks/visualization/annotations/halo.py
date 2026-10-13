@@ -4,7 +4,7 @@ Port of V1 ``roboflow_core/halo_visualization@v2`` (``sv.HaloAnnotator``);
 the older ``halo_visualization@v1`` is not ported. Per image::
 
     colored = black image with masks painted, largest first  (blend.paint_instances)
-    glow    = cv2.blur(colored, kernel_size)                  (raster.box_blur)
+    glow    = cv2.blur(colored, kernel_size)       # on the host, see below
     glow[union of masks] = 0                     # the glow stays outside objects
     gray    = cv2 BGR2GRAY of glow                # OpenCV's 15-bit fixed point
     alpha   = opacity * gray / max(gray)
@@ -13,26 +13,23 @@ the older ``halo_visualization@v1`` is not ported. Per image::
 An image whose glow is all black (no rows, or ``max(gray) == 0``) is
 returned unchanged, as in V1. Pixels inside the masks never change.
 
-Equality with V1, for the same dense masks:
+The blur is V1's own ``cv2.blur``, on the CPU for every input device. A
+dim glow is why: its brightest pixel sets ``max(gray)``, so one level of
+blur rounding can move the output by ~80-160 levels, and ``cv2.blur``'s
+rounding depends on its CPU build. The input and output stay tensors on
+the image's device::
 
-- tested on CPU only, against one OpenCV 4.12 build (arm64, NEON): 645
-  cases (kernels 1 to 64, dim colors included) and 2,610 targeted row-end
-  probes, with no Halo mismatch. ``box_blur`` rounds each mean as that
-  ``cv2.blur`` does. This matters most for dim colors: a glow of 1 level
-  can be ``max(gray)``, where ``alpha`` is the full ``opacity``, so 1 level
-  of blur rounding would move such a pixel by up to ~160 levels;
-- this is not a guarantee for every kernel or backend: for kernels above 16,
-  ``cv2.blur`` rounds a few pixels at each row end in float64 and the rest
-  in float32, and that split depends on its SIMD backend; ``box_blur`` uses
-  float32 everywhere. CUDA and MPS were not verified;
-- MPS has no float64 and uses float32, so a pixel may be 1 level lower or
-  higher where the float64 sum is within float32 rounding of an integer;
+    device  painting the masks
+    host    copy to CPU (waits for the device), cv2.blur, copy back
+    device  clearing the masks, gray, blend
+
+Differences from V1:
+
 - V1 converts sums above 255 with NumPy's ``uint8`` cast, which wraps on
   common platforms (357 becomes 101); this port saturates them at 255. Such
-  sums occur where a bright channel of the glow meets a bright image.
-
-    device  all work: painting, blur, gray, blend; no host read and no wait
-    host    only RLE masks are decoded there, as their provider does
+  sums occur where a bright channel of the glow meets a bright image;
+- MPS has no float64 and blends in float32, so a pixel may be 1 level lower
+  or higher where the float64 sum is within float32 rounding of an integer.
 
 Masks are dense full-image masks at ``mask_quality`` (``rows``); a mask view
 is materialized once.
@@ -40,6 +37,8 @@ is materialized once.
 
 from typing import Any, Dict
 
+import cv2
+import numpy as np
 import torch
 from pydantic import Field, StrictInt, model_validator
 from roboflow_workflows.v2.blocks.visualization.annotations.base import (
@@ -67,7 +66,6 @@ from roboflow_workflows.v2.blocks.visualization.annotations.params import (
     checked_opacity,
     mask_quality_field,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.raster import box_blur
 from roboflow_workflows.v2.blocks.visualization.annotations.rows import (
     MASK_KINDS,
     dense_masks_of,
@@ -222,7 +220,7 @@ def with_halo(
         New contiguous ``(3, H, W)`` uint8 image.
     """
     colored = paint_instances(torch.zeros_like(canvas), masks, colors)
-    glow = box_blur(colored, kernel_size).masked_fill(masks.any(dim=0), 0)
+    glow = _cv2_blur(colored, kernel_size).masked_fill(masks.any(dim=0), 0)
     gray = _gray(glow)
     peak = gray.max()
 
@@ -234,6 +232,18 @@ def with_halo(
     halo = torch.where(peak > 0, blended, canvas).contiguous()
 
     return halo
+
+
+def _cv2_blur(rgb: torch.Tensor, kernel_size: int) -> torch.Tensor:
+    # (3, H, W) uint8 on any device -> blurred copy there. cv2.blur on V1's
+    # contiguous BGR (H, W, 3) array: its rounding at row ends depends on
+    # the position of each value in the row, so the layout must match V1's.
+    bgr = np.ascontiguousarray(rgb.flip(0).permute(1, 2, 0).cpu().numpy())
+    blurred = cv2.blur(bgr, (kernel_size, kernel_size))
+    rgb_blurred = torch.from_numpy(blurred).permute(2, 0, 1).flip(0)
+    result = rgb_blurred.to(rgb.device)
+
+    return result
 
 
 def _gray(rgb: torch.Tensor) -> torch.Tensor:

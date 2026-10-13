@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
+from roboflow_workflows.v2.blocks.image import morphology as morphology_module
 from roboflow_workflows.v2.blocks.image.morphology import (
     MorphologicalTransformationBlock,
 )
@@ -152,6 +153,53 @@ def test_equals_opencv(channels: int, operation: str, kernel_size: int) -> None:
 
     expected = opencv_transform(pixels, operation, kernel_size)
     assert np.array_equal(transformed.numpy(), expected)
+
+
+@pytest.mark.parametrize("channels", [1, 3])
+@pytest.mark.parametrize("operation", OPERATIONS)
+@pytest.mark.parametrize("kernel_size", [1, 2, 3, 4, 5, 8, 9])
+def test_torch_operations_equal_opencv(
+    channels: int, operation: str, kernel_size: int
+) -> None:
+    # The off-CPU versions, checked here on CPU tensors; 9 exceeds 3 x 4.
+    size_hw = (3, 4) if kernel_size == 9 else (19, 23)
+    pixels = random_pixels(channels, size_hw[0], size_hw[1], seed=kernel_size)
+
+    transformed = morphology_module.OPERATIONS[operation](
+        pixels.expand(3, -1, -1), kernel_size
+    )
+
+    expected = opencv_transform(pixels, operation, kernel_size)
+    assert np.array_equal(transformed.numpy(), expected)
+
+
+def test_cpu_tensors_use_opencv(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*args, **kwargs):
+        raise AssertionError("used the PyTorch emulation on the CPU")
+
+    monkeypatch.setattr(morphology_module, "_window_extreme", refuse)
+    pixels = random_pixels(3, 19, 23, seed=6)
+
+    for operation in OPERATIONS:
+        transformed = transform(pixels, operation, 5)
+        expected = opencv_transform(pixels, operation, 5)
+        assert np.array_equal(transformed.numpy(), expected), operation
+
+
+def test_off_cpu_tensors_stay_on_their_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A shape-only "meta" tensor stands in for a CUDA image: no device needed.
+    def refuse(*args, **kwargs):
+        raise AssertionError("crossed to the CPU")
+
+    monkeypatch.setattr(morphology_module, "call_on_host", refuse)
+    pixels = torch.empty((3, 20, 20), dtype=torch.uint8, device="meta")
+
+    for operation in OPERATIONS:
+        transformed = morphology_module.morphology(
+            pixels, operation=operation, kernel_size=5
+        )
+        assert transformed.device.type == "meta"
+        assert transformed.shape == (3, 20, 20)
 
 
 @pytest.mark.parametrize("operation", ["Opening then Closing", "Black Hat"])

@@ -80,6 +80,20 @@ def test_histogram_equalization_of_two_equal_populations() -> None:
     assert equalized[:, 2:].unique().tolist() == [255]
 
 
+def test_docstring_example_one_pixel_of_each_value_100_to_150() -> None:
+    # The darkest of 51 equally common values keeps its own share: 255 / 51.
+    pixels = torch.arange(100, 151, dtype=torch.uint8).reshape(1, 3, 17)
+
+    equalized = equalize(pixels, "Histogram Equalization")
+    stretched = equalize(pixels, "Contrast Stretching")
+
+    assert (int(equalized.min()), int(equalized.max())) == (5, 255)
+    assert np.array_equal(
+        equalized.numpy(), skimage_reference(pixels, "Histogram Equalization")
+    )
+    assert (int(stretched.min()), int(stretched.max())) == (0, 255)
+
+
 def test_contrast_stretching_maps_percentiles_to_the_full_range() -> None:
     # 0..99, one pixel each: p2 = 1.98, p98 = 97.02; values at or below p2
     # become 0, at or above p98 become 255.

@@ -185,6 +185,8 @@ def _channel_range(
         value_range = (np.float32(present[0]), np.float32(present[-1]))
         return value_range
 
+    # Not a no-op: V1 round-trips through a fraction, and the float error
+    # (7 -> 7.000000000000001) changes the quantile. Keep it for exact parity.
     lower_percent = float(clip_limit) / 100.0 * 100
     upper_percent = 100 - lower_percent
     if one_channel:

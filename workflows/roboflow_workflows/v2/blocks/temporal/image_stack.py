@@ -65,7 +65,12 @@ class ImageStackBlock(Block):
         "frames": Output(
             LIST_OF_VALUES_KIND,
             source="image",
-            description="JPEG byte list, newest first; one value, not a time axis.",
+            description=(
+                "JPEG byte list, newest first; one value, not a time axis. No "
+                "V2 catalogue block consumes it yet: read it in a custom Python "
+                "block or a direct session.run caller. A served JSON response "
+                "cannot carry raw bytes; return frames_count instead."
+            ),
         ),
         "frames_count": Output(
             INTEGER_KIND, source="image", description="Number of stored JPEG frames."

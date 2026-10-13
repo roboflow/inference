@@ -20,8 +20,11 @@ Pixels equal OpenCV's ``erode``, ``dilate`` and ``morphologyEx`` with a
 rectangular kernel exactly, as used by V1. Outside the image nothing
 counts: the window covers only the pixels inside. For an even
 ``kernel_size`` the window reaches ``kernel_size // 2`` pixels up and left of
-its pixel and one fewer down and right (OpenCV's default anchor). All work
-stays on the image's device in ``uint8``.
+its pixel and one fewer down and right (OpenCV's default anchor).
+
+A CPU tensor gets V1's OpenCV calls themselves (``host.call_on_host``). A
+tensor on another device stays there: PyTorch takes the window minima and
+maxima in ``uint8``, equal to OpenCV.
 
 Like V1 the result has three channels: a one-channel image is first copied
 into three equal channels, so later color blocks accept it. Otherwise the
@@ -35,9 +38,12 @@ negative sizes.
 
 from typing import Any, Callable, Dict, Literal
 
+import cv2
+import numpy as np
 import torch
 import torch.nn.functional as F
 from pydantic import Field, StrictInt
+from roboflow_workflows.v2.blocks.image.host import call_on_host
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import INTEGER_KIND, STRING_KIND
@@ -147,7 +153,15 @@ def morphology(
     if kernel_size < 1:
         raise ValueError(f"kernel_size must be at least 1, got {kernel_size}")
 
-    transformed = OPERATIONS[operation](pixels, kernel_size)
+    if pixels.device.type == "cpu":
+        transformed = call_on_host(
+            pixels,
+            function=lambda array: _opencv_morphology(
+                array, operation=operation, kernel_size=kernel_size
+            ),
+        )
+    else:
+        transformed = OPERATIONS[operation](pixels, kernel_size)
 
     return transformed
 
@@ -240,6 +254,33 @@ OPERATIONS: Dict[str, Callable[[torch.Tensor, int], torch.Tensor]] = {
     "Gradient": _gradient,
     "Top Hat": _top_hat,
     "Black Hat": _black_hat,
+}
+
+
+def _opencv_morphology(
+    array: np.ndarray, *, operation: str, kernel_size: int
+) -> np.ndarray:
+    # V1's calls: a square kernel of ones and OpenCV's default border.
+    kernel = np.ones((kernel_size, kernel_size), np.uint8)
+    if operation == "Erosion":
+        transformed = cv2.erode(array, kernel, iterations=1)
+    elif operation == "Dilation":
+        transformed = cv2.dilate(array, kernel, iterations=1)
+    elif operation == "Opening then Closing":
+        opened = cv2.morphologyEx(array, cv2.MORPH_OPEN, kernel)
+        transformed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel)
+    else:
+        transformed = cv2.morphologyEx(array, OPENCV_OPERATIONS[operation], kernel)
+
+    return transformed
+
+
+OPENCV_OPERATIONS = {
+    "Opening": cv2.MORPH_OPEN,
+    "Closing": cv2.MORPH_CLOSE,
+    "Gradient": cv2.MORPH_GRADIENT,
+    "Top Hat": cv2.MORPH_TOPHAT,
+    "Black Hat": cv2.MORPH_BLACKHAT,
 }
 
 

@@ -12,9 +12,11 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
+from roboflow_workflows.v2.blocks.image import threshold as threshold_module
 from roboflow_workflows.v2.blocks.image.threshold import (
     ImageThresholdBlock,
     otsu_threshold,
+    torch_adaptive_mean,
 )
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
@@ -212,6 +214,64 @@ def test_one_channel_types_equal_opencv(threshold_type: str, size_hw: tuple) -> 
 
     expected = opencv_threshold(pixels, threshold_type, 0, 200)
     assert np.array_equal(thresholded.numpy(), expected)
+
+
+@pytest.mark.parametrize("max_value", [200, 255, 300, -5])
+@pytest.mark.parametrize("size_hw", [(1, 1), (3, 2), (23, 31), (64, 48)])
+def test_torch_adaptive_mean_equals_opencv(max_value: int, size_hw: tuple) -> None:
+    # The off-CPU version, checked here on CPU tensors.
+    pixels = random_pixels(1, size_hw[0], size_hw[1], seed=size_hw[1])
+    pixels = (pixels // 2 + torch.arange(size_hw[1], dtype=torch.uint8)).clamp(0, 255)
+
+    thresholded = torch_adaptive_mean(pixels, max_value=max_value)
+
+    expected = opencv_threshold(pixels, "adaptive_mean", 0, max_value)
+    assert np.array_equal(thresholded.numpy(), expected)
+
+
+@pytest.mark.parametrize("max_value", [300, -5])
+@pytest.mark.parametrize("threshold_type", ["adaptive_mean", "adaptive_gaussian"])
+def test_cpu_adaptive_types_use_opencv(
+    monkeypatch: pytest.MonkeyPatch, threshold_type: str, max_value: int
+) -> None:
+    def refuse(*args, **kwargs):
+        raise AssertionError("used the PyTorch emulation on the CPU")
+
+    monkeypatch.setattr(threshold_module, "torch_adaptive_mean", refuse)
+    pixels = random_pixels(1, 23, 31, seed=3)
+
+    thresholded = run_threshold(pixels, threshold_type, 0, max_value)
+
+    expected = opencv_threshold(pixels, threshold_type, 0, max_value)
+    assert np.array_equal(thresholded.numpy(), expected)
+
+
+@pytest.mark.parametrize(
+    "threshold_type, route",
+    [("adaptive_mean", "torch"), ("adaptive_gaussian", "opencv")],
+)
+def test_off_cpu_adaptive_mean_stays_on_the_device(
+    monkeypatch: pytest.MonkeyPatch, threshold_type: str, route: str
+) -> None:
+    # A shape-only "meta" tensor stands in for a CUDA image: no device needed.
+    routes = []
+    monkeypatch.setattr(
+        threshold_module,
+        "torch_adaptive_mean",
+        lambda pixels, **kwargs: routes.append("torch"),
+    )
+    monkeypatch.setattr(
+        threshold_module,
+        "call_on_host",
+        lambda pixels, **kwargs: routes.append("opencv"),
+    )
+    pixels = torch.empty((1, 20, 20), dtype=torch.uint8, device="meta")
+
+    threshold_module.threshold(
+        pixels, threshold_type=threshold_type, thresh_value=0, max_value=255
+    )
+
+    assert routes == [route]
 
 
 @pytest.mark.parametrize(

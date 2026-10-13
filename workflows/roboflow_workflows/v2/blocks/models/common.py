@@ -367,24 +367,24 @@ def preprocess_groups(
             or one naming a class the model does not have.
     """
     for member in image:
-        _require_rgb(member, block=block)
+        require_rgb(member, block=block)
     row_filters = tuple(
         _checked_class_filter(row_filter, block=block)
-        for row_filter in _per_row(
+        for row_filter in per_row(
             class_filter, row_count=len(image), name="class_filter"
         )
     )
-    rows_by_request = _rows_by_request(
+    request_rows = rows_by_request(
         len(image), model_id=model_id, model_package_id=model_package_id
     )
-    models = {request: cache.get(request) for request in rows_by_request}
+    models = {request: cache.get(request) for request in request_rows}
     bindings = {
         request: (
             post_process_options(
                 model.post_process, options, block=block, request=request
             ),
             _row_class_ids(
-                [row_filters[row] for row in rows_by_request[request]],
+                [row_filters[row] for row in request_rows[request]],
                 model.class_names,
                 block=block,
                 request=request,
@@ -395,7 +395,7 @@ def preprocess_groups(
 
     members = image.content
     groups = []
-    for request, rows in rows_by_request.items():
+    for request, rows in request_rows.items():
         model = models[request]
         processed = model.pre_process(
             [members[row].tensor_image for row in rows], input_color_format="rgb"
@@ -608,12 +608,48 @@ def identified_result(prediction: Any, *, model_id: str) -> Dict[str, Any]:
     return result
 
 
-def _rows_by_request(
+def per_row(value: RequestField, *, row_count: int, name: str) -> Tuple[Any, ...]:
+    """One value per row: a ``Batch``'s members, or one value repeated.
+
+    Args:
+        value: A selected per-row ``Batch`` or one value for every row.
+        row_count: Rows of the call.
+        name: Parameter name, for error messages.
+
+    Returns:
+        ``row_count`` values in row order.
+
+    Raises:
+        ValueError: When a ``Batch`` has another length.
+    """
+    if not isinstance(value, Batch):
+        return (value,) * row_count
+
+    if len(value) != row_count:
+        raise ValueError(f"{name} has {len(value)} values for {row_count} rows")
+
+    return value.content
+
+
+def rows_by_request(
     row_count: int, *, model_id: RequestField, model_package_id: RequestField
 ) -> Dict[ModelRequest, Tuple[int, ...]]:
-    """Group row indices by request, in order of first appearance."""
-    model_ids = _per_row(model_id, row_count=row_count, name="model_id")
-    package_ids = _per_row(
+    """Group row indices by model request, in order of first appearance.
+
+    Args:
+        row_count: Rows of the call.
+        model_id: Model id for every row, or a ``Batch`` with one per row.
+        model_package_id: Package id for every row, a ``Batch`` with one per
+            row, or ``None``.
+
+    Returns:
+        Row indices of each distinct request, in row order.
+
+    Raises:
+        ValueError: When a ``Batch`` has another length than ``row_count``.
+    """
+    model_ids = per_row(model_id, row_count=row_count, name="model_id")
+    package_ids = per_row(
         model_package_id, row_count=row_count, name="model_package_id"
     )
     rows_by_request: Dict[ModelRequest, List[int]] = {}
@@ -623,6 +659,20 @@ def _rows_by_request(
     grouped = {request: tuple(rows) for request, rows in rows_by_request.items()}
 
     return grouped
+
+
+def require_rgb(image: ImageData, *, block: str) -> None:
+    """Refuse an image that is not 3-channel RGB.
+
+    Args:
+        image: Image a model will read.
+        block: Block type, for the error message.
+
+    Raises:
+        ValueError: When the image does not have 3 channels.
+    """
+    if image.channels != 3:
+        raise ValueError(f"{block} needs a 3-channel RGB image, got {image!r}")
 
 
 def _checked_class_filter(
@@ -698,16 +748,6 @@ def _class_ids(
     return class_ids
 
 
-def _per_row(value: RequestField, *, row_count: int, name: str) -> Tuple[Any, ...]:
-    if not isinstance(value, Batch):
-        return (value,) * row_count
-
-    if len(value) != row_count:
-        raise ValueError(f"{name} has {len(value)} values for {row_count} images")
-
-    return value.content
-
-
 def _ignored_keywords(post_process: Callable[..., Any]) -> frozenset:
     function = getattr(post_process, "__func__", post_process)
     name = f"{function.__module__}.{function.__qualname__}"
@@ -767,8 +807,3 @@ def _refuse_unsupplied(supplied: Mapping[Any, Any]) -> Callable[[ModelRequest], 
         )
 
     return refuse
-
-
-def _require_rgb(image: ImageData, *, block: str) -> None:
-    if image.channels != 3:
-        raise ValueError(f"{block} needs a 3-channel RGB image, got {image!r}")

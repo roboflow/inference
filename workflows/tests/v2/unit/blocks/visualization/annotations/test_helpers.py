@@ -18,6 +18,7 @@ resize_linear          cv2.resize INTER_LINEAR              <= 1 level; exact on
 box_anchors            sv.Detections.get_anchors_coord...   exact
 mass_centres           same, CENTER_OF_MASS                 exact
 paint_instances+blend  sv.MaskAnnotator / cv2.addWeighted   exact
+tracker_ids_of         zero rows draw nothing (V1: no lookup) unchanged image
 =====================  ===================================  ====================
 
 Random cases are bounded, seeded samples of small images.
@@ -30,6 +31,13 @@ import numpy as np
 import pytest
 import supervision as sv
 import torch
+from roboflow_workflows.v2.blocks.visualization.annotations import (
+    BoundingBoxVisualizationBlock,
+    CropVisualizationBlock,
+    LabelVisualizationBlock,
+    MaskVisualizationBlock,
+    PolygonVisualizationBlock,
+)
 from roboflow_workflows.v2.blocks.visualization.annotations.anchors import (
     box_anchors,
     mass_centres,
@@ -38,12 +46,28 @@ from roboflow_workflows.v2.blocks.visualization.annotations.blend import (
     blend,
     paint_instances,
 )
+from roboflow_workflows.v2.blocks.visualization.annotations.circle import (
+    CircleVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.corner import (
+    CornerVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.dot import (
+    DotVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.ellipse import (
+    EllipseVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.halo import (
+    HaloVisualizationBlock,
+)
 from roboflow_workflows.v2.blocks.visualization.annotations.raster import (
     box_blur,
     grow_mask,
     resize_linear,
     resize_nearest,
 )
+from roboflow_workflows.v2.blocks.visualization.annotations.rows import tracker_ids_of
 from roboflow_workflows.v2.blocks.visualization.annotations.strokes import (
     Strokes,
     bounds_scan,
@@ -57,6 +81,18 @@ from roboflow_workflows.v2.blocks.visualization.annotations.text import (
     detection_labels,
     paint_labels,
     vertex_labels,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.triangle import (
+    TriangleVisualizationBlock,
+)
+
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from tests.v2.unit.blocks.visualization.annotations.support import (
+    detections,
+    image_of,
+    pixels_of,
+    run_v2,
+    scene,
 )
 
 MPS = pytest.mark.skipif(
@@ -811,6 +847,63 @@ def test_no_masks_give_an_unchanged_copy() -> None:
     )
 
     assert torch.equal(colored, canvas) and colored.data_ptr() != canvas.data_ptr()
+
+
+# ---------------------------------------------------------------- tracker ids
+
+BOX_TRACK_READERS = [
+    BoundingBoxVisualizationBlock,
+    CircleVisualizationBlock,
+    CornerVisualizationBlock,
+    CropVisualizationBlock,
+    DotVisualizationBlock,
+    EllipseVisualizationBlock,
+    LabelVisualizationBlock,
+    TriangleVisualizationBlock,
+]
+MASK_TRACK_READERS = [
+    HaloVisualizationBlock,
+    MaskVisualizationBlock,
+    PolygonVisualizationBlock,
+]
+
+
+def test_tracker_ids_of_no_rows_are_empty_and_a_missing_id_is_none() -> None:
+    # when
+    empty = tracker_ids_of([])
+    one_missing = tracker_ids_of([{"tracker_id": 1}, {}])
+
+    # then
+    assert empty.shape == (0,) and empty.dtype == np.int64
+    assert one_missing is None
+
+
+@pytest.mark.parametrize(
+    "block_class",
+    BOX_TRACK_READERS + MASK_TRACK_READERS,
+    ids=lambda block_class: block_class.__name__,
+)
+def test_track_axis_on_zero_rows_gives_an_unchanged_image(block_class: type) -> None:
+    # given: a tracker's output on a frame with no confirmed tracks
+    image = image_of(scene())
+    predictions = detections(image, [], rows=[])
+    if block_class in MASK_TRACK_READERS:
+        predictions = InstanceDetections(
+            xyxy=predictions.xyxy,
+            class_id=predictions.class_id,
+            confidence=predictions.confidence,
+            mask=torch.zeros((0, *image.size_hw), dtype=torch.bool),
+            image_metadata=predictions.image_metadata,
+            bboxes_metadata=[],
+        )
+
+    # when
+    drawn = run_v2(
+        block_class, image=image, predictions=predictions, color_axis="TRACK"
+    )
+
+    # then
+    np.testing.assert_array_equal(pixels_of(drawn), pixels_of(image))
 
 
 # ---------------------------------------------------------------- local MPS

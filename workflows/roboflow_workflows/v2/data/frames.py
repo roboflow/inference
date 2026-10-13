@@ -97,9 +97,11 @@ _ROOT_GEOMETRY_KEYS = (
 )
 _SCALING_KEYS = ("scaling_relative_to_parent", "scaling_relative_to_root_parent")
 _COMPOSITE_ROOT_MESSAGE = (
-    "Prediction comes from a composite image (mosaic) of several sources, "
-    "which has no single workflow root. Request coordinates_system='own' for "
-    "canvas coordinates."
+    "Prediction comes from a composite image, such as a stitched panorama or "
+    "a mosaic, which has no single workflow input to map it into. To output "
+    'it, set "coordinates_system": "own" on the JsonField output for '
+    "coordinates in the composite image's pixels. To crop or draw, use the "
+    "composite image itself."
 )
 # Legacy floats are written from the record, or are reciprocals of its scales.
 _RELATIVE_TOLERANCE = 1e-9
@@ -395,7 +397,7 @@ def root_placement_from_metadata(
     Raises:
         ContractError: When the record or the legacy root keys are missing
             values, invalid or disagree, or when the frame is a composite
-            (mosaic), which has no single workflow root.
+            (stitched panorama or mosaic), which has no single workflow root.
     """
     if metadata.get(FRAME_RECORD_KEY) is not None:
         frame = frame_from_metadata(metadata)
