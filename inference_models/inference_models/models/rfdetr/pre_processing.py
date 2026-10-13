@@ -351,6 +351,7 @@ def _pre_process_tensor(
         image=image,
         image_pre_processing=image_pre_processing,
         network_input_channels=network_input.input_channels,
+        input_color_mode=input_color_mode,
         pre_processing_overrides=pre_processing_overrides,
     )
     if not image.is_floating_point():
