@@ -347,12 +347,17 @@ def _pre_process_tensor(
     if image.shape[1] not in (1, 3) and image.shape[-1] in (1, 3):
         image = image.permute(0, 3, 1, 2)
     original_size = ImageDimensions(width=image.shape[3], height=image.shape[2])
+    input_dtype = image.dtype
     image, static_crop_offset = apply_pre_processing_to_torch_image(
         image=image,
         image_pre_processing=image_pre_processing,
         network_input_channels=network_input.input_channels,
+        input_color_mode=input_color_mode,
         pre_processing_overrides=pre_processing_overrides,
     )
+    if input_dtype.is_floating_point and image.dtype == torch.uint8:
+        # Histogram and adaptive equalization return uint8 in [0, 255] for float input.
+        image = image.float() / 255
     size_after_pre_processing = ImageDimensions(
         width=image.shape[3], height=image.shape[2]
     )
