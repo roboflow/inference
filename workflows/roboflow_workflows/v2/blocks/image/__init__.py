@@ -19,6 +19,7 @@ from roboflow_workflows.v2.blocks.image.contrast_equalization import (
 from roboflow_workflows.v2.blocks.image.copy import ImageCopyBlock
 from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
 from roboflow_workflows.v2.blocks.image.grayscale import ConvertGrayscaleBlock
+from roboflow_workflows.v2.blocks.image.mask_edge_snap import MaskEdgeSnapBlock
 from roboflow_workflows.v2.blocks.image.morphology import (
     MorphologicalTransformationBlock,
 )
@@ -49,4 +50,5 @@ __all__ = [
     "RelativeStaticCropBlock",
     "ResizeBlock",
     "StaticCropBlock",
+    "MaskEdgeSnapBlock",
 ]

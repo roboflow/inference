@@ -22,6 +22,17 @@ from roboflow_workflows.v2.blocks.models.instance_segmentation import (
     InstanceSegmentationBlock,
 )
 from roboflow_workflows.v2.blocks.models.keypoints import KeypointDetectionBlock
+from roboflow_workflows.v2.blocks.models.sam_interactive import (
+    SegmentAnything3InteractiveBlock,
+)
+from roboflow_workflows.v2.blocks.models.sam_video import (
+    SegmentAnything2VideoBlock,
+    SegmentAnything3VideoBlock,
+)
+from roboflow_workflows.v2.blocks.models.segment_anything import (
+    SegmentAnything2Block,
+    SegmentAnything3Block,
+)
 from roboflow_workflows.v2.blocks.models.semantic_segmentation import (
     SemanticSegmentationBlock,
 )
@@ -46,6 +57,11 @@ BLOCKS = (
     InstanceSegmentationBlock,
     SemanticSegmentationBlock,
     ActionRecognitionBlock,
+    SegmentAnything2Block,
+    SegmentAnything2VideoBlock,
+    SegmentAnything3Block,
+    SegmentAnything3InteractiveBlock,
+    SegmentAnything3VideoBlock,
 )
 
 __all__ = [
@@ -68,4 +84,9 @@ __all__ = [
     "ObjectDetectionBlock",
     "SemanticSegmentationBlock",
     "auto_model_loader",
+    "SegmentAnything2Block",
+    "SegmentAnything2VideoBlock",
+    "SegmentAnything3Block",
+    "SegmentAnything3InteractiveBlock",
+    "SegmentAnything3VideoBlock",
 ]

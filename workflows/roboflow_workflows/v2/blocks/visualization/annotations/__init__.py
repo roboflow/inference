@@ -19,6 +19,11 @@ v2/dot_visualization@v1                        roboflow_core/dot_visualization@v
 v2/ellipse_visualization@v1                    roboflow_core/ellipse_visualization@v1
 v2/halo_visualization@v2                       roboflow_core/halo_visualization@v2
 v2/triangle_visualization@v1                   roboflow_core/triangle_visualization@v1
+v2/heatmap_visualization@v1                   roboflow_core/heatmap_visualization@v1
+v2/trace_visualization@v1                     roboflow_core/trace_visualization@v1
+v2/polygon_zone_visualization@v1              roboflow_core/polygon_zone_visualization@v1
+v2/line_counter_visualization@v1              roboflow_core/line_counter_visualization@v1
+v2/reference_path_visualization@v1            roboflow_core/reference_path_visualization@v1
 =============================================  ==============================================
 
 Each block runs once per image on the image's device and returns a new
@@ -33,8 +38,7 @@ V1 ``copy_image`` is rejected with either value; chain blocks with
 the same workflow input are mapped into the drawn image and clipped to it.
 
 Not in this slice (queued for later waves): background_color, color, grid,
-heatmap, icon, line_counter, model_comparison, polygon_zone, reference_path,
-rich_label, text_display and trace visualizations (12 V1 families).
+icon, model_comparison, rich_label and text_display visualizations (7 V1 families).
 
 ``create_catalogue()`` registers every block in ``BLOCKS``. The package
 ``roboflow_workflows.v2.blocks`` exports this package's
@@ -97,6 +101,18 @@ from roboflow_workflows.v2.blocks.visualization.annotations.triangle import (
     TriangleVisualizationBlock,
 )
 
+from roboflow_workflows.v2.blocks.visualization.annotations.heatmap import (
+    HeatmapVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.trace import (
+    TraceVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.zones import (
+    LineCounterVisualizationBlock,
+    PolygonZoneVisualizationBlock,
+    ReferencePathVisualizationBlock,
+)
+
 BLOCKS = (
     BoundingBoxVisualizationBlock,
     LabelVisualizationBlock,
@@ -114,6 +130,11 @@ BLOCKS = (
     EllipseVisualizationBlock,
     HaloVisualizationBlock,
     TriangleVisualizationBlock,
+    HeatmapVisualizationBlock,
+    TraceVisualizationBlock,
+    PolygonZoneVisualizationBlock,
+    LineCounterVisualizationBlock,
+    ReferencePathVisualizationBlock,
 )
 
 __all__ = [
@@ -134,4 +155,9 @@ __all__ = [
     "PolygonVisualizationBlock",
     "SemanticSegmentationVisualizationBlock",
     "TriangleVisualizationBlock",
+    "HeatmapVisualizationBlock",
+    "TraceVisualizationBlock",
+    "PolygonZoneVisualizationBlock",
+    "LineCounterVisualizationBlock",
+    "ReferencePathVisualizationBlock",
 ]

@@ -16,6 +16,12 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- **V2 platform metadata, search and events (opt-in)** — Add custom metadata, visual search, visual search classification, vision events and event bundles to default V2 discovery and class exports. Hosts supply explicit ports; compilation and schema discovery create no providers. Metadata and search retain their documented synchronous/sequential baseline. Examples 94 and 97 use fake ports; real services and release builds require separate qualification.
+
+- **V2 drawing discovery (opt-in)** — Register trace/heatmap and polygon-zone/line-counter/reference-path visualization blocks in `create_catalogue()` and expose their classes from the V2 block packages. Whole-frame history is bounded per source; counter drawings share current producer geometry validation and per-image count selectors. See development examples 73 and 74. V1 remains unchanged.
+
+- **V2 segmentation discovery (opt-in)** — Register `v2/mask_edge_snap@v1`, `v2/segment_anything@v1`, `v2/sam3@v3`, `v2/sam3_interactive@v1`, `v2/segment_anything_2_video@v1` and `v2/sam3_video@v1` in `create_catalogue()` and expose their block classes through the V2 block packages. SAM models come from the caller-owned `models` resource; hosted execution is deferred. Video steps require an explicit `max_session_frames` policy; frame/source limits do not bound bytes or objects per frame, and tracker identities belong to an episode. SAM3 concept peak-memory bounds and real-backend/device qualification remain open. See development examples 83, 86 and 107.
+
 - **V2 Roboflow platform discovery (opt-in)** — Register asset attributes, dataset upload and model monitoring in `create_catalogue()` and export their three block classes. Hosts supply explicit ports and credentials; active calls without the required port fail with actionable guidance. Examples 95–96 use local fake ports; release builds and real platform services require separate qualification.
 
 - **V2 local VLM and direct OCR discovery (opt-in)** — Add opt-in Florence-2, Moondream2, Cosmos 3 Edge, current unified Qwen v4 and direct Google Vision OCR adapters. Florence exposes decoded text and explicit grounding coordinate modes while retaining auto/V1 defaults. Local models use host-owned cache; provider transports and credential boundaries stay explicit. Real-model/provider/device qualification is separate. Examples 109 and 110.

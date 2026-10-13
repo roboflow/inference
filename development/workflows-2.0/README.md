@@ -90,9 +90,16 @@ does not imply that every example runs in a plain Python environment.
 | [64 — Image processing](64-image-processing/README.md) | Grayscale, blur, threshold, morphology and contrast, compared with V1. | CPU fixtures |
 | [65 — Image measurements](65-image-measurements/README.md) | Distances, sizes, mask areas and colour counts with explicit calibration. | CPU fixtures |
 | [66 — Custom Python with tensors](66-custom-python-tensors/README.md) | Run local dynamic blocks on V2 images and predictions without conversion. | CPU fixtures |
+| [73 — Trace and heatmap](73-trace-and-heatmap/README.md) | Whole-frame source-bounded trace and heatmap drawings; resizing supported, cropping rejected before history mutation. | CPU fixtures |
+| [74 — Zone drawings](74-zone-drawings/README.md) | Polygon-zone, line-counter and reference-path drawings with shared counter geometry and per-image count selectors. | CPU fixtures |
+| [83 — Mask edge snap](83-mask-edge-snap/README.md) | Refine segmentation boundaries against image edges. | CPU fixtures |
+| [86 — Segment anything](86-segment-anything/README.md) | SAM2/SAM3 prompts, compact masks and selected classes through caller-owned models. | CPU fake models; real models separately |
+| [94 — Platform metadata and search](94-platform-metadata-search/README.md) | Search reference images, classify a query and tag its inference result. | CPU fake ports; explicit host ports for platform calls |
 | [95 — Platform dataset upload](95-platform-dataset-upload/README.md) | Set asset attributes and submit bounded dataset uploads. | CPU fake ports; explicit host ports for platform calls |
 | [96 — Model monitoring](96-model-monitoring/README.md) | Collect inference summaries and report through a caller-owned port. | CPU fake port; explicit host port for platform calls |
+| [97 — Vision events](97-vision-events/README.md) | Submit vision events and collect event bundles through caller-owned ports. | CPU fake ports; explicit host ports for services and bundle storage |
 | [106 — Action recognition](106-action-recognition/README.md) | Classify bounded clips from two cameras with a caller-loaded local model. | CPU fake model; optional local model package |
+| [107 — SAM video and interactive](107-sam-video-and-interactive/README.md) | Explicit video frame budgets, episode identities and interactive prompts; concept peak-memory and real-backend qualification remain open. | CPU fake models; real models separately |
 | [109 — Florence-2](109-local-vlm-wave2/florence/README.md) | Run local Florence text and grounding tasks with explicit coordinate modes. | CPU stand-in; optional local model package |
 | [109 — Moondream and Cosmos](109-local-vlm-wave2/moondream-cosmos/README.md) | Chain local object detection and reasoning with downstream consumers. | CPU stand-ins; optional local model packages |
 | [109 — Unified Qwen](109-local-vlm-wave2/qwen-unified/README.md) | Choose native Qwen or an explicit OpenRouter backend. | CPU stand-in or fake transport; optional provider/model |

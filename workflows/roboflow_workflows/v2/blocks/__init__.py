@@ -83,6 +83,7 @@ from roboflow_workflows.v2.blocks.image import (
     RelativeStaticCropBlock,
     ResizeBlock,
     StaticCropBlock,
+    MaskEdgeSnapBlock,
 )
 from roboflow_workflows.v2.blocks.measurements import BLOCKS as MEASUREMENT_BLOCKS
 from roboflow_workflows.v2.blocks.measurements import (
@@ -105,12 +106,22 @@ from roboflow_workflows.v2.blocks.models import (
     MultiLabelClassificationBlock,
     ObjectDetectionBlock,
     SemanticSegmentationBlock,
+    SegmentAnything2Block,
+    SegmentAnything2VideoBlock,
+    SegmentAnything3Block,
+    SegmentAnything3InteractiveBlock,
+    SegmentAnything3VideoBlock,
 )
 from roboflow_workflows.v2.blocks.roboflow_platform import (
     PLATFORM_BLOCKS,
     AssetLibraryAttributesBlock,
     DatasetUploadBlock,
     ModelMonitoringInferenceAggregatorBlock,
+    RoboflowCustomMetadataBlock,
+    RoboflowVisionEventsBlock,
+    VisionEventBundleBlock,
+    VisualSearchBlock,
+    VisualSearchClassifierBlock,
 )
 from roboflow_workflows.v2.blocks.sampling import BLOCKS as SAMPLING_BLOCKS
 from roboflow_workflows.v2.blocks.sampling import (
@@ -169,6 +180,11 @@ from roboflow_workflows.v2.blocks.visualization import (
 )
 from roboflow_workflows.v2.blocks.visualization.annotations import (
     BLOCKS as ANNOTATION_BLOCKS,
+    HeatmapVisualizationBlock,
+    TraceVisualizationBlock,
+    PolygonZoneVisualizationBlock,
+    LineCounterVisualizationBlock,
+    ReferencePathVisualizationBlock,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations import (
     BlurVisualizationBlock,
@@ -265,6 +281,7 @@ def create_catalogue() -> Catalogue:
             ConvertGrayscaleBlock,
             ImageBlurBlock,
             ImageThresholdBlock,
+            MaskEdgeSnapBlock,
             MorphologicalTransformationBlock,
             ContrastEnhancementBlock,
             ContrastEqualizationBlock,
@@ -440,6 +457,8 @@ __all__ = [
     "RateLimiterBlock",
     "RelativeStaticCropBlock",
     "ResizeBlock",
+    "RoboflowCustomMetadataBlock",
+    "RoboflowVisionEventsBlock",
     "SEMANTIC_SEGMENTATION_PREDICTION_KIND",
     "SegmentationView",
     "SamplingCapacityError",
@@ -463,8 +482,22 @@ __all__ = [
     "TrackerCapacityError",
     "TriangleVisualizationBlock",
     "VelocityBlock",
+    "VisionEventBundleBlock",
+    "VisualSearchBlock",
+    "VisualSearchClassifierBlock",
     "WORKFLOWS_V2_CATALOGUE",
     "Window",
     "create_catalogue",
     "select_predictions",
+    "SegmentAnything2Block",
+    "SegmentAnything2VideoBlock",
+    "SegmentAnything3Block",
+    "SegmentAnything3InteractiveBlock",
+    "SegmentAnything3VideoBlock",
+    "MaskEdgeSnapBlock",
+    "HeatmapVisualizationBlock",
+    "TraceVisualizationBlock",
+    "PolygonZoneVisualizationBlock",
+    "LineCounterVisualizationBlock",
+    "ReferencePathVisualizationBlock",
 ]
