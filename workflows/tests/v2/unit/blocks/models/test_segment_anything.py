@@ -7,6 +7,7 @@ NMS, class names and embedding reuse, not real inference. Compiled workflows
 are in ``integration/blocks/models/test_segment_anything_workflows.py``.
 """
 
+import weakref
 from typing import Any, Dict, List, Optional
 
 import pydantic
@@ -45,6 +46,8 @@ PROMPT_CLASSES = [1, 0, 2]
 # Unprompted, FakeSam2's best mask is the centre rectangle of a 20x30 image:
 # x 30 // 4 .. 3 * 30 // 4 - 1, y 20 // 4 .. 3 * 20 // 4 - 1.
 CENTRE_XYXY = [7, 5, 21, 14]
+# Expected output extents cover every pixel of the inclusive fake masks.
+PROMPT_EXTENTS = [[2, 3, 11, 9], [12, 4, 21, 16], [5, 5, 26, 19]]
 
 
 def _image(image_id: str, *, size_hw=SIZE_HW, channels: int = 3) -> ImageData:
@@ -120,14 +123,14 @@ def test_sam2_without_boxes_gives_one_foreground_mask_per_image() -> None:
 
     assert model.prompts == [None, None]
     first, second = (result["predictions"] for result in results)
-    assert first.xyxy.tolist() == [CENTRE_XYXY]
+    assert first.xyxy.tolist() == [[7, 5, 22, 15]]
     assert torch.equal(first.mask, _masks_of([CENTRE_XYXY]))
     assert first.class_id.tolist() == [0]
     assert first.confidence.tolist() == pytest.approx([0.8])
     assert first.image_metadata[CLASS_NAMES_KEY] == {0: "foreground"}
     assert first.image_metadata["prediction_type"] == "instance-segmentation"
     # 8x12 image: x 3 .. 8, y 2 .. 5.
-    assert second.xyxy.tolist() == [[3, 2, 8, 5]]
+    assert second.xyxy.tolist() == [[3, 2, 9, 6]]
     assert [frame_of(r["predictions"]).image_id for r in results] == ["a", "b"]
     assert frame_of(second).size_hw == (8, 12)
 
@@ -167,7 +170,7 @@ def test_sam2_box_prompts_give_one_mask_per_kept_row_with_its_lineage() -> None:
     assert model.prompts[0].tolist() == PROMPT_XYXY
     predictions = result["predictions"]
     # Scores 0.9, 0.7, 0.5: the third row is below 0.6.
-    assert predictions.xyxy.tolist() == PROMPT_XYXY[:2]
+    assert predictions.xyxy.tolist() == PROMPT_EXTENTS[:2]
     assert torch.equal(predictions.mask, _masks_of(PROMPT_XYXY[:2]))
     assert predictions.confidence.tolist() == pytest.approx([0.9, 0.7])
     assert predictions.class_id.tolist() == [1, 0]
@@ -188,7 +191,7 @@ def test_sam2_mask_boxes_are_the_inclusive_mask_bounds_not_the_prompt() -> None:
 
     (result,) = _call(_sam2(), image=Batch([image]), boxes=Batch([prompt]))
 
-    assert result["predictions"].xyxy.tolist() == [[0, 0, 29, 19]]
+    assert result["predictions"].xyxy.tolist() == [[0, 0, 30, 20]]
     assert bool(result["predictions"].mask.all())
 
 
@@ -227,7 +230,7 @@ def test_sam2_mixed_batch_embeds_only_images_with_prompt_rows() -> None:
         "pb",
         "pc",
     ]
-    assert results[2]["predictions"].xyxy.tolist() == [[1, 1, 4, 4]]
+    assert results[2]["predictions"].xyxy.tolist() == [[1, 1, 5, 5]]
 
 
 def test_sam2_reads_boxes_from_keypoint_predictions() -> None:
@@ -241,7 +244,7 @@ def test_sam2_reads_boxes_from_keypoint_predictions() -> None:
 
     (result,) = _call(_sam2(), image=Batch([image]), boxes=Batch([(key_points, boxes)]))
 
-    assert result["predictions"].xyxy.tolist() == PROMPT_XYXY[:1]
+    assert result["predictions"].xyxy.tolist() == PROMPT_EXTENTS[:1]
     assert row_record(result["predictions"]).namespace == "detector"
 
 
@@ -271,7 +274,7 @@ def test_sam2_reads_boxes_from_a_segmentation_view() -> None:
 
     (result,) = _call(_sam2(), image=Batch([image]), boxes=Batch([view]))
 
-    assert result["predictions"].xyxy.tolist() == PROMPT_XYXY
+    assert result["predictions"].xyxy.tolist() == PROMPT_EXTENTS
     assert result["predictions"].class_id.tolist() == PROMPT_CLASSES
     assert row_record(result["predictions"]).namespace == "detector"
 
@@ -334,7 +337,7 @@ def test_sam2_multimask_output_reaches_the_model_and_the_best_proposal_wins() ->
 
         assert model.multimask == [multimask]
         # With three proposals the best is the middle one (the exact box).
-        assert result["predictions"].xyxy.tolist() == PROMPT_XYXY[:1]
+        assert result["predictions"].xyxy.tolist() == PROMPT_EXTENTS[:1]
         assert result["predictions"].confidence.tolist() == pytest.approx([0.9])
 
 
@@ -376,7 +379,7 @@ def test_sam2_logits_at_zero_are_foreground() -> None:
 
     expected = [[[False, True, True], [False, False, False]]]
     assert result["predictions"].mask.tolist() == expected
-    assert result["predictions"].xyxy.tolist() == [[1, 0, 2, 0]]
+    assert result["predictions"].xyxy.tolist() == [[1, 0, 3, 1]]
 
 
 def test_sam2_empty_mask_has_a_zero_box() -> None:
@@ -516,6 +519,98 @@ def test_sam2_embeddings_are_kept_per_model_request() -> None:
     assert (small.embedded, large.embedded) == ([1], [1])
 
 
+class _ReleaseProbe(FakeSam2):
+    """FakeSam2 that holds its embeddings only weakly.
+
+    Each ``embed_images`` call first records which earlier embeddings are still
+    reachable, in creation order. No ``gc.collect()``: a released embedding
+    must be freed by reference counting alone.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.made: List[weakref.ref] = []
+        self.alive_at_embed: List[List[bool]] = []
+        self.fail = False
+
+    def embed_images(self, images, **options):
+        self.alive_at_embed.append([ref() is not None for ref in self.made])
+        if self.fail:
+            raise RuntimeError("embed failed")
+        embeddings = super().embed_images(images, **options)
+        self.made.extend(weakref.ref(embedding) for embedding in embeddings)
+
+        return embeddings
+
+    def segment_images(self, embeddings, **options):
+        predictions = super().segment_images(embeddings, **options)
+        self.segmented.clear()
+
+        return predictions
+
+    def alive(self) -> List[bool]:
+        return [ref() is not None for ref in self.made]
+
+
+def test_sam2_releases_unhit_embeddings_before_embedding_new_images() -> None:
+    model = _ReleaseProbe()
+    block = _sam2(model)
+    a, b, c = _image("a"), _image("b"), _image("c")
+
+    _call(block, image=Batch([a, b]))
+    _call(block, image=Batch([b, c]))
+
+    # At the second embed_images, a (unhit) is gone and b (hit) is live.
+    assert model.alive_at_embed == [[], [False, True]]
+    assert model.alive() == [False, True, True]
+    assert model.embedded == [2, 1]
+
+
+def test_sam2_releases_a_stale_embedding_of_the_same_image_id() -> None:
+    model = _ReleaseProbe()
+    block = _sam2(model)
+    image = _image("a")
+    brighter = image.with_pixels(torch.full((3, *SIZE_HW), 200, dtype=torch.uint8))
+
+    _call(block, image=Batch([image]))
+    _call(block, image=Batch([brighter]))
+
+    # The miss leaves the stale entry in the hit loop's local; it is cleared too.
+    assert model.alive_at_embed == [[], [False]]
+    assert model.embedded == [1, 1]
+
+
+def test_sam2_failed_embedding_keeps_only_the_calls_hits() -> None:
+    model = _ReleaseProbe()
+    block = _sam2(model)
+    a, b, c = _image("a"), _image("b"), _image("c")
+    _call(block, image=Batch([a, b]))
+
+    model.fail = True
+    with pytest.raises(RuntimeError, match="embed failed"):
+        _call(block, image=Batch([b, c]))
+    model.fail = False
+
+    assert model.alive_at_embed[1] == [False, True]
+    assert model.alive() == [False, True]
+    _call(block, image=Batch([b]))
+    assert model.embedded == [2]
+    _call(block, image=Batch([a]))
+    assert model.embedded == [2, 1]
+
+
+def test_sam2_reset_state_releases_the_kept_embeddings() -> None:
+    model = _ReleaseProbe()
+    block = _sam2(model)
+    image = _image("a")
+    _call(block, image=Batch([image]))
+    assert model.alive() == [True]
+
+    block.reset_state()
+
+    assert model.alive() == [False]
+
+
 def test_sam2_reports_its_model_dependency() -> None:
     params = SegmentAnything2Block.Params(
         image="$inputs.image", model_id="sam2/hiera_large"
@@ -535,7 +630,7 @@ def test_sam2_reports_its_model_dependency() -> None:
 # car 0.4 (20,3,25,9); person 0.6 (2,2,11,9), person 0.95 empty mask;
 # no name 0.8 (1,1,28,18). Mask IoU car 0.9 / car 0.7 = 60 / 80 = 0.75;
 # person 0.6 equals car 0.9 (IoU 1).
-CAR_9, CAR_7, CAR_4 = [2, 2, 11, 9], [2, 2, 11, 7], [20, 3, 25, 9]
+CAR_9, CAR_7, CAR_4 = [2, 2, 12, 10], [2, 2, 12, 8], [20, 3, 26, 10]
 
 
 def _rows(predictions: InstanceDetections):
@@ -565,7 +660,9 @@ def test_sam3_one_prompt_per_class_and_empty_masks_dropped() -> None:
     assert (call["output_prob_thresh"], call["mask_format"]) == (0.5, "dense")
     predictions = result["predictions"]
     assert _rows(predictions) == [(0, 0.9, CAR_9), (0, 0.7, CAR_7), (1, 0.6, CAR_9)]
-    assert torch.equal(predictions.mask, _masks_of([CAR_9, CAR_7, CAR_9]))
+    assert torch.equal(
+        predictions.mask, _masks_of([[2, 2, 11, 9], [2, 2, 11, 7], [2, 2, 11, 9]])
+    )
     assert predictions.image_metadata[CLASS_NAMES_KEY] == {0: "car", 1: "person"}
     record = row_record(predictions)
     assert (record.namespace, record.host_ids()) == (result["inference_id"], [0, 1, 2])
@@ -615,7 +712,7 @@ def test_sam3_without_class_names_runs_one_foreground_prompt() -> None:
     (result,) = _call(_sam3(model), image=Batch([_image("a")]))
 
     assert model.calls[0]["prompts"] == [{"text": None}]
-    assert _rows(result["predictions"]) == [(0, 0.8, [1, 1, 28, 18])]
+    assert _rows(result["predictions"]) == [(0, 0.8, [1, 1, 29, 19])]
     assert result["predictions"].image_metadata[CLASS_NAMES_KEY] == {0: "foreground"}
 
 
@@ -743,8 +840,8 @@ def test_sam3_batches_images_in_one_model_call() -> None:
 
     assert [call["images"] for call in model.calls] == [2]
     assert [frame_of(r["predictions"]).image_id for r in results] == ["a", "b"]
-    # On 10x12 the car boxes are clipped: (2, 2, 11, 9) and (2, 2, 11, 7).
-    assert results[1]["predictions"].xyxy.tolist() == [[2, 2, 11, 9], [2, 2, 11, 7]]
+    # On 10x12 the occupied pixels reach x=11; their exclusive end is 12.
+    assert results[1]["predictions"].xyxy.tolist() == [[2, 2, 12, 10], [2, 2, 12, 8]]
 
 
 def test_sam3_reports_its_model_dependency() -> None:
@@ -761,14 +858,14 @@ def test_sam3_reports_its_model_dependency() -> None:
 # --- shared mask helpers --------------------------------------------------------
 
 
-def test_mask_boxes_are_inclusive_bounds_and_zero_when_empty() -> None:
+def test_mask_boxes_are_half_open_extents_and_zero_when_empty() -> None:
     masks = torch.zeros((3, 4, 5), dtype=torch.bool)
     masks[0, 1:3, 2:5] = True
     masks[1, 3, 0] = True
 
     boxes = _mask_boxes(masks)
 
-    assert boxes.tolist() == [[2, 1, 4, 2], [0, 3, 0, 3], [0, 0, 0, 0]]
+    assert boxes.tolist() == [[2, 1, 5, 3], [0, 3, 1, 4], [0, 0, 0, 0]]
     assert boxes.dtype == torch.float32
 
 
@@ -833,10 +930,38 @@ def test_sam2_changed_boxes_and_scores_drop_prompt_host_mirrors() -> None:
     (result,) = _call(_sam2(), image=Batch([image]), boxes=Batch([prompt]))
 
     predictions = result["predictions"]
-    assert predictions.xyxy.tolist() == [[0, 0, 29, 19]]
+    assert predictions.xyxy.tolist() == [[0, 0, 30, 20]]
     assert predictions.confidence.tolist() == pytest.approx([0.9])
     assert predictions.bboxes_metadata == [{"detection_id": "d0", "custom": "kept"}]
     assert prompt.bboxes_metadata == [original]
     assert (
         result["segmentation"].detections.bboxes_metadata == predictions.bboxes_metadata
     )
+
+
+def test_continuous_prompt_boxes_reach_sam2_unchanged() -> None:
+    image = _image("continuous")
+    box = [[1.25, 2.5, 8.75, 10.5]]
+    prompt = _prompt(image, box, [1])
+    model = FakeSam2()
+
+    _call(_sam2(model), image=Batch([image]), boxes=Batch([prompt]))
+
+    assert model.prompts[0].tolist() == box
+    assert prompt.xyxy.tolist() == box
+
+
+def test_sam3_backend_geometry_is_not_modified_when_reboxing_masks() -> None:
+    class _BackendBoxes(FakeSam3):
+        def segment_with_text_prompts(self, *args, **kwargs):
+            self.result = super().segment_with_text_prompts(*args, **kwargs)
+            self.boxes = torch.tensor([[1.25, 2.5, 8.75, 10.5]])
+            self.result[0][0]["boxes"] = self.boxes
+            return self.result
+
+    model = _BackendBoxes(table={"part": [((4, 3, 4, 3), 0.9)]})
+    (row,) = _call(_sam3(model), image=Batch([_image("a")]), class_names=["part"])
+
+    assert row["predictions"].xyxy.tolist() == [[4, 3, 5, 4]]
+    assert model.result[0][0]["boxes"] is model.boxes
+    assert model.boxes.tolist() == [[1.25, 2.5, 8.75, 10.5]]

@@ -20,6 +20,7 @@ from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+from roboflow_workflows.v2.blocks.image import mask_edge_snap
 from roboflow_workflows.v2.blocks.image.mask_edge_snap import MaskEdgeSnapBlock
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
@@ -30,6 +31,7 @@ from roboflow_workflows.v2.engine.errors import (
     ParamsValidationError,
     ResolvedParameterError,
 )
+from roboflow_workflows.v2.engine.reactions.testing import block_call
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
@@ -556,6 +558,100 @@ def test_outputs_stay_on_the_inputs_device(device):
 
 
 # ---------------------------------------------------------------------------
+# Output demand
+# ---------------------------------------------------------------------------
+
+
+def _spied(monkeypatch) -> dict:
+    # Count calls of the two expensive steps; the real functions still run.
+    calls = {"_snap_region": 0, "_edges_prediction": 0}
+    for name in calls:
+        original = getattr(mask_edge_snap, name)
+
+        def spy(*args, _name=name, _original=original, **kwargs):
+            calls[_name] += 1
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(mask_edge_snap, name, spy)
+
+    return calls
+
+
+def _demanded_snap(image, segmentation, *, wanted) -> tuple:
+    block = MaskEdgeSnapBlock()
+    with block_call(block, wanted=wanted) as call:
+        result = block.run(image=image, segmentation=segmentation, **DEFAULTS)
+
+    return result, call
+
+
+@pytest.mark.parametrize(
+    "rows, wanted, snap_calls, edges_calls",
+    [
+        (0, None, 1, 1),
+        (0, ("refined_segmentation",), 0, 0),
+        (2, None, 1, 1),
+        (2, ("refined_segmentation",), 1, 0),
+    ],
+)
+def test_demand_matrix_skips_only_unread_work(
+    monkeypatch, rows, wanted, snap_calls, edges_calls
+):
+    gray, masks = _two_shapes()
+    image = _image(_color(gray))
+    segmentation = _segmentation(masks[:rows], image=image)
+    expected = _snap(image, segmentation)
+    calls = _spied(monkeypatch)
+
+    result, call = _demanded_snap(image, segmentation, wanted=wanted)
+
+    assert calls == {"_snap_region": snap_calls, "_edges_prediction": edges_calls}
+    assert "edges" in call.queried
+    assert ("edges" in result) == (edges_calls == 1)
+    if edges_calls:
+        assert np.array_equal(_dense(result["edges"]), _dense(expected["edges"]))
+    refined, before = result["refined_segmentation"], expected["refined_segmentation"]
+    if rows == 0:
+        assert refined is segmentation
+        return
+    assert np.array_equal(_dense(refined), _dense(before))
+    assert torch.equal(refined.xyxy, before.xyxy)
+    assert refined.bboxes_metadata == before.bboxes_metadata
+    assert refined.image_metadata == before.image_metadata
+
+
+def test_undemanded_edges_on_an_empty_view_returns_its_predictions(monkeypatch):
+    gray, masks = _two_shapes()
+    image = _image(_color(gray))
+    view = _grid_view(masks, image=image).select(torch.zeros(0, dtype=torch.long))
+    calls = _spied(monkeypatch)
+
+    result, _ = _demanded_snap(image, view, wanted=("refined_segmentation",))
+
+    assert calls == {"_snap_region": 0, "_edges_prediction": 0}
+    assert set(result) == {"refined_segmentation"}
+    refined = result["refined_segmentation"]
+    assert isinstance(refined, InstanceDetections)
+    assert tuple(refined.mask.shape) == (0, *SIZE_HW)
+    assert frame_of(refined) == FrameRef.from_image(image)
+
+
+def test_undemanded_edges_still_rejects_invalid_masks(monkeypatch):
+    gray, masks = _two_shapes()
+    image = _image(_color(gray))
+    small = _image(_color(gray)[:60, :80])
+    wrong_size = _segmentation([masks[0][:60, :80]], image=small)
+    no_masks = dataclasses.replace(_segmentation(masks, image=image), mask=None)
+    calls = _spied(monkeypatch)
+
+    with pytest.raises(ValueError, match="size"):
+        _demanded_snap(image, wrong_size, wanted=("refined_segmentation",))
+    with pytest.raises(ValueError, match="needs instance masks"):
+        _demanded_snap(image, no_masks, wanted=("refined_segmentation",))
+    assert calls == {"_snap_region": 0, "_edges_prediction": 0}
+
+
+# ---------------------------------------------------------------------------
 # Rejections and immutability
 # ---------------------------------------------------------------------------
 
@@ -636,9 +732,9 @@ def test_literal_and_resolved_boundaries_are_accepted(name, low, high, boundary)
     )
 
 
-def test_unchanged_sam_style_mask_reboxes_from_inclusive_to_exclusive_bounds():
-    # Q5 uses inclusive max bounds. Q2 deliberately recomputes max+1, even
-    # when there are no edges and the mask itself does not change.
+def test_unchanged_mask_with_inclusive_input_box_is_reboxed_to_exclusive_bounds():
+    # The input box is hand-made with inclusive max bounds. The block always
+    # recomputes boxes as max + 1, even when no edge moves the mask.
     image = _image(np.full(SIZE_HW, 90, dtype=np.uint8))
     mask = _rectangle((20, 30, 60, 70))
     segmentation = _segmentation([mask], image=image, boxes=[[20, 30, 59, 69]])

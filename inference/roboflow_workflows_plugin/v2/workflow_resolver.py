@@ -20,6 +20,8 @@ Nothing registers this resolver. A host wires it explicitly::
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+from roboflow_workflows.v2.engine.compilation import WorkflowReference
+
 import inference.core.roboflow_api as roboflow_api
 from inference.core.cache.base import BaseCache
 from inference.roboflow_workflows_plugin.v2.credential_boundary import (
@@ -27,7 +29,6 @@ from inference.roboflow_workflows_plugin.v2.credential_boundary import (
     call_host,
     register_diagnostic_filters,
 )
-from roboflow_workflows.v2.engine.compilation import WorkflowReference
 
 LOCAL_WORKSPACE = "local"
 """Workspace whose workflows the host reads from its model cache directory."""

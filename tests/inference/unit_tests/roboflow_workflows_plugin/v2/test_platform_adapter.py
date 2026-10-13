@@ -23,10 +23,21 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 from urllib.parse import parse_qs, urlsplit
 
 import cv2
-import inference.core.roboflow_api as roboflow_api
 import numpy as np
 import pytest
 import torch
+from roboflow_workflows.utils.images import downscale_image_keeping_aspect_ratio
+from roboflow_workflows.v2.blocks import create_catalogue
+from roboflow_workflows.v2.blocks.roboflow_platform import visual_search
+from roboflow_workflows.v2.blocks.roboflow_platform.custom_metadata import (
+    RoboflowCustomMetadataBlock,
+)
+from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+
+import inference.core.roboflow_api as roboflow_api
 from inference.core import exceptions
 from inference.core.utils import image_utils, url_utils
 from inference.roboflow_workflows_plugin.integrations.visual_search import (
@@ -41,16 +52,6 @@ from inference.roboflow_workflows_plugin.integrations.visual_search_classifier i
 from inference.roboflow_workflows_plugin.v2.platform_adapter import (
     RoboflowPlatformAdapter,
 )
-from roboflow_workflows.utils.images import downscale_image_keeping_aspect_ratio
-from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.roboflow_platform import visual_search
-from roboflow_workflows.v2.blocks.roboflow_platform.custom_metadata import (
-    RoboflowCustomMetadataBlock,
-)
-from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
-from roboflow_workflows.v2.data.image import ImageData
-from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
-from roboflow_workflows.v2.engine.compilation import compile_workflow
 
 API_KEY = "rftestKEYr1loopback93d2"
 PROXY_VARIABLES = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY")

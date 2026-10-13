@@ -17,12 +17,14 @@ of mean brightness b has ``round(4 * b / 255)`` rows; row i is box
 ``[i, i, w - i, h - i]``, class ``i % 3`` of person/car/dog.
 """
 
+import copy
 import math
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import pydantic
 import pytest
 import torch
+from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models.cache import (
     ModelCache,
     ModelRequest,
@@ -73,6 +75,11 @@ POINT_XYXY = [8, 6, 12, 10]
 # Adding a negative point at (12, 8) carves x 10..14 out of that square.
 POINT_AND_NEGATIVE = [{"x": 10, "y": 8}, {"x": 12, "y": 8, "positive": False}]
 CARVED_XYXY = [8, 6, 9, 10]
+# The *_XYXY values above are occupied pixels (inclusive). Output boxes are
+# half-open extents: one past the last occupied column and row.
+PROMPT_EXTENTS = [[2, 3, 11, 9], [12, 4, 21, 16], [5, 5, 26, 19]]
+POINT_EXTENT = [8, 6, 13, 11]
+CARVED_EXTENT = [8, 6, 10, 11]
 NAMES_WITH_POINT = {**PROMPT_NAMES, 3: "foreground"}
 
 
@@ -264,7 +271,7 @@ def test_points_give_one_foreground_row_with_a_fresh_identity() -> None:
     (result,) = _call(_block(model), image=Batch([_image("a")]), points=POINT)
 
     predictions = result["predictions"]
-    assert predictions.xyxy.tolist() == [POINT_XYXY]
+    assert predictions.xyxy.tolist() == [POINT_EXTENT]
     assert torch.equal(predictions.mask, _masks_of([POINT_XYXY]))
     assert predictions.class_id.tolist() == [0]
     assert predictions.confidence.tolist() == pytest.approx([POINT_SCORE])
@@ -284,7 +291,7 @@ def test_negative_points_exclude_their_region() -> None:
 
     (call,) = model.calls
     assert call["labels"] == [[1, 0]]
-    assert result["predictions"].xyxy.tolist() == [CARVED_XYXY]
+    assert result["predictions"].xyxy.tolist() == [CARVED_EXTENT]
 
 
 @pytest.mark.parametrize(
@@ -404,7 +411,7 @@ def test_box_prompts_give_one_mask_per_kept_row_with_its_lineage() -> None:
     assert call["boxes"] == PROMPT_XYXY
     predictions = result["predictions"]
     # Row 2 scored 0.5 < 0.6 and is dropped.
-    assert predictions.xyxy.tolist() == PROMPT_XYXY[:2]
+    assert predictions.xyxy.tolist() == PROMPT_EXTENTS[:2]
     assert torch.equal(predictions.mask, _masks_of(PROMPT_XYXY[:2]))
     assert predictions.class_id.tolist() == [1, 0]
     assert predictions.confidence.tolist() == pytest.approx([0.9, 0.7])
@@ -415,6 +422,97 @@ def test_box_prompts_give_one_mask_per_kept_row_with_its_lineage() -> None:
     ]
     record = row_record(predictions)
     assert (record.namespace, record.host_ids()) == ("detector", [0, 1])
+
+
+@pytest.mark.parametrize("points", [None, POINT], ids=["boxes", "boxes-and-points"])
+@pytest.mark.parametrize("confidence", [0.6, 0.85, 1.0])
+@pytest.mark.parametrize(
+    "wanted", [None, {"predictions"}, {"segmentation"}], ids=["both", "dense", "view"]
+)
+def test_transformed_prompt_rows_discard_host_mirrors(
+    points, confidence: float, wanted
+) -> None:
+    image = _image("a")
+    boxes = [[0, 0, 30, 20], *PROMPT_XYXY[1:]]
+    prompt = _prompt(image, xyxy=boxes)
+    for index, row in enumerate(prompt.bboxes_metadata):
+        row.update(
+            _host_xyxy=boxes[index],
+            _host_class_id=PROMPT_CLASSES[index],
+            _host_confidence=0.8,
+            custom={"source": "detector", "index": index},
+        )
+    before_rows = copy.deepcopy(prompt.bboxes_metadata)
+    before_metadata = dict(prompt.image_metadata)
+    before_tensors = [
+        tensor.clone() for tensor in (prompt.xyxy, prompt.class_id, prompt.confidence)
+    ]
+    before_record = (row_record(prompt).namespace, row_record(prompt).host_ids())
+
+    (result,) = _call(
+        _block(),
+        wanted=wanted,
+        image=Batch([image]),
+        boxes=Batch([prompt]),
+        points=points,
+        confidence=confidence,
+    )
+
+    box_count = 2 if confidence == 0.6 else 1 if confidence == 0.85 else 0
+    point_kept = points is not None and confidence <= POINT_SCORE
+    # The first prompt box covers the whole image; its mask is every pixel.
+    expected_occupied = [[0, 0, 29, 19], PROMPT_XYXY[1]][:box_count]
+    expected_boxes = [[0, 0, 30, 20], PROMPT_EXTENTS[1]][:box_count]
+    expected_classes = PROMPT_CLASSES[:box_count]
+    expected_scores = [0.9, 0.7][:box_count]
+    expected_rows = [
+        {"detection_id": f"d{index}", "custom": {"source": "detector", "index": index}}
+        for index in range(box_count)
+    ]
+    if point_kept:
+        expected_occupied.append(POINT_XYXY)
+        expected_boxes.append(POINT_EXTENT)
+        expected_classes.append(3)
+        expected_scores.append(POINT_SCORE)
+        expected_rows.append({})
+    requested = {"predictions", "segmentation"} if wanted is None else wanted
+    assert set(result) == requested | {"model_id", "inference_id"}
+    outputs = []
+    if "predictions" in result:
+        outputs.append(result["predictions"])
+    if "segmentation" in result:
+        outputs.append(result["segmentation"].full_res())
+    for output in outputs:
+        assert output.xyxy.tolist() == expected_boxes
+        assert output.class_id.tolist() == expected_classes
+        assert output.confidence.tolist() == pytest.approx(expected_scores)
+        assert output.bboxes_metadata == expected_rows
+        expected_masks = (
+            _masks_of(expected_occupied)
+            if expected_occupied
+            else torch.empty((0, *SIZE_HW), dtype=torch.bool)
+        )
+        assert torch.equal(output.mask, expected_masks)
+        record = row_record(output)
+        namespace = "detector" if points is None else result["inference_id"]
+        assert (record.namespace, record.host_ids()) == (
+            namespace,
+            list(range(len(expected_rows))),
+        )
+    if len(outputs) == 2:
+        assert torch.equal(outputs[0].mask, outputs[1].mask)
+    if expected_rows:
+        outputs[0].bboxes_metadata[0]["detection_id"] = "changed-output"
+    assert prompt.bboxes_metadata == before_rows
+    assert prompt.image_metadata == before_metadata
+    for tensor, before in zip(
+        (prompt.xyxy, prompt.class_id, prompt.confidence), before_tensors
+    ):
+        assert torch.equal(tensor, before)
+    assert (
+        row_record(prompt).namespace,
+        row_record(prompt).host_ids(),
+    ) == before_record
 
 
 def test_empty_box_prompt_gives_no_masks_and_calls_no_model() -> None:
@@ -448,7 +546,7 @@ def test_boxes_and_points_give_box_rows_then_the_point_row() -> None:
     box_call, point_call = model.calls
     assert point_call["embedding"] is box_call["embedding"]
     predictions = result["predictions"]
-    assert predictions.xyxy.tolist() == [*PROMPT_XYXY[:2], POINT_XYXY]
+    assert predictions.xyxy.tolist() == [*PROMPT_EXTENTS[:2], POINT_EXTENT]
     assert predictions.class_id.tolist() == [1, 0, 3]
     assert predictions.confidence.tolist() == pytest.approx([0.9, 0.7, POINT_SCORE])
     assert predictions.image_metadata[CLASS_NAMES_KEY] == NAMES_WITH_POINT
@@ -526,7 +624,7 @@ def test_reads_boxes_from_keypoint_predictions() -> None:
         _block(), image=Batch([image]), boxes=Batch([(key_points, boxes)])
     )
 
-    assert result["predictions"].xyxy.tolist() == PROMPT_XYXY
+    assert result["predictions"].xyxy.tolist() == PROMPT_EXTENTS
 
 
 def test_keypoints_without_boxes_are_an_error() -> None:
@@ -557,7 +655,7 @@ def test_reads_boxes_from_a_segmentation_view() -> None:
         boxes=Batch([SegmentationView.from_dense(segmented)]),
     )
 
-    assert result["predictions"].xyxy.tolist() == PROMPT_XYXY
+    assert result["predictions"].xyxy.tolist() == PROMPT_EXTENTS
 
 
 @pytest.fixture(params=["other-id", "other-size"])
@@ -633,7 +731,7 @@ def test_logits_at_zero_are_mask_pixels_and_an_empty_mask_has_a_zero_box() -> No
 
     (result,) = _call(_block(model), image=Batch([image]), boxes=Batch([prompt]))
 
-    assert result["predictions"].xyxy.tolist() == [[5, 4, 5, 4], [0, 0, 0, 0]]
+    assert result["predictions"].xyxy.tolist() == [[5, 4, 6, 5], [0, 0, 0, 0]]
 
 
 @pytest.mark.parametrize(
@@ -879,7 +977,7 @@ def _compile(
         ],
     }
     catalogue = Catalogue(
-        [ObjectDetectionBlock, SegmentAnything3InteractiveBlock],
+        [ObjectDetectionBlock, SegmentAnything3InteractiveBlock, DynamicCropBlock],
         kinds=[*NATIVE_KINDS, INSTANCE_SEGMENTATION_VIEW_KIND],
     )
     plan = compile_workflow(
@@ -935,11 +1033,11 @@ def test_compiled_detector_boxes_prompt_sam3_and_rows_stay_detector_rows(
 
     # x: 3 rows scored 0.9/0.7/0.5 -> 2 kept; y: no rows; z: 2 rows, both kept.
     x, y, z = (row["masks"] for row in rows)
-    assert x.xyxy.tolist() == [[0, 0, 29, 19], [1, 1, 29, 19]]
+    assert x.xyxy.tolist() == [[0, 0, 30, 20], [1, 1, 30, 20]]
     assert x.class_id.tolist() == [0, 1]
     assert x.image_metadata[CLASS_NAMES_KEY] == DETECTOR_NAMES
     assert (len(y), tuple(y.mask.shape)) == (0, (0, 12, 30))
-    assert z.xyxy.tolist() == [[0, 0, 29, 19], [1, 1, 29, 19]]
+    assert z.xyxy.tolist() == [[0, 0, 30, 20], [1, 1, 30, 20]]
     for row in rows:
         assert row_record(row["masks"]).namespace == row_record(row["boxes"]).namespace
         assert torch.equal(row["view"].full_res().mask, row["masks"].mask)
@@ -964,9 +1062,9 @@ def test_compiled_bound_points_change_per_run_and_embeddings_are_kept(
     model = loader.models[SAM3_INTERACTIVE_DEFAULT_MODEL_ID]
     # Every image has a point prompt; the same tensors are embedded once.
     assert model.embedded == [3]
-    for rows, point_xyxy in ((first, POINT_XYXY), (second, CARVED_XYXY)):
+    for rows, point_extent in ((first, POINT_EXTENT), (second, CARVED_EXTENT)):
         y = rows[1]["masks"]
-        assert y.xyxy.tolist() == [point_xyxy]
+        assert y.xyxy.tolist() == [point_extent]
         assert y.class_id.tolist() == [3]
         x = rows[0]["masks"]
         assert x.class_id.tolist() == [0, 1, 2, 3]
@@ -982,8 +1080,66 @@ def test_compiled_literal_points_without_boxes() -> None:
 
     (row,) = session.run({"image": [_flat(BRIGHT, "x")]}).rows()
 
-    assert row["masks"].xyxy.tolist() == [POINT_XYXY]
+    assert row["masks"].xyxy.tolist() == [POINT_EXTENT]
     assert row["masks"].image_metadata[CLASS_NAMES_KEY] == {0: "foreground"}
+
+
+# Occupied raster pixels, not prompt boxes, and the crop size they give.
+RASTER_CASES = [
+    pytest.param((4, 3, 4, 3), (1, 1), id="pixel"),
+    pytest.param((2, 3, 8, 3), (1, 7), id="row"),
+    pytest.param((4, 2, 4, 8), (7, 1), id="column"),
+    pytest.param((7, 5, 21, 14), (10, 15), id="rectangle"),
+    pytest.param((0, 0, 29, 19), (20, 30), id="border"),
+    pytest.param(None, None, id="empty"),
+]
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("output", ["predictions", "segmentation"])
+@pytest.mark.parametrize("occupied, expected_hw", RASTER_CASES)
+def test_compiled_mask_boxes_keep_last_pixels_through_dynamic_crop(
+    mode: str, output: str, occupied, expected_hw
+) -> None:
+    mask = box_mask(occupied, size_hw=SIZE_HW)
+    model = _ScriptedSam3(mask[None].float() * 8.0 - 4.0, torch.tensor([0.9]))
+    step = {key: value for key, value in SAM_STEP.items() if key != "boxes"}
+    crop = {
+        "type": DynamicCropBlock.type,
+        "name": "crop",
+        "image": "$inputs.image",
+        "predictions": f"$steps.sam.{output}",
+        "mask_opacity": 0.0,
+    }
+    plan = _compile(
+        [{**step, "points": POINT}, crop],
+        {"masks": "$steps.sam.predictions", "crops": "$steps.crop.crops"},
+        mode=mode,
+    )
+    # Distinct pixels make losing or shifting the last row or column visible.
+    pixels = torch.arange(3 * 20 * 30).reshape(3, *SIZE_HW).to(torch.uint8)
+    image = ImageData.from_tensor(pixels.clone(), image_id="raster-crop")
+    with plan.create_session({"models": ModelCache(lambda request: model)}) as session:
+        (row,) = session.run({"image": [image]}).rows()
+
+    predictions, crops = row["masks"], row["crops"]
+    assert torch.equal(predictions.mask, mask[None])
+    assert torch.equal(image.tensor_image, pixels)
+    if occupied is None:
+        assert predictions.xyxy.tolist() == [[0, 0, 0, 0]]
+        assert crops == [None]
+        return
+
+    x1, y1, x2, y2 = occupied
+    assert predictions.xyxy.tolist() == [[x1, y1, x2 + 1, y2 + 1]]
+    (cropped,) = crops
+    assert cropped.size_hw == expected_hw
+    assert torch.equal(cropped.tensor_image, pixels[:, y1 : y2 + 1, x1 : x2 + 1])
+    record = row_record(predictions)
+    assert (cropped.parent_row.namespace, cropped.parent_row.id) == (
+        record.namespace,
+        record.host_ids()[0],
+    )
 
 
 def test_compiled_new_session_embeds_again() -> None:

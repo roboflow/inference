@@ -3,8 +3,8 @@
 The block gives the instance-segmentation outputs of decision 018: a
 ``segmentation`` view to wire to blocks and ``predictions``, its dense
 serializable ``InstanceDetections``. Each output is built only when a reader
-wants it. Masks and boxes are on the image's device; boxes are the inclusive
-pixel bounds of each mask, ``[0, 0, 0, 0]`` for an empty mask (as in V1)::
+wants it. Masks and boxes are on the image's device; boxes are half-open
+pixel extents of each mask, ``[0, 0, 0, 0]`` for an empty mask (as in V1)::
 
     v2/sam3_interactive@v1 (SAM3 promptable visual segmentation)
       boxes wired     one row per prompt row: the prompt's class and row dict
@@ -19,9 +19,11 @@ pixel bounds of each mask, ``[0, 0, 0, 0]`` for an empty mask (as in V1)::
 Rows keep the box prompt's row identity when the step has no point prompt,
 so a mask row and its detector row stay the same row. A point row is not a
 prompt row: with points, every row of the result gets a fresh identity, and
-box rows keep their prompt row dicts for lineage. The point row's class id is
-0 without boxes, otherwise one past every class id of the box prompt, so it
-never takes a detector class's name.
+box rows keep their prompt row dicts for lineage. The reserved host mirrors
+(``_host_xyxy``, ``_host_class_id``, ``_host_confidence``) are dropped from
+those dicts: they describe the prompt's box, not the mask's. The point
+row's class id is 0 without boxes, otherwise one past every class id of the
+box prompt, so it never takes a detector class's name.
 
 SAM3's image embedding is kept by the step, never by ``ModelCache``, with the
 SAM2 block's rule: a later call with the same pixel tensor and the same model
@@ -30,14 +32,17 @@ request reuses it; only the latest call's embeddings are kept;
 
 Deliberate differences from V1 (``segment_anything3_interactive/v1_tensor.py``):
 
+- Mask boxes include the full last occupied pixel: ``max + 1`` on the right
+  and bottom, correcting V1 inclusive bounds so crops retain every pixel.
 - The model comes from the ``models`` resource by ``model_id`` (default
   ``sam3/sam3_interactive``) and ``model_package_id``; V1's model was fixed.
   ``threshold`` is now ``confidence``, checked to be 0..1.
 - The point row's class id is 0 or one past the box prompt's ids; V1 used -1,
   which V2 drawing blocks reject.
-- Box rows keep the prompt rows' dicts and, without points, their row
-  identity; V1 copied only ``detection_id`` and the class name. A box row
-  whose class id has no name stays unnamed; V1 named it "foreground".
+- Box rows keep the prompt rows' dicts, less the reserved host mirrors,
+  and, without points, their row identity; V1 copied only ``detection_id``
+  and the class name. A box row whose class id has no name stays unnamed;
+  V1 named it "foreground".
 - Points are checked strictly: unknown keys, labels other than true/false/1/0,
   non-finite coordinates and points outside the image are errors. V1 ignored
   unknown keys, read any truthy label as positive and sent outside points to
@@ -71,6 +76,7 @@ from typing import (
 
 import torch
 from pydantic import Field, StrictBool, StrictStr, model_validator
+from roboflow_workflows.v2.blocks.geometry._rows import without_host_mirrors
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.blocks.models.common import (
     UnitFloat,
@@ -533,7 +539,7 @@ def _interactive_instances(
         )
         class_ids.append(prompt.class_id.to(device=device, dtype=torch.int64))
         if prompt.bboxes_metadata is not None:
-            row_dicts = list(prompt.bboxes_metadata)
+            row_dicts = [without_host_mirrors(row) for row in prompt.bboxes_metadata]
 
     if points is None:
         # Every row is a prompt row: keep the prompt's identity.

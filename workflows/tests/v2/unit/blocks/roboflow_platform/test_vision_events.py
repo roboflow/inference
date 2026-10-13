@@ -1,0 +1,468 @@
+"""Vision event blocks with fake ports: skips, cooldown, detachment, outcomes."""
+
+from threading import Event
+
+import pytest
+import torch
+from pydantic import ValidationError
+from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
+from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
+from roboflow_workflows.v2.blocks.roboflow_platform.vision_events import (
+    EventBundle,
+    RoboflowVisionEventsBlock,
+    VisionEventBundleBlock,
+)
+from roboflow_workflows.v2.blocks.sinks.runtime import FULL_MESSAGE, BackgroundEffects
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
+
+ADAPTER_MODULE = "inference.roboflow_workflows_plugin.v2.platform_events_adapter"
+
+
+def arguments(block=RoboflowVisionEventsBlock, **changes):
+    required = {"event_type": "custom", "solution": "use-case"}
+    if block is VisionEventBundleBlock:
+        required["target_directory"] = "/bundles"
+    values = block.Params(**required).model_dump()
+    values.update(fire_and_forget=False, cooldown_seconds=0, custom_value="alert")
+    values.update(changes)
+    return values
+
+
+def image(value=50):
+    return ImageData.from_tensor(torch.full((3, 4, 5), value, dtype=torch.uint8))
+
+
+class Port:
+    """Records calls; ``result`` is returned, or raised when an exception."""
+
+    def __init__(self, result="event-1"):
+        self.result = result
+        self.calls = []
+
+    def _answer(self, call):
+        self.calls.append(call)
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+    def submit(self, request, **kwargs):
+        return self._answer(("submit", request, kwargs))
+
+    def prepare_destination(self, **kwargs):
+        self.calls.append(("prepare", kwargs))
+
+    def create_bundle(self, request, **kwargs):
+        return self._answer(("bundle", request, kwargs))
+
+
+def bundle_port():
+    return Port(EventBundle(event_id="event-2", bundle_path="/bundles/b.tar.gz"))
+
+
+def held_effects(**options):
+    """BackgroundEffects whose only worker is busy until ``release`` is set."""
+    effects = BackgroundEffects(max_workers=1, **options)
+    started, release = Event(), Event()
+
+    def hold():
+        started.set()
+        assert release.wait(5)
+        return False, "held"
+
+    effects.deliver(hold, label="hold")
+    assert started.wait(5)
+    return effects, release
+
+
+@pytest.mark.parametrize("block", [RoboflowVisionEventsBlock, VisionEventBundleBlock])
+@pytest.mark.parametrize("policy,step", [(True, False), (False, True)])
+def test_disabled_needs_no_key_and_touches_no_port(block, policy, step):
+    port = Port(AssertionError("port called"))
+    resource = (
+        {"vision_events_port": port}
+        if block is RoboflowVisionEventsBlock
+        else {"vision_event_bundle_port": port}
+    )
+
+    result = block(disable_sinks=policy, **resource).run(
+        **arguments(block, disable_sink=step)
+    )
+
+    expected = "execution policy" if policy else "parameter `disable_sink`"
+    assert expected in result["message"]
+    assert result["error_status"] is False and result["event_id"] == ""
+    assert result.get("bundle_path", "") == "" and not port.calls
+
+
+def test_cloud_needs_a_key_and_local_store_does_not():
+    with pytest.raises(ValueError, match="API key"):
+        RoboflowVisionEventsBlock(vision_events_port=Port()).run(**arguments())
+    with pytest.raises(SecretUnavailableError):
+        RoboflowVisionEventsBlock(
+            vision_events_port=Port(), api_key=Secret.unavailable("key")
+        ).run(**arguments())
+
+    port = Port("local-1")
+    result = RoboflowVisionEventsBlock(vision_events_port=port).run(
+        **arguments(write_to_event_store=True, event_store_url="http://edge:8001")
+    )
+
+    assert result == {
+        "error_status": False,
+        "throttling_status": False,
+        "event_id": "local-1",
+        "message": "Event written to local event store successfully",
+    }
+    assert port.calls[0][2] == {
+        "api_key": None,
+        "write_to_event_store": True,
+        "event_store_url": "http://edge:8001",
+    }
+
+
+def test_cloud_key_reaches_the_port_as_a_secret():
+    port = Port()
+
+    result = RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented").run(
+        **arguments()
+    )
+
+    assert result["message"] == "Vision event sent successfully"
+    api_key = port.calls[0][2]["api_key"]
+    assert isinstance(api_key, Secret) and api_key.reveal() == "invented"
+
+
+def test_offline_defaults_name_this_family_adapter():
+    result = RoboflowVisionEventsBlock(api_key="invented").run(**arguments())
+
+    assert result["error_status"] is True
+    assert "'vision_events_port'" in result["message"]
+    assert "RoboflowVisionEventsAdapter()" in result["message"]
+    assert ADAPTER_MODULE in result["message"]
+    with pytest.raises(PlatformUnavailableError) as caught:
+        VisionEventBundleBlock().run(**arguments(VisionEventBundleBlock))
+    assert "'vision_event_bundle_port'" in str(caught.value)
+    assert "VisionEventBundleAdapter(allow_access_to_file_system=True)" in str(
+        caught.value
+    )
+    assert "RoboflowPlatformAdapter" not in str(caught.value) + result["message"]
+
+
+@pytest.mark.parametrize(
+    "event_type,changes,expected",
+    [
+        (
+            "custom",
+            {"custom_value": "", "external_id": "ext"},
+            {"value": "", "externalId": "ext"},
+        ),
+        ("quality_check", {"qc_result": "pass"}, {"result": "pass"}),
+        (
+            "inventory_count",
+            {"item_count": 0, "location": "A", "item_type": "part"},
+            {"itemCount": 0, "location": "A", "itemType": "part"},
+        ),
+        (
+            "safety_alert",
+            {"alert_type": "spill", "severity": "high", "alert_description": "floor"},
+            {"alertType": "spill", "severity": "high", "description": "floor"},
+        ),
+        (
+            "operator_feedback",
+            {"related_event_id": "e", "feedback": "correct", "external_id": "ignored"},
+            {"relatedEventId": "e", "feedback": "correct"},
+        ),
+    ],
+)
+def test_event_data_matches_v1(event_type, changes, expected):
+    port = Port()
+
+    RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented").run(
+        **arguments(event_type=event_type, **changes)
+    )
+
+    request = port.calls[0][1]
+    assert request.event_type == event_type and request.event_data == expected
+
+
+def test_request_carries_images_predictions_metadata_and_use_case():
+    port = Port()
+    predictions = object()
+
+    RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented").run(
+        **arguments(
+            input_image=image(10),
+            output_image=image(20),
+            predictions=predictions,
+            custom_metadata={"camera": "north", "count": 2},
+        )
+    )
+
+    request = port.calls[0][1]
+    assert request.input_image.tensor_image.max().item() == 10
+    assert request.output_image.tensor_image.max().item() == 20
+    assert request.solution == "use-case"
+    assert request.custom_metadata == {"camera": "north", "count": 2}
+    # Deep-copied: an opaque object is copied, not shared.
+    assert (
+        type(request.predictions) is object and request.predictions is not predictions
+    )
+
+
+def test_optional_images_and_predictions_are_none():
+    port = Port()
+
+    RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented").run(
+        **arguments()
+    )
+
+    request = port.calls[0][1]
+    assert (request.input_image, request.output_image, request.predictions) == (
+        None,
+        None,
+        None,
+    )
+
+
+@pytest.mark.parametrize(
+    "change", [{"event_type": "unknown"}, {"cooldown_seconds": float("nan")}]
+)
+def test_invalid_selector_values_fail_before_any_call(change):
+    port = Port()
+
+    with pytest.raises(ValueError):
+        RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented").run(
+            **arguments(**change)
+        )
+
+    assert not port.calls
+
+
+def test_use_case_is_required_for_events_and_optional_for_bundles():
+    with pytest.raises(ValidationError):
+        RoboflowVisionEventsBlock.Params(event_type="custom")
+    params = VisionEventBundleBlock.Params(event_type="custom", target_directory="/b")
+    assert params.solution is None
+
+
+def test_background_outcome_is_v1_admission_and_inputs_are_detached():
+    port = Port()
+    source, metadata = image(50), {"nested": [1]}
+    effects, release = held_effects(max_pending=2)
+    with effects:
+        try:
+            result = RoboflowVisionEventsBlock(
+                vision_events_port=port, api_key="invented", sink_effects=effects
+            ).run(
+                **arguments(
+                    input_image=source, custom_metadata=metadata, fire_and_forget=True
+                )
+            )
+            source.tensor_image.zero_()
+            metadata["nested"].append(2)
+        finally:
+            release.set()
+
+    assert result == {
+        "error_status": False,
+        "throttling_status": False,
+        "event_id": "",
+        "message": "Vision event sent in background task",
+    }
+    request = port.calls[0][1]
+    assert request.input_image.tensor_image.max().item() == 50
+    assert request.input_image.device.type == "cpu"
+    assert request.custom_metadata == {"nested": [1]}
+
+
+def test_background_failure_reaches_effects_not_the_step():
+    port = Port(PlatformRequestError("vision event failed", error_type="x"))
+    with BackgroundEffects() as effects:
+        result = RoboflowVisionEventsBlock(
+            vision_events_port=port, api_key="invented", sink_effects=effects
+        ).run(**arguments(fire_and_forget=True))
+
+    assert result["error_status"] is False and result["event_id"] == ""
+    (failure,) = effects.failures()
+    assert failure.label == RoboflowVisionEventsBlock.type
+    assert failure.message == "PlatformRequestError: vision event failed"
+
+
+def test_fire_and_forget_without_sink_effects_runs_now():
+    port = Port()
+
+    result = RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented").run(
+        **arguments(fire_and_forget=True)
+    )
+
+    assert result["event_id"] == "event-1" and len(port.calls) == 1
+
+
+def test_inline_failure_is_an_error_outcome_without_an_id():
+    port = Port(PlatformRequestError("vision event submission failed", error_type="x"))
+
+    result = RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented").run(
+        **arguments()
+    )
+
+    assert result == {
+        "error_status": True,
+        "throttling_status": False,
+        "event_id": "",
+        "message": "PlatformRequestError: vision event submission failed",
+    }
+
+
+@pytest.mark.parametrize("returned", [None, 3, {"id": "x"}])
+def test_non_string_event_id_is_an_error_outcome(returned):
+    result = RoboflowVisionEventsBlock(
+        vision_events_port=Port(returned), api_key="invented"
+    ).run(**arguments())
+
+    assert result["error_status"] is True and result["event_id"] == ""
+    assert "non-str event id" in result["message"]
+
+
+def test_local_store_without_id_is_still_created_as_in_v1():
+    result = RoboflowVisionEventsBlock(vision_events_port=Port("")).run(
+        **arguments(write_to_event_store=True)
+    )
+
+    assert result["error_status"] is False and result["event_id"] == ""
+
+
+def test_cooldown_throttles_without_preparing_and_ignores_failures():
+    port = Port(PlatformRequestError("failed", error_type="x"))
+    block = RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented")
+
+    first = block.run(**arguments(cooldown_seconds=100))
+    second = block.run(**arguments(cooldown_seconds=100, event_type="unknown"))
+
+    # As in V1 a failed delivery still starts the window; the throttled call
+    # is not prepared, so its invalid event_type is never seen.
+    assert first["error_status"] is True and len(port.calls) == 1
+    assert second == {
+        "error_status": False,
+        "throttling_status": True,
+        "event_id": "",
+        "message": "Sink cooldown applies",
+    }
+
+
+def test_negative_cooldown_from_a_selector_disables_throttling():
+    port = Port()
+    block = RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented")
+
+    for _ in range(2):
+        block.run(**arguments(cooldown_seconds=-5))
+
+    assert len(port.calls) == 2
+
+
+def test_full_effects_reject_starts_the_window_as_v1_dispatch_did():
+    port = Port()
+    effects, release = held_effects(max_pending=1, when_full="reject")
+    block = RoboflowVisionEventsBlock(
+        vision_events_port=port, api_key="invented", sink_effects=effects
+    )
+    with effects:
+        try:
+            refused = block.run(**arguments(fire_and_forget=True, cooldown_seconds=100))
+            throttled = block.run(**arguments(cooldown_seconds=100))
+        finally:
+            release.set()
+
+    assert refused["error_status"] is True and refused["message"] == FULL_MESSAGE
+    assert throttled["throttling_status"] is True and not port.calls
+
+
+def test_full_effects_run_inline_return_the_created_id():
+    port = Port()
+    effects, release = held_effects(max_pending=1, when_full="run_inline")
+    with effects:
+        try:
+            result = RoboflowVisionEventsBlock(
+                vision_events_port=port, api_key="invented", sink_effects=effects
+            ).run(**arguments(fire_and_forget=True))
+        finally:
+            release.set()
+
+    assert result["event_id"] == "event-1"
+    assert result["message"] == "Vision event sent successfully"
+
+
+def test_bundle_now_returns_id_and_path():
+    port = bundle_port()
+
+    result = VisionEventBundleBlock(vision_event_bundle_port=port).run(
+        **arguments(VisionEventBundleBlock, solution=None, file_name="b")
+    )
+
+    assert result == {
+        "error_status": False,
+        "throttling_status": False,
+        "event_id": "event-2",
+        "bundle_path": "/bundles/b.tar.gz",
+        "message": "Vision event bundle written successfully",
+    }
+    destination = {"target_directory": "/bundles", "file_name": "b"}
+    assert port.calls[0] == ("prepare", destination)
+    assert port.calls[1][0] == "bundle" and port.calls[1][2] == destination
+    assert port.calls[1][1].solution is None
+
+
+def test_bundle_background_admission_and_failure():
+    port = bundle_port()
+    port.result = OSError("disk full")
+    with BackgroundEffects() as effects:
+        result = VisionEventBundleBlock(
+            vision_event_bundle_port=port, sink_effects=effects
+        ).run(**arguments(VisionEventBundleBlock, fire_and_forget=True))
+
+    assert result == {
+        "error_status": False,
+        "throttling_status": False,
+        "event_id": "",
+        "bundle_path": "",
+        "message": "Vision event bundle written in background task",
+    }
+    assert [failure.message for failure in effects.failures()] == ["OSError: disk full"]
+
+
+def test_refused_destination_fails_the_run_even_in_background():
+    class Refusing(Port):
+        refuse = True
+
+        def prepare_destination(self, **kwargs):
+            if self.refuse:
+                raise ValueError("outside the allowed write directory")
+            super().prepare_destination(**kwargs)
+
+    port = Refusing(EventBundle(event_id="event-3", bundle_path="/bundles/c"))
+    with BackgroundEffects() as effects:
+        block = VisionEventBundleBlock(
+            vision_event_bundle_port=port, sink_effects=effects
+        )
+        with pytest.raises(ValueError, match="allowed write directory"):
+            block.run(
+                **arguments(
+                    VisionEventBundleBlock, fire_and_forget=True, cooldown_seconds=100
+                )
+            )
+        assert not port.calls and effects.stats().submitted == 0
+
+        # The refusal started no cooldown window: a corrected call runs.
+        port.refuse = False
+        result = block.run(**arguments(VisionEventBundleBlock, cooldown_seconds=100))
+
+    assert result["bundle_path"] == "/bundles/c"
+
+
+def test_bundle_port_without_event_bundle_result_is_an_error_outcome():
+    result = VisionEventBundleBlock(
+        vision_event_bundle_port=Port({"event_id": "x", "bundle_path": "y"})
+    ).run(**arguments(VisionEventBundleBlock))
+
+    assert result["error_status"] is True and result["bundle_path"] == ""
+    assert "no EventBundle" in result["message"]

@@ -17,6 +17,7 @@ from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+from roboflow_workflows.v2.blocks.image import mask_edge_snap
 from roboflow_workflows.v2.blocks.image.mask_edge_snap import MaskEdgeSnapBlock
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
@@ -189,6 +190,45 @@ def test_compiled_workflow_snaps_masks_per_batch_element(mode):
         session.close()
 
     _check(result.rows(), inputs, rgb, snapped_box)
+
+
+@pytest.mark.parametrize("mode", ["run", "phases"])
+def test_compiled_workflow_without_edges_output_skips_edge_work(monkeypatch, mode):
+    # Only refined_segmentation is read. The row-less element skips the edge
+    # map; the element with rows still builds it but skips the edges row.
+    definition = {
+        **DEFINITION,
+        "outputs": [o for o in DEFINITION["outputs"] if o["name"] == "refined"],
+    }
+    plan = compile_workflow(
+        definition, catalogue=CATALOGUE, options=CompileOptions(block_execution=mode)
+    )
+    calls = {"_snap_region": 0, "_edges_prediction": 0}
+    for name in calls:
+        original = getattr(mask_edge_snap, name)
+
+        def spy(*args, _name=name, _original=original, **kwargs):
+            calls[_name] += 1
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(mask_edge_snap, name, spy)
+    session = plan.create_session()
+    inputs, rgb, snapped_box = _inputs()
+    try:
+        result = session.run(inputs)
+    finally:
+        session.close()
+
+    assert calls == {"_snap_region": 1, "_edges_prediction": 0}
+    first, second = result.rows()
+    assert set(first) == set(second) == {"refined"}
+    v1_refined, _ = _v1(rgb, inputs["segmentation"][0])
+    assert first["refined"].xyxy.tolist() == [snapped_box]
+    assert torch.equal(first["refined"].mask, v1_refined.mask)
+    assert first["refined"].bboxes_metadata == [{"detection_id": "with-rows-0"}]
+    assert frame_of(first["refined"]) == FrameRef.from_image(inputs["image"][0])
+    assert len(second["refined"]) == 0
+    assert frame_of(second["refined"]) == FrameRef.from_image(inputs["image"][1])
 
 
 def test_pipelined_runs_match_and_leave_inputs_unchanged():

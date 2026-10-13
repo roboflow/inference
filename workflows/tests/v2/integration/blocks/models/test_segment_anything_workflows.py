@@ -17,6 +17,8 @@ from typing import Any, Callable, Dict, List
 
 import pytest
 import torch
+from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
+from roboflow_workflows.v2.blocks.image.mask_edge_snap import MaskEdgeSnapBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.blocks.models.detection import ObjectDetectionBlock
 from roboflow_workflows.v2.blocks.models.instance_segmentation import (
@@ -78,6 +80,8 @@ class _Loader:
 def _catalogue() -> Catalogue:
     catalogue = Catalogue(
         [
+            DynamicCropBlock,
+            MaskEdgeSnapBlock,
             ObjectDetectionBlock,
             InstanceSegmentationBlock,
             SegmentAnything2Block,
@@ -174,13 +178,13 @@ def test_detector_boxes_prompt_sam2_and_mask_rows_stay_detector_rows(
 
     # x: 3 rows scored 0.9/0.7/0.5 -> 2 kept; y: no rows; z: 2 rows, both kept.
     x, y, z = (row["masks"] for row in rows)
-    assert x.xyxy.tolist() == [[0, 0, 29, 19], [1, 1, 29, 19]]
+    assert x.xyxy.tolist() == [[0, 0, 30, 20], [1, 1, 30, 20]]
     assert torch.equal(x.mask, _masks_of([[0, 0, 29, 19], [1, 1, 29, 19]], (20, 30)))
     assert x.confidence.tolist() == pytest.approx([0.9, 0.7])
     assert x.class_id.tolist() == [0, 1]
     assert x.image_metadata[CLASS_NAMES_KEY] == DETECTOR_NAMES
     assert (len(y), tuple(y.mask.shape)) == (0, (0, 12, 30))
-    assert z.xyxy.tolist() == [[0, 0, 15, 19], [1, 1, 15, 19]]
+    assert z.xyxy.tolist() == [[0, 0, 16, 20], [1, 1, 16, 20]]
     for row in rows:
         detector, masks = row_record(row["boxes"]), row_record(row["masks"])
         assert masks.namespace == detector.namespace
@@ -254,7 +258,7 @@ def test_an_instance_segmentation_view_prompts_sam2(mode: str) -> None:
     (row,) = session.run({"image": [_image(BRIGHT, "x")]}).rows()
 
     masks, segmenter = row["masks"], row["segmenter"]
-    assert masks.xyxy.tolist() == [[0, 0, 29, 19], [1, 1, 29, 19], [2, 2, 28, 18]]
+    assert masks.xyxy.tolist() == [[0, 0, 30, 20], [1, 1, 30, 20], [2, 2, 29, 19]]
     assert masks.class_id.tolist() == segmenter.class_id.tolist() == [0, 1, 2]
     assert row_record(masks).namespace == row_record(segmenter).namespace
 
@@ -266,7 +270,7 @@ def test_whole_image_sam2_without_boxes() -> None:
 
     (row,) = session.run({"image": [_image(BRIGHT, "x")]}).rows()
 
-    assert row["masks"].xyxy.tolist() == [[7, 5, 21, 14]]
+    assert row["masks"].xyxy.tolist() == [[7, 5, 22, 15]]
     assert row["masks"].image_metadata[CLASS_NAMES_KEY] == {0: "foreground"}
 
 
@@ -329,9 +333,9 @@ def test_sam3_segments_selected_classes_with_their_thresholds(mode: str) -> None
         assert masks.confidence.tolist() == pytest.approx([0.9, 0.6])
         assert masks.image_metadata[CLASS_NAMES_KEY] == {0: "auto", 1: "person"}
         assert torch.equal(row["view"].full_res().mask, masks.mask)
-    assert rows[0]["masks"].xyxy.tolist() == [[2, 2, 11, 9], [2, 2, 11, 9]]
+    assert rows[0]["masks"].xyxy.tolist() == [[2, 2, 12, 10], [2, 2, 12, 10]]
     # On a 16-pixel-wide image the boxes still fit.
-    assert rows[1]["masks"].xyxy.tolist() == [[2, 2, 11, 9], [2, 2, 11, 9]]
+    assert rows[1]["masks"].xyxy.tolist() == [[2, 2, 12, 10], [2, 2, 12, 10]]
     assert [frame_of(row["masks"]).image_id for row in rows] == ["x", "z"]
 
 
@@ -467,3 +471,173 @@ def test_selected_class_names_recheck_literal_threshold_count(mode: str) -> None
 
     assert isinstance(failure.value.__cause__, ResolvedParameterError)
     assert loader.models == {}
+
+
+# These are occupied raster coordinates, not continuous prompt/model boxes.
+RASTER_CASES = [
+    pytest.param((4, 3, 4, 3), (1, 1), id="pixel"),
+    pytest.param((2, 3, 8, 3), (1, 7), id="row"),
+    pytest.param((4, 2, 4, 8), (7, 1), id="column"),
+    pytest.param((7, 5, 21, 14), (10, 15), id="rectangle"),
+    pytest.param((0, 0, 29, 19), (20, 30), id="border"),
+    pytest.param(None, None, id="empty"),
+]
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("output", ["predictions", "segmentation"])
+@pytest.mark.parametrize("backend", ["sam2", "sam3"])
+@pytest.mark.parametrize("occupied, expected_hw", RASTER_CASES)
+def test_raster_bounds_keep_last_pixels_through_dynamic_crop(
+    mode: str, output: str, backend: str, occupied, expected_hw
+) -> None:
+    from inference_models.models.sam2.entities import SAM2Prediction
+
+    mask = box_mask(occupied, size_hw=(20, 30))
+
+    class _RasterSam2(FakeSam2):
+        def segment_images(self, embeddings, boxes=None, **options):
+            logits = mask[None].float() * 8 - 4
+            prediction = SAM2Prediction(
+                masks=logits, scores=torch.tensor([0.9]), logits=logits
+            )
+            return [prediction for _ in embeddings]
+
+    model = (
+        _RasterSam2()
+        if backend == "sam2"
+        else FakeSam3(table={"part": [(occupied, 0.9)]})
+    )
+    step = {
+        "type": (
+            SegmentAnything2Block.type
+            if backend == "sam2"
+            else SegmentAnything3Block.type
+        ),
+        "name": "sam",
+        "image": "$inputs.image",
+    }
+    if backend == "sam3":
+        step["class_names"] = ["part"]
+    selector = f"$steps.sam.{output}"
+    crop = {
+        "type": DynamicCropBlock.type,
+        "name": "crop",
+        "image": "$inputs.image",
+        "predictions": selector,
+        "mask_opacity": 0.0,
+    }
+    plan = _compile(
+        [step, crop],
+        {"masks": "$steps.sam.predictions", "crops": "$steps.crop.crops"},
+        mode=mode,
+    )
+    # Distinct pixels make losing or shifting the last row/column observable.
+    pixels = torch.arange(3 * 20 * 30).reshape(3, 20, 30).to(torch.uint8)
+    image = ImageData.from_tensor(pixels, image_id="raster-crop")
+    with plan.create_session({"models": ModelCache(lambda request: model)}) as session:
+        (row,) = session.run({"image": [image]}).rows()
+
+    predictions, crops = row["masks"], row["crops"]
+    if occupied is None:
+        assert predictions.xyxy.tolist() == (
+            [[0, 0, 0, 0]] if backend == "sam2" else []
+        )
+        assert crops == ([None] if backend == "sam2" else [])
+        return
+
+    x1, y1, x2, y2 = occupied
+    assert predictions.xyxy.tolist() == [[x1, y1, x2 + 1, y2 + 1]]
+    assert torch.equal(predictions.mask, mask[None])
+    assert len(crops) == 1 and crops[0].size_hw == expected_hw
+    assert torch.equal(crops[0].tensor_image, pixels[:, y1 : y2 + 1, x1 : x2 + 1])
+    assert crops[0].parent_row.namespace == row_record(predictions).namespace
+    assert crops[0].parent_row.id == row_record(predictions).host_ids()[0]
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("output", ["predictions", "segmentation"])
+@pytest.mark.parametrize("occupied, expected_hw", RASTER_CASES[:-1])
+def test_unchanged_sam2_mask_keeps_bounds_and_identity_through_edge_snap(
+    mode: str, output: str, occupied, expected_hw
+) -> None:
+    from inference_models.models.sam2.entities import SAM2Prediction
+
+    class _RasterSam2(FakeSam2):
+        def segment_images(self, embeddings, boxes=None, **options):
+            logits = box_mask(occupied, size_hw=(20, 30))[None].float() * 8 - 4
+            return [
+                SAM2Prediction(masks=logits, scores=torch.tensor([0.9]), logits=logits)
+            ]
+
+    class _MetadataDetector(NmsDetector):
+        def post_process(self, raw, sizes, confidence="default", **kwargs):
+            predictions = super().post_process(
+                raw, sizes, confidence=confidence, **kwargs
+            )
+            for prediction in predictions:
+                prediction.bboxes_metadata = [
+                    {
+                        "custom": "kept",
+                        "_host_xyxy": [-1, -1, -1, -1],
+                        "_host_class_id": -1,
+                        "_host_confidence": -1.0,
+                    }
+                    for _ in range(len(prediction))
+                ]
+            return predictions
+
+    plan = _compile(
+        [
+            DETECTOR_STEP,
+            {
+                "type": SegmentAnything2Block.type,
+                "name": "sam",
+                "image": "$inputs.image",
+                "boxes": "$steps.detector.predictions",
+            },
+            {
+                "type": MaskEdgeSnapBlock.type,
+                "name": "snap",
+                "image": "$inputs.image",
+                "segmentation": f"$steps.sam.{output}",
+                "dilation_iterations": 0,
+                "min_contour_area": 0.0,
+            },
+            {
+                "type": DynamicCropBlock.type,
+                "name": "crop",
+                "image": "$inputs.image",
+                "predictions": "$steps.snap.refined_segmentation",
+                "mask_opacity": 0.0,
+            },
+        ],
+        {
+            "before": "$steps.sam.predictions",
+            "after": "$steps.snap.refined_segmentation",
+            "crops": "$steps.crop.crops",
+        },
+        mode=mode,
+    )
+    with plan.create_session(
+        {
+            "models": ModelCache(
+                lambda request: (
+                    _MetadataDetector(request)
+                    if request.model_id == "od"
+                    else _RasterSam2()
+                )
+            )
+        }
+    ) as session:
+        (row,) = session.run({"image": [_image(64, "flat")]}).rows()
+
+    before, after = row["before"], row["after"]
+    assert torch.equal(before.mask, after.mask)
+    assert torch.equal(before.xyxy, after.xyxy)
+    assert torch.equal(before.class_id, after.class_id)
+    assert torch.equal(before.confidence, after.confidence)
+    assert frame_of(before) == frame_of(after)
+    assert row_record(before) == row_record(after)
+    assert before.bboxes_metadata == after.bboxes_metadata == [{"custom": "kept"}]
+    assert row["crops"][0].size_hw == expected_hw

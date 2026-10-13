@@ -12,8 +12,9 @@ from enum import Enum
 from threading import Lock
 from typing import Any, Callable
 
-from inference.core import exceptions
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
+
+from inference.core import exceptions
 
 
 class HostOperation(Enum):
@@ -24,6 +25,11 @@ class HostOperation(Enum):
     SEARCH = "project image search"
     IMAGE = "candidate image download"
     WORKFLOW = "saved workflow retrieval"
+    ASSET_ATTRIBUTES = "asset attribute update"
+    DATASET_UPLOAD = "dataset upload"
+    MONITORING = "model monitoring report"
+    VISION_EVENT = "vision event submission"
+    EVENT_BUNDLE = "vision event bundle creation"
 
 
 _OPERATION: ContextVar[HostOperation | None] = ContextVar(

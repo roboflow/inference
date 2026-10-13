@@ -3,8 +3,8 @@
 Both blocks give the instance-segmentation outputs of decision 018: a
 ``segmentation`` view to wire to blocks and ``predictions``, its dense
 serializable ``InstanceDetections``. Each output is built only when a reader
-wants it. Masks and boxes are on the image's device; boxes are the inclusive
-pixel bounds of each mask, ``[0, 0, 0, 0]`` for an empty mask (as in V1)::
+wants it. Masks and boxes are on the image's device; boxes are half-open
+pixel extents of each mask, ``[0, 0, 0, 0]`` for an empty mask::
 
     v2/segment_anything@v1 (SAM2)
       boxes not wired   one mask per image: SAM2's best guess, "foreground"
@@ -30,6 +30,9 @@ unloaded.
 Deliberate differences from V1 (``segment_anything2/v1_tensor.py``,
 ``segment_anything3/v3_tensor.py``):
 
+- Mask-derived boxes include the full last occupied pixel: ``max + 1`` on the
+  right and bottom, correcting V1 inclusive bounds so crops retain every pixel.
+  Prompt boxes are passed to the model unchanged.
 - Models come from the ``models`` resource by ``model_id``; SAM2's ``version``
   becomes ``model_id="sam2/<version>"``. ``threshold`` is now ``confidence``.
 - SAM2 with wired boxes but no box rows returns no masks; V1 segmented the
@@ -338,7 +341,8 @@ class SegmentAnything2Block(Block):
 
         All missing images are embedded in one ``embed_images`` call, without
         the model's own embeddings cache. The kept set is replaced by this
-        call's embeddings.
+        call's embeddings. Unhit embeddings are released before that call, so
+        if it fails only this call's hits stay kept.
         """
         previous = self._embeddings
         kept: Dict[Tuple[ModelRequest, str], _Embedding] = {}
@@ -354,6 +358,10 @@ class SegmentAnything2Block(Block):
                 found[row] = entry.embeddings
             else:
                 missing.append(row)
+        # Release unhit embeddings before the model allocates new ones; the
+        # loop's ``entry`` may still hold a stale one.
+        self._embeddings = kept
+        previous = entry = None
 
         if missing:
             computed = model.embed_images(
@@ -371,7 +379,6 @@ class SegmentAnything2Block(Block):
                     member.tensor_image, embeddings
                 )
                 found[row] = embeddings
-        self._embeddings = kept
 
         return found
 
@@ -629,7 +636,7 @@ def _segmentation_result(
     model_id: str,
     inference_id: str,
 ) -> Dict[str, Any]:
-    # Keep the reader keyword: the frozen interactive block imports this helper.
+    # Keep the reader keyword: the interactive and video blocks import this helper.
     result: Dict[str, Any] = {"model_id": model_id, "inference_id": inference_id}
     if reader.wants("segmentation"):
         result["segmentation"] = SegmentationView.from_dense(predictions)
@@ -813,7 +820,7 @@ def _most_confident(
 
 
 def _mask_boxes(mask: torch.Tensor) -> torch.Tensor:
-    """Inclusive ``xyxy`` pixel bounds of each mask; zeros for an empty mask."""
+    """Half-open ``xyxy`` pixel extents of each mask; zeros for an empty mask."""
     _, height, width = mask.shape
     columns_used = mask.any(dim=1)
     rows_used = mask.any(dim=2)
@@ -823,8 +830,8 @@ def _mask_boxes(mask: torch.Tensor) -> torch.Tensor:
         [
             torch.where(columns_used, x, width).amin(dim=1),
             torch.where(rows_used, y, height).amin(dim=1),
-            torch.where(columns_used, x, -1).amax(dim=1),
-            torch.where(rows_used, y, -1).amax(dim=1),
+            torch.where(columns_used, x, -1).amax(dim=1) + 1,
+            torch.where(rows_used, y, -1).amax(dim=1) + 1,
         ],
         dim=1,
     ).to(torch.float32)

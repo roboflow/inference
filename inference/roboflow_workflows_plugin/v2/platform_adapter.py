@@ -32,16 +32,17 @@ existing diagnostic contents. Arbitrary callback threads are outside this scope.
 
 from typing import Any, Dict, Optional, Sequence
 
-import inference.core.roboflow_api as roboflow_api
 import numpy as np
+from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
+from roboflow_workflows.v2.data.secrets import Secret, reveal_secrets
+
+import inference.core.roboflow_api as roboflow_api
 from inference.core.utils import image_utils
 from inference.roboflow_workflows_plugin.v2.credential_boundary import (
     HostOperation,
     call_host,
     register_diagnostic_filters,
 )
-from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
-from roboflow_workflows.v2.data.secrets import Secret, reveal_secrets
 
 
 class RoboflowPlatformAdapter:

@@ -15,12 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 from urllib.parse import parse_qs, urlsplit
 
-import inference.core.roboflow_api as roboflow_api
 import pytest
-from inference.core.cache.memory import MemoryCache
-from inference.roboflow_workflows_plugin.v2.workflow_resolver import (
-    RoboflowWorkflowResolver,
-)
 from roboflow_workflows.v2.data.kinds import FLOAT_KIND
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
@@ -31,6 +26,12 @@ from roboflow_workflows.v2.engine.errors import (
     WorkflowCompileError,
 )
 from roboflow_workflows.v2.engine.plan import CompileOptions
+
+import inference.core.roboflow_api as roboflow_api
+from inference.core.cache.memory import MemoryCache
+from inference.roboflow_workflows_plugin.v2.workflow_resolver import (
+    RoboflowWorkflowResolver,
+)
 
 INVENTED_API_KEY = "invented-key-NOT-REAL-0123456789"
 WORKSPACE = "demo-workspace"

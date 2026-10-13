@@ -16,6 +16,8 @@ Port of V1 ``roboflow_core/mask_edge_snap@v1`` (latest: ``v1_tensor``). As V1::
 
 ``edges`` is one ``"edges"`` row holding the surviving edge pixels, or no row.
 Without rows, predictions pass through; ``edges`` covers the whole image (no band).
+Inputs are validated first. When no reader wants ``edges``, it is not built;
+without rows, the edge map is not computed either.
 
 Masks come from the representation's reference result (dense, RLE, or a
 ``SegmentationView``'s full-resolution masks). The result is
@@ -60,6 +62,7 @@ from roboflow_workflows.v2.data.masks import (
 from roboflow_workflows.v2.data.masks.providers import mask_provider_of
 from roboflow_workflows.v2.data.prediction_ops import CLASS_NAMES_KEY
 from roboflow_workflows.v2.data.predictions import INSTANCE_SEGMENTATION_PREDICTION_KIND
+from roboflow_workflows.v2.engine import NoExecutionContextError, get_execution_context
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
@@ -179,7 +182,8 @@ class MaskEdgeSnapBlock(Block):
             adaptive_window_size: Side of the local statistics window.
 
         Returns:
-            ``refined_segmentation`` and ``edges`` predictions.
+            ``refined_segmentation`` and ``edges`` predictions; ``edges`` is
+            left out when no reader wants it.
 
         Raises:
             ValueError: On a prediction without masks, or masks of another
@@ -199,6 +203,12 @@ class MaskEdgeSnapBlock(Block):
         height, width = image.size_hw
         masks = _host_masks(predictions, size_hw=(height, width))
         gray = _host_gray(image)
+        # Validation is done; skip only the work whose result nobody reads.
+        wants_edges = self._wants_edges()
+        if not masks and not wants_edges:
+            unchanged = predictions if is_view else segmentation
+            return {"refined_segmentation": unchanged}
+
         magnitude, snap_region = _snap_region(
             gray,
             masks=masks,
@@ -208,10 +218,12 @@ class MaskEdgeSnapBlock(Block):
             band_radius=int(boundary_band_width),
             window=int(adaptive_window_size),
         )
-        edges = _edges_prediction(snap_region, image=image)
+        edges = {}
+        if wants_edges:
+            edges["edges"] = _edges_prediction(snap_region, image=image)
         if not masks:
             unchanged = predictions if is_view else segmentation
-            return {"refined_segmentation": unchanged, "edges": edges}
+            return {"refined_segmentation": unchanged, **edges}
 
         refined = [
             _snap_mask(
@@ -231,9 +243,21 @@ class MaskEdgeSnapBlock(Block):
             ),
             bboxes_metadata=[without_host_mirrors(row) for row in rows],
         )
-        result = {"refined_segmentation": refined_predictions, "edges": edges}
+        result = {"refined_segmentation": refined_predictions, **edges}
 
         return result
+
+    def _wants_edges(self) -> bool:
+        # wants() requires a running call. Detect a plain run() through the
+        # public context API; errors in an engine call must still propagate.
+        try:
+            get_execution_context()
+        except NoExecutionContextError:
+            return True
+
+        wanted = self.wants("edges")
+
+        return wanted
 
 
 def _host_masks(

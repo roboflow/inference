@@ -12,12 +12,13 @@ from urllib.parse import quote, quote_plus
 
 import pytest
 import structlog
-from inference.core import exceptions
-from inference.roboflow_workflows_plugin.v2 import credential_boundary as boundary
-from inference.roboflow_workflows_plugin.v2 import platform_adapter, workflow_resolver
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
 from roboflow_workflows.v2.data.secrets import Secret
 from roboflow_workflows.v2.engine.compilation import WorkflowReference
+
+from inference.core import exceptions
+from inference.roboflow_workflows_plugin.v2 import credential_boundary as boundary
+from inference.roboflow_workflows_plugin.v2 import platform_adapter, workflow_resolver
 
 KEY = "qa_ONLY_long_key_A/b+c?= space"
 VARIANTS = (KEY, quote(KEY, safe=""), quote_plus(KEY), "qa_O***", "qa***ce")
