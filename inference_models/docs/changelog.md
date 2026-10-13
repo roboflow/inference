@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Center crop of torch-tensor inputs floors the crop offset like the numpy path.
+  Previously the offset was rounded, so odd margins shifted the crop by one pixel.
+
 ## `0.39.3`
 
 ### Added
