@@ -76,7 +76,7 @@ What to look for in `rig/results.json`:
 | `invalid-middle-t` | `v2/best_frame` over `[N,T,C]` crops is rejected: a T-oriented collapse needs T last. |
 | `invalid-lineage` | `v2/best_frame` comparing a window with the current rig pulse is rejected: equal `[N]` shapes from different pulses do not correspond. |
 | `operator-in-child` | Operators are root declarations in this delivery; one inside a child workflow is rejected, not ignored. |
-| `passive` | `session.run` with a recorded, timestamped `[N,T]` input works with the same temporal blocks. Operators are rejected in passive definitions; nothing spans two `run` calls. |
+| `passive` | `session.run` with a recorded, timestamped `[N,T]` input works with the same temporal blocks. This case declares no operators, so nothing spans two `run` calls. A passive definition may declare operators only as passive history (see `55-passive-image-history`): each operator emits at most one pulse per push, reads one upstream domain, and a Window uses `partial='drop'`. |
 
 ## Files
 

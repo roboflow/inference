@@ -5,9 +5,9 @@ The blocks come from ``example_plugin.py``, loaded by module name exactly as
 an installed plugin would be.
 """
 
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.introspection import discover_workload
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.introspection import discover_workload
 from v2_runner import plain
 
 

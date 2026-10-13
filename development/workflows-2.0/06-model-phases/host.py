@@ -13,15 +13,15 @@ import torch
 from classifier import FlipAveragedClassifier
 from gallery import Gallery
 from redaction import RedactRegion
-from roboflow_workflows.execution_engine.v2.blocks import create_catalogue
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.plan import (
+from roboflow_workflows.v2.blocks import create_catalogue
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.plan import (
     CompiledWorkflow,
     CompileOptions,
     RunResult,
 )
-from roboflow_workflows.execution_engine.v2.targets import Target
+from roboflow_workflows.v2.engine.targets import Target
 from sources import StillFrames
 
 DEMO_DIR = Path(__file__).resolve().parent

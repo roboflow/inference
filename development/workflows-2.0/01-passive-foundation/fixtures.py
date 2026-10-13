@@ -21,13 +21,13 @@ from fractions import Fraction
 from typing import List, Tuple
 
 import numpy as np
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.data import (
+from roboflow_workflows.v2.data.batch import (
     EntryMetadata,
     SampleContext,
     TemporalContext,
     Timestamp,
 )
+from roboflow_workflows.v2.data.image import ImageData
 
 CROP_REGIONS: List[List[int]] = [[40, 40, 100, 100], [120, 10, 180, 70]]
 EXPECTED_CROP_COUNTS: Tuple[int, ...] = (2, 0, 1)

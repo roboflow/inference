@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 import cv2
 import torch
 import torchvision
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
+from roboflow_workflows.v2.data.image import ImageData
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 

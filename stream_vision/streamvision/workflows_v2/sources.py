@@ -38,9 +38,7 @@ from typing import Any, List, Optional, Tuple, Union
 import torch
 from pydantic import Field, ValidationInfo, field_validator
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.data import (
+from roboflow_workflows.v2.data.batch import (
     Axis,
     Batch,
     EntryLayout,
@@ -50,7 +48,9 @@ from roboflow_workflows.execution_engine.v2.data import (
     TemporalContext,
     Timestamp,
 )
-from roboflow_workflows.execution_engine.v2.sources import (
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.engine.sources import (
     Emission,
     Source,
     SourceOutput,

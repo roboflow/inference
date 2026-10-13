@@ -34,15 +34,15 @@ from typing import Any, Dict, List
 
 import thor_imports  # noqa: F401 - installs the 08 and 09 search paths
 from pydantic import Field
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.blocks.predictions import (
+from roboflow_workflows.v2.data.batch import Batch
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.data.kinds import FLOAT_KIND
+from roboflow_workflows.v2.data.predictions import (
     OBJECT_DETECTION_PREDICTION_KIND,
 )
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.data import Batch
-from roboflow_workflows.execution_engine.v2.declaration import Output, Ref
-from roboflow_workflows.execution_engine.v2.kinds import FLOAT_KIND
-from roboflow_workflows.execution_engine.v2.phases import phase
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.declaration import Output, Ref
+from roboflow_workflows.v2.engine.phases import phase
 
 # isort: split
 

@@ -103,7 +103,7 @@ RECORDED_ENVIRONMENT = (
 # report together with every loaded 08/09/10 example module.
 PROVENANCE_MODULES = (
     "inference_models.models.common.trt",
-    "roboflow_workflows.execution_engine.v2.pipelining.stages",
+    "roboflow_workflows.v2.engine.pipelining.stages",
     "roboflow_workflows.core_steps.visualizations.label.v1_tensor",
 )
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent
@@ -781,7 +781,7 @@ def _build_blocks(
     spec: CaseSpec, *, model: Any, held: "_HeldFrames", settings: _Settings
 ) -> _Runner:
     import gpu_blocks
-    from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
+    from roboflow_workflows.v2.data.image import ImageData
 
     detector = gpu_blocks.ObjectDetector(detection_model=model)
     boxes = gpu_blocks.GpuBoxVisualization()
@@ -816,10 +816,10 @@ def _build_v2(
     import backends
     import batched_backend
     import gpu_blocks
-    from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-    from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-    from roboflow_workflows.execution_engine.v2.pipelining import PipelineOptions
-    from roboflow_workflows.execution_engine.v2.plan import CompileOptions
+    from roboflow_workflows.v2.data.image import ImageData
+    from roboflow_workflows.v2.engine.compilation import compile_workflow
+    from roboflow_workflows.v2.engine.pipelining import PipelineOptions
+    from roboflow_workflows.v2.engine.plan import CompileOptions
 
     definition = batched_backend.v2_workflow(spec.stage, batched=False)
     # Same compile options as 09 V2Backend: whole calls serially, phases piped.

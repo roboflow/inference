@@ -89,7 +89,7 @@ definitions it used, actual and expected values, and error details.
 | `nested_inputs` | Child literals/defaults decoded once per run, selections passed by identity, wrong payloads rejected at the child input |
 | `execution_context` | `self.execution_context` in the constructor and in `run`; nothing stays active after a failure |
 | `dynamic_shared_state` | Inline Python `globals` shared by direct and nested steps of a session; a supplied mapping spans sessions |
-| `dynamic_representation` | A `tensor_native` block refused by the default policy; `CpuArrayPolicy` feeds it NumPy arrays |
+| `dynamic_representation` | The default policy passes a `tensor_native` block's data unchanged. An explicit `LEGACY_REPRESENTATION` refuses the block before its imports or `init` run. `CpuArrayPolicy` feeds it NumPy arrays: an optional host adaptation, not the recommended tensor representation. Real tensor code: [66-custom-python-tensors](../66-custom-python-tensors/) |
 | `plugin_catalogue` | [example_plugin.py](example_plugin.py) loaded as a plugin: `Factory(scope="session")`, per-output conversion, workload through nested inputs |
 | `nested_forwarding_gates` | A gate on a nested workflow also masks the inputs, default and literal it forwards, and the consumer declared before the gate; groups `[[1,2],[],[3]]` show a denied versus an admitted empty group. Edit the masks in [gate_examples.py](gate_examples.py) |
 

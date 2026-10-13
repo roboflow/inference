@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from PIL import Image
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
+from roboflow_workflows.v2.data.image import ImageData
 
 THUMBNAIL_SIZE = 280
 

@@ -22,7 +22,7 @@ without an expected entry is recorded, not checked.
 
 from typing import Any, Dict, List
 
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
+from roboflow_workflows.v2.engine.compilation import compile_workflow
 from v2_runner import InvocationRecorder, plain
 
 X = [10, 20, 30]

@@ -8,15 +8,15 @@ compile warning, or an error under ``mutation_conflicts="error"``.
 from typing import Any, Dict, List, Tuple
 
 from pydantic import Field, StrictInt
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.declaration import (
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.engine.declaration import (
     Block,
     BlockParams,
     Output,
     Ref,
 )
-from roboflow_workflows.execution_engine.v2.phases import phase
+from roboflow_workflows.v2.engine.phases import phase
 
 Rectangle = Tuple[int, int, int, int]
 

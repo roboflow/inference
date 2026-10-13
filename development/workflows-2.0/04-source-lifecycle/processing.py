@@ -1,18 +1,18 @@
 """Ordinary processing blocks; source clocks are preserved by the engine."""
 
 from pydantic import Field
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.declaration import (
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.data.kinds import (
+    BOOLEAN_KIND,
+    FLOAT_KIND,
+    INTEGER_KIND,
+)
+from roboflow_workflows.v2.engine.declaration import (
     Block,
     BlockParams,
     Output,
     Ref,
-)
-from roboflow_workflows.execution_engine.v2.kinds import (
-    BOOLEAN_KIND,
-    FLOAT_KIND,
-    INTEGER_KIND,
 )
 
 

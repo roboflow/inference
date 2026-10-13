@@ -16,9 +16,9 @@ from observations import (
     phase_events,
 )
 from resnet18 import top_classes
-from roboflow_workflows.execution_engine.v2.declaration import spec_of
-from roboflow_workflows.execution_engine.v2.phases import run_phases
-from roboflow_workflows.execution_engine.v2.targets import Target
+from roboflow_workflows.v2.engine.declaration import spec_of
+from roboflow_workflows.v2.engine.phases import run_phases
+from roboflow_workflows.v2.engine.targets import Target
 
 CLASSIFIER_PHASES = [
     "tensor",

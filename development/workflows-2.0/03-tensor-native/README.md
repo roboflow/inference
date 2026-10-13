@@ -30,7 +30,8 @@ payload, even when both outputs select the same native object.
 Start with [author_blocks.py](author_blocks.py) and
 [the workflow JSON](workflows/nested_geometry.json). An author reads pixels from
 `image.tensor_image`, attaches `image.prediction_metadata()` to native model
-results, and calls `select_predictions(prediction, mask=...)` to keep aligned
+results (the V1 frame keys plus the typed frame record, so `frame_of(prediction)`
+keeps the image's source and time), and calls `select_predictions(prediction, mask=...)` to keep aligned
 fields together. Scalars and thresholds remain ordinary Python values. The
 selection helper rejects a mismatched mask; `indices=[...]` can reorder rows.
 It preserves tensor devices and may transfer selected indices for Python row

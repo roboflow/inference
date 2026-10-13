@@ -258,13 +258,13 @@ class V2BatchedBackend(BatchedBackend):
     ) -> None:
         import backends
         import batched_blocks
-        from roboflow_workflows.execution_engine.v2.compilation import (
+        from roboflow_workflows.v2.engine.compilation import (
             compile_workflow,
         )
-        from roboflow_workflows.execution_engine.v2.pipelining import (
+        from roboflow_workflows.v2.engine.pipelining import (
             PipelineOptions,
         )
-        from roboflow_workflows.execution_engine.v2.plan import CompileOptions
+        from roboflow_workflows.v2.engine.plan import CompileOptions
 
         self.mode = mode
         self.device = model._device
@@ -342,7 +342,7 @@ class V2BatchedBackend(BatchedBackend):
             pipeline.__exit__(None, None, None)
 
     def _inputs(self, frames: Sequence[Any], *, image_ids: Sequence[str]) -> dict:
-        from roboflow_workflows.execution_engine.v2.blocks.image_data import (
+        from roboflow_workflows.v2.data.image import (
             ImageData,
         )
 

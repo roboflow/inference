@@ -6,8 +6,8 @@ contexts or layouts; the demo shows them exactly as the engine produced them.
 
 from typing import Any, Dict, List, Optional
 
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.data import Batch, EntryMetadata, Timestamp
+from roboflow_workflows.v2.data.batch import Batch, EntryMetadata, Timestamp
+from roboflow_workflows.v2.data.image import ImageData
 
 
 def timestamp_ms(timestamp: Optional[Timestamp]) -> Optional[float]:

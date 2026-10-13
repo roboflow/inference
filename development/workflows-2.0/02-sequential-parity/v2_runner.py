@@ -20,14 +20,14 @@ from blocks import FIXTURE_NAMESPACE, AuditLog, create_fixture_catalogue
 from parity import LOCAL_CODE_CASES
 from pydantic import BaseModel
 from reference.catalogue import ReferenceCase, Run
-from roboflow_workflows.execution_engine.v2.compilation import (
+from roboflow_workflows.v2.data.batch import Batch
+from roboflow_workflows.v2.engine.compilation import (
     WorkflowReference,
     compile_workflow,
 )
-from roboflow_workflows.execution_engine.v2.data import Batch
-from roboflow_workflows.execution_engine.v2.declaration import Select
-from roboflow_workflows.execution_engine.v2.errors import ResolvedParameterError
-from roboflow_workflows.execution_engine.v2.plan import (
+from roboflow_workflows.v2.engine.declaration import Select
+from roboflow_workflows.v2.engine.errors import ResolvedParameterError
+from roboflow_workflows.v2.engine.plan import (
     CompiledWorkflow,
     CompileOptions,
     ExecutionObserver,

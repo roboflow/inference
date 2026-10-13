@@ -204,13 +204,13 @@ class DrawingBackend(batched_backend.V2BatchedBackend):
     ) -> None:
         import backends
         import drawing_blocks
-        from roboflow_workflows.execution_engine.v2.compilation import (
+        from roboflow_workflows.v2.engine.compilation import (
             compile_workflow,
         )
-        from roboflow_workflows.execution_engine.v2.pipelining import (
+        from roboflow_workflows.v2.engine.pipelining import (
             PipelineOptions,
         )
-        from roboflow_workflows.execution_engine.v2.plan import CompileOptions
+        from roboflow_workflows.v2.engine.plan import CompileOptions
 
         self.mode = mode
         self.device = model._device

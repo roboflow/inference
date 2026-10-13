@@ -18,7 +18,7 @@ example verifies the pinned ResNet-18 weights of
 ## Turning it on
 
 ```python
-from roboflow_workflows.execution_engine.v2.pipelining import PipelineOptions
+from roboflow_workflows.v2.engine.pipelining import PipelineOptions
 
 # Passive: bounded submissions; run() is refused while the pipeline is open.
 with session.pipeline(options=PipelineOptions(max_in_flight=3)) as pipeline:
@@ -122,6 +122,6 @@ logical order, not a time axis. No example sleeps.
 | `bounded_report.py`, `run_demo.py` | Report page and command line |
 | `workflows/*.json` | Probe workflow definitions |
 
-Tests: `workflows/tests/unit_tests/execution_engine/v2/pipelining/test_bounded_pipeline_examples.py`
+Tests: `workflows/tests/v2/integration/examples/pipelining/test_bounded_pipeline_examples.py`
 runs the synthetic examples, and the model example when the pinned weights are
 present (marked `slow`).

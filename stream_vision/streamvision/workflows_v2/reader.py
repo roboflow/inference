@@ -51,7 +51,7 @@ from typing import (
     get_args,
 )
 
-from roboflow_workflows.execution_engine.v2.sources import engine_observation
+from roboflow_workflows.v2.engine.sources import engine_observation
 from streamvision.camera.buffer_strategies import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,

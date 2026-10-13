@@ -14,10 +14,10 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 from blocks import CelsiusToFahrenheit, ClipEnds, DescribePair, ExposureGuard, GreyCard
 from inspection import observe
 from probes import FollowerFirst, LeaderAfterFollower
-from roboflow_workflows.execution_engine.v2.blocks import create_catalogue
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.errors import ActiveRunError
+from roboflow_workflows.v2.blocks import create_catalogue
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.errors import ActiveRunError
 from sources import CsvSensor, TensorCamera
 
 DEMO_DIR = Path(__file__).resolve().parent

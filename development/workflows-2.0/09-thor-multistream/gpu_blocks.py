@@ -42,13 +42,13 @@ from roboflow_workflows.core_steps.visualizations.label.v1_tensor import (
     _PinnedSlabRing,
     gpu_paste_label_sprites,
 )
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.blocks.predictions import (
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.data.kinds import FLOAT_KIND
+from roboflow_workflows.v2.data.predictions import (
     OBJECT_DETECTION_PREDICTION_KIND,
 )
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.kinds import FLOAT_KIND
+from roboflow_workflows.v2.engine.catalogue import Catalogue
 
 LIVE_DETECTION_DIR = Path(__file__).resolve().parent.parent / "08-live-detection"
 if str(LIVE_DETECTION_DIR) not in sys.path:

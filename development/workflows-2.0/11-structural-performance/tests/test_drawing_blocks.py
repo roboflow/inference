@@ -33,11 +33,11 @@ from drawing_blocks import (  # noqa: E402
     prepare_drawings,
 )
 from gpu_blocks import GpuBoxVisualization, GpuLabelVisualization  # noqa: E402
-from roboflow_workflows.execution_engine.v2.blocks.image_data import (  # noqa: E402
+from roboflow_workflows.v2.data.batch import Batch  # noqa: E402
+from roboflow_workflows.v2.data.image import (  # noqa: E402
     ImageData,
 )
-from roboflow_workflows.execution_engine.v2.data import Batch  # noqa: E402
-from roboflow_workflows.execution_engine.v2.errors import ContractError  # noqa: E402
+from roboflow_workflows.v2.engine.errors import ContractError  # noqa: E402
 from scripted_model import ScriptedDetectionModel, scripted_detections  # noqa: E402
 
 from inference_models.models.base.object_detection import Detections  # noqa: E402
@@ -558,8 +558,8 @@ def test_inspect_lifetimes_reports_and_restores_gc() -> None:
     assert 0 <= report["payloads_alive_after_results_dropped"] <= 4
     assert report["payloads_alive_after_cyclic_collection"] == 0
     assert set(report["engine_sources"]) == {
-        "roboflow_workflows.execution_engine.v2.execution.entries",
-        "roboflow_workflows.execution_engine.v2.execution.outputs",
+        "roboflow_workflows.v2.engine.execution.entries",
+        "roboflow_workflows.v2.engine.execution.outputs",
     }
 
 

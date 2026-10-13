@@ -28,9 +28,9 @@ from pathlib import Path
 from typing import Any, Dict
 
 import click
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.execution import entries, outputs
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.execution import entries, outputs
 
 PASSTHROUGH_WORKFLOW = {
     "version": "2.0",

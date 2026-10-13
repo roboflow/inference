@@ -9,8 +9,8 @@ from typing import List, Tuple
 
 from inspection import media_pts
 from PIL import Image
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.data import Batch
+from roboflow_workflows.v2.data.batch import Batch
+from roboflow_workflows.v2.data.image import ImageData
 
 SCALE = 3
 

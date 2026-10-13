@@ -1,7 +1,8 @@
 # Workflows 2.0 development examples
 
-Runnable examples for the explicitly selected V2 engine in
-`workflows/roboflow_workflows/execution_engine/v2/`.
+Runnable examples for the explicitly selected V2 engine. Its packages are
+`roboflow_workflows.v2.engine`, `roboflow_workflows.v2.data` and
+`roboflow_workflows.v2.blocks` (source: `workflows/roboflow_workflows/v2/`).
 
 Start with [34 — Local alpha integration](34-local-alpha/README.md) for the
 packaged Python API and reusable detection, tracking and drawing blocks.
@@ -35,7 +36,7 @@ does not imply that every example runs in a plain Python environment.
 | [10 — Physical batching](10-thor-batching/README.md) | One model call for a batch; parity and throughput probes. | CPU fake check; Thor for real runs |
 | [11 — Shared drawing preparation](11-structural-performance/README.md) | Compare separate painters with batched drawing preparation. | CPU parity; GPU benchmarks |
 | [12 — Model loop versus workflow](12-throughput-gap/README.md) | Measure the same held frames through model, blocks and engine. | GPU and cached model |
-| [13 — Drawing kernels](13-visualization-kernels/README.md) | Separate/fused painters, image copies, in-place ownership and Triton. | CPU checks; CUDA benchmarks |
+| [13 — Drawing kernels](13-visualization-kernels/README.md) | Separate/fused painters, image copies, in-place ownership and a staged box upload. | CPU checks; CUDA benchmarks |
 | [14 — Concurrent processes](14-concurrent-pipelines/README.md) | Compare one and two independent pipelines on one GPU. | GPU, model and streams |
 | [15 — Post-processing kernels](15-postprocess-kernels/README.md) | Experimental batched and segmented NMS with explicit parity checks. | CUDA/Triton |
 | [16 — Tiled recording](16-tiled-recording/README.md) | Record a stable annotated grid on separate compositor/writer threads. | GPU and live streams |
@@ -59,6 +60,32 @@ does not imply that every example runs in a plain Python environment.
 | [34 — Local alpha integration](34-local-alpha/README.md) | Packaged sources, detection, tracking and drawing with events, replay and updates. | CPU fixtures; separate Thor qualification |
 | [35 — Thor alpha qualification](35-thor-alpha-qualification/README.md) | Packaged detection, optional tracking and drawing with managed video sources, measured windows and cleanup checks. | Thor, existing RTSP streams and a cached TensorRT package |
 | [36 — Threading](36-threading/README.md) | Compare batch size, pulses in flight and parallel branches; inspect operator emissions, live updates, drain and cancellation. | CPU fixtures |
+| [37 — Implementation contributions](37-implementation-contributions/README.md) | Add a host-chosen implementation to an existing public block without changing the block or the workflow definition. | CPU fixtures |
+| [38 — Native data](38-native-data/README.md) | Frame records, aligned prediction rows and native semantic results through compiled workflows and the wire. | CPU fixtures |
+| [39 — Model cache](39-model-cache/README.md) | Select a detector by model and package id; load each distinct request once. | CPU fake loader |
+| [40 — Mask providers](40-mask-providers/README.md) | Ask for binary instance masks the same way from score grids, dense masks or RLE; each answer is labelled reference or approximation. | CPU fixtures |
+| [41 — Query foundation](41-query-foundation/README.md) | Validate existing UQL JSON once and evaluate it on plain V2 runtime values. | CPU fixtures |
+| [42 — Regions and parent mapping](42-regions-and-parent-mapping/README.md) | Crop, slice, stitch and relabel; each result finds the detection row it was cut for. | CPU fixtures |
+| [43 — Task models](43-task-models/README.md) | Six model families in one workflow, `run` versus `phases`, per-image class filters. | CPU fake models; optional cached model |
+| [44 — Filter and transform](44-filter-and-transform/README.md) | Per-class confidence and UQL filter/transform chains on detections and masks. | CPU fixtures |
+| [45 — Visualization gallery](45-visualization-gallery/README.md) | The ten annotation blocks, chained painters and `mask_quality`, written as PNGs. | CPU fake models |
+| [46 — Merge and combine](46-merge-and-combine/README.md) | Combine two detectors, then merge rows into one box. | CPU fixtures |
+| [47 — Query gates](47-query-gates/README.md) | The UQL gate `v2/continue_if@v1`, property definition and expression. | CPU fake models |
+| [48 — Text and values](48-text-and-values/README.md) | String templates, CSV, first non-empty value and current time with an injected clock. | CPU fixtures |
+| [49 — JSON fields](49-json-fields/README.md) | Parse JSON text into named step outputs. | CPU fixtures |
+| [50 — Routing and throttling](50-routing-and-throttling/README.md) | Route by value, pass changed values and limit how often a branch runs. | CPU fixtures |
+| [51 — Image history](51-image-history/README.md) | Retrieve earlier images or values while keeping camera histories separate. | CPU fixtures |
+| [52 — Object cache](52-object-cache/README.md) | Share values across calls; inspect source namespaces, ordering and reset behavior. | CPU fixtures |
+| [53 — Multi-model consensus](53-multi-model-consensus/README.md) | Keep detections that several models agree on, with explicit voting and merge rules. | CPU fixtures |
+| [54 — Embedding change sampling](54-embedding-change-sampling/README.md) | Compare recent embedding directions and changes, including warmup and finite-window limits. | CPU fixtures |
+| [55 — Passive image history](55-passive-image-history/README.md) | Feed repeated calls into a temporal window using the existing execution workers. | CPU fixtures |
+| [56 — Detection changes](56-detection-changes/README.md) | Compare before/after detections and inspect removed, persisted and new objects. | CPU fixtures |
+
+Examples 42–49 use the built-in `create_catalogue()`. It registers the V1
+ports beside the older V2 prototypes: `v2/continue_if` (boolean) beside
+`v2/continue_if@v1` (UQL), and `v2/box_visualization@v1` /
+`v2/label_visualization@v1` beside `v2/bounding_box_visualization@v1` /
+`v2/label_visualization@v2`.
 
 V2 is an opt-in Python capability alongside V1. These examples do not change
 the server, SDK or stream-manager default engine selection.

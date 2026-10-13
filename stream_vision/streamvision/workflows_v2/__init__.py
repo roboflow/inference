@@ -2,11 +2,11 @@
 
 Usage::
 
-    from roboflow_workflows.execution_engine.v2 import Catalogue, compile_workflow
+    from roboflow_workflows.v2.engine import Catalogue, compile_workflow
     from streamvision.workflows_v2 import VideoStatistics
 
     catalogue = Catalogue.from_modules([
-        "roboflow_workflows.execution_engine.v2.blocks",
+        "roboflow_workflows.v2.blocks",
         "streamvision.workflows_v2",
     ])
     definition["sources"] = [
@@ -25,7 +25,7 @@ Usage::
 ``streamvision`` never imports this package itself.
 """
 
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
+from roboflow_workflows.v2.engine.catalogue import Catalogue
 
 from streamvision.workflows_v2.reader import VideoSourceFailure, VideoStopError
 from streamvision.workflows_v2.sources import (

@@ -9,10 +9,10 @@ from pathlib import Path
 
 from fixtures import RIG_CLOCK, SCHEDULES, make_image, media_timestamp
 from pydantic import Field
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.declaration import Ref
-from roboflow_workflows.execution_engine.v2.kinds import FLOAT_KIND, STRING_KIND
-from roboflow_workflows.execution_engine.v2.sources import (
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.data.kinds import FLOAT_KIND, STRING_KIND
+from roboflow_workflows.v2.engine.declaration import Ref
+from roboflow_workflows.v2.engine.sources import (
     Emission,
     Source,
     SourceOutput,

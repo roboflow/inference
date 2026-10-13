@@ -24,21 +24,21 @@ from resnet18 import (
     to_prediction,
     top_classes,
 )
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.blocks.predictions import (
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.data.kinds import FLOAT_KIND, STRING_KIND
+from roboflow_workflows.v2.data.predictions import (
     CLASSIFICATION_PREDICTION_KIND,
 )
-from roboflow_workflows.execution_engine.v2.declaration import (
+from roboflow_workflows.v2.engine.declaration import (
     Block,
     BlockParams,
     DependentResource,
     Output,
     Ref,
 )
-from roboflow_workflows.execution_engine.v2.implementations import Implementation
-from roboflow_workflows.execution_engine.v2.kinds import FLOAT_KIND, STRING_KIND
-from roboflow_workflows.execution_engine.v2.phases import phase
+from roboflow_workflows.v2.engine.implementations import Implementation
+from roboflow_workflows.v2.engine.phases import phase
 
 from inference_models.models.base.classification import ClassificationPrediction
 

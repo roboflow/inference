@@ -30,8 +30,8 @@ from typing import Any, Deque, Dict, Generic, List, Optional, Tuple, TypeVar
 import cv2
 import numpy as np
 import torch
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.pipelining import (
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.engine.pipelining import (
     PipelineFullError,
     PipelineOptions,
 )

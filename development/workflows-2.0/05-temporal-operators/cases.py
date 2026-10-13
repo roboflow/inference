@@ -23,15 +23,15 @@ from host import (
 )
 from inspection import axis_kinds, leaf_pts, observe_fields
 from probes import ReadOrder
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.data import (
+from roboflow_workflows.v2.data.batch import (
     EntryMetadata,
     InputValue,
     SampleContext,
     TemporalContext,
 )
-from roboflow_workflows.execution_engine.v2.errors import WorkflowCompileError
-from roboflow_workflows.execution_engine.v2.introspection import describe_workflow
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.errors import WorkflowCompileError
+from roboflow_workflows.v2.engine.introspection import describe_workflow
 
 
 @dataclass(frozen=True)
@@ -671,7 +671,8 @@ def _recorded_window() -> Dict[str, Any]:
 @_case(
     "passive",
     "session.run with an explicit timestamped [N,T] input: temporal blocks work "
-    "without operators; operators in a passive definition are rejected.",
+    "without operators; an Align in a definition without sources is rejected "
+    "because it may emit more than one pulse per push.",
 )
 def passive(directory: Optional[Path]) -> Dict[str, Any]:
     plan = compile_workflow(

@@ -89,7 +89,7 @@ A failing phase is named in both modes: the engine raises
 | `model_cases.py`, `contract_cases.py`, `active_case.py`, `cases.py` | The cases |
 | `gallery.py`, `run_demo.py` | Gallery page and command line |
 
-Tests: `workflows/tests/unit_tests/execution_engine/v2/test_model_phase_examples.py`
+Tests: `workflows/tests/v2/integration/examples/test_model_phase_examples.py`
 uses untrained weights for plumbing checks; its real-model test runs this demo
 when the pinned weights are present (`RESNET18_WEIGHTS_DIR` or torch's
 checkpoint directory) and is marked `slow`.

@@ -21,9 +21,9 @@ import cv2
 import torch
 from detection_blocks import create_catalogue
 from live import LiveSummary, StillImage, image_to_bgr, run_live
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.plan import (
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.plan import (
     CompiledWorkflow,
     CompileOptions,
 )

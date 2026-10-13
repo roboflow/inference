@@ -12,20 +12,20 @@
 from typing import Annotated, Any, Dict
 
 from pydantic import Field, field_validator, model_validator
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.declaration import (
-    Block,
-    BlockParams,
-    Output,
-    Ref,
-)
-from roboflow_workflows.execution_engine.v2.kinds import (
+from roboflow_workflows.v2.data.kinds import (
     BOOLEAN_KIND,
     DICTIONARY_KIND,
     FLOAT_KIND,
     INTEGER_KIND,
     STRING_KIND,
     Kind,
+)
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.declaration import (
+    Block,
+    BlockParams,
+    Output,
+    Ref,
 )
 
 BOUNDARY_NAMESPACE = "boundary"

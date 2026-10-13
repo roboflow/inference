@@ -6,20 +6,20 @@ blocks only compute values from plain inputs or delivered ``Batch`` groups.
 
 import torch
 from pydantic import Field, StrictInt
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.data import Batch
-from roboflow_workflows.execution_engine.v2.declaration import (
+from roboflow_workflows.v2.data.batch import Batch
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.data.kinds import (
+    FLOAT_KIND,
+    INTEGER_KIND,
+    STRING_KIND,
+)
+from roboflow_workflows.v2.engine.declaration import (
     Block,
     BlockParams,
     Group,
     Output,
     Ref,
-)
-from roboflow_workflows.execution_engine.v2.kinds import (
-    FLOAT_KIND,
-    INTEGER_KIND,
-    STRING_KIND,
 )
 
 

@@ -14,12 +14,12 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import numpy as np
 from PIL import Image
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.data import (
+from roboflow_workflows.v2.data.batch import (
     Batch,
     EntryLayout,
     EntryMetadata,
 )
+from roboflow_workflows.v2.data.image import ImageData
 
 PayloadDescriber = Callable[[Any, str], Any]
 

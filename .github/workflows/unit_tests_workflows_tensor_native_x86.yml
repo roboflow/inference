@@ -103,3 +103,8 @@ jobs:
         run: |
           WORKFLOWS_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)" \
             python -m pytest tests/unit_tests tests/isolation
+      - name: V1/V2 compatibility tests (tensor true)
+        working-directory: workflows
+        run: |
+          ENABLE_TENSOR_DATA_REPRESENTATION=True python -m pytest -c pytest.ini \
+            --confcutdir=tests/compatibility/v2 tests/compatibility/v2

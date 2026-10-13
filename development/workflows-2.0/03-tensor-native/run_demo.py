@@ -15,10 +15,10 @@ from fixtures import (
     make_root_pixels,
 )
 from PIL import Image, ImageDraw
-from roboflow_workflows.execution_engine.v2.blocks import create_catalogue
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.blocks.predictions import NATIVE_KINDS
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
+from roboflow_workflows.v2.blocks import create_catalogue
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.predictions import NATIVE_KINDS
+from roboflow_workflows.v2.engine.compilation import compile_workflow
 
 from inference_models.models.base.classification import (
     ClassificationPrediction,
@@ -27,6 +27,9 @@ from inference_models.models.base.classification import (
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
+)
 
 DEMO_DIR = Path(__file__).resolve().parent
 
@@ -80,6 +83,8 @@ def _tensor_summary(payload: Any) -> list:
         tensors = [payload.class_id, payload.confidence]
     elif isinstance(payload, MultiLabelClassificationPrediction):
         tensors = [payload.class_ids, payload.confidence]
+    elif isinstance(payload, SemanticSegmentationResult):
+        tensors = [payload.segmentation_map, payload.confidence]
     elif isinstance(payload, tuple) and isinstance(payload[0], KeyPoints):
         points = payload[0]
         tensors = [
@@ -198,6 +203,19 @@ def run_geometry(output_dir: Path) -> Dict[str, Any]:
     return summary
 
 
+def _semantic_fixture(metadata: Dict[str, Any]) -> tuple:
+    """A native semantic grid: integer labels and winning-class confidence."""
+    labels = torch.arange(80, dtype=torch.int64).reshape(8, 10) % 3
+    result = SemanticSegmentationResult(
+        segmentation_map=labels,
+        confidence=torch.full((8, 10), 0.5, dtype=torch.float16),
+        image_metadata=dict(metadata),
+    )
+    fixture = ("semantic-grid", "native_semantic_segmentation", result)
+
+    return fixture
+
+
 def run_gallery(output_dir: Path) -> Dict[str, Any]:
     """Round-trip every native family through compiled ingress and output rows.
 
@@ -211,7 +229,10 @@ def run_gallery(output_dir: Path) -> Dict[str, Any]:
     image = ImageData.from_tensor(
         torch.zeros((3, 8, 10), dtype=torch.uint8), image_id="gallery"
     )
-    fixtures = make_native_fixtures(image.prediction_metadata())
+    fixtures = [
+        *make_native_fixtures(image.prediction_metadata()),
+        _semantic_fixture(image.prediction_metadata()),
+    ]
     records = []
     for name, kind, payload in fixtures:
         plan = compile_workflow(_passthrough(kind), catalogue=create_catalogue())

@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from native_comparison import compare_predictions
 from resnet18 import top_classes
-from roboflow_workflows.execution_engine.v2.data import Batch, EntryMetadata
+from roboflow_workflows.v2.data.batch import Batch, EntryMetadata
 
 from inference_models.models.base.classification import ClassificationPrediction
 

@@ -22,16 +22,16 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Mapping
 
 from pydantic import Field
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.data import Batch
-from roboflow_workflows.execution_engine.v2.declaration import (
+from roboflow_workflows.v2.data.batch import Batch
+from roboflow_workflows.v2.data.kinds import Kind
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.declaration import (
     Block,
     BlockParams,
     Group,
     Output,
     Ref,
 )
-from roboflow_workflows.execution_engine.v2.kinds import Kind
 
 
 def is_number(payload: Any) -> bool:

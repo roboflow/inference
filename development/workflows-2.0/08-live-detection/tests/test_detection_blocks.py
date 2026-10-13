@@ -29,16 +29,16 @@ from detection_blocks import (  # noqa: E402
     ObjectDetector,
     create_catalogue,
 )
-from roboflow_workflows.execution_engine.v2.blocks.image_data import (  # noqa: E402
+from roboflow_workflows.v2.data.image import (  # noqa: E402
     ImageData,
 )
-from roboflow_workflows.execution_engine.v2.compilation import (  # noqa: E402
+from roboflow_workflows.v2.engine.compilation import (  # noqa: E402
     compile_workflow,
 )
-from roboflow_workflows.execution_engine.v2.errors import (  # noqa: E402
+from roboflow_workflows.v2.engine.errors import (  # noqa: E402
     StepExecutionError,
 )
-from roboflow_workflows.execution_engine.v2.plan import CompileOptions  # noqa: E402
+from roboflow_workflows.v2.engine.plan import CompileOptions  # noqa: E402
 
 from inference_models.models.base.object_detection import Detections  # noqa: E402
 

@@ -33,7 +33,7 @@ from live import (  # noqa: E402
     image_to_bgr,
     run_live,
 )
-from roboflow_workflows.execution_engine.v2.pipelining import (  # noqa: E402
+from roboflow_workflows.v2.engine.pipelining import (  # noqa: E402
     PipelineFullError,
 )
 from stats import (  # noqa: E402

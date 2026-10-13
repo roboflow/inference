@@ -7,12 +7,12 @@ import click
 from lifecycle_probe import DemoControl, ProbedFrames, ProbedTemperature
 from passive_example import run_passive
 from processing import CelsiusToFahrenheit, IsBright, RecordTemperature
-from roboflow_workflows.execution_engine.v2 import ActiveRunError, GroupResult
-from roboflow_workflows.execution_engine.v2.blocks import create_catalogue
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.errors import LineageError
+from roboflow_workflows.v2.blocks import create_catalogue
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.engine import ActiveRunError, GroupResult
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.errors import LineageError
 from source_plugins import CsvTemperature, TensorFrames
 
 DEMO_DIR = Path(__file__).resolve().parent

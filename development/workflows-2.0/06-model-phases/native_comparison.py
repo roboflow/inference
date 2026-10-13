@@ -8,8 +8,18 @@ different devices or kernels, and the record says which rule was used.
 from typing import Any, Collection, Dict, Optional
 
 import torch
+from roboflow_workflows.v2.data.frames import FRAME_RECORD_KEY
 
 from inference_models.models.base.classification import ClassificationPrediction
+
+# V1 identity keys and the typed frame record field that repeats the same id,
+# as (record section or None, field).
+_RECORD_IDENTITY_FIELDS = {
+    "parent_id": (None, "image_id"),
+    "parent_frame_id": ("parent", "frame_id"),
+    "root_parent_id": ("root", "frame_id"),
+}
+_IGNORED = "<ignored>"
 
 
 def compare_predictions(
@@ -27,7 +37,10 @@ def compare_predictions(
         tolerance: Maximum absolute confidence difference; ``None`` requires
             bitwise equality. Class ids and metadata must always match.
         ignore_metadata: ``images_metadata`` keys left out, for example
-            ``parent_id`` of crops, which every run names anew.
+            ``parent_id`` of crops, which every run names anew. An ignored
+            identity key also masks the typed frame record field that repeats
+            the same id. The rest of the record, including offsets, scales,
+            sizes and source/time, is still compared.
 
     Returns:
         ``equal`` plus the evidence: rule, max difference, class ids,
@@ -75,8 +88,30 @@ def _kept(rows: Optional[list], ignored: Collection[str]) -> Optional[list]:
     if rows is None:
         return None
 
-    kept = [
-        {key: value for key, value in row.items() if key not in ignored} for row in rows
-    ]
+    kept = [_kept_row(row, ignored) for row in rows]
 
     return kept
+
+
+def _kept_row(row: dict, ignored: Collection[str]) -> dict:
+    kept = {key: value for key, value in row.items() if key not in ignored}
+    record = kept.get(FRAME_RECORD_KEY)
+    if isinstance(record, dict):
+        kept[FRAME_RECORD_KEY] = _record_without_identities(record, ignored)
+
+    return kept
+
+
+def _record_without_identities(record: dict, ignored: Collection[str]) -> dict:
+    masked = dict(record)
+    for key in ignored:
+        if key not in _RECORD_IDENTITY_FIELDS:
+            continue
+
+        section, field = _RECORD_IDENTITY_FIELDS[key]
+        if section is None:
+            masked[field] = _IGNORED
+        elif isinstance(masked.get(section), dict):
+            masked[section] = {**masked[section], field: _IGNORED}
+
+    return masked

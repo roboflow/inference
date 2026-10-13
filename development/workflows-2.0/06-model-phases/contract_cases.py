@@ -8,25 +8,25 @@ from host import DemoContext, compile_for, load_definition, output_value, run_pa
 from native_comparison import compare_predictions
 from observations import expect
 from pydantic import Field
-from roboflow_workflows.execution_engine.v2.declaration import (
+from roboflow_workflows.v2.data.kinds import FLOAT_KIND
+from roboflow_workflows.v2.engine.declaration import (
     Block,
     BlockParams,
     Output,
 )
-from roboflow_workflows.execution_engine.v2.errors import (
+from roboflow_workflows.v2.engine.errors import (
     DeclarationError,
     MutationConflictError,
     StepExecutionError,
     WorkflowCompileError,
 )
-from roboflow_workflows.execution_engine.v2.implementations import Implementation
-from roboflow_workflows.execution_engine.v2.introspection import (
+from roboflow_workflows.v2.engine.implementations import Implementation
+from roboflow_workflows.v2.engine.introspection import (
     describe_workflow,
     discover_workload,
 )
-from roboflow_workflows.execution_engine.v2.kinds import FLOAT_KIND
-from roboflow_workflows.execution_engine.v2.phases import phase
-from roboflow_workflows.execution_engine.v2.targets import (
+from roboflow_workflows.v2.engine.phases import phase
+from roboflow_workflows.v2.engine.targets import (
     Target,
     UnsupportedTargetError,
 )

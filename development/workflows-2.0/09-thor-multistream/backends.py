@@ -399,13 +399,13 @@ class V2Backend(Backend):
         max_in_flight: int,
     ) -> None:
         import gpu_blocks
-        from roboflow_workflows.execution_engine.v2.compilation import (
+        from roboflow_workflows.v2.engine.compilation import (
             compile_workflow,
         )
-        from roboflow_workflows.execution_engine.v2.pipelining import (
+        from roboflow_workflows.v2.engine.pipelining import (
             PipelineOptions,
         )
-        from roboflow_workflows.execution_engine.v2.plan import CompileOptions
+        from roboflow_workflows.v2.engine.plan import CompileOptions
 
         self.mode = mode
         self._confidence = confidence
@@ -496,7 +496,7 @@ class V2Backend(Backend):
             pipeline.__exit__(None, None, None)
 
     def _inputs(self, frame: Any, *, image_id: str) -> Dict[str, Any]:
-        from roboflow_workflows.execution_engine.v2.blocks.image_data import (
+        from roboflow_workflows.v2.data.image import (
             ImageData,
         )
 

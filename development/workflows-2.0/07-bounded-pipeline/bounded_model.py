@@ -36,13 +36,13 @@ from host import (  # noqa: E402
 from native_comparison import compare_predictions  # noqa: E402
 from observations import compare_outputs, expect, leaves, media_pts_ms  # noqa: E402
 from resnet18 import load_state_dict, top_classes  # noqa: E402
-from roboflow_workflows.execution_engine.v2.blocks.image_data import (  # noqa: E402
+from roboflow_workflows.v2.data.image import (  # noqa: E402
     ImageData,
 )
-from roboflow_workflows.execution_engine.v2.pipelining import (  # noqa: E402
+from roboflow_workflows.v2.engine.pipelining import (  # noqa: E402
     PipelineOptions,
 )
-from roboflow_workflows.execution_engine.v2.targets import Target  # noqa: E402
+from roboflow_workflows.v2.engine.targets import Target  # noqa: E402
 
 IMAGE_NAMES = ["beagle", "dogs", "car"]
 EXPECTED_TOP = {"beagle": "basset", "dogs": "Norfolk terrier", "car": "car wheel"}

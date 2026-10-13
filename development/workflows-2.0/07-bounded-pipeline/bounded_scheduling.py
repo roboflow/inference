@@ -19,13 +19,13 @@ from bounded_probes import (
     ProbeWholeCallModel,
     expect,
 )
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.errors import ActiveRunError
-from roboflow_workflows.execution_engine.v2.pipelining import PipelineOptions
-from roboflow_workflows.execution_engine.v2.pipelining.passive import (
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.errors import ActiveRunError
+from roboflow_workflows.v2.engine.pipelining import PipelineOptions
+from roboflow_workflows.v2.engine.pipelining.passive import (
     PipelineAbortedError,
 )
-from roboflow_workflows.execution_engine.v2.plan import CompiledWorkflow, CompileOptions
+from roboflow_workflows.v2.engine.plan import CompiledWorkflow, CompileOptions
 
 WORKFLOWS = Path(__file__).resolve().parent / "workflows"
 

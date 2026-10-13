@@ -4,23 +4,23 @@ from typing import Any, Dict
 
 import torch
 from pydantic import Field
-from roboflow_workflows.execution_engine.v2.blocks import create_catalogue
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.blocks.prediction_ops import (
+from roboflow_workflows.v2.blocks import create_catalogue
+from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.data.kinds import BOOLEAN_KIND, FLOAT_KIND
+from roboflow_workflows.v2.data.prediction_ops import (
     select_predictions,
 )
-from roboflow_workflows.execution_engine.v2.blocks.predictions import (
+from roboflow_workflows.v2.data.predictions import (
     OBJECT_DETECTION_PREDICTION_KIND,
 )
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.declaration import (
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.declaration import (
     Block,
     BlockParams,
     Output,
     Ref,
 )
-from roboflow_workflows.execution_engine.v2.kinds import BOOLEAN_KIND, FLOAT_KIND
 
 from inference_models.models.base.object_detection import Detections
 

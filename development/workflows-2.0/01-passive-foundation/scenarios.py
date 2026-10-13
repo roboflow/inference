@@ -43,20 +43,20 @@ from inspection import (
     save_png,
     write_json,
 )
-from roboflow_workflows.execution_engine.v2.blocks import (
+from roboflow_workflows.v2.blocks import (
     CropBlock,
     InvertBlock,
     create_catalogue,
 )
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.data import (
+from roboflow_workflows.v2.data.batch import (
     Batch,
     EntryMetadata,
     InputValue,
     SampleContext,
 )
-from roboflow_workflows.execution_engine.v2.plan import RunResult
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.plan import RunResult
 
 WORKFLOWS_DIR = Path(__file__).resolve().parent / "workflows"
 

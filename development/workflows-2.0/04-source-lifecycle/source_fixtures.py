@@ -3,8 +3,8 @@
 from fractions import Fraction
 
 import torch
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.data import TemporalContext, Timestamp
+from roboflow_workflows.v2.data.batch import TemporalContext, Timestamp
+from roboflow_workflows.v2.data.image import ImageData
 
 FRAME_BRIGHTNESS = (200, 20, 180, 30, 160)
 FRAME_PTS_MS = (0, 40, 80, 120, 160)

@@ -13,8 +13,8 @@ from fractions import Fraction
 from typing import Dict, Tuple
 
 import torch
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
-from roboflow_workflows.execution_engine.v2.data import Timestamp
+from roboflow_workflows.v2.data.batch import Timestamp
+from roboflow_workflows.v2.data.image import ImageData
 
 RIG_CLOCK = "rig-media"
 FRAME_HEIGHT = 48

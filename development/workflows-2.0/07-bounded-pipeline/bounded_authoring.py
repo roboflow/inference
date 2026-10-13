@@ -26,7 +26,8 @@ from typing import Any, Dict, List
 from bounded_probes import Probe, expect
 from bounded_scheduling import timeline_records
 from pydantic import Field
-from roboflow_workflows.execution_engine.v2 import (
+from roboflow_workflows.v2.data.kinds import FLOAT_KIND
+from roboflow_workflows.v2.engine import (
     Block,
     BlockParams,
     Catalogue,
@@ -37,7 +38,6 @@ from roboflow_workflows.execution_engine.v2 import (
     compile_workflow,
     phase,
 )
-from roboflow_workflows.execution_engine.v2.kinds import FLOAT_KIND
 
 WAIT_SECONDS = 30
 CORRECT_TOTALS = [0.0, 10.0]

@@ -19,9 +19,15 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import Field
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.data import Batch
-from roboflow_workflows.execution_engine.v2.declaration import (
+from roboflow_workflows.v2.data.batch import Batch
+from roboflow_workflows.v2.data.kinds import (
+    DICTIONARY_KIND,
+    FLOAT_KIND,
+    INTEGER_KIND,
+    LIST_OF_VALUES_KIND,
+)
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.declaration import (
     Block,
     BlockParams,
     Group,
@@ -31,13 +37,7 @@ from roboflow_workflows.execution_engine.v2.declaration import (
     StepRef,
     Stop,
 )
-from roboflow_workflows.execution_engine.v2.kinds import (
-    DICTIONARY_KIND,
-    FLOAT_KIND,
-    INTEGER_KIND,
-    LIST_OF_VALUES_KIND,
-)
-from roboflow_workflows.execution_engine.v2.resources import Factory
+from roboflow_workflows.v2.engine.resources import Factory
 
 FIXTURE_NAMESPACE = "fixture"
 

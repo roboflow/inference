@@ -57,10 +57,10 @@ from roboflow_workflows.execution_engine.entities.base import (  # noqa: E402
     ImageParentMetadata,
     WorkflowImageData,
 )
-from roboflow_workflows.execution_engine.v2.blocks.image_data import (  # noqa: E402
+from roboflow_workflows.v2.data.image import (  # noqa: E402
     ImageData,
 )
-from roboflow_workflows.execution_engine.v2.pipelining import (  # noqa: E402
+from roboflow_workflows.v2.engine.pipelining import (  # noqa: E402
     PipelineOptions,
 )
 from run_demo import (  # noqa: E402

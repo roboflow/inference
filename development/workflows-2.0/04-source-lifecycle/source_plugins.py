@@ -4,11 +4,11 @@ import csv
 from pathlib import Path
 
 from pydantic import Field
-from roboflow_workflows.execution_engine.v2.blocks.kinds import IMAGE_KIND
-from roboflow_workflows.execution_engine.v2.data import EntryMetadata, InputValue
-from roboflow_workflows.execution_engine.v2.declaration import Ref
-from roboflow_workflows.execution_engine.v2.kinds import FLOAT_KIND, STRING_KIND
-from roboflow_workflows.execution_engine.v2.sources import (
+from roboflow_workflows.v2.data.batch import EntryMetadata, InputValue
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
+from roboflow_workflows.v2.data.kinds import FLOAT_KIND, STRING_KIND
+from roboflow_workflows.v2.engine.declaration import Ref
+from roboflow_workflows.v2.engine.sources import (
     Emission,
     Source,
     SourceOutput,

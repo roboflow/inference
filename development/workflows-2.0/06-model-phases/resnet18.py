@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Mapping, Tuple
 
 import torch
-from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
+from roboflow_workflows.v2.data.image import ImageData
 from torchvision.models import ResNet18_Weights, resnet18
 
 from inference_models.models.base.classification import ClassificationPrediction

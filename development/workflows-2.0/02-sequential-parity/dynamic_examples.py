@@ -5,18 +5,24 @@ included, sees one ``globals`` mapping; ``init`` state stays per step. A new
 session starts with an empty mapping unless the caller supplies one. (V1 used
 one process-wide ``globals`` by default.)
 
-``dynamic_representation``: a block declaring ``tensor_native`` needs a
-capable representation policy. The default policy refuses it before the
-block's imports or ``init`` run; ``CpuArrayPolicy`` below converts lists to
-NumPy arrays for the code and back to lists for the workflow.
+``dynamic_representation``: the default policy passes data to a block
+declaring ``tensor_native`` unchanged. An explicit ``LEGACY_REPRESENTATION``
+refuses such a block before its imports or ``init`` run. ``CpuArrayPolicy``
+below is an optional host adaptation, not the recommended tensor
+representation: it converts lists to NumPy arrays for the code and back to
+lists for the workflow. For code that uses V2 tensor data, see
+``66-custom-python-tensors``.
 """
 
 from typing import Any, Dict, List
 
 import numpy as np
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.dynamic_blocks import RepresentationPolicy
-from roboflow_workflows.execution_engine.v2.plan import CompileOptions
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.dynamic_blocks import (
+    LEGACY_REPRESENTATION,
+    RepresentationPolicy,
+)
+from roboflow_workflows.v2.engine.plan import CompileOptions
 
 LOCAL_CODE = CompileOptions(allow_local_code=True)
 SHARED_STATE = "dynamic_workflows_blocks.shared_state"
@@ -25,6 +31,8 @@ REPRESENTATION_POLICY = "dynamic_workflows_blocks.representation_policy"
 
 class CpuArrayPolicy(RepresentationPolicy):
     """Accept tensor_native blocks; hand them NumPy arrays, return plain lists.
+
+    An optional host adaptation, not the recommended tensor representation.
 
     Args:
         events: List receiving one entry per hook call, in order.
@@ -109,20 +117,22 @@ def dynamic_shared_state(report, *, catalogue, load) -> None:
 
 
 def dynamic_representation(report, *, catalogue, load) -> None:
-    """Representation policy order, default refusal and a CPU array adapter."""
+    """Representation policy order, explicit legacy refusal and a CPU array adapter."""
     plan = compile_workflow(
         load("dynamic_representation"), catalogue=catalogue, options=LOCAL_CODE
     )
 
     untouched: Dict[str, Any] = {}
     try:
-        plan.create_session({SHARED_STATE: untouched})
+        plan.create_session(
+            {SHARED_STATE: untouched, REPRESENTATION_POLICY: LEGACY_REPRESENTATION}
+        )
         refusal = None
     except Exception as error:
         refusal = [type(error).__name__, type(error.__cause__).__name__, str(error)]
-    report.details["default_policy_refusal"] = refusal
+    report.details["explicit_legacy_refusal"] = refusal
     report.check(
-        "the default policy refuses tensor_native before imports and init run",
+        "explicit LEGACY_REPRESENTATION refuses tensor_native before imports and init",
         (refusal and refusal[:2], untouched),
         (["ResourceError", "RepresentationError"], {}),
     )

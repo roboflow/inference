@@ -8,12 +8,12 @@ import copy
 from typing import Any, Dict, List, Tuple
 
 from boundary_blocks import SETTINGS_DECODER_CALLS
-from roboflow_workflows.execution_engine.v2.compilation import compile_workflow
-from roboflow_workflows.execution_engine.v2.context import (
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.context import (
     NoExecutionContextError,
     get_execution_context,
 )
-from roboflow_workflows.execution_engine.v2.plan import ExecutionObserver
+from roboflow_workflows.v2.engine.plan import ExecutionObserver
 from v2_runner import plain
 
 

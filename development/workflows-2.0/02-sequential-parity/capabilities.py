@@ -24,24 +24,24 @@ import plugin_examples
 from blocks import create_fixture_catalogue
 from boundary_blocks import create_boundary_catalogue
 from capability_blocks import create_capability_catalogue
-from roboflow_workflows.execution_engine.v2.blocks import create_catalogue
-from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
-from roboflow_workflows.execution_engine.v2.compilation import (
+from roboflow_workflows.v2.blocks import create_catalogue
+from roboflow_workflows.v2.engine.catalogue import Catalogue
+from roboflow_workflows.v2.engine.compilation import (
     WorkflowReference,
     compile_workflow,
 )
-from roboflow_workflows.execution_engine.v2.errors import (
+from roboflow_workflows.v2.engine.errors import (
     LineageError,
     MutationConflictError,
     NestedWorkflowError,
 )
-from roboflow_workflows.execution_engine.v2.introspection import (
+from roboflow_workflows.v2.engine.introspection import (
     describe_catalogue,
     describe_workflow,
     discover_connections,
     discover_workload,
 )
-from roboflow_workflows.execution_engine.v2.plan import CompileOptions
+from roboflow_workflows.v2.engine.plan import CompileOptions
 from v2_runner import InvocationRecorder, plain
 
 WORKFLOWS_DIR = Path(__file__).resolve().parent / "workflows"
