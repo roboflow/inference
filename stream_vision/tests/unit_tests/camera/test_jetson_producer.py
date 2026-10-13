@@ -463,6 +463,12 @@ def _camera_producer_with_fake_bridge(monkeypatch):
         def close(self):
             self.closed = True
 
+        def stats(self):
+            if self.closed:
+                raise RuntimeError("Jetson tensor pipeline is closed")
+
+            return {"frames": self.grab_calls}
+
     monkeypatch.setattr(
         module, "probe_gstreamer_elements", lambda *a, **k: (True, "ok")
     )
@@ -491,14 +497,21 @@ def test_camera_is_opened_only_after_requested_properties_are_applied(monkeypatc
     assert opened[0].closed
 
 
-def test_camera_stats_are_safe_before_deferred_open_and_after_release(monkeypatch):
+@pytest.mark.parametrize("start_capture", [False, True])
+def test_camera_stats_are_safe_before_deferred_open_and_after_release(
+    monkeypatch, start_capture
+):
     producer, opened = _camera_producer_with_fake_bridge(monkeypatch)
 
     assert producer.tensor_bridge_stats == {}
     assert not opened
+    if start_capture:
+        assert producer.grab()
+        assert producer.tensor_bridge_stats == {"frames": 1}
+
     producer.release()
     assert producer.tensor_bridge_stats == {}
-    assert not opened
+    assert all(pipeline.closed for pipeline in opened)
 
 
 def test_direct_camera_grab_without_properties_still_opens_default_pipeline(
