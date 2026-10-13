@@ -480,7 +480,9 @@ def apply_histogram_equalization_to_torch_image(image: torch.Tensor) -> torch.Te
     for single_image in image:
         single_image_numpy = np.transpose(single_image.cpu().numpy(), (1, 2, 0))
         single_image_numpy = single_image_numpy.astype(np.float32) / 255
-        image_equalized = exposure.equalize_hist(single_image_numpy) * 255
+        image_equalized = (exposure.equalize_hist(single_image_numpy) * 255).astype(
+            np.uint8
+        )
         results.append(torch.from_numpy(image_equalized).to(original_device))
     return torch.stack(results, dim=0).permute(0, 3, 1, 2)
 
