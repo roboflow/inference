@@ -153,6 +153,35 @@ class TestMergeWindowSegmentsParity:
         assert all(isinstance(entry, ActionRecognitionPrediction) for entry in ours)
 
 
+class TestMergeWindowSegmentsConfidence:
+    def test_scored_segment_keeps_confidence_in_output(self):
+        timeline: List[ActionRecognitionPrediction] = []
+
+        merge_window_segments(
+            timeline=timeline,
+            frame_numbers=[0, 5, 10],
+            segments=[ModelPrediction(0, 2, "wave", confidence=0.75)],
+            id_vocabulary=["wave"],
+            stride=5.0,
+        )
+
+        assert timeline[0].confidence == 0.75
+        assert timeline[0].model_dump(by_alias=True)["confidence"] == 0.75
+
+    def test_unscored_segment_omits_confidence_from_output(self):
+        timeline: List[ActionRecognitionPrediction] = []
+
+        merge_window_segments(
+            timeline=timeline,
+            frame_numbers=[0, 5, 10],
+            segments=[ModelPrediction(0, 2, "wave")],
+            id_vocabulary=["wave"],
+            stride=5.0,
+        )
+
+        assert "confidence" not in timeline[0].model_dump(by_alias=True)
+
+
 class TestClassifyVideo:
     @pytest.mark.asyncio
     async def test_sends_each_planned_window_in_order_as_params(self, clip):

@@ -214,6 +214,7 @@ def merge_window_segments(
                 end_frame_idx=frame_numbers[end_index],
                 class_name=class_name,
                 class_id=class_ids.get(class_name, -1),
+                confidence=getattr(segment, "confidence", None),
             ),
             stride=stride,
         )
