@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Histogram equalization of torch-tensor inputs returns `uint8` values like the
+  numpy path instead of keeping float output. On the RF-DETR float `[0, 1]` path
+  the result is rescaled, which also stops adaptive equalization from crashing
+  and histogram equalization from returning out-of-range values.
 - Letterbox resizing of lists of torch tensors computes the target size and
   padding with the same arithmetic as single images and the numpy path.
   Previously float32 arithmetic could make the resized size one pixel off.
