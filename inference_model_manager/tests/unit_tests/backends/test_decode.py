@@ -471,6 +471,29 @@ class TestTiffPreOrientedByLibtiff:
         result = decode(_tiff_variant(variant, orientation))
         np.testing.assert_array_equal(result, expected)
 
+    @pytest.mark.parametrize("bigtiff", [False, True])
+    @pytest.mark.parametrize("byteorder", ["<", ">"])
+    def test_imagecodecs_gets_orientation_1(self, byteorder, bigtiff, monkeypatch):
+        imagecodecs = pytest.importorskip("imagecodecs")
+        if bigtiff:
+            data = _bigtiff_with_orientation(6, byteorder)
+        else:
+            data = _tiff_with_orientation(6, "II" if byteorder == "<" else "MM")
+        tiff_decode = imagecodecs.tiff_decode
+        seen = []
+
+        def _spy(raw):
+            seen.append(raw)
+            return tiff_decode(raw)
+
+        monkeypatch.setattr(imagecodecs, "tiff_decode", _spy)
+
+        result = make_decoder("imagecodecs")(data)
+
+        assert [exif_orientation(raw) for raw in seen] == [1]
+        assert [len(raw) for raw in seen] == [len(data)]
+        assert decoded_dims(data, 0, 0) == (result.shape[1], result.shape[0])
+
     @pytest.mark.parametrize("orientation", range(1, 9))
     @pytest.mark.parametrize("variant", _TIFF_VARIANTS)
     def test_decoded_dims_match_decoded_pixels(self, variant, orientation):
