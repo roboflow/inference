@@ -29,7 +29,7 @@ Merging a group::
     confidence  mean / max / min of the group, as float32
     box         no mask in the group: mean box / largest / smallest area
                 any mask in the group: the box of the aggregated mask
-                (inclusive last pixel; an empty mask gives (0, 0, 0, 0))
+                (half-open pixel extents; an empty mask gives (0, 0, 0, 0))
     mask        union / intersection / largest / smallest pixel count;
                 rows without a mask count as empty masks
 
@@ -1105,17 +1105,18 @@ def _aggregate_masks(stack: torch.Tensor, *, mode: str) -> torch.Tensor:
 
 
 def _mask_boxes(masks: torch.Tensor) -> torch.Tensor:
-    """``(M, 4)`` float32 boxes of ``(M, H, W)`` masks, as ``sv.mask_to_xyxy``.
+    """``(M, 4)`` float32 half-open pixel extents of ``(M, H, W)`` masks.
 
-    The last pixel is inclusive; an empty mask gives ``(0, 0, 0, 0)``.
+    Upper bounds include the full last pixel, so boxes compose with crops.
+    An empty mask gives ``(0, 0, 0, 0)``.
     """
     height, width = masks.shape[1:]
     rows_any = masks.any(dim=2).to(torch.uint8)
     cols_any = masks.any(dim=1).to(torch.uint8)
     x_min = cols_any.argmax(dim=1)
-    x_max = width - 1 - cols_any.flip(1).argmax(dim=1)
+    x_max = width - cols_any.flip(1).argmax(dim=1)
     y_min = rows_any.argmax(dim=1)
-    y_max = height - 1 - rows_any.flip(1).argmax(dim=1)
+    y_max = height - rows_any.flip(1).argmax(dim=1)
     boxes = torch.stack([x_min, y_min, x_max, y_max], dim=1).to(torch.float32)
     present = rows_any.amax(dim=1).bool().unsqueeze(1)
     boxes = torch.where(present, boxes, torch.zeros_like(boxes))

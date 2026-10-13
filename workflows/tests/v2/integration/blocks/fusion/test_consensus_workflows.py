@@ -23,8 +23,13 @@ import pytest
 import torch
 from roboflow_workflows.v2.blocks import create_catalogue, fusion
 from roboflow_workflows.v2.blocks.fusion import consensus
+from roboflow_workflows.v2.blocks.geometry.mask_inputs import (
+    INSTANCE_SEGMENTATION_VIEW_KIND,
+)
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
-from roboflow_workflows.v2.data.image import FrameMapping
+from roboflow_workflows.v2.data.image import FrameMapping, ImageData
+from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView
+from roboflow_workflows.v2.data.prediction_ops import select_predictions
 from roboflow_workflows.v2.data.predictions import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -333,7 +338,7 @@ def test_dense_and_rle_masks_vote_into_one_instance_segmentation() -> None:
     assert isinstance(merged, InstanceDetections)
     assert merged.image_metadata["prediction_type"] == "instance-segmentation"
     assert merged.mask.flatten(1).sum(dim=1).tolist() == [0, 100]
-    assert merged.xyxy.tolist() == [[0.0, 0.0, 0.0, 0.0], [40.0, 0.0, 49.0, 9.0]]
+    assert merged.xyxy.tolist() == [[0.0, 0.0, 0.0, 0.0], [40.0, 0.0, 50.0, 10.0]]
     assert len(second["predictions"]) == 0
 
 
@@ -407,3 +412,141 @@ def test_a_missing_prediction_skips_consensus_for_that_image() -> None:
     assert len(first["predictions"]) == 2
     assert second["predictions"] is None
     assert second["object_present"] is None
+
+
+@pytest.mark.parametrize("representation", ["dense", "rle", "view"])
+@pytest.mark.parametrize(
+    "extent, row_count",
+    [
+        ((7, 11, 8, 12), 1),
+        ((3, 5, 18, 15), 1),
+        ((58, 38, 60, 40), 1),
+        (None, 1),
+        (None, 0),
+    ],
+    ids=[
+        "single-pixel",
+        "rectangle",
+        "bottom-right-border",
+        "empty-mask",
+        "zero-instances",
+    ],
+)
+def test_consensus_mask_bounds_compose_with_dynamic_crop(
+    representation: str, extent, row_count: int
+) -> None:
+    # Matching uses model boxes; the output crop must follow the mask instead.
+    pixels = (
+        torch.arange(3 * SIZE_HW[0] * SIZE_HW[1]).reshape(3, *SIZE_HW).to(torch.uint8)
+    )
+    image = ImageData.from_tensor(pixels.clone(), image_id="image-0")
+    masks = torch.zeros((row_count, *SIZE_HW), dtype=torch.bool)
+    if extent is not None:
+        x0, y0, x1, y1 = extent
+        masks[0, y0:y1, x0:x1] = True
+    boxes = select_predictions(detections(0, "a"), indices=list(range(row_count)))
+    if representation == "view":
+        height, width = SIZE_HW
+        source = SegmentationView(
+            detections=boxes,
+            scores=masks.float() * 16.0 - 8.0,
+            score_type="logits",
+            threshold=0.0,
+            geometry=MaskGridGeometry(
+                grid_size_hw=SIZE_HW,
+                inference_size_hw=SIZE_HW,
+                padding_ltrb=(0, 0, 0, 0),
+                scale_xy=(1.0, 1.0),
+                crop_size_hw=SIZE_HW,
+                original_size_hw=SIZE_HW,
+                static_crop_xywh=(0, 0, width, height),
+            ),
+        )
+        kind = INSTANCE_SEGMENTATION_VIEW_KIND
+    else:
+        mask = masks
+        if representation == "rle":
+            mask = InstancesRLEMasks(
+                image_size=SIZE_HW,
+                masks=[
+                    mask_utils.encode(np.asfortranarray(row.numpy().astype(np.uint8)))[
+                        "counts"
+                    ]
+                    for row in masks
+                ],
+            )
+        source = InstanceDetections(
+            xyxy=boxes.xyxy,
+            class_id=boxes.class_id,
+            confidence=boxes.confidence,
+            mask=mask,
+            image_metadata=boxes.image_metadata,
+        )
+        kind = (
+            RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND
+            if representation == "rle"
+            else INSTANCE_SEGMENTATION_PREDICTION_KIND
+        )
+    definition = {
+        "version": "2.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowBatchInput", "name": "a", "kind": [kind.name]},
+            {"type": "WorkflowBatchInput", "name": "b", "kind": [kind.name]},
+        ],
+        "steps": [
+            {
+                "type": "v2/detections_consensus@v1",
+                "name": "consensus",
+                "predictions": ["$inputs.a", "$inputs.b"],
+                "required_votes": 2,
+            },
+            {
+                "type": "v2/dynamic_crop@v1",
+                "name": "crop",
+                "image": "$inputs.image",
+                "predictions": "$steps.consensus.predictions",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "merged",
+                "selector": "$steps.consensus.predictions",
+            },
+            {"type": "JsonField", "name": "crops", "selector": "$steps.crop.crops"},
+            {
+                "type": "JsonField",
+                "name": "rows",
+                "selector": "$steps.crop.predictions",
+                "coordinates_system": "own",
+            },
+        ],
+    }
+    plan = compile_workflow(definition, catalogue=create_catalogue())
+
+    (result,) = (
+        plan.create_session()
+        .run({"image": [image], "a": [source], "b": [source]})
+        .rows()
+    )
+
+    if row_count == 0:
+        assert result["merged"].xyxy.shape == (0, 4)
+        assert result["crops"] == []
+        assert result["rows"] == []
+    elif extent is None:
+        assert result["merged"].xyxy.tolist() == [[0.0] * 4]
+        assert result["crops"] == [None]
+        assert result["rows"] == [None]
+    else:
+        (crop,) = result["crops"]
+        (row,) = result["rows"]
+        assert crop is not None
+        assert crop.size_hw == (y1 - y0, x1 - x0)
+        assert result["merged"].xyxy.tolist() == [list(extent)]
+        assert torch.equal(crop.tensor_image, image.tensor_image[:, y0:y1, x0:x1])
+        assert row.mask.shape == (1, y1 - y0, x1 - x0)
+        assert bool(row.mask.all())
+        assert row.xyxy.tolist() == [[0.0, 0.0, float(x1 - x0), float(y1 - y0)]]
+    assert torch.equal(image.tensor_image, pixels)

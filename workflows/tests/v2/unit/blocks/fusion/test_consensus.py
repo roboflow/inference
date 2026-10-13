@@ -796,8 +796,8 @@ def test_masks_are_read_only_for_rows_of_masked_groups(monkeypatch) -> None:
 @pytest.mark.parametrize(
     "mode, box, pixels",
     [
-        ("union", [2.0, 4.0, 9.0, 19.0], 128),
-        ("max", [2.0, 4.0, 9.0, 19.0], 128),
+        ("union", [2.0, 4.0, 10.0, 20.0], 128),
+        ("max", [2.0, 4.0, 10.0, 20.0], 128),
         ("intersection", [0.0, 0.0, 0.0, 0.0], 0),
         ("min", [0.0, 0.0, 0.0, 0.0], 0),
     ],
@@ -828,7 +828,7 @@ def test_box_only_groups_get_an_empty_mask_beside_masked_groups() -> None:
     merged = agree(masked, plain, cars)["predictions"]
 
     # then
-    assert merged.xyxy.tolist() == [[2.0, 4.0, 9.0, 19.0], [40.0, 0.0, 50.0, 10.0]]
+    assert merged.xyxy.tolist() == [[2.0, 4.0, 10.0, 20.0], [40.0, 0.0, 50.0, 10.0]]
     assert merged.mask.flatten(1).sum(dim=1).tolist() == [128, 0]
 
 
@@ -851,8 +851,8 @@ def test_dense_rle_and_grid_masks_of_one_image_combine(device: str) -> None:
     expected = torch.zeros(SIZE_HW, dtype=torch.bool)
     expected[4:20, 2:12] = True
     assert torch.equal(union.mask[0].cpu(), expected)
-    assert union.xyxy.tolist() == [[2.0, 4.0, 11.0, 19.0]]
-    assert intersection["predictions"].xyxy.tolist() == [[4.0, 6.0, 9.0, 19.0]]
+    assert union.xyxy.tolist() == [[2.0, 4.0, 12.0, 20.0]]
+    assert intersection["predictions"].xyxy.tolist() == [[4.0, 6.0, 10.0, 20.0]]
 
 
 @pytest.mark.parametrize("mode, pixels", [("max", 160), ("min", 128)])
@@ -863,3 +863,45 @@ def test_max_and_min_masks_pick_by_pixel_count(mode: str, pixels: int) -> None:
     merged = agree(first, second, mask_aggregation=mode)["predictions"]
 
     assert int(merged.mask.sum()) == pixels
+
+
+@pytest.mark.parametrize("make_source", [dense, rle], ids=["dense", "rle"])
+@pytest.mark.parametrize(
+    "extent",
+    [(7, 11, 8, 12), (3, 5, 18, 15), (58, 38, 60, 40), None],
+    ids=["single-pixel", "rectangle", "bottom-right-border", "empty-mask"],
+)
+def test_mask_boxes_cover_the_full_raster_extent(make_source, extent) -> None:
+    masks = torch.zeros((1, *SIZE_HW), dtype=torch.bool)
+    if extent is not None:
+        x0, y0, x1, y1 = extent
+        masks[0, y0:y1, x0:x1] = True
+    source = make_source([PERSON], masks=masks)
+
+    merged = agree(source, required_votes=1)["predictions"]
+
+    expected_box = [0.0] * 4 if extent is None else list(extent)
+    assert merged.xyxy.tolist() == [expected_box]
+    assert torch.equal(merged.mask, masks)
+
+
+@pytest.mark.parametrize(
+    "make_source", [dense, rle, view], ids=["dense", "rle", "view"]
+)
+def test_zero_instance_masks_remain_an_empty_detection_result(make_source) -> None:
+    merged = agree(make_source([]), required_votes=1)["predictions"]
+
+    assert type(merged) is Detections
+    assert merged.xyxy.shape == (0, 4)
+    assert frame_of(merged) == frame()
+
+
+@pytest.mark.parametrize("mode", ["average", "max", "min"])
+def test_box_only_continuous_bounds_are_not_expanded(mode: str) -> None:
+    box = (2.25, 4.5, 10.75, 20.125)
+    first = boxes([(0, 0.9, box)], namespace="a")
+    second = boxes([(0, 0.8, box)], namespace="b")
+
+    merged = agree(first, second, coordinates_aggregation=mode)["predictions"]
+
+    assert merged.xyxy.tolist() == [list(box)]

@@ -124,9 +124,11 @@ class _Trail:
 class TraceVisualizationBlock(AnnotationBlock):
     """Draw the recent path of each tracked detection onto a copy of the image.
 
-    Needs ``tracker_id`` on every row (``v2/byte_tracker@v1``). A path joins
-    the track's anchors of the last ``trace_length`` calls for the image's
-    source. Give it each whole frame once (a resize is fine); crop after it.
+    Needs predictions with ``tracker_id`` on every row, such as the
+    ``tracked_detections`` output of ``v2/trackers_bytetrack@v1``. A path
+    joins the track's anchors of the last ``trace_length`` calls for the
+    image's source. Give it each whole frame once (a resize is fine); crop
+    after it.
 
     Example: with ``trace_length=3``, a track at x = 10, 20, 30, 40 on four
     frames draws 10-20 on the second frame, 10-20-30 on the third and
@@ -288,8 +290,9 @@ class TraceVisualizationBlock(AnnotationBlock):
         tracker_ids = rows.tracker_ids()
         if tracker_ids is None:
             raise ValueError(
-                f"{self.type} needs tracker_id on every row; track the "
-                "predictions first, e.g. with v2/byte_tracker@v1"
+                f"{self.type} needs tracker_id on every row; use tracked "
+                "predictions, e.g. the tracked_detections output of "
+                "v2/trackers_bytetrack@v1"
             )
 
         return tracker_ids
