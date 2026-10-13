@@ -6,8 +6,10 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     field_serializer,
     field_validator,
+    model_serializer,
     model_validator,
     validator,
 )
@@ -117,13 +119,15 @@ class InferenceResponseImage(BaseModel):
     """Inference response image information.
 
     Attributes:
-        width (int): The original width of the image used in inference.
-        height (int): The original height of the image used in inference.
+        width (int): The width of the represented image coordinate frame.
+        height (int): The height of the represented image coordinate frame.
     """
 
-    width: int = Field(description="The original width of the image used in inference")
+    width: int = Field(
+        description="The width of the represented image coordinate frame"
+    )
     height: int = Field(
-        description="The original height of the image used in inference"
+        description="The height of the represented image coordinate frame"
     )
 
 
@@ -212,6 +216,35 @@ class WithVisualizationResponse(BaseModel):
         return base64.b64encode(visualization).decode("utf-8")
 
 
+class MaskCoordinateMetadata(BaseModel):
+    """Describe the prediction grid and its mapping to the original image.
+
+    Attributes:
+        coordinate_system (str): Coordinate frame shared by boxes, polygons and encoded RLE masks.
+        width (int): Width of the encoded mask grid.
+        height (int): Height of the encoded mask grid.
+        scale_x (float): Multiply mask x coordinates by this to obtain image x.
+        scale_y (float): Multiply mask y coordinates by this to obtain image y.
+    """
+
+    coordinate_system: Literal["mask_grid"] = Field(
+        default="mask_grid",
+        description="All prediction geometry uses this grid, matching response image dimensions.",
+    )
+    width: int = Field(gt=0, description="Mask-grid width in pixels.", examples=[160])
+    height: int = Field(gt=0, description="Mask-grid height in pixels.", examples=[107])
+    scale_x: float = Field(
+        gt=0,
+        description="Original image width divided by output-grid width.",
+        examples=[4.0],
+    )
+    scale_y: float = Field(
+        gt=0,
+        description="Original image height divided by output-grid height.",
+        examples=[4.0],
+    )
+
+
 class InstanceSegmentationInferenceResponse(
     CvInferenceResponse, WithVisualizationResponse
 ):
@@ -227,6 +260,22 @@ class InstanceSegmentationInferenceResponse(
     predictions: List[
         Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
     ]
+    image: Union[List[InferenceResponseImage], InferenceResponseImage] = Field(
+        description="Dimensions of the coordinate frame shared by bounding boxes, "
+        "polygon points and RLE masks. With opt-in this is the selected mask grid; "
+        "otherwise it is the original image. Multi-image responses may provide a list.",
+    )
+    original_image: Optional[InferenceResponseImage] = Field(
+        default=None,
+        description="Original image dimensions retained for opted-in responses, "
+        "including when the selected grid has the same dimensions.",
+    )
+    mask_metadata: Optional[MaskCoordinateMetadata] = Field(
+        default=None,
+        description="Present for opted-in responses in either format. All prediction "
+        "geometry uses this grid. Multiply x coordinates and widths by scale_x, "
+        "and y coordinates and heights by scale_y, to map to original_image.",
+    )
 
 
 class BaseRequest(BaseModel):
@@ -1724,12 +1773,28 @@ class ActionRecognitionPrediction(BaseModel):
     start_frame_idx: int = Field(description="First frame of the range")
     end_frame_idx: int = Field(description="Last frame of the range")
     class_name: str = Field(alias="class", description="The class name")
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
     class_id: int = Field(
         description=(
             "The class position in the model's own class list. A model without "
             "a class list reports -1."
         )
     )
+
+    @model_serializer(mode="wrap")
+    def serialize_prediction(self, handler: SerializerFunctionWrapHandler):
+        """Serialize optional scores without replacing the prediction schema.
+
+        Args:
+            handler (SerializerFunctionWrapHandler): Pydantic's field serializer.
+
+        Returns:
+            The prediction mapping, with confidence only when a score exists.
+        """
+        result = handler(self)
+        if self.confidence is None:
+            result.pop("confidence", None)
+        return result
 
 
 class ActionRecognitionInferenceResponse(InferenceResponse):
