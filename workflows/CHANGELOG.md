@@ -28,6 +28,18 @@ for contributor and maintainer responsibilities.
   so a host that retries uploads can fail an upload whose retry reports a duplicate
   instead of silently dropping the annotation.
 
+## `0.2.7`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Meta block (`roboflow_core/meta_vlm@v3`): Muse Wonder (`meta/muse-wonder` via OpenRouter), reasoning levels `minimal` through `xhigh`, with the same flat 0-1000 `named_0_1000` detection decoding as the Spark models.
+
+### Changed
+
+- Meta block (`roboflow_core/meta_vlm@v3`) defaults `model_version` to Muse Wonder instead of Muse Spark 1.3. Workflows that omit `model_version` now call Muse Wonder.
+
 ## `0.2.6`
 
 Bundled execution engine: `1.16.1`.

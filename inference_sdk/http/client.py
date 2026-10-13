@@ -25,6 +25,7 @@ from inference_sdk.config import (
     EXECUTION_ID_HEADER,
     InferenceSDKGuidanceWarning,
     execution_id,
+    usage_source_tags,
 )
 from inference_sdk.http.entities import (
     ACTION_RECOGNITION_TASK,
@@ -1464,7 +1465,7 @@ class InferenceHTTPClient:
         }
         payload = {
             **preprocessing,
-            "source": self.__inference_configuration.source,
+            **self.__inference_configuration.to_source_parameters(),
             "output_type": output_type,
         }
 
@@ -3420,12 +3421,13 @@ class InferenceHTTPClient:
         return {"api_key": self.__api_key}
 
     def __initialise_payload(self) -> dict:
+        payload = self.__inference_configuration.to_source_parameters()
         if (
             self.__client_mode is not HTTPClientMode.V0
             and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER
         ):
-            return {"api_key": self.__api_key}
-        return {}
+            payload["api_key"] = self.__api_key
+        return payload
 
     def __wrap_url_with_api_key(self, url: str) -> str:
         # The one URL seam every hand-built request method routes through, so
@@ -3434,6 +3436,10 @@ class InferenceHTTPClient:
         # send time) - the standard v0/v1 `infer()` methods serialize those
         # through `InferenceConfiguration` instead, and never call this.
         query_params: Dict[str, Any] = {}
+        if usage_source_tags.get():
+            query_params.update(
+                self.__inference_configuration.to_source_parameters(include_origin=True)
+            )
         if (
             self.__client_mode is HTTPClientMode.V0
             and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER
