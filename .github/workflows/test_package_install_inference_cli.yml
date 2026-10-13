@@ -25,7 +25,7 @@ jobs:
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
-      labels: depot-ubuntu-22.04-8
+      labels: depot-ubuntu-22.04-small
       group: public-depot
     timeout-minutes: 10
     strategy:
@@ -40,7 +40,7 @@ jobs:
           python-version: "3.10"
       - name: 🛞 Create Wheels
         run: |
-          make create_wheels
+          make create_inference_cli_whl
       - name: 🐍 Set up Python ${{ matrix.python-version }} to test package install process
         uses: actions/setup-python@v6
         with:
@@ -49,9 +49,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-package-install-inference-cli-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 📦 Installing `inference` package...
         run: pip install --find-links dist/ ./dist/inference_cli-*-py3-none-any.whl ./dist/inference_sdk-*-py3-none-any.whl
       - name: 🧪 Testing package installation
