@@ -292,6 +292,7 @@ class InferencePipeline:
             profiler=profiler,
             profiling_directory=profiling_directory,
             execution_engine_thread_pool_executor=execution_engine_thread_pool_executor,
+            execution_engine=execution_engine,
         )
         return cls.init_with_custom_logic(
             video_reference=video_reference,
