@@ -1,21 +1,18 @@
 import pytest
-
-from inference_server.legacy import entities, prompts
-
-pytest.importorskip("roboflow_workflows")
-
-from roboflow_workflows.core_steps.common import (  # noqa: E402
+from roboflow_workflows.core_steps.common import (
     inference_response_entities as workflows_responses,
 )
-from roboflow_workflows.core_steps.common import (  # noqa: E402
+from roboflow_workflows.core_steps.common import (
     segmentation_entities as workflows_segmentation,
 )
-from roboflow_workflows.core_steps.models.foundation.segment_anything_common import (  # noqa: E402
+from roboflow_workflows.core_steps.models.foundation.segment_anything_common import (
     prompts as workflows_prompts,
 )
-from roboflow_workflows.core_steps.models.roboflow.action_recognition import (  # noqa: E402
+from roboflow_workflows.core_steps.models.roboflow.action_recognition import (
     entities as workflows_action_recognition,
 )
+
+from inference_server.legacy import entities, prompts
 
 _RESPONSE_CLASSES = [
     "InferenceResponseImage",

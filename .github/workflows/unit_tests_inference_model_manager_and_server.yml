@@ -90,4 +90,6 @@ jobs:
       - name: 🧪 Unit Tests of Inference Server (slim install guard)
         timeout-minutes: 10
         working-directory: inference_server
-        run: ../.venv-slim/bin/pytest tests/unit_tests/legacy tests/unit_tests/legacy/test_slim_install.py
+        run: |
+          ../.venv-slim/bin/python -c "import importlib.util; assert importlib.util.find_spec('roboflow_workflows') is None"
+          ../.venv-slim/bin/pytest tests/unit_tests/legacy/test_slim_install.py
