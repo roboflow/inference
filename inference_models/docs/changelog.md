@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fixed
+
+- Histogram equalization of torch-tensor inputs returns `uint8` values like the
+  numpy path instead of keeping float output. On the RF-DETR float `[0, 1]` path
+  the result is rescaled, which also stops adaptive equalization from crashing
+  and histogram equalization from returning out-of-range values.
+- Letterbox resizing of lists of torch tensors computes the target size and
+  padding with the same arithmetic as single images and the numpy path.
+  Previously float32 arithmetic could make the resized size one pixel off.
+- Grayscale conversion of torch-tensor inputs honours the declared input colour
+  order and matches OpenCV exactly. Previously BGR tensors were treated as RGB
+  and results could differ from OpenCV by one. Single-channel tensors still pass
+  through unchanged.
+- Center crop of torch-tensor inputs floors the crop offset like the numpy path.
+  Previously the offset was rounded, so odd margins shifted the crop by one pixel.
+
 ## `0.39.3`
 
 ### Added
