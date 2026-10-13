@@ -16,6 +16,13 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- OpenAI block (`open_ai@v7`): optional `service_tier`. `ultrafast` runs `gpt-6.1-sol` and
+  `gpt-6-astra` on OpenAI's Ultrafast tier, and is rejected for other models; the default,
+  `auto`, sends no tier, so existing workflows are unchanged. The tier is sent to OpenAI
+  directly or, for `rf_key:` keys, to Roboflow's proxy.
+
 ## `0.2.6`
 
 Bundled execution engine: `1.16.1`.

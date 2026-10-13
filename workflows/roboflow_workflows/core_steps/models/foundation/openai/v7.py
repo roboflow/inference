@@ -254,6 +254,14 @@ MODELS_NOT_SUPPORTING_REASONING_EFFORT = [
 
 REASONING_EFFORT_VALUES = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
+# OpenAI's Ultrafast tier generates output tokens several times faster than the
+# Standard tier, at a higher token price, and only for these models:
+# https://developers.openai.com/api/docs/guides/ultrafast-mode
+MODELS_SUPPORTING_ULTRAFAST = ["gpt-6.1-sol", "gpt-6-astra"]
+
+# `auto` sends no tier: OpenAI picks it, or Roboflow's proxy for `rf_key:` keys.
+SERVICE_TIER_VALUES = ["auto", "ultrafast"]
+
 MODEL_DETECTION_PROMPT_STYLES = {
     model["id"]: model["detection_prompt_style"] for model in OPENAI_MODELS
 }
@@ -457,6 +465,10 @@ The two lists are paired by position. Structured-output models constrain the
 returned label to `output_classes`, and decoded predictions use those stable
 labels. Omitting `output_classes` preserves the original `classes` contract.
 
+Set `service_tier` to `ultrafast` to run GPT-6.1 Sol or GPT-6 Astra on OpenAI's
+Ultrafast tier, which generates the answer several times faster at a higher
+token price. The default, `auto`, sends no tier.
+
 The `instance-segmentation` task asks for one outline polygon per instance of
 the requested classes - a flat `[x1, y1, x2, y2, ...]` vertex list in absolute
 pixel coordinates of the uploaded image, enforced via structured outputs - and
@@ -526,6 +538,36 @@ def validate_output_classes(
     if any(not isinstance(label, str) or not label.strip() for label in output_classes):
         raise ValueError("`output_classes` must contain non-empty strings")
     return output_classes
+
+
+def validate_service_tier(
+    model_version: Optional[str], service_tier: Optional[str]
+) -> None:
+    """Reject an unknown service tier, or `ultrafast` on a model without it.
+
+    Selectors pass here; ``run`` validates again with the resolved values.
+    """
+    if service_tier is None or _is_selector(service_tier):
+        return
+    if service_tier not in SERVICE_TIER_VALUES:
+        raise ValueError(
+            f"`service_tier` must be one of {SERVICE_TIER_VALUES}, got {service_tier!r}"
+        )
+    if (
+        service_tier == "ultrafast"
+        and model_version is not None
+        and not _is_selector(model_version)
+        and model_version not in MODELS_SUPPORTING_ULTRAFAST
+    ):
+        raise ValueError(
+            f"`service_tier` 'ultrafast' is only available for "
+            f"{MODELS_SUPPORTING_ULTRAFAST}, got model {model_version!r}"
+        )
+
+
+def _is_selector(value: object) -> bool:
+    """True if value is a workflow selector reference ($inputs.X / $steps.X.Y)."""
+    return isinstance(value, str) and value.startswith("$")
 
 
 def serialise_detection_classes(
@@ -691,6 +733,25 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
+    service_tier: Union[
+        Selector(kind=[STRING_KIND]),
+        Literal[tuple(SERVICE_TIER_VALUES)],
+    ] = Field(
+        default="auto",
+        description="OpenAI processing tier. 'ultrafast' generates the answer several "
+        "times faster at a higher token price, and is available for GPT-6.1 Sol and "
+        "GPT-6 Astra only. 'auto' leaves the tier to OpenAI (or to Roboflow when the "
+        "request goes through a Roboflow-managed key).",
+        examples=["auto", "ultrafast", "$inputs.service_tier"],
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": MODELS_SUPPORTING_ULTRAFAST,
+                    "required": False,
+                },
+            },
+        },
+    )
     image_detail: Union[
         Selector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
     ] = Field(
@@ -758,6 +819,9 @@ class BlockManifest(WorkflowBlockManifest):
             model=self.model_version,
             level=self.reasoning_effort,
             levels_by_model=MODEL_REASONING_EFFORT_VALUES,
+        )
+        validate_service_tier(
+            model_version=self.model_version, service_tier=self.service_tier
         )
         return self
 
@@ -851,8 +915,10 @@ class OpenAIBlockV7(WorkflowBlock):
         max_concurrent_requests: Optional[int],
         output_classes: Optional[List[str]] = None,
         api_key: str = "rf_key:account",
+        service_tier: Optional[str] = "auto",
     ) -> BlockResult:
         resolved_output_classes = validate_output_classes(classes, output_classes)
+        validate_service_tier(model_version=model_version, service_tier=service_tier)
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_openai_prompting(
             platform_client=self._platform_client,
@@ -870,6 +936,7 @@ class OpenAIBlockV7(WorkflowBlock):
             max_tokens=max_tokens,
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
+            service_tier=service_tier,
         )
         box_format = get_detection_box_format(model_version)
         results = []
@@ -948,6 +1015,7 @@ def run_openai_prompting(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
+    service_tier: Optional[str] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Encode images, build per-task prompts and execute OpenAI requests.
 
@@ -972,6 +1040,7 @@ def run_openai_prompting(
         max_tokens: Maximum number of output tokens.
         temperature: Sampling temperature.
         max_concurrent_requests: Cap on concurrent OpenAI requests.
+        service_tier: OpenAI processing tier; ``None`` or ``"auto"`` sends none.
 
     Returns:
         ``(output_text, input_tokens, output_tokens)`` tuples, one per input
@@ -1010,6 +1079,7 @@ def run_openai_prompting(
         max_tokens=max_tokens,
         temperature=temperature,
         max_concurrent_requests=max_concurrent_requests,
+        service_tier=service_tier,
     )
 
 
@@ -1076,6 +1146,7 @@ def execute_openai_requests(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
+    service_tier: Optional[str] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Execute prepared OpenAI request payloads in parallel.
 
@@ -1090,6 +1161,7 @@ def execute_openai_requests(
         temperature: Sampling temperature.
         max_concurrent_requests: Cap on concurrent requests; defaults to
             ``WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS``.
+        service_tier: OpenAI processing tier; ``None`` or ``"auto"`` sends none.
 
     Returns:
         ``(output_text, input_tokens, output_tokens)`` tuples in the order of
@@ -1108,6 +1180,7 @@ def execute_openai_requests(
             reasoning_effort=reasoning_effort,
             max_tokens=max_tokens,
             temperature=temperature,
+            service_tier=service_tier,
         )
         for prompt in openai_prompts
     ]
@@ -1132,6 +1205,7 @@ def _execute_proxied_openai_request(
     max_tokens: Optional[int],
     temperature: Optional[float],
     text_format: Optional[dict] = None,
+    service_tier: Optional[str] = None,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request via Roboflow proxy."""
     payload = {
@@ -1151,6 +1225,9 @@ def _execute_proxied_openai_request(
 
     if temperature is not None:
         payload["temperature"] = temperature
+
+    if service_tier not in (None, "auto"):
+        payload["service_tier"] = service_tier
 
     validate_reasoning_level(
         model=model_version,
@@ -1239,6 +1316,7 @@ def _execute_direct_openai_request(
     max_tokens: Optional[int],
     temperature: Optional[float],
     text_format: Optional[dict] = None,
+    service_tier: Optional[str] = None,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request directly."""
     client = _get_openai_client(openai_api_key)
@@ -1259,6 +1337,9 @@ def _execute_direct_openai_request(
 
     if temperature is not None:
         request_params["temperature"] = temperature
+
+    if service_tier not in (None, "auto"):
+        request_params["service_tier"] = service_tier
 
     validate_reasoning_level(
         model=model_version,
@@ -1320,6 +1401,7 @@ def execute_openai_request(
     max_tokens: Optional[int],
     temperature: Optional[float],
     text_format: Optional[dict] = None,
+    service_tier: Optional[str] = None,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute a single OpenAI request, routing to direct or proxied mode.
 
@@ -1337,6 +1419,7 @@ def execute_openai_request(
         temperature: Sampling temperature.
         text_format: Optional structured-output ``text`` payload forwarded
             with the request.
+        service_tier: OpenAI processing tier; ``None`` or ``"auto"`` sends none.
 
     Returns:
         Tuple of the raw text output and the input/output token counts
@@ -1359,6 +1442,7 @@ def execute_openai_request(
             max_tokens=max_tokens,
             temperature=temperature,
             text_format=text_format,
+            service_tier=service_tier,
         )
     else:
         return _execute_direct_openai_request(
@@ -1370,6 +1454,7 @@ def execute_openai_request(
             max_tokens=max_tokens,
             temperature=temperature,
             text_format=text_format,
+            service_tier=service_tier,
         )
 
 

@@ -8,7 +8,7 @@ each of the three per-model detection prompt styles.
 
 import json
 from typing import List, Optional
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -49,6 +49,7 @@ from tests.unit_tests.core_steps._vlm_prediction_readers import (
     detection_masks,
     is_detection_prediction,
 )
+from tests.unit_tests.prototypes.platform_client_double import RecordingPlatformClient
 
 EXECUTE_REQUESTS_SEAM = (
     "roboflow_workflows.core_steps.models.foundation.openai.v7"
@@ -164,6 +165,49 @@ def test_manifest_rejects_output_classes_for_unsupported_task() -> None:
                 "task_type": "classification",
                 "classes": ["cat"],
                 "output_classes": ["animal"],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "model_version, service_tier",
+    [
+        ("gpt-6-astra", "ultrafast"),
+        ("gpt-6.1-sol", "ultrafast"),
+        ("gpt-5.1", "auto"),
+        ("gpt-5.1", "$inputs.service_tier"),
+        ("$inputs.openai_model", "ultrafast"),
+    ],
+)
+def test_manifest_accepts_available_or_dynamic_service_tier(
+    model_version: str, service_tier: str
+) -> None:
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/open_ai@v7",
+            "name": "open_ai",
+            "images": "$inputs.image",
+            "task_type": "object-detection",
+            "classes": ["cat"],
+            "model_version": model_version,
+            "service_tier": service_tier,
+        }
+    )
+
+    assert result.service_tier == service_tier
+
+
+def test_manifest_rejects_ultrafast_for_model_without_it() -> None:
+    with pytest.raises(ValueError, match="only available"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "object-detection",
+                "classes": ["cat"],
+                "model_version": "gpt-5.1",
+                "service_tier": "ultrafast",
             }
         )
 
@@ -656,3 +700,110 @@ def test_run_reports_error_status_for_unparsable_segmentation_output() -> None:
     # then
     assert result["error_status"] is True
     assert result["predictions"] is None
+
+
+COMPLETED_PROXY_RESPONSE = {
+    "status": "completed",
+    "output": [
+        {
+            "type": "message",
+            "content": [{"type": "output_text", "text": STRUCTURED_ABSOLUTE_OUTPUT}],
+        }
+    ],
+}
+
+
+def _run_detection(
+    block: OpenAIBlockV7,
+    api_key: str,
+    service_tier: Optional[str],
+    model_version: str = "gpt-6-astra",
+) -> None:
+    block.run(
+        images=Batch(content=[_build_image(width=128, height=64)], indices=[(0,)]),
+        task_type="object-detection",
+        prompt=None,
+        output_structure=None,
+        classes=["cat"],
+        model_version=model_version,
+        reasoning_effort=None,
+        image_detail="auto",
+        max_tokens=None,
+        temperature=None,
+        max_concurrent_requests=None,
+        api_key=api_key,
+        service_tier=service_tier,
+    )
+
+
+@pytest.mark.parametrize(
+    "service_tier, expected_tier",
+    [("ultrafast", "ultrafast"), ("auto", None), (None, None)],
+)
+def test_proxied_request_sends_only_an_explicit_service_tier(
+    service_tier: Optional[str], expected_tier: Optional[str]
+) -> None:
+    # given
+    platform_client = RecordingPlatformClient(post_response=COMPLETED_PROXY_RESPONSE)
+    block = OpenAIBlockV7(api_key="rf-key", platform_client=platform_client)
+
+    # when
+    _run_detection(block, api_key="rf_key:account", service_tier=service_tier)
+
+    # then
+    [post] = platform_client.posts
+    assert post["endpoint"] == "apiproxy/openai/v2"
+    assert post["payload"].get("service_tier") == expected_tier
+
+
+@pytest.mark.parametrize(
+    "service_tier, expected_tier",
+    [("ultrafast", "ultrafast"), ("auto", None), (None, None)],
+)
+def test_direct_request_sends_only_an_explicit_service_tier(
+    service_tier: Optional[str], expected_tier: Optional[str]
+) -> None:
+    # given
+    client = MagicMock()
+    client.responses.create.return_value = MagicMock(
+        status="completed", output_text=STRUCTURED_ABSOLUTE_OUTPUT, usage=None
+    )
+    block = OpenAIBlockV7(api_key="rf-key")
+
+    # when
+    with patch(
+        "roboflow_workflows.core_steps.models.foundation.openai.v7._get_openai_client",
+        return_value=client,
+    ):
+        _run_detection(block, api_key="sk-test", service_tier=service_tier)
+
+    # then
+    request = client.responses.create.call_args.kwargs
+    assert request.get("service_tier") == expected_tier
+
+
+@pytest.mark.parametrize(
+    "model_version, service_tier, error",
+    [
+        ("gpt-5.1", "ultrafast", "only available"),
+        ("gpt-6-astra", "flex", "must be one of"),
+    ],
+)
+def test_run_rejects_unavailable_dynamic_service_tier_before_any_request(
+    model_version: str, service_tier: str, error: str
+) -> None:
+    # given
+    platform_client = RecordingPlatformClient(post_response=COMPLETED_PROXY_RESPONSE)
+    block = OpenAIBlockV7(api_key="rf-key", platform_client=platform_client)
+
+    # when
+    with pytest.raises(ValueError, match=error):
+        _run_detection(
+            block,
+            api_key="rf_key:account",
+            service_tier=service_tier,
+            model_version=model_version,
+        )
+
+    # then
+    assert platform_client.posts == []
