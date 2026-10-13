@@ -5,7 +5,6 @@ import inspect
 import os
 from pathlib import Path
 
-import inference_models
 import pytest
 import torch
 from pydantic import Field
@@ -25,7 +24,10 @@ from roboflow_workflows.v2.data.kinds import STRING_KIND
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
+from roboflow_workflows.v2.engine.errors import WorkflowExecutionError
 from roboflow_workflows.v2.engine.plan import CompileOptions
+
+import inference_models
 
 
 def _images():
@@ -471,11 +473,86 @@ def test_wrong_later_model_method_runs_nothing():
         def prompt(self, images, question):
             raise AssertionError("Must not be invoked")
 
-    with pytest.raises(TypeError):
+    with pytest.raises(
+        ValueError, match=r"model 'b' \(backend Wrong\) does not accept"
+    ):
         Cosmos3EdgeBlock(models={"a": model, "b": Wrong()}).run(
             image=Batch(_images()[:2]), model_id=Batch(["a", "b"])
         )
     assert model.calls == []
+
+
+class _NoTokenLimit:
+    def __init__(self):
+        self.calls = []
+
+    def prompt(self, images, prompt=None, input_color_format=None):
+        self.calls.append(prompt)
+        return ["answer"]
+
+
+def test_backend_without_token_limit_names_model_and_fix_before_any_call():
+    model = _NoTokenLimit()
+    block = Cosmos3EdgeBlock(models={"m": model})
+    with pytest.raises(ValueError) as caught:
+        block.run(image=Batch(_images()[:1]), model_id="m", max_new_tokens=5)
+    assert str(caught.value) == (
+        "v2/cosmos3_edge@v1: model 'm' (backend _NoTokenLimit) does not accept "
+        "prompt(images, prompt, input_color_format, max_new_tokens). Remove "
+        "max_new_tokens or set it to null for this model. Checked before any "
+        "model runs."
+    )
+    assert model.calls == []
+    assert block.run(image=Batch(_images()[:1]), model_id="m")[0]["output"] == "answer"
+
+
+@pytest.mark.parametrize(
+    "field,values,error",
+    [
+        (
+            "prompt",
+            ["ok", "a<system_prompt>b"],
+            "prompt contains '<system_prompt>', which Cosmos reads as the start of "
+            "the system prompt; remove it from the text",
+        ),
+        (
+            "system_prompt",
+            [None, "a<system_prompt>b"],
+            "system_prompt contains '<system_prompt>', which Cosmos reads as the "
+            "start of the system prompt; remove it from the text",
+        ),
+        ("system_prompt", [None, 4], "system_prompt must be text or None, got 4"),
+        ("model_id", ["m", ""], "model_id must be a non-empty string, got ''"),
+    ],
+)
+def test_per_image_errors_name_the_logical_index_before_loading(field, values, error):
+    loads = []
+    block = Cosmos3EdgeBlock(models=ModelCache(lambda request: loads.append(request)))
+    with pytest.raises(ValueError) as caught:
+        block.run(
+            image=_rows(_images()[:2], (1, 3)),
+            **{"model_id": "m", field: _rows(values, (1, 3))},
+        )
+    assert str(caught.value) == f"v2/cosmos3_edge@v1: image at index [3]: {error}"
+    assert loads == []
+
+
+def test_compiled_reserved_marker_error_names_the_row_and_loads_nothing():
+    loads = []
+    plan = _plan(
+        inputs=(
+            {"type": "WorkflowBatchInput", "name": "question", "kind": ["string"]},
+        ),
+        model_id="m",
+        prompt="$inputs.question",
+    )
+    session = plan.create_session(
+        {"models": ModelCache(lambda request: loads.append(request))}
+    )
+    with pytest.raises(WorkflowExecutionError) as caught:
+        session.run({"image": _images()[:2], "question": ["ok", "a<system_prompt>b"]})
+    assert "image at index [1]: prompt contains '<system_prompt>'" in str(caught.value)
+    assert loads == []
 
 
 def test_compiled_dynamic_system_prompt_composition():
@@ -557,6 +634,15 @@ def test_grayscale_rejected_before_loading():
         Cosmos3EdgeBlock(models=ModelCache(lambda request: loads.append(request))).run(
             image=Batch([grayscale]), model_id="m"
         )
+    assert loads == []
+    with pytest.raises(ValueError) as caught:
+        Cosmos3EdgeBlock(models=ModelCache(lambda request: loads.append(request))).run(
+            image=_rows([_images()[0], grayscale], (0, 4)), model_id="m"
+        )
+    assert str(caught.value) == (
+        "v2/cosmos3_edge@v1: image at index [4]: a local vision model needs a "
+        "3-channel RGB image, got 1 channel(s)"
+    )
     assert loads == []
 
 

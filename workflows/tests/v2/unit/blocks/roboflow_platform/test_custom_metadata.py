@@ -179,7 +179,15 @@ def test_missing_inference_id_reports_v1_error_without_requests(
     result = _run(block, _detections(metadata))
 
     # then
-    assert result == {"error_status": True, "message": NO_INFERENCE_ID_MESSAGE}
+    assert result == {
+        "error_status": True,
+        "message": (
+            "Custom metadata upload failed because no inference_ids were received. "
+            "For native V2 model predictions, bind the inference_id parameter to "
+            "$steps.<model>.inference_id. If inference_id is omitted, the fallback "
+            "requires an existing inference_id in prediction image metadata."
+        ),
+    }
     assert port.calls == []
 
 

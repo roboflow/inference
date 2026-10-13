@@ -52,6 +52,7 @@ import torch
 from pycocotools import mask as mask_utils
 from pydantic import Field, StrictInt
 from roboflow_workflows.v2.blocks.geometry._rows import without_host_mirrors
+from roboflow_workflows.v2.data.frames import require_compatible_frame
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import FLOAT_KIND, INTEGER_KIND
@@ -187,8 +188,9 @@ class MaskEdgeSnapBlock(Block):
 
         Raises:
             ValueError: On a prediction without masks, or masks of another
-                size than the image. Parameter bounds are validated by the
-                engine before run(); direct callers must validate them first.
+                size than the image, or incompatible frame metadata. Parameter
+                bounds are validated by the engine before run(); direct callers
+                must validate them first.
         """
         # A view supplies the dense reference result, not a representation template.
         is_view = isinstance(segmentation, SegmentationView)
@@ -199,6 +201,7 @@ class MaskEdgeSnapBlock(Block):
                 "segmentation prediction"
             )
         predictions = mask_provider_of(segmentation).binary().predictions
+        require_compatible_frame(predictions.image_metadata, image=image)
 
         height, width = image.size_hw
         masks = _host_masks(predictions, size_hw=(height, width))

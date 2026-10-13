@@ -10,8 +10,12 @@ alone does not cancel the owner's delayed preset or retire its tracking state.
 Calls wait for camera commands; only the idle preset is delayed. An acknowledged
 preset keeps travelling: empty, dead-zone and rate-limited preset frames send no
 Stop until new motion, quiesce or close. Command errors fail the call; delayed
-errors remain in ``failures`` and fail the next call or quiesce/close. No
-command is retried after an uncertain network result. Closing waits for
+errors remain in ``failures`` and fail the next call or quiesce/close. Failed
+local checks (geometry, boxes, preset name, profile, service address) name
+their cause; earlier work in that call, such as connecting or a preparatory
+Stop, may still have happened. Other errors report only their type, and their
+outcome may be uncertain. No command is retried after an uncertain network
+result. Closing waits for
 admitted work, attempts Stop, closes acquired clients and joins the loop. HTTP
 timeouts bound individual I/O, not total shutdown time.
 
@@ -24,6 +28,7 @@ the segmentation family for empty/preset output. See the offline example.
 """
 
 import asyncio
+import logging
 import math
 import threading
 import time
@@ -77,6 +82,28 @@ class _DriverUnavailable(OnvifError):
 
 class _TransportCloseError(OnvifError):
     pass
+
+
+# Value-free texts for this module's own checks. Only these reach the host
+# verbatim; any other error text may carry credentials and is dropped.
+_LOCAL_DIAGNOSTICS = {
+    "reopen": "camera port cannot be reopened",
+    "remote_wsdl": "remote ONVIF WSDL loading is disabled",
+    "service_address": "camera advertised an invalid ONVIF service address",
+    "profile": "camera has no media profile at profile_index",
+    "preset": "camera does not advertise the requested preset; "
+    "check default_position_preset",
+    "root_geometry": "tracking requires root frame geometry in image_metadata",
+    "box": "tracking requires finite ordered bounding boxes",
+}
+
+
+class _LocalFailure(OnvifError):
+    """A local check failed; the message comes only from ``_LOCAL_DIAGNOSTICS``."""
+
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__("ONVIF " + _LOCAL_DIAGNOSTICS[reason])
 
 
 @dataclass(frozen=True, repr=False)
@@ -227,6 +254,29 @@ class CameraPort(Protocol):
         ...
 
 
+class _TransportDiagnostics(logging.LoggerAdapter):
+    """Replace SDK wire diagnostics with value-free events for this transport.
+
+    Never forward SDK text, URLs, XML, headers, extra fields or exception info.
+    The underlying logger stays untouched, including for concurrent clients.
+    """
+
+    def log(self, level, msg, *args, **kwargs):
+        if not self.isEnabledFor(level):
+            return
+
+        if msg == "HTTP Post to %s:\n%s":
+            self.logger.log(level, "ONVIF transport request")
+        elif (
+            msg == "HTTP Response from %s (status: %d):\n%s"
+            and len(args) == 3
+            and type(args[1]) is int
+        ):
+            self.logger.log(level, "ONVIF transport response (status: %d)", args[1])
+        else:
+            self.logger.log(level, "ONVIF transport diagnostic")
+
+
 class OnvifCameraPort:
     """Service-level adapter using installed ONVIF WSDLs, Zeep and HTTPX.
 
@@ -234,7 +284,9 @@ class OnvifCameraPort:
     adapter owns both HTTP clients before WSDL setup, leaves proxy environment
     variables unchanged, disables environment proxy discovery, and closes both
     clients on every setup/command/shutdown outcome. WSDL loads are local-only.
-    It imports optional dependencies at ``open``; constructing it does no I/O.
+    Transport diagnostics contain only events and integer response statuses,
+    never wire contents, addresses or exception text. Other clients keep their
+    logging configuration. Optional drivers load at ``open``; construction does no I/O.
 
     Args:
         target: Immutable camera connection configuration.
@@ -256,10 +308,11 @@ class OnvifCameraPort:
         """Discover services, profile, velocity ranges and named presets.
 
         Raises:
-            OnvifError: If optional drivers are unavailable.
+            OnvifError: If optional drivers are unavailable, an advertised service
+                address is invalid or ``profile_index`` has no media profile.
         """
         if self._closed or self._async_client is not None:
-            raise OnvifError("ONVIF camera port cannot be reopened")
+            raise _LocalFailure("reopen")
         try:
             import httpx
             from zeep import AsyncClient, Settings
@@ -276,7 +329,7 @@ class OnvifCameraPort:
         class LocalWsdlTransport(AsyncTransport):
             def load(self, url):
                 if urlsplit(str(url)).scheme not in ("", "file"):
-                    raise OnvifError("Remote ONVIF WSDL loading is disabled")
+                    raise _LocalFailure("remote_wsdl")
                 return super().load(url)
 
         target = self._target
@@ -285,6 +338,7 @@ class OnvifCameraPort:
         self._transport = LocalWsdlTransport(
             client=self._async_client, wsdl_client=self._wsdl_client
         )
+        self._transport.logger = _TransportDiagnostics(self._transport.logger, {})
         password = target._identity()[3]
         auth = UsernameToken(target.username, password, use_digest=True)
 
@@ -296,7 +350,7 @@ class OnvifCameraPort:
                 or parsed.username
                 or parsed.password
             ):
-                raise OnvifError("Camera advertised an invalid ONVIF service address")
+                raise _LocalFailure("service_address")
             wsdl = Path(distribution.locate_file("onvif/wsdl")) / filename
             client = AsyncClient(
                 str(wsdl),
@@ -334,6 +388,8 @@ class OnvifCameraPort:
             capabilities.PTZ.XAddr,
         )
         profiles = await media.GetProfiles()
+        if target.profile_index >= len(profiles or ()):
+            raise _LocalFailure("profile")
         profile = profiles[target.profile_index]
         # Set the token before options discovery: close can Stop after a partial setup.
         self._profile = profile.token
@@ -390,7 +446,7 @@ class OnvifCameraPort:
             OnvifError: If the camera did not advertise that preset.
         """
         if name not in self._presets:
-            raise OnvifError("ONVIF camera does not advertise the requested preset")
+            raise _LocalFailure("preset")
         await self._ptz.GotoPreset(
             ProfileToken=self._profile, PresetToken=self._presets[name]
         )
@@ -454,6 +510,7 @@ class OnvifController:
         self._timer = None
         self._failures = []
         self._pending_failure = None
+        self._executor_to_join = None
         self._admission = threading.Lock()
         self._lifecycle = threading.Lock()
         self._accepting = True
@@ -496,8 +553,12 @@ class OnvifController:
 
     def _record_failure(self, operation, error):
         # No third-party error text or exception chain escapes; those may hold credentials.
+        # Exact types and a table lookup: injected errors cannot supply local text.
+        reason = error.reason if type(error) is _LocalFailure else None
         if type(error) in (_DriverUnavailable, _TransportCloseError):
             message = str(error)
+        elif isinstance(reason, str) and reason in _LOCAL_DIAGNOSTICS:
+            message = f"ONVIF {operation} failed: {_LOCAL_DIAGNOSTICS[reason]}"
         else:
             message = f"ONVIF {operation} failed ({type(error).__name__}); outcome may be uncertain"
         failure = _Failure(message)
@@ -654,11 +715,12 @@ class OnvifController:
                 if pulse:
                     self._pulse[axis] -= 1
             speeds = tuple(emitted)
+        # Cleared before sending: an uncertain move failure must not skip later Stop.
+        self._preset_travel = False
         if speeds == (0.0, 0.0, 0.0):
             await self._port.stop()
         else:
             await self._port.move(*speeds)
-        self._preset_travel = False
         self._speeds = speeds
         self._last_update = now
         self._seeking = any(speeds)
@@ -671,7 +733,7 @@ class OnvifController:
         ox, oy = mapping.offset_xy
         x1, x2, y1, y2 = x1 * sx + ox, x2 * sx + ox, y1 * sy + oy, y2 * sy + oy
         if not all(math.isfinite(v) for v in (x1, y1, x2, y2)) or x2 < x1 or y2 < y1:
-            raise ValueError("ONVIF requires finite ordered bounding boxes")
+            raise _LocalFailure("box")
         height, width = mapping.frame_size_hw
         dx, dy = width / 2 - (x1 + x2) / 2, height / 2 - (y1 + y2) / 2
         zoom_delta = min(x1, width - x2, y1, height - y2)
@@ -788,17 +850,15 @@ class OnvifController:
                     )
                     placement = root_placement_from_metadata(boxes.image_metadata or {})
                     if placement is None:
-                        raise ValueError(
-                            "ONVIF tracking requires root frame geometry in image_metadata"
-                        )
+                        raise _LocalFailure("root_geometry")
                     # Four scalars only: no full predictions/masks transfer or root-mask expansion.
                     box = boxes.xyxy[index].detach().tolist()
                     was_zooming = self._zoom_start is not None
                     speeds = self._velocity(box, placement.root, options)
                     if speeds[2] and not was_zooming:
                         # Match the deliberate stop-before-zoom transition.
-                        await self._port.stop()
                         self._preset_travel = False
+                        await self._port.stop()
                         self._speeds = (0.0, 0.0, 0.0)
                         self._last_update = -math.inf
                     if any(speeds):
@@ -840,7 +900,14 @@ class OnvifController:
             return failure
 
     def reset_tracking(self) -> None:
-        """Quiesce and clear tracking; the host explicitly resumes afterwards."""
+        """Stops admission until ``resume()``; an alias of ``quiesce()``.
+
+        Retained for existing host callers; new code calls ``quiesce()``. Every
+        ``process`` call fails until the host calls ``resume()``.
+
+        Raises:
+            OnvifError: As ``quiesce()``.
+        """
         self.quiesce()
 
     def resume(self) -> None:
@@ -864,18 +931,31 @@ class OnvifController:
                 close_failure = self._record_failure("transport close", error)
                 failure = failure or close_failure
             self._port = None
-        await self._loop.shutdown_asyncgens()
-        await self._loop.shutdown_default_executor()
+        try:
+            await self._loop.shutdown_asyncgens()
+        except BaseException as error:
+            shutdown_failure = self._record_failure("async generator shutdown", error)
+            failure = failure or shutdown_failure
+        try:
+            await self._loop.shutdown_default_executor()
+        except BaseException as error:
+            # CPython starts a helper thread before joining its default executor.
+            # If that start fails, the host must join the executor with the loop
+            # still running so worker callbacks can finish. close() owns this join.
+            self._executor_to_join = self._loop._default_executor
+            shutdown_failure = self._record_failure("executor shutdown", error)
+            failure = failure or shutdown_failure
         return failure
 
     def close(self) -> None:
         """Drain, cancel timers, attempt Stop/transport close and join exactly once.
 
         No total timeout is imposed: resources are never torn out from under an
-        admitted operation. A failing Stop still permits transport cleanup.
+        admitted operation. A failing Stop still permits transport cleanup. If
+        executor joining fails, the loop remains available for a later close retry.
 
         Raises:
-            OnvifError: After cleanup if Stop, a delayed command or close failed.
+            OnvifError: If Stop, a delayed command or shutdown failed.
         """
         self._check_thread()
         with self._lifecycle:
@@ -889,7 +969,19 @@ class OnvifController:
             finally:
                 # Interruption of a host wait must not retire live transports.
                 # Settle the admitted shutdown before stopping its event loop.
-                future.result()
+                failure = future.result()
+                join_failure = None
+                if self._executor_to_join is not None:
+                    try:
+                        self._executor_to_join.shutdown(wait=True)
+                    except BaseException as error:
+                        join_failure = self._record_failure("executor join", error)
+                    if join_failure is not None:
+                        # Keep the loop/executor available for a later close retry.
+                        # Raise outside the handler so no driver exception is chained.
+                        failure = failure or join_failure
+                        raise OnvifError(failure.message) from None
+                    self._executor_to_join = None
                 self._loop.call_soon_threadsafe(self._loop.stop)
                 self._thread.join()
                 self._loop.close()

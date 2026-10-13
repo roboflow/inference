@@ -1,16 +1,25 @@
 """Dataset collection wiring and deferred reservation boundary."""
 
+from dataclasses import fields
 from threading import Event
 
 import pytest
 import torch
+from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
 from roboflow_workflows.v2.blocks.roboflow_platform.dataset_upload import (
     DatasetUploadBlock,
 )
-from roboflow_workflows.v2.blocks.sinks.runtime import FULL_MESSAGE, BackgroundEffects
+from roboflow_workflows.v2.blocks.sinks.runtime import (
+    BACKGROUND_MESSAGE,
+    FULL_MESSAGE,
+    BackgroundEffects,
+    EffectStats,
+)
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
+
+NO_EFFECTS = EffectStats(**{field.name: 0 for field in fields(EffectStats)})
 
 
 def image():
@@ -118,23 +127,83 @@ def test_key_validation_and_empty_batch():
     )
 
 
-def test_persist_false_removes_prediction_and_offline_is_actionable():
+OFFLINE_MESSAGE = (
+    "The host provided no 'dataset_upload_port' resource. Pass "
+    "resources={'dataset_upload_port': "
+    "RoboflowAssetsAdapter(cache=shared_cache)} when creating the session. "
+    "Import RoboflowAssetsAdapter from "
+    "inference.roboflow_workflows_plugin.v2.platform_assets_adapter; "
+    "shared_cache must be a caller-owned BaseCache with quota locks."
+)
+
+
+def test_persist_false_removes_prediction():
     port = Port()
     DatasetUploadBlock(dataset_upload_port=port, api_key="invented").run(
         **arguments(predictions=object(), persist_predictions=False)
     )
     assert port.calls[0].prediction is None
-    result = DatasetUploadBlock(api_key="invented").run(**arguments())
-    assert result[0]["error_status"] is True
-    assert result[0]["message"] == (
-        "PlatformUnavailableError: "
-        "The host provided no 'dataset_upload_port' resource. Pass "
-        "resources={'dataset_upload_port': "
-        "RoboflowAssetsAdapter(cache=shared_cache)} when creating the session. "
-        "Import RoboflowAssetsAdapter from "
-        "inference.roboflow_workflows_plugin.v2.platform_assets_adapter; "
-        "shared_cache must be a caller-owned BaseCache with quota locks."
+
+
+@pytest.mark.parametrize("with_runner", [False, True])
+@pytest.mark.parametrize("fire_and_forget", [False, True])
+def test_missing_port_raises_before_sampling_or_admission(
+    with_runner, fire_and_forget, monkeypatch
+):
+    sampled = []
+    monkeypatch.setattr(
+        "roboflow_workflows.v2.blocks.roboflow_platform.dataset_upload.random.random",
+        lambda: sampled.append(True) or 0.0,
     )
+    with BackgroundEffects() as effects:
+        block = DatasetUploadBlock(
+            api_key="invented", sink_effects=effects if with_runner else None
+        )
+        with pytest.raises(PlatformUnavailableError) as caught:
+            block.run(**arguments(fire_and_forget=fire_and_forget))
+        assert effects.drain(5)
+    assert str(caught.value) == OFFLINE_MESSAGE
+    assert not sampled
+    assert effects.stats() == NO_EFFECTS
+    assert effects.failures() == ()
+
+
+def test_missing_port_keeps_disabled_empty_and_validation_outcomes():
+    with BackgroundEffects() as effects:
+        block = DatasetUploadBlock(api_key="invented", sink_effects=effects)
+        disabled = block.run(**arguments(disable_sink=True, fire_and_forget=True))
+        empty = block.run(**arguments(images=Batch.of([]), fire_and_forget=True))
+        by_policy = DatasetUploadBlock(disable_sinks=True, sink_effects=effects).run(
+            **arguments(fire_and_forget=True)
+        )
+        with pytest.raises(ValueError, match="API key"):
+            DatasetUploadBlock(sink_effects=effects).run(**arguments())
+        with pytest.raises(ValueError, match="batch length"):
+            block.run(**arguments(image_name=Batch.of(["a", "b"])))
+    assert disabled[0]["error_status"] is False and "disabled" in disabled[0]["message"]
+    assert empty == []
+    assert by_policy[0]["error_status"] is False
+    assert effects.stats() == NO_EFFECTS
+
+
+def test_configured_port_unavailability_stays_a_row_or_runner_failure():
+    class UnavailablePort:
+        def upload(self, request, *, api_key):
+            raise PlatformUnavailableError("configured host adapter is down")
+
+    port = UnavailablePort()
+    inline = DatasetUploadBlock(dataset_upload_port=port, api_key="invented").run(
+        **arguments()
+    )
+    assert inline[0]["error_status"] is True
+    assert "configured host adapter is down" in inline[0]["message"]
+    with BackgroundEffects() as effects:
+        admitted = DatasetUploadBlock(
+            dataset_upload_port=port, api_key="invented", sink_effects=effects
+        ).run(**arguments(fire_and_forget=True))
+        assert effects.drain(5)
+    assert admitted == [{"error_status": False, "message": BACKGROUND_MESSAGE}]
+    assert effects.stats().failed == 1
 
 
 def test_rejected_scheduling_never_calls_upload():

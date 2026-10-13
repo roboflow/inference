@@ -22,6 +22,8 @@ V1's sink outcome. A sink block runs it now, or hands it to the host-owned
 
 ``BackgroundEffects.deliver`` decides and counts every outcome itself, so a
 sink, or a host, that calls it directly gets the configured ``when_full``.
+When the thread pool cannot take an effect (e.g. no worker thread can
+start), ``deliver`` raises; that effect never runs and is not counted.
 
 The engine never closes block resources, so the host that creates
 ``BackgroundEffects`` also drains and closes it. An active-run host nests
@@ -150,6 +152,19 @@ class EffectFailure:
     message: str
 
 
+@dataclass
+class _Admission:
+    """The thread pool's work item; it carries the effect only once admitted.
+
+    ``ThreadPoolExecutor.submit`` queues the work item, then starts a thread,
+    so it can raise with the item already queued. ``deliver`` attaches the
+    effect only after ``submit`` returned, and ``_run`` reads it, both under
+    the same lock: an item whose ``submit`` raised stays empty and never runs.
+    """
+
+    effect: Optional[Effect] = None
+
+
 @dataclass(frozen=True)
 class EffectStats:
     """Counts of a ``BackgroundEffects`` instance.
@@ -248,7 +263,10 @@ class BackgroundEffects:
             ``(True, FULL_MESSAGE)`` (``reject``).
 
         Raises:
-            RuntimeError: After ``close``; the host closed it too early.
+            RuntimeError: After ``close``; the host closed it too early. Also
+                when the thread pool refuses the effect, e.g. no worker
+                thread can start: the effect then never runs and is not
+                counted; a later ``deliver`` may succeed.
         """
         with self._condition:
             if self._closed:
@@ -258,9 +276,12 @@ class BackgroundEffects:
                 )
             admitted = len(self._futures) < self._max_pending
             if admitted:
+                # Under the lock: close() cannot shut the executor in between,
+                # and the worker reads admission.effect only once it is set.
+                admission = _Admission()
+                future = self._executor.submit(self._run, admission, label)
+                admission.effect = effect
                 self._counts["submitted"] += 1
-                # Under the lock, so close() cannot shut the executor in between.
-                future = self._executor.submit(self._run, effect, label)
                 self._futures.add(future)
                 future.add_done_callback(self._forget)
             elif self._when_full == "run_inline":
@@ -332,7 +353,12 @@ class BackgroundEffects:
     def __exit__(self, *exc_info: Any) -> None:
         self.close()
 
-    def _run(self, effect: Effect, label: str) -> None:
+    def _run(self, admission: _Admission, label: str) -> None:
+        with self._condition:
+            effect = admission.effect
+        if effect is None:
+            return  # its submit raised; deliver's caller got that error
+
         error_status, message = run_effect(effect)
         if not error_status:
             with self._condition:

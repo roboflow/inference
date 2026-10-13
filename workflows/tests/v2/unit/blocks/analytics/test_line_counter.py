@@ -384,6 +384,20 @@ def test_empty_prediction_passes_through_and_keeps_sides():
     assert _counts(after) == (0, 1)
 
 
+def test_empty_prediction_with_changed_line_restarts_accumulated_counts():
+    block = LineCounterBlock()
+    _call(block, _tracked([ABOVE], [1]))
+    crossed = _call(block, _tracked([BELOW], [1]))
+    assert _counts(crossed) == (0, 1)
+
+    empty = _tracked([], [])
+    restarted = _call(block, empty, line=[[0, 90], [100, 90]])
+
+    assert _counts(restarted) == (0, 0)
+    assert restarted["detections_in"] is empty
+    assert restarted["detections_out"] is empty
+
+
 def test_rows_without_tracker_id_fail_without_changing_state():
     block = LineCounterBlock()
     _call(block, _tracked([ABOVE], [1]))
@@ -439,6 +453,49 @@ def test_same_line_given_as_tuples_or_floats_keeps_the_counts():
     result = _call(block, _tracked([BELOW], [1]), line=((0.0, 50.0), (100.0, 50.0)))
 
     assert _counts(result) == (0, 1)
+
+
+# A box centred on the line straddles it: TOP_CENTER y=45 is above (+1),
+# BOTTOM_CENTER y=55 below (-1). Nothing moves in the anchor-change tests.
+ON_LINE = 50.0
+
+
+def test_changed_anchor_restarts_the_source_instead_of_counting_a_static_box():
+    block = LineCounterBlock()
+    _call(block, _tracked([ABOVE], [1]), anchor="TOP_CENTER")
+    _call(block, _tracked([BELOW], [1]), anchor="TOP_CENTER")
+    before = _call(block, _tracked([ON_LINE], [2]), anchor="TOP_CENTER")
+    assert _counts(before) == (0, 1)
+
+    switched = _call(block, _tracked([ON_LINE], [2]), anchor="BOTTOM_CENTER")
+    crossed = _call(block, _tracked([ABOVE], [2]), anchor="BOTTOM_CENTER")
+
+    assert _counts(switched) == (0, 0)
+    assert _ids(switched["detections_out"]) == []
+    assert _counts(crossed) == (1, 0)
+    assert _ids(crossed["detections_in"]) == [2]
+
+
+def test_empty_prediction_with_changed_anchor_restarts_accumulated_counts():
+    block = LineCounterBlock()
+    _call(block, _tracked([ABOVE], [1]))
+    assert _counts(_call(block, _tracked([BELOW], [1]))) == (0, 1)
+
+    restarted = _call(block, _tracked([], []), anchor="BOTTOM_CENTER")
+
+    assert _counts(restarted) == (0, 0)
+
+
+@pytest.mark.parametrize("anchor", [None, "CENTER", "BOTTOM_CENTER"])
+def test_unchanged_anchor_keeps_the_counts_and_sides(anchor):
+    block = LineCounterBlock()
+    _call(block, _tracked([ABOVE - 10], [1]), anchor=anchor)
+    out = _call(block, _tracked([BELOW + 10], [1]), anchor=anchor)
+
+    back = _call(block, _tracked([ABOVE - 10], [1]), anchor=anchor)
+
+    assert _counts(out) == (0, 1)
+    assert _counts(back) == (1, 1)
 
 
 def test_reset_state_forgets_every_source():

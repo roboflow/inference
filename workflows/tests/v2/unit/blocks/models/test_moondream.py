@@ -7,10 +7,8 @@ from pathlib import Path
 from threading import Lock
 from types import MethodType, SimpleNamespace
 
-import inference_models
 import pytest
 import torch
-from inference_models.models.base.object_detection import Detections
 from pydantic import Field
 from roboflow_workflows.v2.blocks.models.cache import (
     ModelCache,
@@ -22,6 +20,7 @@ from roboflow_workflows.v2.blocks.models.moondream import (
     Moondream2Block,
 )
 from roboflow_workflows.v2.data.batch import Batch
+from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import INTEGER_KIND, STRING_KIND
@@ -30,6 +29,9 @@ from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 from roboflow_workflows.v2.engine.plan import CompileOptions
+
+import inference_models
+from inference_models.models.base.object_detection import Detections
 
 
 def _images():
@@ -286,6 +288,10 @@ def test_aligned_sparse_per_image_values_follow_their_images_and_scalars_broadca
     expected = [images[0], images[2], images[1], images[0], images[1]]
     assert all(tensor is image.tensor_image for tensor, image in zip(sent, expected))
     assert [call["max_new_tokens"] for call in a.calls] == [5, 5]
+    # The fakes return one shared carrier; each row must carry its own frame.
+    assert [frame_of(row["predictions"]) for row in rows] == [
+        FrameRef.from_image(image) for image in images
+    ]
 
 
 def test_all_models_resolve_before_first_call():
@@ -357,6 +363,10 @@ def test_compiled_source_model_downstream_selectors_and_reuse(mode):
     assert [row["model_id"] for row in rows] == ["a", "b", "a"]
     assert [row["consumed"] for row in rows] == ["first", "second", "third"]
     assert len({row["inference_id"] for row in rows + again}) == 6
+    for result in (rows, again):
+        frames = [frame_of(row["predictions"]) for row in result]
+        assert frames == [FrameRef.from_image(image) for image in images]
+        assert len({frame.image_id for frame in frames}) == 3
     calls = models[ModelRequest("a", "p")].calls
     assert [call["text"] for call in calls] == ["first", "third"] * 2
     assert calls[0]["image"] is images[0].tensor_image
@@ -465,11 +475,71 @@ def test_wrong_later_model_method_runs_nothing():
         def detect(self, images, prompt):
             raise AssertionError("Must not be invoked")
 
-    with pytest.raises(TypeError):
+    with pytest.raises(
+        ValueError, match=r"model 'b' \(backend Wrong\) does not accept"
+    ):
         Moondream2Block(models={"a": model, "b": Wrong()}).run(
             image=Batch(_images()[:2]), model_id=Batch(["a", "b"])
         )
     assert model.calls == []
+
+
+class _NoTokenLimit:
+    def __init__(self):
+        self.calls = []
+
+    def detect(self, images, classes, input_color_format=None):
+        self.calls.append(classes[0])
+        return [_Fake().answer]
+
+
+def test_backend_without_token_limit_names_model_and_fix_before_any_call():
+    model, other = _NoTokenLimit(), _Fake()
+    block = Moondream2Block(models={"a": other, "b": model})
+    with pytest.raises(ValueError) as caught:
+        block.run(
+            image=Batch(_images()[:2]), model_id=Batch(["a", "b"]), max_new_tokens=5
+        )
+    assert str(caught.value) == (
+        "v2/moondream2@v1: model 'b' (backend _NoTokenLimit) does not accept "
+        "detect(images, classes, input_color_format, max_new_tokens). Remove "
+        "max_new_tokens or set it to null for this model. Checked before any "
+        "model runs."
+    )
+    assert model.calls == [] and other.calls == []
+    block.run(image=Batch(_images()[:1]), model_id="b", prompt="cat")
+    assert model.calls == ["cat"]
+
+
+def test_model_without_detect_fails_before_any_call():
+    model = _Fake()
+    with pytest.raises(ValueError, match=r"\(backend object\) has no detect\(\)"):
+        Moondream2Block(models={"a": model, "b": object()}).run(
+            image=Batch(_images()[:2]), model_id=Batch(["a", "b"])
+        )
+    assert model.calls == []
+
+
+@pytest.mark.parametrize(
+    "arguments,error",
+    [
+        ({"prompt": ["ok", 9]}, "prompt must be text or None, got 9"),
+        ({"model_id": ["ok", ""]}, "model_id must be a non-empty string"),
+        ({"model_package_id": [None, ""]}, "model_package_id must be a non-empty"),
+    ],
+)
+def test_per_image_errors_name_the_logical_index_before_loading(arguments, error):
+    loads = []
+    block = Moondream2Block(models=ModelCache(lambda request: loads.append(request)))
+    ((field, values),) = arguments.items()
+    with pytest.raises(ValueError) as caught:
+        block.run(
+            image=_rows(_images()[:2], (2, 5)),
+            **{"model_id": "m", field: _rows(values, (2, 5))},
+        )
+    assert str(caught.value).startswith("v2/moondream2@v1: image at index [5]: ")
+    assert error in str(caught.value)
+    assert loads == []
 
 
 def test_grayscale_rejected_before_loading():
@@ -479,6 +549,15 @@ def test_grayscale_rejected_before_loading():
         Moondream2Block(models=ModelCache(lambda request: loads.append(request))).run(
             image=Batch([grayscale]), model_id="m"
         )
+    assert loads == []
+    with pytest.raises(ValueError) as caught:
+        Moondream2Block(models=ModelCache(lambda request: loads.append(request))).run(
+            image=_rows([_images()[0], grayscale], (0, 4)), model_id="m"
+        )
+    assert str(caught.value) == (
+        "v2/moondream2@v1: image at index [4]: a local vision model needs a "
+        "3-channel RGB image, got 1 channel(s)"
+    )
     assert loads == []
 
 

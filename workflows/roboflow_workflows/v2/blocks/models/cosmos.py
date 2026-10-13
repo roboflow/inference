@@ -8,7 +8,6 @@ their identity/device. Per-image values must carry the image batch's indices
 Roboflow hosted execution awaits the new server contract.
 """
 
-import inspect
 import uuid
 from typing import Any, Dict, List, Mapping, Union
 
@@ -18,11 +17,13 @@ from roboflow_workflows.v2.blocks.models._local_vlm import (
     TextParam,
     TokensField,
     TokensParam,
+    _check_backend_call,
+    _image_row,
+    _model_requests,
+    _require_rgb,
     checked_text,
     generation_options,
-    model_requests,
     per_row,
-    require_rgb,
 )
 from roboflow_workflows.v2.blocks.models.cache import ModelCache
 from roboflow_workflows.v2.blocks.models.common import (
@@ -57,7 +58,8 @@ def _combine_prompt(prompt: Any, system_prompt: Any) -> str:
     for name, text in (("prompt", prompt), ("system_prompt", system_prompt)):
         if text and SYSTEM_PROMPT_MARKER in text:
             raise ValueError(
-                f"{name} contains reserved marker {SYSTEM_PROMPT_MARKER!r}"
+                f"{name} contains {SYSTEM_PROMPT_MARKER!r}, which Cosmos reads as "
+                "the start of the system prompt; remove it from the text"
             )
 
     if system_prompt:
@@ -70,6 +72,7 @@ class Cosmos3EdgeBlock(Block):
     """Ask Cosmos 3 Edge about each image's physical scene."""
 
     type = "v2/cosmos3_edge@v1"
+    metadata = {"name": "Cosmos 3", "port_of": "roboflow_core/cosmos3_edge@v1"}
     outputs = {
         # Temporary STRING_KIND convention, matching pinned Q3 c2.
         "output": Output(
@@ -155,30 +158,41 @@ class Cosmos3EdgeBlock(Block):
             Text output, model id and fresh inference id for every image.
 
         Raises:
-            ValueError: On invalid parameters, a per-image Batch whose indices
-                differ from the image batch's, reserved markers or
-                non-single-text answers.
+            ValueError: On invalid parameters or reserved markers (naming the
+                image's logical index), a per-image Batch whose indices differ
+                from the image batch's, a backend whose prompt() cannot take the
+                call, or non-single-text answers.
             LookupError: When the host cannot serve the exact model request.
         """
-        require_rgb(image)
-        requests = model_requests(
-            image, model_id=model_id, model_package_id=model_package_id
+        _require_rgb(image, block=self.type)
+        requests = _model_requests(
+            image,
+            model_id=model_id,
+            model_package_id=model_package_id,
+            block=self.type,
         )
-        prompts = tuple(
-            _combine_prompt(text, system)
-            for text, system in zip(
-                per_row(prompt, image=image, name="prompt"),
-                per_row(system_prompt, image=image, name="system_prompt"),
-            )
-        )
+        prompts = []
+        for index, text, system in zip(
+            image.indices,
+            per_row(prompt, image=image, name="prompt"),
+            per_row(system_prompt, image=image, name="system_prompt"),
+        ):
+            with _image_row(index, block=self.type):
+                prompts.append(_combine_prompt(text, system))
         options = generation_options(max_new_tokens)
         models = {
             request: self._models.get(request) for request in dict.fromkeys(requests)
         }
         # Bind every backend signature before the first model invocation.
-        for model in models.values():
-            inspect.signature(model.prompt).bind(
-                [], prompt="", input_color_format="rgb", **options
+        for request, model in models.items():
+            _check_backend_call(
+                model,
+                "prompt",
+                block=self.type,
+                request=request,
+                options=options,
+                prompt="",
+                input_color_format="rgb",
             )
 
         results = []

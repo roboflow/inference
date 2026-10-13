@@ -5,6 +5,12 @@ moving at a constant speed, so every expected value is analytic::
 
     cam-a   x1 = 3 * frame          30 px/s at 10 fps
     cam-b   y1 = 100 - 2 * frame    -20 px/s at 10 fps
+
+The tracker, ``v2/trackers_bytetrack@v1``, does not report a track on the
+frame that creates it. Every session therefore starts with frame 0, which only
+creates the tracks: the consumers see zero rows there, and the analytic
+values start on frame 1. Tracker ids come from a process-wide counter, so
+tests read them from the outputs.
 """
 
 from datetime import datetime
@@ -78,7 +84,15 @@ def _empty():
 
 
 def _definition(*, lock=None, stable=None, speed=None, outputs=OUTPUTS):
-    track = {"type": "v2/byte_tracker@v1", "name": "track", "frame_rate": 10.0}
+    # Explicit knobs: confidence 0.9 starts a track; a box moves at most 3 px
+    # per frame, so consecutive 40 px boxes overlap with IoU above 0.8.
+    track = {
+        "type": "v2/trackers_bytetrack@v1",
+        "name": "track",
+        "frame_rate": 10.0,
+        "minimum_iou_threshold": 0.3,
+        "minimum_consecutive_frames": 2,
+    }
     tracked = "$steps.track.tracked_detections"
     steps = [
         {**track, "image": "$inputs.image", "predictions": "$inputs.predictions"},
@@ -166,9 +180,23 @@ def _speed(row):
     return values
 
 
+def _track_ids(row):
+    ids = {source: _speed(row[source])[0][0] for source in SOURCES}
+
+    return ids
+
+
+def _create_tracks(session, **inputs):
+    created = _run(session, 0, **inputs)
+    assert all(
+        len(value) == 0 for source in SOURCES for value in created[source].values()
+    )
+
+
 def test_tracked_sources_get_analytic_velocity_smoothing_and_locks():
     session = _plan().create_session()
     try:
+        _create_tracks(session)
         frames = [
             _run(session, frame, classes={"cam-a": cls})
             for frame, cls in zip(range(1, 5), [0, 0, 1, 1])
@@ -177,10 +205,14 @@ def test_tracked_sources_get_analytic_velocity_smoothing_and_locks():
         session.close()
 
     a, b = frames[-1]["cam-a"], frames[-1]["cam-b"]
-    # 30 px/s and -20 px/s at 10 px/m; the first frame of a track reports 0.
-    assert _speed(frames[0]["cam-a"]) == [(1, [0.0, 0.0], 0.0)]
-    assert _speed(a) == [(1, pytest.approx([3.0, 0.0]), pytest.approx(3.0))]
-    assert _speed(b) == [(1, pytest.approx([0.0, -2.0]), pytest.approx(2.0))]
+    ids = _track_ids(frames[0])
+    assert ids["cam-a"] != ids["cam-b"]
+    assert _track_ids(frames[-1]) == ids
+    # 30 px/s and -20 px/s at 10 px/m; the first reported frame of a track
+    # reports 0.
+    assert _speed(frames[0]["cam-a"]) == [(ids["cam-a"], [0.0, 0.0], 0.0)]
+    assert _speed(a) == [(ids["cam-a"], pytest.approx([3.0, 0.0]), pytest.approx(3.0))]
+    assert _speed(b) == [(ids["cam-b"], pytest.approx([0.0, -2.0]), pytest.approx(2.0))]
     # a = 0.5 keeps a seen box 1.5 px (cam-a) behind its raw position.
     assert a["stable"].xyxy.tolist() == [[10.5, 50.0, 50.5, 90.0]]
     assert b["stable"].xyxy.tolist() == [[50.0, 93.0, 90.0, 133.0]]
@@ -199,8 +231,9 @@ def test_tracked_sources_get_analytic_velocity_smoothing_and_locks():
 def test_missing_frames_skip_empty_frames_age_and_returning_tracks_keep_time():
     session = _plan().create_session()
     try:
+        _create_tracks(session)
         for frame in range(1, 5):
-            _run(session, frame)
+            before = _run(session, frame)
         missing = _run(session, 5, predictions=[_box("cam-b", 5), None])
         empty = _run(session, 6, predictions=[_box("cam-b", 6), _empty()])
         returned = _run(session, 7)
@@ -214,15 +247,17 @@ def test_missing_frames_skip_empty_frames_age_and_returning_tracks_keep_time():
     # The empty frame is a frame for the stabilizer: one gap row at the cached
     # frame-4 box advanced by a * 3 px.
     assert empty["cam-a"]["stable"].xyxy.tolist() == [[13.5, 50.0, 53.5, 90.0]]
-    # Frame 4 -> 7 is 0.3 s by frame number for 9 px: still 3 m/s.
+    # Frame 4 -> 7 is 0.3 s by frame number for 9 px: still 3 m/s, and the
+    # track keeps its id through the missing and the empty frame.
     assert _speed(returned["cam-a"]) == [
-        (1, pytest.approx([3.0, 0.0]), pytest.approx(3.0))
+        (_track_ids(before)["cam-a"], pytest.approx([3.0, 0.0]), pytest.approx(3.0))
     ]
 
 
 def test_selected_parameters_change_between_runs():
     session = _plan().create_session()
     try:
+        _create_tracks(session, min_votes=5)
         _run(session, 1, min_votes=5)
         unlocked = _run(session, 2, min_votes=5)
         locked = _run(session, 3, min_votes=1, ppm=5.0)
@@ -238,17 +273,57 @@ def test_selected_parameters_change_between_runs():
 def test_processing_reset_drops_every_consumer_state():
     session = _plan().create_session()
     try:
+        _create_tracks(session)
         for frame in range(1, 4):
             before = _run(session, frame)
         session.apply_update(session.prepare_update(_plan(), reset=True))
-        after = _run(session, 4)
+        # The new tracker creates its tracks on frame 4 and reports frame 5.
+        recreated = _run(session, 4)
+        after = _run(session, 5)
     finally:
         session.close()
 
     assert _speed(before["cam-a"])[0][2] == pytest.approx(3.0)
+    assert all(len(value) == 0 for value in recreated["cam-a"].values())
     assert _speed(after["cam-a"])[0][2] == 0.0
+    assert _track_ids(after)["cam-a"] != _track_ids(before)["cam-a"]
     assert after["cam-a"]["locked"].bboxes_metadata[0]["class_locked"] is False
-    assert after["cam-a"]["stable"].xyxy.tolist() == [[12.0, 50.0, 52.0, 90.0]]
+    assert after["cam-a"]["stable"].xyxy.tolist() == [[15.0, 50.0, 55.0, 90.0]]
+
+
+def test_processing_reset_drops_consumer_state_for_reused_external_ids():
+    # External tracked rows may reuse ids. The built-in tracker's global ids
+    # would hide stale per-track entries after a processing reset.
+    definition = _definition()
+    definition["steps"] = definition["steps"][1:]
+    for step in definition["steps"]:
+        step["predictions"] = "$inputs.predictions"
+    plan = compile_workflow(definition, catalogue=_catalogue())
+    ids = {"cam-a": 7, "cam-b": 8}
+
+    def run(frame):
+        predictions = [_box(source, frame) for source in SOURCES]
+        for source, prediction in zip(SOURCES, predictions):
+            prediction.bboxes_metadata = [{"tracker_id": ids[source]}]
+        return _run(session, frame, predictions=predictions)
+
+    session = plan.create_session()
+    try:
+        for frame in (1, 2, 3):
+            before = run(frame)
+        session.apply_update(session.prepare_update(plan, reset=True))
+        after = run(4)
+    finally:
+        session.close()
+
+    assert _track_ids(before) == _track_ids(after) == ids
+    for source, speed in (("cam-a", 3.0), ("cam-b", 2.0)):
+        assert _speed(before[source])[0][2] == pytest.approx(speed)
+        assert before[source]["locked"].bboxes_metadata[0]["class_locked"] is True
+        assert _speed(after[source]) == [(ids[source], [0.0, 0.0], 0.0)]
+        assert after[source]["locked"].bboxes_metadata[0]["class_locked"] is False
+        # A fresh stabilizer emits the raw frame-4 box with no cached smoothing.
+        assert after[source]["stable"].xyxy.tolist() == _box(source, 4).xyxy.tolist()
 
 
 @pytest.mark.parametrize("step", ["lock", "stable", "speed"])

@@ -420,6 +420,97 @@ def test_bounding_rect_keeps_rle_masks_rle_and_requires_masks():
         )
 
 
+@pytest.mark.parametrize("as_rle", [False, True])
+@pytest.mark.parametrize("with_hole", [False, True])
+def test_bounding_rect_follows_the_outline_and_preserves_rows(as_rle, with_hole):
+    masks = torch.zeros((3, 90, 120), dtype=torch.bool)
+    masks[0, 20:70, 20:100] = True
+    masks[2, 5:10, 5:15] = True
+    if with_hole:
+        ys, xs = torch.meshgrid(torch.arange(90), torch.arange(120), indexing="ij")
+        masks[0] &= (xs - 60) ** 2 + (ys - 45) ** 2 > 12**2
+    expected_masks = masks.clone()
+    expected_masks[0, 20:70, 20:100] = True
+    rows = with_row_identity(
+        detections(
+            root_image(90, 120),
+            [[20, 20, 100, 70], [1, 2, 3, 4], [5, 5, 15, 10]],
+            confidence=[0.7, 0.8, 0.9],
+            class_id=[2, 1, 0],
+            mask=rle(masks) if as_rle else masks,
+            rows=[{"tag": "outline"}, {"tag": "empty"}, {"tag": "control"}],
+        )
+    )
+    reordered = select_predictions(rows, indices=[2, 1, 0])
+
+    fitted = BoundingRectBlock().run(predictions=reordered)["predictions"]
+
+    assert fitted.xyxy.tolist() == [[5, 5, 14, 9], [1, 2, 3, 4], [20, 20, 99, 69]]
+    assert isinstance(fitted.mask, InstancesRLEMasks) == as_rle
+    actual_masks = (
+        torch.from_numpy(coco_rle_masks_to_numpy_mask(fitted.mask))
+        if as_rle
+        else fitted.mask
+    )
+    assert torch.equal(actual_masks, expected_masks[[2, 1, 0]])
+    assert sorted(map(tuple, fitted.bboxes_metadata[2]["rect"])) == [
+        (20, 20),
+        (20, 69),
+        (99, 20),
+        (99, 69),
+    ]
+    assert {
+        fitted.bboxes_metadata[2]["width"],
+        fitted.bboxes_metadata[2]["height"],
+    } == {79.0, 49.0}
+    assert fitted.bboxes_metadata[2]["angle"] == 90.0
+    assert fitted.bboxes_metadata[1] == {
+        "tag": "empty",
+        "rect": None,
+        "width": None,
+        "height": None,
+        "angle": None,
+    }
+    assert [row["tag"] for row in fitted.bboxes_metadata] == [
+        "control",
+        "empty",
+        "outline",
+    ]
+    assert fitted.image_metadata == reordered.image_metadata
+    assert torch.equal(fitted.class_id, reordered.class_id)
+    assert torch.equal(fitted.confidence, reordered.confidence)
+    assert row_record(fitted).host_ids() == [2, 1, 0]
+    assert row_record(fitted).namespace == row_record(rows).namespace
+    assert rows.bboxes_metadata == [
+        {"tag": "outline"},
+        {"tag": "empty"},
+        {"tag": "control"},
+    ]
+    assert torch.equal(
+        (
+            torch.from_numpy(coco_rle_masks_to_numpy_mask(rows.mask))
+            if as_rle
+            else rows.mask
+        ),
+        masks,
+    )
+
+
+def test_bounding_rect_keeps_the_most_points_choice_among_outer_contours():
+    masks = torch.zeros((1, 60, 80), dtype=torch.bool)
+    masks[0, 20:55, 30:75] = True  # larger rectangle: four contour points
+    masks[0, 2:12, 2:4] = True
+    masks[0, 10:12, 2:12] = True  # smaller L: six contour points
+    rows = detections(root_image(), [[2, 2, 75, 55]], mask=masks)
+
+    fitted = BoundingRectBlock().run(predictions=rows)["predictions"]
+
+    assert fitted.xyxy.tolist() == [[2, 2, 11, 11]]
+    expected = torch.zeros_like(masks)
+    expected[0, 2:12, 2:12] = True
+    assert torch.equal(fitted.mask, expected)
+
+
 # --- class replacement -------------------------------------------------------
 
 

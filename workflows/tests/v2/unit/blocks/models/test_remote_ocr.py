@@ -294,7 +294,7 @@ def test_unavailable_secret_and_misaligned_batch_fail_before_transport():
     [
         (TimeoutError(FAKE_KEY), "timed out"),
         (RuntimeError(quote(FAKE_KEY)), "transport"),
-        (_Response({"error": {"message": FAKE_KEY}}, status=403), "HTTP status"),
+        (_Response({"error": {"message": FAKE_KEY}}, status=403), "HTTP 403"),
         (_Response(ValueError(FAKE_KEY)), "JSON"),
         (_Response({"error": {"message": FAKE_KEY}}), "envelope"),
         (_Response({"responses": [{"error": {"message": FAKE_KEY}}]}), "image error"),
@@ -317,6 +317,187 @@ def test_sanitizes_errors_without_exception_context_or_retries(response, message
     assert captured.value.__context__ is None
     assert captured.value.__cause__ is None
     assert len(transport.calls) == 1
+
+
+def _rendered(error):
+    return "".join(traceback.format_exception(error))
+
+
+def _assert_redacted(rendered):
+    for secret in [FAKE_KEY, quote(FAKE_KEY), urlencode({"key": FAKE_KEY})]:
+        assert secret not in rendered
+    assert PROVIDER_TEXT not in rendered
+    assert "provider body" not in rendered
+
+
+PROVIDER_TEXT = "API key not valid. Please pass a valid API key."
+
+
+def _provider_error(code, status, *, message=PROVIDER_TEXT):
+    return {
+        "error": {
+            "code": code,
+            "message": f"{message} {FAKE_KEY}",
+            "status": status,
+            "details": [{"reason": "provider body", "key": FAKE_KEY}],
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    "response,expected",
+    [
+        (
+            _Response(_provider_error(403, "PERMISSION_DENIED"), status=403),
+            "Google Vision returned HTTP 403 (PERMISSION_DENIED, provider code 403); "
+            "check the API key, its restrictions, and that the Cloud Vision API and "
+            "billing are enabled for its project",
+        ),
+        (
+            _Response(_provider_error(429, "RESOURCE_EXHAUSTED"), status=429),
+            "Google Vision returned HTTP 429 (RESOURCE_EXHAUSTED, provider code 429); "
+            "check the Cloud Vision quota and rate limits of the key's project; if "
+            "one is used up, wait or request a higher quota",
+        ),
+        (
+            _Response(_provider_error(504, "DEADLINE_EXCEEDED"), status=504),
+            "Google Vision returned HTTP 504 (DEADLINE_EXCEEDED, provider code 504); "
+            "the request deadline expired; retry later",
+        ),
+        (
+            _Response(_provider_error(400, "INVALID_ARGUMENT"), status=400),
+            "Google Vision returned HTTP 400 (INVALID_ARGUMENT, provider code 400); "
+            "check the API key, the image, and the ocr_type and language_hints settings",
+        ),
+        # Unknown or free-text status names and non-integer codes are dropped.
+        (
+            _Response(_provider_error("403", FAKE_KEY), status=403),
+            "Google Vision returned HTTP 403; check the API key, its restrictions, "
+            "and that the Cloud Vision API and billing are enabled for its project",
+        ),
+        (
+            _Response(_provider_error(True, "PERMISSION DENIED"), status=429),
+            "Google Vision returned HTTP 429; check the Cloud Vision quota and rate "
+            "limits of the key's project; if one is used up, wait or request a "
+            "higher quota",
+        ),
+        (
+            _Response(ValueError(FAKE_KEY), status=503),
+            "Google Vision returned HTTP 503; provider-side failure; retry later",
+        ),
+        (
+            _Response(PROVIDER_TEXT, status=502),
+            "Google Vision returned HTTP 502; provider-side failure; retry later",
+        ),
+        (
+            _Response(_provider_error(10**6, "ABORTED"), status=409),
+            "Google Vision returned HTTP 409 (ABORTED); see Google Cloud Vision's "
+            "error documentation for this status",
+        ),
+        (
+            _Response({}, status="403"),
+            "Google Vision returned an invalid HTTP status; see Google Cloud "
+            "Vision's error documentation for this status",
+        ),
+        (
+            _Response({"responses": [{"error": {"code": 3, "message": FAKE_KEY}}]}),
+            "Google Vision reported an image error (INVALID_ARGUMENT, provider code "
+            "3); check the API key, the image, and the ocr_type and language_hints "
+            "settings",
+        ),
+        (
+            _Response({"responses": [{"error": {"code": 99, "status": FAKE_KEY}}]}),
+            "Google Vision reported an image error (provider code 99); see Google "
+            "Cloud Vision's error documentation for this status",
+        ),
+    ],
+)
+def test_provider_errors_report_only_status_code_name_and_repair(response, expected):
+    transport = _Transport([response])
+    with pytest.raises(GoogleVisionOCRError) as captured:
+        _block(transport).run(
+            image=Batch([_image()]), api_key=Secret(FAKE_KEY, name="fixture")
+        )
+    assert str(captured.value) == expected
+    _assert_redacted(_rendered(captured.value))
+    assert captured.value.__context__ is None
+    assert len(transport.calls) == 1
+
+
+def test_compiled_step_errors_distinguish_bad_key_from_quota():
+    transport = _Transport(
+        [
+            _Response(_provider_error(403, "PERMISSION_DENIED"), status=403),
+            _Response(_provider_error(429, "RESOURCE_EXHAUSTED"), status=429),
+        ]
+    )
+    session = _plan(dynamic=True).create_session(
+        {"google_vision_transport": transport, "google_vision_base_url": BASE}
+    )
+    inputs = {
+        "image": [_image()],
+        "api_key": [Secret(FAKE_KEY, name="fixture")],
+        "ocr_type": ["text_detection"],
+        "language_hints": [None],
+        "timeout": [1],
+    }
+    failures = []
+    try:
+        for _ in range(2):
+            with pytest.raises(StepExecutionError) as captured:
+                session.run(inputs)
+            failures.append(captured.value)
+    finally:
+        session.close()
+    assert "HTTP 403 (PERMISSION_DENIED, provider code 403); check the API key" in str(
+        failures[0]
+    )
+    assert "HTTP 429 (RESOURCE_EXHAUSTED, provider code 429); check the Cloud" in (
+        str(failures[1])
+    )
+    for failure in failures:
+        _assert_redacted(_rendered(failure))
+    assert len(transport.calls) == 2
+
+
+@pytest.mark.parametrize(
+    "name,message",
+    [
+        ("ReadTimeout", "timed out after 2.5 s; retry later or raise timeout"),
+        ("ConnectTimeout", "timed out after 2.5 s; retry later or raise timeout"),
+        ("ConnectionError", "transport or JSON decoding failed"),
+    ],
+)
+def test_installed_requests_session_errors_map_to_sanitized_failures(name, message):
+    requests = pytest.importorskip("requests")
+    error_type = getattr(requests.exceptions, name)
+    # requests' timeouts are not builtin TimeoutError; the block must still
+    # recognize them without importing requests.
+    assert not issubclass(error_type, TimeoutError)
+    url = BASE + "/v1/images:annotate?" + urlencode({"key": FAKE_KEY})
+
+    class Adapter(requests.adapters.BaseAdapter):
+        def send(self, request, **kwargs):
+            raise error_type(f"{FAKE_KEY} {quote(FAKE_KEY)} {url}", request=request)
+
+        def close(self):
+            pass
+
+    transport = requests.Session()
+    transport.trust_env = False
+    transport.mount("http://", Adapter())
+    try:
+        with pytest.raises(GoogleVisionOCRError) as captured:
+            _block(transport).run(
+                image=Batch([_image()]),
+                api_key=Secret(FAKE_KEY, name="fixture"),
+                timeout=2.5,
+            )
+    finally:
+        transport.close()
+    assert str(captured.value).endswith(message)
+    _assert_redacted(_rendered(captured.value))
+    assert captured.value.__context__ is None
 
 
 @pytest.mark.parametrize(
@@ -652,6 +833,80 @@ def test_installed_requests_session_prepares_real_request_with_injected_adapter(
 def test_malformed_literal_definitions_fail_compilation(settings):
     with pytest.raises(ParamsValidationError):
         _plan(settings=settings)
+
+
+MANAGED_KEY_MESSAGE = (
+    "Roboflow-managed keys (rf_key:*, V1's default) are not supported by "
+    "v2/google_vision_ocr; pass your Google Cloud Vision API key, preferably "
+    "through a workflow input of kind secret"
+)
+
+
+@pytest.mark.parametrize("key", ["rf_key:account", "rf_key:user:123"])
+def test_literal_managed_key_fails_compilation_with_replacement(key):
+    with pytest.raises(ParamsValidationError) as captured:
+        _plan(settings={"api_key": key})
+    assert str(captured.value).endswith(f"api_key: {MANAGED_KEY_MESSAGE}")
+    assert captured.value.field_path == ("api_key",)
+
+
+MANAGED_SECRET = "rf_key:synthetic-test-only /+?&="
+
+
+def _assert_managed_secret_redacted(rendered):
+    token = MANAGED_SECRET.removeprefix("rf_key:")
+    for form in [
+        MANAGED_SECRET,
+        repr(MANAGED_SECRET),
+        json.dumps(MANAGED_SECRET),
+        quote(MANAGED_SECRET, safe=""),
+        urlencode({"key": MANAGED_SECRET}),
+        base64.b64encode(MANAGED_SECRET.encode()).decode(),
+        "synthetic-test-only",
+        quote(token, safe=""),
+    ]:
+        assert form not in rendered
+
+
+def test_literal_managed_key_traceback_hides_the_key_but_keeps_guidance():
+    with pytest.raises(ParamsValidationError) as captured:
+        _plan(settings={"api_key": MANAGED_SECRET})
+    rendered = _rendered(captured.value)
+    _assert_managed_secret_redacted(rendered)
+    # The engine still chains the pydantic error; only its input is hidden.
+    assert type(captured.value.__cause__).__name__ == "ValidationError"
+    assert "type=managed_api_key" in rendered
+    assert MANAGED_KEY_MESSAGE in str(captured.value)
+    assert captured.value.field_path == ("api_key",)
+
+
+def test_selected_managed_key_fails_direct_and_compiled_before_transport():
+    transport = _Transport()
+    with pytest.raises(ValueError) as captured:
+        _block(transport).run(
+            image=Batch([_image()]), api_key=Secret(MANAGED_SECRET, name="fixture")
+        )
+    assert str(captured.value) == MANAGED_KEY_MESSAGE
+    _assert_managed_secret_redacted(_rendered(captured.value))
+    session = _plan(dynamic=True).create_session(
+        {"google_vision_transport": transport, "google_vision_base_url": BASE}
+    )
+    try:
+        with pytest.raises(StepExecutionError) as captured:
+            session.run(
+                {
+                    "image": [_image()],
+                    "api_key": [MANAGED_SECRET],
+                    "ocr_type": ["text_detection"],
+                    "language_hints": [None],
+                    "timeout": [1],
+                }
+            )
+    finally:
+        session.close()
+    assert MANAGED_KEY_MESSAGE in str(captured.value)
+    _assert_managed_secret_redacted(_rendered(captured.value))
+    assert transport.calls == []
 
 
 def test_real_source_drives_ocr_and_downstream_until_end_of_stream():

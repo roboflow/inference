@@ -2,8 +2,8 @@
 
 Expected pixels are worked out by hand: integer positions copy pixels,
 half-pixel positions outside the image blend with black, and positions are
-rounded to 1/32 pixel before blending. Device cases run where the device is
-present; CPU is the only device every run has.
+rounded to 1/32 pixel before blending. Device cases are listed for CUDA and
+MPS and run where the device is present; CPU is the only device every run has.
 """
 
 from dataclasses import replace
@@ -30,6 +30,19 @@ VIDEO = VideoMetadata(
     frame_number=7,
     frame_timestamp=datetime(2026, 10, 12, tzinfo=timezone.utc),
 )
+# Every non-CPU device is listed, so a run reports which ones it skipped.
+DEVICES = [
+    pytest.param(
+        "cuda",
+        marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA"),
+    ),
+    pytest.param(
+        "mps",
+        marks=pytest.mark.skipif(
+            not torch.backends.mps.is_available(), reason="needs MPS"
+        ),
+    ),
+]
 
 
 def random_pixels(channels: int, height: int, width: int) -> torch.Tensor:
@@ -132,21 +145,19 @@ def test_float32_and_float64_positions_give_the_same_pixels() -> None:
     assert torch.equal(wide, narrow)
 
 
-@pytest.mark.skipif(
-    not torch.backends.mps.is_available(), reason="needs a non-CPU torch device"
-)
-def test_remap_stays_on_its_device() -> None:
+@pytest.mark.parametrize("device", DEVICES)
+def test_remap_stays_on_its_device(device: str) -> None:
     pixels = random_pixels(3, 9, 11)
     source_x, source_y = integer_grid(9, 11, dtype=torch.float32)
     on_cpu = remap_bilinear(pixels, source_x=source_x + 0.25, source_y=source_y)
 
     on_device = remap_bilinear(
-        pixels.to("mps"),
-        source_x=(source_x + 0.25).to("mps"),
-        source_y=source_y.to("mps"),
+        pixels.to(device),
+        source_x=(source_x + 0.25).to(device),
+        source_y=source_y.to(device),
     )
 
-    assert on_device.device.type == "mps"
+    assert on_device.device.type == device
     assert on_device.dtype == torch.uint8
     assert torch.equal(on_device.cpu(), on_cpu)
 

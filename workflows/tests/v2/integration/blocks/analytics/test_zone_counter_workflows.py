@@ -3,12 +3,17 @@
 120 x 120 frames of a 10 fps file; 20 x 20 px boxes at x = 60. Line
 ``(0, 60) -> (120, 60)`` (moving up crosses in); zone: the band below y = 70::
 
-    step              1    2    3    4    5    6
-    cam-a centre y    35   45   55   65   75   85    moving down
-    cam-b centre y    85   75   65   55   45   35    moving up
+    step              0    1    2    3    4    5    6
+    cam-a centre y    25   35   45   55   65   75   85    moving down
+    cam-b centre y    95   85   75   65   55   45   35    moving up
 
 With the CENTER anchor both cross on step 4. With all four corners (the
-default) a box crosses once its top or bottom edge has passed: step 5.
+default) the whole box must be across, so its trailing edge decides: step 5.
+
+The tracker, ``v2/trackers_bytetrack@v1``, does not report a track on the
+frame that creates it. Sessions therefore start with step 0, which only
+creates the tracks; the counters see the tracks from step 1. Tracker ids come
+from a process-wide counter, so tests read them from the outputs.
 """
 
 from datetime import datetime
@@ -27,6 +32,7 @@ from roboflow_workflows.v2.engine.errors import (
     ParamsValidationError,
     StepExecutionError,
 )
+from roboflow_workflows.v2.engine.plan import CompileOptions
 
 from inference_models.models.base.object_detection import Detections
 
@@ -96,11 +102,15 @@ def _definition(*, line=None, zone=None):
         ],
         "steps": [
             {
-                "type": "v2/byte_tracker@v1",
+                "type": "v2/trackers_bytetrack@v1",
                 "name": "track",
                 "image": "$inputs.image",
                 "predictions": "$inputs.predictions",
                 "frame_rate": 10.0,
+                # Explicit: confidence 0.9 starts a track; 20 px boxes one
+                # step (10 px) apart overlap with IoU 1/3.
+                "minimum_iou_threshold": 0.2,
+                "minimum_consecutive_frames": 2,
             },
             {
                 "type": "v2/line_counter@v2",
@@ -143,19 +153,32 @@ def _definition(*, line=None, zone=None):
     return definition
 
 
+@pytest.fixture(params=("run", "phases"), autouse=True)
+def block_execution(request, monkeypatch):
+    """Exercise every compiled case in both supported local execution modes."""
+    compile_original = compile_workflow
+
+    def compile_in_mode(*args, **kwargs):
+        kwargs["options"] = CompileOptions(block_execution=request.param)
+        return compile_original(*args, **kwargs)
+
+    monkeypatch.setitem(globals(), "compile_workflow", compile_in_mode)
+
+
 def _plan(**kwargs):
     plan = compile_workflow(_definition(**kwargs), catalogue=_catalogue())
 
     return plan
 
 
-def _run(session, frame, predictions, *, line=LINE, zone=ZONE):
+def _run(session, frame, predictions, *, line=LINE, zone=ZONE, **parameters):
     rows = session.run(
         {
             "image": [_image(source, frame) for source in SOURCES],
             "predictions": [predictions[source] for source in SOURCES],
             "line": line,
             "zone": zone,
+            **parameters,
         }
     ).rows()
     by_source = dict(zip(SOURCES, rows))
@@ -163,9 +186,17 @@ def _run(session, frame, predictions, *, line=LINE, zone=ZONE):
     return by_source
 
 
+def _create_tracks(session, step=0, predictions=None, **parameters):
+    created = _run(session, step, predictions or _frame(step), **parameters)
+    for source in SOURCES:
+        assert (created[source]["in"], created[source]["out"]) == (0, 0)
+        assert len(created[source]["timed"]) == 0
+
+
 def _run_steps(plan, steps):
     session = plan.create_session()
     try:
+        _create_tracks(session)
         frames = [_run(session, step, _frame(step)) for step in steps]
     finally:
         session.close()
@@ -188,6 +219,12 @@ def _times(row):
     return times
 
 
+def _track_id(row):
+    (track_id,) = {track_id for track_id, _ in _times(row)}
+
+    return track_id
+
+
 def test_tracked_sources_cross_the_line_and_are_timed_in_the_zone():
     frames = _run_steps(_plan(line={"triggering_anchor": "CENTER"}), range(1, 7))
 
@@ -203,13 +240,16 @@ def test_tracked_sources_cross_the_line_and_are_timed_in_the_zone():
     ]
     assert frames[3]["cam-a"]["crossed_out"].xyxy.tolist() == [[50, 55, 70, 75]]
     # cam-a enters the zone on step 5; cam-b leaves it after step 2.
+    a_id, b_id = _track_id(frames[4]["cam-a"]), _track_id(frames[0]["cam-b"])
+    assert a_id != b_id
+    assert frames[3]["cam-a"]["crossed_out"].bboxes_metadata[0]["tracker_id"] == a_id
     assert [_times(frame["cam-a"]) for frame in frames[4:]] == [
-        [(1, 0.0)],
-        [(1, pytest.approx(0.1))],
+        [(a_id, 0.0)],
+        [(a_id, pytest.approx(0.1))],
     ]
     assert [_times(frame["cam-b"]) for frame in frames[:3]] == [
-        [(1, 0.0)],
-        [(1, pytest.approx(0.1))],
+        [(b_id, 0.0)],
+        [(b_id, pytest.approx(0.1))],
         [],
     ]
     assert [frame["cam-b"]["in_zone"] for frame in frames] == [1, 1, 0, 0, 0, 0]
@@ -230,14 +270,16 @@ def test_out_of_zone_rows_are_kept_when_asked():
     frames = _run_steps(_plan(zone=zone), range(1, 4))
 
     # cam-a stays above the zone: every row is kept with time 0.
-    assert [_times(frame["cam-a"]) for frame in frames] == [[(1, 0.0)]] * 3
+    a_id, b_id = _track_id(frames[0]["cam-a"]), _track_id(frames[0]["cam-b"])
+    assert [_times(frame["cam-a"]) for frame in frames] == [[(a_id, 0.0)]] * 3
     assert [frame["cam-a"]["in_zone"] for frame in frames] == [0, 0, 0]
-    assert _times(frames[2]["cam-b"]) == [(1, 0.0)]
+    assert _times(frames[2]["cam-b"]) == [(b_id, 0.0)]
 
 
 def test_selected_line_change_restarts_counts_and_empty_frames_keep_them():
     session = _plan(line={"triggering_anchor": "CENTER"}).create_session()
     try:
+        _create_tracks(session)
         for step in range(1, 5):
             _run(session, step, _frame(step))
         empty = _run(session, 5, {"cam-a": _empty(), "cam-b": _empty()})
@@ -253,21 +295,87 @@ def test_selected_line_change_restarts_counts_and_empty_frames_keep_them():
     assert moved["cam-a"]["in_zone"] == 0 and len(moved["cam-a"]["timed"]) == 0
 
 
+def test_selected_anchor_change_restarts_counts_without_a_static_crossing():
+    definition = _definition(line={"triggering_anchor": "$inputs.anchor"})
+    definition["inputs"].append(
+        {"type": "WorkflowParameter", "name": "anchor", "kind": ["string"]}
+    )
+    plan = compile_workflow(definition, catalogue=_catalogue())
+    # Both sources move up. At y = 60 the box straddles the line: its top
+    # edge (y 50) is above it, its bottom edge (y 70) below. The anchor
+    # switches there while the box stands still.
+    steps = [(80, "TOP_CENTER"), (75, "TOP_CENTER"), (70, "TOP_CENTER")]
+    steps += [(65, "TOP_CENTER"), (60, "TOP_CENTER"), (60, "BOTTOM_CENTER")]
+    steps += [(55, "BOTTOM_CENTER"), (50, "BOTTOM_CENTER"), (45, "BOTTOM_CENTER")]
+    session = plan.create_session()
+    try:
+        _create_tracks(session, 0, {s: _box(85) for s in SOURCES}, anchor="TOP_CENTER")
+        frames = [
+            _run(session, step, {s: _box(y) for s in SOURCES}, anchor=anchor)
+            for step, (y, anchor) in enumerate(steps, start=1)
+        ]
+    finally:
+        session.close()
+
+    # Top edge crosses on step 4; the switch restarts; bottom edge crosses on 9.
+    expected = [(0, 0)] * 3 + [(1, 0)] * 2 + [(0, 0)] * 3 + [(1, 0)]
+    assert _counts(frames, "cam-a") == _counts(frames, "cam-b") == expected
+    assert [len(frame["cam-a"]["crossed_out"]) for frame in frames] == [0] * 9
+
+
 def test_processing_reset_drops_counts_and_entries():
     plan = _plan(line={"triggering_anchor": "CENTER"})
     session = plan.create_session()
     try:
+        _create_tracks(session)
         for step in range(1, 6):
             before = _run(session, step, _frame(step))
         session.apply_update(session.prepare_update(plan, reset=True))
-        after = _run(session, 6, _frame(6))
+        # The new tracker creates its tracks on step 6 and reports step 7.
+        _create_tracks(session, 6)
+        after = _run(session, 7, _frame(7))
     finally:
         session.close()
 
     assert (before["cam-a"]["in"], before["cam-a"]["out"]) == (0, 1)
     assert (after["cam-a"]["in"], after["cam-a"]["out"]) == (0, 0)
-    # A fresh entry on step 6, although cam-a entered the zone on step 5.
-    assert _times(after["cam-a"]) == [(1, 0.0)]
+    # A fresh entry on step 7, although cam-a entered the zone on step 5.
+    a_id = _track_id(after["cam-a"])
+    assert a_id != _track_id(before["cam-a"])
+    assert _times(after["cam-a"]) == [(a_id, 0.0)]
+
+
+def test_processing_reset_drops_entries_for_reused_external_ids():
+    # Fixed external ids expose stale dwell entries that global tracker ids hide.
+    definition = _definition()
+    definition["steps"] = definition["steps"][1:]
+    for step in definition["steps"]:
+        step["predictions"] = "$inputs.predictions"
+    plan = compile_workflow(definition, catalogue=_catalogue())
+    ids = {"cam-a": 7, "cam-b": 8}
+
+    def run(frame):
+        predictions = _frame(frame)
+        for source, prediction in predictions.items():
+            prediction.bboxes_metadata = [{"tracker_id": ids[source]}]
+        return _run(session, frame, predictions)
+
+    session = plan.create_session()
+    try:
+        entered = run(5)
+        before = run(6)
+        session.apply_update(session.prepare_update(plan, reset=True))
+        after = run(7)
+    finally:
+        session.close()
+
+    assert _times(entered["cam-a"]) == [(ids["cam-a"], 0.0)]
+    assert _times(before["cam-a"]) == [(ids["cam-a"], pytest.approx(0.1))]
+    # Same id stays inside the zone: fresh entry now, not 0.2 s since step 5.
+    assert _times(after["cam-a"]) == [(ids["cam-a"], 0.0)]
+    assert after["cam-a"]["in_zone"] == 1
+    assert _times(after["cam-b"]) == []
+    assert after["cam-b"]["in_zone"] == 0
 
 
 @pytest.mark.parametrize(

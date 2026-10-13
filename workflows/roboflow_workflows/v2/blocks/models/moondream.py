@@ -8,23 +8,23 @@ Caption, query, and point are separate backend capabilities, outside this V1
 detection port. Roboflow hosted execution awaits the new server contract.
 """
 
-import inspect
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Union
 
 import torch
-from inference_models import Detections
 from pydantic import Field
 from roboflow_workflows.v2.blocks.models._local_vlm import (
     TextField,
     TextParam,
     TokensField,
     TokensParam,
+    _check_backend_call,
+    _image_row,
+    _model_requests,
+    _require_rgb,
     checked_text,
     generation_options,
-    model_requests,
     per_row,
-    require_rgb,
 )
 from roboflow_workflows.v2.blocks.models.cache import ModelCache
 from roboflow_workflows.v2.blocks.models.common import (
@@ -50,6 +50,8 @@ from roboflow_workflows.v2.engine.declaration import (
     Ref,
 )
 
+from inference_models import Detections
+
 DEFAULT_MODEL_ID = "moondream2/moondream2_2b_jul24"
 
 
@@ -57,6 +59,7 @@ class Moondream2Block(Block):
     """Detect the object named by the prompt in each input image."""
 
     type = "v2/moondream2@v1"
+    metadata = {"name": "Moondream2", "port_of": "roboflow_core/moondream2@v1"}
     outputs = {
         "predictions": Output(
             OBJECT_DETECTION_PREDICTION_KIND,
@@ -136,27 +139,39 @@ class Moondream2Block(Block):
             Native predictions, model id and fresh inference id for every image.
 
         Raises:
-            ValueError: On invalid resolved parameters, a per-image Batch whose
-                indices differ from the image batch's, or a bad output type or
-                cardinality.
+            ValueError: On invalid resolved parameters (naming the image's
+                logical index), a per-image Batch whose indices differ from the
+                image batch's, a backend whose detect() cannot take the call, or
+                a bad output type or cardinality.
             LookupError: When the host cannot serve the exact model request.
         """
-        require_rgb(image)
-        requests = model_requests(
-            image, model_id=model_id, model_package_id=model_package_id
+        _require_rgb(image, block=self.type)
+        requests = _model_requests(
+            image,
+            model_id=model_id,
+            model_package_id=model_package_id,
+            block=self.type,
         )
-        prompts = tuple(
-            checked_text(value, name="prompt") or ""
-            for value in per_row(prompt, image=image, name="prompt")
-        )
+        prompts = []
+        for index, value in zip(
+            image.indices, per_row(prompt, image=image, name="prompt")
+        ):
+            with _image_row(index, block=self.type):
+                prompts.append(checked_text(value, name="prompt") or "")
         options = generation_options(max_new_tokens)
         models = {
             request: self._models.get(request) for request in dict.fromkeys(requests)
         }
         # Bind every backend signature before the first model invocation.
-        for model in models.values():
-            inspect.signature(model.detect).bind(
-                [], classes=[""], input_color_format="rgb", **options
+        for request, model in models.items():
+            _check_backend_call(
+                model,
+                "detect",
+                block=self.type,
+                request=request,
+                options=options,
+                classes=[""],
+                input_color_format="rgb",
             )
 
         results = []

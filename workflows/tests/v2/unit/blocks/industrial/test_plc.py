@@ -2,7 +2,8 @@
 
 Nothing leaves this process or ``127.0.0.1``. ``LoopbackRelay`` is a real HTTP
 server speaking the relay's batch API, so relay tests exercise the actual
-``requests`` transport. EtherNet/IP and Modbus use in-process stand-ins for
+``requests`` transport; malformed relay bodies use ``StandInRelaySession``,
+which opens no socket. EtherNet/IP and Modbus use in-process stand-ins for
 ``pylogix.PLC`` and ``ModbusTcpClient``; installed drivers and real PLCs are
 not exercised here.
 """
@@ -247,6 +248,23 @@ class RecordingSession:
         self._session.close()
 
 
+class StandInRelaySession:
+    """Answers every POST with one HTTP 200 JSON object; records the URLs."""
+
+    def __init__(self, payload: Dict[str, Any]) -> None:
+        self.payload = payload
+        self.posted: List[str] = []
+        self.status_code = 200
+        self.text = json.dumps(payload)
+
+    def post(self, url: str, **kwargs: Any) -> "StandInRelaySession":
+        self.posted.append(url)
+        return self
+
+    def json(self) -> Dict[str, Any]:
+        return self.payload
+
+
 @pytest.fixture()
 def relay():
     with LoopbackRelay({"camera_msg": 1, "sku_number": "A-17"}) as server:
@@ -419,6 +437,104 @@ def test_relay_write_failure_per_tag_is_write_failure(relay, results) -> None:
     # then
     assert result == {"write_result": WRITE_FAILURE, "error_status": True}
     assert len(relay.received) == 1
+
+
+@pytest.mark.parametrize(
+    "bad_name", [["ok"], {"ok": 1}, 7], ids=["list", "dict", "number"]
+)
+def test_relay_read_entries_without_a_string_name_fail_as_missing(
+    bad_name, caplog
+) -> None:
+    # given: V1 crashed on the unhashable list and dict names
+    session = StandInRelaySession(
+        {"tags": [{"name": bad_name, "value": 3}, {"name": "ok", "value": 5}]}
+    )
+
+    # when
+    with caplog.at_level(logging.ERROR, logger=LOGGER_NAME):
+        result = plc.relay_read_tags(session, target(), ["ok", "lost"])
+
+    # then
+    assert result == ({"ok": 5, "lost": READ_FAILURE}, True)
+    assert len(session.posted) == 1
+    assert "did not return a value for tag 'lost'" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "bad_name", [["ok"], {"ok": 1}, 7], ids=["list", "dict", "number"]
+)
+def test_relay_write_entries_without_a_string_name_fail_as_missing(
+    bad_name, caplog
+) -> None:
+    # given
+    session = StandInRelaySession(
+        {
+            "results": [
+                {"name": bad_name, "success": True},
+                {"name": "ok", "success": True},
+            ]
+        }
+    )
+
+    # when
+    with caplog.at_level(logging.ERROR, logger=LOGGER_NAME):
+        result = plc.relay_write_tags(session, target(), {"ok": 1, "lost": 2})
+
+    # then: one request; the unknown write is reported, not resent
+    assert result == ({"ok": WRITE_SUCCESS, "lost": WRITE_FAILURE}, True)
+    assert len(session.posted) == 1
+    assert "did not return a result for tag 'lost'" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "success",
+    ["true", "false", 1, 0, 1.0, [True], {"error": "write failed"}, None],
+    ids=["str-true", "str-false", "int-1", "int-0", "float", "list", "dict", "null"],
+)
+def test_relay_write_success_that_is_not_a_boolean_is_write_failure(
+    success, caplog
+) -> None:
+    # given: V1 reported WriteSuccess for every truthy value here
+    session = StandInRelaySession({"results": [{"name": "ok", "success": success}]})
+
+    # when
+    with caplog.at_level(logging.ERROR, logger=LOGGER_NAME):
+        result = plc.relay_write_tags(session, target(), {"ok": 1})
+
+    # then
+    assert result == ({"ok": WRITE_FAILURE}, True)
+    assert len(session.posted) == 1
+    assert f"invalid success acknowledgement {success!r}" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "entry, expected, logged",
+    [
+        ({"name": "ok", "success": True}, ({"ok": WRITE_SUCCESS}, False), ""),
+        (
+            {"name": "ok", "success": False, "error": "out of range"},
+            ({"ok": WRITE_FAILURE}, True),
+            "out of range",
+        ),
+        ({"name": "ok"}, ({"ok": WRITE_FAILURE}, True), WRITE_FAILURE),
+    ],
+    ids=["true", "false", "missing"],
+)
+def test_relay_write_boolean_or_missing_success_keeps_v1_results(
+    entry, expected, logged, caplog
+) -> None:
+    # given
+    session = StandInRelaySession({"results": [entry]})
+
+    # when
+    with caplog.at_level(logging.ERROR, logger=LOGGER_NAME):
+        result = plc.relay_write_tags(session, target(), {"ok": 1})
+
+    # then
+    assert result == expected
+    assert len(session.posted) == 1
+    assert logged in caplog.text
+    assert "invalid success acknowledgement" not in caplog.text
 
 
 def test_relay_read_timeout_fails_every_tag_without_retry(relay) -> None:
@@ -860,6 +976,14 @@ def test_modbus_reads_each_area_with_the_unit_id() -> None:
         "holding:999": READ_FAILURE,
         "bogus:1": READ_FAILURE,
     }
+    # == cannot tell 1 from True; V1 direct.py reads registers as int, bits as bool
+    assert {tag: type(values[tag]) for tag in tags[:5]} == {
+        "holding:100": int,
+        "100": int,
+        "input:5": int,
+        "coil:0": bool,
+        "discrete:2": bool,
+    }
     assert had_failure is True
     assert (made[0].address, made[0].port) == ("127.0.0.1", 1502)
     assert {call[3] for call in made[0].calls} == {7}
@@ -900,6 +1024,10 @@ def test_modbus_write_validates_area_and_value_before_sending(
         "error_status": expected == WRITE_FAILURE,
     }
     assert made[0].calls == ([sent] if sent else [])
+    # == cannot tell 7.0 from 7 or 0 from False; V1 direct.py sends coils as
+    # bool and registers as int
+    payload_type = bool if tag.startswith("coil:") else int
+    assert [type(call[2]) for call in made[0].calls] == ([payload_type] if sent else [])
 
 
 def test_modbus_connect_failure_fails_every_tag() -> None:

@@ -33,6 +33,7 @@ from roboflow_workflows.v2.blocks.models.sam_video import (
     SAM3_VISUAL_MODEL_ID,
     SegmentAnything2VideoBlock,
     SegmentAnything3VideoBlock,
+    VideoSessionLimitError,
     VideoSourceCapacityError,
 )
 from roboflow_workflows.v2.data.batch import (
@@ -170,6 +171,95 @@ class _ConceptBackend:
         return result
 
 
+class _IndexedSession:
+    """Session parts of transformers 5.15.0 SAM2/SAM3-tracker video streaming."""
+
+    def __init__(self):
+        self.processed_frames = None
+        self.inputs_per_frame = {}
+        self.obj_ids = []
+        self.conditioned = set()
+
+    def add_new_frame(self, pixel_values, frame_idx=None):
+        # modeling_sam2_video.py:299-311: a streamed frame takes the next local index.
+        if frame_idx is None:
+            frame_idx = len(self.processed_frames or {})
+        self.processed_frames = {
+            **(self.processed_frames or {}),
+            frame_idx: pixel_values,
+        }
+
+        return frame_idx
+
+
+class _IndexedProcessor:
+    def __init__(self):
+        self.sessions = []
+        self.prompt_frames = []
+
+    def __call__(self, images, device, return_tensors):
+        pixels = torch.from_numpy(np.ascontiguousarray(images)).permute(2, 0, 1)
+        inputs = SimpleNamespace(
+            pixel_values=pixels[None], original_sizes=[images.shape[:2]]
+        )
+
+        return inputs
+
+    def init_video_session(self, **kwargs):
+        session = _IndexedSession()
+        self.sessions.append(weakref.ref(session))
+
+        return session
+
+    def add_inputs_to_inference_session(
+        self, inference_session, *, frame_idx, obj_ids, original_size, **prompts
+    ):
+        # processing_sam2_video.py:717-734 stores prompt inputs under frame_idx.
+        inference_session.inputs_per_frame[frame_idx] = list(obj_ids)
+        inference_session.obj_ids = sorted({*inference_session.obj_ids, *obj_ids})
+        self.prompt_frames.append(frame_idx)
+
+    def post_process_masks(self, masks, original_sizes, binarize):
+        return masks
+
+
+class _IndexedModel:
+    def __init__(self):
+        self.fail = False
+
+    def __call__(self, inference_session, frame, reverse):
+        frame_idx = inference_session.add_new_frame(frame)
+        if self.fail:
+            raise RuntimeError("indexed backend mutated then failed")
+
+        # modeling_sam2_video.py:1801 reads prompts at the streamed frame index.
+        inputs = inference_session.inputs_per_frame.get(frame_idx, [])
+        inference_session.conditioned.update(inputs)
+        obj_ids = inference_session.obj_ids
+        masks = torch.zeros((len(obj_ids), 1, *frame.shape[-2:]), dtype=torch.bool)
+        for i, obj_id in enumerate(obj_ids):
+            if obj_id in inference_session.conditioned:
+                masks[i, 0, 1:4, 1 + i : 4 + i] = True
+        outputs = SimpleNamespace(pred_masks=masks, obj_ids=list(obj_ids))
+
+        return outputs
+
+
+def _indexed_backend(backend_type):
+    backend = backend_type(
+        model=_IndexedModel(), processor=_IndexedProcessor(), device=torch.device("cpu")
+    )
+
+    return backend
+
+
+def _live_sessions(backend):
+    gc.collect()
+    live = [ref for ref in backend._processor.sessions if ref() is not None]
+
+    return len(live)
+
+
 def _image(source="a", frame=0, *, size=SIZE, video=True):
     metadata = (
         VideoMetadata(
@@ -205,6 +295,8 @@ def _boxes(image, *, empty=False):
 
 
 def _direct(block, image, *, wanted=None, **kwargs):
+    # The budget is required; tests not about lifetime choose unbounded explicitly.
+    kwargs.setdefault("max_session_frames", "unbounded")
     with block_call(block, indices=((0,),), wanted=wanted):
         result = block.run(Batch([image]), **kwargs)[0]
 
@@ -221,6 +313,7 @@ def _plan(
     **params,
 ):
     block = SegmentAnything3VideoBlock if sam3 else SegmentAnything2VideoBlock
+    params.setdefault("max_session_frames", "unbounded")
     definition = {
         "version": "2.0",
         "inputs": [
@@ -238,6 +331,10 @@ def _plan(
             for name in outputs
         ],
     }
+    if params.get("reset_source") == "$inputs.reset":
+        definition["inputs"].append(
+            {"type": "WorkflowBatchInput", "name": "reset", "kind": ["boolean"]}
+        )
     if detector:
         definition["steps"].insert(
             0,
@@ -440,7 +537,8 @@ def test_concept_mapping_rebuilt_for_new_objects_and_scores_filter_per_frame():
     assert first.class_id.tolist() == [0]
     assert second.class_id.tolist() == [0, 1]
     assert second.bboxes_metadata == [{"tracker_id": 7}, {"tracker_id": 42}]
-    assert second.xyxy.tolist() == [[3.0, 2.0, 5.0, 4.0]] * 2
+    # Backend boxes are inclusive [3, 2, 5, 4]; outputs are half-open mask extents.
+    assert second.xyxy.tolist() == [[3.0, 2.0, 6.0, 5.0]] * 2
     assert second.confidence.tolist() == pytest.approx([0.9, 0.6])
     assert row_record(first).namespace != row_record(second).namespace
     filtered = _direct(
@@ -579,6 +677,28 @@ def test_prompt_and_frame_validation_before_backend_call():
         SegmentAnything2VideoBlock.Params(image="$inputs.image", prompt_interval=0)
     with pytest.raises(ValueError, match="unique"):
         _direct(SegmentAnything3VideoBlock({}), image, class_names=["car", "car"])
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        lambda: {"points": [[100, 1]]},
+        lambda: {"boxes": Batch([_boxes(_image("other", 2))])},
+    ],
+)
+def test_invalid_prompt_on_due_frame_discards_established_source(invalid):
+    backend = _VisualBackend()
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    _direct(block, _image(), points=POINTS, prompt_mode="every_frame")
+    _direct(block, _image(frame=1), points=[], prompt_mode="every_frame")
+    assert [c[0] for c in backend.calls] == ["prompt", "track"]
+
+    with pytest.raises(ValueError, match="outside image|boxes were predicted"):
+        _direct(block, _image(frame=2), prompt_mode="every_frame", **invalid())
+    after = _direct(block, _image(frame=3), points=[], prompt_mode="every_frame")
+    # Discarded, so the source is unseeded again: no rows and no tracking call.
+    assert len(after["predictions"]) == 0
+    assert [c[0] for c in backend.calls] == ["prompt", "track"]
 
 
 def test_backend_empty_mask_sentinel_and_empty_masks_are_supported():
@@ -726,7 +846,11 @@ def test_video_source_metadata_takes_precedence_over_sample_context():
     block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
     for frame in range(2):
         with block_call(block, indices=((0,),), source_id=f"different-{frame}"):
-            block.run(Batch([_image("fixed-video", frame)]), points=POINTS)
+            block.run(
+                Batch([_image("fixed-video", frame)]),
+                points=POINTS,
+                max_session_frames="unbounded",
+            )
     assert [c[0] for c in backend.calls] == ["prompt", "track"]
 
 
@@ -810,3 +934,563 @@ def test_compiled_video_raster_bounds_compose_with_dynamic_crop(
             assert row["crops"][0].size_hw == crop_size
             assert row["crops"][0].parent_row is not None
     assert [c[0] for c in backend.calls] == ["prompt", "track"]
+
+
+def _inclusive_boxes(mask):
+    # Pinned SAM3 concept boxes come from torchvision masks_to_boxes.
+    ys, xs = torch.nonzero(mask, as_tuple=True)
+    if not len(xs):
+        return np.zeros((1, 4), dtype=np.float32)
+    box = [xs.min(), ys.min(), xs.max(), ys.max()]
+    return np.array([[float(v) for v in box]], dtype=np.float32)
+
+
+@pytest.mark.parametrize("execution", ["run", "phases"])
+@pytest.mark.parametrize("route", ["predictions", "segmentation"])
+@pytest.mark.parametrize("pixels,box,crop_size", RASTER_CASES)
+def test_compiled_concept_raster_bounds_compose_with_dynamic_crop(
+    execution, route, pixels, box, crop_size
+):
+    backend = _ConceptBackend()
+    mask = _raster_mask(pixels)
+    backend.bad = lambda r: _ConceptRecord(
+        masks=mask[None].numpy(),
+        object_ids=np.array([7], dtype=np.int64),
+        scores=np.array([0.9], dtype=np.float32),
+        boxes=_inclusive_boxes(mask),
+        prompt_to_object_ids={"car": [7]},
+        state_dict=r.state_dict,
+    )
+    plan = _plan(sam3=True, mode=execution, class_names=["car"], crop_from=route)
+    session = plan.create_session({"models": {SAM3_CONCEPT_MODEL_ID: backend}})
+    for frame in range(2):
+        row = session.run({"image": [_image(frame=frame)]}).rows()[0]
+        predictions = row["predictions"]
+        if crop_size is None:
+            assert len(predictions) == 0 and row["crops"] == []
+        else:
+            assert predictions.xyxy.tolist() == [box]
+            assert row["segmentation"].full_res().xyxy.tolist() == [box]
+            assert predictions.class_id.tolist() == [0]
+            assert predictions.confidence.tolist() == pytest.approx([0.9])
+            assert predictions.bboxes_metadata == [{"tracker_id": 7}]
+            assert len(row["crops"]) == 1
+            assert row["crops"][0].size_hw == crop_size
+            assert row["crops"][0].parent_row is not None
+    assert [c[0] for c in backend.calls] == ["prompt", "track"]
+
+
+INDEXED_VISUAL = [
+    (SAM2Video, SegmentAnything2VideoBlock, SAM2_VIDEO_MODEL_ID, {}),
+    (
+        SAM3TrackerVideo,
+        SegmentAnything3VideoBlock,
+        SAM3_VISUAL_MODEL_ID,
+        {"tracking_mode": "visual"},
+    ),
+]
+
+
+@pytest.mark.parametrize("backend_type,block_type,model_id,extra", INDEXED_VISUAL)
+@pytest.mark.parametrize(
+    "prompt_mode,prompts",
+    [("first_frame", 1), ("every_frame", 4), ("every_n_frames", 2)],
+)
+def test_fresh_sessions_take_prompts_on_their_local_first_frame(
+    backend_type, block_type, model_id, extra, prompt_mode, prompts
+):
+    backend = _indexed_backend(backend_type)
+    block = block_type({model_id: backend})
+    # Nonzero source frames; each re-prompt also starts a fresh backend session.
+    for frame in range(19, 23):
+        image = _image(frame=frame)
+        output = _direct(
+            block,
+            image,
+            boxes=Batch([_boxes(image)]),
+            points=POINTS,
+            prompt_mode=prompt_mode,
+            prompt_interval=1,
+            **extra,
+        )["predictions"]
+        assert [row["tracker_id"] for row in output.bboxes_metadata] == [0, 1]
+        assert output.xyxy.tolist() == [[1.0, 1.0, 4.0, 4.0], [2.0, 1.0, 5.0, 4.0]]
+    assert backend._processor.prompt_frames == [0] * prompts
+    assert len(backend._processor.sessions) == prompts
+
+
+def test_direct_reset_and_failed_call_release_backend_sessions():
+    backend = _indexed_backend(SAM2Video)
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    for source in ("a", "b"):
+        _direct(block, _image(source), points=POINTS)
+    assert _live_sessions(backend) == 2
+
+    backend._model.fail = True
+    with pytest.raises(RuntimeError, match="mutated then failed"):
+        _direct(block, _image("a", 1))
+    # Checked after the traceback is dropped; a held traceback keeps frame locals.
+    assert _live_sessions(backend) == 1
+    block.reset_state()
+    assert _live_sessions(backend) == 0
+
+
+@pytest.mark.parametrize("execution", ["run", "phases"])
+def test_compiled_processing_reset_releases_backend_sessions(execution):
+    backend = _indexed_backend(SAM2Video)
+    plan = _plan(mode=execution, points=POINTS)
+    session = plan.create_session({"models": {SAM2_VIDEO_MODEL_ID: backend}})
+    session.run({"image": [_image("a"), _image("b")]})
+    assert _live_sessions(backend) == 2
+
+    session.update(plan, reset=True)
+    assert _live_sessions(backend) == 0
+    session.run({"image": [_image("a", 1)]})
+    assert _live_sessions(backend) == 1
+
+
+@pytest.mark.parametrize(
+    "block_type", [SegmentAnything2VideoBlock, SegmentAnything3VideoBlock]
+)
+@pytest.mark.parametrize("value", [None, 0, -1, True, 1.5, "300"])
+def test_session_budget_is_required_and_strict(block_type, value):
+    extra = {"class_names": []} if block_type is SegmentAnything3VideoBlock else {}
+    with pytest.raises(ValidationError):
+        block_type.Params(image="$inputs.image", **extra)
+    with pytest.raises((ValidationError, ValueError)):
+        block_type.Params(image="$inputs.image", max_session_frames=value, **extra)
+    for valid in (1, "unbounded"):
+        assert block_type.Params(
+            image="$inputs.image", max_session_frames=valid, **extra
+        )
+
+
+def _episode(result, *, output="predictions"):
+    prediction = result[output]
+    if isinstance(prediction, SegmentationView):
+        prediction = prediction.detections
+    return prediction.image_metadata["video_episode"]
+
+
+def _batch_direct(block, images, **kwargs):
+    indices = tuple((i,) for i in range(len(images)))
+    with block_call(block, indices=indices):
+        results = block.run(Batch(images), **kwargs)
+    return results
+
+
+def test_budget_prevents_n_plus_one_and_only_explicit_reset_recovers_source():
+    backend = _indexed_backend(SAM2Video)
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    first = _direct(block, _image("a"), points=POINTS, max_session_frames=2)
+    second = _direct(block, _image("a", 1), max_session_frames=2)
+    _direct(block, _image("b"), points=POINTS, max_session_frames=2)
+    a_ref, b_ref = backend._processor.sessions
+    assert _episode(first)["episode_id"] == _episode(second)["episode_id"]
+    assert _episode(second)["episode_frame"] == 2
+    with pytest.raises(VideoSessionLimitError, match="reached"):
+        _direct(block, _image("a", 2), points=POINTS, max_session_frames=2)
+    assert a_ref() is None  # No gc.collect and no caller-held traceback.
+    assert b_ref() is not None
+    with pytest.raises(VideoSessionLimitError, match="stopped"):
+        _direct(block, _image("a", 3), points=POINTS, max_session_frames=2)
+    assert len(backend._processor.sessions) == 2
+    recovered = _direct(
+        block, _image("a", 4), points=POINTS, reset_source=True, max_session_frames=2
+    )
+    assert _episode(recovered)["transition"] == "reset"
+    assert _episode(recovered)["episode_id"] != _episode(first)["episode_id"]
+    assert b_ref() is not None
+    assert (
+        _episode(_direct(block, _image("b", 1), max_session_frames=2))["episode_frame"]
+        == 2
+    )
+
+
+def test_due_reprompt_resets_budget_but_due_without_prompts_does_not():
+    backend = _VisualBackend()
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    options = dict(
+        prompt_mode="every_n_frames", prompt_interval=1, max_session_frames=2
+    )
+    first = _direct(block, _image(), points=POINTS, **options)
+    _direct(block, _image(frame=1), **options)
+    fresh = _direct(block, _image(frame=2), points=POINTS, **options)
+    assert _episode(fresh)["episode_id"] != _episode(first)["episode_id"]
+    assert _episode(fresh)["episode_frame"] == 1
+    assert _episode(fresh)["transition"] == "new_session"
+    _direct(block, _image(frame=3), **options)
+    with pytest.raises(VideoSessionLimitError):
+        _direct(block, _image(frame=4), **options)
+    assert [c[0] for c in backend.calls] == ["prompt", "track", "prompt", "track"]
+
+
+def test_unseeded_frames_and_visual_restart_wait_for_prompts_with_empty_metadata():
+    backend = _indexed_backend(SAM2Video)
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    options = dict(max_session_frames=1, on_session_limit="restart")
+    for frame in range(3):
+        empty = _direct(block, _image(frame=frame), **options)
+        assert len(empty["predictions"]) == 0
+        assert _episode(empty) == {
+            "episode_id": None,
+            "episode_frame": 0,
+            "transition": None,
+        }
+    assert backend._processor.sessions == []
+    first = _direct(block, _image(frame=3), points=POINTS, **options)
+    old_ref = backend._processor.sessions[0]
+    pending = _direct(block, _image(frame=4), **options)
+    assert old_ref() is None
+    assert len(pending["predictions"]) == 0
+    assert _episode(pending) == {
+        "episode_id": None,
+        "episode_frame": 0,
+        "transition": "session_limit",
+    }
+    assert _episode(_direct(block, _image(frame=5), **options))["episode_frame"] == 0
+    restarted = _direct(block, _image(frame=6), points=POINTS, **options)
+    assert _episode(restarted)["episode_id"] != _episode(first)["episode_id"]
+    assert _episode(restarted)["transition"] == "new_session"
+
+
+def test_concept_restart_uses_new_episode_even_when_all_rows_filtered():
+    backend = _ConceptBackend()
+    block = SegmentAnything3VideoBlock({SAM3_CONCEPT_MODEL_ID: backend})
+    options = dict(
+        class_names=["car"],
+        max_session_frames=1,
+        on_session_limit="restart",
+        confidence=1.0,
+    )
+    first = _direct(block, _image(), **options)
+    second = _direct(block, _image(frame=1), **options)
+    assert len(first["predictions"]) == len(second["predictions"]) == 0
+    assert _episode(first)["episode_id"] != _episode(second)["episode_id"]
+    assert _episode(second)["transition"] == "session_limit"
+    assert _episode(second, output="segmentation") == _episode(second)
+    assert [c[0] for c in backend.calls] == ["prompt", "prompt"]
+
+
+@pytest.mark.parametrize("execution", ["run", "phases"])
+@pytest.mark.parametrize("route", ["predictions", "segmentation"])
+def test_compiled_aligned_reset_is_local_and_held_true_resets_each_frame(
+    execution, route
+):
+    backend = _indexed_backend(SAM2Video)
+    session = _plan(
+        mode=execution,
+        outputs=(route,),
+        points=POINTS,
+        max_session_frames=1,
+        reset_source="$inputs.reset",
+    ).create_session({"models": {SAM2_VIDEO_MODEL_ID: backend}})
+    first = session.run(
+        {"image": [_image("a"), _image("b")], "reset": [False, False]}
+    ).rows()
+    a_ref, b_ref = backend._processor.sessions
+    # Each held true member starts fresh; the peer is absent and remains retained.
+    for frame in (1, 2):
+        row = session.run({"image": [_image("a", frame)], "reset": [True]}).rows()[0]
+        assert _episode(row, output=route)["transition"] == "reset"
+        assert (
+            _episode(row, output=route)["episode_id"]
+            != _episode(first[0], output=route)["episode_id"]
+        )
+        assert b_ref() is not None
+    assert a_ref() is None
+    assert len(backend._processor.sessions) == 4
+
+
+def test_whole_batch_preflight_protects_later_members_and_idle_boundary():
+    backend = _indexed_backend(SAM2Video)
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    options = dict(
+        points=POINTS, max_session_frames=10, max_idle_pulses=1, max_sources=2
+    )
+    _batch_direct(block, [_image("a"), _image("b")], **options)
+    a_ref, b_ref = backend._processor.sessions
+    _batch_direct(block, [_image("a", 1), _image("b", 1)], **options)
+    assert a_ref() is not None and b_ref() is not None
+    _direct(block, _image("a", 2), **options)
+    assert b_ref() is not None  # One absent pulse is allowed.
+    _direct(block, _image("a", 3), **options)
+    assert b_ref() is None  # Second absent pulse crosses the boundary.
+    assert set(block._sources) == {"a", "b"}
+    assert block._sources["b"].expired
+    with pytest.raises(VideoSourceCapacityError):
+        _direct(block, _image("c"), **options)
+    assert block.release_source("b")
+    _direct(block, _image("c"), **options)
+    assert len(block._sources) == 2
+    assert block.release_source("a") and not block.release_source("a")
+    assert a_ref() is None
+    assert block.release_source("c")
+
+
+def test_invalid_batch_does_not_sweep_or_advance_and_reset_alignment_is_checked():
+    backend = _indexed_backend(SAM2Video)
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    options = dict(points=POINTS, max_session_frames=2, max_idle_pulses=1)
+    _direct(block, _image(), **options)
+    ref = backend._processor.sessions[0]
+    bad = _image("b")
+    bad.video_metadata.frame_number = -1
+    with pytest.raises(ValueError, match="frame_number"):
+        _batch_direct(block, [_image("c"), bad], **options)
+    with pytest.raises(ValueError, match="align"):
+        _batch_direct(
+            block, [_image()], reset_source=Batch([True], indices=((4,),)), **options
+        )
+    assert ref() is not None and block._pulse == 1
+    assert len(backend._processor.sessions) == 1
+
+
+def test_stopped_entries_count_capacity_after_idle_and_only_cleanup_frees_it():
+    backend = _indexed_backend(SAM2Video)
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    options = dict(points=POINTS, max_session_frames=1, max_sources=1)
+    _direct(block, _image(), **options)
+    with pytest.raises(VideoSessionLimitError):
+        _direct(block, _image(frame=1), **options)
+    with pytest.raises(VideoSourceCapacityError):
+        _direct(block, _image("b"), **options)
+    assert set(block._sources) == {"a"}
+    assert block.release_source("a")
+    _direct(block, _image("b"), **options)
+    with pytest.raises(VideoSessionLimitError):
+        _direct(block, _image("b", 1), **options)
+    # Empty valid invocations are pulses; no private timer runs between them.
+    for _ in range(2):
+        assert _batch_direct(block, [], max_idle_pulses=1, **options) == []
+    assert set(block._sources) == {"b"}
+    with pytest.raises(VideoSessionLimitError, match="stopped"):
+        _direct(block, _image("b", 2), **options)
+    with pytest.raises(VideoSourceCapacityError):
+        _direct(block, _image("c"), **options)
+    assert block.release_source("b")
+    _direct(block, _image("c"), **options)
+
+
+def test_exhaustion_partway_through_batch_keeps_earlier_progress_and_skips_later():
+    backend = _VisualBackend()
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    options = dict(points=POINTS, max_session_frames=2)
+    _batch_direct(block, [_image("a"), _image("b"), _image("c")], **options)
+    _direct(block, _image("b", 1), **options)
+    with pytest.raises(VideoSessionLimitError):
+        _batch_direct(
+            block, [_image("a", 1), _image("b", 2), _image("c", 1)], **options
+        )
+    assert block._sources["a"].episode_frames == 2
+    assert block._sources["b"].stopped and block._sources["b"].handle is None
+    assert block._sources["c"].episode_frames == 1
+    assert [c[0] for c in backend.calls] == [
+        "prompt",
+        "prompt",
+        "prompt",
+        "track",
+        "track",
+    ]
+
+
+def test_old_handle_is_released_before_reprompt_allocation_without_gc():
+    backend = _indexed_backend(SAM2Video)
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    options = dict(points=POINTS, prompt_mode="every_frame", max_session_frames=1)
+    _direct(block, _image(), **options)
+    old = backend._processor.sessions[0]
+    original = backend._processor.init_video_session
+
+    def checked_init(**kwargs):
+        assert old() is None
+        return original(**kwargs)
+
+    backend._processor.init_video_session = checked_init
+    _direct(block, _image(frame=1), **options)
+    assert old() is None
+    assert block.release_source("a")
+    assert all(ref() is None for ref in backend._processor.sessions)
+
+
+def test_backend_failure_and_reset_drop_noncyclic_handles_without_gc():
+    backend = _indexed_backend(SAM2Video)
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    _direct(block, _image("a"), points=POINTS, max_session_frames=3)
+    _direct(block, _image("b"), points=POINTS, max_session_frames=3)
+    a_ref, b_ref = backend._processor.sessions
+    backend._model.fail = True
+    with pytest.raises(RuntimeError, match="mutated then failed"):
+        _direct(block, _image("a", 1), max_session_frames=3)
+    assert a_ref() is None and b_ref() is not None
+    block.reset_state()
+    assert b_ref() is None
+
+
+def test_stopped_batch_member_is_preflighted_before_peers_or_idle_sweep():
+    backend = _VisualBackend()
+    block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
+    options = dict(points=POINTS, max_session_frames=2, max_idle_pulses=1)
+    _batch_direct(block, [_image("a"), _image("b"), _image("c")], **options)
+    _direct(block, _image("b", 1), **options)
+    with pytest.raises(VideoSessionLimitError):
+        _direct(block, _image("b", 2), **options)
+    # Explicitly reset a peer after idle expiry; ordinary re-entry is refused.
+    _direct(block, _image("a", 3), reset_source=True, **options)
+    calls = len(backend.calls)
+    pulse = block._pulse
+    with pytest.raises(VideoSessionLimitError, match="stopped"):
+        _batch_direct(block, [_image("a", 4), _image("b", 3)], **options)
+    assert len(backend.calls) == calls and block._pulse == pulse
+    recovered = _batch_direct(
+        block,
+        [_image("b", 4), _image("b", 5)],
+        reset_source=Batch([True, False]),
+        **options,
+    )
+    assert _episode(recovered[0])["episode_id"] == _episode(recovered[1])["episode_id"]
+    assert _episode(recovered[1])["episode_frame"] == 2
+
+
+IDLE_MODES = ["sam2", "sam3_visual", "sam3_concept"]
+
+
+def _idle_block(kind):
+    concept = kind == "sam3_concept"
+    backend = _ConceptBackend() if concept else _VisualBackend()
+    block_type = (
+        SegmentAnything2VideoBlock if kind == "sam2" else SegmentAnything3VideoBlock
+    )
+    model_id = (
+        SAM3_CONCEPT_MODEL_ID
+        if concept
+        else (SAM2_VIDEO_MODEL_ID if kind == "sam2" else SAM3_VISUAL_MODEL_ID)
+    )
+    options = {"class_names": ["car"]} if concept else {"points": POINTS}
+    if kind == "sam3_visual":
+        options["tracking_mode"] = "visual"
+    return block_type({model_id: backend}), backend, options
+
+
+@pytest.mark.parametrize("kind", IDLE_MODES)
+@pytest.mark.parametrize("action", ["error", "restart"])
+def test_idle_expiry_requires_explicit_recovery_and_retains_capacity(kind, action):
+    block, backend, seed = _idle_block(kind)
+    options = dict(
+        max_session_frames=10,
+        max_idle_pulses=1,
+        max_sources=2,
+        on_session_limit=action,
+        **seed,
+    )
+    first = _batch_direct(block, [_image("a"), _image("b")], **options)
+    a_id, b_id = [_episode(result)["episode_id"] for result in first]
+    _direct(block, _image("b", 1), **options)
+    assert block._sources["a"].handle is not None
+    peer = _direct(block, _image("b", 2), **options)
+    assert block._sources["a"].handle is None and block._sources["a"].expired
+    assert _episode(peer)["episode_id"] == b_id
+    assert len(block._sources) == 2
+    calls = len(backend.calls)
+    pulse = block._pulse
+    with pytest.raises(RuntimeError, match="expired.*reset_source"):
+        _direct(block, _image("a", 3), **options)
+    assert len(backend.calls) == calls and block._pulse == pulse
+    with pytest.raises(VideoSourceCapacityError):
+        _direct(block, _image("c"), **options)
+    # Return a before b can expire; the denied capacity attempt counted as a pulse.
+    recovered = _batch_direct(
+        block,
+        [_image("a", 4), _image("b", 4)],
+        reset_source=Batch([True, False]),
+        **options,
+    )
+    assert _episode(recovered[0])["episode_id"] != a_id
+    assert _episode(recovered[0])["transition"] == "reset"
+    assert _episode(recovered[1])["episode_id"] == b_id
+    assert _episode(recovered[1])["episode_frame"] == 4
+    # Explicit cleanup, in contrast to idle expiry, frees capacity and permits seeding.
+    assert block.release_source("a")
+    again = _batch_direct(block, [_image("a", 5), _image("b", 5)], **options)
+    assert _episode(again[0])["transition"] == "new_session"
+    assert _episode(again[0])["episode_id"] != _episode(recovered[0])["episode_id"]
+    assert _episode(again[1])["episode_id"] == b_id
+
+
+@pytest.mark.parametrize("kind", IDLE_MODES)
+def test_idle_pulses_cannot_forget_exhaustion_stop(kind):
+    block, backend, seed = _idle_block(kind)
+    options = dict(max_session_frames=1, max_idle_pulses=1, max_sources=1, **seed)
+    first = _direct(block, _image(), **options)
+    with pytest.raises(VideoSessionLimitError):
+        _direct(block, _image(frame=1), **options)
+    for _ in range(4):
+        _batch_direct(block, [], **options)
+    assert len(block._sources) == 1 and block._sources["a"].stopped
+    assert block._sources["a"].handle is None
+    with pytest.raises(VideoSessionLimitError, match="stopped"):
+        _direct(block, _image(frame=2), **options)
+    with pytest.raises(VideoSourceCapacityError):
+        _direct(block, _image("b"), **options)
+    assert len(backend.calls) == 1
+    recovered = _direct(block, _image(frame=3), reset_source=True, **options)
+    assert _episode(recovered)["transition"] == "reset"
+    assert _episode(recovered)["episode_id"] != _episode(first)["episode_id"]
+
+
+@pytest.mark.parametrize("kind", IDLE_MODES)
+def test_expired_empty_reentry_is_refused_and_explicit_unseeded_reset_is_visible(kind):
+    block, backend, seed = _idle_block(kind)
+    options = dict(max_session_frames=3, max_idle_pulses=1)
+    first = _direct(block, _image(), **seed, **options)
+    for _ in range(2):
+        _batch_direct(block, [], **seed, **options)
+    # Changing to an empty concept set/visual prompt cannot silently clear expiry.
+    empty = {"class_names": []} if kind == "sam3_concept" else {}
+    if kind == "sam3_visual":
+        empty["tracking_mode"] = "visual"
+    with pytest.raises(RuntimeError, match="expired"):
+        _direct(block, _image(frame=1), **empty, **options)
+    assert len(backend.calls) == 1
+    reset = _direct(block, _image(frame=2), reset_source=True, **empty, **options)
+    assert len(reset["predictions"]) == 0
+    assert _episode(reset) == {
+        "episode_id": None,
+        "episode_frame": 0,
+        "transition": "reset",
+    }
+    assert _episode(reset, output="segmentation") == _episode(reset)
+    seeded = _direct(block, _image(frame=3), **seed, **options)
+    assert _episode(seeded)["transition"] == "new_session"
+    assert _episode(seeded)["episode_id"] != _episode(first)["episode_id"]
+
+
+@pytest.mark.parametrize("execution", ["run", "phases"])
+def test_workflow_host_cleanup_releases_expired_slot_and_preserves_peer_episode(
+    execution,
+):
+    backend = _indexed_backend(SAM2Video)
+    session = _plan(
+        mode=execution,
+        points=POINTS,
+        max_session_frames=10,
+        max_idle_pulses=1,
+        max_sources=2,
+    ).create_session({"models": {SAM2_VIDEO_MODEL_ID: backend}})
+    first = session.run({"image": [_image("a"), _image("b")]}).rows()
+    a_ref, b_ref = backend._processor.sessions
+    for frame in (1, 2):
+        session.run({"image": [_image("b", frame)]})
+    assert a_ref() is None and b_ref() is not None
+    block = next(
+        b
+        for b in session.instances.values()
+        if isinstance(b, SegmentAnything2VideoBlock)
+    )
+    assert block._sources["a"].expired
+    assert block.release_source("a")
+    later = session.run({"image": [_image("a", 3), _image("b", 3)]}).rows()
+    assert _episode(later[0])["episode_id"] != _episode(first[0])["episode_id"]
+    assert _episode(later[0])["transition"] == "new_session"
+    assert _episode(later[1])["episode_id"] == _episode(first[1])["episode_id"]
+    assert b_ref() is not None

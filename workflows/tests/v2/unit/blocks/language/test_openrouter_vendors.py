@@ -1,4 +1,4 @@
-"""OpenRouter vendor blocks: Kimi, Meta, Z.ai and Llama requests and decoding.
+"""OpenRouter vendor blocks: Kimi, Meta and Z.ai requests and decoding.
 
 Every request goes to an in-process fake transport or platform client; the
 answers are fixed strings, not model output.
@@ -18,7 +18,6 @@ from roboflow_workflows.v2.blocks.language import openrouter_vendors
 from roboflow_workflows.v2.blocks.language.chat import ChatRequestError
 from roboflow_workflows.v2.blocks.language.openrouter_vendors import (
     KimiOpenRouterBlock,
-    LlamaVisionBlock,
     MetaVlmBlock,
     VendorModel,
     ZaiVlmBlock,
@@ -32,7 +31,6 @@ from roboflow_workflows.v2.data.predictions import (
 )
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 from roboflow_workflows.v2.engine.declaration import spec_of
-
 from tests.v2.support.language.fake_chat import (
     FakeChatServer,
     FakePlatformClient,
@@ -134,25 +132,6 @@ def test_kimi_decodes_normalized_detections_to_pixels() -> None:
     detections = results[0]["predictions"]
     assert detections.xyxy.tolist() == [[50.0, 50.0, 150.0, 100.0]]
     assert results[0]["error_status"] is False
-
-
-def test_llama_returns_raw_answers_with_the_native_precision_filter() -> None:
-    server = _answering('{"class_name": "dog", "confidence": 0.8}')
-
-    results = _run(
-        _block(LlamaVisionBlock, server),
-        [_image()],
-        task_type="classification",
-        classes=["dog"],
-    )
-
-    body = server.requests[0].body
-    assert body["model"] == "meta-llama/llama-3.2-11b-vision-instruct"
-    assert body["provider"]["quantizations"] == ["bf16", "fp32"]
-    assert results == [
-        {"output": '{"class_name": "dog", "confidence": 0.8}', "classes": ["dog"]}
-    ]
-    assert LlamaVisionBlock.metadata["deprecated"] is True
 
 
 def test_meta_sends_one_image_first_user_message_with_low_reasoning() -> None:
@@ -324,7 +303,7 @@ def test_a_replayed_secret_fails_before_any_request() -> None:
 
 
 @pytest.mark.parametrize(
-    "block_class", [KimiOpenRouterBlock, MetaVlmBlock, ZaiVlmBlock, LlamaVisionBlock]
+    "block_class", [KimiOpenRouterBlock, MetaVlmBlock, ZaiVlmBlock]
 )
 def test_a_key_resolved_to_none_never_sends_the_environment_key(
     block_class, monkeypatch
@@ -448,12 +427,6 @@ def test_answers_keep_image_order_under_concurrency() -> None:
             {"classes": ["car", "car"]},
             "classes repeat",
         ),
-        (
-            LlamaVisionBlock,
-            {"prompt": "$inputs.prompt"},
-            {"prompt": None},
-            "`prompt` parameter required",
-        ),
     ],
 )
 def test_resolved_values_are_checked_before_any_request(
@@ -517,7 +490,6 @@ def test_describe_outputs_follows_the_task() -> None:
     assert kind(KimiOpenRouterBlock, "classification", ["a"]) == (
         CLASSIFICATION_PREDICTION_KIND,
     )
-    assert "predictions" not in LlamaVisionBlock.outputs
     assert {"thinking", "input_tokens"} <= set(ZaiVlmBlock.outputs)
     assert "thinking" not in KimiOpenRouterBlock.outputs
 
@@ -528,11 +500,6 @@ def test_describe_outputs_follows_the_task() -> None:
         (KimiOpenRouterBlock, "Kimi K2.6 - OpenRouter", "moonshotai/kimi-k2.6"),
         (MetaVlmBlock, "Muse Glimmer", "meta/muse-glimmer-30b"),
         (ZaiVlmBlock, "$inputs.zai_model", "$inputs.zai_model"),
-        (
-            LlamaVisionBlock,
-            "11B - OpenRouter",
-            "meta-llama/llama-3.2-11b-vision-instruct",
-        ),
     ],
 )
 def test_dependent_resources_name_the_openrouter_slug(
@@ -556,16 +523,8 @@ def test_max_concurrent_requests_below_one_is_rejected() -> None:
         )
 
 
-def test_llama_recommends_classification_but_no_detection_parser() -> None:
-    assert LlamaVisionBlock.metadata["recommended_parsers"] == {
-        "structured-answering": "v2/json_parser@v1",
-        "classification": "v2/vlm_as_classifier@v2",
-        "multi-label-classification": "v2/vlm_as_classifier@v2",
-    }
-
-
 @pytest.mark.parametrize(
-    "block_class", [KimiOpenRouterBlock, MetaVlmBlock, ZaiVlmBlock, LlamaVisionBlock]
+    "block_class", [KimiOpenRouterBlock, MetaVlmBlock, ZaiVlmBlock]
 )
 @pytest.mark.parametrize("provide_platform", [False, True])
 def test_managed_key_without_host_fails_before_platform_effects(
@@ -588,3 +547,8 @@ def test_managed_key_without_host_fails_before_platform_effects(
     assert server.requests == [] and platform.posts == []
     assert caught.value.__cause__ is None and caught.value.__context__ is None
     assert ROBOFLOW_KEY not in str(caught.value)
+
+
+def test_only_active_openrouter_vendor_blocks_are_discoverable() -> None:
+    assert openrouter_vendors.BLOCKS == (KimiOpenRouterBlock, MetaVlmBlock, ZaiVlmBlock)
+    assert all("llama" not in block.type for block in openrouter_vendors.BLOCKS)

@@ -84,7 +84,8 @@ from roboflow_workflows.v2.blocks.models.common import (
     models_cache,
 )
 from roboflow_workflows.v2.data.batch import Batch
-from roboflow_workflows.v2.data.frames import FRAME_RECORD_KEY, FrameRef
+from roboflow_workflows.v2.data.errors import ContractError
+from roboflow_workflows.v2.data.frames import FrameRef, require_compatible_frame
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import (
@@ -871,19 +872,13 @@ def _prompt_boxes(prompt: Any, *, block: str) -> Optional[Detections]:
 def _require_same_frame(
     prompt: Optional[Detections], image: ImageData, *, block: str
 ) -> None:
-    record = (
-        None if prompt is None else (prompt.image_metadata or {}).get(FRAME_RECORD_KEY)
-    )
-    if record is None:
-        return
-
-    frame = FrameRef.from_record(record)
-    if frame.image_id != image.image_id or frame.size_hw != image.size_hw:
+    metadata = None if prompt is None else prompt.image_metadata
+    try:
+        require_compatible_frame(metadata, image=image)
+    except ContractError as error:
         raise ValueError(
-            f"{block}: boxes were predicted on image {frame.image_id!r} of size "
-            f"{frame.size_hw}, not on image {image.image_id!r} of size "
-            f"{image.size_hw}; wire boxes predicted on the image you segment"
-        )
+            f"{block}: {error}; wire boxes predicted on the image you segment"
+        ) from error
 
 
 def _require_rgb(image: ImageData, *, block: str) -> None:

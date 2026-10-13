@@ -1,4 +1,4 @@
-"""Gemma, Qwen 3.5/3.6 and SpaceXAI blocks: requests, keys, failures, decoding.
+"""Gemma and SpaceXAI blocks: requests, keys, failures, decoding.
 
 Every request goes to an in-process fake transport or platform client; the
 answers are fixed strings, not model output.
@@ -15,15 +15,10 @@ import torch
 from roboflow_workflows.v2.blocks.language import compatible_vendors
 from roboflow_workflows.v2.blocks.language.chat import ChatRequestError
 from roboflow_workflows.v2.blocks.language.compatible_vendors import (
-    QWEN_VQA_SYSTEM_PROMPT,
     GoogleGemmaBlock,
-    Qwen35OpenRouterBlock,
-    Qwen36OpenRouterBlock,
     SpaceXAIBlock,
     xai_task_request,
 )
-from roboflow_workflows.v2.blocks.language.openrouter import OpenRouterBlock
-from roboflow_workflows.v2.blocks.language.parsers import VLMAsDetectorBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import (
@@ -32,7 +27,6 @@ from roboflow_workflows.v2.data.predictions import (
 )
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 from roboflow_workflows.v2.engine.declaration import spec_of
-
 from tests.v2.support.language.fake_chat import (
     FakeChatServer,
     FakePlatformClient,
@@ -109,15 +103,6 @@ def _gemma(server: FakeChatServer, **resources: Any) -> GoogleGemmaBlock:
         openrouter_base_url=FAKE_OPENROUTER_URL,
         openrouter_http_client=server.http_client(),
         **resources,
-    )
-
-    return block
-
-
-def _qwen(block_class, server: FakeChatServer):
-    block = block_class(
-        openrouter_base_url=FAKE_OPENROUTER_URL,
-        openrouter_http_client=server.http_client(),
     )
 
     return block
@@ -273,176 +258,6 @@ def test_gemma_requires_the_field_its_task_needs() -> None:
         spec_of(GoogleGemmaBlock).validate_params(
             {"images": "$inputs.i", "task_type": "classification"}
         )
-
-
-# --- qwen3_5_openrouter@v1 / qwen3_6_openrouter@v1 --------------------------
-
-
-@pytest.mark.parametrize(
-    "block_class, slug",
-    [
-        (Qwen35OpenRouterBlock, "qwen/qwen3.5-27b"),
-        (Qwen36OpenRouterBlock, "qwen/qwen3.6-35b-a3b"),
-    ],
-)
-def test_qwen_request_carries_only_v1_fields(block_class, slug: str) -> None:
-    server = _chat_server("Two cats.")
-
-    results = _run(
-        block_class,
-        _qwen(block_class, server),
-        [_image()],
-        api_key=OPENROUTER_KEY,
-        prompt="How many cats?",
-    )
-
-    request = server.requests[0]
-    assert request.headers["authorization"] == f"Bearer {OPENROUTER_KEY}"
-    assert set(request.body) == {"model", "messages", "max_tokens", "temperature"}
-    assert (request.body["model"], request.body["max_tokens"]) == (slug, 500)
-    assert request.body["temperature"] == 0.1
-    assert results == [{"output": "Two cats.", "classes": None}]
-
-
-def test_qwen_vqa_keeps_v1_system_prompt() -> None:
-    server = _chat_server("B")
-
-    _run(
-        Qwen35OpenRouterBlock,
-        _qwen(Qwen35OpenRouterBlock, server),
-        [_image()],
-        api_key=OPENROUTER_KEY,
-        task_type="visual-question-answering",
-        prompt="A or B?",
-    )
-
-    messages = server.requests[0].body["messages"]
-    assert messages[0] == {"role": "system", "content": QWEN_VQA_SYSTEM_PROMPT}
-    assert "questionsubmitted" in QWEN_VQA_SYSTEM_PROMPT
-    assert messages[1]["content"][0] == {"type": "text", "text": "Question: A or B?"}
-
-
-def test_qwen_requires_an_api_key() -> None:
-    with pytest.raises(ValueError, match="api_key"):
-        spec_of(Qwen36OpenRouterBlock).validate_params(
-            {"images": "$inputs.i", "prompt": "Hi"}
-        )
-
-
-def test_qwen_rejects_a_managed_key_before_any_request() -> None:
-    server = _chat_server()
-
-    with pytest.raises(ValueError, match="Roboflow-managed"):
-        _run(
-            Qwen36OpenRouterBlock,
-            _qwen(Qwen36OpenRouterBlock, server),
-            [_image()],
-            api_key="rf_key:account",
-            prompt="Hi",
-        )
-
-    assert server.requests == []
-
-
-def test_qwen_replayed_secret_fails_before_any_request() -> None:
-    server = _chat_server()
-
-    with pytest.raises(SecretUnavailableError):
-        _run(
-            Qwen35OpenRouterBlock,
-            _qwen(Qwen35OpenRouterBlock, server),
-            [_image()],
-            resolved={"api_key": Secret.unavailable("openrouter_key")},
-            api_key="$inputs.key",
-            prompt="Hi",
-        )
-
-    assert server.requests == []
-
-
-def test_qwen_failure_names_no_key_and_chains_nothing() -> None:
-    server = FakeChatServer(
-        lambda path, request: (401, error_body(f"bad key {OPENROUTER_KEY}"))
-    )
-
-    with pytest.raises(ChatRequestError) as caught:
-        _run(
-            Qwen35OpenRouterBlock,
-            _qwen(Qwen35OpenRouterBlock, server),
-            [_image()],
-            api_key=OPENROUTER_KEY,
-            prompt="Hi",
-        )
-
-    assert "bad key <secret api_key>" in str(caught.value)
-    assert caught.value.__cause__ is None and caught.value.__context__ is None
-    assert OPENROUTER_KEY not in _chain_text(caught.value)
-
-
-def test_qwen_answer_without_choices_fails_with_v1_message() -> None:
-    server = FakeChatServer(
-        lambda path, request: (
-            200,
-            {
-                "id": "x",
-                "object": "chat.completion",
-                "created": 0,
-                "model": "m",
-                "choices": [],
-                "error": {"message": "no provider"},
-            },
-        )
-    )
-
-    with pytest.raises(ChatRequestError, match="Details: no provider"):
-        _run(
-            Qwen35OpenRouterBlock,
-            _qwen(Qwen35OpenRouterBlock, server),
-            [_image()],
-            api_key=OPENROUTER_KEY,
-            prompt="Hi",
-        )
-
-
-def test_qwen_answers_keep_image_order_under_concurrency() -> None:
-    def reply(path: str, body: Dict[str, Any]):
-        url = body["messages"][0]["content"][1]["image_url"]["url"]
-        data = base64.b64decode(url.split(",", 1)[1])
-        height, width = cv2.imdecode(np.frombuffer(data, np.uint8), 1).shape[:2]
-        return 200, chat_completion_body(f"{width}x{height}")
-
-    server = FakeChatServer(reply)
-    images = [_image(10 + index, 8, seed=index) for index in range(6)]
-
-    results = _run(
-        Qwen36OpenRouterBlock,
-        _qwen(Qwen36OpenRouterBlock, server),
-        images,
-        api_key=OPENROUTER_KEY,
-        prompt="Size?",
-        max_concurrent_requests=3,
-    )
-
-    assert [row["output"] for row in results] == [
-        f"{10 + index}x8" for index in range(6)
-    ]
-
-
-def test_qwen_unknown_model_from_a_selector_fails_before_any_request() -> None:
-    server = _chat_server()
-
-    with pytest.raises(ValueError, match="Invalid model name"):
-        _run(
-            Qwen35OpenRouterBlock,
-            _qwen(Qwen35OpenRouterBlock, server),
-            [_image()],
-            resolved={"model_version": "Qwen 3.6 Plus - OpenRouter"},
-            api_key=OPENROUTER_KEY,
-            prompt="Hi",
-            model_version="$inputs.model",
-        )
-
-    assert server.requests == []
 
 
 # --- spacexai@v3 -----------------------------------------------------------
@@ -739,72 +554,8 @@ def test_xai_task_requests_follow_v1_part_order() -> None:
 
 
 @pytest.mark.parametrize(
-    "block_class, slug",
-    [
-        (Qwen35OpenRouterBlock, "qwen/qwen3.5-27b"),
-        (Qwen36OpenRouterBlock, "qwen/qwen3.6-35b-a3b"),
-    ],
-)
-def test_qwen_raw_detection_and_documented_openrouter_replacement(
-    block_class, slug: str
-) -> None:
-    metadata = block_class.metadata
-    assert metadata["recommended_parsers"] == {
-        "structured-answering": "v2/json_parser@v1",
-        "classification": "v2/vlm_as_classifier@v2",
-        "multi-label-classification": "v2/vlm_as_classifier@v2",
-    }
-    assert metadata["deprecation_message"].startswith("Use v2/openrouter@v3")
-    assert (
-        "V1-only replacement: roboflow_core/qwen_vlm@v1"
-        in metadata["deprecation_message"]
-    )
-    image = _image(400, 200)
-    server = _chat_server(DETECTION_ANSWER_NORMALIZED)
-    raw = _run(
-        block_class,
-        _qwen(block_class, server),
-        [image],
-        api_key=OPENROUTER_KEY,
-        task_type="object-detection",
-        classes=["car"],
-    )
-    assert raw == [{"output": DETECTION_ANSWER_NORMALIZED, "classes": ["car"]}]
-    assert '"x_min": 0.1' in server.requests[0].body["messages"][0]["content"]
-
-    parsed = VLMAsDetectorBlock().run(
-        image=image,
-        vlm_output=raw[0]["output"],
-        model_type="qwen",
-        classes=["car"],
-    )
-    assert parsed["error_status"] is True
-    assert parsed["predictions"] is None
-
-    replacement_server = _chat_server(DETECTION_ANSWER_NORMALIZED)
-    replacement = OpenRouterBlock(
-        openrouter_base_url=FAKE_OPENROUTER_URL,
-        openrouter_http_client=replacement_server.http_client(),
-    )
-    decoded = _run(
-        OpenRouterBlock,
-        replacement,
-        [image],
-        api_key=OPENROUTER_KEY,
-        model_id=slug,
-        task_type="object-detection",
-        classes=["car"],
-    )
-    assert replacement_server.requests[0].body["model"] == slug
-    assert decoded[0]["error_status"] is False
-    assert decoded[0]["predictions"].xyxy.tolist() == [[100.0, 100.0, 300.0, 200.0]]
-
-
-@pytest.mark.parametrize(
     "block_class, provider",  # all credentials below are invented
     [
-        (Qwen35OpenRouterBlock, "OpenRouter"),
-        (Qwen36OpenRouterBlock, "OpenRouter"),
         (SpaceXAIBlock, "xAI"),
     ],
 )
@@ -813,8 +564,8 @@ def test_missing_resolved_provider_key_rejects_before_sdk_or_request(
 ) -> None:
     ambient_key = "invented-ambient-openai-key-must-not-send"
     monkeypatch.setenv("OPENAI_API_KEY", ambient_key)
-    server = _responses_server() if block_class is SpaceXAIBlock else _chat_server()
-    block = _xai(server) if block_class is SpaceXAIBlock else _qwen(block_class, server)
+    server = _responses_server()
+    block = _xai(server)
     constructions = []
     real_openai = compatible_vendors.OpenAI
 
@@ -842,8 +593,6 @@ def test_missing_resolved_provider_key_rejects_before_sdk_or_request(
 @pytest.mark.parametrize(
     "block_class, explicit_key",
     [
-        (Qwen35OpenRouterBlock, OPENROUTER_KEY),
-        (Qwen36OpenRouterBlock, OPENROUTER_KEY),
         (SpaceXAIBlock, XAI_KEY),
     ],
 )
@@ -852,41 +601,14 @@ def test_explicit_provider_key_overrides_ambient_openai_key(
 ) -> None:
     ambient_key = "invented-ambient-openai-key-must-not-send"
     monkeypatch.setenv("OPENAI_API_KEY", ambient_key)
-    server = _responses_server() if block_class is SpaceXAIBlock else _chat_server()
-    block = _xai(server) if block_class is SpaceXAIBlock else _qwen(block_class, server)
+    server = _responses_server()
+    block = _xai(server)
     _run(block_class, block, [_image()], api_key=explicit_key, prompt="Hi")
 
     assert len(server.requests) == 1
     request = server.requests[0]
     assert request.headers["authorization"] == f"Bearer {explicit_key}"
     assert ambient_key not in str(request.headers) + str(request.body)
-
-
-@pytest.mark.parametrize("block_class", [Qwen35OpenRouterBlock, Qwen36OpenRouterBlock])
-def test_qwen_managed_key_rejects_before_sdk_with_ambient_key(
-    block_class, monkeypatch
-) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "invented-ambient-openai-key-must-not-send")
-    server = _chat_server()
-    constructions = []
-
-    def capture_sdk(**kwargs):
-        constructions.append(kwargs)
-        raise AssertionError("managed Qwen key must not construct the SDK")
-
-    monkeypatch.setattr(compatible_vendors, "OpenAI", capture_sdk)
-    with pytest.raises(ValueError, match="Roboflow-managed") as caught:
-        _run(
-            block_class,
-            _qwen(block_class, server),
-            [_image()],
-            api_key="rf_key:user:invented-account",
-            prompt="Hi",
-        )
-
-    assert constructions == [] and server.requests == []
-    assert caught.value.__cause__ is None and caught.value.__context__ is None
-    assert "invented-account" not in _chain_text(caught.value)
 
 
 def test_xai_managed_key_ignores_ambient_key_without_sdk(monkeypatch) -> None:
@@ -917,3 +639,8 @@ def test_xai_managed_key_ignores_ambient_key_without_sdk(monkeypatch) -> None:
     assert post["payload"]["store"] is False
     assert ambient_key not in str(post)
     assert results[0]["output"] == "Proxied."
+
+
+def test_only_active_compatible_vendor_blocks_are_discoverable() -> None:
+    assert compatible_vendors.BLOCKS == (GoogleGemmaBlock, SpaceXAIBlock)
+    assert all("qwen3_" not in block.type for block in compatible_vendors.BLOCKS)

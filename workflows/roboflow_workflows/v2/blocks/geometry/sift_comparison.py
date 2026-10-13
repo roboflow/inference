@@ -26,8 +26,9 @@ another device are copied to the host for matching.
 
 Differences from V1: keypoints and descriptors are tensors; a descriptor input
 must be a ``(N, 128)`` floating tensor (V1 also matches ``float32``
-descriptors of another width, e.g. ``(N, 64)``; its FLANN matcher fails inside
-OpenCV on ``uint8``); keypoint visualizations are images even when a side has
+descriptors of another width, e.g. ``(N, 64)``, and, with ``BFMatcher``,
+``uint8`` descriptors; V1's ``FlannBasedMatcher`` fails inside OpenCV on
+``uint8``); keypoint visualizations are images even when a side has
 too few descriptors (V1 returns raw arrays there); ``visualization_matches`` is
 a composite of both inputs (V1 labels it with ``input_1``'s frame, whose size
 differs).

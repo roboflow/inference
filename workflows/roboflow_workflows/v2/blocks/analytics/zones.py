@@ -209,8 +209,8 @@ def line_sides(points: torch.Tensor, line: Line) -> torch.Tensor:
 
     # Projection onto the segment, ends included.
     along = delta_x * offset_x + delta_y * offset_y
-    beside = (along >= 0) & (along <= delta_x**2 + delta_y**2)
-    on_segment = beside.all(dim=0)
+    within_extent = (along >= 0) & (along <= delta_x**2 + delta_y**2)
+    on_segment = within_extent.all(dim=0)
 
     left = (delta_x * offset_y - delta_y * offset_x) < 0
     all_left = left.all(dim=0)

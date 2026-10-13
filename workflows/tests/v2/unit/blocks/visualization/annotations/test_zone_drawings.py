@@ -20,6 +20,7 @@ from roboflow_workflows.core_steps.visualizations.polygon_zone.v1 import (
 from roboflow_workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
 )
+from roboflow_workflows.v2.blocks.analytics.zones import parse_line, parse_polygons
 from roboflow_workflows.v2.blocks.visualization.annotations.zones import (
     LineCounterVisualizationBlock,
     PolygonZoneVisualizationBlock,
@@ -303,7 +304,7 @@ def test_input_is_unchanged_and_a_strided_input_draws_the_same(
 def test_polygon_zones_reads_one_or_many_polygons(value: Any, expected: Any) -> None:
     # when / then
     if expected is None:
-        with pytest.raises(ValueError, match="zone must be a list of points"):
+        with pytest.raises(ValueError, match="zone must be a list; got generator"):
             polygon_zones(value)
     else:
         polygons = polygon_zones(value)
@@ -314,14 +315,16 @@ def test_polygon_zones_reads_one_or_many_polygons(value: Any, expected: Any) -> 
 @pytest.mark.parametrize(
     "block_class, name, value, message",
     [
-        (PolygonZoneVisualizationBlock, "zone", [[0, 0], [5, 5]], "zone must have >= 3 points"),
-        (PolygonZoneVisualizationBlock, "zone", [TRIANGLE, []], "zone[1] must have >= 3 points"),
-        (PolygonZoneVisualizationBlock, "zone", [[0, 0, 1], [5, 5, 1], [9, 0, 1]], "zone[0] must be a point [x, y]"),
-        (PolygonZoneVisualizationBlock, "zone", [[0, True], [5, 5], [9, 0]], "zone[0] must be a point [x, y]"),
-        (PolygonZoneVisualizationBlock, "zone", [[0, float("nan")], [5, 5], [9, 0]], "must be finite int32 pixels"),
+        (PolygonZoneVisualizationBlock, "zone", [[0, 0], [5, 5]], "zone must be a polygon of at least 3 [x, y] points"),
+        (PolygonZoneVisualizationBlock, "zone", [TRIANGLE, []], "zone[1] must be a polygon of at least 3 [x, y] points"),
+        (PolygonZoneVisualizationBlock, "zone", [[0, 0, 1], [5, 5, 1], [9, 0, 1]], "zone[0][0] must be a point [x, y]"),
+        (PolygonZoneVisualizationBlock, "zone", [[0, True], [5, 5], [9, 0]], "zone[0] coordinates must be numbers"),
+        (PolygonZoneVisualizationBlock, "zone", [[0, float("nan")], [5, 5], [9, 0]], "zone[0] coordinates must be finite"),
+        (PolygonZoneVisualizationBlock, "zone", [[0, 3e9], [5, 5], [9, 0]], "zone must be finite int32 pixels"),
         (PolygonZoneVisualizationBlock, "opacity", 1.5, "opacity must be a number in [0.0, 1.0]"),
         (PolygonZoneVisualizationBlock, "color", "#zz0000", "color: invalid color"),
-        (LineCounterVisualizationBlock, "zone", TRIANGLE, "zone must be exactly two points"),
+        (LineCounterVisualizationBlock, "zone", TRIANGLE, "zone must be exactly 2 points"),
+        (LineCounterVisualizationBlock, "zone", [[5, 5], [5.0, 5]], "zone needs two different points"),
         (LineCounterVisualizationBlock, "thickness", 0, "thickness must be an integer >= 1"),
         (LineCounterVisualizationBlock, "text_thickness", 0, "text_thickness must be an integer >= 1"),
         (LineCounterVisualizationBlock, "text_scale", 0, "text_scale must be a number > 0.0"),
@@ -352,6 +355,48 @@ def test_a_selected_value_fails_with_the_literal_error_text(
     # then
     assert message in str(compile_error.value)
     assert message in str(run_error.value)
+
+
+@pytest.mark.parametrize(
+    "block_class, parse, value",
+    [
+        (PolygonZoneVisualizationBlock, parse_polygons, TRIANGLE),
+        (PolygonZoneVisualizationBlock, parse_polygons, [TRIANGLE, SQUARE]),
+        (PolygonZoneVisualizationBlock, parse_polygons, np.array(TRIANGLE)),
+        (PolygonZoneVisualizationBlock, parse_polygons, []),
+        (PolygonZoneVisualizationBlock, parse_polygons, [[0, 0], [5, 5]]),
+        (PolygonZoneVisualizationBlock, parse_polygons, [[[0, 0, 1], [5, 5, 1], [9, 0, 1]]]),
+        (PolygonZoneVisualizationBlock, parse_polygons, "0,0 5,5 9,0"),
+        (LineCounterVisualizationBlock, parse_line, [[0, 5], [9, 5]]),
+        (LineCounterVisualizationBlock, parse_line, [[0, 5], [0, 5]]),
+        (LineCounterVisualizationBlock, parse_line, [[0, 5, 1], [9, 5, 1]]),
+        (LineCounterVisualizationBlock, parse_line, [[0, 5]]),
+    ],
+)  # fmt: skip
+def test_a_drawing_accepts_a_geometry_exactly_when_the_zone_blocks_do(
+    block_class: type, parse: Any, value: Any
+) -> None:
+    # given
+    params = dict(
+        spec_of(block_class).validate_params(
+            {"image": "$inputs.image", "zone": "$inputs.zone"}
+        )
+    )
+
+    # when
+    try:
+        parse(value, name="zone")
+        expected_error = None
+    except ValueError as error:
+        expected_error = str(error)
+    try:
+        block_class().run(**{**params, "zone": value, "image": image_of(scene())})
+        drawing_error = None
+    except ValueError as error:
+        drawing_error = str(error)
+
+    # then
+    assert drawing_error == expected_error
 
 
 def test_a_selected_non_list_geometry_names_the_expected_shape() -> None:

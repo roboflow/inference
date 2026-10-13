@@ -417,6 +417,16 @@ def bundles(**options):
     return module.VisionEventBundleAdapter(allow_access_to_file_system=True, **options)
 
 
+def bundles_in(directory, confined):
+    # confined: an allowed root, so publication uses an open directory.
+    return bundles(allowed_write_directory=str(directory)) if confined else bundles()
+
+
+both_publishers = pytest.mark.parametrize(
+    "confined", [False, True], ids=["v1-pathname", "allowed-root"]
+)
+
+
 def write(adapter, directory, file_name=None, **changes):
     adapter.prepare_destination(target_directory=str(directory), file_name=file_name)
     return adapter.create_bundle(
@@ -547,8 +557,9 @@ def test_unwritable_directory_is_refused(tmp_path):
         directory.chmod(stat.S_IRWXU)
 
 
-def test_taken_names_are_refused_and_never_replaced(tmp_path):
-    adapter = bundles()
+@both_publishers
+def test_taken_names_are_refused_and_never_replaced(tmp_path, confined):
+    adapter = bundles_in(tmp_path, confined)
     first = write(adapter, tmp_path, "taken.tar.gz")
     original = Path(first.bundle_path).read_bytes()
     (tmp_path / "dangling.tar.gz").symlink_to(tmp_path / "missing")
@@ -565,15 +576,18 @@ def test_taken_names_are_refused_and_never_replaced(tmp_path):
     assert Path(first.bundle_path).read_bytes() == original
 
 
-def test_concurrent_writers_of_one_name_have_exactly_one_winner(tmp_path, monkeypatch):
+@both_publishers
+def test_concurrent_writers_of_one_name_have_exactly_one_winner(
+    tmp_path, monkeypatch, confined
+):
     barrier, real_link = Barrier(2), os.link
 
-    def synchronized_link(source, target):
+    def synchronized_link(*args, **kwargs):
         barrier.wait(timeout=5)
-        real_link(source, target)
+        real_link(*args, **kwargs)
 
     monkeypatch.setattr(os, "link", synchronized_link)
-    adapter = bundles()
+    adapter = bundles_in(tmp_path, confined)
 
     def publish(_):
         try:
@@ -591,29 +605,210 @@ def test_concurrent_writers_of_one_name_have_exactly_one_winner(tmp_path, monkey
     assert [path.name for path in tmp_path.iterdir()] == ["race.tar.gz"]
 
 
-def test_filesystem_without_hard_links_uses_v1_checked_rename(tmp_path, monkeypatch):
-    def unsupported(source, target):
+@both_publishers
+def test_filesystem_without_hard_links_uses_v1_checked_rename(
+    tmp_path, monkeypatch, confined
+):
+    def unsupported(*args, **kwargs):
         raise OSError(errno.EPERM, "hard links unsupported")
 
     monkeypatch.setattr(os, "link", unsupported)
 
-    bundle = write(bundles(), tmp_path, "fat")
+    bundle = write(bundles_in(tmp_path, confined), tmp_path, "fat")
 
     assert inspect(bundle.bundle_path)[0]["eventId"] == bundle.event_id
     assert [path.name for path in tmp_path.iterdir()] == ["fat.tar.gz"]
 
 
+@both_publishers
 @pytest.mark.parametrize("failing", ["link", "fsync"])
-def test_write_failures_leave_no_files(tmp_path, monkeypatch, failing):
-    def fail(*args):
+def test_write_failures_leave_no_files(tmp_path, monkeypatch, failing, confined):
+    def fail(*args, **kwargs):
         raise OSError(errno.EIO, "invented disk failure")
 
     monkeypatch.setattr(os, failing, fail)
 
     with pytest.raises(OSError, match="invented disk failure"):
-        write(bundles(), tmp_path, "broken")
+        write(bundles_in(tmp_path, confined), tmp_path, "broken")
 
     assert not list(tmp_path.iterdir())
+
+
+def confinement(tmp_path):
+    """allowed/link -> allowed/original, a sibling outside, and the adapter."""
+    allowed, outside = tmp_path / "allowed", tmp_path / "outside"
+    original = allowed / "original"
+    original.mkdir(parents=True)
+    outside.mkdir()
+    link = allowed / "link"
+    link.symlink_to(original, target_is_directory=True)
+    adapter = bundles(allowed_write_directory=str(allowed))
+    return adapter, link, original, outside
+
+
+def during_archive(monkeypatch, stage, action):
+    """Run ``action`` inside the real archive build: JPEG encoding or tar."""
+    owner, name = {
+        "jpeg": (module, "encode_image_to_jpeg_bytes"),
+        "tar": (module.v1_bundles, "_build_tar_bytes"),
+    }[stage]
+    real = getattr(owner, name)
+
+    def interfere(*args, **kwargs):
+        result = real(*args, **kwargs)
+        action()
+        return result
+
+    monkeypatch.setattr(owner, name, interfere)
+
+
+def temporary_files(root):
+    return sorted(path.name for path in root.rglob(".tmp_*"))
+
+
+@pytest.mark.parametrize("stage", ["jpeg", "tar"])
+def test_link_retargeted_while_the_archive_is_built_cannot_redirect_it(
+    tmp_path, monkeypatch, stage
+):
+    adapter, link, original, outside = confinement(tmp_path)
+
+    def retarget():
+        link.unlink()
+        link.symlink_to(outside, target_is_directory=True)
+
+    during_archive(monkeypatch, stage, retarget)
+
+    bundle = write(adapter, link, "root-bound", input_image=image(True))
+
+    assert link.resolve() == outside.resolve()
+    assert not list(outside.iterdir())
+    assert [path.name for path in original.iterdir()] == ["root-bound.tar.gz"]
+    assert bundle.bundle_path == str(original.resolve() / "root-bound.tar.gz")
+    assert inspect(bundle.bundle_path)[0]["eventId"] == bundle.event_id
+    assert temporary_files(tmp_path) == []
+
+
+def test_directory_moved_out_of_the_root_fails_and_retains_the_bundle(
+    tmp_path, monkeypatch
+):
+    adapter, link, original, outside = confinement(tmp_path)
+    moved = outside / "moved"
+    during_archive(monkeypatch, "tar", lambda: original.rename(moved))
+
+    with pytest.raises(ValueError, match="Automatic cleanup was skipped"):
+        write(adapter, original, "escaped")
+
+    retained = moved / "escaped.tar.gz"
+    assert [path.name for path in moved.iterdir()] == [retained.name]
+    assert inspect(retained)[0]["eventType"] == "inventory_count"
+    assert temporary_files(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "interference", ["before-stat", "after-stat", "absent", "stat-error"]
+)
+def test_moved_directory_failure_never_removes_a_published_name(
+    tmp_path, monkeypatch, interference
+):
+    adapter, _, original, outside = confinement(tmp_path)
+    moved = outside / "moved"
+    during_archive(monkeypatch, "tar", lambda: original.rename(moved))
+    real_reaches, real_stat = adapter._reaches, os.stat
+    replacement = b"another writer's bundle"
+    changed = []
+
+    def replace():
+        staging = moved / "other.tmp"
+        staging.write_bytes(replacement)
+        os.replace(staging, moved / "event.tar.gz")
+        changed.append(True)
+
+    def reaches(*args, **kwargs):
+        result = real_reaches(*args, **kwargs)
+        if interference == "before-stat":
+            replace()
+        elif interference == "absent":
+            (moved / "event.tar.gz").unlink()
+            changed.append(True)
+        return result
+
+    def stat(path, *args, **kwargs):
+        if path == "event.tar.gz" and kwargs.get("dir_fd") is not None:
+            if interference == "stat-error":
+                changed.append(True)
+                raise PermissionError(errno.EACCES, "name inspection refused")
+            result = real_stat(path, *args, **kwargs)
+            if interference == "after-stat":
+                replace()
+            return result
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(adapter, "_reaches", reaches)
+    monkeypatch.setattr(os, "stat", stat)
+
+    with pytest.raises(ValueError, match="moved or replaced") as caught:
+        write(adapter, original, "event")
+
+    assert changed and "Automatic cleanup was skipped" in str(caught.value)
+    remaining = moved / "event.tar.gz"
+    if interference in ("before-stat", "after-stat"):
+        assert remaining.read_bytes() == replacement
+    elif interference == "absent":
+        assert not remaining.exists()
+    else:
+        assert inspect(remaining)[0]["eventType"] == "inventory_count"
+    assert temporary_files(tmp_path) == []
+
+
+@pytest.mark.parametrize("hard_links", [True, False])
+def test_name_taken_while_building_is_refused_without_following_it(
+    tmp_path, monkeypatch, hard_links
+):
+    adapter, link, original, outside = confinement(tmp_path)
+    victim = outside / "victim"
+    victim.write_bytes(b"outside data")
+    planted = original / "taken.tar.gz"
+    during_archive(monkeypatch, "tar", lambda: planted.symlink_to(victim))
+    if not hard_links:
+
+        def unsupported(*args, **kwargs):
+            raise OSError(errno.EPERM, "hard links unsupported")
+
+        monkeypatch.setattr(os, "link", unsupported)
+
+    with pytest.raises(ValueError, match="already exists"):
+        write(adapter, link, "taken")
+
+    assert planted.is_symlink() and victim.read_bytes() == b"outside data"
+    assert sorted(path.name for path in outside.iterdir()) == ["victim"]
+    assert temporary_files(tmp_path) == []
+
+
+def test_walk_refuses_a_link_put_in_place_of_a_checked_directory(tmp_path):
+    adapter, link, original, outside = confinement(tmp_path)
+    directory = original.resolve()
+    original.rmdir()
+    original.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="replaced part of the checked directory"):
+        adapter._open_directory(directory, target_directory=str(link))
+
+    assert not list(outside.iterdir())
+
+
+def test_allowed_root_without_directory_relative_calls_refuses(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DIRECTORY_RELATIVE_FILES", False)
+    adapter = bundles(allowed_write_directory=str(tmp_path))
+    directory = str(tmp_path / "new")
+
+    with pytest.raises(RuntimeError, match="Run the host on Linux or macOS"):
+        adapter.prepare_destination(target_directory=directory, file_name=None)
+    with pytest.raises(RuntimeError, match="Run the host on Linux or macOS"):
+        adapter.create_bundle(request(), target_directory=directory, file_name=None)
+
+    assert not list(tmp_path.iterdir())
+    # Without an allowed root the V1 pathname publication still works.
+    assert Path(write(bundles(), tmp_path / "plain").bundle_path).exists()
 
 
 def test_bundles_over_the_consumer_limit_are_not_written(tmp_path, monkeypatch):

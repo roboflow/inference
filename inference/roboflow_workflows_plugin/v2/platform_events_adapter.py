@@ -8,8 +8,14 @@
       local: POST <event_store_url>/v2/events, base64 images ─▶ 201 "id"
     VisionEventBundleAdapter
       prepare_destination: permission, name, allowed root, writable, free
-      create_bundle: call_host(EVENT_BUNDLE) builds the archive,
-                     then size limit, non-replacing publish, directory fsync
+      create_bundle: same checks; with an allowed root, open the directory
+                     by walking from the root without following links
+                     call_host(EVENT_BUNDLE) builds the archive
+                     size limit, publish (hard link refuses a taken name,
+                     else V1's checked replacing rename), directory fsync
+                     with an allowed root, publish inside the open directory
+                     and fail if a new walk no longer reaches it; a published
+                     bundle may remain for host-controlled recovery
 
 The wire and archive contracts are the pinned V1 helpers, called directly:
 prediction conversion and payload/tar builders of ``v1_tensor``, cloud
@@ -23,7 +29,10 @@ run outside the boundary so their V1 messages stay actionable.
 """
 
 import base64
+import errno
+import logging
 import os
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -63,6 +72,21 @@ from inference.roboflow_workflows_plugin.v2.credential_boundary import (
 )
 
 REQUEST_TIMEOUT_SECONDS = 30
+
+logger = logging.getLogger(__name__)
+
+# Confinement to an allowed root opens each directory relative to its parent
+# and never follows a link. Windows has none of these calls. os.replace takes
+# directory descriptors wherever os.rename does.
+DIRECTORY_RELATIVE_FILES = (
+    hasattr(os, "O_DIRECTORY")
+    and hasattr(os, "O_NOFOLLOW")
+    and {os.open, os.mkdir, os.stat, os.link, os.rename, os.unlink}
+    <= os.supports_dir_fd
+)
+_DIRECTORY_FLAGS = (
+    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+)
 
 # call_host names the category of these classes; the text is discarded.
 _HTTP_STATUS_ERRORS = {
@@ -300,13 +324,117 @@ def _json_field(response: requests.Response, name: str) -> Any:
     return body.get(name)
 
 
+def _taken_name_error(path: str) -> ValueError:
+    error = ValueError(
+        f"Vision event bundle {path!r} already exists. A custom "
+        "file_name must be unique for every event."
+    )
+
+    return error
+
+
+def _same_file(first: os.stat_result, second: os.stat_result) -> bool:
+    return (first.st_dev, first.st_ino) == (second.st_dev, second.st_ino)
+
+
+def _publish_bundle_at(
+    directory_fd: int, *, path: str, content: bytes
+) -> os.stat_result:
+    """V1's ``_publish_bundle`` with every call relative to ``directory_fd``.
+
+    Args:
+        directory_fd: Open directory that receives the bundle.
+        path: The bundle's path, used for its name and in messages.
+        content: Archive bytes.
+
+    Returns:
+        The status of the published file, for a later read-only diagnostic.
+
+    Raises:
+        ValueError: When the name is taken.
+        OSError: When writing fails; temporary cleanup is attempted.
+    """
+    name = Path(path).name
+    # V1's dot-prefixed temporary name, which file movers skip.
+    temporary = f".tmp_{secrets.token_hex(8)}_{name}"
+    file_fd = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=directory_fd,
+    )
+    try:
+        with os.fdopen(file_fd, "wb") as file:
+            file.write(content)
+            file.flush()
+            os.fsync(file.fileno())
+            published = os.fstat(file.fileno())
+        try:
+            os.link(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        except FileExistsError:
+            raise _taken_name_error(path) from None
+        except OSError as error:
+            if error.errno not in v1_bundles._LINK_UNSUPPORTED_ERRNOS:
+                raise
+            try:
+                os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise _taken_name_error(path) from None
+            logger.warning(
+                "Hard links unsupported for %s - publishing the vision event "
+                "bundle with a replacing rename, which cannot guarantee that "
+                "a concurrent event with the same file name is not overwritten.",
+                path,
+            )
+            os.replace(
+                temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd
+            )
+    finally:
+        # As in V1: cleanup neither fails a published bundle nor masks an error.
+        try:
+            os.unlink(temporary, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            logger.warning(
+                "Failed to remove vision event bundle temporary file %s: %s",
+                temporary,
+                error,
+            )
+
+    return published
+
+
 class VisionEventBundleAdapter:
     """``vision_event_bundle_port`` writing V1 format bundles to local disk.
 
     It writes ``.tar.gz`` files and nothing else; moving or uploading them is
-    the deployment's business. A publication never replaces an existing
-    file; on a filesystem without hard links (e.g. FAT removable media) it
-    falls back to V1's checked rename, as V1 does.
+    the deployment's business. Publication refuses a taken name. A hard link
+    makes the refusal atomic: of two concurrent writers of one name, exactly
+    one wins. When the filesystem refuses hard links (e.g. FAT removable
+    media) it falls back, as V1 does, to a check and then a replacing
+    rename. A repeated name is still refused, but two concurrent writers of
+    one custom ``file_name`` can race and one bundle can overwrite the
+    other; a WARNING is logged on each fallback. Leave ``file_name`` unset
+    for unique generated names, or serialize writes that share a custom name.
+
+    With an allowed root, ``create_bundle`` opens the checked directory
+    before it builds the archive. It walks from the root one directory at a
+    time and follows no link, so a link changed later cannot redirect the
+    bundle. The temporary file, publication and fsync use that open
+    directory. Afterwards the walk is repeated; if it no longer reaches the
+    same directory, e.g. because the directory was moved out of the root,
+    the call fails. The published basename is left untouched: portable
+    name-based removal cannot exclude a replacement by another writer,
+    even after an inode check. A bundle may remain in the opened directory
+    for host-controlled recovery. Directory owners must be trusted not to
+    move directories or replace the private temporary names; their cleanup
+    is best effort. The root's own path and its ancestors are host
+    configuration and is trusted. This needs directory-relative file calls
+    (``DIRECTORY_RELATIVE_FILES``): Linux and macOS have them, Windows does
+    not, and there an allowed root refuses every bundle.
 
     Args:
         allow_access_to_file_system: Host permission; False refuses every
@@ -339,15 +467,118 @@ class VisionEventBundleAdapter:
             file_name: Custom bundle name, or None for a generated one.
 
         Raises:
-            RuntimeError: When filesystem access is not allowed.
+            RuntimeError: When filesystem access is not allowed, or an
+                allowed root is set on a platform without directory-relative
+                file calls.
             ValueError: When the name is unsafe, the directory is outside the
                 allowed root or not writable, or the custom file exists.
         """
+        self._checked_directory(target_directory=target_directory, file_name=file_name)
+
+    def create_bundle(
+        self,
+        request: VisionEventRequest,
+        *,
+        target_directory: str,
+        file_name: Optional[str],
+    ) -> EventBundle:
+        """Write one bundle and refuse a taken name.
+
+        Only hard-link publication refuses a concurrent writer of the same
+        name atomically; see the class for the fallback race and for how an
+        allowed root stays in force while the archive is built.
+
+        Args:
+            request: Detached inputs.
+            target_directory: Output directory.
+            file_name: Custom bundle name, or None for
+                ``event_<UTC time>_<eventId>.tar.gz``.
+
+        Returns:
+            The event id stored in the bundle and the bundle's absolute path.
+            With an allowed root the path has its symbolic links resolved: it
+            names the directory that was checked and written.
+
+        Raises:
+            RuntimeError: When filesystem access is not allowed, or an
+                allowed root is set on a platform without directory-relative
+                file calls.
+            ValueError: On a refused destination, a taken name, a bundle
+                over V1's 25 MiB consumer limit, or a directory that was
+                replaced or moved out of the allowed root meanwhile.
+            PlatformRequestError: When building the archive fails.
+            OSError: When writing fails; temporary cleanup is attempted.
+                A bundle published before a later failure may remain.
+        """
+        # A background effect writes later: check the destination again.
+        directory = self._checked_directory(
+            target_directory=target_directory, file_name=file_name
+        )
+        # Opened before the archive is built, so later link changes are inert.
+        directory_fd = (
+            None
+            if self._allowed_directory is None
+            else self._open_directory(directory, target_directory=target_directory)
+        )
+        try:
+            event_id = str(uuid4())
+            timestamp = datetime.now(timezone.utc)
+            content = call_host(
+                HostOperation.EVENT_BUNDLE,
+                self._archive,
+                platform=True,
+                request=request,
+                event_id=event_id,
+                timestamp=timestamp,
+            )
+            if len(content) > v1_bundles.MAX_BUNDLE_SIZE_BYTES:
+                raise ValueError(
+                    f"Bundle size {len(content):,} bytes exceeds the companion "
+                    f"API limit of {v1_bundles.MAX_BUNDLE_SIZE_BYTES:,} bytes "
+                    "(25 MiB). Reduce the number or size of images in this event."
+                )
+
+            if directory_fd is None:
+                path = v1_bundles._generate_bundle_path(
+                    target_directory, timestamp, event_id, file_name
+                )
+                v1_bundles._publish_bundle(target_path=path, content=content)
+                v1_bundles._fsync_directory(os.path.dirname(path))
+            else:
+                path = v1_bundles._generate_bundle_path(
+                    str(directory), timestamp, event_id, file_name
+                )
+                self._publish_in_directory(
+                    directory_fd,
+                    directory=directory,
+                    target_directory=target_directory,
+                    path=path,
+                    content=content,
+                )
+        finally:
+            if directory_fd is not None:
+                os.close(directory_fd)
+        bundle = EventBundle(event_id=event_id, bundle_path=path)
+
+        return bundle
+
+    def _checked_directory(
+        self, *, target_directory: str, file_name: Optional[str]
+    ) -> Path:
         if not self._allow_access_to_file_system:
             raise RuntimeError(
                 "Vision event bundles cannot be written here: local file system "
                 "access is forbidden. Use self-hosted inference or Roboflow "
                 "Dedicated Deployment."
+            )
+
+        if self._allowed_directory is not None and not DIRECTORY_RELATIVE_FILES:
+            raise RuntimeError(
+                "Vision event bundles cannot be kept inside the allowed write "
+                "directory on this platform: it lacks directory-relative file "
+                "calls (dir_fd, O_DIRECTORY, O_NOFOLLOW). Run the host on Linux "
+                "or macOS, or configure no allowed write directory, which "
+                "removes that confinement."
             )
 
         if file_name is not None:
@@ -362,7 +593,11 @@ class VisionEventBundleAdapter:
                 f"{str(self._allowed_directory)!r}."
             )
 
-        directory.mkdir(parents=True, exist_ok=True)
+        if self._allowed_directory is None:
+            directory.mkdir(parents=True, exist_ok=True)
+        else:
+            # Creating by walking keeps new directories inside the root too.
+            os.close(self._open_directory(directory, target_directory=target_directory))
         if not os.access(directory, os.W_OK):
             raise ValueError(
                 f"Vision event bundles cannot be written to {target_directory!r}: "
@@ -375,63 +610,96 @@ class VisionEventBundleAdapter:
                 target_directory, datetime.now(timezone.utc), "", file_name
             )
             if os.path.lexists(path):
-                raise ValueError(
-                    f"Vision event bundle {path!r} already exists. A custom "
-                    "file_name must be unique for every event."
-                )
+                raise _taken_name_error(path)
 
-    def create_bundle(
-        self,
-        request: VisionEventRequest,
-        *,
-        target_directory: str,
-        file_name: Optional[str],
-    ) -> EventBundle:
-        """Write one bundle without replacing an existing file.
+        return directory
 
-        Args:
-            request: Detached inputs.
-            target_directory: Output directory.
-            file_name: Custom bundle name, or None for
-                ``event_<UTC time>_<eventId>.tar.gz``.
+    def _open_directory(
+        self, directory: Path, *, target_directory: str, create: bool = True
+    ) -> int:
+        """Open ``directory`` by walking from the allowed root.
 
-        Returns:
-            The event id stored in the bundle and the bundle's absolute path.
-
-        Raises:
-            RuntimeError: When filesystem access is not allowed.
-            ValueError: On a refused destination, a taken name or a bundle
-                over V1's 25 MiB consumer limit.
-            PlatformRequestError: When building the archive fails.
-            OSError: When writing fails; the temporary file is removed.
+        Each step opens one name relative to its parent with ``O_NOFOLLOW``.
+        A link or file put in place of a checked directory fails the open
+        instead of redirecting it.
         """
-        # A background effect writes later: check the destination again.
-        self.prepare_destination(target_directory=target_directory, file_name=file_name)
-        event_id = str(uuid4())
-        timestamp = datetime.now(timezone.utc)
-        content = call_host(
-            HostOperation.EVENT_BUNDLE,
-            self._archive,
-            platform=True,
-            request=request,
-            event_id=event_id,
-            timestamp=timestamp,
-        )
-        if len(content) > v1_bundles.MAX_BUNDLE_SIZE_BYTES:
+        root = self._allowed_directory
+        if create:
+            root.mkdir(parents=True, exist_ok=True)
+        try:
+            directory_fd = os.open(root, _DIRECTORY_FLAGS)
+            try:
+                for name in directory.relative_to(root).parts:
+                    if create:
+                        try:
+                            os.mkdir(name, dir_fd=directory_fd)
+                        except FileExistsError:
+                            pass
+                    child_fd = os.open(name, _DIRECTORY_FLAGS, dir_fd=directory_fd)
+                    os.close(directory_fd)
+                    directory_fd = child_fd
+            except BaseException:
+                os.close(directory_fd)
+                raise
+        except OSError as error:
+            if error.errno not in (errno.ELOOP, errno.ENOTDIR):
+                raise
             raise ValueError(
-                f"Bundle size {len(content):,} bytes exceeds the companion API "
-                f"limit of {v1_bundles.MAX_BUNDLE_SIZE_BYTES:,} bytes (25 MiB). "
-                "Reduce the number or size of images in this event."
+                f"Vision event bundles cannot be written to {target_directory!r}: "
+                "a symbolic link or file replaced part of the checked directory."
+            ) from None
+
+        return directory_fd
+
+    def _publish_in_directory(
+        self,
+        directory_fd: int,
+        *,
+        directory: Path,
+        target_directory: str,
+        path: str,
+        content: bytes,
+    ) -> None:
+        published = _publish_bundle_at(directory_fd, path=path, content=content)
+        name = Path(path).name
+        if not self._reaches(directory, directory_fd=directory_fd):
+            # This snapshot only describes the error. It cannot authorize an
+            # unlink: another writer can replace the name just after stat.
+            try:
+                current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                name_state = "absent"
+            except OSError:
+                name_state = "unreadable"
+            else:
+                name_state = (
+                    "this bundle" if _same_file(current, published) else "another file"
+                )
+            raise ValueError(
+                f"Vision event bundles cannot be written to {target_directory!r}: "
+                "the directory was moved or replaced while the bundle was "
+                "written. Automatic cleanup was skipped to avoid deleting "
+                "another writer's file; the bundle may remain in the opened "
+                f"directory (published name at last check: {name_state})."
             )
 
-        path = v1_bundles._generate_bundle_path(
-            target_directory, timestamp, event_id, file_name
-        )
-        v1_bundles._publish_bundle(target_path=path, content=content)
-        v1_bundles._fsync_directory(os.path.dirname(path))
-        bundle = EventBundle(event_id=event_id, bundle_path=path)
+        os.fsync(directory_fd)
 
-        return bundle
+    def _reaches(self, directory: Path, *, directory_fd: int) -> bool:
+        """Whether a fresh walk from the root still ends at ``directory_fd``."""
+        try:
+            check_fd = self._open_directory(
+                directory, target_directory=str(directory), create=False
+            )
+        except (OSError, ValueError):
+            return False
+
+        try:
+            reached = _same_file(os.fstat(check_fd), os.fstat(directory_fd))
+        finally:
+            os.close(check_fd)
+
+        return reached
 
     def _archive(
         self, *, request: VisionEventRequest, event_id: str, timestamp: datetime

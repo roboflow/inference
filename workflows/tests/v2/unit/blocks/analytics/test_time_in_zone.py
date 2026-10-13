@@ -357,6 +357,21 @@ def test_zone_may_change_per_frame():
     assert _times(result) == [0.2]
 
 
+def test_anchor_may_change_per_frame_keeping_entries():
+    block = TimeInZoneBlock()
+    # Box y 95..105 over the zone's bottom edge at y = 100.
+    row = [(50.0, 100.0)]
+    _call(block, _tracked(row, [1]), frame=_file_frame(1))
+
+    top = _call(block, _tracked(row, [1]), frame=_file_frame(3), anchor="TOP_CENTER")
+    bottom = _call(
+        block, _tracked(row, [1]), frame=_file_frame(4), anchor="BOTTOM_CENTER"
+    )
+
+    assert _times(top) == [0.2]
+    assert bottom["count_in_zone"] == 0
+
+
 # ------------------------------------------------------ remove / reset flags
 LEAVE_AND_RETURN = [
     (1, [IN, OUT], [1, 2]),

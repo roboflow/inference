@@ -11,6 +11,7 @@ markers, not read from a previous run.
 
 import pytest
 import torch
+from roboflow_workflows.v2.data.row_identity import row_record
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 
 from tests.v2.integration.blocks.geometry.deterministic import (
@@ -442,3 +443,51 @@ def test_stitch_refuses_resized_slices_with_a_clear_error() -> None:
             {"stitched": "$steps.stitch.predictions"},
             inputs={"image": [painted_image((64, 128), MARKERS)]},
         )
+
+
+@pytest.mark.parametrize("with_hole", [False, True])
+@pytest.mark.parametrize("output", ["predictions", "segmentation"])
+def test_compiled_bounding_rect_follows_the_outline(with_hole, output):
+    pixels = painted_image((90, 120), [(20, 20, 100, 70, 1, 0)])
+    if with_hole:
+        ys, xs = torch.meshgrid(torch.arange(90), torch.arange(120), indexing="ij")
+        pixels[((xs - 60) ** 2 + (ys - 45) ** 2 <= 12**2).numpy()] = 0
+    result = run(
+        [
+            {
+                "type": "test/masked_marker_detector@v1",
+                "name": "detect",
+                "image": "$inputs.image",
+            },
+            {
+                "type": "v2/bounding_rect@v1",
+                "name": "rect",
+                "predictions": f"$steps.detect.{output}",
+            },
+        ],
+        {"fitted": "$steps.rect.predictions", "original": "$steps.detect.predictions"},
+        inputs={"image": [pixels]},
+    )
+
+    row = result.rows()[0]
+    fitted, original = row["fitted"], row["original"]
+    assert fitted.xyxy.tolist() == [[20, 20, 99, 69]]
+    expected = torch.zeros((1, 90, 120), dtype=torch.bool)
+    expected[0, 20:70, 20:100] = True
+    assert torch.equal(fitted.mask, expected)
+    assert sorted(map(tuple, fitted.bboxes_metadata[0]["rect"])) == [
+        (20, 20),
+        (20, 69),
+        (99, 20),
+        (99, 69),
+    ]
+    assert fitted.bboxes_metadata[0]["marker"] == 1
+    assert original.bboxes_metadata == [{"marker": 1}]
+    # The integer radius-12 disc contains 441 pixels.
+    expected_area = 3559 if with_hole else 4000
+    assert int(original.mask.sum()) == expected_area
+    assert torch.equal(fitted.class_id, original.class_id)
+    assert torch.equal(fitted.confidence, original.confidence)
+    assert fitted.image_metadata == original.image_metadata
+    assert row_record(fitted).host_ids() == row_record(original).host_ids()
+    assert row_record(fitted).namespace == row_record(original).namespace

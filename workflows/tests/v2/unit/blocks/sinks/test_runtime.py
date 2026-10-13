@@ -236,6 +236,57 @@ def test_timed_out_close_abandons_queued_effects() -> None:
     assert effects.stats().abandoned == 1
 
 
+def _no_thread_can_start(thread: threading.Thread) -> None:
+    raise RuntimeError("can't start new thread")
+
+
+def test_effect_refused_at_thread_start_never_runs_and_frees_its_slot(
+    monkeypatch,
+) -> None:
+    # given: the real thread pool queues the work, then cannot start a thread
+    refused, recovered = _Recorder(), _Recorder()
+    with BackgroundEffects(max_pending=1, when_full="reject") as effects:
+        with monkeypatch.context() as patch:
+            patch.setattr(threading.Thread, "start", _no_thread_can_start)
+            with pytest.raises(RuntimeError, match="can't start new thread"):
+                effects.deliver(refused, label="t")
+        after_refusal = effects.stats()
+
+        # when: threads start again, and the only slot admits another effect
+        outcome = effects.deliver(recovered, label="t")
+        assert effects.drain(timeout=5)
+
+    # then: the new worker skipped the refused work; every count agrees
+    stats = effects.stats()
+    assert (refused.runs, recovered.runs) == (0, 1)
+    assert outcome == (False, BACKGROUND_MESSAGE)
+    assert (after_refusal.submitted, after_refusal.pending) == (0, 0)
+    assert (stats.submitted, stats.completed, stats.rejected) == (1, 1, 0)
+    assert stats.pending == 0
+
+
+def test_effect_refused_at_thread_start_never_runs_at_close(monkeypatch) -> None:
+    # given: a busy worker, and a second effect whose own thread cannot start
+    gate = threading.Event()
+    busy, refused = _Recorder(gate), _Recorder()
+    effects = BackgroundEffects(max_workers=2)
+    effects.deliver(busy, label="t")
+    with monkeypatch.context() as patch:
+        patch.setattr(threading.Thread, "start", _no_thread_can_start)
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            effects.deliver(refused, label="t")
+
+    # when: the busy worker frees up while the effects close
+    gate.set()
+    effects.close()
+
+    # then: that worker found the refused work still queued and skipped it
+    stats = effects.stats()
+    assert (busy.runs, refused.runs) == (1, 0)
+    assert (stats.submitted, stats.completed, stats.ran_inline) == (1, 1, 0)
+    assert stats.pending == 0
+
+
 def test_when_full_must_be_known() -> None:
     with pytest.raises(ValueError, match="when_full"):
         BackgroundEffects(when_full="drop")

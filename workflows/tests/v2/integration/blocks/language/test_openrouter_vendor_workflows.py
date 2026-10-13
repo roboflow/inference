@@ -7,7 +7,7 @@ composition, not any real model::
 
     image ─▶ v2/meta_vlm@v3 (detection, secret key) ─▶ v2/detection_offset@v1
     image ─▶ v2/zai_vlm@v2 (structured) ─▶ v2/json_parser@v1
-    image ─▶ v2/llama_vision@v2 (classification) ─▶ v2/vlm_as_classifier@v2
+    image ─▶ v2/kimi_openrouter@v3 (native classification)
     image ─▶ v2/kimi_openrouter@v3 behind a gate: gated images send nothing
 """
 
@@ -20,18 +20,15 @@ from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
 from roboflow_workflows.v2.blocks.geometry.offset import DetectionOffsetBlock
 from roboflow_workflows.v2.blocks.language.openrouter_vendors import (
     KimiOpenRouterBlock,
-    LlamaVisionBlock,
     MetaVlmBlock,
     ZaiVlmBlock,
 )
-from roboflow_workflows.v2.blocks.language.parsers import VLMAsClassifierBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.language import LANGUAGE_MODEL_OUTPUT_KIND
 from roboflow_workflows.v2.data.secrets import SECRET_KIND
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.introspection import discover_workload
-
 from tests.v2.support.compilation.fixture_blocks import Gate
 from tests.v2.support.language.fake_chat import (
     FakeChatServer,
@@ -47,10 +44,8 @@ CATALOGUE = Catalogue(
         KimiOpenRouterBlock,
         MetaVlmBlock,
         ZaiVlmBlock,
-        LlamaVisionBlock,
         DetectionOffsetBlock,
         JsonParserBlock,
-        VLMAsClassifierBlock,
         Gate,
     ],
     kinds=[SECRET_KIND, LANGUAGE_MODEL_OUTPUT_KIND],
@@ -188,24 +183,17 @@ def test_zai_structured_answer_feeds_the_json_parser() -> None:
     assert server.requests[0].body["reasoning"] == {"enabled": False}
 
 
-def test_llama_raw_classification_feeds_the_vlm_classifier_parser() -> None:
+def test_kimi_classification_returns_a_native_prediction() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/llama_vision@v2",
-                "name": "llama",
+                "type": "v2/kimi_openrouter@v3",
+                "name": "classify",
                 "images": "$inputs.image",
                 "task_type": "classification",
                 "classes": ["cat", "dog"],
                 "api_key": "sk-or-literal",
-            },
-            {
-                "type": "v2/vlm_as_classifier@v2",
-                "name": "classify",
-                "image": "$inputs.image",
-                "vlm_output": "$steps.llama.output",
-                "classes": ["cat", "dog"],
-            },
+            }
         ],
         [
             _output("prediction", "$steps.classify.predictions"),
@@ -217,15 +205,16 @@ def test_llama_raw_classification_feeds_the_vlm_classifier_parser() -> None:
     session = plan.create_session(
         resources={"openrouter_http_client": server.http_client()}
     )
+    try:
+        rows = session.run({"image": [_image(16, 16)]}).rows()
+    finally:
+        session.close()
 
-    rows = session.run({"image": [_image(16, 16)]}).rows()
-
-    prediction = rows[0]["prediction"]
     assert rows[0]["error"] is False
-    assert int(prediction.class_id.reshape(-1)[0]) == 1
-    assert server.requests[0].body["model"] == (
-        "meta-llama/llama-3.2-11b-vision-instruct"
-    )
+    prediction = rows[0]["prediction"]
+    assert prediction.class_id.tolist() == [1]
+    assert float(prediction.confidence[0, 1]) == pytest.approx(0.8)
+    assert server.requests[0].body["model"] == "moonshotai/kimi-k2.6"
 
 
 def test_a_gated_image_sends_no_request() -> None:

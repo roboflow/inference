@@ -13,7 +13,7 @@ Text per row (``text``); "V2 producer" is the block that writes the key::
     Area                   mask pixel count for mask carriers, else box area
     Area (mask)            row "area_px"; no V2 producer yet ("Area (mask): N/A")
     Area (converted)       row "area_converted"; no V2 producer yet ("Area (conv): N/A")
-    Tracker Id             row "tracker_id"; v2/byte_tracker@v1 ("No Tracker ID")
+    Tracker Id             row "tracker_id"; v2/trackers_* blocks ("No Tracker ID")
     Time In Zone           row "time_in_zone"; no V2 producer yet ("In zone: N/A")
     any other (selector)   that bboxes_metadata key; "" where a row lacks it
 
@@ -117,10 +117,10 @@ class LabelVisualizationBlock(AnnotationBlock):
                 "mask_quality), box area otherwise. Area (mask), Area (converted) "
                 "and Time In Zone read the area_px, area_converted and "
                 "time_in_zone row keys, which no V2 block writes yet; rows "
-                "without them show N/A. Tracker Id reads tracker_id from "
-                "v2/byte_tracker@v1; rows without it show 'No Tracker ID'. A "
-                "selector may also name any other bboxes_metadata key; rows "
-                "without it get an empty label."
+                "without them show N/A. Tracker Id reads tracker_id from a "
+                "tracker such as v2/trackers_bytetrack@v1; rows without it show "
+                "'No Tracker ID'. A selector may also name any other "
+                "bboxes_metadata key; rows without it get an empty label."
             ),
             examples=["Class", "Class and Confidence", "$inputs.label_text"],
         )

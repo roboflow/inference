@@ -6,7 +6,12 @@ homographies are compared with V1's own functions and ``cv2.warpPerspective``
 (V1's call): boxes and rectangle sizes are exact; pixels may differ by 1 level
 (float bilinear blending). That pixel bound is CPU evidence only.
 Keypoint covariance is checked against an exact affine case and against
-central-difference Jacobians of a skewed homography.
+central-difference Jacobians of a skewed homography. CENTER_OF_MASS centroids
+are compared with supervision and with the earlier float formula, also for
+true values stored as bytes other than 1, and the allocation of that formula
+is measured to show the masks are never widened.
+Device cases are listed for CUDA and MPS and run where the device is present.
+Selected ``None`` settings are run through a compiled workflow.
 """
 
 from dataclasses import replace
@@ -24,6 +29,7 @@ from roboflow_workflows.core_steps.transformations.perspective_correction.v1 imp
     generate_transformation_matrix as v1_transformation_matrix,
 )
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
+from roboflow_workflows.v2.blocks import create_catalogue
 from roboflow_workflows.v2.blocks.geometry import perspective
 from roboflow_workflows.v2.blocks.geometry.perspective import (
     PerspectiveCorrectionBlock,
@@ -35,6 +41,10 @@ from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import FrameMapping, ImageData
 from roboflow_workflows.v2.data.rle import decode_rle_masks
 from roboflow_workflows.v2.data.row_identity import RowRef
+from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.errors import StepExecutionError
+from roboflow_workflows.v2.engine.plan import CompileOptions
+from torch.profiler import ProfilerActivity, profile
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
@@ -50,6 +60,19 @@ VIDEO = VideoMetadata(
 # Maps to the 400 x 300 rectangle by the shift (-100, -100).
 SHIFT_POLYGON = [[100, 399], [100, 100], [499, 100], [499, 399]]
 SKEWED_POLYGON = [[60, 380], [40, 30], [480, 50], [450, 360]]
+# Every non-CPU device is listed, so a run reports which ones it skipped.
+DEVICES = [
+    pytest.param(
+        "cuda",
+        marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA"),
+    ),
+    pytest.param(
+        "mps",
+        marks=pytest.mark.skipif(
+            not torch.backends.mps.is_available(), reason="needs MPS"
+        ),
+    ),
+]
 
 
 def scene(channels: int = 3, height: int = 420, width: int = 560) -> ImageData:
@@ -369,16 +392,14 @@ def test_key_point_covariance_of_empty_and_strided_tensors() -> None:
     assert torch.equal(from_strided.covariance, from_contiguous.covariance)
 
 
-@pytest.mark.skipif(
-    not torch.backends.mps.is_available(), reason="needs a non-CPU torch device"
-)
-def test_key_point_covariance_stays_on_its_device() -> None:
+@pytest.mark.parametrize("device", DEVICES)
+def test_key_point_covariance_stays_on_its_device(device: str) -> None:
     image = scene()
     xy = torch.tensor([[[110.0, 120.0], [300.0, 250.0]]])
     covariance = torch.eye(2).expand(1, 2, 2, 2)
     on_cpu = key_points_with_covariance(image, xy, covariance)
     on_device = replace(
-        on_cpu, xy=on_cpu.xy.to("mps"), covariance=on_cpu.covariance.to("mps")
+        on_cpu, xy=on_cpu.xy.to(device), covariance=on_cpu.covariance.to(device)
     )
 
     expected, moved = (
@@ -388,7 +409,7 @@ def test_key_point_covariance_stays_on_its_device() -> None:
         for points in (on_cpu, on_device)
     )
 
-    assert moved.covariance.device.type == "mps"
+    assert moved.covariance.device.type == device
     assert moved.covariance.dtype == torch.float32
     assert torch.allclose(moved.covariance.cpu(), expected.covariance, rtol=1e-4)
 
@@ -514,6 +535,206 @@ def test_center_of_mass_needs_masks_and_matches_supervision() -> None:
 
     expected = sv.calculate_masks_centroids(dense.numpy())
     assert centroids.tolist() == expected.tolist()
+
+
+def float_formula_centroids(dense: torch.Tensor) -> np.ndarray:
+    """The earlier CENTER_OF_MASS formula: widen the masks, then reduce."""
+    masks = dense.to(torch.float64)
+    height, width = masks.shape[-2:]
+    area = masks.sum(dim=(1, 2)).clamp(min=1)
+    columns = torch.arange(width, dtype=torch.float64) + 0.5
+    rows = torch.arange(height, dtype=torch.float64) + 0.5
+    x = (masks.sum(dim=1) * columns).sum(dim=1) / area
+    y = (masks.sum(dim=2) * rows).sum(dim=1) / area
+    centroids = torch.stack((x, y), dim=1).numpy().astype(int)
+
+    return centroids
+
+
+def masked(dense: torch.Tensor) -> InstanceDetections:
+    count, height, width = dense.shape
+    image = scene(height=height, width=width)
+
+    return boxes(image, [[0, 0, 1, 1]] * count, mask=dense)
+
+
+def varied_masks() -> dict:
+    generator = torch.Generator().manual_seed(5)
+    # Sides around 255, the most pixels one uint8 partial count holds.
+    random = torch.rand((5, 511, 300), generator=generator) < 0.3
+    random[2] = False
+    full = torch.ones((2, 256, 255), dtype=torch.bool)
+    corners = torch.zeros((3, 600, 520), dtype=torch.bool)
+    corners[0, 599, 519] = True
+    corners[1, 0, 0] = True
+    corners[2, 254:256, 509:511] = True
+    wide = torch.rand((4, 300, 520), generator=generator) < 0.05
+    masks = {
+        "random_with_an_empty_row": random,
+        "full": full,
+        "corners_and_block_edges": corners,
+        "strided": wide[:, ::2, ::3],
+        "transposed": wide.transpose(1, 2).contiguous().transpose(1, 2),
+        "no_rows": torch.zeros((0, 40, 30), dtype=torch.bool),
+    }
+
+    return masks
+
+
+@pytest.mark.parametrize("name", list(varied_masks()))
+def test_center_of_mass_matches_the_float_formula(name: str) -> None:
+    dense = varied_masks()[name]
+
+    centroids = perspective._mask_centroids(masked(dense))
+
+    expected = float_formula_centroids(dense)
+    assert centroids.shape == expected.shape == (len(dense), 2)
+    assert centroids.tolist() == expected.tolist()
+    if len(dense):
+        assert (
+            centroids.tolist() == sv.calculate_masks_centroids(dense.numpy()).tolist()
+        )
+
+
+TRUE_BYTES = [1, 2, 127, 128, 254, 255]
+LAYOUTS = ["contiguous", "strided", "transposed"]
+
+
+def stored_bytes(true_byte: int, layout: str) -> tuple[np.ndarray, np.ndarray]:
+    """Mask bytes and a (2, 256, 255) view of them; any nonzero byte is true.
+
+    Mask 0 is full, so every count reaches 255 or 256 pixels. Mask 1 mixes
+    false pixels with true ones stored as true_byte or as other nonzero bytes.
+    """
+    generator = np.random.default_rng(true_byte)
+    full = (2, 512, 765) if layout == "strided" else (2, 256, 255)
+    raw = np.zeros(full, dtype=np.uint8)
+    raw[0] = true_byte
+    others = generator.choice(TRUE_BYTES, size=full[1:]).astype(np.uint8)
+    picked = generator.random(full[1:])
+    raw[1] = np.where(picked < 0.3, true_byte, 0)
+    raw[1] = np.where(picked > 0.8, others, raw[1])
+    if layout == "transposed":
+        raw = np.ascontiguousarray(raw.transpose(0, 2, 1))
+        return raw, raw.transpose(0, 2, 1)
+    if layout == "strided":
+        return raw, raw[:, ::2, ::3]
+
+    return raw, raw
+
+
+@pytest.mark.parametrize("layout", LAYOUTS)
+@pytest.mark.parametrize("true_byte", TRUE_BYTES)
+def test_center_of_mass_counts_true_values_whatever_byte_stores_them(
+    true_byte: int, layout: str
+) -> None:
+    raw, view = stored_bytes(true_byte, layout)
+    before = raw.copy()
+    dense = torch.from_numpy(view.view(np.bool_))
+    logical = torch.from_numpy(view != 0)
+    assert dense.shape == (2, 256, 255)
+    assert dense.is_contiguous() == (layout == "contiguous")
+
+    centroids = perspective._mask_centroids(masked(dense))
+
+    assert centroids.tolist() == float_formula_centroids(logical).tolist()
+    assert centroids.tolist() == float_formula_centroids(dense).tolist()
+    assert centroids.tolist() == sv.calculate_masks_centroids(view != 0).tolist()
+    for dim in (1, 2):
+        counts = perspective._pixel_counts(dense, dim=dim)
+        assert torch.equal(counts, logical.sum(dim=dim))
+    assert np.array_equal(raw, before)
+
+
+def largest_allocation(work) -> int:
+    with profile(activities=[ProfilerActivity.CPU], profile_memory=True) as run:
+        work()
+    largest = max((event.cpu_memory_usage for event in run.events()), default=0)
+
+    return largest
+
+
+def test_center_of_mass_never_widens_the_whole_masks() -> None:
+    # Torch casts a sum's input to its result type, so a float64 or int64
+    # reduction of the masks allocates 8 bytes per pixel. The profiler sees
+    # that copy in the float formula; the block must stay below 1 byte per pixel.
+    dense = varied_masks()["random_with_an_empty_row"]
+    detections = masked(dense)
+
+    widened = largest_allocation(lambda: float_formula_centroids(dense))
+    counted = largest_allocation(lambda: perspective._mask_centroids(detections))
+
+    assert widened >= 8 * dense.numel()
+    assert 0 < counted < dense.numel()
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_center_of_mass_stays_on_its_device(device: str) -> None:
+    dense = varied_masks()["random_with_an_empty_row"]
+    detections = masked(dense)
+    on_device = replace(detections, mask=dense.to(device))
+
+    centroids = perspective._mask_centroids(on_device)
+
+    assert centroids.tolist() == float_formula_centroids(dense).tolist()
+
+
+def selected_setting_workflow(name: str) -> dict:
+    step = {
+        "type": "v2/perspective_correction@v1",
+        "name": "perspective",
+        "images": "$inputs.images",
+        "perspective_polygons": SHIFT_POLYGON,
+        "transformed_rect_width": 400,
+        "transformed_rect_height": 300,
+        "warp_image": True,
+        name: "$inputs.value",
+    }
+    definition = {
+        "version": "2.0",
+        "inputs": [
+            {"type": "WorkflowBatchInput", "name": "images", "kind": ["image"]},
+            {"type": "WorkflowParameter", "name": "value"},
+        ],
+        "steps": [step],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "warped",
+                "selector": "$steps.perspective.warped_image",
+            }
+        ],
+    }
+
+    return definition
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("transformed_rect_width", 400),
+        ("transformed_rect_height", 300),
+        ("warp_image", True),
+    ],
+)
+def test_selected_none_setting_fails_the_step_and_names_it(name, value) -> None:
+    catalogue = create_catalogue().with_blocks([PerspectiveCorrectionBlock])
+    plan = compile_workflow(
+        selected_setting_workflow(name),
+        catalogue=catalogue,
+        options=CompileOptions(block_execution="run"),
+    )
+    pixels = scene().tensor_image
+    (row,) = plan.create_session().run({"images": [pixels], "value": value}).rows()
+    assert row["warped"].size_hw == (300, 400)
+
+    with pytest.raises(StepExecutionError) as error:
+        plan.create_session().run({"images": [pixels], "value": None})
+
+    assert isinstance(error.value.__cause__, ValueError)
+    assert str(error.value.__cause__) == (
+        f"{name} is required, got None from its selector"
+    )
 
 
 def test_plane_matrix_maps_polygon_vertices_to_rectangle_corners() -> None:

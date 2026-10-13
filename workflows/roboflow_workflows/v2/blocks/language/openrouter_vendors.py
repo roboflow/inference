@@ -1,4 +1,9 @@
-"""Vendor model blocks served through OpenRouter: Kimi, Meta Muse, Z.ai GLM, Llama.
+"""Active OpenRouter vendors: Kimi, Meta Muse and Z.ai GLM.
+
+LlamaVisionBlock is retired and excluded from BLOCKS. Its implementation and
+shared helpers remain for existing internal references, without a drop-in promise.
+
+Historical implementation context: vendor model blocks served through OpenRouter: Kimi, Meta Muse, Z.ai GLM, Llama.
 
 Ports of V1 ``roboflow_core/kimi_openrouter@v3``, ``roboflow_core/meta_vlm@v3``,
 ``roboflow_core/zai_vlm@v2`` and ``roboflow_core/llama_vision@v2``. Each block
@@ -1135,4 +1140,5 @@ class ZaiVlmBlock(_ReasoningVendorBlock):
             return self
 
 
-BLOCKS = (KimiOpenRouterBlock, MetaVlmBlock, ZaiVlmBlock, LlamaVisionBlock)
+# LlamaVisionBlock is retained as implementation history, outside discovery.
+BLOCKS = (KimiOpenRouterBlock, MetaVlmBlock, ZaiVlmBlock)

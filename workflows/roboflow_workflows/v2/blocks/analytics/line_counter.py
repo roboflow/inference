@@ -18,13 +18,15 @@ recorded once per row, as in V1. ``count_in`` / ``count_out`` are the source's
 totals so far; ``detections_in`` / ``detections_out`` are this call's
 crossing rows, in input order, same family, rows unchanged.
 
-State: one line per source, created on its first call, empty prediction
-included. A source whose ``line_segment`` changes starts again from zero
-counts and no history (V1 kept the first line forever). Each source
-remembers the last side of at most ``MAX_TRACKS_PER_SOURCE`` tracks. After
-each call, the tracks least recently seen are forgotten down to that bound;
-the call's own tracks are always kept. A forgotten track needs two recorded
-frames again.
+State: one line and anchor choice per source, created on its first call,
+empty prediction included. A source whose ``line_segment`` or
+``triggering_anchor`` changes starts again from zero counts and no history:
+recorded sides are only comparable for the same line and box points. V1
+kept the first line and anchor forever. Re-sending the same anchor, through
+a literal or a selector, keeps the counts. Each source remembers the last
+side of at most ``MAX_TRACKS_PER_SOURCE`` tracks. After each call, the
+tracks least recently seen are forgotten down to that bound; the call's own
+tracks are always kept. A forgotten track needs two recorded frames again.
 
 Capacity fails loudly, never by evicting a source or a track of the current
 call. ``LineCounterCapacityError`` is raised, before this call changes any
@@ -36,9 +38,10 @@ state, when:
 A processing reset replaces the block and ``reset_state()`` forgets every
 source.
 
-An empty prediction returns both counts, changes no counts or sides and
-passes the empty prediction on as both crossing outputs. Every row needs a
-``tracker_id``.
+An empty prediction returns both counts and passes the empty prediction on
+as both crossing outputs. It changes no counts or sides, except that a
+changed ``line_segment`` or ``triggering_anchor`` restarts the source, as
+on any call. Every row needs a ``tracker_id``.
 
 Source key: ``video_metadata.video_identifier``, else the ``image`` input's
 own ``SampleContext.source_id``, else ``"default"`` (also for a plain
@@ -51,7 +54,9 @@ stays lazy.
 
 Differences from V1:
 
-* A changed ``line_segment`` restarts the source's counts (V1 ignored it).
+* A changed ``line_segment`` or ``triggering_anchor`` restarts the source's
+  counts (V1 ignored both). Without the restart, a static box straddling
+  the line would count a crossing when the anchor moves to its other side.
 * Tracks and sources are bounded (V1 kept every track and source).
 * Bad lines and anchors fail at compile time when literal; V1 checked in
   ``run``. Booleans and non-finite coordinates are rejected.
@@ -60,7 +65,7 @@ Differences from V1:
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import torch
 from pydantic import Field, StrictInt, field_validator
@@ -114,9 +119,11 @@ class LineCounterCapacityError(RuntimeError):
 
 @dataclass
 class _SourceLine:
-    """Crossing state of one source: its line, totals and last track sides."""
+    """Crossing state of one source: its line, anchors, totals and track sides."""
 
     line: zones.Line
+    # Box points tested against the line: one anchor, or the four corners.
+    anchors: Tuple[str, ...]
     count_in: int = 0
     count_out: int = 0
     # tracker id -> last recorded side (+1 / -1), least recently seen first.
@@ -146,11 +153,17 @@ class LineCounterBlock(Block):
     outputs = {
         "count_in": Output(
             INTEGER_KIND,
-            description="Rows of this source that crossed in so far.",
+            description=(
+                "Crossings in so far for this source; a track crossing in "
+                "twice counts twice (not unique objects)."
+            ),
         ),
         "count_out": Output(
             INTEGER_KIND,
-            description="Rows of this source that crossed out so far.",
+            description=(
+                "Crossings out so far for this source; a track crossing out "
+                "twice counts twice (not unique objects)."
+            ),
         ),
         "detections_in": Output(
             *COUNTED_KINDS,
@@ -178,7 +191,8 @@ class LineCounterBlock(Block):
         line_segment: list | Ref(LIST_OF_VALUES_KIND) = Field(
             description=(
                 "Two [x, y] pixel points. Crossing to the left of start -> end "
-                "as drawn counts in: for [[0, 100], [500, 100]] moving up is in."
+                "as drawn counts in: for [[0, 100], [500, 100]] moving up is in. "
+                "Changing it restarts this source's counts."
             ),
             examples=[[[0, 100], [500, 100]], "$inputs.line"],
         )
@@ -186,7 +200,8 @@ class LineCounterBlock(Block):
             default=None,
             description=(
                 "Box point that must cross, e.g. CENTER or BOTTOM_CENTER. "
-                "None: all four corners must cross."
+                "None: all four corners must cross. Changing it restarts this "
+                "source's counts."
             ),
             examples=[None, "CENTER", "$inputs.anchor"],
         )
@@ -257,7 +272,9 @@ class LineCounterBlock(Block):
         tracker_ids = _tracker_ids(boxes, block_type=self.type)
         _check_track_count(tracker_ids, block_type=self.type)
 
-        state = self._source_state(image, line=line, max_sources=max_sources)
+        state = self._source_state(
+            image, line=line, anchors=anchors, max_sources=max_sources
+        )
         if not tracker_ids:
             return _result(state, crossed_in=predictions, crossed_out=predictions)
 
@@ -283,11 +300,16 @@ class LineCounterBlock(Block):
         return result
 
     def reset_state(self) -> None:
-        """Forget every source's line, counts and track sides."""
+        """Forget every source's line, anchors, counts and track sides."""
         self._sources.clear()
 
     def _source_state(
-        self, image: ImageData, *, line: zones.Line, max_sources: int
+        self,
+        image: ImageData,
+        *,
+        line: zones.Line,
+        anchors: Tuple[str, ...],
+        max_sources: int,
     ) -> _SourceLine:
         source = _source_key(self, image)
         state = self._sources.get(source)
@@ -299,8 +321,8 @@ class LineCounterBlock(Block):
                 "Raise max_sources or reset processing to free sources."
             )
 
-        if state is None or state.line != line:
-            state = _SourceLine(line=line)
+        if state is None or (state.line, state.anchors) != (line, anchors):
+            state = _SourceLine(line=line, anchors=anchors)
             self._sources[source] = state
 
         return state

@@ -459,6 +459,7 @@ def test_one_parameter_logo_and_alpha_mark_each_image_at_its_own_corners(
         mode=mode,
     )
 
+    assert len(rows) == len(images)
     for image, pixels, row in zip(images, before, rows):
         for name, corner in LOGO_CORNERS[image.image_id].items():
             assert np.array_equal(pixels_of(row[name]), stamped(pixels, corner=corner))

@@ -22,6 +22,7 @@ registered under different types::
     v2/bounding_box_visualization@v1   V1 port (BoundingBoxVisualizationBlock)
 """
 
+from roboflow_workflows.v2.blocks.analytics import VelocityBlock
 from roboflow_workflows.v2.blocks.combine import BLOCKS as COMBINE_BLOCKS
 from roboflow_workflows.v2.blocks.combine import (
     DetectionsCombineBlock,
@@ -49,8 +50,11 @@ from roboflow_workflows.v2.blocks.formatters import (
 )
 from roboflow_workflows.v2.blocks.fusion import BLOCKS as FUSION_BLOCKS
 from roboflow_workflows.v2.blocks.fusion import (
+    DETECTIONS_OVERLAPS_KIND,
     DetectionsConsensusBlock,
     DetectionsDifferenceBlock,
+    DetectionsListRollUpBlock,
+    OverlapAnalysisBlock,
 )
 from roboflow_workflows.v2.blocks.geometry import BLOCKS as GEOMETRY_BLOCKS
 from roboflow_workflows.v2.blocks.geometry import (
@@ -62,26 +66,51 @@ from roboflow_workflows.v2.blocks.geometry import (
 )
 from roboflow_workflows.v2.blocks.image import (
     AbsoluteStaticCropBlock,
+    ContrastEnhancementBlock,
+    ContrastEqualizationBlock,
+    ConvertGrayscaleBlock,
     CropBlock,
     DynamicCropBlock,
     HasBrightnessBlock,
+    ImageBlurBlock,
     ImageCopyBlock,
     ImagePreprocessingBlock,
     ImageSlicerBlock,
+    ImageThresholdBlock,
     InvertBlock,
+    MorphologicalTransformationBlock,
     MosaicBlock,
     RelativeStaticCropBlock,
     ResizeBlock,
     StaticCropBlock,
 )
+from roboflow_workflows.v2.blocks.measurements import BLOCKS as MEASUREMENT_BLOCKS
+from roboflow_workflows.v2.blocks.measurements import (
+    DistanceMeasurementBlock,
+    MaskAreaMeasurementBlock,
+    PixelColorCountBlock,
+    SizeMeasurementBlock,
+)
 from roboflow_workflows.v2.blocks.models import BLOCKS as MODEL_BLOCKS
 from roboflow_workflows.v2.blocks.models import (
+    Cosmos3EdgeBlock,
+    Florence2Block,
+    GoogleVisionOCRBlock,
+    Moondream2Block,
+    QwenVLMBlock,
+    ActionRecognitionBlock,
     ClassificationBlock,
     InstanceSegmentationBlock,
     KeypointDetectionBlock,
     MultiLabelClassificationBlock,
     ObjectDetectionBlock,
     SemanticSegmentationBlock,
+)
+from roboflow_workflows.v2.blocks.roboflow_platform import (
+    PLATFORM_BLOCKS,
+    AssetLibraryAttributesBlock,
+    DatasetUploadBlock,
+    ModelMonitoringInferenceAggregatorBlock,
 )
 from roboflow_workflows.v2.blocks.sampling import BLOCKS as SAMPLING_BLOCKS
 from roboflow_workflows.v2.blocks.sampling import (
@@ -109,8 +138,17 @@ from roboflow_workflows.v2.blocks.temporal.frame_delay import (
     FrameDelayBlock,
     FrameHistoryCapacityError,
 )
-from roboflow_workflows.v2.blocks.tracking.byte_track import (
-    ByteTrackerBlock,
+from roboflow_workflows.v2.blocks.temporal.image_stack import (
+    ImageStackBlock,
+    ImageStackCapacityError,
+)
+from roboflow_workflows.v2.blocks.tracking import (
+    BoTSORTTrackerBlock,
+    ByteTrackTrackerBlock,
+    OCSORTTrackerBlock,
+    SORTTrackerBlock,
+    StabilizeDetectionsBlock,
+    TrackClassLockBlock,
     TrackerCapacityError,
 )
 from roboflow_workflows.v2.blocks.transforms import BLOCKS as TRANSFORM_BLOCKS
@@ -135,8 +173,13 @@ from roboflow_workflows.v2.blocks.visualization.annotations import (
 from roboflow_workflows.v2.blocks.visualization.annotations import (
     BlurVisualizationBlock,
     BoundingBoxVisualizationBlock,
+    CircleVisualizationBlock,
     ClassificationLabelVisualizationBlock,
+    CornerVisualizationBlock,
     CropVisualizationBlock,
+    DotVisualizationBlock,
+    EllipseVisualizationBlock,
+    HaloVisualizationBlock,
     KeypointVisualizationBlock,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations import (
@@ -147,6 +190,7 @@ from roboflow_workflows.v2.blocks.visualization.annotations import (
     PixelateVisualizationBlock,
     PolygonVisualizationBlock,
     SemanticSegmentationVisualizationBlock,
+    TriangleVisualizationBlock,
 )
 from roboflow_workflows.v2.data.boundaries import MEDIA_WILDCARD_KIND, NUMPY_ARRAY_KIND
 from roboflow_workflows.v2.data.image import ImageData
@@ -191,8 +235,9 @@ def create_catalogue() -> Catalogue:
     select it explicitly.
 
     Returns:
-        Catalogue with image blocks and crop ports, caller-loaded batched model
-        blocks, per-source tracking, region and parent-mapping, prediction
+        Catalogue with image blocks, crop and image-processing ports,
+        caller-loaded batched model blocks, per-source tracking and track
+        consumers, measurements, region and parent-mapping, prediction
         transforms, merge and combine, formatters, boolean and query gates,
         prototype detection painters and V1 visualization ports, temporal
         and managed-state blocks, alignment/window operators and native
@@ -217,6 +262,12 @@ def create_catalogue() -> Catalogue:
             ImagePreprocessingBlock,
             ImageSlicerBlock,
             ImageCopyBlock,
+            ConvertGrayscaleBlock,
+            ImageBlurBlock,
+            ImageThresholdBlock,
+            MorphologicalTransformationBlock,
+            ContrastEnhancementBlock,
+            ContrastEqualizationBlock,
             DeltaFilterBlock,
             RateLimiterBlock,
             SwitchCaseBlock,
@@ -225,6 +276,7 @@ def create_catalogue() -> Catalogue:
             BestFrameBlock,
             TopKBrightestBlock,
             FrameDelayBlock,
+            ImageStackBlock,
             CacheGetBlock,
             CacheSetBlock,
             StateGetBlock,
@@ -233,7 +285,13 @@ def create_catalogue() -> Catalogue:
             StateCompareAndSetBlock,
             StateMachineSetBlock,
             *MODEL_BLOCKS,
-            ByteTrackerBlock,
+            SORTTrackerBlock,
+            ByteTrackTrackerBlock,
+            OCSORTTrackerBlock,
+            BoTSORTTrackerBlock,
+            TrackClassLockBlock,
+            StabilizeDetectionsBlock,
+            VelocityBlock,
             *GEOMETRY_BLOCKS,
             *TRANSFORM_BLOCKS,
             *COMBINE_BLOCKS,
@@ -242,6 +300,8 @@ def create_catalogue() -> Catalogue:
             *FORMATTER_BLOCKS,
             *VISUALIZATION_BLOCKS,
             *ANNOTATION_BLOCKS,
+            *PLATFORM_BLOCKS,
+            *MEASUREMENT_BLOCKS,
         ],
         operators=[Align, Window],
         kinds=[
@@ -264,22 +324,35 @@ def create_catalogue() -> Catalogue:
 WORKFLOWS_V2_CATALOGUE = create_catalogue
 
 __all__ = [
+    "Cosmos3EdgeBlock",
+    "Florence2Block",
+    "GoogleVisionOCRBlock",
+    "Moondream2Block",
+    "QwenVLMBlock",
     "AbsoluteStaticCropBlock",
+    "ActionRecognitionBlock",
     "Align",
     "AnnotationLabelVisualizationBlock",
+    "AssetLibraryAttributesBlock",
     "BAR_CODE_DETECTION_KIND",
     "BestFrameBlock",
+    "BoTSORTTrackerBlock",
     "BlurVisualizationBlock",
     "BoundingBoxVisualizationBlock",
     "BoundingRectBlock",
     "BoxVisualizationBlock",
-    "ByteTrackerBlock",
+    "ByteTrackTrackerBlock",
     "CacheGetBlock",
     "CacheSetBlock",
     "CLASSIFICATION_PREDICTION_KIND",
     "CROP_SUMMARY_KIND",
     "ClassificationBlock",
+    "CircleVisualizationBlock",
     "ClassificationLabelVisualizationBlock",
+    "ContrastEnhancementBlock",
+    "ContrastEqualizationBlock",
+    "ConvertGrayscaleBlock",
+    "CornerVisualizationBlock",
     "ContinueIfBlock",
     "ContinueIfQueryBlock",
     "CropBlock",
@@ -288,6 +361,8 @@ __all__ = [
     "CurrentTimeBlock",
     "DETECTION_DRAWING_KIND",
     "DETECTION_KIND",
+    "DETECTIONS_OVERLAPS_KIND",
+    "DatasetUploadBlock",
     "DeltaFilterBlock",
     "DetectionDrawing",
     "DetectionDrawingBlock",
@@ -298,27 +373,36 @@ __all__ = [
     "DetectionsConsensusBlock",
     "DetectionsDifferenceBlock",
     "DetectionsFilterBlock",
+    "DetectionsListRollUpBlock",
     "DetectionsMergeBlock",
     "DetectionsStitchBlock",
     "DetectionsTransformationBlock",
     "DimensionCollapseBlock",
+    "DistanceMeasurementBlock",
+    "DotVisualizationBlock",
     "DynamicCropBlock",
     "EMBEDDING_KIND",
+    "EllipseVisualizationBlock",
     "ExpressionBlock",
     "FirstNonEmptyOrDefaultBlock",
     "FrameDelayBlock",
     "FrameHistoryCapacityError",
+    "HaloVisualizationBlock",
     "HasBrightnessBlock",
     "HoldCapacityError",
     "IMAGE_KIND",
     "INSTANCE_SEGMENTATION_PREDICTION_KIND",
     "INSTANCE_SEGMENTATION_VIEW_KIND",
     "ImageData",
+    "ImageBlurBlock",
     "ImageCopyBlock",
     "IdentifyChangesBlock",
     "IdentifyOutliersBlock",
     "ImagePreprocessingBlock",
     "ImageSlicerBlock",
+    "ImageStackBlock",
+    "ImageStackCapacityError",
+    "ImageThresholdBlock",
     "InPlaceLabelVisualizationBlock",
     "InstanceSegmentationBlock",
     "InvertBlock",
@@ -330,8 +414,12 @@ __all__ = [
     "MEDIA_WILDCARD_KIND",
     "MaskGridGeometry",
     "MaskVisualizationBlock",
+    "MaskAreaMeasurementBlock",
+    "MorphologicalTransformationBlock",
+    "ModelMonitoringInferenceAggregatorBlock",
     "MosaicBlock",
     "MultiLabelClassificationBlock",
+    "OCSORTTrackerBlock",
     "NATIVE_KINDS",
     "NATIVE_RECORDING_CODECS",
     "NATIVE_SEMANTIC_SEGMENTATION_KIND",
@@ -340,8 +428,10 @@ __all__ = [
     "ObjectDetectionBlock",
     "ObjectCache",
     "ObservationOrderError",
+    "OverlapAnalysisBlock",
     "PREDICTION_ROWS_KIND",
     "PerClassConfidenceFilterBlock",
+    "PixelColorCountBlock",
     "PixelateVisualizationBlock",
     "PolygonVisualizationBlock",
     "PropertyDefinitionBlock",
@@ -355,6 +445,9 @@ __all__ = [
     "SamplingCapacityError",
     "SemanticSegmentationBlock",
     "SemanticSegmentationVisualizationBlock",
+    "SizeMeasurementBlock",
+    "SORTTrackerBlock",
+    "StabilizeDetectionsBlock",
     "StateCompareAndSetBlock",
     "StateGetBlock",
     "StateIncrementBlock",
@@ -366,7 +459,10 @@ __all__ = [
     "TENSOR_KIND",
     "TIMESTAMP_KIND",
     "TopKBrightestBlock",
+    "TrackClassLockBlock",
     "TrackerCapacityError",
+    "TriangleVisualizationBlock",
+    "VelocityBlock",
     "WORKFLOWS_V2_CATALOGUE",
     "Window",
     "create_catalogue",

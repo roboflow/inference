@@ -13,9 +13,12 @@ Ports of V1 ``roboflow_core/polygon_zone_visualization@v1``,
 "pixel + opacity * color" is V1's ``cv2.addWeighted(mask, opacity, image, 1,
 0)``: a zone brightens towards the color rather than blending with it.
 
-The geometry is the same workflow value the zone and counter blocks read
-(for example ``$inputs.zone``), so coordinates are written once. Points are
+Polygons and lines are read by the zone blocks' own parsers
+(``analytics.zones.parse_polygons`` and ``parse_line``), so one workflow value
+such as ``$inputs.zone`` draws exactly when the counters accept it. Points are
 image pixels; fractional coordinates are truncated as V1's int32 cast does.
+A reference path is read more leniently than ``v2/path_deviation_analytics@v2``
+reads it, as V1 drew it (``path_points``).
 
 OpenCV rasterizes on the host into a frame-sized scratch mask, so it clips at
 the frame edges as V1. Only the shapes' window (bounds plus the stroke's
@@ -31,6 +34,7 @@ import cv2
 import numpy as np
 import torch
 from pydantic import Field, StrictInt, model_validator
+from roboflow_workflows.v2.blocks.analytics.zones import parse_line, parse_polygons
 from roboflow_workflows.v2.blocks.visualization.annotations.base import (
     AnnotationBlock,
     annotated,
@@ -66,7 +70,6 @@ from roboflow_workflows.v2.data.kinds import (
 from roboflow_workflows.v2.engine.declaration import Ref
 
 DEFAULT_ZONE_COLOR = "#5bb573"
-MIN_POLYGON_POINTS = 3
 COUNTER_TEXT_RGB = (0, 0, 0)
 COUNTER_BACKGROUND_RGB = (255, 255, 255)
 _INT32 = np.iinfo(np.int32)
@@ -90,8 +93,8 @@ class PolygonZoneVisualizationBlock(AnnotationBlock):
         zone: list | Ref(LIST_OF_VALUES_KIND) = Field(
             description=(
                 "One polygon [[x, y], ...] with >= 3 points, or a list of "
-                "polygons, in image pixels. Usually the same value the zone "
-                "blocks read. An empty list draws nothing."
+                "polygons, in image pixels. Read by the zone blocks' parser, so "
+                "the same value works for both. An empty list draws nothing."
             ),
             examples=[[[10, 10], [90, 10], [50, 70]], "$inputs.zone"],
         )
@@ -177,9 +180,10 @@ class LineCounterVisualizationBlock(AnnotationBlock):
     class Params(AnnotationParams):
         zone: list | Ref(LIST_OF_VALUES_KIND) = Field(
             description=(
-                "The counting line: exactly two points [[x1, y1], [x2, y2]] in "
-                "image pixels; usually the same value the line counter reads. "
-                "The counts are centred on the first point."
+                "The counting line: two different points [[x1, y1], [x2, y2]] "
+                "in image pixels. Read by the line counter's parser, so the "
+                "same value works for both. The counts are centred on the "
+                "first point."
             ),
             examples=[[[0, 50], [500, 50]], "$inputs.line"],
         )
@@ -325,7 +329,8 @@ class ReferencePathVisualizationBlock(AnnotationBlock):
             description=(
                 "Path points [[x, y], ...] in image pixels, joined in order and "
                 "not closed. Coordinates after the second of a point are "
-                "ignored, as in V1. An empty list draws nothing."
+                "ignored and an empty list draws nothing, as in V1. More "
+                "lenient than path deviation, which needs >= 2 [x, y] points."
             ),
             examples=[[[10, 90], [50, 40], [90, 40]], "$inputs.expected_path"],
         )
@@ -389,10 +394,7 @@ class ReferencePathVisualizationBlock(AnnotationBlock):
 
 
 def polygon_zones(value: Any, *, name: str = "zone") -> List[np.ndarray]:
-    """Read one polygon or a list of polygons as V1 polygon zones do.
-
-    A value whose first point is a pair of numbers is one polygon; otherwise
-    every item is a polygon.
+    """Read polygons with the zone blocks' ``parse_polygons``, as int32 pixels.
 
     Args:
         value: ``[[x, y], ...]`` or ``[[[x, y], ...], ...]``; ``[]`` for none.
@@ -402,85 +404,63 @@ def polygon_zones(value: Any, *, name: str = "zone") -> List[np.ndarray]:
         ``(K, 2)`` int32 points per polygon, ``K >= 3``.
 
     Raises:
-        ValueError: When a polygon is malformed or has fewer than 3 points.
+        ValueError: When ``parse_polygons`` refuses the value or a coordinate
+            is outside the int32 range.
     """
-    items = _sequence(value, name=name)
-    if not items:
-        return []
-
-    first = _sequence(items[0], name=f"{name}[0]")
-    is_one_polygon = bool(first) and _is_number(first[0])
-    polygons_value = [value] if is_one_polygon else items
-    labels = [name] if is_one_polygon else [f"{name}[{i}]" for i in range(len(items))]
-    polygons = []
-    for polygon, label in zip(polygons_value, labels):
-        points = pixel_points(polygon, name=label)
-        if len(points) < MIN_POLYGON_POINTS:
-            raise ValueError(
-                f"{label} must have >= {MIN_POLYGON_POINTS} points [x, y], "
-                f"got {len(points)}"
-            )
-        polygons.append(points)
+    polygons = [
+        _pixels(polygon, name=name) for polygon in parse_polygons(value, name=name)
+    ]
 
     return polygons
 
 
 def line_points(value: Any, *, name: str = "zone") -> np.ndarray:
-    """Read a counting line: exactly two ``[x, y]`` points.
+    """Read a counting line with the line counter's ``parse_line``, as int32 pixels.
 
     Args:
-        value: ``[[x1, y1], [x2, y2]]``.
+        value: ``[[x1, y1], [x2, y2]]`` with two different points.
         name: Parameter name for errors.
 
     Returns:
         ``(2, 2)`` int32 points.
 
     Raises:
-        ValueError: When the line is not two pairs of numbers.
+        ValueError: When ``parse_line`` refuses the value or a coordinate is
+            outside the int32 range.
     """
-    points = pixel_points(value, name=name)
-    if len(points) != 2:
-        raise ValueError(
-            f"{name} must be exactly two points [[x1, y1], [x2, y2]], got {len(points)}"
-        )
+    points = _pixels(parse_line(value, name=name), name=name)
 
     return points
 
 
-def pixel_points(
-    value: Any, *, name: str, extra_coordinates: bool = False
-) -> np.ndarray:
-    """Read a list of points as int32 pixels, truncating fractions as V1.
+def path_points(value: Any, *, name: str = "reference_path") -> np.ndarray:
+    """Read a reference path as V1 drew it, as int32 pixels.
+
+    More lenient than ``v2/path_deviation_analytics@v2``, on purpose (V1
+    parity): any number of points, ``[]`` included, and a point may carry
+    more than two numbers; only the first two are read. Path deviation needs
+    at least 2 points of exactly ``[x, y]``.
 
     Args:
-        value: Sequence of points; each a sequence of numbers.
+        value: ``[[x, y, ...], ...]``.
         name: Parameter name for errors.
-        extra_coordinates: Accept points with more than two numbers and keep
-            their first two (V1 reference path); otherwise exactly two.
 
     Returns:
         ``(K, 2)`` int32 points; ``K`` may be 0.
 
     Raises:
-        ValueError: On a non-sequence, a non-number, a wrong point length or
-            a coordinate outside the int32 range.
+        ValueError: On a non-list, a point of fewer than two numbers, a
+            non-number, or a coordinate that is not finite int32.
     """
     points = []
     for index, point in enumerate(_sequence(value, name=name)):
         point = _sequence(point, name=f"{name}[{index}]")
-        wrong_length = len(point) < 2 if extra_coordinates else len(point) != 2
-        if wrong_length or not all(_is_number(number) for number in point):
-            expected = "[x, y, ...]" if extra_coordinates else "[x, y]"
+        if len(point) < 2 or not all(_is_number(number) for number in point):
             raise ValueError(
-                f"{name}[{index}] must be a point {expected} of numbers, got {point!r}"
+                f"{name}[{index}] must be a point [x, y, ...] of numbers, got {point!r}"
             )
-        x, y = float(point[0]), float(point[1])
-        if not all(np.isfinite(c) and _INT32.min <= c <= _INT32.max for c in (x, y)):
-            raise ValueError(
-                f"{name}[{index}] must be finite int32 pixels, got {point!r}"
-            )
-        points.append((x, y))
-    pixels = np.asarray(points, dtype=np.float64).reshape(-1, 2).astype(np.int32)
+        points.append((float(point[0]), float(point[1])))
+    pixels = _pixels(points, name=name)
 
     return pixels
 
@@ -568,6 +548,19 @@ def _is_number(value: Any) -> bool:
     return number
 
 
+def _pixels(points: Sequence[Tuple[float, float]], *, name: str) -> np.ndarray:
+    # Truncate toward zero as V1's int32 cast; refuse what int32 cannot hold.
+    coordinates = np.asarray(points, dtype=np.float64).reshape(-1, 2)
+    fits = np.isfinite(coordinates) & (coordinates >= _INT32.min)
+    fits &= coordinates <= _INT32.max
+    if not fits.all():
+        raise ValueError(f"{name} must be finite int32 pixels, got {list(points)!r}")
+
+    pixels = coordinates.astype(np.int32)
+
+    return pixels
+
+
 def _scratch(size_hw: Tuple[int, int]) -> np.ndarray:
     # Zero pages until OpenCV touches them; frame-sized so clipping equals V1.
     scratch = np.zeros((int(size_hw[0]), int(size_hw[1])), dtype=np.uint8)
@@ -601,9 +594,7 @@ _LINE_COUNTER_CHECKS = {
     "opacity": checked_opacity,
 }
 _REFERENCE_PATH_CHECKS = {
-    "reference_path": lambda value: pixel_points(
-        value, name="reference_path", extra_coordinates=True
-    ),
+    "reference_path": path_points,
     "color": _color,
     "thickness": lambda value: checked_int(value, name="thickness", minimum=1),
 }

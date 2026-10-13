@@ -15,13 +15,23 @@ prompts once per concept set and tracks new matching objects continuously.
 A fresh backend session numbers its first frame 0, so prompts attach there;
 source frame numbers only order frames and detect rollback.
 
-Image and frame-number checks run before a source's frame is processed. Any
-later error on that frame discards the source, including an invalid prompt on
-a due frame: opaque sessions can mutate before throwing and cannot be rolled
-back. Previously processed batch members remain advanced. Discarding drops this
-block's references only; memory is freed when nothing else references it.
-Source capacity is bounded, backend history is not; no model unloading,
-backend cleanup or long-session memory bound is promised.
+Lifetime: each actual backend session is an episode with its own id. The
+required max_session_frames bounds its successful backend frames; the call
+that would exceed it is never made. on_session_limit="error" releases the
+handle and stops that source until reset_source; "restart" starts a new
+episode once the source can seed. Tracker ids are local to an episode. An
+invocation is one pulse; max_idle_pulses releases idle handles but retains
+expired entries until explicit reset or cleanup. Both stopped and expired
+entries count against max_sources.
+
+All members are checked before any is processed: image, frame number, source
+identity and stopped/expired sources. Those errors change no state. Budget
+exhaustion releases the handle and retains a stopped entry. Other errors during
+frame processing discard that source, including an invalid due prompt: opaque
+sessions can mutate before throwing and cannot be rolled back. Earlier
+members remain advanced and later members are not processed. Discarding drops
+this block's references only; memory is freed when nothing else references it.
+Frame and source bounds do not bound bytes, objects per frame or the cache.
 """
 
 import re
@@ -32,8 +42,7 @@ from typing import Any, Dict, List, Literal, Mapping, NamedTuple, Optional, Tupl
 import numpy as np
 import torch
 from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-from pydantic import Field, StrictInt, StrictStr, model_validator
+from pydantic import Field, StrictBool, StrictInt, StrictStr, model_validator
 from roboflow_workflows.v2.blocks.geometry._rows import without_host_mirrors
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.blocks.models.common import (
@@ -59,6 +68,7 @@ from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import (
+    BOOLEAN_KIND,
     FLOAT_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
@@ -85,10 +95,33 @@ SAM2_VIDEO_MODEL_ID = "sam2video/small"
 SAM3_CONCEPT_MODEL_ID = "sam3video"
 SAM3_VISUAL_MODEL_ID = "sam3trackervideo"
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
+SessionLimitAction = Literal["error", "restart"]
+UNBOUNDED = "unbounded"
+# image_metadata key: {"episode_id", "episode_frame", "transition"} on every result.
+VIDEO_EPISODE_KEY = "video_episode"
 
 
 class VideoSourceCapacityError(RuntimeError):
-    """A new source exceeds max_sources; reset processing or raise the bound."""
+    """A new source exceeds max_sources; release ended sources or raise the bound."""
+
+
+class VideoSessionLimitError(RuntimeError):
+    """A source reached max_session_frames under on_session_limit="error".
+
+    Its backend handle is already released. The source refuses frames until a
+    frame arrives with reset_source=true, or until it is released. source_id
+    names the stopped source.
+    """
+
+    def __init__(self, message: str, *, source_id: str):
+        """Create the error for one stopped source.
+
+        Args:
+            message: Human-readable explanation and recovery action.
+            source_id: Source whose frames are refused.
+        """
+        super().__init__(message)
+        self.source_id = source_id
 
 
 class _VideoParams(BlockParams):
@@ -137,7 +170,41 @@ class _VideoParams(BlockParams):
     max_sources: StrictInt = Field(
         default=256,
         ge=1,
-        description="Maximum retained sources; exceeding it fails without evicting another stream.",
+        description=(
+            "Maximum retained sources, stopped/expired ones included; exceeding it fails "
+            "without evicting another stream."
+        ),
+    )
+    max_session_frames: StrictInt | Literal["unbounded"] = Field(
+        description=(
+            "Required positive integer: successful backend frames per session, or "
+            "'unbounded'. New sessions start a new count. No safe numerical default "
+            "is established."
+        ),
+        examples=[300, "unbounded"],
+    )
+    on_session_limit: SessionLimitAction = Field(
+        default="error",
+        description=(
+            "At max_session_frames: 'error' stops the source until reset_source; "
+            "'restart' starts a new tracking episode once the source can seed."
+        ),
+    )
+    reset_source: StrictBool | Ref(BOOLEAN_KIND, batch="if_varying") = Field(
+        default=False,
+        description=(
+            "True drops this frame's source state before processing it, also "
+            "recovering a stopped or expired source. Every true frame resets again."
+        ),
+    )
+    max_idle_pulses: Optional[StrictInt] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Allow this many intervening block invocations without the source; "
+            "release its handle on the next absent pulse and retain an expired entry "
+            "until reset or cleanup. Null disables idle release."
+        ),
     )
 
     @model_validator(mode="after")
@@ -146,6 +213,7 @@ class _VideoParams(BlockParams):
             _positive_int(self.prompt_interval, name="prompt_interval")
         if not _is_selector(self.points):
             _labeled_points(self.points, block="SAM video")
+        _session_frame_limit(self.max_session_frames)
 
         return self
 
@@ -160,11 +228,39 @@ class _PromptObject(NamedTuple):
 class _SourceSession:
     configuration: tuple
     size_hw: Tuple[int, int]
+    last_pulse: int
     handle: Any = None
     last_frame: Optional[int] = None
     frames_since_prompt: int = 0
     visual_metadata: Dict[int, _PromptObject] = field(default_factory=dict)
     class_names: dict = field(default_factory=dict)
+    episode_id: Optional[str] = None
+    # Successful backend frames in the current episode (backend session).
+    episode_frames: int = 0
+    # Reached max_session_frames under "error"; only a reset or release clears it.
+    stopped: bool = False
+    # Idle expiry retains the slot and refuses re-entry until reset or cleanup.
+    expired: bool = False
+
+    def end_episode(self) -> None:
+        # Drop the handle before any new session is created for this source.
+        self.handle = None
+        self.visual_metadata = {}
+        self.class_names = {}
+        self.episode_id = None
+        self.episode_frames = 0
+        self.frames_since_prompt = 0
+
+    def start_episode(self, handle) -> None:
+        self.handle = handle
+        self.episode_id = str(uuid.uuid4())
+        self.episode_frames = 1
+        self.frames_since_prompt = 0
+
+    def continue_episode(self, handle) -> None:
+        self.handle = handle
+        self.episode_frames += 1
+        self.frames_since_prompt += 1
 
 
 class _VideoBlock(Block):
@@ -177,6 +273,8 @@ class _VideoBlock(Block):
     def __init__(self, models: Mapping[Any, Any] | ModelCache):
         self._models = models_cache(models, block=self.type)
         self._sources: Dict[str, _SourceSession] = {}
+        # One pulse per run() invocation that passes the batch checks.
+        self._pulse = 0
 
     def reset_state(self) -> None:
         """Drop all source handles for direct callers.
@@ -185,6 +283,22 @@ class _VideoBlock(Block):
         model weights remain owned by the host's models resource.
         """
         self._sources.clear()
+
+    def release_source(self, source_id: str) -> bool:
+        """Drop one source's handle and retained state, including stopped/expired entries.
+
+        Frees its max_sources slot at once. Other sources and cached model
+        weights are untouched. Call it between invocations, like run().
+
+        Args:
+            source_id: Identity used for the source's frames.
+
+        Returns:
+            Whether the source was retained.
+        """
+        released = self._sources.pop(source_id, None) is not None
+
+        return released
 
     def _run_video(
         self,
@@ -198,12 +312,21 @@ class _VideoBlock(Block):
         prompt_mode: str,
         prompt_interval: int,
         max_sources: int,
+        max_session_frames: Any,
+        on_session_limit: str,
+        reset_source: Any,
+        max_idle_pulses: Optional[int],
         mode: str,
         class_names: Any = None,
     ) -> List[Dict[str, Any]]:
         confidence = _unit_float(confidence, name="confidence", block=self.type)
         _positive_int(prompt_interval, name="prompt_interval")
         _positive_int(max_sources, name="max_sources")
+        limit = _session_frame_limit(max_session_frames)
+        if on_session_limit not in ("error", "restart"):
+            raise ValueError(f"{self.type}: on_session_limit must be error or restart")
+        if max_idle_pulses is not None:
+            _positive_int(max_idle_pulses, name="max_idle_pulses")
         if prompt_mode not in ("first_frame", "every_n_frames", "every_frame"):
             raise ValueError(f"{self.type}: unsupported prompt_mode {prompt_mode!r}")
         if mode not in ("visual", "concept"):
@@ -219,19 +342,26 @@ class _VideoBlock(Block):
         point_list = (
             _labeled_points(points, block=self.type) if mode == "visual" else []
         )
+        resets = self._member_resets(reset_source, image=image)
+        identities = self._preflight(image, resets=resets)
+        self._start_pulse(
+            [key for key, _ in identities],
+            max_idle_pulses=max_idle_pulses,
+            max_sources=max_sources,
+        )
+
         request = ModelRequest(model_id, model_package_id)
         configuration = (request, mode, tuple(names), prompt_mode, prompt_interval)
         results = []
         for position, member in enumerate(image):
-            _require_rgb(member, block=self.type)
-            key, frame = self._source_identity(member, index=image.indices[position])
+            key, frame = identities[position]
+            transition = None
+            if resets[position]:
+                # Drops the old handle (and a stop) before any new session starts.
+                self._sources.pop(key, None)
+                transition = "reset"
             session = self._sources.get(key)
-            if session is None and len(self._sources) >= max_sources:
-                raise VideoSourceCapacityError(
-                    f"{self.type}: max_sources={max_sources} exceeded; reset processing "
-                    "to drop ended sources, or increase max_sources"
-                )
-            restarted = (
+            rolled_back = (
                 session is not None
                 and frame is not None
                 and session.last_frame is not None
@@ -241,15 +371,23 @@ class _VideoBlock(Block):
                 session is None
                 or session.configuration != configuration
                 or session.size_hw != member.size_hw
-                or restarted
+                or rolled_back
             ):
                 session = _SourceSession(
-                    configuration=configuration, size_hw=member.size_hw
+                    configuration=configuration,
+                    size_hw=member.size_hw,
+                    last_pulse=self._pulse,
                 )
                 self._sources[key] = session
 
+            at_limit = (
+                session.handle is not None
+                and limit is not None
+                and session.episode_frames >= limit
+            )
+            restart = at_limit and on_session_limit == "restart"
             # Inputs read only for visual prompt policy; tracking ignores current boxes/points.
-            due = (
+            scheduled = (
                 session.handle is None
                 or prompt_mode == "every_frame"
                 or (
@@ -257,7 +395,29 @@ class _VideoBlock(Block):
                     and session.frames_since_prompt >= prompt_interval
                 )
             )
+            due = scheduled or restart
             try:
+                prompt = (
+                    _prompt_boxes(boxes[position], block=self.type)
+                    if mode == "visual" and due and boxes is not None
+                    else None
+                )
+                member_points = point_list if mode == "visual" and due else []
+                # A scheduled visual re-prompt starts a fresh session within the limit.
+                reprompts = scheduled and _has_prompts(prompt, member_points)
+                if at_limit and not reprompts:
+                    if not restart:
+                        session.end_episode()
+                        session.stopped = True
+                        raise VideoSessionLimitError(
+                            f"{self.type}: source {key!r} reached max_session_frames="
+                            f"{limit}; its session was released. Send reset_source="
+                            "true with its next frame to start a new episode",
+                            source_id=key,
+                        )
+                    session.end_episode()
+                    transition = "session_limit"
+
                 if mode == "concept":
                     predictions = self._concept_frame(
                         session,
@@ -267,21 +427,23 @@ class _VideoBlock(Block):
                         confidence=confidence,
                     )
                 else:
-                    prompt = (
-                        _prompt_boxes(boxes[position], block=self.type)
-                        if due and boxes is not None
-                        else None
-                    )
                     predictions = self._visual_frame(
                         session,
                         member,
                         request=request,
                         prompt=prompt,
-                        points=point_list if due else [],
+                        points=member_points,
                         due=due,
                         confidence=confidence,
                     )
                 session.last_frame = frame
+                if transition is None and session.episode_frames == 1:
+                    transition = "new_session"
+                predictions.image_metadata[VIDEO_EPISODE_KEY] = {
+                    "episode_id": session.episode_id,
+                    "episode_frame": session.episode_frames,
+                    "transition": transition,
+                }
                 inference_id = str(uuid.uuid4())
                 predictions = with_row_identity(predictions, namespace=inference_id)
                 result = _segmentation_result(
@@ -291,12 +453,83 @@ class _VideoBlock(Block):
                     inference_id=inference_id,
                 )
                 results.append(result)
+            except VideoSessionLimitError:
+                # Keep the stopped entry: it refuses frames until reset or release.
+                raise
             except Exception:
                 # Includes invalid prompts and malformed results after a backend call.
                 self._sources.pop(key, None)
                 raise
 
         return results
+
+    def _member_resets(self, reset_source, *, image) -> List[bool]:
+        if isinstance(reset_source, Batch):
+            if len(reset_source) != len(image) or reset_source.indices != image.indices:
+                raise ValueError(
+                    f"{self.type}: reset_source and image batches must align"
+                )
+            resets = list(reset_source)
+        else:
+            resets = [reset_source] * len(image)
+        if any(type(value) is not bool for value in resets):
+            raise ValueError(f"{self.type}: reset_source must be true or false")
+
+        return resets
+
+    def _preflight(self, image, *, resets) -> List[Tuple[str, Optional[int]]]:
+        """Check every member before any is processed; changes no state."""
+        stopped = {key for key, session in self._sources.items() if session.stopped}
+        expired = {key for key, session in self._sources.items() if session.expired}
+        identities = []
+        for position, member in enumerate(image):
+            _require_rgb(member, block=self.type)
+            key, frame = self._source_identity(member, index=image.indices[position])
+            if resets[position]:
+                stopped.discard(key)
+                expired.discard(key)
+            elif key in stopped:
+                raise VideoSessionLimitError(
+                    f"{self.type}: source {key!r} stopped at max_session_frames; send "
+                    "reset_source=true with its frame, or release the source",
+                    source_id=key,
+                )
+            elif key in expired:
+                raise RuntimeError(
+                    f"{self.type}: source {key!r} expired at max_idle_pulses; send "
+                    "reset_source=true with its frame, or release the source"
+                )
+            identities.append((key, frame))
+
+        return identities
+
+    def _start_pulse(self, keys, *, max_idle_pulses, max_sources) -> None:
+        """Count this invocation, expire idle handles, then check retained capacity."""
+        self._pulse += 1
+        present = set(keys)
+        if max_idle_pulses is not None:
+            idle = [
+                key
+                for key, session in self._sources.items()
+                if key not in present
+                and not session.stopped
+                and not session.expired
+                and self._pulse - session.last_pulse > max_idle_pulses
+            ]
+            for key in idle:
+                session = self._sources[key]
+                session.end_episode()
+                session.expired = True
+        for key in present & self._sources.keys():
+            self._sources[key].last_pulse = self._pulse
+
+        added = present - self._sources.keys()
+        if len(self._sources) + len(added) > max_sources:
+            raise VideoSourceCapacityError(
+                f"{self.type}: max_sources={max_sources} exceeded by {len(added)} new "
+                "source(s); release ended, stopped or expired sources (release_source "
+                "or a processing reset), or increase max_sources"
+            )
 
     def _source_identity(self, image: ImageData, *, index: tuple):
         metadata = image.video_metadata
@@ -318,9 +551,10 @@ class _VideoBlock(Block):
 
         return key, frame
 
-    def _visual_frame(self, session, image, *, request, prompt, points, due, confidence):
-        has_prompts = prompt is not None and len(prompt) > 0 or bool(points)
-        if due and has_prompts:
+    def _visual_frame(
+        self, session, image, *, request, prompt, points, due, confidence
+    ):
+        if due and _has_prompts(prompt, points):
             _require_same_frame(prompt, image, block=self.type)
             for x, y, _ in points:
                 if not (0 <= x < image.size_hw[1] and 0 <= y < image.size_hw[0]):
@@ -330,8 +564,7 @@ class _VideoBlock(Block):
             bboxes, metadata, names = _visual_prompts(
                 prompt, points=points, image=image
             )
-            session.handle = None
-            session.visual_metadata.clear()
+            session.end_episode()
             session.class_names = names
             model = self._models.get(request)
             # The fresh HF session numbers its first streamed frame 0, not the source frame.
@@ -351,17 +584,16 @@ class _VideoBlock(Block):
                 raise ValueError(
                     f"{self.type}: visual prompt returned an unprompted object id"
                 )
-            session.handle = handle
-            session.frames_since_prompt = 0
+            session.start_episode(handle)
         elif session.handle is not None:
             model = self._models.get(request)
             result = model.track(image=_backend_image(image), state_dict=session.handle)
-            masks, ids, session.handle = _visual_result(result, image=image)
+            masks, ids, handle = _visual_result(result, image=image)
             if any(int(object_id) not in session.visual_metadata for object_id in ids):
                 raise ValueError(
                     f"{self.type}: visual tracker returned an unprompted object id"
                 )
-            session.frames_since_prompt += 1
+            session.continue_episode(handle)
         else:
             masks = torch.zeros((0, *image.size_hw), dtype=torch.bool)
             ids = torch.zeros(0, dtype=torch.int64)
@@ -388,11 +620,11 @@ class _VideoBlock(Block):
             masks = torch.zeros((0, *image.size_hw), dtype=torch.bool)
             ids = torch.zeros(0, dtype=torch.int64)
             scores = torch.zeros(0)
-            boxes = torch.zeros((0, 4))
             classes = torch.zeros(0, dtype=torch.int64)
         else:
             model = self._models.get(request)
-            if session.handle is None:
+            starts = session.handle is None
+            if starts:
                 result = model.prompt(
                     image=_backend_image(image),
                     text=names,
@@ -403,9 +635,13 @@ class _VideoBlock(Block):
                 result = model.track(
                     image=_backend_image(image), state_dict=session.handle
                 )
-            masks, ids, scores, boxes, mapping, session.handle = _concept_result(
+            masks, ids, scores, mapping, handle = _concept_result(
                 result, image=image, names=names
             )
+            if starts:
+                session.start_episode(handle)
+            else:
+                session.continue_episode(handle)
             by_id = {
                 object_id: names.index(name)
                 for name, object_ids in mapping.items()
@@ -426,7 +662,6 @@ class _VideoBlock(Block):
             names={**dict(enumerate(names)), len(names): FOREGROUND},
             image=image,
             confidence=confidence,
-            boxes=boxes,
         )
 
         return predictions
@@ -436,7 +671,8 @@ class SegmentAnything2VideoBlock(_VideoBlock):
     """Track box or point prompted objects locally with SAM2 video.
 
     A source without prompts emits no rows until it can be seeded. Re-prompts
-    restart backend tracker IDs; every frame always gets fresh row identity.
+    start a new episode, which restarts backend tracker IDs; every frame always
+    gets fresh row identity.
     """
 
     type = "v2/segment_anything_2_video@v1"
@@ -474,6 +710,11 @@ class SegmentAnything2VideoBlock(_VideoBlock):
         prompt_interval: int = 30,
         confidence: float = 0.0,
         max_sources: int = 256,
+        *,
+        max_session_frames: int | str,
+        on_session_limit: SessionLimitAction = "error",
+        reset_source: bool | Batch = False,
+        max_idle_pulses: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Process sequential frames using independent source handles.
 
@@ -486,14 +727,26 @@ class SegmentAnything2VideoBlock(_VideoBlock):
             prompt_mode: Visual re-prompt policy.
             prompt_interval: Tracking calls between scheduled prompts.
             confidence: Minimum inherited visual prompt confidence.
-            max_sources: Maximum source handles to retain.
+            max_sources: Maximum sources to retain, stopped/expired ones included.
+            max_session_frames: Positive backend-frame budget per session,
+                or "unbounded".
+            on_session_limit: "error" stops the source; "restart" starts a
+                new episode.
+            reset_source: One flag, or flags aligned with image; true drops
+                that frame's source state first.
+            max_idle_pulses: Invocations a source may miss before its handle is released;
+                the expired entry remains until reset/cleanup. None disables expiry.
 
         Returns:
             Demanded dense/view predictions and model/inference identifiers.
+            Prediction image_metadata["video_episode"] names the episode.
 
         Raises:
             ValueError: For invalid inputs or malformed backend results.
-            VideoSourceCapacityError: When a new source exceeds the bound.
+            RuntimeError: When an idle-expired source requires explicit reset/cleanup.
+            VideoSourceCapacityError: When new sources exceed the bound.
+            VideoSessionLimitError: When a source reaches its frame budget
+                under "error", or sends frames while stopped.
         """
         result = self._run_video(
             image,
@@ -505,6 +758,10 @@ class SegmentAnything2VideoBlock(_VideoBlock):
             prompt_mode=prompt_mode,
             prompt_interval=prompt_interval,
             max_sources=max_sources,
+            max_session_frames=max_session_frames,
+            on_session_limit=on_session_limit,
+            reset_source=reset_source,
+            max_idle_pulses=max_idle_pulses,
             mode="visual",
         )
 
@@ -609,6 +866,11 @@ class SegmentAnything3VideoBlock(_VideoBlock):
         tracking_mode: str = "concept",
         class_names: Any = None,
         visual_model_id: str = SAM3_VISUAL_MODEL_ID,
+        *,
+        max_session_frames: int | str,
+        on_session_limit: SessionLimitAction = "error",
+        reset_source: bool | Batch = False,
+        max_idle_pulses: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Process sequential SAM3 concept or visual video frames.
 
@@ -621,17 +883,29 @@ class SegmentAnything3VideoBlock(_VideoBlock):
             prompt_mode: Visual re-prompt policy; concept mode prompts once.
             prompt_interval: Tracking calls between visual re-prompts.
             confidence: Minimum concept score or visual prompt confidence.
-            max_sources: Maximum retained sources.
+            max_sources: Maximum retained sources, stopped/expired ones included.
             tracking_mode: concept or visual, matching the backend contract.
             class_names: Concept prompts; empty emits no rows.
             visual_model_id: Visual tracker id or cached package path.
+            max_session_frames: Positive backend-frame budget per session,
+                or "unbounded".
+            on_session_limit: "error" stops the source; "restart" starts a
+                new episode.
+            reset_source: One flag, or flags aligned with image; true drops
+                that frame's source state first.
+            max_idle_pulses: Invocations a source may miss before its handle is released;
+                the expired entry remains until reset/cleanup. None disables expiry.
 
         Returns:
             Demanded dense/view predictions and model/inference identifiers.
+            Prediction image_metadata["video_episode"] names the episode.
 
         Raises:
             ValueError: For invalid inputs or malformed backend results.
-            VideoSourceCapacityError: When a new source exceeds the bound.
+            RuntimeError: When an idle-expired source requires explicit reset/cleanup.
+            VideoSourceCapacityError: When new sources exceed the bound.
+            VideoSessionLimitError: When a source reaches its frame budget
+                under "error", or sends frames while stopped.
         """
         selected = visual_model_id if tracking_mode == "visual" else model_id
         result = self._run_video(
@@ -644,6 +918,10 @@ class SegmentAnything3VideoBlock(_VideoBlock):
             prompt_mode=prompt_mode,
             prompt_interval=prompt_interval,
             max_sources=max_sources,
+            max_session_frames=max_session_frames,
+            on_session_limit=on_session_limit,
+            reset_source=reset_source,
+            max_idle_pulses=max_idle_pulses,
             mode=tracking_mode,
             class_names=class_names,
         )
@@ -652,7 +930,9 @@ class SegmentAnything3VideoBlock(_VideoBlock):
 
 
 def _is_selector(value):
-    selector = isinstance(value, str) and bool(re.fullmatch(DATA_SELECTOR_PATTERN, value))
+    selector = isinstance(value, str) and bool(
+        re.fullmatch(DATA_SELECTOR_PATTERN, value)
+    )
 
     return selector
 
@@ -660,6 +940,24 @@ def _is_selector(value):
 def _positive_int(value, *, name):
     if type(value) is not int or value < 1:
         raise ValueError(f"SAM video: {name} must be a positive integer")
+
+
+def _session_frame_limit(value):
+    # None means the caller chose unbounded sessions explicitly.
+    if value == UNBOUNDED:
+        return None
+    if type(value) is not int or value < 1:
+        raise ValueError(
+            "SAM video: max_session_frames must be a positive integer or 'unbounded'"
+        )
+
+    return value
+
+
+def _has_prompts(prompt, points):
+    present = prompt is not None and len(prompt) > 0 or bool(points)
+
+    return present
 
 
 def _concept_names(value):
@@ -824,6 +1122,8 @@ def _concept_result(result, *, image, names):
         raise ValueError(
             "SAM video: concept scores must align with ids and lie in 0..1"
         )
+    # Backend boxes are inclusive occupied-pixel extrema (masks_to_boxes). They are
+    # validated as part of the record, but output boxes are half-open mask extents.
     if boxes.shape != (len(ids), 4) or not torch.isfinite(boxes).all():
         raise ValueError("SAM video: concept boxes must be finite (N, 4)")
     mapping = result.prompt_to_object_ids
@@ -847,16 +1147,14 @@ def _concept_result(result, *, image, names):
         claimed.update(object_ids)
     handle = _handle(result.state_dict)
 
-    return masks, ids, scores, boxes, mapping, handle
+    return masks, ids, scores, mapping, handle
 
 
-def _frame_predictions(
-    masks, *, ids, scores, classes, rows, names, image, confidence, boxes=None
-):
+def _frame_predictions(masks, *, ids, scores, classes, rows, names, image, confidence):
     keep = (scores >= confidence) & masks.flatten(1).any(dim=1)
     device = image.device
     selected_masks = masks[keep].to(device)
-    xyxy = _mask_boxes(selected_masks) if boxes is None else boxes[keep].to(device)
+    xyxy = _mask_boxes(selected_masks)
     selected_rows = [row for row, selected in zip(rows, keep.tolist()) if selected]
     predictions = InstanceDetections(
         xyxy=xyxy,

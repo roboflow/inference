@@ -9,7 +9,9 @@ Each image causes one images:annotate request; the transport is reused.
 Image encoding is an explicit host boundary: RGB/gray tensors become PNG bytes
 on the CPU. Returned tensors stay on the input image's device. Predictions
 carry the image frame and V2 row identity, including when there is no text.
-Errors deliberately omit provider bodies and transport exception text.
+Errors deliberately omit provider bodies and transport exception text. They
+name only the integer HTTP status, the integer provider error code and a
+canonical status name such as PERMISSION_DENIED, plus a suggested repair.
 
 Credentials: an ``api_key`` selected from a workflow input of kind ``secret``
 arrives as a ``roboflow_workflows.v2.data.secrets.Secret``, which hides the
@@ -26,7 +28,15 @@ from urllib.parse import urlsplit
 
 import torch
 from inference_models.models.base.object_detection import Detections
-from pydantic import Field, StrictFloat, StrictInt, StrictStr
+from pydantic import (
+    ConfigDict,
+    Field,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    field_validator,
+)
+from pydantic_core import PydanticCustomError
 from roboflow_workflows.v2.blocks.models.common import prediction_metadata
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
@@ -50,6 +60,70 @@ _FEATURES = {
     "ocr_text_detection": "DOCUMENT_TEXT_DETECTION",
 }
 _FLOAT32_MAX = torch.finfo(torch.float32).max
+_MANAGED_KEY_MESSAGE = (
+    "Roboflow-managed keys (rf_key:*, V1's default) are not supported by "
+    "v2/google_vision_ocr; pass your Google Cloud Vision API key, preferably "
+    "through a workflow input of kind secret"
+)
+# google.rpc.Code names, indexed by code. Only these names reach error messages,
+# so provider-chosen text never does.
+_STATUS_NAMES = (
+    "OK",
+    "CANCELLED",
+    "UNKNOWN",
+    "INVALID_ARGUMENT",
+    "DEADLINE_EXCEEDED",
+    "NOT_FOUND",
+    "ALREADY_EXISTS",
+    "PERMISSION_DENIED",
+    "RESOURCE_EXHAUSTED",
+    "FAILED_PRECONDITION",
+    "ABORTED",
+    "OUT_OF_RANGE",
+    "UNIMPLEMENTED",
+    "INTERNAL",
+    "UNAVAILABLE",
+    "DATA_LOSS",
+    "UNAUTHENTICATED",
+)
+_RETRY_LATER = "provider-side failure; retry later"
+# Minimal responses do not say which quota or deadline applied, so these
+# repairs name checks rather than causes.
+_REPAIRS = {
+    # Google also reports an invalid API key as HTTP 400 INVALID_ARGUMENT.
+    "INVALID_ARGUMENT": (
+        "check the API key, the image, and the ocr_type and language_hints settings"
+    ),
+    "UNAUTHENTICATED": "check the API key",
+    "PERMISSION_DENIED": (
+        "check the API key, its restrictions, and that the Cloud Vision API "
+        "and billing are enabled for its project"
+    ),
+    "NOT_FOUND": "check google_vision_base_url",
+    "RESOURCE_EXHAUSTED": (
+        "check the Cloud Vision quota and rate limits of the key's project; "
+        "if one is used up, wait or request a higher quota"
+    ),
+    "DEADLINE_EXCEEDED": "the request deadline expired; retry later",
+    "INTERNAL": _RETRY_LATER,
+    "UNAVAILABLE": _RETRY_LATER,
+}
+# Repair lookup when the provider body names no status; the name is not shown.
+_HTTP_STATUS_REPAIR_KEYS = {
+    400: "INVALID_ARGUMENT",
+    401: "UNAUTHENTICATED",
+    403: "PERMISSION_DENIED",
+    404: "NOT_FOUND",
+    429: "RESOURCE_EXHAUSTED",
+    500: "INTERNAL",
+    503: "UNAVAILABLE",
+    504: "DEADLINE_EXCEEDED",
+}
+_DEFAULT_REPAIR = "see Google Cloud Vision's error documentation for this status"
+# Matched by class name along the MRO, so the block need not import requests:
+# requests raises Timeout subclasses (ReadTimeout, ConnectTimeout), which are
+# not builtin TimeoutError.
+_TIMEOUT_CLASS_NAMES = frozenset({"Timeout", "TimeoutError"})
 
 
 class GoogleVisionTransport(Protocol):
@@ -112,12 +186,19 @@ class GoogleVisionOCRBlock(Block):
     class Params(BlockParams):
         """Image batch and literal or selected OCR request settings."""
 
+        # The engine chains pydantic's ValidationError, whose rendering would
+        # otherwise echo a rejected literal api_key.
+        model_config = ConfigDict(hide_input_in_errors=True)
+
         image: Ref(IMAGE_KIND, batch="always") = Field(  # noqa: F821
             description="RGB or gray images to read; one vendor request per image."
         )
         api_key: Union[StrictStr, Ref(STRING_KIND, SECRET_KIND, batch="if_varying")] = (
             Field(
-                description="Your vendor key or secret selector; rf_key:* is unsupported.",
+                description=(
+                    "Google Cloud Vision API key or secret selector; "
+                    "Roboflow-managed rf_key:* keys are unsupported."
+                ),
                 examples=["$inputs.google_key"],
                 repr=False,
             )
@@ -140,6 +221,16 @@ class GoogleVisionOCRBlock(Block):
             description="Finite positive request timeout in seconds; no retries.",
             examples=[30.0, "$inputs.timeout"],
         )
+
+        @field_validator("api_key")
+        @classmethod
+        def _reject_managed_key(cls, value: Any) -> Any:
+            # A migrated V1 definition fails at compile time, not on its first
+            # image. Selected values are checked again before any request.
+            if isinstance(value, str) and value.startswith("rf_key:"):
+                raise PydanticCustomError("managed_api_key", _MANAGED_KEY_MESSAGE)
+
+            return value
 
     def __init__(
         self,
@@ -285,13 +376,13 @@ def _resolved_rows(
 
         secret = to_secret(key, name="google_vision_api_key")
         if secret is None:
-            raise ValueError("api_key must be a non-empty vendor key")
+            raise ValueError("api_key must be a non-empty Google Cloud Vision API key")
 
         plain = secret.reveal()
-        if not plain.strip() or plain.startswith("rf_key:"):
-            raise ValueError(
-                "api_key must be a non-empty vendor key; managed proxy keys are unsupported"
-            )
+        if not plain.strip():
+            raise ValueError("api_key must be a non-empty Google Cloud Vision API key")
+        if plain.startswith("rf_key:"):
+            raise ValueError(_MANAGED_KEY_MESSAGE)
 
         rows.append((member, plain, mode, hints, float(seconds)))
 
@@ -329,13 +420,16 @@ def _execute(
             endpoint, params={"key": key}, json=request, timeout=timeout
         )
         if response.status_code != 200:
-            failure = "Google Vision returned an unsuccessful HTTP status"
+            failure = _http_failure(response)
         else:
             payload = response.json()
-    except TimeoutError:
-        failure = "Google Vision request timed out"
-    except Exception:
-        failure = "Google Vision transport or JSON decoding failed"
+    except Exception as error:
+        failure = (
+            f"Google Vision request timed out after {timeout:g} s; retry later "
+            "or raise timeout"
+            if _is_timeout(error)
+            else "Google Vision transport or JSON decoding failed"
+        )
     if failure is not None:
         raise GoogleVisionOCRError(failure)
 
@@ -350,9 +444,79 @@ def _execute(
 
     result = payload["responses"][0]
     if "error" in result:
-        raise GoogleVisionOCRError("Google Vision reported an image error")
+        # Per-image errors are google.rpc.Status: code is a gRPC code.
+        code, name = _provider_error(result["error"], grpc_code=True)
+        message = _failure_message(
+            "Google Vision reported an image error", code=code, name=name
+        )
+        raise GoogleVisionOCRError(message)
 
     return result
+
+
+def _is_timeout(error: Exception) -> bool:
+    return any(cls.__name__ in _TIMEOUT_CLASS_NAMES for cls in type(error).__mro__)
+
+
+def _http_failure(response: Any) -> str:
+    status = response.status_code
+    try:
+        body = response.json()
+    except Exception:
+        body = None
+    # Request-level errors carry the HTTP status as code and a status name.
+    error = body.get("error") if isinstance(body, dict) else None
+    code, name = _provider_error(error, grpc_code=False)
+    if isinstance(status, bool) or not isinstance(status, int):
+        status = None
+    if status is not None and not 100 <= status <= 599:
+        status = None
+
+    prefix = (
+        "Google Vision returned an invalid HTTP status"
+        if status is None
+        else f"Google Vision returned HTTP {status}"
+    )
+    fallback = _HTTP_STATUS_REPAIR_KEYS.get(status)
+    if fallback is None and status is not None and status >= 500:
+        fallback = "INTERNAL"
+    message = _failure_message(prefix, code=code, name=name, fallback=fallback)
+
+    return message
+
+
+def _provider_error(error: Any, *, grpc_code: bool) -> tuple:
+    """Return only the integer code and a known status name from an error object."""
+    if not isinstance(error, dict):
+        return None, None
+
+    code = error.get("code")
+    if isinstance(code, bool) or not isinstance(code, int) or not 0 <= code <= 999:
+        code = None
+    name = error.get("status")
+    if not isinstance(name, str) or name not in _STATUS_NAMES:
+        name = None
+    if name is None and grpc_code and code is not None and code < len(_STATUS_NAMES):
+        name = _STATUS_NAMES[code]
+
+    return code, name
+
+
+def _failure_message(
+    prefix: str,
+    *,
+    code: Optional[int],
+    name: Optional[str],
+    fallback: Optional[str] = None,
+) -> str:
+    details = [name] if name else []
+    if code is not None:
+        details.append(f"provider code {code}")
+    suffix = f" ({', '.join(details)})" if details else ""
+    repair = _REPAIRS.get(name or fallback, _DEFAULT_REPAIR)
+    message = f"{prefix}{suffix}; {repair}"
+
+    return message
 
 
 def _parse_response(result: dict, *, image: ImageData) -> dict:

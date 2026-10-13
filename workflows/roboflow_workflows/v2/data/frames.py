@@ -37,6 +37,12 @@ keys alone it needs only ``root_parent_coordinates``,
 metadata without ``image_dimensions`` or parent keys therefore converts to
 the root but has no ``FrameRef``. A typed record always gives both.
 
+``require_compatible_frame`` serves a block that already holds the image a
+prediction or prompt must describe. Like root conversion, it needs no full
+frame: it validates every frame field the metadata supplies, compares it with
+the image and rejects a known difference. A missing field stays unknown, so passing
+means "no known conflict", not "same image".
+
 A composite (mosaic) root is a canvas, not one source: ``root`` maps to the
 canvas and ``composite_sources`` lists the placements. In legacy keys,
 ``is_composite`` is a boolean flag: ``False`` marks an ordinary image and
@@ -47,7 +53,7 @@ recipe. No function here reads pixels or tensor values, or copies tensors.
 
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 from roboflow_workflows.v2.data.errors import ContractError
@@ -438,6 +444,190 @@ def root_placement_from_metadata(
     return placement
 
 
+def require_compatible_frame(
+    metadata: Optional[Mapping[str, Any]], *, image: ImageData
+) -> None:
+    """Check that a prediction's metadata may describe ``image``.
+
+    For a block that receives an image and a prediction or prompt made on it.
+    Every frame field the metadata supplies is validated, then compared with
+    the image when the image knows it too. Compared fields: image id and
+    size; frame id, size, scale and offset of the parent and root mappings;
+    whether the root is a composite, and its placements; video source, frame
+    number and timestamp. Ids, integers, flags and times must be equal;
+    scales and offsets may differ by a relative ``1e-9``. Legacy keys next to
+    a typed record are validated as if alone, then must match the record.
+
+    A missing field is unknown and never proves or disproves a match:
+    ``metadata=None``; a legacy key that is absent or ``None``, including a
+    legacy scale, which ``frame_of`` would read as ``1.0``; a ``None`` id or
+    ``video_metadata`` in the record; an image whose parent id or video
+    metadata is ``None``. Legacy keys alone carry no source and time. Passing
+    therefore means no known conflict; matching sizes do not prove identity.
+
+    Args:
+        metadata: ``image_metadata`` of the prediction or prompt, with the
+            typed record, legacy frame keys, both or neither.
+        image: The image the block works on. Its pixels are not read.
+
+    Raises:
+        ContractError: When ``metadata`` is not a dict or a supplied frame
+            field is malformed, when the record and the legacy keys disagree,
+            or when a field both sides know differs.
+    """
+    if metadata is None:
+        return
+
+    if not isinstance(metadata, Mapping):
+        raise ContractError(
+            f"image_metadata must be a dict, got {type(metadata).__name__}"
+        )
+
+    # Legacy keys are read the same way with or without a record.
+    legacy = _legacy_frame_fields(metadata)
+    record = metadata.get(FRAME_RECORD_KEY)
+    if record is None:
+        known = legacy
+    else:
+        known = _frame_fields(FrameRef.from_record(record))
+        for name, value in legacy.items():
+            # An absent or None mirror is unknown. A supplied mirror must
+            # match the record, also where the record's id is None.
+            if value is not None and not _same_value(
+                value, known[name], exact_integers=True
+            ):
+                raise ContractError(
+                    f"Conflicting frame: image_metadata gives {name} {value!r} but "
+                    f"the {FRAME_RECORD_KEY} record gives {known[name]!r}"
+                )
+    image_fields = _frame_fields(FrameRef.from_image(image))
+
+    for name, value in known.items():
+        expected = image_fields[name]
+        if value is None or expected is None:
+            continue
+        if not _same_value(value, expected, exact_integers=True):
+            raise ContractError(
+                f"Frame mismatch: image_metadata gives {name} {value!r}, but "
+                f"image {image.image_id!r} has {expected!r}"
+            )
+
+
+def _frame_fields(frame: FrameRef) -> Dict[str, Any]:
+    # Comparable fields of a whole frame; None marks an unknown value.
+    video = frame.video_metadata
+    fields = {
+        "image_id": frame.image_id,
+        "size_hw": list(frame.size_hw),
+        **_mapping_fields(frame.parent, name="parent"),
+        **_mapping_fields(frame.root, name="root"),
+        "is_composite": frame.is_composite,
+        "composite_sources": (
+            None
+            if frame.composite_sources is None
+            else [source.to_dict() for source in frame.composite_sources]
+        ),
+        "video_identifier": None if video is None else video.video_identifier,
+        "frame_number": None if video is None else video.frame_number,
+        "frame_timestamp": None if video is None else video.frame_timestamp,
+    }
+
+    return fields
+
+
+def _mapping_fields(mapping: FrameMapping, *, name: str) -> Dict[str, Any]:
+    fields = {
+        f"{name}.frame_id": mapping.frame_id,
+        f"{name}.size_hw": list(mapping.frame_size_hw),
+        f"{name}.scale_xy": list(mapping.scale_xy),
+        f"{name}.offset_xy": list(mapping.offset_xy),
+    }
+
+    return fields
+
+
+def _legacy_frame_fields(metadata: Mapping[str, Any]) -> Dict[str, Any]:
+    """Read the legacy frame keys that are present, in ``_frame_fields`` terms.
+
+    No key is required. Each present key is validated by the same reader as
+    in ``frame_of``; an absent or ``None`` key gives ``None``, unknown.
+    """
+    try:
+        is_composite, composite_sources = _legacy_composite_fields(metadata)
+        fields = {
+            "image_id": _legacy_id(metadata, key="parent_id"),
+            "size_hw": _legacy_known(
+                metadata, key="image_dimensions", read=_legacy_size
+            ),
+            "parent.frame_id": _legacy_id(metadata, key="parent_frame_id"),
+            "parent.size_hw": _legacy_known(
+                metadata, key="parent_dimensions", read=_legacy_size
+            ),
+            "parent.scale_xy": _legacy_known(
+                metadata, key="scaling_relative_to_parent", read=_frame_scale
+            ),
+            "parent.offset_xy": _legacy_known(
+                metadata, key="parent_coordinates", read=_legacy_pair
+            ),
+            "root.frame_id": _legacy_id(metadata, key="root_parent_id"),
+            "root.size_hw": _legacy_known(
+                metadata, key="root_parent_dimensions", read=_legacy_size
+            ),
+            "root.scale_xy": _legacy_known(
+                metadata, key="scaling_relative_to_root_parent", read=_frame_scale
+            ),
+            "root.offset_xy": _legacy_known(
+                metadata, key="root_parent_coordinates", read=_legacy_pair
+            ),
+            "is_composite": is_composite,
+            "composite_sources": composite_sources,
+        }
+    except (TypeError, ValueError) as error:
+        raise ContractError(
+            f"Invalid frame metadata in image_metadata: {error}"
+        ) from error
+
+    return fields
+
+
+def _legacy_id(metadata: Mapping[str, Any], *, key: str) -> Optional[str]:
+    value = metadata.get(key)
+    if value is not None and not (isinstance(value, str) and value):
+        raise ContractError(
+            f"'{key}' must be a non-empty string or None, got {value!r}"
+        )
+
+    return value
+
+
+def _legacy_known(
+    metadata: Mapping[str, Any], *, key: str, read: Callable[..., Tuple[Any, Any]]
+) -> Optional[List[Any]]:
+    value = metadata.get(key)
+    if value is None:
+        return None
+
+    known = list(read(value, key=key))
+
+    return known
+
+
+def _legacy_composite_fields(
+    metadata: Mapping[str, Any],
+) -> Tuple[Optional[bool], Optional[List[Dict[str, Any]]]]:
+    # (is_composite, placements); no flag and no placements leave both unknown.
+    if not _legacy_is_composite(metadata):
+        flag = _legacy_composite_flag(metadata)
+        return flag, None
+
+    if metadata.get("composite_sources") is None:
+        return True, None
+
+    sources = [source.to_dict() for source in _composite_sources_from_legacy(metadata)]
+
+    return True, sources
+
+
 def _image_metadata_of(prediction: Any) -> Mapping[str, Any]:
     if isinstance(prediction, ClassificationPrediction):
         images_metadata = prediction.images_metadata
@@ -519,18 +709,22 @@ def _legacy_mapping(
     offset_key: str,
     scale_key: str,
 ) -> FrameMapping:
-    # Legacy keys hold local pixels per frame pixel, the reciprocal of scale_xy.
-    local_per_frame_x, local_per_frame_y = _legacy_scale(
-        metadata.get(scale_key), key=scale_key
-    )
     mapping = FrameMapping(
         frame_id=metadata.get(id_key),
         frame_size_hw=_legacy_size(metadata[size_key], key=size_key),
-        scale_xy=(1.0 / local_per_frame_x, 1.0 / local_per_frame_y),
+        scale_xy=_frame_scale(metadata.get(scale_key), key=scale_key),
         offset_xy=_legacy_pair(metadata[offset_key], key=offset_key),
     )
 
     return mapping
+
+
+def _frame_scale(value: Any, *, key: str) -> Tuple[float, float]:
+    # Legacy keys hold local pixels per frame pixel, the reciprocal of scale_xy.
+    local_per_frame_x, local_per_frame_y = _legacy_scale(value, key=key)
+    scale_xy = (1.0 / local_per_frame_x, 1.0 / local_per_frame_y)
+
+    return scale_xy
 
 
 def _legacy_scale(value: Any, *, key: str) -> Tuple[float, float]:
@@ -677,7 +871,7 @@ def _check_legacy_keys_agree(metadata: Mapping[str, Any], *, frame: FrameRef) ->
 
 
 def _scale_pair(value: Any) -> Any:
-    if isinstance(value, (list, tuple, np.ndarray)):
+    if _is_sequence(value):
         return list(value)
 
     pair = [value, value]
@@ -685,30 +879,52 @@ def _scale_pair(value: Any) -> Any:
     return pair
 
 
-def _same_value(actual: Any, expected: Any) -> bool:
+def _is_sequence(value: Any) -> bool:
+    # A 0-d numpy array has no length: it is a malformed scalar, not a pair.
+    is_sequence = isinstance(value, (list, tuple)) or (
+        isinstance(value, np.ndarray) and value.ndim > 0
+    )
+
+    return is_sequence
+
+
+def _same_value(actual: Any, expected: Any, *, exact_integers: bool = False) -> bool:
+    """Compare a metadata value with the expected one.
+
+    Floats match within ``_RELATIVE_TOLERANCE``. Integers do too, unless
+    ``exact_integers`` is set: frame numbers and sizes are discrete, and a
+    relative tolerance would merge adjacent large values.
+    """
     if isinstance(expected, bool) or expected is None or isinstance(expected, str):
         return type(actual) is type(expected) and actual == expected
     if isinstance(expected, (int, float)):
         if isinstance(actual, np.generic):
             actual = actual.item()
-        same = (
-            isinstance(actual, (int, float))
-            and not isinstance(actual, bool)
-            and math.isclose(actual, expected, rel_tol=_RELATIVE_TOLERANCE)
-        )
+        if isinstance(actual, bool) or not isinstance(actual, (int, float)):
+            return False
+        if exact_integers and isinstance(expected, int):
+            return actual == expected
+
+        same = math.isclose(actual, expected, rel_tol=_RELATIVE_TOLERANCE)
         return same
     if isinstance(expected, list):
         same = (
-            isinstance(actual, (list, tuple, np.ndarray))
+            _is_sequence(actual)
             and len(actual) == len(expected)
-            and all(_same_value(a, e) for a, e in zip(actual, expected))
+            and all(
+                _same_value(a, e, exact_integers=exact_integers)
+                for a, e in zip(actual, expected)
+            )
         )
         return same
     if isinstance(expected, dict):
         same = (
             isinstance(actual, Mapping)
             and set(actual) == set(expected)
-            and all(_same_value(actual[key], expected[key]) for key in expected)
+            and all(
+                _same_value(actual[key], expected[key], exact_integers=exact_integers)
+                for key in expected
+            )
         )
         return same
 
@@ -737,5 +953,6 @@ __all__ = [
     "RootPlacement",
     "frame_from_metadata",
     "frame_of",
+    "require_compatible_frame",
     "root_placement_from_metadata",
 ]

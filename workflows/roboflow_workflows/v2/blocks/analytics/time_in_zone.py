@@ -22,8 +22,9 @@ first entry, gap included.
 masks (a segmentation view stays lazy) and row identity are unchanged.
 
 ``zone`` is one polygon, a list of polygons, or ``[]`` for none (no row is
-in a zone). It may change per frame: entries are kept per track, not per
-polygon. Polygon masks are cached, the ``ZONE_CACHE_SIZE`` most recently
+in a zone). It and ``triggering_anchor`` may change per frame: entries are
+kept per track, not per polygon or anchor, and each call tests the current
+anchor. Polygon masks are cached, the ``ZONE_CACHE_SIZE`` most recently
 added shared by all sources.
 
 State: each source, created on its first call (empty prediction included),
@@ -59,6 +60,8 @@ Differences from V1:
   entry at that frame; V1 reported a negative time.
 * A video file without a finite positive ``fps`` uses ``frame_timestamp``;
   V1 failed for ``fps=None``.
+* A changed ``triggering_anchor`` applies from that call on, keeping
+  entries; V1 kept testing the source's first anchor for that zone.
 * Every polygon needs 3 points; V1 checked only the first. Bad literal zones
   and anchors fail at compile time.
 * Adds ``count_in_zone``. Tracks and sources are bounded. A segmentation view
@@ -279,16 +282,18 @@ class TimeInZoneBlock(Block):
             return {"timed_detections": predictions, "count_in_zone": 0}
 
         in_zone = self._in_any_zone(boxes.xyxy, polygons=polygons, anchor=anchor)
-        times = [
-            (
-                _update_entry(entries, tracker_id=tracker_id, now=now)
-                if inside
-                else _leave(
+        times = []
+        for tracker_id, inside in zip(tracker_ids, in_zone):
+            if inside:
+                elapsed = _record_inside_and_get_elapsed(
+                    entries, tracker_id=tracker_id, now=now
+                )
+                times.append(elapsed)
+            else:
+                _mark_outside(
                     entries, tracker_id=tracker_id, reset=reset_out_of_zone_detections
                 )
-            )
-            for tracker_id, inside in zip(tracker_ids, in_zone)
-        ]
+                times.append(0.0)
         _forget_oldest(entries)
 
         kept = in_zone if remove_out_of_zone_detections else [True] * len(in_zone)
@@ -359,7 +364,7 @@ class TimeInZoneBlock(Block):
         return mask
 
 
-def _update_entry(
+def _record_inside_and_get_elapsed(
     entries: "OrderedDict[int, float]", *, tracker_id: int, now: float
 ) -> float:
     entry = entries.pop(tracker_id, now)
@@ -372,16 +377,14 @@ def _update_entry(
     return elapsed
 
 
-def _leave(
+def _mark_outside(
     entries: "OrderedDict[int, float]", *, tracker_id: int, reset: bool
-) -> float:
+) -> None:
     if reset:
         entries.pop(tracker_id, None)
     elif tracker_id in entries:
         # Kept entry of a track seen this call: mark it recently seen.
         entries.move_to_end(tracker_id)
-
-    return 0.0
 
 
 def _forget_oldest(entries: "OrderedDict[int, float]") -> None:

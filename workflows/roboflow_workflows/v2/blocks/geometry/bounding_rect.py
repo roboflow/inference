@@ -1,9 +1,10 @@
 """Minimum-area rotated rectangle of each instance mask: ``v2/bounding_rect@v1``.
 
-Port of V1 ``roboflow_core/bounding_rect@v1``. Per instance, as V1::
+Port of V1 ``roboflow_core/bounding_rect@v1``. Per instance::
 
-    contours = OpenCV findContours(mask, RETR_TREE, CHAIN_APPROX_SIMPLE), >= 3 points
-    rect     = minAreaRect(contour with the most points)
+    contours = OpenCV findContours(mask, RETR_TREE, CHAIN_APPROX_SIMPLE)
+    eligible = outer contours (parent -1) with >= 3 points
+    rect     = minAreaRect(eligible contour with the most points)
     corners  = boxPoints(rect), truncated to int
     mask    <- filled corner polygon;  box <- min/max of the corners
 
@@ -21,7 +22,9 @@ re-encoded on the host.
 
 Differences from V1: corners are exact integers (V1 stored them as float16,
 which rounds values above 2048); an instance whose mask is empty keeps its box
-and mask and gets ``None`` metadata, where V1 failed the whole step.
+and mask and gets ``None`` metadata, where V1 failed the whole step. Hole
+contours cannot replace the outer outline: this deliberately corrects an
+inherited V1 defect while retaining its most-points choice among outer contours.
 """
 
 from dataclasses import replace
@@ -46,6 +49,7 @@ from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output,
 
 RECT_KEYS = ("rect", "width", "height", "angle")
 MIN_POLYGON_POINTS = 3
+PARENT = 3
 
 
 class BoundingRectBlock(Block):
@@ -116,8 +120,15 @@ def _min_area_rectangle(window: Optional[Window]) -> Optional[Dict[str, Any]]:
     # One zero pixel of margin: contours of a window see the same edges as
     # contours of the full mask.
     padded = np.pad(pixels, 1)
-    contours, _ = cv2.findContours(padded, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    contours = [c for c in contours if c.shape[0] >= MIN_POLYGON_POINTS]
+    contours, hierarchy = cv2.findContours(
+        padded, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+    )
+    # A round hole can have more points than its straight outer outline.
+    contours = [
+        contour
+        for contour, links in zip(contours, hierarchy[0] if contours else [])
+        if links[PARENT] == -1 and contour.shape[0] >= MIN_POLYGON_POINTS
+    ]
     if not contours:
         return None
 

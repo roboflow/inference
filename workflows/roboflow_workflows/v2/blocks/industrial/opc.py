@@ -15,11 +15,14 @@ backoff; exhausted servers impose 30–45s. Unlike V1's singleton pool these
 backoffs and the monotonic cooldown do not coordinate independent blocks.
 
 V1 conversion is retained: Boolean strings mean true only for stripped,
-case-insensitive 'true' or '1'; other strings mean false. Integer conversion
-uses int(), including truncation; Integer aliases Int64; String uses str().
-No JSON decoding is performed. V2 deliberately rejects containers, non-finite
-numbers, Float overflow, invalid timeouts and malformed namespace indexes
-before connection. Params validate literal and selected values alike.
+case-insensitive 'true' or '1'; other strings mean false; other values use
+bool(), so NaN and infinity are true. Integer conversion uses int(), including
+truncation; Integer aliases Int64; String uses str(), so NaN becomes 'nan'.
+No JSON decoding is performed. V2 deliberately rejects containers, invalid
+timeouts and malformed namespace indexes before connection. Numeric targets
+(the integer types, Double and Float) also reject non-finite numbers and values
+outside the target's range; Boolean and String targets do not. Params validate
+literal and selected values alike.
 
 SDK logs on the operation thread are suppressed while using the default
 adapter: asyncua debug records can contain endpoints, credentials and values.

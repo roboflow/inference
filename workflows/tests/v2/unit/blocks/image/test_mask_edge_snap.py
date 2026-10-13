@@ -7,6 +7,7 @@ offset from its shape, so snapping has to move outlines.
 
 import copy
 import dataclasses
+from datetime import datetime, timezone
 
 import cv2
 import numpy as np
@@ -18,6 +19,7 @@ from roboflow_workflows.core_steps.classical_cv.mask_edge_snap.v1_tensor import 
 )
 from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
+    VideoMetadata,
     WorkflowImageData,
 )
 from roboflow_workflows.v2.blocks.image import mask_edge_snap
@@ -743,13 +745,180 @@ def test_unchanged_mask_with_inclusive_input_box_is_reboxed_to_exclusive_bounds(
     assert refined.xyxy.tolist() == [[20.0, 30.0, 60.0, 70.0]]
 
 
-def test_same_size_wrong_frame_currently_passes_through_its_frame():
-    # Evidence of the current compatibility gap, pending a scoped group
-    # decision on typed-frame and legacy-metadata validation.
+def test_same_size_wrong_frame_is_rejected():
+    # C004-01: same-sized masks from another image must not be snapped.
     gray, masks = _two_shapes()
     image = _image(gray)
     other = ImageData.from_tensor(image.tensor_image.clone(), image_id="other")
     segmentation = _segmentation(masks, image=other)
-    result = _snap(image, segmentation)
-    assert frame_of(result["refined_segmentation"]) == FrameRef.from_image(other)
-    assert frame_of(result["edges"]) == FrameRef.from_image(image)
+    with pytest.raises(ValueError, match="Frame mismatch"):
+        _snap(image, segmentation)
+
+
+INVALID_FRAME_CASES = (
+    "non-mapping",
+    "typed-missing-key",
+    "typed-image",
+    "typed-size",
+    "typed-source",
+    "typed-frame",
+    "typed-time",
+    "typed-parent",
+    "typed-root",
+    "typed-version",
+    "typed-mapping",
+    "typed-video",
+    "legacy-image",
+    "legacy-root",
+    "legacy-size",
+    "legacy-offset",
+    "legacy-scale",
+    "conflict-size",
+    "conflict-flag",
+    "partial-root-scale",
+)
+VALID_FRAME_CASES = (
+    "absent",
+    "empty",
+    "unrelated",
+    "size-only",
+    "root-id-only",
+    "offset-only",
+    "none-fields",
+    "typed-only",
+    "legacy-only",
+    "mirrored",
+)
+
+
+def _guard_image(image):
+    return dataclasses.replace(
+        image,
+        video_metadata=VideoMetadata(
+            video_identifier="source-a",
+            frame_number=4,
+            frame_timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ),
+    )
+
+
+def _guard_metadata(image, case):
+    metadata = copy.deepcopy(image.prediction_metadata())
+    record = metadata["workflows_v2_frame"]
+    if case == "non-mapping":
+        return []
+    if case.startswith("typed-"):
+        metadata = {"workflows_v2_frame": record}
+        if case == "typed-missing-key":
+            record.pop("root")
+        elif case == "typed-image":
+            record["image_id"] = "other"
+        elif case == "typed-size":
+            record["size_hw"][0] += 1
+        elif case == "typed-source":
+            record["video_metadata"]["video_identifier"] = "source-b"
+        elif case == "typed-frame":
+            record["video_metadata"]["frame_number"] += 1
+        elif case == "typed-time":
+            record["video_metadata"]["frame_timestamp"] = "2026-01-02T00:00:00+00:00"
+        elif case == "typed-parent":
+            record["parent"]["offset_xy"][0] += 1
+        elif case == "typed-root":
+            record["root"]["frame_id"] = "other-root"
+        elif case == "typed-version":
+            record["version"] = True
+        elif case == "typed-mapping":
+            record["parent"]["scale_xy"] = [0, 1]
+        elif case == "typed-video":
+            record["video_metadata"]["frame_number"] = True
+        return metadata
+    if case == "legacy-image":
+        return {"parent_id": "other"}
+    if case == "legacy-root":
+        return {"root_parent_id": "other-root"}
+    if case == "legacy-size":
+        return {"image_dimensions": [True, image.size_hw[1]]}
+    if case == "legacy-offset":
+        return {"parent_coordinates": ["bad", 0]}
+    if case == "legacy-scale":
+        return {"scaling_relative_to_root_parent": 0}
+    if case == "conflict-size":
+        metadata["image_dimensions"] = [image.size_hw[0] + 1, image.size_hw[1]]
+        return metadata
+    if case == "conflict-flag":
+        metadata["is_composite"] = 1
+        return metadata
+    if case == "partial-root-scale":
+        return {"scaling_relative_to_root_parent": 2}
+    if case == "absent":
+        return None
+    if case == "empty":
+        return {}
+    if case == "unrelated":
+        return {"class_names": {0: "part"}}
+    if case == "size-only":
+        return {"image_dimensions": metadata["image_dimensions"]}
+    if case == "root-id-only":
+        return {"root_parent_id": metadata["root_parent_id"]}
+    if case == "offset-only":
+        return {"parent_coordinates": metadata["parent_coordinates"]}
+    if case == "none-fields":
+        return {"parent_id": None, "image_dimensions": None, "workflows_v2_frame": None}
+    if case == "legacy-only":
+        metadata.pop("workflows_v2_frame")
+    return metadata
+
+
+@pytest.mark.parametrize("case", INVALID_FRAME_CASES)
+@pytest.mark.parametrize("family", ["dense", "rle", "view"])
+def test_frame_metadata_is_checked_before_snapping(monkeypatch, case, family):
+    image = _guard_image(_image(np.full(SIZE_HW, 90, dtype=np.uint8)))
+    masks = [_rectangle((20, 30, 60, 70))]
+    predictions = _segmentation(
+        masks, image=image, family="rle" if family == "rle" else "dense"
+    )
+    predictions.image_metadata = _guard_metadata(image, case)
+    segmentation = (
+        SegmentationView.from_dense(predictions) if family == "view" else predictions
+    )
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("frame validation must precede image edge processing")
+
+    monkeypatch.setattr(mask_edge_snap, "_snap_region", unexpected)
+    with pytest.raises(ValueError):
+        _snap(image, segmentation)
+
+
+@pytest.mark.parametrize("wanted", [set(), {"refined_segmentation"}, {"edges"}])
+@pytest.mark.parametrize("family", ["dense", "rle", "view"])
+def test_empty_predictions_still_validate_partial_frame_metadata(wanted, family):
+    image = _image(np.full(SIZE_HW, 90, dtype=np.uint8))
+    predictions = _segmentation(
+        [], image=image, family="rle" if family == "rle" else "dense"
+    )
+    predictions.image_metadata = {"parent_id": "other"}
+    segmentation = (
+        SegmentationView.from_dense(predictions) if family == "view" else predictions
+    )
+    block = MaskEdgeSnapBlock()
+    with block_call(block, wanted=wanted), pytest.raises(
+        ValueError, match="Frame mismatch"
+    ):
+        block.run(image=image, segmentation=segmentation, **DEFAULTS)
+
+
+@pytest.mark.parametrize("case", VALID_FRAME_CASES)
+@pytest.mark.parametrize("empty", [False, True])
+def test_missing_or_valid_partial_frame_metadata_is_allowed(case, empty):
+    image = _guard_image(_image(np.full(SIZE_HW, 90, dtype=np.uint8)))
+    masks = [] if empty else [_rectangle((20, 30, 60, 70))]
+    predictions = _segmentation(masks, image=image)
+    predictions.image_metadata = _guard_metadata(image, case)
+    before = copy.deepcopy(predictions.image_metadata)
+    block = MaskEdgeSnapBlock()
+    with block_call(block, wanted={"refined_segmentation"}):
+        result = block.run(image=image, segmentation=predictions, **DEFAULTS)
+    assert "edges" not in result
+    assert torch.equal(result["refined_segmentation"].mask, predictions.mask)
+    assert predictions.image_metadata == before

@@ -23,15 +23,20 @@ the aspect ratio, land at wrong positions in V1; after any resize, V1's
 ``pixel_x``, ``pixel_y``, ``width`` and ``height`` are resized-image pixels.
 Here detections land where they are in the workflow input, and those four
 fields are workflow-input pixels. The math runs in float64. For detections on
-the full input image the result equals V1 with float64 boxes (V1 NumPy mode).
-V1 tensor mode computes in float32, so its positions differ by float32
-rounding (at most 0.56 m, measured near latitude 47, longitude -105).
-Predictions from a composite image, or from another workflow input than
-``image``, are a ``ContractError``. Parameters are checked: latitude in
-(-90, 90) (``cos(latitude)`` is zero at +-90), longitude in [-180, 180],
-``horizontal_fov`` in (0, 180); latitude, longitude, altitude,
-``horizontal_fov`` and heading must be finite. V1 checks none of these; an
-infinite heading fails there with a ``ValueError``.
+the full input image, the result equalled V1 in every tested case where V1's
+boxes were float64. V1 NumPy mode alone does not give float64: with float32
+boxes V1 computes in float32, and V1 tensor mode always computes in float32.
+A float32 V1 result differs from V2 by float32 rounding. The difference
+depends on latitude, longitude and the boxes, and is larger far from latitude
+0 and longitude 0. It has no fixed bound: probes measured 0.015 m near
+latitude 1, longitude 2, 0.61 m near latitude 47.4, longitude -105.3, and
+1.33 m near latitude -33.9, longitude 151.2. None of these is a tolerance.
+Predictions from a composite image (stitched panorama or mosaic), or from
+another workflow input than ``image``, are a ``ContractError``. Parameters
+are checked: latitude in (-90, 90) (``cos(latitude)`` is zero at +-90),
+longitude in [-180, 180], ``horizontal_fov`` in (0, 180); latitude,
+longitude, altitude, ``horizontal_fov`` and heading must be finite. V1
+checks none of these; an infinite heading fails there with a ``ValueError``.
 """
 
 import math
@@ -247,8 +252,9 @@ def _check_same_input(block: str, *, frame: FrameRef, image: ImageData) -> None:
     if frame.is_composite or image.is_composite:
         raise ContractError(
             f"{block}: predictions of image {frame.image_id!r} or image "
-            f"{image.image_id!r} come from a composite image (mosaic), which "
-            "has no single camera position; geotag detections of a camera image"
+            f"{image.image_id!r} come from a composite image (stitched "
+            "panorama or mosaic), which has no single camera position; "
+            "geotag detections of a camera image"
         )
     prediction_input, image_input = frame.root, image.root
     if (prediction_input.frame_id, tuple(prediction_input.frame_size_hw)) != (

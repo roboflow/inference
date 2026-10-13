@@ -1,6 +1,7 @@
 """Offline author checks: real controller/PID, fake camera; SDK tests labeled below."""
 
 import asyncio
+import logging
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +18,7 @@ from roboflow_workflows.v2.blocks.industrial.onvif import (
     OnvifTarget,
     OnvifTrackingBlock,
     TrackingOptions,
+    _LocalFailure,
 )
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import FrameMapping
@@ -85,6 +87,39 @@ class RecordingCamera:
         self.commands.append(("close",))
         if "close" in self.fail:
             raise RuntimeError("sentinel-password close")
+
+
+class TravellingCamera(RecordingCamera):
+    """Fake camera whose motion outlives command acknowledgement; not WSDL/wire.
+
+    ``motion`` is the physical state: continuous velocity, preset travel or none.
+    Only Stop or a replacing command ends a preset already in travel.
+    """
+
+    def __init__(self, target=None):
+        super().__init__(target)
+        self.motion = None
+        self.preset_entered = threading.Event()
+        self.preset_gate = None
+
+    async def open(self):
+        await super().open()
+        self.preset_gate = asyncio.Event()
+        self.preset_gate.set()
+
+    async def move(self, x, y, z):
+        await super().move(x, y, z)
+        self.motion = "continuous" if any((x, y, z)) else None
+
+    async def stop(self):
+        await super().stop()
+        self.motion = None
+
+    async def preset(self, name):
+        self.preset_entered.set()
+        await self.preset_gate.wait()
+        await super().preset(name)
+        self.motion = f"preset:{name}"
 
 
 class ManualSleep:
@@ -318,10 +353,152 @@ def test_preset_outputs_aligned_empty_and_is_rate_limited(rig):
     assert isinstance(result["predictions"], InstanceDetections)
     assert len(result["predictions"].xyxy) == 0
     assert result["predictions"].image_metadata == value.image_metadata
-    assert camera.commands == [("stop",), ("preset", "home"), ("stop",)]
+    # The rate-limited second frame neither re-sends GotoPreset nor stops travel.
+    assert camera.commands == [("stop",), ("preset", "home")]
     clock.advance()
     process(owner, value, **options)
-    assert camera.commands[-1] == ("preset", "home")
+    assert camera.commands == [("stop",), ("preset", "home"), ("preset", "home")]
+
+
+@pytest.fixture
+def travel_rig():
+    camera, clock, timer = TravellingCamera(), Clock(), ManualSleep()
+    owner = OnvifController(
+        TARGET, port_factory=lambda target: camera, clock=clock, sleep=timer
+    )
+    yield owner, camera, clock, timer
+    if not owner.closed and camera.preset_gate is not None:
+        owner._loop.call_soon_threadsafe(camera.preset_gate.set)
+    owner.close()
+
+
+def test_direct_preset_keeps_travelling_through_rate_limited_frames(travel_rig):
+    owner, camera, clock, _ = travel_rig
+    preset = dict(
+        movement_type="Go To Preset",
+        default_position_preset="home",
+        camera_update_rate_limit=250,
+    )
+    process(owner, predictions(((70, 70, 90, 90),)), camera_update_rate_limit=250)
+    clock.advance(0.1)
+    process(owner, **preset)
+    # Continuous motion still stops when GotoPreset itself is rate-limited.
+    assert camera.motion is None and camera.commands[-1] == ("stop",)
+    clock.advance(0.2)
+    process(owner, **preset)
+    for _ in range(3):
+        clock.advance(0.033)
+        process(owner, **preset)
+    assert camera.motion == "preset:home"
+    clock.advance(0.25)
+    process(owner, **preset)
+    assert [command[0] for command in camera.commands] == [
+        "move",
+        "stop",
+        "stop",
+        "preset",
+        "preset",
+    ]
+    assert camera.motion == "preset:home"
+    clock.advance(0.1)
+    process(owner, camera_update_rate_limit=250)
+    assert camera.motion == "preset:home" and len(camera.commands) == 5
+    clock.advance(0.2)
+    assert process(owner, camera_update_rate_limit=250)["seeking"]
+    assert camera.motion == "continuous"
+    process(owner, predictions(()), camera_update_rate_limit=250)
+    assert camera.motion is None and camera.commands[-1] == ("stop",)
+
+
+def test_idle_preset_keeps_travelling_until_new_motion(travel_rig):
+    owner, camera, clock, timer = travel_rig
+    idle = dict(default_position_preset="home", move_to_position_after_idle_seconds=3)
+    process(owner, predictions(()), **idle)
+    assert timer.started.wait(2)
+    timer.fire(owner)
+    assert camera.preset_called.wait(2)
+    for value in (predictions(()), predictions(((45, 45, 55, 55),)), predictions(())):
+        clock.advance()
+        assert process(owner, value, **idle)["seeking"] is False
+    assert camera.motion == "preset:home"
+    assert camera.commands == [("stop",), ("preset", "home")]
+    assert len(timer.waiters) == 1
+    clock.advance()
+    assert process(owner, **idle)["seeking"] and camera.motion == "continuous"
+    timer.started.clear()
+    clock.advance()
+    process(owner, predictions(()), **idle)
+    assert camera.motion is None and camera.commands[-1] == ("stop",)
+    assert timer.started.wait(2) and len(timer.waiters) == 2
+
+
+def test_frame_during_executing_idle_preset_waits_and_keeps_travel(travel_rig):
+    owner, camera, _, timer = travel_rig
+    idle = dict(default_position_preset="home", move_to_position_after_idle_seconds=3)
+    process(owner, predictions(()), **idle)
+    assert timer.started.wait(2)
+    owner._loop.call_soon_threadsafe(camera.preset_gate.clear)
+    timer.fire(owner)
+    assert camera.preset_entered.wait(2)
+    queued = threading.Event()
+    original_process = owner._process
+
+    async def observed_process(*args):
+        queued.set()
+        return await original_process(*args)
+
+    owner._process = observed_process
+    with ThreadPoolExecutor(1) as pool:
+        frame = pool.submit(process, owner, predictions(()), **idle)
+        assert queued.wait(2)
+        owner._loop.call_soon_threadsafe(camera.preset_gate.set)
+        assert frame.result(2)["seeking"] is False
+    assert camera.commands == [("stop",), ("preset", "home")]
+    assert camera.motion == "preset:home"
+
+
+def test_zoom_entry_stops_travelling_preset_before_zoom(travel_rig):
+    owner, camera, _, _ = travel_rig
+    process(owner, movement_type="Go To Preset", default_position_preset="home")
+    process(owner, predictions(((40, 40, 60, 60),)), zoom_if_able=True)
+    assert camera.commands[-2] == ("stop",)
+    assert camera.commands[-1] == pytest.approx(("move", 0, 0, 0.375))
+    assert camera.motion == "continuous"
+
+
+def test_uncertain_move_failure_during_preset_travel_keeps_next_stop(travel_rig):
+    owner, camera, _, _ = travel_rig
+    process(owner, movement_type="Go To Preset", default_position_preset="home")
+    camera.fail.add("move")
+    with pytest.raises(OnvifError, match="command failed"):
+        process(owner)
+    camera.fail.clear()
+    process(owner, predictions(()))
+    assert camera.commands[-1] == ("stop",) and camera.motion is None
+
+
+def test_quiesce_and_close_stop_a_travelling_preset(travel_rig):
+    owner, camera, _, _ = travel_rig
+    preset = dict(movement_type="Go To Preset", default_position_preset="home")
+    process(owner, **preset)
+    owner.quiesce()
+    assert camera.motion is None
+    owner.resume()
+    process(owner, predictions(()))
+    process(owner, **preset)
+    assert camera.motion == "preset:home"
+    owner.close()
+    assert camera.motion is None
+    assert camera.commands == [
+        ("stop",),
+        ("preset", "home"),
+        ("stop",),
+        ("stop",),
+        ("stop",),
+        ("preset", "home"),
+        ("stop",),
+        ("close",),
+    ]
 
 
 def test_idle_timer_cancelled_by_single_axis_motion_and_rearmed_once():
@@ -345,7 +522,7 @@ def test_idle_timer_cancelled_by_single_axis_motion_and_rearmed_once():
         assert len(timer.waiters) == 2
 
 
-def test_host_reset_cancels_old_generation_timer_then_rearms():
+def test_quiesce_cancels_old_generation_timer_and_resume_rearms():
     timer, camera = ManualSleep(), RecordingCamera()
     with OnvifController(TARGET, port_factory=lambda t: camera, sleep=timer) as owner:
         opts = dict(
@@ -354,7 +531,7 @@ def test_host_reset_cancels_old_generation_timer_then_rearms():
         process(owner, predictions(()), **opts)
         assert timer.started.wait(2)
         old = timer.waiters[0][1]
-        owner.reset_tracking()
+        owner.quiesce()
         assert old.cancelled() and owner._tracked is None
         with pytest.raises(OnvifError, match="quiesced"):
             process(owner)
@@ -364,6 +541,36 @@ def test_host_reset_cancels_old_generation_timer_then_rearms():
         assert timer.started.wait(2) and len(timer.waiters) == 2
     assert all(f.done() for _, f in timer.waiters)
     assert not camera.preset_called.is_set()
+
+
+def test_reset_tracking_alias_matches_quiesce_and_never_resumes_itself():
+    def lifecycle(stop_admission):
+        camera = RecordingCamera()
+        with OnvifController(TARGET, port_factory=lambda t: camera) as owner:
+            process(owner, predictions(trackers=[7]))
+            getattr(owner, stop_admission)()
+            tracked = owner._tracked
+            rejected = []
+            for _ in range(2):
+                with pytest.raises(OnvifError) as caught:
+                    process(owner)
+                rejected.append(str(caught.value))
+            owner.resume()
+            process(owner, predictions(()))
+        return camera.commands, tracked, rejected, owner.failures
+
+    alias = lifecycle("reset_tracking")
+    assert alias == lifecycle("quiesce")
+    commands, tracked, rejected, failures = alias
+    assert [command[0] for command in commands] == [
+        "move",
+        "stop",
+        "stop",
+        "stop",
+        "close",
+    ]
+    assert tracked is None and failures == ()
+    assert rejected == ["ONVIF owner is quiesced or closed"] * 2
 
 
 def test_delayed_failure_surfaces_on_next_command_and_is_retained():
@@ -512,6 +719,81 @@ def test_no_resource_acquisition_on_construct_and_repeated_host_close():
         assert not calls and not owner._thread.is_alive()
 
 
+@pytest.mark.parametrize(
+    "box",
+    [(90, 40, 70, 60), (70, float("nan"), 90, 60), (70, 40, float("inf"), 60)],
+)
+def test_invalid_box_names_local_cause_and_sends_no_command(rig, box):
+    owner, camera, _ = rig
+    with pytest.raises(OnvifError) as caught:
+        process(owner, predictions((box,)))
+    assert str(caught.value) == (
+        "ONVIF command failed: tracking requires finite ordered bounding boxes"
+    )
+    assert camera.commands == [] and owner.failures == (str(caught.value),)
+
+
+def test_missing_root_geometry_names_local_cause_and_sends_no_command(rig):
+    owner, camera, _ = rig
+    value = predictions()
+    value.image_metadata = None
+    with pytest.raises(OnvifError) as caught:
+        process(owner, value)
+    assert str(caught.value) == (
+        "ONVIF command failed: tracking requires root frame geometry in image_metadata"
+    )
+    # The port was opened for this call, but no camera command was sent.
+    assert camera.open_count == 1 and camera.commands == []
+
+
+class HostileErrorCamera(RecordingCamera):
+    """Fake port whose move raises a caller-chosen error; not WSDL/wire."""
+
+    def __init__(self, error):
+        super().__init__()
+        self.error = error
+
+    async def move(self, x, y, z):
+        self.commands.append(("move", x, y, z))
+        raise self.error
+
+
+class _ForgedLocalFailure(_LocalFailure):
+    pass
+
+
+def _forged_reason():
+    error = _LocalFailure("box")
+    error.reason = "sentinel-password"
+    return error
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OnvifError(
+            "ONVIF camera does not advertise the requested preset sentinel-password"
+        ),
+        ValueError("tracking requires finite ordered bounding boxes sentinel-password"),
+        _ForgedLocalFailure("box"),
+        _forged_reason(),
+    ],
+    ids=["public-onvif-error", "value-error", "subclass", "forged-reason"],
+)
+def test_injected_port_errors_stay_uncertain_and_sanitized(error):
+    camera = HostileErrorCamera(error)
+    with OnvifController(TARGET, port_factory=lambda t: camera) as owner:
+        with pytest.raises(OnvifError) as caught:
+            process(owner)
+        failures = owner.failures
+    name = type(error).__name__
+    assert str(caught.value) == (
+        f"ONVIF command failed ({name}); outcome may be uncertain"
+    )
+    assert failures == (str(caught.value),) and caught.value.__context__ is None
+    assert camera.commands[0][0] == "move"
+
+
 # Installed adapter evidence: real onvif-zeep-async 2.0.0 WSDLs, real Zeep
 # parsing/serialization and HTTPX clients, in-memory MockTransport. No camera,
 # socket, listener or ONVIFCamera/ONVIFService Python wrapper is used.
@@ -523,7 +805,13 @@ def soap(body):
     return f'<s:Envelope xmlns:s="{SOAP}" xmlns:tt="{TT}"><s:Body>{body}</s:Body></s:Envelope>'
 
 
-def sdk_fixture(monkeypatch, *, fail_operation=None):
+def sdk_fixture(
+    monkeypatch,
+    *,
+    fail_operation=None,
+    media_xaddr="http://camera.invalid/media",
+    on_request=None,
+):
     import httpx
     from lxml import etree
 
@@ -537,10 +825,12 @@ def sdk_fixture(monkeypatch, *, fail_operation=None):
         root = etree.fromstring(request.content)
         operation = etree.QName(root.find(f"{{{SOAP}}}Body")[0]).localname
         requests.append((operation, root))
+        if on_request is not None:
+            on_request()
         if operation == fail_operation:
             raise httpx.ReadTimeout("sentinel-password", request=request)
         bodies = {
-            "GetCapabilities": f'<d:GetCapabilitiesResponse xmlns:d="{device}"><d:Capabilities><tt:Media><tt:XAddr>http://camera.invalid/media</tt:XAddr></tt:Media><tt:PTZ><tt:XAddr>http://camera.invalid/ptz</tt:XAddr></tt:PTZ></d:Capabilities></d:GetCapabilitiesResponse>',
+            "GetCapabilities": f'<d:GetCapabilitiesResponse xmlns:d="{device}"><d:Capabilities><tt:Media><tt:XAddr>{media_xaddr}</tt:XAddr></tt:Media><tt:PTZ><tt:XAddr>http://camera.invalid/ptz</tt:XAddr></tt:PTZ></d:Capabilities></d:GetCapabilitiesResponse>',
             "GetProfiles": f'<m:GetProfilesResponse xmlns:m="{media}"><m:Profiles token="profile"><tt:Name>main</tt:Name><tt:PTZConfiguration token="config"><tt:Name>ptz</tt:Name><tt:UseCount>1</tt:UseCount><tt:NodeToken>node</tt:NodeToken></tt:PTZConfiguration></m:Profiles></m:GetProfilesResponse>',
             "GetConfigurationOptions": f'<p:GetConfigurationOptionsResponse xmlns:p="{ptz}"><p:PTZConfigurationOptions><tt:Spaces><tt:ContinuousPanTiltVelocitySpace><tt:URI>pan</tt:URI><tt:XRange><tt:Min>-2</tt:Min><tt:Max>3</tt:Max></tt:XRange><tt:YRange><tt:Min>-4</tt:Min><tt:Max>5</tt:Max></tt:YRange></tt:ContinuousPanTiltVelocitySpace><tt:ContinuousZoomVelocitySpace><tt:URI>zoom</tt:URI><tt:XRange><tt:Min>-6</tt:Min><tt:Max>7</tt:Max></tt:XRange></tt:ContinuousZoomVelocitySpace></tt:Spaces></p:PTZConfigurationOptions></p:GetConfigurationOptionsResponse>',
             "GetPresets": f'<p:GetPresetsResponse xmlns:p="{ptz}"><p:Preset token="home-token"><tt:Name>home</tt:Name></p:Preset></p:GetPresetsResponse>',
@@ -606,6 +896,7 @@ def test_installed_wsdl_partial_setup_closes_both_clients(monkeypatch, fail_oper
     assert all(client.is_closed for client in clients)
     assert fail_operation in [name for name, _ in requests]
     assert "sentinel-password" not in str(caught.value)
+    assert "outcome may be uncertain" in str(caught.value)
     assert caught.value.__context__ is None
     if fail_operation in ("GetConfigurationOptions", "GetPresets"):
         assert requests[-1][0] == "Stop"
@@ -623,6 +914,184 @@ def test_installed_wsdl_second_client_construction_failure_closes_first(monkeypa
         with pytest.raises(OnvifError):
             process(owner)
     assert len(clients) == 1 and clients[0].is_closed
+
+
+def test_installed_wsdl_unadvertised_preset_is_named_after_preparatory_stop(
+    monkeypatch,
+):
+    requests, clients = sdk_fixture(monkeypatch)
+    with OnvifController(TARGET) as owner:
+        with pytest.raises(OnvifError) as caught:
+            process(
+                owner, movement_type="Go To Preset", default_position_preset="garage"
+            )
+    assert str(caught.value) == (
+        "ONVIF command failed: camera does not advertise the requested preset; "
+        "check default_position_preset"
+    )
+    # The cause is local, yet this call already sent Stop: no "no effect" claim.
+    assert [name for name, _ in requests] == [
+        "GetCapabilities",
+        "GetProfiles",
+        "GetConfigurationOptions",
+        "GetPresets",
+        "Stop",
+        "Stop",
+    ]
+    assert all(client.is_closed for client in clients)
+
+
+def test_installed_wsdl_missing_profile_index_is_named(monkeypatch):
+    requests, clients = sdk_fixture(monkeypatch)
+    target = replace(TARGET, profile_index=1)
+    with OnvifController(target) as owner:
+        with pytest.raises(OnvifError) as caught:
+            owner.process(predictions(), target=target, options=OPTIONS)
+    assert str(caught.value) == (
+        "ONVIF command failed: camera has no media profile at profile_index"
+    )
+    assert [name for name, _ in requests] == ["GetCapabilities", "GetProfiles"]
+    assert all(client.is_closed for client in clients)
+
+
+def test_installed_wsdl_credential_service_address_is_named_without_its_text(
+    monkeypatch,
+    caplog,
+):
+    requests, clients = sdk_fixture(
+        monkeypatch, media_xaddr="http://viewer:sentinel-password@camera.invalid/m"
+    )
+    with caplog.at_level(logging.DEBUG, logger="zeep.transports"):
+        with OnvifController(TARGET) as owner:
+            with pytest.raises(OnvifError) as caught:
+                process(owner)
+            failures = owner.failures
+    assert str(caught.value) == (
+        "ONVIF command failed: camera advertised an invalid ONVIF service address"
+    )
+    assert failures == (str(caught.value),)
+    assert [name for name, _ in requests] == ["GetCapabilities"]
+    assert all(client.is_closed for client in clients)
+    # Formatter includes exc_info and stack_info, unlike record.getMessage().
+    formatted = "\n".join(logging.Formatter().format(r) for r in caplog.records)
+    assert "sentinel-password" not in formatted
+    events = [r.getMessage() for r in caplog.records if r.name == "zeep.transports"]
+    assert events == [
+        "ONVIF transport request",
+        "ONVIF transport response (status: 200)",
+    ]
+
+
+def test_installed_wsdl_transport_logging_is_scoped_to_each_live_port(
+    monkeypatch,
+    caplog,
+):
+    import httpx
+    from zeep.transports import AsyncTransport
+
+    logger = logging.getLogger("zeep.transports")
+    targets = [
+        replace(
+            TARGET,
+            username="private-user-a",
+            password=Secret("private-key-a", name="camera-a"),
+        ),
+        replace(
+            TARGET,
+            username="private-user-b",
+            password=Secret("private-key-b", name="camera-b"),
+        ),
+    ]
+    ports = [OnvifCameraPort(target) for target in targets]
+
+    def configuration():
+        return (
+            logger.level,
+            logger.disabled,
+            logger.propagate,
+            tuple(logger.handlers),
+            tuple(logger.filters),
+        )
+
+    def observe_request():
+        # Run inside each send, where a temporary global logging change would
+        # also affect unrelated concurrent clients.
+        assert configuration() == before
+        logger.debug("unrelated in-flight diagnostic")
+
+    requests, clients = sdk_fixture(monkeypatch, on_request=observe_request)
+
+    async def exercise():
+        unrelated_async, unrelated_sync = httpx.AsyncClient(), httpx.Client()
+        unrelated = AsyncTransport(client=unrelated_async, wsdl_client=unrelated_sync)
+        before = configuration()
+        try:
+            await asyncio.gather(*(port.open() for port in ports))
+            assert configuration() == before
+            assert unrelated.logger is logger
+            assert ports[0]._transport.logger is not ports[1]._transport.logger
+            await asyncio.gather(*(port.move(0.1, 0, 0) for port in ports))
+            # Future SDK exception diagnostics must not reintroduce traceback text
+            # or bypass the policy via extra fields, even with both owners alive.
+            for port, target in zip(ports, targets):
+                try:
+                    raise RuntimeError(target.password.reveal())
+                except RuntimeError:
+                    port._transport.logger.error(
+                        "unsafe XML %s",
+                        target.username,
+                        exc_info=True,
+                        stack_info=True,
+                        extra={"wire_body": target.password.reveal()},
+                    )
+            await unrelated.post(
+                "http://camera.invalid/unrelated",
+                soap("<Unrelated>unrelated-wire-marker</Unrelated>"),
+                {"Content-Type": "application/soap+xml"},
+            )
+        finally:
+            try:
+                await asyncio.gather(*(port.close() for port in ports))
+            finally:
+                await unrelated_async.aclose()
+                unrelated_sync.close()
+        assert configuration() == before
+
+    with caplog.at_level(logging.DEBUG, logger="zeep.transports"):
+        before = configuration()
+        asyncio.run(exercise())
+        assert configuration() == before
+    assert len(clients) == 6 and all(client.is_closed for client in clients)
+    formatted = "\n".join(logging.Formatter().format(r) for r in caplog.records)
+    for target in targets:
+        assert target.username not in formatted
+        assert target.password.reveal() not in formatted
+    assert "unrelated-wire-marker" in formatted
+    assert formatted.count("unrelated in-flight diagnostic") == 11
+    wsse = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+    sent_users = {
+        root.findtext(f".//{{{wsse}}}Username")
+        for name, root in requests
+        if name != "Unrelated"
+    }
+    assert sent_users == {target.username for target in targets}
+    own_records = [
+        r for r in caplog.records if r.getMessage().startswith("ONVIF transport")
+    ]
+    assert sum(r.getMessage() == "ONVIF transport request" for r in own_records) == 10
+    assert (
+        sum(
+            r.getMessage() == "ONVIF transport response (status: 200)"
+            for r in own_records
+        )
+        == 10
+    )
+    assert sum(r.getMessage() == "ONVIF transport diagnostic" for r in own_records) == 2
+    assert all(
+        r.exc_info is None and r.stack_info is None and not hasattr(r, "wire_body")
+        for r in own_records
+    )
+    assert [name for name, _ in requests].count("ContinuousMove") == 2
 
 
 def test_no_full_tensor_or_mask_host_roundtrip(rig, monkeypatch):
@@ -752,3 +1221,243 @@ def test_repeated_actual_adapter_owners_close_every_client(monkeypatch):
         owner.close()
     assert len(clients) == 6 and all(client.is_closed for client in clients)
     assert [operation for operation, _ in requests].count("Stop") == 3
+
+
+class ExecutorCamera(RecordingCamera):
+    async def open(self):
+        await super().open()
+        await asyncio.to_thread(lambda: None)
+
+
+@pytest.mark.parametrize("stop_fails", [False, True])
+def test_executor_helper_start_failure_reports_sanitized_error_after_join(
+    monkeypatch, stop_fails
+):
+    camera = ExecutorCamera()
+    owner = OnvifController(TARGET, port_factory=lambda t: camera)
+    original_start = threading.Thread.start
+    executor = None
+
+    def refuse_helper(thread):
+        if getattr(thread, "_target", None) == owner._loop._do_shutdown:
+            raise RuntimeError("sentinel-password shutdown")
+        return original_start(thread)
+
+    try:
+        process(owner)
+        executor = owner._loop._default_executor
+        if stop_fails:
+            camera.fail.add("stop")
+        with monkeypatch.context() as patch:
+            patch.setattr(threading.Thread, "start", refuse_helper)
+            with pytest.raises(OnvifError) as caught:
+                owner.close()
+        operation = "reset Stop" if stop_fails else "executor shutdown"
+        assert operation in str(caught.value)
+        assert "sentinel-password" not in str(caught.value)
+        assert caught.value.__cause__ is None and caught.value.__context__ is None
+        assert len(owner.failures) == (2 if stop_fails else 1)
+        assert owner.closed and owner._loop.is_closed()
+        assert not owner._thread.is_alive()
+        assert all(not thread.is_alive() for thread in executor._threads)
+        owner.close()
+        assert camera.close_count == 1
+    finally:
+        camera.fail.clear()
+        owner.close()
+        if executor is not None:
+            executor.shutdown(wait=True)
+
+
+@pytest.mark.parametrize("stop_fails", [False, True])
+def test_foreground_exception_survives_executor_helper_start_failure(
+    monkeypatch, stop_fails
+):
+    camera = ExecutorCamera()
+    owner = OnvifController(TARGET, port_factory=lambda t: camera)
+    original_start = threading.Thread.start
+    primary = ValueError("foreground")
+
+    def refuse_helper(thread):
+        if getattr(thread, "_target", None) == owner._loop._do_shutdown:
+            raise RuntimeError("sentinel-password shutdown")
+        return original_start(thread)
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(threading.Thread, "start", refuse_helper)
+            with pytest.raises(ValueError) as caught:
+                with owner:
+                    process(owner)
+                    if stop_fails:
+                        camera.fail.add("stop")
+                    raise primary
+        assert caught.value is primary
+        assert owner.closed and not owner._thread.is_alive()
+        assert camera.close_count == 1
+        assert len(owner.failures) == (2 if stop_fails else 1)
+        assert "executor shutdown" in owner.failures[-1]
+        assert "sentinel-password" not in owner.failures[0]
+    finally:
+        owner.close()
+
+
+def test_executor_fallback_waits_with_loop_alive_for_pending_worker(monkeypatch):
+    camera = ExecutorCamera()
+    owner = OnvifController(TARGET, port_factory=lambda t: camera)
+    entered, release, joining = (threading.Event() for _ in range(3))
+    original_start = threading.Thread.start
+    executor = None
+    closer = ThreadPoolExecutor(1)
+
+    def blocking_work():
+        entered.set()
+        release.wait()
+
+    async def submit_work():
+        return owner._loop.run_in_executor(None, blocking_work)
+
+    def refuse_helper(thread):
+        if getattr(thread, "_target", None) == owner._loop._do_shutdown:
+            raise RuntimeError("sentinel-password shutdown")
+        return original_start(thread)
+
+    try:
+        process(owner)
+        executor = owner._loop._default_executor
+        pending = asyncio.run_coroutine_threadsafe(submit_work(), owner._loop).result(2)
+        assert entered.wait(2)
+        original_shutdown = executor.shutdown
+
+        def observed_join(*args, **kwargs):
+            assert threading.current_thread() is not owner._thread
+            joining.set()
+            return original_shutdown(*args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(threading.Thread, "start", refuse_helper)
+            patch.setattr(executor, "shutdown", observed_join)
+            closed = closer.submit(owner.close)
+            assert joining.wait(2)
+            assert not closed.done() and not owner.closed
+            assert owner._loop.is_running() and camera.close_count == 1
+            # The live loop can release work that must finish before retirement.
+            owner._loop.call_soon_threadsafe(release.set)
+            with pytest.raises(OnvifError, match="executor shutdown"):
+                closed.result(2)
+        assert pending.done()
+        assert owner.closed and not owner._thread.is_alive()
+        assert all(not thread.is_alive() for thread in executor._threads)
+    finally:
+        release.set()
+        closer.shutdown(wait=True)
+        owner.close()
+        if executor is not None:
+            executor.shutdown(wait=True)
+
+
+def test_async_generator_shutdown_failure_still_joins_and_closes(monkeypatch):
+    camera = RecordingCamera()
+    owner = OnvifController(TARGET, port_factory=lambda t: camera)
+    original_shutdown = owner._loop.shutdown_asyncgens
+
+    async def settled_failure():
+        await original_shutdown()
+        raise RuntimeError("sentinel-password shutdown")
+
+    try:
+        process(owner)
+        with monkeypatch.context() as patch:
+            patch.setattr(owner._loop, "shutdown_asyncgens", settled_failure)
+            with pytest.raises(OnvifError, match="async generator shutdown"):
+                owner.close()
+        assert owner.closed and owner._loop.is_closed()
+        assert not owner._thread.is_alive() and camera.close_count == 1
+        assert "sentinel-password" not in owner.failures[0]
+    finally:
+        owner.close()
+
+
+def test_normal_close_joins_real_default_executor_once():
+    camera = ExecutorCamera()
+    owner = OnvifController(TARGET, port_factory=lambda t: camera)
+    executor = None
+    try:
+        process(owner)
+        executor = owner._loop._default_executor
+        owner.close()
+        owner.close()
+        assert owner.closed and owner._loop.is_closed()
+        assert not owner._thread.is_alive() and camera.close_count == 1
+        assert not owner.failures
+        assert all(not thread.is_alive() for thread in executor._threads)
+    finally:
+        owner.close()
+        if executor is not None:
+            executor.shutdown(wait=True)
+
+
+@pytest.mark.parametrize("foreground", [False, True])
+@pytest.mark.parametrize("stop_fails", [False, True])
+def test_failed_host_executor_join_is_sanitized_and_retryable(
+    monkeypatch, foreground, stop_fails
+):
+    camera = ExecutorCamera()
+    owner = OnvifController(TARGET, port_factory=lambda t: camera)
+    original_start = threading.Thread.start
+    primary = ValueError("foreground")
+    entered, release = threading.Event(), threading.Event()
+    executor = None
+
+    def blocking_work():
+        entered.set()
+        release.wait()
+
+    async def submit_work():
+        return owner._loop.run_in_executor(None, blocking_work)
+
+    def refuse_helper(thread):
+        if getattr(thread, "_target", None) == owner._loop._do_shutdown:
+            raise RuntimeError("sentinel-password helper")
+        return original_start(thread)
+
+    def refuse_join(*args, **kwargs):
+        raise RuntimeError("sentinel-password join")
+
+    try:
+        process(owner)
+        executor = owner._loop._default_executor
+        asyncio.run_coroutine_threadsafe(submit_work(), owner._loop).result(2)
+        assert entered.wait(2)
+        if stop_fails:
+            camera.fail.add("stop")
+        with monkeypatch.context() as patch:
+            patch.setattr(threading.Thread, "start", refuse_helper)
+            patch.setattr(executor, "shutdown", refuse_join)
+            if foreground:
+                with pytest.raises(ValueError) as caught:
+                    with owner:
+                        raise primary
+                assert caught.value is primary
+            else:
+                with pytest.raises(OnvifError) as caught:
+                    owner.close()
+                operation = "reset Stop" if stop_fails else "executor shutdown"
+                assert operation in str(caught.value)
+                error = caught.value
+                while error is not None:
+                    assert "sentinel-password" not in str(error)
+                    error = error.__context__
+        assert not owner.closed and owner._loop.is_running()
+        assert owner._thread.is_alive() and camera.close_count == 1
+        assert owner._executor_to_join is executor
+        assert any(thread.is_alive() for thread in executor._threads)
+        assert "executor join" in owner.failures[-1]
+        assert all("sentinel-password" not in message for message in owner.failures)
+    finally:
+        release.set()
+        camera.fail.clear()
+        owner.close()
+        if executor is not None:
+            executor.shutdown(wait=True)
+        assert owner.closed and not owner._thread.is_alive()

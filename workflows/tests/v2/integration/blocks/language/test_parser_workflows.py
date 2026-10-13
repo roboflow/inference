@@ -1,24 +1,27 @@
-"""Compiled workflows that turn VLM answers into predictions.
+"""Active providers decode predictions before crop, classification and drawing.
 
-The real compiler, session and executor run every workflow. Answers are
-workflow inputs standing in for a VLM step, so expected boxes are exact.
+Requests use in-process fake OpenRouter transports. Florence-2's retained pure
+helper also supplies predictions to downstream filters without a parser block.
 """
 
+import json
 from typing import Any, Dict
 
 import numpy as np
 import pytest
 from roboflow_workflows.v2.blocks.image.blocks import StaticCropBlock
 from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
-from roboflow_workflows.v2.blocks.language.parsers import (
-    VLMAsClassifierBlock,
-    VLMAsDetectorBlock,
+from roboflow_workflows.v2.blocks.language.openrouter_vendors import (
+    KimiOpenRouterBlock,
+    MetaVlmBlock,
 )
+from roboflow_workflows.v2.blocks.language.parsers import decode_florence_2_detections
 from roboflow_workflows.v2.blocks.transforms.operations_chain import (
     DetectionsFilterBlock,
 )
 from roboflow_workflows.v2.blocks.visualization.blocks import DetectionDrawingBlock
 from roboflow_workflows.v2.data.frames import frame_of
+from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import (
     RowRef,
     classification_parent,
@@ -30,17 +33,17 @@ from roboflow_workflows.v2.engine.errors import (
     ParamsValidationError,
     StepExecutionError,
 )
+from tests.v2.support.language.fake_chat import FakeChatServer, chat_completion_body
 
 CATALOGUE = Catalogue(
-    [VLMAsDetectorBlock, VLMAsClassifierBlock, DynamicCropBlock, StaticCropBlock]
+    [MetaVlmBlock, KimiOpenRouterBlock, DynamicCropBlock, StaticCropBlock]
 )
 IMAGE = np.zeros((200, 400, 3), dtype=np.uint8)
-# Qwen answers in 0-1000 coordinates: x * 0.4, y * 0.2 on the 400 x 200 image.
-TWO_ANIMALS = (
-    "```json\n"
-    '[{"box_2d": [0, 0, 250, 500], "label": "dog"},'
-    ' {"box_2d": [500, 500, 1000, 1000], "label": "cat"}]\n'
-    "```"
+TWO_ANIMALS = json.dumps(
+    [
+        {"x_min": 0, "y_min": 0, "x_max": 250, "y_max": 500, "label": "dog"},
+        {"x_min": 500, "y_min": 500, "x_max": 1000, "y_max": 1000, "label": "cat"},
+    ]
 )
 
 
@@ -51,23 +54,15 @@ def _output(name: str, selector: str) -> Dict[str, str]:
 def _detect_then_classify_crops() -> Dict[str, Any]:
     definition = {
         "version": "2.0",
-        "inputs": [
-            {"type": "WorkflowImage", "name": "image"},
-            {
-                "type": "WorkflowParameter",
-                "name": "boxes_answer",
-                "kind": ["language_model_output"],
-            },
-            {"type": "WorkflowParameter", "name": "label_answer", "kind": ["string"]},
-        ],
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "v2/vlm_as_detector@v2",
+                "type": "v2/meta_vlm@v3",
                 "name": "detector",
-                "image": "$inputs.image",
-                "vlm_output": "$inputs.boxes_answer",
-                "model_type": "qwen",
+                "images": "$inputs.image",
+                "task_type": "object-detection",
                 "classes": ["dog", "cat"],
+                "api_key": "sk-or-fake-parser-demo",
             },
             {
                 "type": "v2/dynamic_crop@v1",
@@ -76,11 +71,12 @@ def _detect_then_classify_crops() -> Dict[str, Any]:
                 "predictions": "$steps.detector.predictions",
             },
             {
-                "type": "v2/vlm_as_classifier@v2",
+                "type": "v2/kimi_openrouter@v3",
                 "name": "classifier",
-                "image": "$steps.crop.crops",
-                "vlm_output": "$inputs.label_answer",
+                "images": "$steps.crop.crops",
+                "task_type": "classification",
                 "classes": ["sleeping", "awake"],
+                "api_key": "sk-or-fake-parser-demo",
             },
         ],
         "outputs": [
@@ -90,32 +86,33 @@ def _detect_then_classify_crops() -> Dict[str, Any]:
             _output("labels", "$steps.classifier.predictions"),
         ],
     }
-
     return definition
 
 
-def _run(definition: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, Any]:
-    session = compile_workflow(definition, catalogue=CATALOGUE).create_session()
+def _run(
+    definition,
+    *,
+    boxes_answer=TWO_ANIMALS,
+    label_answer='{"class_name": "awake", "confidence": 0.75}',
+    inputs=None
+):
+    def answer(path, request):
+        content = boxes_answer if request["model"].startswith("meta/") else label_answer
+        return 200, chat_completion_body(content)
+
+    server = FakeChatServer(answer)
+    session = compile_workflow(definition, catalogue=CATALOGUE).create_session(
+        resources={"openrouter_http_client": server.http_client()}
+    )
     try:
-        row = session.run(inputs).rows()[0]
+        row = session.run(inputs or {"image": IMAGE}).rows()[0]
     finally:
         session.close()
-
     return row
 
 
-def test_parsed_boxes_are_cropped_and_each_crop_label_joins_its_box() -> None:
-    # when
-    row = _run(
-        _detect_then_classify_crops(),
-        {
-            "image": IMAGE,
-            "boxes_answer": TWO_ANIMALS,
-            "label_answer": '{"class_name": "awake", "confidence": 0.75}',
-        },
-    )
-
-    # then
+def test_native_boxes_are_cropped_and_each_crop_label_joins_its_box() -> None:
+    row = _run(_detect_then_classify_crops())
     boxes = row["boxes"]
     assert row["boxes_error"] is False
     assert boxes.xyxy.tolist() == [[0, 0, 100, 100], [200, 100, 400, 200]]
@@ -125,44 +122,28 @@ def test_parsed_boxes_are_cropped_and_each_crop_label_joins_its_box() -> None:
     assert len(labels) == 2
     for position, label in enumerate(labels):
         assert label.class_id.tolist() == [1]
+        assert float(label.confidence[0, 1]) == pytest.approx(0.75)
         assert classification_parent(label) == RowRef(row["boxes_id"], position)
     assert frame_of(labels[1]).size_hw == (100, 200)
 
 
 def test_unreadable_answer_reports_error_and_skips_dependent_steps() -> None:
-    # when
-    row = _run(
-        _detect_then_classify_crops(),
-        {"image": IMAGE, "boxes_answer": "I cannot tell.", "label_answer": "{}"},
-    )
-
-    # then
+    row = _run(_detect_then_classify_crops(), boxes_answer="I cannot tell.")
     assert row["boxes_error"] is True
     assert row["boxes"] is None
-    # The crop step is skipped, so the per-crop output is an empty group.
     assert row["labels"] == []
 
 
-def test_decoded_dict_answer_is_accepted_as_language_model_output() -> None:
-    answer = {"detections": [{"box_2d": [0, 0, 500, 500], "label": "cat"}]}
-
-    row = _run(
-        _detect_then_classify_crops(),
-        {"image": IMAGE, "boxes_answer": answer, "label_answer": "not json"},
-    )
-
-    assert row["boxes"].xyxy.tolist() == [[0, 0, 200, 100]]
-    assert row["labels"] == [None]
+def test_unreadable_classification_preserves_boxes_and_returns_no_labels() -> None:
+    row = _run(_detect_then_classify_crops(), label_answer="not json")
+    assert len(row["boxes"]) == 2
+    assert row["labels"] == [None, None]
 
 
 def test_boxes_read_on_static_crops_map_back_to_the_input_image() -> None:
-    # given: Gemini answers yxyx in 0-1000 of each 200 x 200 crop.
     definition = {
         "version": "2.0",
-        "inputs": [
-            {"type": "WorkflowImage", "name": "image"},
-            {"type": "WorkflowParameter", "name": "answer"},
-        ],
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
                 "type": "v2/static_crop",
@@ -171,12 +152,12 @@ def test_boxes_read_on_static_crops_map_back_to_the_input_image() -> None:
                 "regions": [[0, 0, 200, 200], [200, 0, 400, 200]],
             },
             {
-                "type": "v2/vlm_as_detector@v2",
+                "type": "v2/meta_vlm@v3",
                 "name": "detector",
-                "image": "$steps.tiles.crops",
-                "vlm_output": "$inputs.answer",
-                "model_type": "google-gemini",
+                "images": "$steps.tiles.crops",
+                "task_type": "object-detection",
                 "classes": ["cat"],
+                "api_key": "sk-or-fake-parser-demo",
             },
         ],
         "outputs": [
@@ -187,12 +168,10 @@ def test_boxes_read_on_static_crops_map_back_to_the_input_image() -> None:
             },
         ],
     }
-    answer = '[{"box_2d": [100, 250, 500, 750], "label": "cat"}]'
-
-    # when
-    row = _run(definition, {"image": IMAGE, "answer": answer})
-
-    # then: each tile's box is x 50..150, y 20..100 in tile pixels.
+    answer = (
+        '[{"x_min": 250, "y_min": 100, "x_max": 750, "y_max": 500, "label": "cat"}]'
+    )
+    row = _run(definition, boxes_answer=answer)
     assert [p.xyxy.tolist() for p in row["in_tile"]] == [[[50, 20, 150, 100]]] * 2
     assert [p.xyxy.tolist() for p in row["in_input"]] == [
         [[50, 20, 150, 100]],
@@ -200,10 +179,22 @@ def test_boxes_read_on_static_crops_map_back_to_the_input_image() -> None:
     ]
 
 
-def test_florence_2_ocr_rows_are_filtered_and_labelled_by_their_own_text() -> None:
-    # given: OCR rows share class id 0 and carry an empty class_names map.
-    #   detector (OCR) ─┬─▶ detections_filter   class_name in ["EXIT"]
-    #                   └─▶ detection_drawing   label texts
+def test_florence_helper_rows_feed_filters_and_drawing_with_their_own_text() -> None:
+    answer = {
+        "quad_boxes": [
+            [10, 20, 50, 15, 55, 40, 12, 45],
+            [100, 100, 140, 100, 140, 120, 100, 120],
+        ],
+        "labels": ["STOP", "EXIT"],
+    }
+    error, boxes = decode_florence_2_detections(
+        answer,
+        image=ImageData.from_numpy_rgb(IMAGE),
+        task_type="ocr-with-text-detection",
+        classes=None,
+        inference_id="florence-ocr",
+    )
+    assert error is False
     exit_only = {
         "type": "DetectionsFilter",
         "filter_operation": {
@@ -229,56 +220,36 @@ def test_florence_2_ocr_rows_are_filtered_and_labelled_by_their_own_text() -> No
     definition = {
         "version": "2.0",
         "inputs": [
-            {"type": "WorkflowImage", "name": "image"},
-            {"type": "WorkflowParameter", "name": "answer"},
+            {
+                "type": "WorkflowParameter",
+                "name": "boxes",
+                "kind": ["object_detection_prediction"],
+            }
         ],
         "steps": [
             {
-                "type": "v2/vlm_as_detector@v2",
-                "name": "detector",
-                "image": "$inputs.image",
-                "vlm_output": "$inputs.answer",
-                "model_type": "florence-2",
-                "task_type": "ocr-with-text-detection",
-            },
-            {
                 "type": "v2/detections_filter@v1",
                 "name": "exits",
-                "predictions": "$steps.detector.predictions",
+                "predictions": "$inputs.boxes",
                 "operations": [exit_only],
             },
             {
                 "type": "v2/detection_drawing@v1",
                 "name": "drawing",
-                "predictions": "$steps.detector.predictions",
+                "predictions": "$inputs.boxes",
             },
         ],
         "outputs": [
-            _output("boxes", "$steps.detector.predictions"),
             _output("exits", "$steps.exits.predictions"),
             _output("drawing", "$steps.drawing.drawing"),
         ],
     }
-    answer = {
-        "quad_boxes": [
-            [10, 20, 50, 15, 55, 40, 12, 45],
-            [100, 100, 140, 100, 140, 120, 100, 120],
-        ],
-        "labels": ["STOP", "EXIT"],
-    }
-    catalogue = Catalogue(
-        [VLMAsDetectorBlock, DetectionsFilterBlock, DetectionDrawingBlock]
-    )
-
-    # when
+    catalogue = Catalogue([DetectionsFilterBlock, DetectionDrawingBlock])
     session = compile_workflow(definition, catalogue=catalogue).create_session()
     try:
-        row = session.run({"image": IMAGE, "answer": answer}).rows()[0]
+        row = session.run({"boxes": boxes}).rows()[0]
     finally:
         session.close()
-
-    # then
-    boxes = row["boxes"]
     assert boxes.class_id.tolist() == [0, 0]
     assert boxes.image_metadata["class_names"] == {}
     assert row["exits"].xyxy.tolist() == [[100, 100, 140, 120]]
@@ -289,8 +260,7 @@ def test_florence_2_ocr_rows_are_filtered_and_labelled_by_their_own_text() -> No
 def test_detector_configuration_is_checked_at_compile_time() -> None:
     definition = _detect_then_classify_crops()
     del definition["steps"][0]["classes"]
-
-    with pytest.raises(ParamsValidationError, match="classes is required"):
+    with pytest.raises(ParamsValidationError, match="classes"):
         compile_workflow(definition, catalogue=CATALOGUE)
 
 
@@ -298,17 +268,5 @@ def test_selected_classes_are_checked_at_run_time() -> None:
     definition = _detect_then_classify_crops()
     definition["inputs"].append({"type": "WorkflowParameter", "name": "classes"})
     definition["steps"][0]["classes"] = "$inputs.classes"
-    session = compile_workflow(definition, catalogue=CATALOGUE).create_session()
-
-    try:
-        with pytest.raises(StepExecutionError, match="repeat"):
-            session.run(
-                {
-                    "image": IMAGE,
-                    "boxes_answer": "[]",
-                    "label_answer": "{}",
-                    "classes": ["cat", "cat"],
-                }
-            )
-    finally:
-        session.close()
+    with pytest.raises(StepExecutionError, match="repeat"):
+        _run(definition, inputs={"image": IMAGE, "classes": ["cat", "cat"]})

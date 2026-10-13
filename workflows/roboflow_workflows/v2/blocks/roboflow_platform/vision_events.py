@@ -7,6 +7,7 @@ Ports of V1 ``roboflow_core/roboflow_vision_events@v1`` and
     cooling?      ─▶ throttling_status=True (one window per step, as in V1)
     events:  cloud ─▶ api_key as Secret, or V1's missing-key error
              write_to_event_store ─▶ no key needed
+    events:  valid event_type ─▶ missing default port fails the run now
     bundle:  port.prepare_destination ─▶ a refused destination fails the run now
     schema fields ─▶ event_data (camelCase, None dropped); inputs detached
     window starts ─▶ fire_and_forget and sink_effects ─▶ background, ids ""
@@ -38,7 +39,7 @@ Differences from V1:
 import copy
 import math
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Literal, Optional, Protocol, Union
+from typing import Any, Callable, Dict, Literal, NoReturn, Optional, Protocol, Union
 
 from pydantic import Field, StrictBool
 from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
@@ -194,7 +195,14 @@ class VisionEventBundlePort(Protocol):
         target_directory: str,
         file_name: Optional[str],
     ) -> EventBundle:
-        """Write one bundle without replacing an existing file.
+        """Write one bundle and refuse a name that is already taken.
+
+        With hard links the refusal is atomic: of two concurrent writes of
+        one name, exactly one wins. Without them (e.g. FAT removable media)
+        the host adapter falls back to V1's check and then a replacing
+        rename, so two concurrent writes of one custom ``file_name`` can race
+        and one bundle can overwrite the other. Leave ``file_name`` unset for
+        unique generated names, or serialize writes that share a custom name.
 
         Args:
             request: Detached inputs.
@@ -205,8 +213,12 @@ class VisionEventBundlePort(Protocol):
             The bundle's event id and path.
 
         Raises:
-            PlatformRequestError: When encoding or publication fails.
-            ValueError: When the destination was taken or became unsafe.
+            RuntimeError: When the host forbids local filesystem access.
+            PlatformRequestError: When building the archive fails; the host
+                reports a fixed diagnostic.
+            ValueError: When the destination was taken or became unsafe, or
+                the bundle is too large.
+            OSError: When writing or publishing the file fails.
         """
 
 
@@ -223,12 +235,16 @@ def _offline(resource: str, *, needs: str, example: str) -> PlatformUnavailableE
 
 
 class _OfflineVisionEventsPort:
-    def submit(self, request: VisionEventRequest, **arguments: Any) -> str:
+    def ensure_available(self) -> NoReturn:
         raise _offline(
             VISION_EVENTS_PORT_RESOURCE,
             needs="the Roboflow Vision Events API or a local event store",
             example="RoboflowVisionEventsAdapter()",
         )
+
+
+    def submit(self, request: VisionEventRequest, **arguments: Any) -> str:
+        self.ensure_available()
 
 
 class _OfflineVisionEventBundlePort:
@@ -343,14 +359,19 @@ def _cooldown_seconds(value: float) -> float:
     return seconds
 
 
-def _detached_request(arguments: Dict[str, Any]) -> VisionEventRequest:
-    event_type = arguments["event_type"]
+def _event_fields(event_type: str) -> Dict[str, str]:
     fields = EVENT_DATA_FIELDS.get(event_type)
     if fields is None:
         raise ValueError(
             f"Unknown event_type {event_type!r}; expected one of "
             f"{', '.join(EVENT_DATA_FIELDS)}"
         )
+    return fields
+
+
+def _detached_request(arguments: Dict[str, Any]) -> VisionEventRequest:
+    event_type = arguments["event_type"]
+    fields = _event_fields(event_type)
 
     event_data = {
         name: arguments[parameter]
@@ -504,6 +525,8 @@ class RoboflowVisionEventsBlock(_EventSink):
             ValueError: Without an API key in cloud mode, or on an unknown
                 ``event_type``.
             SecretUnavailableError: When the API key is an unavailable secret.
+            PlatformUnavailableError: When the active step has no vision_events_port,
+                before snapshotting or background admission.
         """
         skipped = self._skipped(arguments)
         if skipped is not None:
@@ -513,7 +536,13 @@ class RoboflowVisionEventsBlock(_EventSink):
         api_key = None
         if not local:
             api_key = api_key_for_dispatch(self._api_key, block_name="VisionEvents")
+        # Missing host setup must fail here, before copying inputs or admission.
+        # Preserve parameter validation ahead of that setup diagnostic.
+        if isinstance(self._port, _OfflineVisionEventsPort):
+            _event_fields(arguments["event_type"])
+            self._port.ensure_available()
         request = _detached_request(arguments)
+        event_store_url = arguments["event_store_url"]
         completed = {}
 
         def submit() -> EffectOutcome:
@@ -521,7 +550,7 @@ class RoboflowVisionEventsBlock(_EventSink):
                 request,
                 api_key=api_key,
                 write_to_event_store=local,
-                event_store_url=arguments["event_store_url"],
+                event_store_url=event_store_url,
             )
             if not isinstance(event_id, str):
                 raise TypeError("vision_events_port returned a non-str event id")

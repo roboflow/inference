@@ -534,7 +534,12 @@ PSYCOPG_ERRORS = {
 }
 
 
-def _fake_psycopg(*, fail_at: Optional[str] = None, error: Any = None):
+def _fake_psycopg(
+    *,
+    fail_at: Optional[str] = None,
+    error: Any = None,
+    rollback_error: Optional[Exception] = None,
+):
     """A stand-in ``psycopg`` module whose connections log every call."""
     module = types.ModuleType("psycopg")
     module.Error = _PsycopgError
@@ -571,6 +576,8 @@ def _fake_psycopg(*, fail_at: Optional[str] = None, error: Any = None):
 
         def rollback(self):
             module.log.append("rollback")
+            if rollback_error is not None:
+                raise rollback_error
 
         def close(self):
             module.log.append("close")
@@ -701,6 +708,47 @@ def test_default_postgresql_connection_failure_reports_only_the_category(
         "PostgreSQL connection failed: OperationalError (SQLSTATE 28P01)."
     )
     assert driver.log == []
+
+
+@pytest.mark.parametrize(
+    "rollback_error",
+    [
+        PSYCOPG_ERRORS["InterfaceError"](f"rollback lost {PASSWORD}"),
+        RuntimeError(f"rollback crashed {PASSWORD}"),
+    ],
+)
+def test_default_postgresql_failed_rollback_keeps_the_unknown_commit_failure(
+    monkeypatch, rollback_error: Exception
+) -> None:
+    # given
+    monkeypatch.setattr(
+        environment, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True
+    )
+    monkeypatch.setattr(
+        environment, "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", None
+    )
+    monkeypatch.setattr(
+        environment, "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", None
+    )
+    driver = _fake_psycopg(
+        fail_at="commit",
+        error=PSYCOPG_ERRORS["OperationalError"]("server closed the connection"),
+        rollback_error=rollback_error,
+    )
+    monkeypatch.setitem(sys.modules, "psycopg", driver)
+
+    # when
+    result = PostgreSQLSinkBlock().run(**_pg_params())
+
+    # then
+    assert result == {
+        "error_status": True,
+        "message": "PostgreSQL commit failed: OperationalError."
+        " Commit outcome may be unknown; verify before retrying.",
+    }
+    assert driver.log[-3:] == ["commit", "rollback", "close"]
+    assert driver.log.count("commit") == 1
+    assert len(driver.connect_settings) == 1
 
 
 def test_default_postgresql_block_reports_a_missing_driver_before_scheduling(
@@ -882,6 +930,101 @@ def test_an_active_policy_refuses_unscreenable_hosts_before_scheduling(
     }
 
 
+def _screen_with_environment_lists(
+    monkeypatch, *, blocked: Any, allowed: Any, addresses: List[str]
+):
+    # Non-global addresses stay allowed, so only the lists activate screening.
+    from roboflow_workflows.utils import url_input
+
+    monkeypatch.setattr(
+        environment, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True
+    )
+    monkeypatch.setattr(
+        environment, "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", blocked
+    )
+    monkeypatch.setattr(
+        environment, "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", allowed
+    )
+    calls = []
+
+    def resolve(host, port, allow_non_global_addresses):
+        calls.append((host, port, allow_non_global_addresses))
+        return addresses
+
+    monkeypatch.setattr(url_input, "resolve_and_validate_ips", resolve)
+    driver = _fake_psycopg()
+    monkeypatch.setitem(sys.modules, "psycopg", driver)
+
+    result = PostgreSQLSinkBlock().run(**_pg_params())
+
+    return result, driver, calls
+
+
+@pytest.mark.parametrize(
+    "blocked, allowed, addresses, message",
+    [
+        (
+            {"db.example.com"},
+            None,
+            ["203.0.113.7"],
+            "host is blocked by the sink address denylist",
+        ),
+        (
+            {"203.0.113.8"},
+            None,
+            ["203.0.113.7", "203.0.113.8"],
+            "host 'db.example.com' resolves to a denylisted address '203.0.113.8'",
+        ),
+        (
+            None,
+            {"203.0.113.7"},
+            ["203.0.113.7", "198.51.100.1"],
+            "host is not in the sink address allowlist",
+        ),
+    ],
+)
+def test_environment_address_lists_refuse_block_writes_without_connecting(
+    monkeypatch, blocked: Any, allowed: Any, addresses: List[str], message: str
+) -> None:
+    # when
+    result, driver, calls = _screen_with_environment_lists(
+        monkeypatch, blocked=blocked, allowed=allowed, addresses=addresses
+    )
+
+    # then
+    assert result == {"error_status": True, "message": message}
+    assert calls == [("db.example.com", 5432, True)]
+    assert driver.connect_settings == []
+
+
+@pytest.mark.parametrize(
+    "blocked, allowed, addresses",
+    [
+        ({"198.51.100.1"}, None, ["203.0.113.7", "203.0.113.8"]),
+        (None, {"db.example.com"}, ["203.0.113.7", "198.51.100.1"]),
+        (None, {"203.0.113.7", "203.0.113.8"}, ["203.0.113.7", "203.0.113.8"]),
+    ],
+)
+def test_environment_address_lists_let_screened_block_writes_through_pinned(
+    monkeypatch, blocked: Any, allowed: Any, addresses: List[str]
+) -> None:
+    # when
+    result, driver, calls = _screen_with_environment_lists(
+        monkeypatch, blocked=blocked, allowed=allowed, addresses=addresses
+    )
+
+    # then
+    assert result == {
+        "error_status": False,
+        "message": "Successfully inserted 1 records",
+    }
+    assert calls == [("db.example.com", 5432, True)]
+    assert len(driver.connect_settings) == 1
+    assert driver.connect_settings[0]["host"] == "db.example.com"
+    assert driver.connect_settings[0]["hostaddr"] == "203.0.113.7"
+    assert driver.log[-2:] == ["commit", "close"]
+
+
 # Default SQL Server client with a stand-in pyodbc module
 
 
@@ -893,7 +1036,13 @@ class _PyodbcDataError(_PyodbcError):
     pass
 
 
-def _fake_pyodbc(*, fail_at: Optional[str] = None, error: Any = None, row: int = 0):
+def _fake_pyodbc(
+    *,
+    fail_at: Optional[str] = None,
+    error: Any = None,
+    row: int = 0,
+    rollback_error: Optional[Exception] = None,
+):
     """A stand-in ``pyodbc`` module whose connections log every call."""
     module = types.ModuleType("pyodbc")
     module.Error = _PyodbcError
@@ -925,6 +1074,8 @@ def _fake_pyodbc(*, fail_at: Optional[str] = None, error: Any = None, row: int =
 
         def rollback(self):
             module.log.append("rollback")
+            if rollback_error is not None:
+                raise rollback_error
 
         def close(self):
             module.log.append("close")
@@ -1057,6 +1208,33 @@ def test_default_sql_server_failures_roll_back_close_and_scrub(
     assert driver.log[-2:] == ["rollback", "close"]
     connects = [entry for entry in driver.log if entry[0] == "connect"]
     assert len(connects) == 1
+
+
+def test_default_sql_server_failed_rollback_keeps_the_unknown_commit_failure(
+    monkeypatch,
+) -> None:
+    # given
+    driver = _fake_pyodbc(
+        fail_at="commit",
+        error=_PyodbcError("link lost"),
+        rollback_error=_PyodbcError(f"rollback failed {PASSWORD}"),
+    )
+    monkeypatch.setitem(sys.modules, "pyodbc", driver)
+
+    # when
+    result = SQLServerSinkBlock().run(**_ms_params(data=[{"a": 1}, {"a": 2}]))
+
+    # then
+    assert result == {
+        "error_status": True,
+        "message": "Error preparing or executing insert: Failed to insert data:"
+        " link lost Commit outcome may be unknown; verify before retrying.",
+    }
+    assert driver.log[-4:] == ["commit", "cursor.close", "rollback", "close"]
+    connects = [entry for entry in driver.log if entry[0] == "connect"]
+    assert len(connects) == 1
+    # one session-options commit, then the single failed insert commit
+    assert driver.log.count("commit") == 2
 
 
 def test_default_sql_server_connection_failure_keeps_driver_text_scrubbed(

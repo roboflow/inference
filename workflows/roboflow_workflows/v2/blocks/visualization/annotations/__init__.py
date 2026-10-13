@@ -13,6 +13,12 @@ v2/crop_visualization@v1                       roboflow_core/crop_visualization@
 v2/blur_visualization@v1                       roboflow_core/blur_visualization@v1
 v2/pixelate_visualization@v1                   roboflow_core/pixelate_visualization@v1
 v2/semantic_segmentation_visualization@v1      (new) native semantic segmentation grids
+v2/circle_visualization@v1                     roboflow_core/circle_visualization@v1
+v2/corner_visualization@v1                     roboflow_core/corner_visualization@v1
+v2/dot_visualization@v1                        roboflow_core/dot_visualization@v1
+v2/ellipse_visualization@v1                    roboflow_core/ellipse_visualization@v1
+v2/halo_visualization@v2                       roboflow_core/halo_visualization@v2
+v2/triangle_visualization@v1                   roboflow_core/triangle_visualization@v1
 =============================================  ==============================================
 
 Each block runs once per image on the image's device and returns a new
@@ -26,10 +32,9 @@ V1 ``copy_image`` is rejected with either value; chain blocks with
 ``image: $steps.<previous>.image`` instead. Predictions of another frame of
 the same workflow input are mapped into the drawn image and clipped to it.
 
-Not in this slice (queued for later waves): background_color, circle, color,
-corner, dot, ellipse, grid, halo@v2, heatmap, icon, line_counter,
-model_comparison, polygon_zone, reference_path, rich_label, text_display,
-trace and triangle visualizations (18 V1 families).
+Not in this slice (queued for later waves): background_color, color, grid,
+heatmap, icon, line_counter, model_comparison, polygon_zone, reference_path,
+rich_label, text_display and trace visualizations (12 V1 families).
 
 ``create_catalogue()`` registers every block in ``BLOCKS``. The package
 ``roboflow_workflows.v2.blocks`` exports this package's
@@ -49,11 +54,26 @@ from roboflow_workflows.v2.blocks.visualization.annotations.blur import (
 from roboflow_workflows.v2.blocks.visualization.annotations.bounding_box import (
     BoundingBoxVisualizationBlock,
 )
+from roboflow_workflows.v2.blocks.visualization.annotations.circle import (
+    CircleVisualizationBlock,
+)
 from roboflow_workflows.v2.blocks.visualization.annotations.classification_label import (
     ClassificationLabelVisualizationBlock,
 )
+from roboflow_workflows.v2.blocks.visualization.annotations.corner import (
+    CornerVisualizationBlock,
+)
 from roboflow_workflows.v2.blocks.visualization.annotations.crop import (
     CropVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.dot import (
+    DotVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.ellipse import (
+    EllipseVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.halo import (
+    HaloVisualizationBlock,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.keypoint import (
     KeypointVisualizationBlock,
@@ -73,6 +93,9 @@ from roboflow_workflows.v2.blocks.visualization.annotations.polygon import (
 from roboflow_workflows.v2.blocks.visualization.annotations.semantic_segmentation import (
     SemanticSegmentationVisualizationBlock,
 )
+from roboflow_workflows.v2.blocks.visualization.annotations.triangle import (
+    TriangleVisualizationBlock,
+)
 
 BLOCKS = (
     BoundingBoxVisualizationBlock,
@@ -85,18 +108,30 @@ BLOCKS = (
     BlurVisualizationBlock,
     PixelateVisualizationBlock,
     SemanticSegmentationVisualizationBlock,
+    CircleVisualizationBlock,
+    CornerVisualizationBlock,
+    DotVisualizationBlock,
+    EllipseVisualizationBlock,
+    HaloVisualizationBlock,
+    TriangleVisualizationBlock,
 )
 
 __all__ = [
     "BLOCKS",
     "BlurVisualizationBlock",
     "BoundingBoxVisualizationBlock",
+    "CircleVisualizationBlock",
     "ClassificationLabelVisualizationBlock",
+    "CornerVisualizationBlock",
     "CropVisualizationBlock",
+    "DotVisualizationBlock",
+    "EllipseVisualizationBlock",
+    "HaloVisualizationBlock",
     "KeypointVisualizationBlock",
     "LabelVisualizationBlock",
     "MaskVisualizationBlock",
     "PixelateVisualizationBlock",
     "PolygonVisualizationBlock",
     "SemanticSegmentationVisualizationBlock",
+    "TriangleVisualizationBlock",
 ]

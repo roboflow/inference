@@ -1,4 +1,10 @@
-"""Turn a VLM answer into a prediction: ports of the V1 VLM parser blocks.
+"""Retained shared decoding helpers and retired parser implementations.
+
+The parser block identities are retired from V2 discovery and public exports.
+Active provider blocks decode their own predictions; Florence-2 still uses
+``decode_florence_2_detections`` below.
+
+Historical implementation context: turn a VLM answer into a prediction: ports of the V1 VLM parser blocks.
 
 Ports of ``roboflow_core/vlm_as_classifier@v2`` and
 ``roboflow_core/vlm_as_detector@v2``. They read an answer produced by another
@@ -41,6 +47,7 @@ from collections.abc import Mapping
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import torch
+from inference_models.models.base.object_detection import Detections
 from pydantic import Field, model_validator
 from roboflow_workflows.v2.blocks.language.decoding import (
     DETECTION_MAX_EDGE_PIXELS,
@@ -60,8 +67,6 @@ from roboflow_workflows.v2.data.kinds import LIST_OF_VALUES_KIND, STRING_KIND
 from roboflow_workflows.v2.data.language import LANGUAGE_MODEL_OUTPUT_KIND
 from roboflow_workflows.v2.data.row_identity import with_row_identity
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Ref
-
-from inference_models.models.base.object_detection import Detections
 
 ModelType = Literal[
     "openai",
@@ -430,7 +435,5 @@ def _label_id(label: str) -> int:
 __all__ = [
     "FLORENCE_2_TASKS",
     "MODEL_BOX_FORMATS",
-    "VLMAsClassifierBlock",
-    "VLMAsDetectorBlock",
     "decode_florence_2_detections",
 ]

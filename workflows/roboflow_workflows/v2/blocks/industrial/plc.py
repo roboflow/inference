@@ -15,11 +15,18 @@ Ports of V1 ``roboflow_core/plc_reader@v1`` and ``roboflow_core/plc_writer@v1``:
         {tag: value or "ReadFailure"} / "WriteSuccess" | "WriteFailure",
         error_status = any tag failed
 
-Failures keep V1's contract: a transport or PLC error is logged and turns the
-affected tags into the failure sentinel; it does not fail the step. Writes are
-never retried. A failed write reports ``WriteFailure`` even when the PLC may
-have applied it (e.g. a read timeout after the relay sent it); the caller
-decides whether to write again.
+The supplied transport operation adapters keep V1's caught-error behavior:
+handled transport or PLC failures are logged and turn affected tags into
+failure sentinels. This does not cover client acquisition or every backend
+exception: Modbus connect exceptions, for example, still fail the step as in
+V1. Missing optional drivers, unavailable secrets, a closed connection owner
+and unexpected implementation failures also fail the step. Borrowed clients
+are called as is; their error conversion and diagnostics are their own duty
+(see ``PlcClient``).
+
+Writes are never retried. A failed write reports ``WriteFailure`` even when
+the PLC may have applied it (e.g. a read timeout after the relay sent it);
+the caller decides whether to write again.
 
 Connection lifetime: the engine never closes a block, so a block keeps no
 connection between calls. Without a ``plc_client`` resource each call opens
@@ -29,9 +36,11 @@ passes it as ``plc_client`` and closes it after its runs stop. No speed claim
 is made for either path.
 
 The relay address may be a ``secret`` (e.g. ``http://user:password@host:8007``
-from a secrets store step). Its plaintext exists only inside the transport;
-log lines are scrubbed of it. A replayed (unavailable) secret fails the step
-before any connection is made.
+from a secrets store step). ``PlcTarget`` reveals it at the transport boundary.
+The supplied adapters scrub caught backend exception and relay error text
+with ``target.scrub``. This is not a sanitizer for tag data or library logs;
+borrowed clients must protect their own diagnostics. A replayed (unavailable)
+secret fails the step before any client is acquired.
 
 Differences from V1 are listed in ``PlcReaderBlock`` and ``PlcWriterBlock``.
 """
@@ -182,7 +191,32 @@ class PlcClient(Protocol):
     """Reads and writes PLC tags for a target; ``PlcConnections`` is one.
 
     A host-provided client is borrowed: blocks never close it. Calls from
-    several steps, pulses and sessions may arrive at once.
+    several steps, pulses and sessions may arrive at once; the host owns
+    synchronization, reuse and shutdown after those calls have stopped.
+
+    Blocks call the client as is, with no exception conversion or automatic
+    diagnostic sanitizer. A conforming borrowed implementation catches its
+    ordinary backend failures and returns ``READ_FAILURE`` or ``WRITE_FAILURE``
+    for every affected tag, with ``any_failed=True``. Preserve successful tag
+    values unchanged. Do not replay writes whose delivery may be uncertain.
+
+    Apply ``target.scrub`` to diagnostic text before putting it in an output,
+    logging it, retaining it or raising it. Also configure backend library
+    logging so it cannot expose the address; the block cannot scrub those logs.
+    Scrubbing replaces the exact secret address, not arbitrary credentials or
+    payload content. Never scrub actual tag values as if they were diagnostics.
+
+    Unavailable secrets fail target construction before client acquisition.
+    Missing supplied optional drivers and calls to a closed ``PlcConnections``
+    fail the step. Acquisition/connect exceptions outside supplied adapters'
+    catches and unexpected implementation exceptions also propagate. There is
+    no required common exception class for borrowed implementations; any raised
+    diagnostic remains the implementation's responsibility.
+
+    Runtime structural use needs only the method the block calls: a reader-only
+    client can implement ``read_tags`` and a writer-only client ``write_tags``.
+    ``PlcClient`` describes the combined port for static typing; no inheritance
+    or unused runtime method is required.
     """
 
     def read_tags(self, target: PlcTarget, tags: List[Any]) -> TagResult:
@@ -399,7 +433,8 @@ def relay_read_tags(session: Any, target: PlcTarget, tags: List[Any]) -> TagResu
 
     A whole-batch rejection (non-200), an unreachable relay, a non-positive
     timeout or a malformed body fails every tag; a per-tag ``error`` fails
-    that tag.
+    that tag. A response entry whose ``name`` is not a string is ignored, so
+    a requested tag it might have answered fails as missing.
 
     Args:
         session: ``requests.Session``-like object; not closed here.
@@ -442,8 +477,9 @@ def relay_write_tags(
 ) -> TagResult:
     """Write a batch of tags with one ``POST /write_batch`` to the relay.
 
-    Failure rules are those of ``relay_read_tags``; a per-tag
-    ``success: false`` fails that tag.
+    Failure rules are those of ``relay_read_tags``. Only a per-tag
+    ``success: true`` (a JSON Boolean) acknowledges the write; ``false``, a
+    missing ``success`` or any other value fails that tag. Nothing is resent.
 
     Args:
         session: ``requests.Session``-like object; not closed here.
@@ -475,8 +511,8 @@ def relay_write_tags(
             LOGGER.error("PLC Relay did not return a result for tag '%s'", name)
             results[name] = WRITE_FAILURE
             had_failure = True
-        elif not entry.get("success", False):
-            error = target.scrub(str(entry.get("error", WRITE_FAILURE)))
+        elif entry.get("success", False) is not True:
+            error = target.scrub(_write_error(entry))
             LOGGER.error(
                 "Error writing tag '%s' with value '%s': %s", name, value, error
             )
@@ -553,17 +589,29 @@ def _error_detail(response: Any) -> str:
     return response.text
 
 
-def _index_by_name(entries: Any) -> Dict[Any, dict]:
+def _index_by_name(entries: Any) -> Dict[str, dict]:
+    # Entries without a string name are skipped; V1 crashed on unhashable ones.
     if not isinstance(entries, list):
         return {}
 
     indexed = {
         entry["name"]: entry
         for entry in entries
-        if isinstance(entry, dict) and "name" in entry
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str)
     }
 
     return indexed
+
+
+def _write_error(entry: dict) -> str:
+    """The relay's error text, or why its ``success`` is not a Boolean."""
+    success = entry.get("success", False)
+    if not isinstance(success, bool):
+        return f"invalid success acknowledgement {success!r}"
+
+    error = str(entry.get("error", WRITE_FAILURE))
+
+    return error
 
 
 def _all_failed(tags: Iterable[Any], sentinel: str) -> TagValues:
@@ -1034,7 +1082,9 @@ class PlcReaderBlock(Block):
     converted); an empty tag list opens no Modbus connection; a missing
     direct driver fails the step with ``PlcDriverUnavailableError`` naming
     the pin (V1 could not import at all); messages log to this module's
-    logger, not ``inference``.
+    logger, not ``inference``; a relay response entry whose ``name`` is not a
+    string fails its tag as missing (V1 crashed on unhashable names). Valid
+    relay responses give V1's results.
     """
 
     type = READER_TYPE
@@ -1146,7 +1196,9 @@ class PlcWriterBlock(Block):
 
     Differences from V1: those of ``PlcReaderBlock``; ``depends_on`` selects
     a step output (``$steps.x.output``), not a bare step; the value check
-    below applies only to literals, as V1 meant.
+    below applies only to literals, as V1 meant; a relay ``success`` that is
+    not the Boolean ``true`` gives ``WriteFailure`` (V1 accepted any truthy
+    value, e.g. the string ``"false"``).
     """
 
     type = WRITER_TYPE

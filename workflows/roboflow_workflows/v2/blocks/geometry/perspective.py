@@ -126,6 +126,8 @@ ORIENTED_BOX_KEY = "xyxyxyxy"
 DEGENERATE_DETERMINANT = 1e-12
 # A one-pixel side maps two polygon corners to one point: no homography.
 MIN_RECT_SIDE = 2
+# Most mask pixels a uint8 sum can count without overflow.
+COUNT_BLOCK = 255
 
 Vertex = np.ndarray
 
@@ -254,7 +256,8 @@ class PerspectiveCorrectionBlock(Block):
 
         Raises:
             ValueError: On a malformed or degenerate polygon, a rectangle
-                side below 2 or an unknown anchor.
+                side below 2, an unknown anchor, or a ``None`` rectangle
+                side or ``warp_image``.
             ContractError: When the predictions describe another image,
                 ``CENTER_OF_MASS`` is requested without masks, or keypoint
                 covariance is not shaped like the points.
@@ -267,6 +270,16 @@ class PerspectiveCorrectionBlock(Block):
             )
         if images is None:
             return dict.fromkeys(self.outputs)
+        # The block accepts empty inputs for missing predictions; a missing
+        # setting must not become a TypeError or a silently skipped warp.
+        settings = {
+            "transformed_rect_width": transformed_rect_width,
+            "transformed_rect_height": transformed_rect_height,
+            "warp_image": warp_image,
+        }
+        for name, value in settings.items():
+            if value is None:
+                raise ValueError(f"{name} is required, got None from its selector")
 
         detections = _boxes_of(predictions)
         if predictions is not None:
@@ -571,18 +584,36 @@ def _mask_centroids(detections: Any) -> np.ndarray:
             "v2/perspective_correction@v1: anchor CENTER_OF_MASS needs instance "
             "segmentation masks; these predictions have only boxes"
         )
+    # Only the (N, W) and (N, H) pixel counts become floats, never the masks.
     dense = _dense_masks(detections)
     dtype = compute_dtype(dense.device)
-    masks = dense.to(dtype)
-    height, width = masks.shape[-2:]
-    area = masks.sum(dim=(1, 2)).clamp(min=1)
-    columns = torch.arange(width, dtype=dtype, device=masks.device) + 0.5
-    rows = torch.arange(height, dtype=dtype, device=masks.device) + 0.5
-    x = (masks.sum(dim=1) * columns).sum(dim=1) / area
-    y = (masks.sum(dim=2) * rows).sum(dim=1) / area
+    height, width = dense.shape[-2:]
+    column_counts = _pixel_counts(dense, dim=1)
+    row_counts = _pixel_counts(dense, dim=2)
+    area = column_counts.sum(dim=1).clamp(min=1).to(dtype)
+    columns = torch.arange(width, dtype=dtype, device=dense.device) + 0.5
+    rows = torch.arange(height, dtype=dtype, device=dense.device) + 0.5
+    x = (column_counts.to(dtype) * columns).sum(dim=1) / area
+    y = (row_counts.to(dtype) * rows).sum(dim=1) / area
     centroids = torch.stack((x, y), dim=1).cpu().numpy().astype(int)
 
     return centroids
+
+
+def _pixel_counts(masks: torch.Tensor, *, dim: int) -> torch.Tensor:
+    # A torch sum casts its whole input to the result type first, so summing
+    # (N, H, W) bool masks as int64 allocates 8 bytes per pixel. Summing a block
+    # of at most 255 pixels as uint8 casts only that block, at 1 byte per pixel.
+    # The cast turns every true value into 1, even when its stored byte is not
+    # 1, so the uint8 sum cannot overflow. The partial sums are added as int64.
+    length = masks.shape[dim]
+    shape = masks.shape[:dim] + masks.shape[dim + 1 :]
+    counts = torch.zeros(shape, dtype=torch.int64, device=masks.device)
+    for start in range(0, length, COUNT_BLOCK):
+        block = masks.narrow(dim, start, min(COUNT_BLOCK, length - start))
+        counts += block.sum(dim=dim, dtype=torch.uint8)
+
+    return counts
 
 
 def _extend_polygon(

@@ -1,4 +1,9 @@
-"""Vendor-named vision models served over OpenAI-compatible APIs.
+"""Active compatible vendors: Google Gemma and SpaceXAI.
+
+Qwen35OpenRouterBlock and Qwen36OpenRouterBlock are retired and excluded from
+BLOCKS. Their implementations remain; current providers return native predictions.
+
+Historical implementation context: vendor-named vision models served over OpenAI-compatible APIs.
 
 Ports of V1 ``roboflow_core/google_gemma@v4``,
 ``roboflow_core/qwen3_5_openrouter@v1``, ``roboflow_core/qwen3_6_openrouter@v1``
@@ -1288,7 +1293,5 @@ class SpaceXAIBlock(Block):
 
 BLOCKS = (
     GoogleGemmaBlock,
-    Qwen35OpenRouterBlock,
-    Qwen36OpenRouterBlock,
     SpaceXAIBlock,
 )

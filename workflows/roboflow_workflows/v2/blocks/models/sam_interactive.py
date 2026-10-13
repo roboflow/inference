@@ -120,7 +120,6 @@ from roboflow_workflows.v2.data.predictions import (
     OBJECT_DETECTION_PREDICTION_KIND,
 )
 from roboflow_workflows.v2.data.row_identity import ROW_RECORD_KEY, with_row_identity
-from roboflow_workflows.v2.engine.compilation.definition import is_selector_text
 from roboflow_workflows.v2.engine.declaration import (
     Block,
     BlockParams,
@@ -235,7 +234,7 @@ class SegmentAnything3InteractiveBlock(Block):
         @model_validator(mode="after")
         def _check_literals(self) -> "SegmentAnything3InteractiveBlock.Params":
             # Selected points are checked at run time, against each image too.
-            if is_selector_text(self.points):
+            if isinstance(self.points, str) and self.points.startswith("$"):
                 return self
 
             has_points = bool(_labeled_points(self.points, block=BLOCK_TYPE))

@@ -244,7 +244,7 @@ def test_a_selected_line_fails_with_the_literal_compile_error_text() -> None:
         )
 
     # then
-    expected = "zone must be exactly two points [[x1, y1], [x2, y2]], got 3"
+    expected = "zone must be exactly 2 points [[x1, y1], [x2, y2]]; got 3 items"
     assert expected in str(compile_error.value)
     assert expected in str(run_error.value)
 

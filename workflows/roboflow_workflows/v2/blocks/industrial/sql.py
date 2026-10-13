@@ -36,8 +36,14 @@ never retried: after a failed commit the rows may already be stored, and the
 message then says the outcome may be unknown. In the background the step only
 reports ``"Data processing scheduled"``; the result reaches the host's
 ``BackgroundEffects.failures()``. Messages are scrubbed of the password.
-PostgreSQL messages also never carry server text (it can hold row values), as
-in V1; SQL Server messages keep the driver text, as in V1.
+The supplied ``PsycopgClient`` reports PostgreSQL driver failures without
+server text (it can hold row values), as in V1. Unexpected PostgreSQL client
+exceptions get a generic message; a borrowed client's ``SQLSinkError`` text
+is reportable after password scrubbing. SQL Server keeps both driver text and
+unexpected client exception text after password scrubbing, as in V1. Clients
+must keep sensitive row data and other credentials out of reportable errors
+and their own or backend library logs; password scrubbing is not a general
+payload sanitizer.
 
 Differences from V1 (both blocks):
 
@@ -208,9 +214,13 @@ _SQL_SERVER_NAME_PART = re.compile(
 class SQLSinkError(Exception):
     """A write failure whose message may be reported as the step's message.
 
-    Clients raise it with text that holds no credential; the block still
-    scrubs the password from it. Any other exception from a client is
-    reported with a generic message.
+    Both dialects report this text after scrubbing the target password.
+    Clients must omit sensitive row data and other credentials themselves.
+    For other client exceptions PostgreSQL returns a generic message, while
+    SQL Server intentionally reports ``An unexpected error occurred: {error}``
+    after password scrubbing, preserving V1 behavior. No other payload or
+    credential sanitization is provided, and client/library logs are outside
+    the block's scrubbing boundary.
     """
 
 
@@ -275,7 +285,23 @@ class SQLServerTarget:
 
 
 class SQLClient(Protocol):
-    """Writes one batch of rows; the caller of the session owns its lifetime."""
+    """Write one batch of rows; the caller of the session owns its lifetime.
+
+    Borrowed implementations own connections, concurrent use and shutdown
+    after runs stop and background effects drain. Each call writes one
+    transaction: commit on success, attempt rollback on failure without
+    replacing the original failure if cleanup fails. Never automatically
+    retry an uncertain commit; failure may mean rows were already stored.
+
+    ``SQLSinkError`` text is reportable in both dialects after target-password
+    scrubbing. Other exceptions receive a generic PostgreSQL message, but SQL
+    Server retains their text after password scrubbing, intentionally as in V1.
+    Keep sensitive row data and other credentials out of all reportable errors
+    and client/backend library logs. The supplied ``PsycopgClient`` omits server
+    text from its driver-error messages; that guarantee does not sanitize a
+    borrowed implementation's ``SQLSinkError`` or its logs. Row values remain
+    unchanged; password scrubbing is only for diagnostic text.
+    """
 
     def insert(self, target: Any, insert: SQLInsert) -> None:
         """Run ``insert.statement`` for each row in one transaction and commit.
@@ -285,7 +311,11 @@ class SQLClient(Protocol):
             insert: The statement and its parameter rows.
 
         Raises:
-            SQLSinkError: With a reportable message, after rolling back.
+            SQLSinkError: With a reportable message after attempted rollback;
+                cleanup must not replace the original failure. After a commit
+                failure the outcome may be unknown even if rollback succeeds.
+            Exception: Other failures follow the dialect-specific reporting
+                rules above; SQL Server retains unexpected exception text.
         """
 
 

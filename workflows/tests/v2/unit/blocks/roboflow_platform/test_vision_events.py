@@ -1,10 +1,14 @@
 """Vision event blocks with fake ports: skips, cooldown, detachment, outcomes."""
 
+import gc
+import weakref
+from contextlib import nullcontext
 from threading import Event
 
 import pytest
 import torch
 from pydantic import ValidationError
+from roboflow_workflows.v2.blocks.roboflow_platform import vision_events as events
 from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
 from roboflow_workflows.v2.blocks.roboflow_platform.vision_events import (
@@ -12,7 +16,11 @@ from roboflow_workflows.v2.blocks.roboflow_platform.vision_events import (
     RoboflowVisionEventsBlock,
     VisionEventBundleBlock,
 )
-from roboflow_workflows.v2.blocks.sinks.runtime import FULL_MESSAGE, BackgroundEffects
+from roboflow_workflows.v2.blocks.sinks.runtime import (
+    BACKGROUND_MESSAGE,
+    FULL_MESSAGE,
+    BackgroundEffects,
+)
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 
@@ -134,19 +142,20 @@ def test_cloud_key_reaches_the_port_as_a_secret():
 
 
 def test_offline_defaults_name_this_family_adapter():
-    result = RoboflowVisionEventsBlock(api_key="invented").run(**arguments())
+    with pytest.raises(PlatformUnavailableError) as event_error:
+        RoboflowVisionEventsBlock(api_key="invented").run(**arguments())
 
-    assert result["error_status"] is True
-    assert "'vision_events_port'" in result["message"]
-    assert "RoboflowVisionEventsAdapter()" in result["message"]
-    assert ADAPTER_MODULE in result["message"]
+    message = str(event_error.value)
+    assert "'vision_events_port'" in message
+    assert "RoboflowVisionEventsAdapter()" in message
+    assert ADAPTER_MODULE in message
     with pytest.raises(PlatformUnavailableError) as caught:
         VisionEventBundleBlock().run(**arguments(VisionEventBundleBlock))
     assert "'vision_event_bundle_port'" in str(caught.value)
     assert "VisionEventBundleAdapter(allow_access_to_file_system=True)" in str(
         caught.value
     )
-    assert "RoboflowPlatformAdapter" not in str(caught.value) + result["message"]
+    assert "RoboflowPlatformAdapter" not in str(caught.value) + message
 
 
 @pytest.mark.parametrize(
@@ -274,6 +283,92 @@ def test_background_outcome_is_v1_admission_and_inputs_are_detached():
     assert request.input_image.tensor_image.max().item() == 50
     assert request.input_image.device.type == "cpu"
     assert request.custom_metadata == {"nested": [1]}
+
+
+@pytest.mark.parametrize("local", [False, True])
+def test_queued_event_releases_original_payloads_before_delivery(local):
+    class Payload(dict):
+        """A weak-referenceable input container with normal deepcopy behavior."""
+
+    class DelayedEffects:
+        """Keep the effect queued until the test explicitly delivers it."""
+
+        def __init__(self):
+            self.pending = []
+
+        def deliver(self, effect, *, label):
+            assert label == RoboflowVisionEventsBlock.type
+            self.pending.append(effect)
+            return False, BACKGROUND_MESSAGE
+
+    port, effects = Port(), DelayedEffects()
+    input_image, output_image = image(10), image(20)
+    predictions = Payload(scores=torch.tensor([0.75]))
+    metadata = Payload(nested=[1])
+    originals = {
+        "input image": weakref.ref(input_image),
+        "input pixels": weakref.ref(input_image.tensor_image),
+        "output image": weakref.ref(output_image),
+        "output pixels": weakref.ref(output_image.tensor_image),
+        "predictions": weakref.ref(predictions),
+        "prediction scores": weakref.ref(predictions["scores"]),
+        "metadata": weakref.ref(metadata),
+    }
+    values = arguments(
+        input_image=input_image,
+        output_image=output_image,
+        predictions=predictions,
+        custom_metadata=metadata,
+        fire_and_forget=True,
+        write_to_event_store=local,
+        event_store_url="http://edge:8001/events",
+    )
+    block = RoboflowVisionEventsBlock(
+        vision_events_port=port, api_key="invented", sink_effects=effects
+    )
+
+    result = block.run(**values)
+
+    assert result == {
+        "error_status": False,
+        "throttling_status": False,
+        "event_id": "",
+        "message": "Vision event sent in background task",
+    }
+    assert len(effects.pending) == 1 and not port.calls
+    input_image.tensor_image.zero_()
+    output_image.tensor_image.zero_()
+    predictions["scores"].zero_()
+    metadata["nested"].append(2)
+    values["event_store_url"] = "http://changed:9000"
+    del values, input_image, output_image, predictions, metadata
+    gc.collect()
+    retained = [name for name, reference in originals.items() if reference() is not None]
+    assert retained == [], f"queued effect retained original payloads: {retained}"
+
+    outcome = effects.pending.pop()()
+
+    expected_message = (
+        "Event written to local event store successfully"
+        if local else "Vision event sent successfully"
+    )
+    assert outcome == (False, expected_message)
+    (call,) = port.calls
+    operation, request, delivery = call
+    assert operation == "submit"
+    assert request.input_image.tensor_image.unique().tolist() == [10]
+    assert request.output_image.tensor_image.unique().tolist() == [20]
+    assert request.input_image.device.type == request.output_image.device.type == "cpu"
+    assert request.predictions["scores"].tolist() == [0.75]
+    assert request.custom_metadata == {"nested": [1]}
+    assert request.event_data == {"value": "alert"} and request.solution == "use-case"
+    assert delivery["event_store_url"] == "http://edge:8001/events"
+    assert delivery["write_to_event_store"] is local
+    if local:
+        assert delivery["api_key"] is None
+    else:
+        assert isinstance(delivery["api_key"], Secret)
+        assert delivery["api_key"].reveal() == "invented"
 
 
 def test_background_failure_reaches_effects_not_the_step():
@@ -466,3 +561,151 @@ def test_bundle_port_without_event_bundle_result_is_an_error_outcome():
 
     assert result["error_status"] is True and result["bundle_path"] == ""
     assert "no EventBundle" in result["message"]
+
+
+@pytest.fixture
+def no_event_work(monkeypatch):
+    """Fail if the block snapshots inputs or starts a delivery window."""
+    calls = []
+
+    def forbidden(*args, **kwargs):
+        calls.append("snapshot or cooldown start")
+        raise AssertionError("missing-port/no-work path prepared a delivery")
+
+    monkeypatch.setattr(events, "_detached_request", forbidden)
+    return calls, forbidden
+
+
+@pytest.mark.parametrize("runner", [False, True])
+@pytest.mark.parametrize("fire", [False, True])
+@pytest.mark.parametrize("local", [False, True])
+def test_missing_default_event_port_fails_before_work(runner, fire, local, no_event_work):
+    effects = BackgroundEffects() if runner else None
+    block = RoboflowVisionEventsBlock(api_key="invented", sink_effects=effects)
+    calls, forbidden = no_event_work
+    block._cooldown.try_start = forbidden
+    before = block._cooldown._last
+
+    with effects if effects is not None else nullcontext():
+        with pytest.raises(PlatformUnavailableError) as caught:
+            block.run(**arguments(
+                fire_and_forget=fire, write_to_event_store=local, cooldown_seconds=100
+            ))
+
+    assert "'vision_events_port'" in str(caught.value)
+    assert "RoboflowVisionEventsAdapter()" in str(caught.value)
+    assert ADAPTER_MODULE in str(caught.value)
+    assert not calls and block._cooldown._last == before
+    if effects is not None:
+        assert effects.stats().submitted == 0 and not effects.failures()
+
+
+@pytest.mark.parametrize("runner", [False, True])
+@pytest.mark.parametrize("fire", [False, True])
+@pytest.mark.parametrize("policy,step", [(True, False), (False, True)])
+def test_disabled_default_event_port_skips_before_validation(
+    runner, fire, policy, step, no_event_work
+):
+    effects = BackgroundEffects() if runner else None
+    block = RoboflowVisionEventsBlock(disable_sinks=policy, sink_effects=effects)
+    calls, forbidden = no_event_work
+    block._cooldown.try_start = forbidden
+    with effects if effects is not None else nullcontext():
+        result = block.run(**arguments(
+            fire_and_forget=fire, disable_sink=step, event_type="unknown",
+            cooldown_seconds=float("nan")
+        ))
+    assert result["error_status"] is False and result["event_id"] == ""
+    assert result["throttling_status"] is False
+    assert not calls and block._cooldown._last is None
+    if effects is not None:
+        assert effects.stats().submitted == 0 and not effects.failures()
+
+
+@pytest.mark.parametrize("runner", [False, True])
+@pytest.mark.parametrize("fire", [False, True])
+def test_cooling_default_event_port_skips_validation_and_work(runner, fire, no_event_work):
+    effects = BackgroundEffects() if runner else None
+    block = RoboflowVisionEventsBlock(sink_effects=effects)
+    block._cooldown._clock = lambda: 10.0
+    assert block._cooldown.try_start(100)
+    before = block._cooldown._last
+    calls, forbidden = no_event_work
+    block._cooldown.try_start = forbidden
+    with effects if effects is not None else nullcontext():
+        result = block.run(**arguments(
+            fire_and_forget=fire, event_type="unknown", cooldown_seconds=100
+        ))
+    assert result == {
+        "error_status": False, "throttling_status": True,
+        "event_id": "", "message": "Sink cooldown applies",
+    }
+    assert not calls and block._cooldown._last == before
+    if effects is not None:
+        assert effects.stats().submitted == 0 and not effects.failures()
+
+
+@pytest.mark.parametrize("local,key,changes,error,match", [
+    (False, "invented", {"event_type": "unknown"}, ValueError, "Unknown event_type"),
+    (True, None, {"event_type": "unknown"}, ValueError, "Unknown event_type"),
+    (False, "invented", {"cooldown_seconds": float("nan")}, ValueError, "NaN"),
+    (False, None, {}, ValueError, "API key"),
+    (False, None, {"event_type": "unknown"}, ValueError, "API key"),
+    (False, Secret.unavailable("key"), {}, SecretUnavailableError, "key"),
+])
+def test_missing_default_event_port_preserves_validation_order(
+    local, key, changes, error, match, no_event_work
+):
+    with BackgroundEffects() as effects:
+        block = RoboflowVisionEventsBlock(api_key=key, sink_effects=effects)
+        calls, forbidden = no_event_work
+        block._cooldown.try_start = forbidden
+        with pytest.raises(error, match=match):
+            block.run(**arguments(
+                fire_and_forget=True, write_to_event_store=local, **changes
+            ))
+        assert not calls and block._cooldown._last is None
+        assert effects.stats().submitted == 0 and not effects.failures()
+
+
+def test_missing_default_event_port_refusal_does_not_start_cooldown():
+    block = RoboflowVisionEventsBlock(api_key="invented")
+    with pytest.raises(PlatformUnavailableError):
+        block.run(**arguments(cooldown_seconds=100))
+    port = Port()
+    block._port = port
+    result = block.run(**arguments(cooldown_seconds=100))
+    assert result["event_id"] == "event-1" and len(port.calls) == 1
+
+
+@pytest.mark.parametrize("runner", [False, True])
+@pytest.mark.parametrize("fire", [False, True])
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("failure", [
+    PlatformUnavailableError("configured port is unavailable"),
+    PlatformRequestError("configured delivery failed", error_type="x"),
+])
+def test_configured_event_port_keeps_late_failure_semantics(runner, fire, local, failure):
+    class ConfiguredPort(Port):
+        def ensure_available(self):
+            raise AssertionError("custom ports must not be availability-probed")
+
+    port = ConfiguredPort(failure)
+    effects = BackgroundEffects() if runner else None
+    block = RoboflowVisionEventsBlock(
+        vision_events_port=port, api_key="invented", sink_effects=effects
+    )
+    with effects if effects is not None else nullcontext():
+        result = block.run(**arguments(
+            fire_and_forget=fire, write_to_event_store=local
+        ))
+    expected = f"{type(failure).__name__}: {failure}"
+    assert len(port.calls) == 1 and result["event_id"] == ""
+    if runner and fire:
+        assert result["error_status"] is False
+        assert result["message"] == "Vision event sent in background task"
+        assert [item.message for item in effects.failures()] == [expected]
+    else:
+        assert result["error_status"] is True and result["message"] == expected
+        if effects is not None:
+            assert not effects.failures()

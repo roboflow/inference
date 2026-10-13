@@ -5,6 +5,9 @@ its original RGB tensor. Standard tasks supply both their task token and full
 prompt; custom tasks derive the decoder key from their leading prompt token,
 matching the V1 adapter. Decoded boxes, quads and polygons remain unchanged in
 parsed_output; image_metadata identifies the input image and its origins.
+Text answers are also returned plainly in text. grounding_coordinate_system
+reads literal and selected boxes as in V1 (auto) or as explicit pixels or
+relative coordinates; native detection boxes keep their own pixels.
 """
 
 import json
@@ -18,10 +21,11 @@ from pydantic import (
     StrictFloat,
     StrictInt,
     StrictStr,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
-from roboflow_workflows.v2.blocks.models._local_vlm import per_row
+from roboflow_workflows.v2.blocks.models._local_vlm import _image_row, per_row
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.blocks.models.common import (
     INFERENCE_ID_OUTPUT,
@@ -98,6 +102,11 @@ SELECTION_MODES = (
     "most-confident",
     "least-confident",
 )
+ImageParam = Ref(IMAGE_KIND, batch="always")
+TaskParam = TaskType | Ref(STRING_KIND, batch="if_varying")
+SelectionParam = SelectionMode | Ref(STRING_KIND, batch="if_varying")
+CoordinateSystem = Literal["auto", "pixels", "relative"]
+COORDINATE_SYSTEMS = ("auto", "pixels", "relative")
 TextParam = Optional[StrictStr] | Ref(STRING_KIND, batch="if_varying", allow_none=True)
 ClassesParam = Optional[List[StrictStr]] | Ref(
     LIST_OF_VALUES_KIND, batch="if_varying", allow_none=True
@@ -117,7 +126,14 @@ def _is_selector(value: Any) -> bool:
     return isinstance(value, str) and value.startswith(("$inputs.", "$steps."))
 
 
-def _validate_task(task: Any, *, prompt: Any, classes: Any, grounding: Any) -> None:
+def _validate_task(
+    task: Any,
+    *,
+    prompt: Any,
+    classes: Any,
+    grounding: Any,
+    default_task: bool = False,
+) -> None:
     if not isinstance(task, str) or task not in TASK_TOKENS:
         raise ValueError(f"Unsupported Florence task_type {task!r}")
 
@@ -125,22 +141,37 @@ def _validate_task(task: Any, *, prompt: Any, classes: Any, grounding: Any) -> N
         raise ValueError(f"prompt must be non-empty text for task {task!r}")
 
     if task == "open-vocabulary-object-detection" and not classes:
-        raise ValueError(f"classes must be a non-empty list for task {task!r}")
+        hint = (
+            " (the default task_type); set classes or choose another task_type"
+            if default_task
+            else ""
+        )
+        raise ValueError(f"classes must be a non-empty list for task {task!r}{hint}")
 
     if task in GROUNDING_TASKS and grounding is None:
         raise ValueError(f"grounding_detection is required for task {task!r}")
 
 
-def _validate_box(box: Any) -> List[Union[int, float]]:
+def _validate_box(box: Any, *, coordinates: str) -> bool:
+    """Check a four-number grounding box and return whether it is relative."""
     if not isinstance(box, list) or len(box) != 4:
         raise ValueError("grounding box must contain exactly four coordinates")
 
-    integer = all(type(v) is int for v in box)
-    relative = all(type(v) is float for v in box)
-    if not (integer or relative) or not all(math.isfinite(v) for v in box):
-        raise ValueError(
-            "grounding box must contain finite all-integer pixels or all-float relative coordinates"
-        )
+    if coordinates == "auto":
+        # V1 typing. JSON writers that drop ".0" (JavaScript) need an
+        # explicit system: [0, 0, 1, 1] is pixels here.
+        integer = all(type(v) is int for v in box)
+        relative = all(type(v) is float for v in box)
+        if not (integer or relative) or not all(math.isfinite(v) for v in box):
+            raise ValueError(
+                "grounding box must contain finite all-integer pixels or all-float "
+                "relative coordinates; set grounding_coordinate_system to 'pixels' "
+                "or 'relative' to mix integers and floats"
+            )
+    else:
+        if not all(type(v) in (int, float) and math.isfinite(v) for v in box):
+            raise ValueError("grounding box must contain four finite numbers")
+        relative = coordinates == "relative"
 
     if relative and not all(0 <= v <= 1 for v in box):
         raise ValueError("relative grounding coordinates must lie in [0, 1]")
@@ -148,7 +179,7 @@ def _validate_box(box: Any) -> List[Union[int, float]]:
     if box[2] <= box[0] or box[3] <= box[1]:
         raise ValueError("grounding box must have positive width and height")
 
-    return box
+    return relative
 
 
 class _PreparedImage(NamedTuple):
@@ -171,12 +202,17 @@ class Florence2Block(Block):
         "raw_output": Output(
             STRING_KIND,
             source="image",
-            description="JSON encoding of the decoded task answer; null for a detection-grounded task whose grounding prediction has no box.",
+            description="JSON encoding of the decoded task answer, so a text answer is a quoted JSON string; null for a detection-grounded task whose grounding prediction has no box.",
+        ),
+        "text": Output(
+            STRING_KIND,
+            source="image",
+            description="The decoded answer as plain text for text tasks such as caption and OCR; null for dictionary answers and for detection-grounded rows without a box.",
         ),
         "parsed_output": Output(
             DICTIONARY_KIND,
             source="image",
-            description="Decoded Florence dictionary, preserving boxes, polygons and quads; null for text answers.",
+            description="Decoded Florence dictionary, preserving boxes, polygons and quads; null for text answers. Geometry is in the model package's processed-image pixels: input-image pixels unless the package applies a static crop or resize. image_metadata does not convert it.",
         ),
         "classes": Output(
             LIST_OF_VALUES_KIND,
@@ -186,7 +222,7 @@ class Florence2Block(Block):
         "image_metadata": Output(
             DICTIONARY_KIND,
             source="image",
-            description="Input image frame and crop/resize origins; decoded geometry uses model output coordinates.",
+            description="Input image frame and crop/resize origins; does not convert parsed_output geometry.",
         ),
         "model_id": MODEL_ID_OUTPUT,
         "inference_id": INFERENCE_ID_OUTPUT,
@@ -195,7 +231,7 @@ class Florence2Block(Block):
     class Params(ModelSelectionParams):
         """Image, task-dependent prompts and local model selection."""
 
-        image: Ref(IMAGE_KIND, batch="always") = Field(
+        image: ImageParam = Field(
             description="RGB input images; one backend call per image."
         )
         model_id: ModelIdField = Field(
@@ -203,7 +239,7 @@ class Florence2Block(Block):
             description=MODEL_ID_DESCRIPTION,
             examples=["florence-2-base", "$inputs.model_id"],
         )
-        task_type: TaskType | Ref(STRING_KIND, batch="if_varying") = Field(
+        task_type: TaskParam = Field(
             default="open-vocabulary-object-detection",
             description="Florence task; determines required prompt, classes or detection grounding.",
         )
@@ -215,22 +251,27 @@ class Florence2Block(Block):
             default=None,
             description="Open vocabulary classes, joined with <and>. Overrides prompt as in V1.",
         )
+        grounding_coordinate_system: CoordinateSystem = Field(
+            default="auto",
+            description="How a four-number grounding box is read. auto (V1): all integers are pixels, all floats are relative coordinates in [0, 1], mixed is rejected. pixels or relative: every finite number is read that way, so a JavaScript client's [0, 0, 1, 1] with relative is the whole image. Native detection predictions keep their own pixel boxes.",
+        )
         grounding_detection: GroundingParam = Field(
             default=None,
-            description="Exactly four all-integer pixel coordinates or all-float relative coordinates, or a native detection prediction. Overrides prompt/classes as in V1.",
+            description="Four coordinates [x0, y0, x1, y1], read as set by grounding_coordinate_system, or a native detection prediction. Overrides prompt/classes as in V1.",
         )
-        grounding_selection_mode: SelectionMode | Ref(
-            STRING_KIND, batch="if_varying"
-        ) = Field(
+        grounding_selection_mode: SelectionParam = Field(
             default="first",
             description="Which detection box to select; ties use the first row.",
         )
 
         @field_validator("grounding_detection", mode="before")
         @classmethod
-        def _validate_literal_box(cls, value):
-            if isinstance(value, list):
-                _validate_box(value)
+        def _validate_literal_box(cls, value, info: ValidationInfo):
+            # Before pydantic converts mixed numbers to floats. The coordinate
+            # system is declared first, so it is known here unless invalid.
+            coordinates = info.data.get("grounding_coordinate_system")
+            if isinstance(value, list) and coordinates is not None:
+                _validate_box(value, coordinates=coordinates)
             return value
 
         @model_validator(mode="after")
@@ -243,6 +284,7 @@ class Florence2Block(Block):
                     prompt=self.prompt,
                     classes=self.classes,
                     grounding=self.grounding_detection,
+                    default_task="task_type" not in self.model_fields_set,
                 )
             return self
 
@@ -275,6 +317,7 @@ class Florence2Block(Block):
         classes: Any = None,
         grounding_detection: Any = None,
         grounding_selection_mode: Any = "first",
+        grounding_coordinate_system: str = "auto",
     ) -> List[Dict[str, Any]]:
         """Validate every row, resolve models, then decode one answer per image.
 
@@ -287,15 +330,23 @@ class Florence2Block(Block):
             classes: Optional shared class list or per-image Batch.
             grounding_detection: Shared box/prediction, per-image Batch, or None.
             grounding_selection_mode: Shared selection mode or per-image Batch.
+            grounding_coordinate_system: How four-number boxes are read.
 
         Returns:
             One result per image, including null answers for detection-grounded
             tasks whose grounding prediction has no box.
 
         Raises:
-            ValueError: On invalid task inputs, a per-image Batch whose indices
-                differ from the image batch's, grounding frames or answer counts.
+            ValueError: On invalid task inputs or grounding frames (naming the
+                image's logical index), a per-image Batch whose indices differ
+                from the image batch's, or answer counts.
         """
+        if grounding_coordinate_system not in COORDINATE_SYSTEMS:
+            raise ValueError(
+                f"grounding_coordinate_system must be one of {list(COORDINATE_SYSTEMS)}, "
+                f"got {grounding_coordinate_system!r}"
+            )
+
         columns = [
             per_row(value, image=image, name=name)
             for name, value in (
@@ -309,43 +360,13 @@ class Florence2Block(Block):
             )
         ]
         prepared = []
-        for member, values in zip(image, zip(*columns)):
-            if not isinstance(member, ImageData) or member.channels != 3:
-                raise ValueError("Florence-2 needs a 3-channel RGB ImageData")
-            mid, package, task, text, labels, grounding, mode = values
-            _validate_task(task, prompt=text, classes=labels, grounding=grounding)
-            if text is not None and not isinstance(text, str):
-                raise ValueError("prompt must be text or None")
-            if labels is not None and (
-                not isinstance(labels, list)
-                or not labels
-                or not all(isinstance(c, str) and c.strip() for c in labels)
-            ):
-                raise ValueError(
-                    "classes must be a non-empty list of non-empty strings"
+        for index, member, values in zip(image.indices, image, zip(*columns)):
+            with _image_row(index, block=self.type):
+                prepared.append(
+                    _prepared_image(
+                        member, *values, coordinates=grounding_coordinate_system
+                    )
                 )
-            if mode not in SELECTION_MODES:
-                raise ValueError(f"Unknown grounding selection mode: {mode!r}")
-            request = ModelRequest(mid, package)
-            suffix = text or ""
-            if labels is not None:
-                suffix = "<and>".join(labels)
-            if grounding is not None:
-                suffix = _grounding_prompt(member, grounding=grounding, mode=mode)
-            skip = suffix is None and task in GROUNDING_TASKS
-            final_prompt = (TASK_TOKENS[task] or "") + (suffix or "")
-            decoder_task = TASK_TOKENS[task] or final_prompt.split(">")[0] + ">"
-            prepared.append(
-                _PreparedImage(
-                    member,
-                    request,
-                    task,
-                    final_prompt,
-                    decoder_task,
-                    labels or [],
-                    skip,
-                )
-            )
 
         requests = dict.fromkeys(row.request for row in prepared if not row.skip)
         models = {request: self._models.get(request) for request in requests}
@@ -357,7 +378,12 @@ class Florence2Block(Block):
         for row in prepared:
             decoder_task = row.decoder_task
             if row.skip:
-                result = {"raw_output": None, "parsed_output": None, "classes": None}
+                result = {
+                    "raw_output": None,
+                    "text": None,
+                    "parsed_output": None,
+                    "classes": None,
+                }
             else:
                 answers = models[row.request].prompt(
                     [row.image.tensor_image],
@@ -393,6 +419,7 @@ class Florence2Block(Block):
                     )
                 result = {
                     "raw_output": json.dumps(decoded, allow_nan=False),
+                    "text": decoded if isinstance(decoded, str) else None,
                     "parsed_output": decoded if isinstance(decoded, dict) else None,
                     "classes": extracted,
                 }
@@ -405,10 +432,55 @@ class Florence2Block(Block):
         return results
 
 
-def _grounding_prompt(image: ImageData, *, grounding: Any, mode: str) -> Optional[str]:
+def _prepared_image(
+    member: Any,
+    model_id: Any,
+    package_id: Any,
+    task: Any,
+    text: Any,
+    labels: Any,
+    grounding: Any,
+    mode: Any,
+    *,
+    coordinates: str,
+) -> _PreparedImage:
+    if not isinstance(member, ImageData) or member.channels != 3:
+        raise ValueError("Florence-2 needs a 3-channel RGB ImageData")
+    _validate_task(task, prompt=text, classes=labels, grounding=grounding)
+    if text is not None and not isinstance(text, str):
+        raise ValueError("prompt must be text or None")
+    if labels is not None and (
+        not isinstance(labels, list)
+        or not labels
+        or not all(isinstance(c, str) and c.strip() for c in labels)
+    ):
+        raise ValueError("classes must be a non-empty list of non-empty strings")
+    if mode not in SELECTION_MODES:
+        raise ValueError(f"Unknown grounding selection mode: {mode!r}")
+    request = ModelRequest(model_id, package_id)
+    suffix = text or ""
+    if labels is not None:
+        suffix = "<and>".join(labels)
+    if grounding is not None:
+        suffix = _grounding_prompt(
+            member, grounding=grounding, mode=mode, coordinates=coordinates
+        )
+    skip = suffix is None and task in GROUNDING_TASKS
+    final_prompt = (TASK_TOKENS[task] or "") + (suffix or "")
+    decoder_task = TASK_TOKENS[task] or final_prompt.split(">")[0] + ">"
+    prepared = _PreparedImage(
+        member, request, task, final_prompt, decoder_task, labels or [], skip
+    )
+
+    return prepared
+
+
+def _grounding_prompt(
+    image: ImageData, *, grounding: Any, mode: str, coordinates: str
+) -> Optional[str]:
     if isinstance(grounding, list):
-        box = _validate_box(grounding)
-        relative = all(type(v) is float for v in box)
+        box = grounding
+        relative = _validate_box(box, coordinates=coordinates)
     else:
         box = _selected_box(image, prediction=grounding, mode=mode)
         if box is None:

@@ -80,6 +80,23 @@ does not imply that every example runs in a plain Python environment.
 | [54 — Embedding change sampling](54-embedding-change-sampling/README.md) | Compare recent embedding directions and changes, including warmup and finite-window limits. | CPU fixtures |
 | [55 — Passive image history](55-passive-image-history/README.md) | Feed repeated calls into a temporal window using the existing execution workers. | CPU fixtures |
 | [56 — Detection changes](56-detection-changes/README.md) | Compare before/after detections and inspect removed, persisted and new objects. | CPU fixtures |
+| [57 — Overlap analysis](57-overlap-analysis/README.md) | Inspect asymmetric box or mask-contour coverage in comparable coordinates. | CPU fixtures |
+| [58 — Crop rollup](58-crop-rollup/README.md) | Map crop predictions into the parent frame, collect them and merge duplicates. | CPU fixtures |
+| [59 — Tracking instances](59-tracking-instances/README.md) | ByteTrack per camera, with new and already-seen instances. | CPU fixtures |
+| [60 — Compressed image history](60-compressed-image-history/README.md) | Keep the last frames per source as JPEG bytes. | CPU fixtures |
+| [61 — Tracker variants](61-tracker-variants/README.md) | SORT, ByteTrack, OC-SORT and BoT-SORT on one scene, and which tracker to choose. | CPU fixtures |
+| [62 — Track state and speed](62-track-state-and-speed/README.md) | Lock classes, stabilize boxes and measure speed per track. | CPU fixtures |
+| [63 — Shape visualizations](63-shape-visualizations/README.md) | Circle, corner, dot, ellipse, triangle and halo painters chained on one image. | CPU fixtures |
+| [64 — Image processing](64-image-processing/README.md) | Grayscale, blur, threshold, morphology and contrast, compared with V1. | CPU fixtures |
+| [65 — Image measurements](65-image-measurements/README.md) | Distances, sizes, mask areas and colour counts with explicit calibration. | CPU fixtures |
+| [66 — Custom Python with tensors](66-custom-python-tensors/README.md) | Run local dynamic blocks on V2 images and predictions without conversion. | CPU fixtures |
+| [95 — Platform dataset upload](95-platform-dataset-upload/README.md) | Set asset attributes and submit bounded dataset uploads. | CPU fake ports; explicit host ports for platform calls |
+| [96 — Model monitoring](96-model-monitoring/README.md) | Collect inference summaries and report through a caller-owned port. | CPU fake port; explicit host port for platform calls |
+| [106 — Action recognition](106-action-recognition/README.md) | Classify bounded clips from two cameras with a caller-loaded local model. | CPU fake model; optional local model package |
+| [109 — Florence-2](109-local-vlm-wave2/florence/README.md) | Run local Florence text and grounding tasks with explicit coordinate modes. | CPU stand-in; optional local model package |
+| [109 — Moondream and Cosmos](109-local-vlm-wave2/moondream-cosmos/README.md) | Chain local object detection and reasoning with downstream consumers. | CPU stand-ins; optional local model packages |
+| [109 — Unified Qwen](109-local-vlm-wave2/qwen-unified/README.md) | Choose native Qwen or an explicit OpenRouter backend. | CPU stand-in or fake transport; optional provider/model |
+| [110 — Google Vision OCR](110-remote-ocr/google-vision/README.md) | Call direct Google Vision OCR with a host-owned transport and credential. | Fake transport; optional direct provider |
 
 Examples 42–49 use the built-in `create_catalogue()`. It registers the V1
 ports beside the older V2 prototypes: `v2/continue_if` (boolean) beside

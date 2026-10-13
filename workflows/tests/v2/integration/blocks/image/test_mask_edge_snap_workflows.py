@@ -296,3 +296,42 @@ def test_selected_nan_sigma_has_resolved_parameter_path():
         session.close()
     assert isinstance(error.value.__cause__, ResolvedParameterError)
     assert error.value.__cause__.field_path == ("sigma",)
+
+
+@pytest.mark.parametrize("mode", ["run", "phases"])
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize(
+    "metadata_case",
+    ["wrong-image", "wrong-typed-image", "malformed-partial", "valid-partial"],
+)
+def test_compiled_frame_guard_precedes_unread_edges(mode, empty, metadata_case):
+    inputs, _, _ = _inputs()
+    image = inputs["image"][0]
+    predictions = _segmentation([] if empty else [_scene(0)[1]], image=image)
+    predictions.image_metadata = {
+        "wrong-image": {"parent_id": "other"},
+        "wrong-typed-image": ImageData.from_tensor(
+            image.tensor_image, image_id="other"
+        ).prediction_metadata(),
+        "malformed-partial": {"scaling_relative_to_root_parent": 0},
+        "valid-partial": {"image_dimensions": list(SIZE_HW)},
+    }[metadata_case]
+    definition = {**DEFINITION, "outputs": [DEFINITION["outputs"][0]]}
+    session = compile_workflow(
+        definition, catalogue=CATALOGUE, options=CompileOptions(block_execution=mode)
+    ).create_session()
+    try:
+        values = {
+            "image": [image],
+            "segmentation": [predictions],
+            "tolerance": TOLERANCE,
+        }
+        if metadata_case == "valid-partial":
+            (row,) = session.run(values).rows()
+            assert set(row) == {"refined"}
+            assert len(row["refined"]) == (0 if empty else 1)
+        else:
+            with pytest.raises(StepExecutionError):
+                session.run(values)
+    finally:
+        session.close()

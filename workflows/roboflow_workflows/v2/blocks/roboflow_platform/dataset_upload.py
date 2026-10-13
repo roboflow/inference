@@ -125,7 +125,9 @@ class DatasetUploadBlock(Block):
     """Collect images with optional native predictions, preserving V1 row order.
 
     Args:
-        dataset_upload_port: Host adapter with explicit shared cache ownership.
+        dataset_upload_port: Host adapter with explicit shared cache ownership;
+            omitted means a non-empty, non-disabled call raises
+            PlatformUnavailableError.
         api_key: Host credential, string or Secret.
         disable_sinks: Execution policy disabling collection.
         sink_effects: Optional caller-owned BackgroundEffects, drained by the host.
@@ -312,6 +314,8 @@ class DatasetUploadBlock(Block):
 
         Raises:
             ValueError: Missing credentials or misaligned per-row values.
+            PlatformUnavailableError: No host adapter was supplied and the batch
+                is not empty, with or without sink_effects.
         """
         if self._disable_sinks:
             return [
@@ -337,6 +341,11 @@ class DatasetUploadBlock(Block):
         names = _per_row(image_name, count)
         tags = _per_row(registration_tags, count)
         attributes = _per_row(metadata, count)
+        # A missing adapter is a host setup error: report it here, not as a
+        # background success whose failure only the runner sees.
+        if count and isinstance(self._port, _OfflineDatasetUploadPort):
+            raise PlatformUnavailableError(_OFFLINE_MESSAGE)
+
         results = []
         for index, image in enumerate(images):
             if random.random() >= data_percentage / 100:

@@ -77,8 +77,9 @@ DISABLED_MESSAGE = "Sink was disabled by workflow execution policy"
 SUCCESS_MESSAGE = "Custom metadata upload was successful"
 NO_INFERENCE_ID_MESSAGE = (
     "Custom metadata upload failed because no inference_ids were received. "
-    "This is known bug (https://github.com/roboflow/inference/issues/567). "
-    "Please provide a report for the problem under mentioned issue."
+    "For native V2 model predictions, bind the inference_id parameter to "
+    "$steps.<model>.inference_id. If inference_id is omitted, the fallback "
+    "requires an existing inference_id in prediction image metadata."
 )
 
 __all__ = ["RoboflowCustomMetadataBlock"]

@@ -15,6 +15,7 @@ from tests.v2.unit.blocks.industrial.test_onvif import (
     Clock,
     ManualSleep,
     RecordingCamera,
+    TravellingCamera,
     predictions,
 )
 
@@ -163,6 +164,46 @@ def test_engine_reset_alone_does_not_claim_host_timer_cancellation():
         owner.quiesce()
         assert timer_future.cancelled()
         session.close()
+
+
+def test_retained_runs_keep_idle_preset_travelling_until_new_target():
+    camera, timer = TravellingCamera(), ManualSleep()
+    with OnvifController(TARGET, port_factory=lambda t: camera, sleep=timer) as owner:
+        compiled = plan(
+            default_position_preset="home", move_to_position_after_idle_seconds=3
+        )
+        session = compiled.create_session(resources={"onvif_controller": owner})
+        run(session, predictions(()))
+        assert timer.started.wait(2)
+        timer.fire(owner)
+        assert camera.preset_called.wait(2)
+        assert run(session, predictions(()))["seeking"] is False
+        assert run(session, predictions(((45, 45, 55, 55),)))["seeking"] is False
+        assert camera.motion == "preset:home"
+        assert camera.commands == [("stop",), ("preset", "home")]
+        assert run(session)["seeking"] and camera.motion == "continuous"
+        run(session, predictions(()))
+        assert camera.motion is None and camera.commands[-1] == ("stop",)
+        session.close()
+    assert camera.commands[-2:] == [("stop",), ("close",)]
+
+
+def test_retained_direct_preset_runs_do_not_abort_travel():
+    camera, clock = TravellingCamera(), Clock()
+    with OnvifController(TARGET, port_factory=lambda t: camera, clock=clock) as owner:
+        compiled = plan(
+            movement_type="Go To Preset",
+            default_position_preset="home",
+            camera_update_rate_limit=250,
+        )
+        session = compiled.create_session(resources={"onvif_controller": owner})
+        for _ in range(3):
+            assert run(session)["seeking"] is False
+            clock.advance(0.033)
+        assert camera.motion == "preset:home"
+        assert camera.commands == [("stop",), ("preset", "home")]
+        session.close()
+    assert camera.motion is None and camera.commands[-2:] == [("stop",), ("close",)]
 
 
 def test_compiled_error_and_disabled_missing_owner():

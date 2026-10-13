@@ -7,12 +7,16 @@ NMS, class names and embedding reuse, not real inference. Compiled workflows
 are in ``integration/blocks/models/test_segment_anything_workflows.py``.
 """
 
+import copy
+import dataclasses
 import weakref
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import pydantic
 import pytest
 import torch
+from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks.models.segment_anything import (
     SAM2_DEFAULT_MODEL_ID,
     SAM3_DEFAULT_MODEL_ID,
@@ -965,3 +969,163 @@ def test_sam3_backend_geometry_is_not_modified_when_reboxing_masks() -> None:
     assert row["predictions"].xyxy.tolist() == [[4, 3, 5, 4]]
     assert model.result[0][0]["boxes"] is model.boxes
     assert model.boxes.tolist() == [[1.25, 2.5, 8.75, 10.5]]
+
+
+INVALID_FRAME_CASES = (
+    "non-mapping",
+    "typed-missing-key",
+    "typed-image",
+    "typed-size",
+    "typed-source",
+    "typed-frame",
+    "typed-time",
+    "typed-parent",
+    "typed-root",
+    "typed-version",
+    "typed-mapping",
+    "typed-video",
+    "legacy-image",
+    "legacy-root",
+    "legacy-size",
+    "legacy-offset",
+    "legacy-scale",
+    "conflict-size",
+    "conflict-flag",
+    "partial-root-scale",
+)
+VALID_FRAME_CASES = (
+    "absent",
+    "empty",
+    "unrelated",
+    "size-only",
+    "root-id-only",
+    "offset-only",
+    "none-fields",
+    "typed-only",
+    "legacy-only",
+    "mirrored",
+)
+
+
+def _guard_image(image):
+    return dataclasses.replace(
+        image,
+        video_metadata=VideoMetadata(
+            video_identifier="source-a",
+            frame_number=4,
+            frame_timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ),
+    )
+
+
+def _guard_metadata(image, case):
+    metadata = copy.deepcopy(image.prediction_metadata())
+    record = metadata["workflows_v2_frame"]
+    if case == "non-mapping":
+        return []
+    if case.startswith("typed-"):
+        metadata = {"workflows_v2_frame": record}
+        if case == "typed-missing-key":
+            record.pop("root")
+        elif case == "typed-image":
+            record["image_id"] = "other"
+        elif case == "typed-size":
+            record["size_hw"][0] += 1
+        elif case == "typed-source":
+            record["video_metadata"]["video_identifier"] = "source-b"
+        elif case == "typed-frame":
+            record["video_metadata"]["frame_number"] += 1
+        elif case == "typed-time":
+            record["video_metadata"]["frame_timestamp"] = "2026-01-02T00:00:00+00:00"
+        elif case == "typed-parent":
+            record["parent"]["offset_xy"][0] += 1
+        elif case == "typed-root":
+            record["root"]["frame_id"] = "other-root"
+        elif case == "typed-version":
+            record["version"] = True
+        elif case == "typed-mapping":
+            record["parent"]["scale_xy"] = [0, 1]
+        elif case == "typed-video":
+            record["video_metadata"]["frame_number"] = True
+        return metadata
+    if case == "legacy-image":
+        return {"parent_id": "other"}
+    if case == "legacy-root":
+        return {"root_parent_id": "other-root"}
+    if case == "legacy-size":
+        return {"image_dimensions": [True, image.size_hw[1]]}
+    if case == "legacy-offset":
+        return {"parent_coordinates": ["bad", 0]}
+    if case == "legacy-scale":
+        return {"scaling_relative_to_root_parent": 0}
+    if case == "conflict-size":
+        metadata["image_dimensions"] = [image.size_hw[0] + 1, image.size_hw[1]]
+        return metadata
+    if case == "conflict-flag":
+        metadata["is_composite"] = 1
+        return metadata
+    if case == "partial-root-scale":
+        return {"scaling_relative_to_root_parent": 2}
+    if case == "absent":
+        return None
+    if case == "empty":
+        return {}
+    if case == "unrelated":
+        return {"class_names": {0: "part"}}
+    if case == "size-only":
+        return {"image_dimensions": metadata["image_dimensions"]}
+    if case == "root-id-only":
+        return {"root_parent_id": metadata["root_parent_id"]}
+    if case == "offset-only":
+        return {"parent_coordinates": metadata["parent_coordinates"]}
+    if case == "none-fields":
+        return {"parent_id": None, "image_dimensions": None, "workflows_v2_frame": None}
+    if case == "legacy-only":
+        metadata.pop("workflows_v2_frame")
+    return metadata
+
+
+@pytest.mark.parametrize("case", INVALID_FRAME_CASES)
+@pytest.mark.parametrize("empty", [False, True])
+def test_sam2_rejects_frame_metadata_before_model_work(case, empty):
+    image = _guard_image(_image("a"))
+    prompt = _prompt(image, [] if empty else [[1, 1, 4, 4]], [] if empty else [0])
+    prompt.image_metadata = _guard_metadata(image, case)
+    model = FakeSam2()
+    with pytest.raises(ValueError, match="wire boxes predicted on the image"):
+        _call(_sam2(model), image=Batch([image]), boxes=Batch([prompt]), wanted=set())
+    assert model.embedded == []
+    assert model.segmented == []
+
+
+@pytest.mark.parametrize("case", VALID_FRAME_CASES)
+@pytest.mark.parametrize("empty", [False, True])
+def test_sam2_accepts_absent_and_valid_partial_frame_metadata(case, empty):
+    image = _guard_image(_image("a"))
+    prompt = _prompt(image, [] if empty else [[1, 1, 4, 4]], [] if empty else [0])
+    prompt.image_metadata = _guard_metadata(image, case)
+    before = copy.deepcopy(prompt.image_metadata)
+    model = FakeSam2()
+    (result,) = _call(_sam2(model), image=Batch([image]), boxes=Batch([prompt]))
+    assert len(result["predictions"]) == (0 if empty else 1)
+    assert model.embedded == ([] if empty else [1])
+    assert prompt.image_metadata == before
+
+
+def test_sam2_view_prompt_validates_legacy_identity():
+    image = _image("a")
+    predictions = InstanceDetections(
+        xyxy=torch.tensor([[1.0, 1.0, 4.0, 4.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.8]),
+        mask=torch.ones((1, *SIZE_HW), dtype=torch.bool),
+        image_metadata={"parent_id": "other"},
+    )
+    model = FakeSam2()
+    with pytest.raises(ValueError, match="Frame mismatch"):
+        _call(
+            _sam2(model),
+            image=Batch([image]),
+            boxes=Batch([SegmentationView.from_dense(predictions)]),
+        )
+    assert model.embedded == []

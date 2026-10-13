@@ -8,14 +8,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from inference_models.configuration import (
-    INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
-    INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
-    INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
-)
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
+from pydantic import Field
 from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
 from roboflow_workflows.v2.blocks.models.cache import (
     ModelCache,
@@ -29,13 +22,24 @@ from roboflow_workflows.v2.blocks.models.florence import (
 )
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.kinds import STRING_KIND
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 from roboflow_workflows.v2.engine.errors import (
     ParamsValidationError,
     WorkflowExecutionError,
 )
 from roboflow_workflows.v2.engine.plan import CompileOptions
+
+from inference_models.configuration import (
+    INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+    INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
 from tests.v2.support.paths import CHECKOUT_ROOT, WORKFLOWS_ROOT
 
 
@@ -120,6 +124,19 @@ def _detections(boxes=((0, 0, 10, 10), (10, 2, 30, 12)), *, frame=None):
     )
 
 
+class _Shout(Block):
+    """A string consumer, standing in for any step input of kind string."""
+
+    type = "test/shout@v1"
+    outputs = {"value": Output(STRING_KIND, source="text")}
+
+    class Params(BlockParams):
+        text: Ref(STRING_KIND) = Field(description="Plain text to upper-case.")
+
+    def run(self, *, text):
+        return {"value": text.upper()}
+
+
 def _plan(*, mode="run", inputs=(), steps=(), outputs=(), **params):
     definition = {
         "version": "2.0",
@@ -144,7 +161,7 @@ def _plan(*, mode="run", inputs=(), steps=(), outputs=(), **params):
     }
     return compile_workflow(
         definition,
-        catalogue=Catalogue([*BLOCKS, JsonParserBlock]),
+        catalogue=Catalogue([*BLOCKS, JsonParserBlock, _Shout]),
         options=CompileOptions(block_execution=mode),
     )
 
@@ -951,3 +968,220 @@ def test_tied_grounding_selection_is_stable_and_does_not_mutate_native_boxes(mod
     )
     assert fake.calls[0]["prompt"] == "<REGION_TO_DESCRIPTION>" + expected
     assert torch.equal(prediction.xyxy, original)
+
+
+@pytest.mark.parametrize("mode", ["run", "phases"])
+@pytest.mark.parametrize("task", ["ocr", "caption"])
+def test_text_answers_reach_a_string_consumer_unquoted(task, mode):
+    session = _plan(
+        mode=mode,
+        model_id="m",
+        task_type=task,
+        steps=({"type": _Shout.type, "name": "shout", "text": "$steps.florence.text"},),
+        outputs=(
+            {"type": "JsonField", "name": "shouted", "selector": "$steps.shout.value"},
+        ),
+    ).create_session({"models": {"m": FakeFlorence()}})
+    rows = session.run({"image": _images()[:2]}).rows()
+    assert [row["text"] for row in rows] == ["answer-10", "answer-30"]
+    assert [row["shouted"] for row in rows] == ["ANSWER-10", "ANSWER-30"]
+    # The legacy outputs keep their V1 meaning.
+    assert [row["raw_output"] for row in rows] == ['"answer-10"', '"answer-30"']
+    assert [row["parsed_output"] for row in rows] == [None, None]
+
+
+def test_text_is_null_for_dictionary_answers_and_empty_grounding():
+    block = Florence2Block(models={"m": FakeFlorence()})
+    detected = block.run(
+        image=Batch(_images()[:1]), model_id="m", task_type="object-detection"
+    )[0]
+    assert detected["text"] is None
+    assert detected["parsed_output"] == {"bboxes": [[1, 2, 5, 6]], "labels": ["cat"]}
+    skipped = block.run(
+        image=Batch(_images()[:1]),
+        model_id="m",
+        task_type="detection-grounded-ocr",
+        grounding_detection=_detections(()),
+    )[0]
+    assert skipped["text"] is None and skipped["raw_output"] is None
+
+
+# The 40x20 test images: [0, 0, 1, 1] in pixels is <loc_0><loc_0><loc_25><loc_50>.
+@pytest.mark.parametrize("mode", ["run", "phases"])
+@pytest.mark.parametrize(
+    "coordinates,box,loc",
+    [
+        # JavaScript writes [0.0, 0.0, 1.0, 1.0] as [0, 0, 1, 1].
+        ("relative", [0, 0, 1, 1], "<loc_0><loc_0><loc_999><loc_999>"),
+        ("relative", [0, 0, 0.5, 1], "<loc_0><loc_0><loc_500><loc_999>"),
+        ("relative", [0.0, 0.0, 0.5, 0.5], "<loc_0><loc_0><loc_500><loc_500>"),
+        ("pixels", [0, 0, 20.0, 10], "<loc_0><loc_0><loc_500><loc_500>"),
+        ("pixels", [0, 0, 1, 1], "<loc_0><loc_0><loc_25><loc_50>"),
+        ("auto", [0, 0, 1, 1], "<loc_0><loc_0><loc_25><loc_50>"),
+        ("auto", [0.0, 0.0, 1.0, 1.0], "<loc_0><loc_0><loc_999><loc_999>"),
+    ],
+)
+@pytest.mark.parametrize("selected", [False, True], ids=["literal", "selected"])
+def test_coordinate_system_reads_literal_and_selected_boxes(
+    coordinates, box, loc, selected, mode
+):
+    fake = FakeFlorence()
+    params = dict(
+        mode=mode,
+        model_id="m",
+        task_type="detection-grounded-caption",
+        grounding_coordinate_system=coordinates,
+        grounding_detection="$inputs.box" if selected else box,
+    )
+    if selected:
+        params["inputs"] = (
+            {"type": "WorkflowParameter", "name": "box", "kind": ["list_of_values"]},
+        )
+    session = _plan(**params).create_session({"models": {"m": fake}})
+    arguments = {"image": _images()[:1], **({"box": box} if selected else {})}
+    rows = session.run(arguments).rows()
+    assert fake.calls[0]["prompt"] == "<REGION_TO_DESCRIPTION>" + loc
+    assert rows[0]["text"] == "answer-10"
+
+
+def test_omitted_coordinate_system_keeps_v1_auto_reading():
+    fake = FakeFlorence()
+    _plan(
+        model_id="m",
+        task_type="detection-grounded-caption",
+        grounding_detection=[0, 0, 1, 1],
+    ).create_session({"models": {"m": fake}}).run({"image": _images()[:1]})
+    assert fake.calls[0]["prompt"].endswith("<loc_0><loc_0><loc_25><loc_50>")
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"grounding_coordinate_system": "bogus"},
+        {"grounding_coordinate_system": "Relative"},
+        {"grounding_coordinate_system": None},
+        {
+            "grounding_coordinate_system": "relative",
+            "grounding_detection": [0, 0, 2, 1],
+        },
+        {
+            "grounding_coordinate_system": "relative",
+            "grounding_detection": [-0.1, 0, 1, 1],
+        },
+        {
+            "grounding_coordinate_system": "relative",
+            "grounding_detection": [0, 0, 0, 1],
+        },
+        {
+            "grounding_coordinate_system": "relative",
+            "grounding_detection": [True, 0, 1, 1],
+        },
+        {
+            "grounding_coordinate_system": "pixels",
+            "grounding_detection": [0, 0, "9", 9],
+        },
+        {"grounding_coordinate_system": "pixels", "grounding_detection": [5, 0, 5, 9]},
+        {"grounding_coordinate_system": "pixels", "grounding_detection": [0, 0, 9]},
+        {"grounding_detection": [0, 0, 0.5, 1]},
+    ],
+)
+def test_invalid_coordinate_system_or_box_fails_to_compile(params):
+    with pytest.raises(ParamsValidationError):
+        _plan(task_type="detection-grounded-caption", **params)
+
+
+@pytest.mark.parametrize(
+    "coordinates,box,error",
+    [
+        ("relative", [0, 0, 2, 1], "relative grounding coordinates must lie in"),
+        ("relative", [0, 0, 1, float("inf")], "four finite numbers"),
+        ("pixels", [9, 0, 1, 9], "positive width and height"),
+        ("auto", [0, 0, 0.5, 1], "set grounding_coordinate_system"),
+    ],
+)
+def test_bad_selected_box_names_its_row_and_fails_before_any_model_load(
+    coordinates, box, error
+):
+    loader = Loader()
+    session = _plan(
+        model_id="m",
+        task_type="detection-grounded-caption",
+        grounding_coordinate_system=coordinates,
+        grounding_detection="$inputs.box",
+        inputs=(
+            {"type": "WorkflowBatchInput", "name": "box", "kind": ["list_of_values"]},
+        ),
+    ).create_session({"models": ModelCache(loader)})
+    with pytest.raises(WorkflowExecutionError) as caught:
+        session.run({"image": _images()[:2], "box": [[0, 0, 1, 1], box]})
+    assert "at index [1]" in str(caught.value)
+    assert error in str(caught.value)
+    assert loader.loaded == []
+
+
+@pytest.mark.parametrize("coordinates", ["pixels", "relative"])
+def test_explicit_coordinate_system_leaves_native_boxes_in_pixels(coordinates):
+    fake = FakeFlorence()
+    Florence2Block(models={"m": fake}).run(
+        image=Batch(_images()[:1]),
+        model_id="m",
+        task_type="detection-grounded-caption",
+        grounding_detection=_detections(),
+        grounding_coordinate_system=coordinates,
+    )
+    assert fake.calls[0]["prompt"].endswith("<loc_0><loc_0><loc_250><loc_500>")
+
+
+def test_direct_call_rejects_an_unknown_coordinate_system_before_load():
+    loader = Loader()
+    with pytest.raises(ValueError, match="grounding_coordinate_system must be one of"):
+        Florence2Block(models=ModelCache(loader)).run(
+            image=Batch(_images()[:1]),
+            model_id="m",
+            task_type="caption",
+            grounding_coordinate_system="Relative",
+        )
+    assert loader.loaded == []
+
+
+@pytest.mark.parametrize(
+    "field,values,error",
+    [
+        ("prompt", [None, 4], "prompt must be text or None"),
+        ("task_type", ["caption", "Caption"], "Unsupported Florence task_type"),
+        ("model_id", ["m", ""], "model_id must be a non-empty string"),
+        ("grounding_detection", [None, [0, 0, 0.5, 1]], "set grounding_coordinate"),
+    ],
+)
+def test_direct_call_errors_name_the_logical_index_of_the_failing_image(
+    field, values, error
+):
+    loader = Loader()
+    params = dict(model_id="m", task_type="caption")
+    params[field] = _rows(values, (3, 8))
+    with pytest.raises(ValueError) as caught:
+        Florence2Block(models=ModelCache(loader)).run(
+            image=_rows(_images()[:2], (3, 8)), **params
+        )
+    assert str(caught.value).startswith("v2/florence_2@v2: image at index [8]: ")
+    assert error in str(caught.value)
+    assert loader.loaded == []
+
+
+def test_grayscale_later_image_names_its_index():
+    gray = ImageData.from_tensor(torch.zeros((1, 20, 40), dtype=torch.uint8))
+    with pytest.raises(ValueError, match=r"image at index \[1\]: Florence-2 needs a 3"):
+        Florence2Block(models={"m": FakeFlorence()}).run(
+            image=Batch([_images()[0], gray]), model_id="m", task_type="caption"
+        )
+
+
+def test_default_task_without_classes_says_it_is_the_default():
+    with pytest.raises(ParamsValidationError) as caught:
+        _plan(model_id="m")
+    assert "(the default task_type); set classes or choose another task_type" in str(
+        caught.value
+    )
+    with pytest.raises(ParamsValidationError) as caught:
+        _plan(model_id="m", task_type="open-vocabulary-object-detection")
+    assert "the default task_type" not in str(caught.value)

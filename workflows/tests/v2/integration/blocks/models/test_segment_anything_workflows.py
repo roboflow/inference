@@ -49,6 +49,7 @@ from roboflow_workflows.v2.engine.errors import (
 from roboflow_workflows.v2.engine.introspection import discover_workload
 from roboflow_workflows.v2.engine.plan import CompileOptions
 
+from inference_models.models.base.object_detection import Detections
 from tests.v2.support.models.fake_sam_models import FakeSam2, FakeSam3, box_mask
 from tests.v2.support.models.fake_task_models import InstanceModel, NmsDetector
 
@@ -641,3 +642,64 @@ def test_unchanged_sam2_mask_keeps_bounds_and_identity_through_edge_snap(
     assert row_record(before) == row_record(after)
     assert before.bboxes_metadata == after.bboxes_metadata == [{"custom": "kept"}]
     assert row["crops"][0].size_hw == expected_hw
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize(
+    "metadata_case", ["wrong-image", "malformed-partial", "valid-partial", "absent"]
+)
+def test_compiled_sam2_frame_guard_on_external_boxes(mode, empty, metadata_case):
+    image = _image(BRIGHT, "a")
+    prompt = Detections(
+        xyxy=torch.zeros((0, 4)) if empty else torch.tensor([[1.0, 1.0, 4.0, 4.0]]),
+        class_id=torch.zeros(0 if empty else 1, dtype=torch.int64),
+        confidence=torch.full((0 if empty else 1,), 0.8),
+        image_metadata={
+            "wrong-image": {"parent_id": "other"},
+            "malformed-partial": {"scaling_relative_to_root_parent": 0},
+            "valid-partial": {"image_dimensions": [20, 30]},
+            "absent": None,
+        }[metadata_case],
+    )
+    definition = {
+        "version": "2.0",
+        "inputs": [
+            {"type": "WorkflowBatchInput", "name": "image", "kind": ["image"]},
+            {
+                "type": "WorkflowBatchInput",
+                "name": "boxes",
+                "kind": ["object_detection_prediction"],
+            },
+        ],
+        "steps": [
+            {
+                "type": SegmentAnything2Block.type,
+                "name": "sam",
+                "image": "$inputs.image",
+                "boxes": "$inputs.boxes",
+            }
+        ],
+        "outputs": [
+            {"type": "JsonField", "name": "masks", "selector": "$steps.sam.predictions"}
+        ],
+    }
+    model = FakeSam2()
+    cache = ModelCache(supplied={SAM2_DEFAULT_MODEL_ID: model})
+    session = compile_workflow(
+        definition, catalogue=_catalogue(), options=CompileOptions(block_execution=mode)
+    ).create_session({"models": cache})
+    try:
+        if metadata_case in {"valid-partial", "absent"}:
+            (row,) = session.run({"image": [image], "boxes": [prompt]}).rows()
+            assert len(row["masks"]) == (0 if empty else 1)
+            assert model.embedded == ([] if empty else [1])
+        else:
+            with pytest.raises(
+                StepExecutionError, match="wire boxes predicted on the image"
+            ):
+                session.run({"image": [image], "boxes": [prompt]})
+            assert model.embedded == []
+            assert model.segmented == []
+    finally:
+        session.close()
