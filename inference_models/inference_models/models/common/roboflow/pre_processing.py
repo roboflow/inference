@@ -7,7 +7,7 @@ import PIL
 import torch
 from PIL.Image import Image
 from skimage import exposure
-from torchvision.transforms import Grayscale, functional
+from torchvision.transforms import functional
 
 from inference_models.configuration import INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV
 from inference_models.entities import ColorFormat, ImageDimensions
@@ -320,6 +320,7 @@ def pre_process_images_tensor(
         image=images,
         image_pre_processing=image_pre_processing,
         network_input_channels=network_input.input_channels,
+        input_color_mode=input_color_mode,
         pre_processing_overrides=pre_processing_overrides,
     )
     target_dimensions = resolve_target_dimensions(
@@ -347,7 +348,11 @@ def apply_pre_processing_to_torch_image(
     image_pre_processing: ImagePreProcessing,
     network_input_channels: int,
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+    *,
+    input_color_mode: Optional[ColorMode] = None,
 ) -> Tuple[torch.Tensor, StaticCropOffset]:
+    if input_color_mode is None:
+        input_color_mode = ColorMode.RGB
     static_crop_offset = StaticCropOffset(
         offset_x=0,
         offset_y=0,
@@ -376,7 +381,11 @@ def apply_pre_processing_to_torch_image(
         and image_pre_processing.grayscale.enabled
         and not grayscale_overridden
     ):
-        image = Grayscale(num_output_channels=network_input_channels)(image)
+        image = apply_grayscale_to_torch_image(
+            image=image,
+            input_color_mode=input_color_mode,
+            num_output_channels=network_input_channels,
+        )
     contrast_enhancement_overridden = (
         pre_processing_overrides is not None
         and pre_processing_overrides.disable_contrast_enhancement
@@ -398,6 +407,30 @@ def apply_pre_processing_to_torch_image(
             image_pre_processing.contrast.type
         ](image)
     return image, static_crop_offset
+
+
+def apply_grayscale_to_torch_image(
+    image: torch.Tensor,
+    input_color_mode: ColorMode,
+    num_output_channels: int,
+) -> torch.Tensor:
+    if image.shape[1] == 1:
+        return image
+
+    if input_color_mode is ColorMode.BGR:
+        blue, green, red = image[:, 0], image[:, 1], image[:, 2]
+    else:
+        red, green, blue = image[:, 0], image[:, 1], image[:, 2]
+    if image.dtype == torch.uint8:
+        gray = (
+            red.int() * 9798 + green.int() * 19235 + blue.int() * 3735 + 16384
+        ) >> 15
+    else:
+        gray = red * 0.299 + green * 0.587 + blue * 0.114
+    gray = gray.to(dtype=image.dtype).unsqueeze(1)
+    gray = gray.expand(-1, num_output_channels, -1, -1)
+
+    return gray
 
 
 def apply_static_crop_to_torch_image(
@@ -629,9 +662,9 @@ def handle_torch_input_preparation_with_center_crop(
         image = functional.pad(image, padding_ltrb, fill=0)
     crop_ltrb = [0, 0, 0, 0]
     if target_size.width != image.shape[3] or target_size.height != image.shape[2]:
-        crop_top = int(round((image.shape[2] - target_size.height) / 2.0))
+        crop_top = (image.shape[2] - target_size.height) // 2
         crop_bottom = image.shape[2] - target_size.height - crop_top
-        crop_left = int(round((image.shape[3] - target_size.width) / 2.0))
+        crop_left = (image.shape[3] - target_size.width) // 2
         crop_right = image.shape[3] - target_size.width - crop_left
         crop_ltrb = [crop_left, crop_top, crop_right, crop_bottom]
         image = functional.crop(
@@ -763,6 +796,7 @@ def pre_process_images_tensor_list(
             image_pre_processing=image_pre_processing,
             network_input_channels=network_input.input_channels,
             target_device=target_device,
+            input_color_mode=input_color_mode,
             pre_processing_overrides=pre_processing_overrides,
         )
     )
@@ -783,6 +817,8 @@ def apply_pre_processing_to_list_of_torch_image(
     network_input_channels: int,
     target_device: torch.device,
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+    *,
+    input_color_mode: Optional[ColorMode] = None,
 ) -> Tuple[List[torch.Tensor], List[StaticCropOffset], List[ImageDimensions]]:
     result_images, result_offsets, original_sizes = [], [], []
     for image in images:
@@ -801,6 +837,7 @@ def apply_pre_processing_to_list_of_torch_image(
             image=image.unsqueeze(0),
             image_pre_processing=image_pre_processing,
             network_input_channels=network_input_channels,
+            input_color_mode=input_color_mode,
             pre_processing_overrides=pre_processing_overrides,
         )
         result_images.append(result_image)
@@ -871,16 +908,6 @@ def handle_tensor_list_input_preparation_with_letterbox(
         dtype=torch.float32,
         device=target_device,
     )
-    original_shapes = torch.tensor(
-        [[img.shape[2], img.shape[3]] for img in images], dtype=torch.float32
-    )
-    scale_w = target_size.width / original_shapes[:, 1]
-    scale_h = target_size.height / original_shapes[:, 0]
-    scales = torch.minimum(scale_w, scale_h)
-    new_ws = (original_shapes[:, 1] * scales).int()
-    new_hs = (original_shapes[:, 0] * scales).int()
-    pad_tops = ((target_size.height - new_hs) / 2).int()
-    pad_lefts = ((target_size.width - new_ws) / 2).int()
     images_metadata = []
     for i in range(num_images):
         img = images[i]
@@ -895,9 +922,15 @@ def handle_tensor_list_input_preparation_with_letterbox(
         )
         if input_color_mode != network_input.color_mode:
             img = img[:, [2, 1, 0], :, :]
-        new_h_i, new_w_i = new_hs[i].item(), new_ws[i].item()
+        scale = min(
+            target_size.width / size_after_pre_processing.width,
+            target_size.height / size_after_pre_processing.height,
+        )
+        new_w_i = int(size_after_pre_processing.width * scale)
+        new_h_i = int(size_after_pre_processing.height * scale)
+        pad_top_i = int((target_size.height - new_h_i) / 2)
+        pad_left_i = int((target_size.width - new_w_i) / 2)
         img = _resize_image_tensor(img, height=new_h_i, width=new_w_i)
-        pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
         final_batch[
             i, :, pad_top_i : pad_top_i + new_h_i, pad_left_i : pad_left_i + new_w_i
         ] = img
@@ -911,8 +944,8 @@ def handle_tensor_list_input_preparation_with_letterbox(
             original_size=original_size,
             size_after_pre_processing=size_after_pre_processing,
             inference_size=target_size,
-            scale_width=scales[i].item(),
-            scale_height=scales[i].item(),
+            scale_width=scale,
+            scale_height=scale,
             static_crop_offset=static_crop_offsets[i],
         )
         images_metadata.append(image_metadata)
