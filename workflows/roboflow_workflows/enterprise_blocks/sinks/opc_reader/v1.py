@@ -98,8 +98,10 @@ The variable is located the same way as in the **OPC UA Writer** block:
   - **Example**: `object_name="[Sample_Tags]/Ramp"`, `variable_name="Running"` reads
     `ns=2;s=[Sample_Tags]/Ramp/Running`
   - **Best for**: Ignition and other servers with string NodeIds, including the Roboflow
-    edge OPC UA server, whose tags are `ns=1;s=Folder.Tag` (set `object_name` to
-    `Folder.Tag` and leave `variable_name` empty)
+    edge OPC UA server, whose tags are string NodeIds `Folder.Tag` in its own namespace
+    (set `object_name` to `Folder.Tag` and leave `variable_name` empty). Pass that
+    namespace by URI (`http://opcua.roboflow.run`) rather than by index: the index is
+    1 on the edge server but differs between servers
 
 ### Connection loss and errors
 After the first run, a run never waits for the server. While the connection is down the
@@ -109,9 +111,10 @@ background. The log carries one ERROR line when an outage starts and one INFO li
 its duration when the subscription is restored.
 
 A lost connection is noticed by the OPC UA client's watchdog, which checks the server
-once a second and then waits up to `timeout` for the answer: after a server crash, runs
-keep returning the last value as healthy for up to about 1 second plus `timeout` (about
-3 seconds with the defaults). To fail closed on a stale value sooner, lower `timeout`.
+once a second and then waits up to `timeout` for the answer, and by the block's own
+check of the subscription, also once a second: after a server crash, runs can keep
+returning the last value as healthy for up to `timeout` plus about 2 seconds (about 4
+seconds with the defaults). To fail closed on a stale value sooner, lower `timeout`.
 
 - A value whose OPC UA quality is not Good (for example when Ignition lost the PLC it
   mirrors) is returned with `error_status` True and the status name in `error_message`.
@@ -192,6 +195,16 @@ NODE_CONFIGURATION_STATUS_CODES = frozenset(
 DISCONNECT_TIMEOUT_SECONDS = SHUTDOWN_CALL_TIMEOUT_SECONDS * 0.6
 # How long stop() waits for the loop thread to exit once the loop is told to stop.
 LOOP_STOP_JOIN_SECONDS = 1.0
+
+UNPARSEABLE_URL = "<unparseable url>"
+EXPECTED_URL_FORM = "Expected opc.tcp://host[:port][/path], without credentials."
+
+# Bounds for the manifest and for selector-resolved values. A larger `timeout` would let
+# one workflow pin a request thread against an unreachable server; a shorter publishing
+# interval than this is below what servers sample at anyway.
+MAX_TIMEOUT_SECONDS = 60.0
+MIN_PUBLISHING_INTERVAL_MS = 10.0
+MAX_PUBLISHING_INTERVAL_MS = 60_000.0
 
 NOT_CONNECTED_WITHIN_TIMEOUT = (
     "OPC UA server not connected within timeout; the block keeps connecting in the "
@@ -294,34 +307,48 @@ class OPCUAReaderState:
 
 
 def _display_url(url: str) -> str:
-    """The URL without userinfo: asyncua takes credentials from `user:password@host`, and
-    the URL ends up in logs and error outputs."""
-    scheme, separator, rest = url.partition("://")
-    if not separator:
-        scheme, rest = "", url
-    # Everything up to the last "@", not just the authority: an unescaped "/", "?" or
-    # "#" in a password moves the "@" out of what a URL parser calls the authority.
-    return f"{scheme}{separator}{rest.rpartition('@')[2]}"
+    """Scheme, host and port of `url` for logs and error outputs.
+
+    Credentials and paths are never shown, and a URL that does not parse cleanly is
+    replaced by a placeholder: a malformed URL can carry a password in any position.
+    """
+    try:
+        parsed_url = urlsplit(url)
+        host = parsed_url.hostname
+        port = parsed_url.port
+    except ValueError:
+        return UNPARSEABLE_URL
+    if "@" in url or not parsed_url.scheme or not host:
+        return UNPARSEABLE_URL
+    if ":" in host:
+        host = f"[{host}]"
+    if port is None:
+        return f"{parsed_url.scheme}://{host}"
+    return f"{parsed_url.scheme}://{host}:{port}"
 
 
 def _url_problem(url: str) -> Optional[str]:
-    """Why `url` is not an acceptable OPC UA endpoint, or None. Never echoes credentials."""
+    """Why `url` is not an acceptable OPC UA endpoint, or None.
+
+    The messages are fixed: neither the URL nor a parser error (which quotes the part
+    it failed on) is echoed, since a malformed URL can carry a password anywhere.
+    """
     if "@" in url:
         # the url field is not private: credentials there would be stored and shown
         # with the workflow definition. An "@" anywhere counts, since a password with
         # an unescaped "/" hides it from the parser's view of the authority.
         return (
-            f"Invalid url {_display_url(url)}: credentials in the url are not "
-            f"accepted. Set user_name and password instead."
+            "Invalid url: credentials in the url are not accepted. Set user_name and "
+            "password instead."
         )
     try:
         parsed_url = urlsplit(url)
         # raises for a port that is not a number in range
         parsed_url.port
-    except ValueError as exc:
-        return f"Invalid url {_display_url(url)}: {exc}."
+    except ValueError:
+        return f"Invalid url: it could not be parsed. {EXPECTED_URL_FORM}"
     if parsed_url.scheme != "opc.tcp" or not parsed_url.hostname:
-        return f"Invalid url {_display_url(url)}: must be opc.tcp://host[:port][/path]."
+        return f"Invalid url: {EXPECTED_URL_FORM}"
     return None
 
 
@@ -403,10 +430,14 @@ class _DataChangeHandler:
         self._state = state
         self._subscription_lost = subscription_lost
         self.lost_status: Optional[str] = None
+        # Set by the subscription's first notification, which carries the value the
+        # monitored item started from.
+        self.initial_value_delivered = asyncio.Event()
 
     def datachange_notification(self, node: Node, val: Any, data: Any) -> None:
         # The full DataValue carries the quality next to the value.
         self._state.record_value(data.monitored_item.Value)
+        self.initial_value_delivered.set()
 
     def status_change_notification(self, status: ua.StatusChangeNotification) -> None:
         # Sent when the server ends the subscription, for example after its lifetime
@@ -442,6 +473,10 @@ class _SubscriptionWorker:
         self._client: Optional[Client] = None
         self._finished = threading.Event()
         self._reconnect_delay = RECONNECT_INITIAL_DELAY_SECONDS
+        # When the current subscription was established; the backoff only starts over
+        # once a connection has stayed up this long, so a server that accepts and then
+        # drops sessions is not re-approached every half second.
+        self._connected_at: Optional[float] = None
         self._outage_started_at: Optional[float] = None
         self._subscribed_once = False
 
@@ -454,11 +489,21 @@ class _SubscriptionWorker:
         self._task = self._loop.create_task(self._supervise())
         # A done callback rather than a `finally` in the coroutine: a task cancelled
         # before its first step never runs its body at all.
-        self._task.add_done_callback(lambda _: self._finished.set())
+        self._task.add_done_callback(self._on_supervisor_done)
+
+    def _on_supervisor_done(self, _task: asyncio.Task) -> None:
+        self._finished.set()
+        # Nothing else runs on this loop. Ending it here lets the thread exit after the
+        # worker gave up for good (refused credentials, an unexpected failure), not only
+        # after stop(); a retained block would otherwise keep an idle thread.
+        self._loop.stop()
 
     def stop(self) -> None:
         """Close the session and stop the thread, bounded by the shutdown budget."""
         if not self._thread.is_alive():
+            # The supervisor already ended the loop (see `_on_supervisor_done`).
+            if not self._loop.is_closed():
+                self._loop.close()
             return
         deadline = time.monotonic() + SHUTDOWN_CALL_TIMEOUT_SECONDS
         # FIFO with `_start_task`, so the task always exists by the time this runs.
@@ -518,7 +563,9 @@ class _SubscriptionWorker:
         except Exception as exc:
             # A URL asyncua cannot parse fails the same way on every attempt.
             self._report_failure(
-                f"Invalid url {self._url}: {type(exc).__name__}: {exc}", permanent=True
+                f"Invalid url {self._url}: the OPC UA client could not use it "
+                f"({type(exc).__name__}).",
+                permanent=True,
             )
             return None
         # Ask for a short session timeout instead of the asyncua default of 1 hour, so a
@@ -589,6 +636,19 @@ class _SubscriptionWorker:
                 )
                 return CONFIGURATION_RETRY_DELAY_SECONDS
 
+            # Settle only on the subscription's own initial value: the read above can be
+            # overtaken by a change before the monitored item exists, and that change
+            # would never be notified. Servers send the initial value on the first
+            # publishing cycle.
+            try:
+                await asyncio.wait_for(
+                    handler.initial_value_delivered.wait(),
+                    config.timeout + 2 * config.publishing_interval_ms / 1000,
+                )
+            except asyncio.TimeoutError:
+                raise ConnectionError(
+                    "the server did not deliver the subscription's initial value"
+                ) from None
             self._report_connected(node_path)
             while not self._stop_requested.is_set():
                 try:
@@ -627,7 +687,7 @@ class _SubscriptionWorker:
 
     def _report_connected(self, node_path: str) -> None:
         self._state.record_connected()
-        self._reconnect_delay = RECONNECT_INITIAL_DELAY_SECONDS
+        self._connected_at = time.monotonic()
         if self._outage_started_at is not None:
             logger.info(
                 f"OPC UA Reader {self._url} {node_path}: subscription restored "
@@ -639,6 +699,11 @@ class _SubscriptionWorker:
         self._subscribed_once = True
 
     def _report_transient_failure(self, message: str) -> float:
+        if (
+            self._connected_at is not None
+            and time.monotonic() - self._connected_at >= RECONNECT_MAX_DELAY_SECONDS
+        ):
+            self._reconnect_delay = RECONNECT_INITIAL_DELAY_SECONDS
         retry_in = self._reconnect_delay
         self._reconnect_delay = min(
             self._reconnect_delay * 2, RECONNECT_MAX_DELAY_SECONDS
@@ -647,6 +712,7 @@ class _SubscriptionWorker:
         return retry_in
 
     def _report_failure(self, message: str, *, permanent: bool = False) -> None:
+        self._connected_at = None
         self._state.record_failure(message, permanent=permanent)
         # One ERROR line per outage, not one per reconnect attempt.
         if self._outage_started_at is None:
@@ -743,23 +809,30 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["hierarchical", "direct"],
     )
     publishing_interval_ms: Union[
-        Annotated[float, Field(gt=0, allow_inf_nan=False)],
+        Annotated[
+            float,
+            Field(
+                ge=MIN_PUBLISHING_INTERVAL_MS,
+                le=MAX_PUBLISHING_INTERVAL_MS,
+                allow_inf_nan=False,
+            ),
+        ],
         Selector(kind=[FLOAT_KIND, INTEGER_KIND]),
     ] = Field(
         default=100,
         description="How often, in milliseconds, the server samples the variable and sends "
         "changes. Lower values deliver changes sooner; the server may revise it upwards. "
-        "Must be a finite number greater than 0.",
+        "Between 10 and 60000.",
         examples=[100, 50, "$inputs.opc_publishing_interval_ms"],
     )
     timeout: Union[
-        Annotated[float, Field(gt=0, allow_inf_nan=False)],
+        Annotated[float, Field(gt=0, le=MAX_TIMEOUT_SECONDS, allow_inf_nan=False)],
         Selector(kind=[FLOAT_KIND, INTEGER_KIND]),
     ] = Field(
         default=2.0,
         description="Seconds the first run waits for the connection and the initial value, "
-        "and the timeout of each request to the server. Later runs never wait. Must be a "
-        "finite number greater than 0.",
+        "and the timeout of each request to the server. Later runs never wait. Greater "
+        "than 0 and at most 60.",
         examples=[2.0, "$inputs.opc_timeout"],
     )
 
@@ -1094,9 +1167,21 @@ def _build_config(
     if (user_name is None) != (password is None):
         return "Set both user_name and password to authenticate, or neither."
     numbers = {}
-    for name, raw in (
-        ("publishing_interval_ms", publishing_interval_ms),
-        ("timeout", timeout),
+    for name, raw, is_within_bounds, bounds in (
+        (
+            "publishing_interval_ms",
+            publishing_interval_ms,
+            lambda number: MIN_PUBLISHING_INTERVAL_MS
+            <= number
+            <= MAX_PUBLISHING_INTERVAL_MS,
+            "between 10 and 60000",
+        ),
+        (
+            "timeout",
+            timeout,
+            lambda number: 0 < number <= MAX_TIMEOUT_SECONDS,
+            "greater than 0 and at most 60",
+        ),
     ):
         try:
             if isinstance(raw, bool):
@@ -1104,8 +1189,8 @@ def _build_config(
             number = float(raw)
         except (TypeError, ValueError, OverflowError):
             number = math.nan
-        if not math.isfinite(number) or not 0 < number <= threading.TIMEOUT_MAX:
-            return f"Invalid {name}: {raw!r}. Must be a positive finite number."
+        if not math.isfinite(number) or not is_within_bounds(number):
+            return f"Invalid {name}: {raw!r}. Must be a number {bounds}."
         numbers[name] = number
     return OPCUAReaderConfig(
         url=url,

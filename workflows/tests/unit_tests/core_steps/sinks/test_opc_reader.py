@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple
 
 import pytest
 from asyncua import ua
+from asyncua.ua.uaerrors import BadTooManySessions, BadUserAccessDenied
 from pydantic import ValidationError
 from roboflow_workflows.enterprise_blocks import loader as enterprise_loader
 from roboflow_workflows.enterprise_blocks.sinks.opc_reader import v1
@@ -157,6 +158,29 @@ class TestManifest:
         with pytest.raises(ValidationError):
             BlockManifest.model_validate(manifest_payload(**{field: value}))
 
+    @pytest.mark.parametrize(
+        "field, value",
+        [
+            ("timeout", 60.5),
+            ("publishing_interval_ms", 5),
+            ("publishing_interval_ms", 60001),
+        ],
+    )
+    def test_literal_intervals_are_bounded(self, field, value):
+        with pytest.raises(ValidationError):
+            BlockManifest.model_validate(manifest_payload(**{field: value}))
+
+    @pytest.mark.parametrize(
+        "field, value",
+        [
+            ("timeout", 60),
+            ("publishing_interval_ms", 10),
+            ("publishing_interval_ms", 60000),
+        ],
+    )
+    def test_interval_bounds_are_inclusive(self, field, value):
+        BlockManifest.model_validate(manifest_payload(**{field: value}))
+
     def test_default_lookup_mode_is_hierarchical(self):
         manifest = BlockManifest.model_validate(manifest_payload())
 
@@ -187,7 +211,7 @@ class TestManifest:
         "url, expected",
         [
             ("opc.tcp://alice:secret@host:4840", "credentials in the url"),
-            ("http://host:4840", "must be opc.tcp://"),
+            ("http://host:4840", "Expected opc.tcp://"),
         ],
     )
     def test_invalid_literal_url_is_rejected_at_compile_time(self, url, expected):
@@ -383,11 +407,14 @@ class TestBuildConfig:
         [
             ({"url": ""}, "Invalid url"),
             ({"url": None}, "Invalid url"),
-            ({"url": "http://host:4840"}, "must be opc.tcp://"),
-            ({"url": "opc.tcp://"}, "must be opc.tcp://"),
-            ({"url": "opc.tcp://[bad"}, "Invalid IPv6 URL"),
-            ({"url": "opc.tcp://host:port"}, "Invalid url opc.tcp://host:port"),
-            ({"url": "opc.tcp://host:99999"}, "out of range"),
+            ({"url": "http://host:4840"}, "Expected opc.tcp://"),
+            ({"url": "opc.tcp://"}, "Expected opc.tcp://"),
+            ({"url": "opc.tcp://[bad"}, "could not be parsed"),
+            ({"url": "opc.tcp://host:port"}, "could not be parsed"),
+            ({"url": "opc.tcp://host:99999"}, "could not be parsed"),
+            ({"timeout": 60.5}, "Invalid timeout"),
+            ({"publishing_interval_ms": 5}, "Invalid publishing_interval_ms"),
+            ({"publishing_interval_ms": 60001}, "Invalid publishing_interval_ms"),
             ({"namespace": ""}, "Invalid namespace"),
             ({"namespace": True}, "Invalid namespace"),
             ({"object_name": ""}, "Invalid object_name"),
@@ -430,15 +457,6 @@ class TestBuildConfig:
 
 
 class TestUrlValidation:
-    def test_credentials_in_an_invalid_url_are_not_echoed(self):
-        error = _build_config(
-            **TestBuildConfig._arguments(url="tcp://alice:secret@host:4840")
-        )
-
-        assert "secret" not in error
-        assert "alice" not in error
-        assert "tcp://host:4840" in error
-
     @pytest.mark.parametrize(
         "url",
         [
@@ -450,27 +468,59 @@ class TestUrlValidation:
             "opc.tcp://alice:123/secret@host:4840",
             "opc.tcp://alice:se?cret@host:4840",
             "opc.tcp://alice:se#cret@host:4840",
+            # credentials before the scheme
+            "alice:secret@opc.tcp://host",
+            "tcp://alice:secret@host:4840",
         ],
     )
     def test_url_with_credentials_is_rejected_without_echoing_them(self, url):
         error = _build_config(**TestBuildConfig._arguments(url=url))
 
-        assert "credentials in the url are not accepted" in error
-        assert "alice" not in error
+        assert error == (
+            "Invalid url: credentials in the url are not accepted. Set user_name and "
+            "password instead."
+        )
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            # a fullwidth at-sign is not an "@", and the parser quotes the netloc
+            "opc.tcp://alice:secret\uff20host:4840",
+            # a forgotten "@" makes the password the port, which the parser quotes
+            "opc.tcp://alice:secret",
+            "opc.tcp://[secret",
+            "opc.tcp://host:99999",
+        ],
+    )
+    def test_unparseable_url_is_rejected_with_a_fixed_message(self, url):
+        error = _build_config(**TestBuildConfig._arguments(url=url))
+
+        assert error.startswith("Invalid url: it could not be parsed.")
         assert "secret" not in error
+        assert "alice" not in error
+
+    @pytest.mark.parametrize("url", ["http://host:4840", "opc.tcp://", "host:4840"])
+    def test_wrong_scheme_or_missing_host_is_rejected(self, url):
+        error = _build_config(**TestBuildConfig._arguments(url=url))
+
+        assert error == (
+            "Invalid url: Expected opc.tcp://host[:port][/path], without credentials."
+        )
 
     @pytest.mark.parametrize(
         "url, expected",
         [
-            ("opc.tcp://host:4840/opcua/server", "opc.tcp://host:4840/opcua/server"),
-            ("opc.tcp://alice:secret@host:4840/path", "opc.tcp://host:4840/path"),
-            ("opc.tcp://alice@host", "opc.tcp://host"),
-            ("opc.tcp://a:b@c@host:4840", "opc.tcp://host:4840"),
-            ("not a url", "not a url"),
-            ("alice:secret@host:4840/path", "host:4840/path"),
+            ("opc.tcp://host:4840/opcua/server", "opc.tcp://host:4840"),
+            ("opc.tcp://host", "opc.tcp://host"),
+            ("opc.tcp://[::1]:4840/x", "opc.tcp://[::1]:4840"),
+            ("opc.tcp://alice:secret@host:4840/path", "<unparseable url>"),
+            ("alice:secret@opc.tcp://host", "<unparseable url>"),
+            ("opc.tcp://alice:secret\uff20host:4840", "<unparseable url>"),
+            ("opc.tcp://alice:secret", "<unparseable url>"),
+            ("not a url", "<unparseable url>"),
         ],
     )
-    def test_display_url_drops_userinfo(self, url, expected):
+    def test_display_url_shows_only_scheme_host_and_port(self, url, expected):
         assert _display_url(url) == expected
 
 
@@ -853,6 +903,9 @@ class FakeAsyncClient:
 
     instances: List["FakeAsyncClient"] = []
     read_result: ua.DataValue = ua.DataValue(ua.Variant(True))
+    # the value the subscription's first notification carries; None sends none
+    initial_notification: Optional[ua.DataValue] = ua.DataValue(ua.Variant(True))
+    connect_error: Optional[Exception] = None
     disconnect_hangs = False
     publish_loop_ended = False
 
@@ -870,7 +923,8 @@ class FakeAsyncClient:
         FakeAsyncClient.instances.append(self)
 
     async def connect(self):
-        pass
+        if FakeAsyncClient.connect_error is not None:
+            raise FakeAsyncClient.connect_error
 
     def get_node(self, node_id):
         return SimpleNamespace(read_data_value=self._read_data_value)
@@ -881,6 +935,15 @@ class FakeAsyncClient:
 
     async def create_subscription(self, period, handler):
         async def subscribe_data_change(node, sampling_interval):
+            # like a server: the initial value arrives on a later publishing cycle
+            initial = FakeAsyncClient.initial_notification
+            if initial is not None:
+                asyncio.get_running_loop().call_soon(
+                    handler.datachange_notification,
+                    node,
+                    initial.Value.Value,
+                    SimpleNamespace(monitored_item=SimpleNamespace(Value=initial)),
+                )
             return 1
 
         return SimpleNamespace(subscribe_data_change=subscribe_data_change)
@@ -901,6 +964,8 @@ class FakeAsyncClient:
 def fake_clients(monkeypatch):
     FakeAsyncClient.instances = []
     FakeAsyncClient.read_result = ua.DataValue(ua.Variant(True))
+    FakeAsyncClient.initial_notification = ua.DataValue(ua.Variant(True))
+    FakeAsyncClient.connect_error = None
     FakeAsyncClient.disconnect_hangs = False
     FakeAsyncClient.publish_loop_ended = False
     monkeypatch.setattr(v1, "Client", FakeAsyncClient)
@@ -936,7 +1001,10 @@ class TestSubscriptionWorker:
             worker.stop()
 
         assert state.permanent is True
-        assert state.error.startswith("Invalid url opc.tcp://[bad:")
+        assert state.error == (
+            "Invalid url <unparseable url>: the OPC UA client could not use it "
+            "(ValueError)."
+        )
         assert "secret" not in state.error
 
     def _direct_worker(self) -> Tuple[_SubscriptionWorker, OPCUAReaderState]:
@@ -952,10 +1020,116 @@ class TestSubscriptionWorker:
         )
         return worker, state
 
+    def test_first_run_settles_on_the_subscriptions_initial_value(self, fake_clients):
+        # the value changed between the read and the subscription: the read is stale
+        FakeAsyncClient.read_result = data_value(False)
+        FakeAsyncClient.initial_notification = data_value(True)
+        worker, state = self._direct_worker()
+
+        worker.start()
+        try:
+            assert state.settled.wait(timeout=5)
+        finally:
+            worker.stop()
+
+        assert state.connected is True
+        assert state.value is True
+
+    def test_missing_initial_notification_is_a_connection_failure(self, fake_clients):
+        FakeAsyncClient.initial_notification = None
+        state = OPCUAReaderState()
+        worker = _SubscriptionWorker(
+            config=self._config(
+                url="opc.tcp://host:4840",
+                object_name="Line1.LineRunning",
+                variable_name="",
+                node_lookup_mode="direct",
+                timeout=0.1,
+                publishing_interval_ms=10.0,
+            ),
+            state=state,
+        )
+
+        worker.start()
+        try:
+            assert state.settled.wait(timeout=5)
+        finally:
+            worker.stop()
+
+        assert state.connected is False
+        assert "did not deliver the subscription's initial value" in state.error
+
+    def test_thread_ends_after_rejected_credentials_without_stop(self, fake_clients):
+        FakeAsyncClient.connect_error = BadUserAccessDenied()
+        worker, state = self._direct_worker()
+
+        worker.start()
+        try:
+            assert state.settled.wait(timeout=5)
+            assert wait_for(lambda: not worker._thread.is_alive())
+        finally:
+            worker.stop()
+
+        assert state.permanent is True
+        assert state.error.startswith("AUTH ERROR")
+        assert worker._loop.is_closed()
+
+    def test_session_limit_waits_out_a_jittered_backoff(
+        self, fake_clients, monkeypatch
+    ):
+        jitter_ranges = []
+
+        def fixed_jitter(low, high):
+            jitter_ranges.append((low, high))
+            return 7.0
+
+        monkeypatch.setattr(v1.random, "uniform", fixed_jitter)
+        FakeAsyncClient.connect_error = BadTooManySessions()
+        worker, state = self._direct_worker()
+
+        worker.start()
+        try:
+            assert state.settled.wait(timeout=5)
+        finally:
+            worker.stop()
+
+        assert jitter_ranges == [(0.0, v1.SESSION_EXHAUSTION_BACKOFF_JITTER_SECONDS)]
+        expected = v1.SESSION_EXHAUSTION_BACKOFF_SECONDS + 7.0
+        assert f"Retrying in {expected:.0f}s" in state.error
+        assert len(fake_clients) == 1
+
+    def test_reconnect_backoff_escalates_and_survives_short_lived_connections(self):
+        worker, _ = self._direct_worker()
+        try:
+            delays = [worker._report_transient_failure("down") for _ in range(6)]
+            # a connection that is dropped right after it was established does not
+            # start the backoff over
+            worker._report_connected("node")
+            after_short_connection = worker._report_transient_failure("dropped")
+        finally:
+            worker._loop.close()
+
+        assert delays == [0.5, 1.0, 2.0, 4.0, 8.0, 10.0]
+        assert after_short_connection == 10.0
+
+    def test_reconnect_backoff_starts_over_after_a_healthy_connection(self):
+        worker, _ = self._direct_worker()
+        try:
+            for _ in range(4):
+                worker._report_transient_failure("down")
+            worker._report_connected("node")
+            worker._connected_at -= v1.RECONNECT_MAX_DELAY_SECONDS
+            delay = worker._report_transient_failure("dropped after a while")
+        finally:
+            worker._loop.close()
+
+        assert delay == v1.RECONNECT_INITIAL_DELAY_SECONDS
+
     def test_initially_bad_quality_value_is_recorded_not_retried(self, fake_clients):
         FakeAsyncClient.read_result = data_value(
             False, ua.StatusCodes.BadCommunicationError
         )
+        FakeAsyncClient.initial_notification = FakeAsyncClient.read_result
         worker, state = self._direct_worker()
 
         worker.start()
@@ -1062,6 +1236,40 @@ class TestSubscriptionWorker:
         assert state.permanent is True
         assert state.error == "OPC UA Reader stopped unexpectedly: RuntimeError: boom"
         assert not worker._thread.is_alive()
+
+
+class TestConcurrency:
+    def test_runs_racing_close_always_return_complete_results(self, block, workers):
+        errors = []
+        results = []
+        stop = threading.Event()
+
+        def keep_running():
+            while not stop.is_set():
+                try:
+                    results.append(block.run(**run_kwargs()))
+                except Exception as error:  # pragma: no cover - the failure mode
+                    errors.append(error)
+
+        runners = [threading.Thread(target=keep_running) for _ in range(4)]
+        for runner in runners:
+            runner.start()
+        try:
+            for _ in range(50):
+                block.close()
+                time.sleep(0.001)
+        finally:
+            stop.set()
+            for runner in runners:
+                runner.join(timeout=5)
+
+        assert errors == []
+        declared = {output.name for output in BlockManifest.describe_outputs()}
+        assert results
+        assert all(set(result) == declared for result in results)
+        # every subscription a run started was stopped by a later close()
+        block.close()
+        assert all(worker.stop_calls == 1 for worker in workers)
 
 
 class TestClose:

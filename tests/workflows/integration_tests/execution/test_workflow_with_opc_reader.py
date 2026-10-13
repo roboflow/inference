@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional
 
 import pytest
 from asyncua import Server, ua
+from asyncua.common.callback import CallbackType
 
 try:
     from asyncua.server.users import User, UserRole
@@ -80,8 +81,24 @@ class OPCTestServer:
         self.nodes["temperature"] = await server.nodes.objects.add_variable(
             ua.NodeId("Sensors.Temperature", idx), "Temperature", 20.0
         )
+        # a string NodeId `Object/Variable`, for direct lookup with a variable name
+        self.nodes["cell"] = await server.nodes.objects.add_variable(
+            ua.NodeId("Cell/Running", idx), "CellRunning", True
+        )
+        # a nested object path, for hierarchical lookup `Plant/Line2`
+        plant = await server.nodes.objects.add_object(idx, "Plant")
+        line2 = await plant.add_object(idx, "Line2")
+        self.nodes["nested"] = await line2.add_variable(idx, "Running", 7)
+        self.running_reads = 0
+        server.subscribe_server_callback(CallbackType.PreRead, self._count_reads)
         await server.start()
         self._server = server
+
+    def _count_reads(self, event, *_) -> None:
+        # every Read request of the `LineRunning` variable, from any client
+        for read_value in event.request_params.NodesToRead:
+            if read_value.NodeId == self.nodes["running"].nodeid:
+                self.running_reads += 1
 
     def stop(self) -> None:
         self._call(self._server.stop())
@@ -189,6 +206,7 @@ def test_server_side_change_is_pushed_without_polling(opc_server):
 
     try:
         block.run(**reader_kwargs(opc_server))
+        reads_after_first_run = opc_server.running_reads
 
         # when
         opc_server.write("running", True)
@@ -199,6 +217,8 @@ def test_server_side_change_is_pushed_without_polling(opc_server):
             lambda: results.append(block.run(**reader_kwargs(opc_server)))
             or results[-1]["value"] is True
         )
+        # the change arrived through the subscription: no run read the variable
+        assert opc_server.running_reads == reads_after_first_run
         assert results[-1] == {
             "value": True,
             "is_new": True,
@@ -211,22 +231,63 @@ def test_server_side_change_is_pushed_without_polling(opc_server):
 
 
 @pytest.mark.timeout(30)
-def test_runs_after_the_first_do_not_wait_for_the_server(opc_server):
+def test_runs_after_the_first_do_not_read_from_the_server(opc_server):
     # given
     block = OPCReaderBlockV1()
 
     try:
         block.run(**reader_kwargs(opc_server))
+        reads_after_first_run = opc_server.running_reads
 
         # when
-        started = time.perf_counter()
-        for _ in range(100):
-            block.run(**reader_kwargs(opc_server))
-        elapsed = time.perf_counter() - started
+        results = [block.run(**reader_kwargs(opc_server)) for _ in range(100)]
 
-        # then: 100 runs never wait for the server. The bound is loose enough for a
-        # loaded CI runner; a single run that waited would take up to `timeout` (5 s)
-        assert elapsed < 1.0
+        # then: the runs answered from the subscription, not with a server read
+        assert opc_server.running_reads == reads_after_first_run
+        assert all(result["value"] is False for result in results)
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(30)
+def test_direct_mode_joins_object_and_variable_into_the_node_id(opc_server):
+    # given
+    block = OPCReaderBlockV1()
+
+    try:
+        # when
+        result = block.run(
+            **reader_kwargs(
+                opc_server,
+                object_name="Cell",
+                variable_name="Running",
+                node_lookup_mode="direct",
+            )
+        )
+
+        # then: ns=<index>;s=Cell/Running
+        assert result["value"] is True
+        assert result["error_status"] is False
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(30)
+def test_hierarchical_mode_follows_a_nested_object_path(opc_server):
+    # given
+    block = OPCReaderBlockV1()
+
+    try:
+        # when
+        result = block.run(
+            **reader_kwargs(
+                opc_server, object_name="Plant/Line2", variable_name="Running"
+            )
+        )
+
+        # then: 0:Objects/<index>:Plant/<index>:Line2/<index>:Running
+        assert result["value"] == 7
+        assert result["error_status"] is False
     finally:
         block.close()
 
@@ -359,16 +420,17 @@ def test_rejected_credentials_are_reported_and_not_retried(opc_server):
         first = block.run(
             **reader_kwargs(opc_server, user_name="operator", password="wrong")
         )
-        time.sleep(1.5)
+        worker = block._worker
+
+        # then the worker gave up for good and its thread ended without close()
+        assert worker._finished.wait(timeout=10)
+        assert wait_until(lambda: not worker._thread.is_alive(), timeout=10)
         later = block.run(
             **reader_kwargs(opc_server, user_name="operator", password="wrong")
         )
-
-        # then
         assert first["error_status"] is True
         assert first["error_message"].startswith("AUTH ERROR")
         assert later == first
-        assert block._worker._finished.is_set()
     finally:
         block.close()
 
