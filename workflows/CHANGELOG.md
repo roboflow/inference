@@ -47,6 +47,18 @@ for contributor and maintainer responsibilities.
   - Credentials go in `user_name` and `password` (a `url` containing `user:password@` is rejected, since the `url` field is not masked in the editor like `password`; use a secret selector for `password` to keep it out of the workflow definition). A `url` that does not validate is never echoed: errors use fixed messages, and logs show only the scheme, host and port. Rejected credentials are reported and not retried, and the block's thread then ends; an unknown namespace or node is retried every 10 s; a server at its session limit is retried after the OPC UA Writer's jittered session-exhaustion backoff. Sessions request the writer's 60 s session timeout (`OPC_SESSION_TIMEOUT_SECONDS`) and are closed when the pipeline running the workflow is joined after it ends, when the block is closed or garbage collected, or when the interpreter exits.
   - Each block instance holds its own session, separate from the OPC UA Writer's pool. Over the HTTP API every request builds a fresh instance, so each request opens a session, reads the current value and closes it. Not available on the Roboflow hosted platform.
 
+## `0.2.7`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Meta block (`roboflow_core/meta_vlm@v3`): Muse Wonder (`meta/muse-wonder` via OpenRouter), reasoning levels `minimal` through `xhigh`, with the same flat 0-1000 `named_0_1000` detection decoding as the Spark models.
+
+### Changed
+
+- Meta block (`roboflow_core/meta_vlm@v3`) defaults `model_version` to Muse Wonder instead of Muse Spark 1.3. Workflows that omit `model_version` now call Muse Wonder.
+
 ## `0.2.6`
 
 Bundled execution engine: `1.16.1`.

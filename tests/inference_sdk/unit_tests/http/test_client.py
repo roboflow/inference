@@ -23,6 +23,7 @@ from inference_sdk.config import (
     RemoteProcessingTimeCollector,
     outbound_service_secret,
     remote_processing_times,
+    usage_source_tags,
 )
 from inference_sdk.http import client
 from inference_sdk.http.client import (
@@ -3538,6 +3539,80 @@ def test_clip_compare_sends_no_billing_parameters_without_context_or_configurati
     sent_url = requests_mock.request_history[0].url.lower()
     assert "countinference" not in sent_url
     assert "service_secret" not in sent_url
+
+
+@pytest.mark.parametrize("endpoint", ["/clip/compare", "/infer/lmm"])
+def test_core_model_requests_forward_source_context(
+    monkeypatch, requests_mock: Mocker, endpoint: str
+) -> None:
+    """Forward origin tags through both hand-built and shared model requests.
+
+    Args:
+        monkeypatch: Fixture replacing image encoding.
+        requests_mock (Mocker): HTTP request recorder.
+        endpoint (str): Core model endpoint to exercise.
+    """
+    monkeypatch.setattr(
+        client, "load_static_inference_input", lambda **_: [("base64_image", None)]
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    requests_mock.post(f"http://some.com{endpoint}", json={"similarity": [0.5]})
+    token = usage_source_tags.set({"source": "app", "source_info": "workflowEvals"})
+    try:
+        if endpoint == "/clip/compare":
+            http_client.clip_compare(subject="cat", prompt="dog", subject_type="text")
+        else:
+            http_client.infer_lmm(inference_input="image", model_id="qwen-pretrains/2")
+    finally:
+        usage_source_tags.reset(token)
+
+    request = requests_mock.request_history[0]
+    assert request.json()["source"] == "app"
+    assert request.json()["source_info"] == "workflowEvals"
+    assert request.qs["source_info"] == ["workflowevals"]
+    assert request.qs["source_info_origin"] == ["context"]
+    assert "countinference" not in request.qs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["/clip/compare", "/infer/lmm"])
+async def test_async_core_model_requests_forward_source_context(
+    monkeypatch, endpoint: str
+) -> None:
+    """Forward attribution through asynchronous core model requests.
+
+    Args:
+        monkeypatch: Fixture replacing asynchronous image encoding.
+        endpoint (str): Core model endpoint to exercise.
+    """
+    monkeypatch.setattr(
+        client,
+        "load_static_inference_input_async",
+        AsyncMock(return_value=[("base64_image", None)]),
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    url = (
+        f"http://some.com{endpoint}?source=app&source_info=workflowEvals"
+        "&source_info_origin=context"
+    )
+    token = usage_source_tags.set({"source": "app", "source_info": "workflowEvals"})
+    try:
+        with aioresponses() as responses:
+            responses.post(url, payload={"similarity": [0.5]})
+            if endpoint == "/clip/compare":
+                await http_client.clip_compare_async(
+                    subject="cat", prompt="dog", subject_type="text"
+                )
+            else:
+                await http_client.infer_lmm_async(
+                    inference_input="image", model_id="qwen-pretrains/2"
+                )
+            body = responses.requests[("POST", URL(url))][0].kwargs["json"]
+    finally:
+        usage_source_tags.reset(token)
+
+    assert body["source"] == "app"
+    assert body["source_info"] == "workflowEvals"
 
 
 @pytest.mark.asyncio
