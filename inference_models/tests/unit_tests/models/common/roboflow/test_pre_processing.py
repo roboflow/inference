@@ -10395,3 +10395,39 @@ def test_pre_process_list_of_torch_images_with_letterbox_matches_numpy_image(
     # then
     assert list_meta == numpy_meta
     assert torch.equal(list_result, numpy_result)
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_pre_process_torch_image_with_center_crop_matches_numpy_image_for_odd_margin(
+    as_list: bool,
+) -> None:
+    # given
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=5, width=5),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.CENTER_CROP,
+        input_channels=3,
+    )
+    image = np.arange(64, dtype=np.uint8).reshape(8, 8, 1).repeat(3, axis=2)
+    tensor_image = torch.from_numpy(image).permute(2, 0, 1)
+
+    # when
+    numpy_result, numpy_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+    )
+    torch_result, torch_meta = pre_process_network_input(
+        images=[tensor_image] if as_list else tensor_image,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+    )
+
+    # then
+    assert torch_meta == numpy_meta
+    assert torch.equal(torch_result, numpy_result)

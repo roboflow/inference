@@ -616,9 +616,9 @@ def handle_torch_input_preparation_with_center_crop(
         image = functional.pad(image, padding_ltrb, fill=0)
     crop_ltrb = [0, 0, 0, 0]
     if target_size.width != image.shape[3] or target_size.height != image.shape[2]:
-        crop_top = int(round((image.shape[2] - target_size.height) / 2.0))
+        crop_top = (image.shape[2] - target_size.height) // 2
         crop_bottom = image.shape[2] - target_size.height - crop_top
-        crop_left = int(round((image.shape[3] - target_size.width) / 2.0))
+        crop_left = (image.shape[3] - target_size.width) // 2
         crop_right = image.shape[3] - target_size.width - crop_left
         crop_ltrb = [crop_left, crop_top, crop_right, crop_bottom]
         image = functional.crop(

@@ -7,6 +7,8 @@
 - Letterbox resizing of lists of torch tensors computes the target size and
   padding with the same arithmetic as single images and the numpy path.
   Previously float32 arithmetic could make the resized size one pixel off.
+- Center crop of torch-tensor inputs floors the crop offset like the numpy path.
+  Previously the offset was rounded, so odd margins shifted the crop by one pixel.
 
 ## `0.39.3`
 
