@@ -4,7 +4,7 @@
 
 ### Added
 
-- `INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV` (default `false`). When enabled,
+- `INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV` (default `true`). When enabled,
   stretch, letterbox and fit-longer-edge pre-processing resize uint8 tensor
   inputs bit-identically to `cv2.resize`, so tensor and NumPy inputs with the
   same pixels give the same predictions. CPU tensors use `cv2.resize`; CUDA

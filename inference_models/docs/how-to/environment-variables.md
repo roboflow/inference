@@ -287,7 +287,7 @@ Resize uint8 tensor inputs exactly like `cv2.resize` (`INTER_LINEAR`) in stretch
 fit-longer-edge pre-processing, so a tensor gives the same predictions as a NumPy image with the same
 pixels. CUDA tensors use a Triton kernel when Triton is installed and an exact torch fallback otherwise.
 Float tensors are not affected.
-Default: `false`
+Default: `true`
 
 ## Prediction Parameter Defaults
 
