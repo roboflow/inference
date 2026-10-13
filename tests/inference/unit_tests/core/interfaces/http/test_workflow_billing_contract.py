@@ -88,6 +88,10 @@ def _build_test_client(monkeypatch, model_manager=None) -> TestClient:
         workflows_execution_observer.usage_collector,
     ):
         monkeypatch.setattr(collector, "_enqueue_usage_payload", MagicMock())
+        # The sender thread drains payloads queued by OTHER test files on the
+        # same xdist worker through real `requests.post`; `requests_mock`
+        # records every call it sees, so keep the usage API out of the picture.
+        monkeypatch.setattr(collector, "_offload_to_api", MagicMock())
     model_manager = model_manager if model_manager is not None else MagicMock()
     model_manager.pingback = None
     model_manager.num_errors = 0
@@ -598,7 +602,12 @@ def run(self, value) -> BlockResult:
     )
 
     assert response.status_code == 200, response.text
-    assert len(requests_mock.request_history) == 1
+    remote_calls = [
+        call
+        for call in requests_mock.request_history
+        if call.hostname == "remote-model"
+    ]
+    assert len(remote_calls) == 1, [call.url for call in requests_mock.request_history]
     details = json.loads(_row_for_category(api_key, "model")["resource_details"])
     assert details.get("source_info") == source_info
     assert details["source"] == ("app" if source_info else "workflow-execution")
