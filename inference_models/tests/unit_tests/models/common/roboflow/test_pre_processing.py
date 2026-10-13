@@ -10355,6 +10355,94 @@ def test_fixed_size_image_list_keeps_dense_preprocessing_behavior(images) -> Non
     assert list_metadata == dense_metadata
 
 
+@pytest.mark.parametrize("input_color_format", ["bgr", "rgb"])
+@pytest.mark.parametrize("as_list", [False, True])
+def test_grayscale_pre_processing_for_torch_image_matches_numpy_image(
+    input_color_format: str,
+    as_list: bool,
+) -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(grayscale=Grayscale(enabled=True))
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=64),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.random.default_rng(1).integers(0, 256, (64, 64, 3), dtype=np.uint8)
+    tensor_image = torch.from_numpy(image).permute(2, 0, 1)
+
+    # when
+    numpy_result, _ = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format=input_color_format,
+    )
+    torch_result, _ = pre_process_network_input(
+        images=[tensor_image] if as_list else tensor_image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format=input_color_format,
+    )
+
+    # then
+    assert torch.equal(torch_result, numpy_result)
+
+
+def test_apply_pre_processing_to_torch_image_accepts_positional_overrides() -> None:
+    # given
+    image = torch.zeros((1, 3, 4, 4), dtype=torch.uint8)
+    image[:, 0] = 255
+
+    # when
+    result, _ = pre_processing_module.apply_pre_processing_to_torch_image(
+        image,
+        ImagePreProcessing(grayscale=Grayscale(enabled=True)),
+        3,
+        PreProcessingOverrides(disable_grayscale=True),
+    )
+
+    # then
+    assert torch.equal(result, image)
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_grayscale_pre_processing_passes_single_channel_torch_image_through(
+    as_list: bool,
+) -> None:
+    # given
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=8, width=9),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = torch.arange(72, dtype=torch.uint8).reshape(1, 8, 9)
+    images = [image] if as_list else image
+
+    # when
+    grayscale_result, _ = pre_process_network_input(
+        images=images,
+        image_pre_processing=ImagePreProcessing(grayscale=Grayscale(enabled=True)),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+    )
+    plain_result, _ = pre_process_network_input(
+        images=images,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+    )
+
+    # then
+    assert torch.equal(grayscale_result, plain_result)
+
+
 @pytest.mark.parametrize("as_list", [False, True])
 def test_pre_process_torch_image_with_center_crop_matches_numpy_image_for_odd_margin(
     as_list: bool,

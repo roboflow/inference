@@ -7,7 +7,7 @@ import PIL
 import torch
 from PIL.Image import Image
 from skimage import exposure
-from torchvision.transforms import Grayscale, functional
+from torchvision.transforms import functional
 
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
@@ -316,6 +316,7 @@ def pre_process_images_tensor(
         image=images,
         image_pre_processing=image_pre_processing,
         network_input_channels=network_input.input_channels,
+        input_color_mode=input_color_mode,
         pre_processing_overrides=pre_processing_overrides,
     )
     target_dimensions = resolve_target_dimensions(
@@ -343,7 +344,11 @@ def apply_pre_processing_to_torch_image(
     image_pre_processing: ImagePreProcessing,
     network_input_channels: int,
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+    *,
+    input_color_mode: Optional[ColorMode] = None,
 ) -> Tuple[torch.Tensor, StaticCropOffset]:
+    if input_color_mode is None:
+        input_color_mode = ColorMode.RGB
     static_crop_offset = StaticCropOffset(
         offset_x=0,
         offset_y=0,
@@ -372,7 +377,11 @@ def apply_pre_processing_to_torch_image(
         and image_pre_processing.grayscale.enabled
         and not grayscale_overridden
     ):
-        image = Grayscale(num_output_channels=network_input_channels)(image)
+        image = apply_grayscale_to_torch_image(
+            image=image,
+            input_color_mode=input_color_mode,
+            num_output_channels=network_input_channels,
+        )
     contrast_enhancement_overridden = (
         pre_processing_overrides is not None
         and pre_processing_overrides.disable_contrast_enhancement
@@ -394,6 +403,30 @@ def apply_pre_processing_to_torch_image(
             image_pre_processing.contrast.type
         ](image)
     return image, static_crop_offset
+
+
+def apply_grayscale_to_torch_image(
+    image: torch.Tensor,
+    input_color_mode: ColorMode,
+    num_output_channels: int,
+) -> torch.Tensor:
+    if image.shape[1] == 1:
+        return image
+
+    if input_color_mode is ColorMode.BGR:
+        blue, green, red = image[:, 0], image[:, 1], image[:, 2]
+    else:
+        red, green, blue = image[:, 0], image[:, 1], image[:, 2]
+    if image.dtype == torch.uint8:
+        gray = (
+            red.int() * 9798 + green.int() * 19235 + blue.int() * 3735 + 16384
+        ) >> 15
+    else:
+        gray = red * 0.299 + green * 0.587 + blue * 0.114
+    gray = gray.to(dtype=image.dtype).unsqueeze(1)
+    gray = gray.expand(-1, num_output_channels, -1, -1)
+
+    return gray
 
 
 def apply_static_crop_to_torch_image(
@@ -754,6 +787,7 @@ def pre_process_images_tensor_list(
             image_pre_processing=image_pre_processing,
             network_input_channels=network_input.input_channels,
             target_device=target_device,
+            input_color_mode=input_color_mode,
             pre_processing_overrides=pre_processing_overrides,
         )
     )
@@ -774,6 +808,8 @@ def apply_pre_processing_to_list_of_torch_image(
     network_input_channels: int,
     target_device: torch.device,
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+    *,
+    input_color_mode: Optional[ColorMode] = None,
 ) -> Tuple[List[torch.Tensor], List[StaticCropOffset], List[ImageDimensions]]:
     result_images, result_offsets, original_sizes = [], [], []
     for image in images:
@@ -792,6 +828,7 @@ def apply_pre_processing_to_list_of_torch_image(
             image=image.unsqueeze(0),
             image_pre_processing=image_pre_processing,
             network_input_channels=network_input_channels,
+            input_color_mode=input_color_mode,
             pre_processing_overrides=pre_processing_overrides,
         )
         result_images.append(result_image)
