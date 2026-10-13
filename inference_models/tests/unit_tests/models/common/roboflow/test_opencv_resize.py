@@ -284,6 +284,8 @@ def test_triton_resize_stays_eager_when_thread_cannot_start(
     assert opencv_resize._get_triton_resize(0) is None
 
 
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
 @pytest.mark.skipif(not CUDA_AVAILABLE, reason="CUDA is not available")
 @pytest.mark.parametrize("channels", [1, 2, 3, 4])
 def test_eager_resize_on_cuda_matches_cpu(channels: int) -> None:
@@ -308,6 +310,8 @@ def test_eager_resize_on_cuda_matches_cpu(channels: int) -> None:
     assert mismatches == []
 
 
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
 @pytest.mark.skipif(
     not (CUDA_AVAILABLE and TRITON_AVAILABLE), reason="CUDA with Triton not available"
 )
@@ -342,6 +346,8 @@ def test_triton_resize_matches_eager_on_cuda(channels: int) -> None:
     assert mismatches == []
 
 
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
 @pytest.mark.skipif(
     not (CUDA_AVAILABLE and TRITON_AVAILABLE), reason="CUDA with Triton not available"
 )
@@ -417,6 +423,8 @@ def test_eager_resize_does_not_widen_unsampled_source_pixels(
     )
 
 
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
 @pytest.mark.skipif(
     not (CUDA_AVAILABLE and TRITON_AVAILABLE), reason="CUDA with Triton not available"
 )
@@ -440,6 +448,8 @@ def test_cuda_resize_beyond_triton_grid_limit_falls_back_to_eager() -> None:
     )
 
 
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
 @pytest.mark.skipif(not CUDA_AVAILABLE, reason="CUDA is not available")
 @pytest.mark.parametrize("use_triton", [False, True])
 def test_cached_coefficients_survive_eviction_while_used_on_another_stream(
