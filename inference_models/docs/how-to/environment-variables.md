@@ -283,10 +283,19 @@ Default: `true`
 ### Pre-processing
 
 **`INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV`**
-Resize uint8 tensor inputs exactly like `cv2.resize` (`INTER_LINEAR`) in stretch, letterbox and
-fit-longer-edge pre-processing, so a tensor gives the same predictions as a NumPy image with the same
-pixels. CUDA tensors use a Triton kernel when Triton is installed and an exact torch fallback otherwise.
-Float tensors are not affected.
+Use OpenCV-compatible `INTER_LINEAR` values for uint8 tensor inputs to the shared Roboflow
+stretch, letterbox and fit-longer-edge preprocessor. CPU tensors use `cv2.resize`; CUDA tensors
+use a torch port of OpenCV's generic fixed-point arithmetic. Platform-specific OpenCV
+implementations (such as Carotene) can differ. Triton accelerates the CUDA path after a background
+check against the torch reference, not the installed OpenCV build. While preparation is pending,
+when Triton is unavailable or unsupported, or after a recognized Triton JIT failure, CUDA tensors
+use that same reference.
+
+This replaces the previous PyTorch bilinear tensor resize by default. Set
+`INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV=false` to retain the previous resize behavior.
+Float tensors, the existing NumPy route (including standard HTTP JPEG preprocessing), and
+RF-DETR's separate Pillow resize are unaffected by this flag. Matching resize values does not
+guarantee identical predictions across different model backends or devices.
 Default: `true`
 
 ## Prediction Parameter Defaults

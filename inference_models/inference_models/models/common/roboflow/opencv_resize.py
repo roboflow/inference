@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from inference_models.logger import LOGGER
+from inference_models.models.optimization.triton_jit import classify_triton_jit_failure
 
 TritonResize = Callable[[torch.Tensor, int, int], torch.Tensor]
 
@@ -31,11 +32,13 @@ _TRITON_VERIFICATION_SHAPES = [
 def resize_uint8_tensor_like_opencv(
     image: torch.Tensor, *, height: int, width: int
 ) -> torch.Tensor:
-    """Resize a uint8 image batch exactly like ``cv2.resize`` with ``INTER_LINEAR``.
+    """Resize a uint8 image batch with OpenCV-compatible ``INTER_LINEAR`` values.
 
-    CPU tensors go through ``cv2.resize`` itself. On CUDA a Triton kernel is used
-    once a background compilation has verified it bit-for-bit against the eager
-    implementation; until then, or when Triton is unavailable, the eager one runs.
+    CPU tensors use ``cv2.resize``. Other devices use the eager port of OpenCV's
+    generic (non-HAL) arithmetic; platform-specific OpenCV implementations may
+    differ. On CUDA, Triton is used after background verification against eager,
+    not the installed OpenCV build. A recognized Triton JIT failure disables it
+    for that device and retries eagerly; unexpected errors propagate.
 
     Args:
         image: ``N x C x H x W`` uint8 tensor.
@@ -43,8 +46,12 @@ def resize_uint8_tensor_like_opencv(
         width: Output width.
 
     Returns:
-        ``N x C x height x width`` uint8 tensor on the input device.
+        ``N x C x height x width`` uint8 tensor on the input device. Same-size
+        requests return the original tensor without starting Triton preparation.
     """
+    if image.shape[2:] == (height, width):
+        return image
+
     if image.device.type == "cpu":
         resized = _resize_with_opencv(image, height=height, width=width)
         return resized
@@ -54,9 +61,27 @@ def resize_uint8_tensor_like_opencv(
         if triton_resize is not None and _fits_triton_kernel(
             image, height=height, width=width
         ):
-            with torch.cuda.device(image.device):
-                resized = triton_resize(image, height, width)
-            return resized
+            try:
+                with torch.cuda.device(image.device):
+                    resized = triton_resize(image, height, width)
+            except Exception as error:
+                diagnostic = classify_triton_jit_failure(error)
+                if diagnostic is None:
+                    raise
+
+                with _TRITON_LOCK:
+                    failed_resize = _TRITON_RESIZES.pop(image.device.index, None)
+                if failed_resize is not None:
+                    LOGGER.warning(
+                        "OpenCV-compatible tensor resize disabled Triton on %s "
+                        "after %s; using eager torch. %s",
+                        image.device,
+                        diagnostic.category,
+                        diagnostic.guidance,
+                        exc_info=True,
+                    )
+            else:
+                return resized
 
     resized = resize_uint8_tensor_like_opencv_eager(image, height=height, width=width)
     return resized

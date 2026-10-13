@@ -1,6 +1,7 @@
 import importlib.util
 import threading
 from typing import List
+from unittest.mock import Mock
 
 import cv2
 import numpy as np
@@ -123,6 +124,43 @@ def test_resize_of_single_channel_cpu_batch_keeps_channel_dimension() -> None:
     assert torch.equal(result, _opencv_resize(image, (20, 30)))
 
 
+@pytest.mark.parametrize("contiguous", [False, True])
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=[
+                pytest.mark.gpu_only,
+                pytest.mark.skipif(not CUDA_AVAILABLE, reason="CUDA is not available"),
+            ],
+        ),
+    ],
+)
+def test_same_size_resize_returns_input_without_device_dispatch(
+    contiguous: bool, device: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # given
+    image = torch.zeros((2, 37, 53, 3), dtype=torch.uint8, device=device).permute(
+        0, 3, 1, 2
+    )
+    if contiguous:
+        image = image.contiguous()
+    cpu_resize = Mock(side_effect=AssertionError("CPU resize must not run"))
+    triton_lookup = Mock(side_effect=AssertionError("Triton preparation must not run"))
+    monkeypatch.setattr(opencv_resize, "_resize_with_opencv", cpu_resize)
+    monkeypatch.setattr(opencv_resize, "_get_triton_resize", triton_lookup)
+
+    # when
+    result = resize_uint8_tensor_like_opencv(image, height=37, width=53)
+
+    # then
+    assert result is image
+    cpu_resize.assert_not_called()
+    triton_lookup.assert_not_called()
+
+
 @pytest.fixture
 def fresh_triton_state(monkeypatch: pytest.MonkeyPatch) -> List[threading.Thread]:
     monkeypatch.setattr(opencv_resize, "_TRITON_RESIZES", {})
@@ -218,6 +256,79 @@ def test_triton_resize_stays_eager_when_compilation_fails(
 
     # then
     assert opencv_resize._get_triton_resize(0) is None
+
+
+@pytest.mark.parametrize("device_index", [0, 1])
+def test_registered_triton_failure_falls_back_and_disables_only_affected_device(
+    fresh_triton_state: List[threading.Thread],
+    monkeypatch: pytest.MonkeyPatch,
+    device_index: int,
+) -> None:
+    # given
+    image = Mock(
+        spec=torch.Tensor,
+        device=torch.device("cuda", device_index),
+        shape=(1, 3, 37, 53),
+    )
+    image.numel.return_value = 3 * 37 * 53
+    failed_resize = Mock(
+        side_effect=RuntimeError("ptxas fatal: unsupported PTX version")
+    )
+    other_resize = Mock()
+    opencv_resize._TRITON_RESIZES.update(
+        {device_index: failed_resize, 1 - device_index: other_resize}
+    )
+    opencv_resize._TRITON_STARTED.update({0, 1})
+    expected = _opencv_resize(_random_image((37, 53), channels=3, seed=0), (64, 64))
+    eager_resize = Mock(return_value=expected)
+    monkeypatch.setattr(
+        opencv_resize, "resize_uint8_tensor_like_opencv_eager", eager_resize
+    )
+
+    # when
+    first = resize_uint8_tensor_like_opencv(image, height=64, width=64)
+    second = resize_uint8_tensor_like_opencv(image, height=64, width=64)
+
+    # then
+    assert first is expected
+    assert second is expected
+    failed_resize.assert_called_once_with(image, 64, 64)
+    assert eager_resize.call_count == 2
+    eager_resize.assert_called_with(image, height=64, width=64)
+    assert opencv_resize._TRITON_RESIZES == {1 - device_index: other_resize}
+    assert opencv_resize._TRITON_STARTED == {0, 1}
+    assert fresh_triton_state == []
+
+
+@pytest.mark.parametrize(
+    "error", [RuntimeError("unexpected kernel error"), ValueError("bad input")]
+)
+def test_registered_triton_unexpected_error_propagates(
+    fresh_triton_state: List[threading.Thread],
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+) -> None:
+    # given
+    image = Mock(
+        spec=torch.Tensor, device=torch.device("cuda", 0), shape=(1, 3, 37, 53)
+    )
+    image.numel.return_value = 3 * 37 * 53
+    failed_resize = Mock(side_effect=error)
+    opencv_resize._TRITON_RESIZES[0] = failed_resize
+    opencv_resize._TRITON_STARTED.add(0)
+    eager_resize = Mock()
+    monkeypatch.setattr(
+        opencv_resize, "resize_uint8_tensor_like_opencv_eager", eager_resize
+    )
+
+    # when
+    with pytest.raises(type(error)) as raised:
+        resize_uint8_tensor_like_opencv(image, height=64, width=64)
+
+    # then
+    assert raised.value is error
+    eager_resize.assert_not_called()
+    assert opencv_resize._TRITON_RESIZES[0] is failed_resize
 
 
 def test_triton_resize_stays_eager_when_kernel_differs_from_eager(

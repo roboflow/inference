@@ -4,13 +4,16 @@
 
 ### Added
 
-- `INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV` (default `true`). When enabled,
-  stretch, letterbox and fit-longer-edge pre-processing resize uint8 tensor
-  inputs bit-identically to `cv2.resize`, so tensor and NumPy inputs with the
-  same pixels give the same predictions. CPU tensors use `cv2.resize`; CUDA
-  tensors use an exact torch implementation and switch to a Triton kernel once
-  it compiles and matches it bit-for-bit. Without Triton they stay on torch.
-  Float tensors and the disabled flag keep the bilinear `interpolate` resize.
+- `INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV` (default `true`). The shared
+  Roboflow stretch, letterbox and fit-longer-edge preprocessor now resizes uint8
+  tensors with OpenCV-compatible values. CPU tensors use `cv2.resize`; CUDA
+  tensors target OpenCV's generic fixed-point `INTER_LINEAR` arithmetic, which
+  can differ from platform-specific OpenCV implementations. Triton activates
+  after matching the eager torch reference bit-for-bit; pending preparation,
+  unsupported inputs and recognized Triton JIT failures use that same reference.
+  Same-size tensors bypass resizing and Triton preparation. Set the flag to
+  `false` to retain the previous PyTorch bilinear resize. Float tensors, NumPy
+  preprocessing and RF-DETR's separate Pillow resize are unaffected by the flag.
 
 ### Fixed
 
