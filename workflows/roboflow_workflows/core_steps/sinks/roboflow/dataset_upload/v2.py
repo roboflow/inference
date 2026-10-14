@@ -301,11 +301,6 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         self._disable_sinks = disable_sinks
         self._platform_client = resolve_platform_blocks_client(platform_client)
 
-    def __setstate__(self, state: Dict[str, Any]) -> None:
-        if "_platform_client" not in state:
-            state["_platform_client"] = resolve_platform_blocks_client(None)
-        self.__dict__.update(state)
-
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return [

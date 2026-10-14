@@ -2,7 +2,7 @@ import hashlib
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -219,11 +219,6 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
         self._thread_pool_executor = thread_pool_executor
         self._disable_sinks = disable_sinks
         self._platform_client = resolve_platform_blocks_client(platform_client)
-
-    def __setstate__(self, state: Dict[str, Any]) -> None:
-        if "_platform_client" not in state:
-            state["_platform_client"] = resolve_platform_blocks_client(None)
-        self.__dict__.update(state)
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:

@@ -59,6 +59,7 @@ from roboflow_workflows.prototypes.block import (
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
+    ensure_roboflow_api_access,
     resolve_platform_blocks_client,
 )
 from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes
@@ -514,11 +515,6 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         self._disable_sinks = disable_sinks
         self._platform_client = resolve_platform_blocks_client(platform_client)
         self._last_event_fired: Optional[datetime] = None
-
-    def __setstate__(self, state: Dict[str, Any]) -> None:
-        if "_platform_client" not in state:
-            state["_platform_client"] = resolve_platform_blocks_client(None)
-        self.__dict__.update(state)
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -1138,6 +1134,7 @@ def _upload_image(
         Tuple of (sourceId, url)
     """
     platform_client = resolve_platform_blocks_client(platform_client)
+    ensure_roboflow_api_access(platform_client)
     image_bytes = encode_image_to_jpeg_bytes(
         image_data.numpy_image, jpeg_quality=jpeg_quality
     )
@@ -1197,6 +1194,7 @@ def _send_event(
     """
     platform_client = resolve_platform_blocks_client(platform_client)
     try:
+        ensure_roboflow_api_access(platform_client)
         response = requests.post(
             platform_client.wrap_url(f"{api_base_url}/vision-events"),
             headers=_build_cloud_request_headers(

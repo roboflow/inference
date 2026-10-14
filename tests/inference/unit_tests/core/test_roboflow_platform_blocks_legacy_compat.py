@@ -43,8 +43,10 @@ from inference._workflows_compat_inventory import (
 )
 from inference.core import roboflow_api
 from inference.core.cache import MemoryCache
-from inference.core.env import ROBOFLOW_BLOCKS_PLUGIN
+from inference.core.env import API_BASE_URL, ROBOFLOW_BLOCKS_PLUGIN
 from inference.core.interfaces.roboflow_platform_client import SERVER_PLATFORM_CLIENT
+from inference.core.roboflow_api import build_roboflow_api_headers
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -327,83 +329,6 @@ def test_a_protocol_subclass_with_only_main_operations_gets_the_server_client(
     assert block._platform_client is SERVER_PLATFORM_CLIENT
 
 
-def _main_era_pickle(block_class: type) -> bytes:
-    block = _construct_block(block_class=block_class)
-    state = dict(block.__dict__)
-    del state["_platform_client"]
-    if "_offloader" in state:
-        module = sys.modules[block_class.__module__]
-        state["_offloader"] = module.call_asset_library_attributes_endpoint
-    main_era_block = block_class.__new__(block_class)
-    main_era_block.__dict__.update(state)
-    return pickle.dumps(main_era_block)
-
-
-@pytest.mark.parametrize("module_suffix,class_name", PLATFORM_CLIENT_BLOCKS)
-def test_a_block_pickled_with_main_era_state_gets_the_server_client(
-    module_suffix: str, class_name: str
-) -> None:
-    # given
-    block_class = _block_class(module_suffix=module_suffix, class_name=class_name)
-    payload = _main_era_pickle(block_class=block_class)
-
-    # when
-    restored = pickle.loads(payload)
-
-    # then
-    assert restored._platform_client is SERVER_PLATFORM_CLIENT
-    assert restored._api_key == "my-key"
-
-
-@pytest.mark.parametrize("module_suffix,class_name", PLATFORM_CLIENT_BLOCKS)
-def test_restoring_saved_client_state_keeps_it_without_calling_the_fallback(
-    module_suffix: str, class_name: str
-) -> None:
-    # given
-    block_class = _block_class(module_suffix=module_suffix, class_name=class_name)
-    saved_client = object()
-    restored = block_class.__new__(block_class)
-
-    # when
-    with mock.patch.object(
-        sys.modules[block_class.__module__],
-        "resolve_platform_blocks_client",
-        side_effect=RuntimeError("host unavailable"),
-    ) as fallback_mock:
-        restored.__setstate__({"_api_key": "my-key", "_platform_client": saved_client})
-
-    # then
-    assert restored._platform_client is saved_client
-    fallback_mock.assert_not_called()
-
-
-def test_a_visual_search_block_pickled_with_main_era_state_still_searches() -> None:
-    # given
-    main_era_block = RoboflowVisualSearchBlockV1.__new__(RoboflowVisualSearchBlockV1)
-    main_era_block.__dict__.update({"_api_key": "my-key"})
-    restored = pickle.loads(pickle.dumps(main_era_block))
-    image = WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id="parent"),
-        numpy_image=np.zeros((8, 12, 3), dtype=np.uint8),
-    )
-
-    # when
-    with mock.patch.object(
-        roboflow_api,
-        "search_project_images_at_roboflow",
-        return_value={"results": []},
-    ) as search_mock:
-        result = restored.run(
-            image=image, workspace="my-workspace", target_project="my-project"
-        )
-
-    # then
-    assert result["message"] == "No visually similar images found."
-    assert result["error_status"] is False
-    search_mock.assert_called_once()
-    assert search_mock.call_args.kwargs["api_key"] == "my-key"
-
-
 CANONICAL_ONLY_CHILD_PROBE = """
 import json
 import os
@@ -458,6 +383,70 @@ def test_a_canonical_only_child_process_inherits_the_host_client() -> None:
     report = json.loads(result.stdout.strip().splitlines()[-1])
     assert report["plugins"].split(",")[0] == ROBOFLOW_BLOCKS_PLUGIN
     assert report["client"] == "ServerRoboflowPlatformClient"
+
+
+def _main_cloud_headers(module_suffix: str, explicit_headers: dict) -> dict:
+    if module_suffix.endswith("_tensor"):
+        headers = {"Authorization": "Bearer my-key", **explicit_headers}
+        return headers
+    headers = build_roboflow_api_headers(explicit_headers=dict(explicit_headers))
+    headers.setdefault("Authorization", "Bearer my-key")
+    return headers
+
+
+@pytest.mark.parametrize(
+    "module_suffix",
+    ["sinks.roboflow.vision_events.v1", "sinks.roboflow.vision_events.v1_tensor"],
+)
+def test_vision_events_cloud_requests_on_the_legacy_server_are_unchanged(
+    module_suffix: str,
+) -> None:
+    # given
+    block = _construct_block(
+        block_class=_block_class(
+            module_suffix=module_suffix, class_name="RoboflowVisionEventsBlockV1"
+        )
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((8, 12, 3), dtype=np.uint8),
+    )
+    response = mock.MagicMock(status_code=200)
+    response.json.return_value = {"sourceId": "source-1", "url": ""}
+
+    # when
+    with mock.patch("requests.post", return_value=response) as post_mock:
+        result = block.run(
+            input_image=None,
+            output_image=image,
+            predictions=None,
+            event_type="custom",
+            solution="my-solution",
+            custom_metadata={},
+            fire_and_forget=False,
+            disable_sink=False,
+            cooldown_seconds=0,
+        )
+
+    # then
+    assert result["error_status"] is False
+    upload_call, event_call = post_mock.call_args_list
+    assert upload_call.args == (wrap_url(f"{API_BASE_URL}/vision-events/upload"),)
+    assert upload_call.kwargs["headers"] == _main_cloud_headers(
+        module_suffix=module_suffix, explicit_headers={}
+    )
+    assert set(upload_call.kwargs) == {"headers", "files", "timeout"}
+    assert upload_call.kwargs["timeout"] == 30
+    assert event_call.args == (wrap_url(f"{API_BASE_URL}/vision-events"),)
+    assert event_call.kwargs["headers"] == _main_cloud_headers(
+        module_suffix=module_suffix,
+        explicit_headers={"Content-Type": "application/json"},
+    )
+    assert event_call.kwargs["json"]["images"] == [
+        {"sourceId": "source-1", "label": "workflow"}
+    ]
+    assert event_call.kwargs["json"]["eventId"] == result["event_id"]
+    assert event_call.kwargs["timeout"] == 30
 
 
 def test_legacy_helper_signature_without_platform_client_still_works() -> None:

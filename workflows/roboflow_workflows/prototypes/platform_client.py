@@ -597,3 +597,21 @@ def _implements_operation(platform_client: Any, operation: str) -> bool:
         return False
     protocol_stub = RoboflowPlatformClient.__dict__[operation]
     return getattr(implementation, "__func__", implementation) is not protocol_stub
+
+
+def ensure_roboflow_api_access(platform_client: Any) -> None:
+    """Refuse a direct Roboflow API request that the client cannot make.
+
+    For blocks that send their own requests with the client's URL and header
+    helpers, this gives the same refusal as the named operations.
+
+    Args:
+        platform_client (Any): The resolved client of a Roboflow-platform block.
+
+    Raises:
+        WorkflowEnvironmentConfigurationError: If the client is the offline
+            client or does not implement the Roboflow-platform blocks'
+            operations.
+    """
+    if not _implements_platform_blocks_operations(platform_client):
+        raise _roboflow_api_unavailable()

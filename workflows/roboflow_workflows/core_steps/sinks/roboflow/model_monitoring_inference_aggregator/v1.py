@@ -386,11 +386,6 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         self._platform_client = resolve_platform_blocks_client(platform_client)
         self._predictions_aggregator = PredictionsAggregator()
 
-    def __setstate__(self, state: Dict[str, Any]) -> None:
-        if "_platform_client" not in state:
-            state["_platform_client"] = resolve_platform_blocks_client(None)
-        self.__dict__.update(state)
-
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return [
