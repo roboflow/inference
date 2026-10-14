@@ -237,6 +237,40 @@ def test_embedding_endpoint_keeps_the_image_orientation_when_auto_orient_is_off(
     assert infer_call[3] == {"output_type": "feature_vector"}
 
 
+def test_embedding_endpoint_keeps_the_orientation_off_the_event_loop(
+    legacy_client, fake_stat, monkeypatch
+):
+    from inference_server.legacy import router
+
+    keep_image_orientation = router.keep_image_orientation
+    on_loop = []
+
+    def _spy(payload, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return keep_image_orientation(payload, **kwargs)
+
+    monkeypatch.setattr(router, "keep_image_orientation", _spy)
+    fake_stat["ds/1"] = ("classification", "infer")
+    gw = _gateway("ds/1", "feature_vector", _envelope("feature_vector", [0.5]))
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={
+            "model_id": "ds/1",
+            "api_key": "k",
+            "image": [_image(), _image()],
+            "disable_preproc_auto_orient": True,
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    assert on_loop == [False, False]
+
+
 def test_embedding_endpoint_time_includes_image_loading(
     legacy_client, fake_stat, monkeypatch
 ):

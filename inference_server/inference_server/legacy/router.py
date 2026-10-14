@@ -771,7 +771,9 @@ async def _embed_images(
         payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
     if inference_request.disable_preproc_auto_orient:
         payloads = [
-            keep_image_orientation(payload, ndarray_ok=bridge.accepts_ndarray)
+            await asyncio.to_thread(
+                keep_image_orientation, payload, ndarray_ok=bridge.accepts_ndarray
+            )
             for payload in payloads
         ]
     params = build_image_embedding_params(inference_request)
