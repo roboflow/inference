@@ -523,8 +523,8 @@
  {
   "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_dataset_upload.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v1",
-   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2"
+   "roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1",
+   "roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -592,7 +592,7 @@
  {
   "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_model_monitoring.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1"
+   "roboflow_workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -762,7 +762,7 @@
  {
   "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_visual_search.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.integrations.visual_search.v1"
+   "roboflow_workflows.core_steps.integrations.roboflow.visual_search.v1"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -770,7 +770,7 @@
  {
   "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_visual_search_classifier.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.integrations.visual_search_classifier.v1"
+   "roboflow_workflows.core_steps.integrations.roboflow.visual_search_classifier.v1"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -1017,7 +1017,7 @@
  {
   "path": "tests/workflows/unit_tests/core_steps/integrations/roboflow/visual_search/test_helpers.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.integrations.visual_search.helpers"
+   "roboflow_workflows.core_steps.integrations.roboflow.visual_search.helpers"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -1025,8 +1025,8 @@
  {
   "path": "tests/workflows/unit_tests/core_steps/integrations/roboflow/visual_search/test_v1.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.integrations.visual_search",
-   "inference.roboflow_workflows_plugin.integrations.visual_search.v1"
+   "roboflow_workflows.core_steps.integrations.roboflow.visual_search",
+   "roboflow_workflows.core_steps.integrations.roboflow.visual_search.v1"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -1034,7 +1034,7 @@
  {
   "path": "tests/workflows/unit_tests/core_steps/integrations/roboflow/visual_search_classifier/test_classification_annotations.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.integrations.visual_search_classifier.classification_annotations"
+   "roboflow_workflows.core_steps.integrations.roboflow.visual_search_classifier.classification_annotations"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -1044,8 +1044,8 @@
   "imps": [
    "inference.core.env",
    "inference.core.utils.image_utils",
-   "inference.roboflow_workflows_plugin.integrations.visual_search_classifier",
-   "inference.roboflow_workflows_plugin.integrations.visual_search_classifier.v1"
+   "roboflow_workflows.core_steps.integrations.roboflow.visual_search_classifier",
+   "roboflow_workflows.core_steps.integrations.roboflow.visual_search_classifier.v1"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -1783,8 +1783,8 @@
   "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/asset_library_attributes/test_v1.py",
   "imps": [
    "inference.core.cache",
-   "inference.roboflow_workflows_plugin.sinks.asset_library_attributes",
-   "inference.roboflow_workflows_plugin.sinks.asset_library_attributes.v1"
+   "roboflow_workflows.core_steps.sinks.roboflow.asset_library_attributes",
+   "roboflow_workflows.core_steps.sinks.roboflow.asset_library_attributes.v1"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -1794,9 +1794,9 @@
   "imps": [
    "inference.core.cache",
    "inference.core.env",
-   "inference.roboflow_workflows_plugin.sinks.dataset_upload",
-   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v1",
-   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v1_tensor"
+   "roboflow_workflows.core_steps.sinks.roboflow.dataset_upload",
+   "roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1",
+   "roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -1806,9 +1806,9 @@
   "imps": [
    "inference.core.cache",
    "inference.core.env",
-   "inference.roboflow_workflows_plugin.sinks.dataset_upload",
-   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2",
-   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2_tensor"
+   "roboflow_workflows.core_steps.sinks.roboflow.dataset_upload",
+   "roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2",
+   "roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2_tensor"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -1817,12 +1817,12 @@
   "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/test_model_monitoring_inference_aggregator.py",
   "imps": [
    "inference.core.cache",
-   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1"
+   "roboflow_workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1"
   ],
   "strs": [
    "inference.core.roboflow_api.send_inference_results_to_model_monitoring",
-   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace",
-   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
+   "roboflow_workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace",
+   "roboflow_workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
   ],
   "action": "RETAIN"
  },
@@ -1830,38 +1830,38 @@
   "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/test_roboflow_custom_metadata.py",
   "imps": [
    "inference.core.cache",
-   "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1"
+   "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1"
   ],
   "strs": [
-   "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata",
-   "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request",
-   "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.get_roboflow_workspace"
+   "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata",
+   "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request",
+   "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1.get_roboflow_workspace"
   ],
   "action": "RETAIN"
  },
  {
   "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/vision_events/test_v1.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.sinks.vision_events",
-   "inference.roboflow_workflows_plugin.sinks.vision_events.v1"
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events",
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1"
   ],
   "strs": [
-   "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_local_event",
-   "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event",
-   "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_event",
-   "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event",
-   "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_local_event",
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event",
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_event",
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_local_event",
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post"
   ],
   "action": "RETAIN"
  },
  {
   "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/vision_events_bundle/test_v1.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.sinks",
-   "inference.roboflow_workflows_plugin.sinks.vision_events.v1",
-   "inference.roboflow_workflows_plugin.sinks.vision_events.v1_tensor",
-   "inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1",
-   "inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1_tensor"
+   "roboflow_workflows.core_steps.sinks.roboflow",
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1",
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1_tensor",
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1",
+   "roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor"
   ],
   "strs": [
    "inference.core.env"
@@ -1895,7 +1895,7 @@
  {
   "path": "tests/workflows/unit_tests/core_steps/sinks/test_execution_policy.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.loader"
+   "roboflow_workflows.core_steps.loader"
   ],
   "strs": [],
   "action": "RETAIN"
@@ -1988,11 +1988,11 @@
  {
   "path": "tests/workflows/unit_tests/core_steps/test_dependent_resources.py",
   "imps": [
-   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2",
-   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1"
+   "roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2",
+   "roboflow_workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1"
   ],
   "strs": [
-   "inference.roboflow_workflows_plugin.loader"
+   "roboflow_workflows.core_steps.loader"
   ],
   "action": "RETAIN",
   "reason": "plan Phase E table: split package-only vs server parity",

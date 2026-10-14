@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Added
+
+- `INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV` (default `true`). The shared
+  Roboflow stretch, letterbox and fit-longer-edge preprocessor now resizes uint8
+  tensors with OpenCV-compatible values. CPU tensors use `cv2.resize`; CUDA
+  tensors target OpenCV's generic fixed-point `INTER_LINEAR` arithmetic, which
+  can differ from platform-specific OpenCV implementations. Triton activates
+  after matching the eager torch reference bit-for-bit; pending preparation,
+  unsupported inputs and recognized Triton JIT failures use that same reference.
+  Same-size tensors bypass resizing and Triton preparation. Set the flag to
+  `false` to retain the previous PyTorch bilinear resize. Float tensors, NumPy
+  preprocessing and RF-DETR's separate Pillow resize are unaffected by the flag.
+
+### Fixed
+
+- Histogram equalization of torch-tensor inputs returns `uint8` values like the
+  numpy path instead of keeping float output. On the RF-DETR float `[0, 1]` path
+  the result is rescaled, which also stops adaptive equalization from crashing
+  and histogram equalization from returning out-of-range values.
+- Letterbox resizing of lists of torch tensors computes the target size and
+  padding with the same arithmetic as single images and the numpy path.
+  Previously float32 arithmetic could make the resized size one pixel off.
+- Grayscale conversion of torch-tensor inputs honours the declared input colour
+  order and matches OpenCV exactly. Previously BGR tensors were treated as RGB
+  and results could differ from OpenCV by one. Single-channel tensors still pass
+  through unchanged.
+- Center crop of torch-tensor inputs floors the crop offset like the numpy path.
+  Previously the offset was rounded, so odd margins shifted the crop by one pixel.
+- RF-DETR NAS TensorRT packages for object detection and instance segmentation
+  load on TensorRT again. These packages now declare their subnet as model
+  features (`resolution`, `patch_size`, `num_windows`, `dec_layers`,
+  `num_queries`, `num_select`), which the TensorRT registry entries did not
+  accept. Previously negotiation rejected them and fell back to ONNX.
+
 ## `0.39.3`
 
 ### Added
