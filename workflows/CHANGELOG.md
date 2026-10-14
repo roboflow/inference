@@ -28,6 +28,14 @@ for contributor and maintainer responsibilities.
   so a host that retries uploads can fail an upload whose retry reports a duplicate
   instead of silently dropping the annotation.
 
+## `0.2.8`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Google Gemini v6: Argon-only instance segmentation with normalized YX polygons, detached components, holes, and RLE mask output.
+
 ## `0.2.7`
 
 Bundled execution engine: `1.16.1`.
