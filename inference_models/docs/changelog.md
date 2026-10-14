@@ -30,6 +30,11 @@
   through unchanged.
 - Center crop of torch-tensor inputs floors the crop offset like the numpy path.
   Previously the offset was rounded, so odd margins shifted the crop by one pixel.
+- RF-DETR NAS TensorRT packages for object detection and instance segmentation
+  load on TensorRT again. These packages now declare their subnet as model
+  features (`resolution`, `patch_size`, `num_windows`, `dec_layers`,
+  `num_queries`, `num_select`), which the TensorRT registry entries did not
+  accept. Previously negotiation rejected them and fell back to ONNX.
 
 ## `0.39.3`
 

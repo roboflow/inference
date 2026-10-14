@@ -1,12 +1,11 @@
 from unittest import mock
 from unittest.mock import MagicMock
 
+from roboflow_workflows.core_steps.sinks.roboflow.asset_library_attributes import v1
+
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.roboflow_workflows_plugin.sinks.asset_library_attributes import (
-    v1,
-)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 WORKFLOW_WITH_ASSET_LIBRARY_ATTRIBUTES = {
@@ -37,18 +36,21 @@ WORKFLOW_WITH_ASSET_LIBRARY_ATTRIBUTES = {
 
 
 @mock.patch.object(v1, "get_workspace_name")
-@mock.patch.object(v1, "batch_update_image_metadata_at_roboflow")
 def test_workflow_with_asset_library_attributes_auto_batches_scalar_metadata_and_tags(
-    batch_update_image_metadata_at_roboflow_mock: MagicMock,
     get_workspace_name_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
     # given
+    platform_client = MagicMock()
+    batch_update_image_metadata_at_roboflow_mock = (
+        platform_client.batch_update_image_metadata_at_roboflow
+    )
     get_workspace_name_mock.return_value = "my-workspace"
     batch_update_image_metadata_at_roboflow_mock.return_value = {"taskId": "task-123"}
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": "my_api_key",
+        "workflows_core.platform_client": platform_client,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -124,18 +126,21 @@ WORKFLOW_WITH_PER_ROW_METADATA_AND_TAGS = {
 
 
 @mock.patch.object(v1, "get_workspace_name")
-@mock.patch.object(v1, "batch_update_image_metadata_at_roboflow")
 def test_workflow_with_asset_library_attributes_accepts_per_row_metadata_and_tags(
-    batch_update_image_metadata_at_roboflow_mock: MagicMock,
     get_workspace_name_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
     # given
+    platform_client = MagicMock()
+    batch_update_image_metadata_at_roboflow_mock = (
+        platform_client.batch_update_image_metadata_at_roboflow
+    )
     get_workspace_name_mock.return_value = "my-workspace"
     batch_update_image_metadata_at_roboflow_mock.return_value = {"taskId": "task-123"}
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": "my_api_key",
+        "workflows_core.platform_client": platform_client,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -195,18 +200,21 @@ WORKFLOW_WITH_INLINE_SCALAR_SELECTORS = {
 
 
 @mock.patch.object(v1, "get_workspace_name")
-@mock.patch.object(v1, "batch_update_image_metadata_at_roboflow")
 def test_workflow_with_asset_library_attributes_resolves_inline_scalar_selectors(
-    batch_update_image_metadata_at_roboflow_mock: MagicMock,
     get_workspace_name_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
     # given
+    platform_client = MagicMock()
+    batch_update_image_metadata_at_roboflow_mock = (
+        platform_client.batch_update_image_metadata_at_roboflow
+    )
     get_workspace_name_mock.return_value = "my-workspace"
     batch_update_image_metadata_at_roboflow_mock.return_value = {"taskId": "task-123"}
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": "my_api_key",
+        "workflows_core.platform_client": platform_client,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
