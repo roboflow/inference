@@ -714,6 +714,9 @@ async def test_url_image_failure_keeps_the_v2_answer(
     monkeypatch, url, settings, public_message, v2_status, v2_body
 ):
     _configure_url_fetch(monkeypatch, **settings)
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     images, error = await fetch_images_from_urls([url])
 

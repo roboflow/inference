@@ -229,8 +229,12 @@ async def test_fetch_image_from_url_invalid_scheme():
 
 
 @pytest.mark.asyncio
-async def test_fetch_image_from_url_bad_domain():
+async def test_fetch_image_from_url_bad_domain(monkeypatch):
     from inference_server.framework.input_parsers import fetch_image_from_url
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     _, err = await fetch_image_from_url(
         "https://this-domain-does-not-exist-12345.invalid/img.jpg"
@@ -397,8 +401,14 @@ async def test_fetch_images_from_urls_under_limits_ok():
     ],
 )
 @pytest.mark.asyncio
-async def test_fetch_image_from_url_rejects_non_global_destination(address):
+async def test_fetch_image_from_url_rejects_non_global_destination(
+    monkeypatch, address
+):
     from inference_server.framework.input_parsers import fetch_image_from_url
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     with _patch_public_dns((address,)):
         data, err = await fetch_image_from_url("https://internal.example/img.jpg")
@@ -407,9 +417,13 @@ async def test_fetch_image_from_url_rejects_non_global_destination(address):
 
 
 @pytest.mark.asyncio
-async def test_fetch_image_from_url_rejects_when_any_address_is_internal():
+async def test_fetch_image_from_url_rejects_when_any_address_is_internal(monkeypatch):
     """Split-horizon DNS answers must not slip through on one public entry."""
     from inference_server.framework.input_parsers import fetch_image_from_url
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     with _patch_public_dns(("93.184.216.34", "127.0.0.1")):
         data, err = await fetch_image_from_url("https://mixed.example/img.jpg")
@@ -428,12 +442,50 @@ async def test_fetch_image_from_url_allows_public_destination():
 
 
 @pytest.mark.parametrize(
+    "url,description",
+    [
+        ("http://example.com/img.jpg", "image URL must start with https://"),
+        ("http://169.254.169.254/latest", "image URL must start with https://"),
+        ("https://93.184.216.34/img.jpg", "image URL host must be a domain name"),
+        ("https://localhost/img.jpg", "image URL host must be a domain name"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_refuses_non_https_and_bare_host_urls(
+    url, description
+):
+    import json
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_http([b"x" * 8]) as session:
+        data, err = await fetch_image_from_url(url)
+
+    assert data is None
+    assert err.status_code == 400
+    assert json.loads(err.body) == {
+        "error_code": "INVALID_URL",
+        "description": description,
+    }
+    assert session.requested == []
+
+
+@pytest.mark.parametrize(
     "url",
     ["http://example.com/img.jpg", "https://93.184.216.34/img.jpg"],
 )
 @pytest.mark.asyncio
-async def test_fetch_image_from_url_fetches_non_https_and_bare_ip_urls(url):
+async def test_fetch_image_from_url_fetches_non_https_and_bare_ip_urls_when_allowed(
+    monkeypatch, url
+):
     from inference_server.framework.input_parsers import fetch_image_from_url
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_NON_HTTPS_URL_INPUT", True
+    )
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     with _patch_http([b"x" * 8]) as session:
         data, err = await fetch_image_from_url(url)
@@ -441,6 +493,19 @@ async def test_fetch_image_from_url_fetches_non_https_and_bare_ip_urls(url):
     assert err is None
     assert data == b"x" * 8
     assert session.requested == [url]
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_refuses_a_redirect_to_non_https():
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    redirects = {"https://example.com/img.jpg": "http://example.com/img.jpg"}
+    with _patch_http([b"x" * 8], redirects=redirects) as session:
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+
+    assert data is None
+    assert err.status_code == 400
+    assert session.requested == ["https://example.com/img.jpg"]
 
 
 @pytest.mark.asyncio
@@ -467,10 +532,17 @@ async def test_fetch_image_from_url_validates_hops_whatever_the_redirect_setting
 
 
 @pytest.mark.asyncio
-async def test_fetch_image_from_url_revalidates_redirect_hops():
+async def test_fetch_image_from_url_revalidates_redirect_hops(monkeypatch):
     from unittest.mock import patch
 
     from inference_server.framework.input_parsers import fetch_image_from_url
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_NON_HTTPS_URL_INPUT", True
+    )
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     async def _resolve(host: str):
         return ["127.0.0.1"] if host == "metadata.internal" else ["93.184.216.34"]
@@ -528,10 +600,14 @@ async def test_fetch_image_from_url_bounds_redirect_chain():
 
 
 @pytest.mark.asyncio
-async def test_fetch_image_from_url_allowlist_permits_internal_host():
+async def test_fetch_image_from_url_allowlist_permits_internal_host(monkeypatch):
     from unittest.mock import patch
 
     from inference_server.framework.input_parsers import fetch_image_from_url
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     with _patch_http([b"ok"]), patch(
         "inference_server.configuration.WHITELISTED_DESTINATIONS_FOR_URL_INPUT",
@@ -573,10 +649,17 @@ async def test_fetch_image_from_url_blocklist_rejects_public_host():
 
 
 @pytest.mark.asyncio
-async def test_fetch_image_from_url_non_global_opt_in():
+async def test_fetch_image_from_url_non_global_opt_in(monkeypatch):
     from unittest.mock import patch
 
     from inference_server.framework.input_parsers import fetch_image_from_url
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_NON_HTTPS_URL_INPUT", True
+    )
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     with _patch_http([b"ok"]), patch(
         "inference_server.configuration.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True
@@ -688,11 +771,15 @@ async def test_fetch_image_from_url_pins_validated_addresses():
 
 
 @pytest.mark.asyncio
-async def test_fetch_image_from_url_pins_allowlisted_host_too():
+async def test_fetch_image_from_url_pins_allowlisted_host_too(monkeypatch):
     """The allowlist skips the address check, not the pinning."""
     from unittest.mock import patch
 
     from inference_server.framework.input_parsers import fetch_image_from_url
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     with _patch_pinning([["10.0.0.5"], ["169.254.169.254"]]) as captured, patch(
         "inference_server.configuration.WHITELISTED_DESTINATIONS_FOR_URL_INPUT",
@@ -750,13 +837,17 @@ async def test_pinned_resolver_reports_ipv6_family():
 
 
 @pytest.mark.asyncio
-async def test_ip_literal_url_is_validated_and_bypasses_the_resolver():
+async def test_ip_literal_url_is_validated_and_bypasses_the_resolver(monkeypatch):
     """aiohttp connects to an IP literal without consulting the resolver, so
     the literal itself must be (and is) validated by the destination check."""
     import aiohttp
 
     from inference_server.framework.input_parsers import fetch_image_from_url
     from inference_server.framework.input_parsers.url_fetch import _PinnedResolver
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     with _patch_public_dns(("169.254.169.254",)):
         data, err = await fetch_image_from_url("https://169.254.169.254/img.jpg")
@@ -859,8 +950,14 @@ async def test_fetch_to_sink_is_uncapped_without_max_bytes():
 
 
 @pytest.mark.asyncio
-async def test_fetch_to_sink_refuses_a_non_global_destination_before_connecting():
+async def test_fetch_to_sink_refuses_a_non_global_destination_before_connecting(
+    monkeypatch,
+):
     from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     received, sink = _sink()
     with _patch_public_dns(("169.254.169.254",)):
@@ -919,10 +1016,17 @@ async def test_fetch_to_sink_follows_an_allowed_redirect():
 
 
 @pytest.mark.asyncio
-async def test_fetch_to_sink_revalidates_every_redirect_hop():
+async def test_fetch_to_sink_revalidates_every_redirect_hop(monkeypatch):
     from unittest.mock import patch
 
     from inference_server.framework.input_parsers.url_fetch import fetch_to_sink
+
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_NON_HTTPS_URL_INPUT", True
+    )
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_INPUT_WITHOUT_FQDN", True
+    )
 
     async def _resolve(host: str):
         return ["127.0.0.1"] if host == "metadata.internal" else ["93.184.216.34"]

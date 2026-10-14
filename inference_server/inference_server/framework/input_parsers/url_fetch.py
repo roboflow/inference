@@ -11,6 +11,7 @@ from typing import Callable, Optional
 from urllib.parse import urljoin, urlsplit
 
 import aiohttp
+import tldextract
 from aiohttp.abc import AbstractResolver
 from fastapi import Response
 
@@ -24,6 +25,7 @@ URL_FETCH_TIMEOUT_S = 10
 URL_FETCH_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
 _CHUNK_BYTES = 64 * 1024
 _REDIRECT_STATUSES = frozenset((301, 302, 303, 307, 308))
+_extract_domain = tldextract.TLDExtract(suffix_list_urls=())
 
 
 @dataclass(frozen=True)
@@ -168,9 +170,21 @@ async def _ensure_destination_allowed(
         return None, error_response(
             400, "INVALID_URL", "image URL must start with http:// or https://"
         )
-    host = (urlsplit(url).hostname or "").lower()
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
     if not host:
         return None, error_response(400, "INVALID_URL", "image URL has no host")
+    if parts.scheme != "https" and not configuration.ALLOW_NON_HTTPS_URL_INPUT:
+        return None, error_response(
+            400, "INVALID_URL", "image URL must start with https://"
+        )
+    if (
+        not _extract_domain(f"[{host}]" if ":" in host else host).fqdn
+        and not configuration.ALLOW_URL_INPUT_WITHOUT_FQDN
+    ):
+        return None, error_response(
+            400, "INVALID_URL", "image URL host must be a domain name"
+        )
 
     blocked = configuration.BLACKLISTED_DESTINATIONS_FOR_URL_INPUT
     if blocked and host in blocked:

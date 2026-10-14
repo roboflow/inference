@@ -186,8 +186,8 @@ FAILURES = {
     "redirect-to-blacklisted": (
         [A],
         {
-            "session": _Session(redirects={A: "https://blocked.example/a.jpg"}),
-            "blocked": frozenset({"blocked.example"}),
+            "session": _Session(redirects={A: "https://blocked.example.com/a.jpg"}),
+            "blocked": frozenset({"blocked.example.com"}),
         },
         403,
         FORBIDDEN_BODY,
@@ -266,13 +266,27 @@ FAILURES = {
         b'"description": "at most 1 images per request"}',
     ),
     "batch-non-global-then-blacklisted": (
-        ["https://internal.example/a.jpg", "https://blocked.example/b.jpg"],
+        ["https://internal.example.com/a.jpg", "https://blocked.example.com/b.jpg"],
         {
-            "addresses": {"internal.example": ("127.0.0.1",)},
-            "blocked": frozenset({"blocked.example"}),
+            "addresses": {"internal.example.com": ("127.0.0.1",)},
+            "blocked": frozenset({"blocked.example.com"}),
         },
         403,
         FORBIDDEN_BODY,
+    ),
+    "non-https": (
+        ["http://example.com/a.jpg"],
+        {},
+        400,
+        b'{"error_code": "INVALID_URL", '
+        b'"description": "image URL must start with https://"}',
+    ),
+    "without-fqdn": (
+        ["https://localhost/a.jpg"],
+        {},
+        400,
+        b'{"error_code": "INVALID_URL", '
+        b'"description": "image URL host must be a domain name"}',
     ),
     "batch-fine-then-invalid": ([A, "example.com/b.jpg"], {}, 400, INVALID_SCHEME_BODY),
 }
@@ -870,9 +884,30 @@ async def test_workflow_image_fetch_follows_redirects_like_the_route(
     "url", [HTTP_URL, "https://93.184.216.34/a.jpg", "https://localhost/a.jpg"]
 )
 @pytest.mark.asyncio
-async def test_shared_fetch_keeps_fetching_non_https_and_bare_hosts(monkeypatch, url):
+async def test_shared_fetch_refuses_non_https_and_bare_hosts_by_default(
+    monkeypatch, url
+):
     session = _Session()
     _configure(monkeypatch, session=session)
+
+    images, error = await fetch_images_from_urls([url])
+
+    assert images is None
+    assert error.status_code == 400
+    assert session.requested == []
+
+
+@pytest.mark.parametrize(
+    "url", [HTTP_URL, "https://93.184.216.34/a.jpg", "https://localhost/a.jpg"]
+)
+@pytest.mark.asyncio
+async def test_shared_fetch_fetches_non_https_and_bare_hosts_when_allowed(
+    monkeypatch, url
+):
+    session = _Session()
+    _configure(
+        monkeypatch, session=session, allow_non_https=True, allow_without_fqdn=True
+    )
 
     images, error = await fetch_images_from_urls([url])
 
