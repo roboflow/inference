@@ -36,6 +36,7 @@ from roboflow_workflows.prototypes.block import (
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
+    resolve_platform_blocks_client,
 )
 from typing_extensions import Annotated
 
@@ -147,7 +148,7 @@ class RoboflowVisualSearchBlockV1(WorkflowBlock):
         platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._api_key = api_key
-        self._platform_client = platform_client
+        self._platform_client = resolve_platform_blocks_client(platform_client)
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:

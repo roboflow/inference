@@ -430,7 +430,10 @@ def test_upload_image_success(mock_post: MagicMock) -> None:
 
     image = _make_workflow_image()
     source_id, url = _upload_image(
-        "https://api.roboflow.com", "test-key", OFFLINE_PLATFORM_CLIENT, image
+        api_base_url="https://api.roboflow.com",
+        api_key="test-key",
+        image_data=image,
+        platform_client=OFFLINE_PLATFORM_CLIENT,
     )
 
     assert source_id == "src-123"
@@ -457,7 +460,10 @@ def test_upload_image_failure(mock_post: MagicMock) -> None:
     image = _make_workflow_image()
     with pytest.raises(requests.exceptions.HTTPError):
         _upload_image(
-            "https://api.roboflow.com", "test-key", OFFLINE_PLATFORM_CLIENT, image
+            api_base_url="https://api.roboflow.com",
+            api_key="test-key",
+            image_data=image,
+            platform_client=OFFLINE_PLATFORM_CLIENT,
         )
 
 
@@ -810,7 +816,7 @@ def test_execute_vision_event_returns_generated_event_id(
     assert error_status is False
     # the returned id is the client-generated UUID that was sent in the payload
     assert event_id
-    sent_payload = mock_send.call_args.args[3]
+    sent_payload = mock_send.call_args.args[2]
     assert event_id == sent_payload["eventId"]
 
 
@@ -1319,10 +1325,10 @@ def test_upload_image_sends_shared_roboflow_api_headers(mock_post: MagicMock) ->
 
     platform_client = _headers_client({"x-temporary-auth-token": "batch-token"})
     _upload_image(
-        "https://api.roboflow.com",
-        "test-key",
-        platform_client,
-        _make_workflow_image(),
+        api_base_url="https://api.roboflow.com",
+        api_key="test-key",
+        image_data=_make_workflow_image(),
+        platform_client=platform_client,
     )
 
     assert mock_post.call_args[1]["headers"] == {
@@ -1346,7 +1352,10 @@ def test_send_event_sends_shared_roboflow_api_headers(mock_post: MagicMock) -> N
     )
     build_headers_mock = platform_client.build_api_headers
     error_status, _ = _send_event(
-        "https://api.roboflow.com", "test-key", platform_client, {"eventId": "evt-1"}
+        api_base_url="https://api.roboflow.com",
+        api_key="test-key",
+        payload={"eventId": "evt-1"},
+        platform_client=platform_client,
     )
 
     assert error_status is False
@@ -1369,10 +1378,12 @@ def test_configured_authorization_header_is_not_overridden(
     mock_post.return_value = mock_response
 
     _send_event(
-        "https://api.roboflow.com",
-        "dummy-workspace",
-        _headers_client({"Authorization": "Bearer configured-credential"}),
-        {"eventId": "e"},
+        api_base_url="https://api.roboflow.com",
+        api_key="dummy-workspace",
+        payload={"eventId": "e"},
+        platform_client=_headers_client(
+            {"Authorization": "Bearer configured-credential"}
+        ),
     )
 
     assert (
@@ -1390,10 +1401,10 @@ def test_api_key_is_not_placed_in_request_url(mock_post: MagicMock) -> None:
     mock_post.return_value = mock_response
 
     _send_event(
-        "https://api.roboflow.com",
-        "my-secret-key",
-        OFFLINE_PLATFORM_CLIENT,
-        {"eventId": "evt-1"},
+        api_base_url="https://api.roboflow.com",
+        api_key="my-secret-key",
+        payload={"eventId": "evt-1"},
+        platform_client=OFFLINE_PLATFORM_CLIENT,
     )
 
     url = mock_post.call_args[0][0]

@@ -1359,6 +1359,17 @@ if LOAD_ENTERPRISE_BLOCKS:
             [ENTERPRISE_BLOCKS_PLUGIN] + _workflows_plugins
         )
 
+# Listed once, first: the stub loads no blocks but initialises the host in children.
+ROBOFLOW_BLOCKS_PLUGIN = "inference.roboflow_workflows_plugin.loader"
+_workflows_plugins = [
+    plugin
+    for plugin in os.getenv("WORKFLOWS_PLUGINS", "").split(",")
+    if plugin and plugin != ROBOFLOW_BLOCKS_PLUGIN
+]
+os.environ["WORKFLOWS_PLUGINS"] = ",".join(
+    [ROBOFLOW_BLOCKS_PLUGIN] + _workflows_plugins
+)
+
 TRANSIENT_ROBOFLOW_API_ERRORS = set(
     int(e)
     for e in os.getenv("TRANSIENT_ROBOFLOW_API_ERRORS", "").split(",")

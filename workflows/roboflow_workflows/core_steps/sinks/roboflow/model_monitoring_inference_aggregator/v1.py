@@ -50,6 +50,7 @@ from roboflow_workflows.prototypes.cache import WorkflowsCache
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
+    resolve_platform_blocks_client,
 )
 
 # The aggregation buffer lives in the block instance while the reporting
@@ -382,7 +383,7 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._disable_sinks = disable_sinks
-        self._platform_client = platform_client
+        self._platform_client = resolve_platform_blocks_client(platform_client)
         self._predictions_aggregator = PredictionsAggregator()
 
     @classmethod
@@ -458,9 +459,10 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
 def get_workspace_name(
     api_key: str,
     cache: WorkflowsCache,
-    platform_client: RoboflowPlatformClient,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> str:
     # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    platform_client = resolve_platform_blocks_client(platform_client)
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cached_workspace_name = cache.get(cache_key)
@@ -473,11 +475,12 @@ def get_workspace_name(
 
 def send_to_model_monitoring_request(
     cache: WorkflowsCache,
-    platform_client: RoboflowPlatformClient,
     last_report_time_cache_key: str,
     api_key: str,
     predictions: List[ParsedPrediction],
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Tuple[bool, str]:
+    platform_client = resolve_platform_blocks_client(platform_client)
     workspace_id = get_workspace_name(
         api_key=api_key, cache=cache, platform_client=platform_client
     )

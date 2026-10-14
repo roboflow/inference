@@ -64,6 +64,8 @@ from roboflow_workflows.prototypes.block import (
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
+    ensure_roboflow_api_access,
+    resolve_platform_blocks_client,
 )
 from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes
 
@@ -518,7 +520,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._disable_sinks = disable_sinks
-        self._platform_client = platform_client
+        self._platform_client = resolve_platform_blocks_client(platform_client)
         self._last_event_fired: Optional[datetime] = None
 
     @classmethod
@@ -754,7 +756,6 @@ def _convert_predictions_to_annotations(
 def _execute_vision_event(
     api_base_url: str,
     api_key: str,
-    platform_client: RoboflowPlatformClient,
     input_image: Optional[WorkflowImageData],
     output_image: Optional[WorkflowImageData],
     prediction: Optional[TensorNativePrediction],
@@ -762,6 +763,7 @@ def _execute_vision_event(
     solution: str,
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Tuple[bool, str, str]:
     try:
         # Step 1: Convert predictions to vision events annotation format
@@ -773,13 +775,17 @@ def _execute_vision_event(
 
         if output_image is not None:
             output_source_id, _ = _upload_image(
-                api_base_url, api_key, platform_client, output_image
+                api_base_url, api_key, output_image, platform_client=platform_client
             )
             image_entry["sourceId"] = output_source_id
 
         if input_image is not None:
             input_source_id, _ = _upload_image(
-                api_base_url, api_key, platform_client, input_image, jpeg_quality=95
+                api_base_url,
+                api_key,
+                input_image,
+                jpeg_quality=95,
+                platform_client=platform_client,
             )
             image_entry["inputSourceId"] = input_source_id
 
@@ -799,7 +805,7 @@ def _execute_vision_event(
         )
 
         error_status, message = _send_event(
-            api_base_url, api_key, platform_client, payload
+            api_base_url, api_key, payload, platform_client=platform_client
         )
         # The eventId is generated client-side and sent in the payload, so it is the
         # canonical id of the created event; surface it on success.
@@ -1085,15 +1091,17 @@ def _convert_classification_to_vision_events_format(
 def _upload_image(
     api_base_url: str,
     api_key: str,
-    platform_client: RoboflowPlatformClient,
     image_data: WorkflowImageData,
     jpeg_quality: int = 85,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Tuple[str, str]:
     """Upload an image to the Vision Events API.
 
     Returns:
         Tuple of (sourceId, url)
     """
+    platform_client = resolve_platform_blocks_client(platform_client)
+    ensure_roboflow_api_access(platform_client)
     image_bytes = encode_image_to_jpeg_bytes(
         image_data.numpy_image, jpeg_quality=jpeg_quality
     )
@@ -1141,15 +1149,17 @@ def _build_event_payload(
 def _send_event(
     api_base_url: str,
     api_key: str,
-    platform_client: RoboflowPlatformClient,
     payload: dict,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Tuple[bool, str]:
     """Send a vision event to the API.
 
     Returns:
         Tuple of (error_status, message)
     """
+    platform_client = resolve_platform_blocks_client(platform_client)
     try:
+        ensure_roboflow_api_access(platform_client)
         response = requests.post(
             platform_client.wrap_url(f"{api_base_url}/vision-events"),
             headers={

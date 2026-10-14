@@ -50,8 +50,18 @@ class RoboflowPlatformClient(Protocol):
     def wrap_url(self, url: str) -> str: ...
 
     def get_roboflow_workspace(self, api_key: str) -> str:
-        """Workspace of `api_key`; raises instead of returning `None`."""
-        ...
+        """Return the workspace that owns an API key.
+
+        Args:
+            api_key (str): Roboflow API key.
+
+        Returns:
+            str: The workspace ID; never `None`.
+
+        Raises:
+            WorkspaceLoadError: If the key is empty or maps to no workspace.
+            RoboflowAPIRequestError: If the Roboflow API request fails.
+        """
 
     def add_custom_metadata(
         self,
@@ -60,7 +70,19 @@ class RoboflowPlatformClient(Protocol):
         inference_ids: List[str],
         field_name: str,
         field_value: str,
-    ) -> None: ...
+    ) -> None:
+        """Attach a custom metadata field to inference results.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace_id (str): Workspace that owns the results.
+            inference_ids (List[str]): IDs of the inference results to update.
+            field_name (str): Name of the metadata field.
+            field_value (str): Value of the metadata field.
+
+        Raises:
+            RoboflowAPIRequestError: If the Roboflow API request fails.
+        """
 
     def register_image_at_roboflow(
         self,
@@ -73,7 +95,27 @@ class RoboflowPlatformClient(Protocol):
         inference_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         annotation_follows: bool = False,
-    ) -> dict: ...
+    ) -> dict:
+        """Upload an image to a Roboflow dataset.
+
+        Args:
+            api_key (str): Roboflow API key.
+            dataset_id (str): Target project.
+            local_image_id (str): Name the image is uploaded under.
+            image_bytes (bytes): Encoded image.
+            batch_name (str): Labeling batch the image joins.
+            tags (Optional[List[str]]): Tags for the image.
+            inference_id (Optional[str]): Inference result the image belongs to.
+            metadata (Optional[Dict[str, Any]]): User metadata for the image.
+            annotation_follows (bool): Whether an annotation upload follows.
+
+        Returns:
+            dict: The Roboflow API response, including the image `id`.
+
+        Raises:
+            RoboflowAPIImageUploadRejectionError: If the API rejects the image.
+            RoboflowAPIRequestError: If the Roboflow API request fails.
+        """
 
     def annotate_image_at_roboflow(
         self,
@@ -84,7 +126,25 @@ class RoboflowPlatformClient(Protocol):
         annotation_content: str,
         annotation_file_type: str,
         is_prediction: bool = True,
-    ) -> dict: ...
+    ) -> dict:
+        """Upload an annotation for an image already in a dataset.
+
+        Args:
+            api_key (str): Roboflow API key.
+            dataset_id (str): Project that holds the image.
+            local_image_id (str): Name the image was uploaded under.
+            roboflow_image_id (str): Image ID returned by the upload.
+            annotation_content (str): Serialized annotation.
+            annotation_file_type (str): Annotation format, such as `json`.
+            is_prediction (bool): Whether the annotation is a model prediction.
+
+        Returns:
+            dict: The Roboflow API response.
+
+        Raises:
+            RoboflowAPIIAnnotationRejectionError: If the annotation is rejected.
+            RoboflowAPIRequestError: If the Roboflow API request fails.
+        """
 
     def update_image_metadata_at_roboflow(
         self,
@@ -93,14 +153,42 @@ class RoboflowPlatformClient(Protocol):
         image_id: str,
         metadata: Optional[Dict[str, Any]] = None,
         add_tags: Optional[List[str]] = None,
-    ) -> Dict[str, Any]: ...
+    ) -> Dict[str, Any]:
+        """Update the metadata and tags of an image in the asset library.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace_id (str): Workspace that owns the image.
+            image_id (str): Image to update.
+            metadata (Optional[Dict[str, Any]]): Metadata fields to set.
+            add_tags (Optional[List[str]]): Tags to add.
+
+        Returns:
+            Dict[str, Any]: The Roboflow API response.
+
+        Raises:
+            RoboflowAPIRequestError: If the Roboflow API request fails.
+        """
 
     def batch_update_image_metadata_at_roboflow(
         self,
         api_key: str,
         workspace_id: str,
         updates: List[Dict[str, Any]],
-    ) -> Dict[str, Any]: ...
+    ) -> Dict[str, Any]:
+        """Update the metadata and tags of several images in one request.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace_id (str): Workspace that owns the images.
+            updates (List[Dict[str, Any]]): One update per image.
+
+        Returns:
+            Dict[str, Any]: The Roboflow API response.
+
+        Raises:
+            RoboflowAPIRequestError: If the Roboflow API request fails.
+        """
 
     def search_project_images_at_roboflow(
         self,
@@ -110,21 +198,62 @@ class RoboflowPlatformClient(Protocol):
         image_base64: str,
         limit: int,
         fields: Optional[List[str]] = None,
-    ) -> Dict[str, Any]: ...
+    ) -> Dict[str, Any]:
+        """Find the project images most similar to a query image.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace (str): Workspace that owns the project.
+            project (str): Project to search.
+            image_base64 (str): Query image, base64-encoded.
+            limit (int): Maximum number of results.
+            fields (Optional[List[str]]): Image fields to return.
+
+        Returns:
+            Dict[str, Any]: The Roboflow API response, with `results`.
+
+        Raises:
+            RoboflowAPIRequestError: If the Roboflow API request fails.
+        """
 
     def send_inference_results_to_model_monitoring(
         self,
         api_key: str,
         workspace_id: str,
         inference_data: dict,
-    ) -> None: ...
+    ) -> None:
+        """Report aggregated inference results to model monitoring.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace_id (str): Workspace the results are reported to.
+            inference_data (dict): Report payload.
+
+        Raises:
+            RoboflowAPIRequestError: If the Roboflow API request fails.
+        """
 
     # What the model-monitoring block reports about the host it runs on.
-    def get_device_id(self) -> Optional[str]: ...
+    def get_device_id(self) -> Optional[str]:
+        """Return the ID of the device this host runs on.
 
-    def get_server_version(self) -> str: ...
+        Returns:
+            Optional[str]: The device ID, or `None` when it is not set.
+        """
 
-    def get_system_info(self) -> dict: ...
+    def get_server_version(self) -> str:
+        """Return the version of the host server.
+
+        Returns:
+            str: The version string.
+        """
+
+    def get_system_info(self) -> dict:
+        """Return a description of the host system for model monitoring.
+
+        Returns:
+            dict: System information.
+        """
 
 
 class OfflineRoboflowPlatformClient:
@@ -173,6 +302,14 @@ class OfflineRoboflowPlatformClient:
         return url
 
     def get_roboflow_workspace(self, api_key: str) -> str:
+        """Return the workspace that owns an API key.
+
+        Args:
+            api_key (str): Roboflow API key.
+
+        Raises:
+            WorkflowEnvironmentConfigurationError: Always; no Roboflow API.
+        """
         raise _roboflow_api_unavailable()
 
     def add_custom_metadata(
@@ -183,6 +320,18 @@ class OfflineRoboflowPlatformClient:
         field_name: str,
         field_value: str,
     ) -> None:
+        """Attach a custom metadata field to inference results.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace_id (str): Workspace that owns the results.
+            inference_ids (List[str]): IDs of the inference results to update.
+            field_name (str): Name of the metadata field.
+            field_value (str): Value of the metadata field.
+
+        Raises:
+            WorkflowEnvironmentConfigurationError: Always; no Roboflow API.
+        """
         raise _roboflow_api_unavailable()
 
     def register_image_at_roboflow(
@@ -197,6 +346,22 @@ class OfflineRoboflowPlatformClient:
         metadata: Optional[Dict[str, Any]] = None,
         annotation_follows: bool = False,
     ) -> dict:
+        """Upload an image to a Roboflow dataset.
+
+        Args:
+            api_key (str): Roboflow API key.
+            dataset_id (str): Target project.
+            local_image_id (str): Name the image is uploaded under.
+            image_bytes (bytes): Encoded image.
+            batch_name (str): Labeling batch the image joins.
+            tags (Optional[List[str]]): Tags for the image.
+            inference_id (Optional[str]): Inference result the image belongs to.
+            metadata (Optional[Dict[str, Any]]): User metadata for the image.
+            annotation_follows (bool): Whether an annotation upload follows.
+
+        Raises:
+            WorkflowEnvironmentConfigurationError: Always; no Roboflow API.
+        """
         raise _roboflow_api_unavailable()
 
     def annotate_image_at_roboflow(
@@ -209,6 +374,20 @@ class OfflineRoboflowPlatformClient:
         annotation_file_type: str,
         is_prediction: bool = True,
     ) -> dict:
+        """Upload an annotation for an image already in a dataset.
+
+        Args:
+            api_key (str): Roboflow API key.
+            dataset_id (str): Project that holds the image.
+            local_image_id (str): Name the image was uploaded under.
+            roboflow_image_id (str): Image ID returned by the upload.
+            annotation_content (str): Serialized annotation.
+            annotation_file_type (str): Annotation format, such as `json`.
+            is_prediction (bool): Whether the annotation is a model prediction.
+
+        Raises:
+            WorkflowEnvironmentConfigurationError: Always; no Roboflow API.
+        """
         raise _roboflow_api_unavailable()
 
     def update_image_metadata_at_roboflow(
@@ -219,6 +398,18 @@ class OfflineRoboflowPlatformClient:
         metadata: Optional[Dict[str, Any]] = None,
         add_tags: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
+        """Update the metadata and tags of an image in the asset library.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace_id (str): Workspace that owns the image.
+            image_id (str): Image to update.
+            metadata (Optional[Dict[str, Any]]): Metadata fields to set.
+            add_tags (Optional[List[str]]): Tags to add.
+
+        Raises:
+            WorkflowEnvironmentConfigurationError: Always; no Roboflow API.
+        """
         raise _roboflow_api_unavailable()
 
     def batch_update_image_metadata_at_roboflow(
@@ -227,6 +418,16 @@ class OfflineRoboflowPlatformClient:
         workspace_id: str,
         updates: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
+        """Update the metadata and tags of several images in one request.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace_id (str): Workspace that owns the images.
+            updates (List[Dict[str, Any]]): One update per image.
+
+        Raises:
+            WorkflowEnvironmentConfigurationError: Always; no Roboflow API.
+        """
         raise _roboflow_api_unavailable()
 
     def search_project_images_at_roboflow(
@@ -238,6 +439,19 @@ class OfflineRoboflowPlatformClient:
         limit: int,
         fields: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
+        """Find the project images most similar to a query image.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace (str): Workspace that owns the project.
+            project (str): Project to search.
+            image_base64 (str): Query image, base64-encoded.
+            limit (int): Maximum number of results.
+            fields (Optional[List[str]]): Image fields to return.
+
+        Raises:
+            WorkflowEnvironmentConfigurationError: Always; no Roboflow API.
+        """
         raise _roboflow_api_unavailable()
 
     def send_inference_results_to_model_monitoring(
@@ -246,15 +460,40 @@ class OfflineRoboflowPlatformClient:
         workspace_id: str,
         inference_data: dict,
     ) -> None:
+        """Report aggregated inference results to model monitoring.
+
+        Args:
+            api_key (str): Roboflow API key.
+            workspace_id (str): Workspace the results are reported to.
+            inference_data (dict): Report payload.
+
+        Raises:
+            WorkflowEnvironmentConfigurationError: Always; no Roboflow API.
+        """
         raise _roboflow_api_unavailable()
 
     def get_device_id(self) -> Optional[str]:
+        """Return the ID of the device this host runs on.
+
+        Returns:
+            Optional[str]: Always `None`.
+        """
         return None
 
     def get_server_version(self) -> str:
+        """Return the version of the host server.
+
+        Returns:
+            str: Always `"unknown"`.
+        """
         return "unknown"
 
     def get_system_info(self) -> dict:
+        """Return a description of the host system for model monitoring.
+
+        Returns:
+            dict: Always empty.
+        """
         return {}
 
 
@@ -276,3 +515,103 @@ def _roboflow_api_unavailable() -> WorkflowEnvironmentConfigurationError:
 # Task 9.5 ones) still works while the engine always passes
 # the resolved value explicitly.
 OFFLINE_PLATFORM_CLIENT = OfflineRoboflowPlatformClient()
+
+_PLATFORM_BLOCKS_OPERATIONS = (
+    "build_api_headers",
+    "wrap_url",
+    "get_roboflow_workspace",
+    "add_custom_metadata",
+    "register_image_at_roboflow",
+    "annotate_image_at_roboflow",
+    "update_image_metadata_at_roboflow",
+    "batch_update_image_metadata_at_roboflow",
+    "search_project_images_at_roboflow",
+    "send_inference_results_to_model_monitoring",
+    "get_device_id",
+    "get_server_version",
+    "get_system_info",
+)
+_PLATFORM_BLOCKS_CLIENT_FACTORY: Optional[Callable[[], RoboflowPlatformClient]] = None
+
+
+def set_platform_blocks_client_factory(
+    factory: Optional[Callable[[], RoboflowPlatformClient]],
+) -> None:
+    """Register the host client that the Roboflow-platform blocks fall back to.
+
+    The fallback is used only by the Roboflow-platform blocks, and only when
+    they get no client, the offline client, or a client that lacks one of the
+    operations they call or only inherits its `RoboflowPlatformClient` stub.
+    Other blocks keep the client they are given.
+
+    Args:
+        factory (Optional[Callable[[], RoboflowPlatformClient]]): Called on
+            each resolution to return the host client; `None` removes the
+            fallback.
+    """
+    global _PLATFORM_BLOCKS_CLIENT_FACTORY
+    _PLATFORM_BLOCKS_CLIENT_FACTORY = factory
+
+
+def resolve_platform_blocks_client(
+    platform_client: Optional[RoboflowPlatformClient],
+) -> RoboflowPlatformClient:
+    """Pick the client a Roboflow-platform block uses to reach the Roboflow API.
+
+    Args:
+        platform_client (Optional[RoboflowPlatformClient]): The client passed
+            to the block or helper, if any.
+
+    Returns:
+        RoboflowPlatformClient: `platform_client` when it implements every
+        operation the Roboflow-platform blocks call; otherwise the client of
+        the factory registered with `set_platform_blocks_client_factory`, and
+        without a factory `platform_client` or the offline client.
+    """
+    if platform_client is not None and _implements_platform_blocks_operations(
+        platform_client
+    ):
+        return platform_client
+
+    factory = _PLATFORM_BLOCKS_CLIENT_FACTORY
+    if factory is not None:
+        host_client = factory()
+        return host_client
+    if platform_client is None:
+        return OFFLINE_PLATFORM_CLIENT
+    return platform_client
+
+
+def _implements_platform_blocks_operations(platform_client: Any) -> bool:
+    if isinstance(platform_client, OfflineRoboflowPlatformClient):
+        return False
+    return all(
+        _implements_operation(platform_client=platform_client, operation=operation)
+        for operation in _PLATFORM_BLOCKS_OPERATIONS
+    )
+
+
+def _implements_operation(platform_client: Any, operation: str) -> bool:
+    implementation = getattr(platform_client, operation, None)
+    if not callable(implementation):
+        return False
+    protocol_stub = RoboflowPlatformClient.__dict__[operation]
+    return getattr(implementation, "__func__", implementation) is not protocol_stub
+
+
+def ensure_roboflow_api_access(platform_client: Any) -> None:
+    """Refuse a direct Roboflow API request that the client cannot make.
+
+    For blocks that send their own requests with the client's URL and header
+    helpers, this gives the same refusal as the named operations.
+
+    Args:
+        platform_client (Any): The resolved client of a Roboflow-platform block.
+
+    Raises:
+        WorkflowEnvironmentConfigurationError: If the client is the offline
+            client or does not implement the Roboflow-platform blocks'
+            operations.
+    """
+    if not _implements_platform_blocks_operations(platform_client):
+        raise _roboflow_api_unavailable()

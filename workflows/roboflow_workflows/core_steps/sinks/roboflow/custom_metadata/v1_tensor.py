@@ -40,6 +40,7 @@ from roboflow_workflows.prototypes.cache import WorkflowsCache
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
+    resolve_platform_blocks_client,
 )
 
 from inference_models.models.base.classification import (
@@ -228,7 +229,7 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._disable_sinks = disable_sinks
-        self._platform_client = platform_client
+        self._platform_client = resolve_platform_blocks_client(platform_client)
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -329,9 +330,10 @@ def _extract_inference_ids(
 def get_workspace_name(
     api_key: str,
     cache: WorkflowsCache,
-    platform_client: RoboflowPlatformClient,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> str:
     # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    platform_client = resolve_platform_blocks_client(platform_client)
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cached_workspace_name = cache.get(cache_key)
@@ -346,12 +348,13 @@ def get_workspace_name(
 
 def add_custom_metadata_request(
     cache: WorkflowsCache,
-    platform_client: RoboflowPlatformClient,
     api_key: str,
     inference_ids: List[str],
     field_name: str,
     field_value: str,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Tuple[bool, str]:
+    platform_client = resolve_platform_blocks_client(platform_client)
     workspace_id = get_workspace_name(
         api_key=api_key, cache=cache, platform_client=platform_client
     )

@@ -4,6 +4,7 @@ import subprocess
 import sys
 
 from inference.core.env import ENTERPRISE_BLOCKS_PLUGIN as ENTERPRISE_PLUGIN
+from inference.core.env import ROBOFLOW_BLOCKS_PLUGIN as ROBOFLOW_PLUGIN
 
 MQTT_BLOCK = (
     "inference.enterprise.workflows.enterprise_blocks.sinks.mqtt_writer.v1"
@@ -11,6 +12,10 @@ MQTT_BLOCK = (
 )
 FAKE_PLUGIN = "fake_workflows_plugin"
 FAKE_BLOCK = "__main__.FakePluginBlockV1"
+PLATFORM_BLOCK_PREFIXES = (
+    "inference.core.workflows.core_steps.sinks.roboflow.",
+    "inference.core.workflows.core_steps.integrations.roboflow.",
+)
 
 # Installs `FAKE_PLUGIN` in sys.modules before anything imports the loader, so
 # `WORKFLOWS_PLUGINS=fake_workflows_plugin` resolves without a real distribution.
@@ -132,7 +137,7 @@ def test_enterprise_blocks_keep_their_position_between_core_and_custom_plugins()
     assert max(genuine_core_positions) < mqtt_position
     # ... which in turn precedes the custom plugin's block.
     assert mqtt_position < fake_position
-    assert report["plugins"] == f"{ENTERPRISE_PLUGIN},{FAKE_PLUGIN}"
+    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN},{FAKE_PLUGIN}"
 
 
 def test_env_expansion_does_not_duplicate_an_already_listed_enterprise_plugin() -> None:
@@ -143,6 +148,66 @@ def test_env_expansion_does_not_duplicate_an_already_listed_enterprise_plugin() 
         LOAD_ENTERPRISE_BLOCKS="True",
         WORKFLOWS_PLUGINS=ENTERPRISE_PLUGIN,
     )
-    assert report["plugins"] == ENTERPRISE_PLUGIN
+    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN}"
     identifiers = [identifier for identifier, _ in report["blocks"]]
     assert identifiers.count(MQTT_BLOCK) == 1
+
+
+def _platform_block_positions(report: dict) -> list:
+    return [
+        index
+        for index, (identifier, _) in enumerate(report["blocks"])
+        if identifier.startswith(PLATFORM_BLOCK_PREFIXES)
+    ]
+
+
+def test_env_keeps_a_listed_legacy_roboflow_plugin_once() -> None:
+    report = _run_probe(PROBE, WORKFLOWS_PLUGINS=ROBOFLOW_PLUGIN)
+
+    assert report["plugins"] == ROBOFLOW_PLUGIN
+    identifiers = [identifier for identifier, _ in report["blocks"]]
+    platform_blocks = [
+        identifiers[index] for index in _platform_block_positions(report)
+    ]
+    assert len(platform_blocks) == len(set(platform_blocks)) == 9
+    assert report["blocks"] == _run_probe(PROBE)["blocks"]
+
+
+def test_env_moves_a_listed_legacy_roboflow_plugin_ahead_of_enterprise() -> None:
+    report = _run_probe(
+        PROBE,
+        LOAD_ENTERPRISE_BLOCKS="True",
+        WORKFLOWS_PLUGINS=ROBOFLOW_PLUGIN,
+    )
+
+    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN}"
+
+
+def test_env_moves_a_legacy_roboflow_plugin_listed_after_a_custom_plugin() -> None:
+    report = _run_probe(
+        ORDERING_PROBE,
+        LOAD_ENTERPRISE_BLOCKS="True",
+        WORKFLOWS_PLUGINS=f"{FAKE_PLUGIN},{ROBOFLOW_PLUGIN}",
+    )
+
+    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN},{FAKE_PLUGIN}"
+    identifiers = [identifier for identifier, _ in report["blocks"]]
+    platform_positions = _platform_block_positions(report)
+    assert len(platform_positions) == 9
+    mqtt_position = identifiers.index(MQTT_BLOCK)
+    fake_position = identifiers.index(FAKE_BLOCK)
+    assert max(platform_positions) < mqtt_position < fake_position
+
+
+def test_env_replaces_an_empty_plugins_value_with_the_legacy_roboflow_plugin() -> None:
+    report = _run_probe(PROBE, WORKFLOWS_PLUGINS="")
+
+    assert report["plugins"] == ROBOFLOW_PLUGIN
+    assert report["blocks"] == _run_probe(PROBE)["blocks"]
+
+
+def test_env_drops_empty_entries_from_plugins() -> None:
+    report = _run_probe(ORDERING_PROBE, WORKFLOWS_PLUGINS=f",{FAKE_PLUGIN},,")
+
+    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{FAKE_PLUGIN}"
+    assert dict(report["blocks"])[FAKE_BLOCK] == FAKE_PLUGIN

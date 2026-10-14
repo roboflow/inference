@@ -21,11 +21,7 @@ _ENTERPRISE_CANONICAL = "roboflow_workflows.enterprise_blocks"
 _CORE_LEGACY = "inference.core.workflows"
 _ENTERPRISE_LEGACY = "inference.enterprise.workflows.enterprise_blocks"
 
-# Inference 1.6.1-1.7.2 shipped the Roboflow-platform blocks (dataset upload,
-# custom metadata, model monitoring, vision events, visual search, ...) from a
-# separate ``inference.roboflow_workflows_plugin`` package. That package is
-# gone and is NOT importable any more; the mapping exists only so that
-# WORKFLOW_DISABLED_BLOCK_PATTERNS written against it keep matching.
+# Paths of inference.roboflow_workflows_plugin (1.6.1-1.7.2), for disable patterns.
 _PLATFORM_BLOCKS_PLUGIN_PREFIXES = (
     (
         "roboflow_workflows.core_steps.sinks.roboflow.",

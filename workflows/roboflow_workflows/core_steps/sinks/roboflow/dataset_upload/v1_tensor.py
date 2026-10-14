@@ -97,6 +97,7 @@ from roboflow_workflows.prototypes.cache import WorkflowsCache
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
+    resolve_platform_blocks_client,
 )
 
 from inference_models.models.base.classification import (
@@ -341,7 +342,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._disable_sinks = disable_sinks
-        self._platform_client = platform_client
+        self._platform_client = resolve_platform_blocks_client(platform_client)
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -451,9 +452,9 @@ def register_datapoint_at_roboflow(
     background_tasks: Optional[BackgroundTaskScheduler],
     thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
-    platform_client: RoboflowPlatformClient,
     image_name: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Tuple[bool, str]:
     registration_task = partial(
         execute_registration,
@@ -501,9 +502,9 @@ def execute_registration(
     new_labeling_batch_frequency: BatchCreationFrequency,
     cache: WorkflowsCache,
     api_key: str,
-    platform_client: RoboflowPlatformClient,
     image_name: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Tuple[bool, str]:
     matching_strategies_limits = OrderedDict(
         {
@@ -590,8 +591,9 @@ def execute_registration(
 def get_workspace_name(
     api_key: str,
     cache: WorkflowsCache,
-    platform_client: RoboflowPlatformClient,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> str:
+    platform_client = resolve_platform_blocks_client(platform_client)
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cached_workspace_name = cache.get(cache_key)
@@ -643,11 +645,12 @@ def register_datapoint(
     local_image_id: str,
     prediction: Optional[TensorNativePrediction],
     api_key: str,
-    platform_client: RoboflowPlatformClient,
     batch_name: str,
     tags: List[str],
     metadata: Optional[Dict[str, Any]] = None,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> str:
+    platform_client = resolve_platform_blocks_client(platform_client)
     inference_id = None
     if _is_tensor_native_classification_prediction(prediction):
         inference_id = _read_classification_inference_id(prediction=prediction)
@@ -693,13 +696,14 @@ def safe_register_image_at_roboflow(
     encoded_image: bytes,
     local_image_id: str,
     api_key: str,
-    platform_client: RoboflowPlatformClient,
     batch_name: str,
     tags: List[str],
     inference_id: Optional[str],
     metadata: Optional[Dict[str, Any]] = None,
     annotation_follows: bool = False,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Optional[str]:
+    platform_client = resolve_platform_blocks_client(platform_client)
     registration_response = platform_client.register_image_at_roboflow(
         api_key=api_key,
         dataset_id=target_project,

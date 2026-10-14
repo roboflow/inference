@@ -44,6 +44,7 @@ from roboflow_workflows.prototypes.cache import WorkflowsCache
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
+    resolve_platform_blocks_client,
 )
 from typing_extensions import Annotated
 
@@ -298,7 +299,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._disable_sinks = disable_sinks
-        self._platform_client = platform_client
+        self._platform_client = resolve_platform_blocks_client(platform_client)
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -413,9 +414,9 @@ def maybe_register_datapoint_at_roboflow(
     background_tasks: Optional[BackgroundTaskScheduler],
     thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
-    platform_client: RoboflowPlatformClient,
     image_name: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Tuple[bool, str]:
     normalised_probability = data_percentage / 100
     if random.random() < normalised_probability:

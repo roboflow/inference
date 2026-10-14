@@ -378,6 +378,30 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
 
 
 ENTERPRISE_BLOCKS_PLUGIN = "roboflow_workflows.enterprise_blocks.loader"
+LEGACY_PLATFORM_BLOCKS_PLUGIN = "inference.roboflow_workflows_plugin.loader"
+
+
+def drop_legacy_platform_blocks_plugin() -> None:
+    """Remove the legacy `inference` platform-blocks loader from `WORKFLOWS_PLUGINS`.
+
+    The platform blocks are core blocks of `roboflow_workflows`; the legacy loader
+    only exists in `inference`, which this server does not install. An empty list
+    is unset, because an empty plugin entry fails plugin loading.
+    """
+    plugins = os.environ.get("WORKFLOWS_PLUGINS", "").split(",")
+    if LEGACY_PLATFORM_BLOCKS_PLUGIN not in plugins:
+        return
+
+    remaining = [
+        plugin
+        for plugin in plugins
+        if plugin and plugin != LEGACY_PLATFORM_BLOCKS_PLUGIN
+    ]
+    if not remaining:
+        os.environ.pop("WORKFLOWS_PLUGINS", None)
+        return
+
+    os.environ["WORKFLOWS_PLUGINS"] = ",".join(remaining)
 
 
 def expand_enterprise_blocks_plugin() -> None:
@@ -420,6 +444,7 @@ def require_enterprise_blocks_plugin() -> None:
         ) from error
 
 
+drop_legacy_platform_blocks_plugin()
 expand_enterprise_blocks_plugin()
 SERVER_WORKFLOWS_CONFIGURATION = build_workflows_configuration()
 configure_process(SERVER_WORKFLOWS_CONFIGURATION)

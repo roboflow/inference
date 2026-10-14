@@ -233,6 +233,33 @@ def test_load_enterprise_blocks_is_read_from_the_environment():
     assert result.returncode == 0, result.stderr
 
 
+LEGACY_PLATFORM_BLOCKS_PLUGIN = "inference.roboflow_workflows_plugin.loader"
+
+
+def test_legacy_platform_blocks_plugin_is_dropped_from_the_plugin_list(monkeypatch):
+    monkeypatch.setenv("WORKFLOWS_PLUGINS", f"{LEGACY_PLATFORM_BLOCKS_PLUGIN},custom_a")
+
+    host.drop_legacy_platform_blocks_plugin()
+
+    assert os.environ["WORKFLOWS_PLUGINS"] == "custom_a"
+
+
+def test_plugin_list_holding_only_the_legacy_platform_plugin_is_unset(monkeypatch):
+    monkeypatch.setenv("WORKFLOWS_PLUGINS", f"{LEGACY_PLATFORM_BLOCKS_PLUGIN},")
+
+    host.drop_legacy_platform_blocks_plugin()
+
+    assert "WORKFLOWS_PLUGINS" not in os.environ
+
+
+def test_plugin_list_without_the_legacy_platform_plugin_is_untouched(monkeypatch):
+    monkeypatch.setenv("WORKFLOWS_PLUGINS", "custom_a,,custom_b")
+
+    host.drop_legacy_platform_blocks_plugin()
+
+    assert os.environ["WORKFLOWS_PLUGINS"] == "custom_a,,custom_b"
+
+
 def test_enterprise_plugin_is_prepended_to_an_unset_plugin_list(enterprise_flag):
     host.expand_enterprise_blocks_plugin()
 

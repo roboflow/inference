@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Generator, List, NamedTuple, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 from roboflow_workflows._compat_names import get_logger
@@ -38,6 +38,8 @@ USAGE_KEY = "usage"
 
 @dataclass(frozen=True)
 class ImageDimensions:
+    """Image size in pixels."""
+
     height: int
     width: int
 
@@ -49,6 +51,8 @@ class ImageDimensions:
 
 
 class StrategyLimitType(Enum):
+    """Period over which a usage limit is counted."""
+
     MINUTELY = "minutely"
     HOURLY = "hourly"
     DAILY = "daily"
@@ -56,11 +60,25 @@ class StrategyLimitType(Enum):
 
 @dataclass(frozen=True)
 class StrategyLimit:
+    """Maximum number of uploads a strategy may make in one period."""
+
     limit_type: StrategyLimitType
     value: int
 
     @classmethod
     def from_dict(cls, specification: dict) -> "StrategyLimit":
+        """Build a limit from its block-manifest form.
+
+        Args:
+            specification (dict): Mapping with the limit `type` and `value`.
+
+        Returns:
+            StrategyLimit: The parsed limit.
+
+        Raises:
+            KeyError: If `type` or `value` is missing.
+            ValueError: If `type` is not a known period.
+        """
         return cls(
             limit_type=StrategyLimitType(specification["type"]),
             value=specification["value"],
@@ -81,6 +99,22 @@ LIMIT_TYPE2KEY_EXPIRATION = {
 _LOCAL_LOCKS: Dict[str, threading.Lock] = {}
 _LOCAL_LOCKS_GUARD = threading.Lock()
 
+_INVALID_IMAGE_ERROR_FACTORY: Callable[[str], Exception] = ValueError
+
+
+def set_invalid_image_error_factory(factory: Callable[[str], Exception]) -> None:
+    """Choose the error raised for an image that cannot be registered.
+
+    The dataset-upload blocks report the type of this error in their
+    `message` output, so a host can keep the type its users already see.
+
+    Args:
+        factory (Callable[[str], Exception]): Builds the error from its
+            message. Defaults to `ValueError`.
+    """
+    global _INVALID_IMAGE_ERROR_FACTORY
+    _INVALID_IMAGE_ERROR_FACTORY = factory
+
 
 def use_credit_of_matching_strategy(
     cache: WorkflowsCache,
@@ -90,7 +124,16 @@ def use_credit_of_matching_strategy(
 ) -> Optional[str]:
     """Consume one credit of the first strategy under all its limits.
 
-    Returns that strategy's name, or None when every strategy is exhausted.
+    Args:
+        cache (WorkflowsCache): Cache that holds the usage counters.
+        workspace (str): Workspace of the target project.
+        project (str): Target project.
+        matching_strategies_limits (OrderedDict[str, List[StrategyLimit]]):
+            Limits of each candidate strategy, in priority order.
+
+    Returns:
+        Optional[str]: Name of the strategy charged, or `None` when every
+        strategy has reached a limit.
     """
     with lock_limits(cache=cache, workspace=workspace, project=project):
         strategy_with_spare_credit = find_strategy_with_spare_usage_credit(
@@ -117,6 +160,16 @@ def return_strategy_credit(
     project: str,
     strategy_name: str,
 ) -> None:
+    """Give back one credit taken by `use_credit_of_matching_strategy`.
+
+    Counters never drop below zero, and a period with no counter is skipped.
+
+    Args:
+        cache (WorkflowsCache): Cache that holds the usage counters.
+        workspace (str): Workspace of the target project.
+        project (str): Target project.
+        strategy_name (str): Strategy the credit was charged to.
+    """
     with lock_limits(cache=cache, workspace=workspace, project=project):
         _update_strategy_limits_usage(
             cache=cache,
@@ -133,6 +186,19 @@ def lock_limits(
     workspace: str,
     project: str,
 ) -> Generator[Any, None, None]:
+    """Hold the lock that guards a project's usage counters.
+
+    Uses the cache's own `lock` when it has one, otherwise a lock local to
+    this process.
+
+    Args:
+        cache (WorkflowsCache): Cache that holds the usage counters.
+        workspace (str): Workspace of the target project.
+        project (str): Target project.
+
+    Yields:
+        Any: The acquired lock.
+    """
     limits_lock_key = f"active_learning:usage:{workspace}:{project}:usage:lock"
     cache_lock = getattr(cache, "lock", None)
     if callable(cache_lock):
@@ -151,6 +217,18 @@ def find_strategy_with_spare_usage_credit(
     project: str,
     matching_strategies_limits: "OrderedDict[str, List[StrategyLimit]]",
 ) -> Optional[str]:
+    """Find the first strategy that has not reached any of its limits.
+
+    Args:
+        cache (WorkflowsCache): Cache that holds the usage counters.
+        workspace (str): Workspace of the target project.
+        project (str): Target project.
+        matching_strategies_limits (OrderedDict[str, List[StrategyLimit]]):
+            Limits of each candidate strategy, in priority order.
+
+    Returns:
+        Optional[str]: Name of that strategy, or `None` when there is none.
+    """
     for strategy_name, strategy_limits in matching_strategies_limits.items():
         rejected = any(
             _limit_reached(
@@ -219,9 +297,15 @@ def _update_strategy_limits_usage(
                 project=project,
                 strategy_name=strategy_name,
             ),
-            value={USAGE_KEY: max(current_value + delta, 0)},
+            value={USAGE_KEY: _apply_usage_delta(current_value, delta=delta)},
             expire=LIMIT_TYPE2KEY_EXPIRATION[limit_type],
         )
+
+
+def _apply_usage_delta(current_value: int, *, delta: int) -> int:
+    if delta > 0:
+        return current_value + delta
+    return max(current_value + delta, 0)
 
 
 def get_current_strategy_limit_usage(
@@ -231,6 +315,18 @@ def get_current_strategy_limit_usage(
     strategy_name: str,
     limit_type: StrategyLimitType,
 ) -> Optional[int]:
+    """Read a strategy's usage in the current period.
+
+    Args:
+        cache (WorkflowsCache): Cache that holds the usage counters.
+        workspace (str): Workspace of the target project.
+        project (str): Target project.
+        strategy_name (str): Strategy whose usage is read.
+        limit_type (StrategyLimitType): Period to read.
+
+    Returns:
+        Optional[int]: The usage, or `None` when nothing was recorded.
+    """
     value = cache.get(
         generate_cache_key_for_active_learning_usage(
             limit_type=limit_type,
@@ -250,6 +346,17 @@ def generate_cache_key_for_active_learning_usage(
     project: str,
     strategy_name: str,
 ) -> str:
+    """Build the cache key of a strategy's usage counter for the current period.
+
+    Args:
+        limit_type (StrategyLimitType): Period of the counter.
+        workspace (str): Workspace of the target project.
+        project (str): Target project.
+        strategy_name (str): Strategy the counter belongs to.
+
+    Returns:
+        str: The cache key.
+    """
     time_infix = LIMIT_TYPE2KEY_INFIX_GENERATOR[limit_type]()
     return f"active_learning:usage:{workspace}:{project}:{strategy_name}:{time_infix}"
 
@@ -276,10 +383,26 @@ def prepare_image_to_registration_with_metadata(
     desired_size: Optional[ImageDimensions],
     jpeg_compression_level: int,
 ) -> PreparedRegistrationImage:
+    """Downscale an image if needed and encode it as JPEG for upload.
+
+    Args:
+        image (np.ndarray): Image in HWC layout.
+        desired_size (Optional[ImageDimensions]): Size the image must fit
+            within, keeping its aspect ratio; `None` keeps the original size.
+        jpeg_compression_level (int): JPEG quality.
+
+    Returns:
+        PreparedRegistrationImage: The encoded image and the size transform.
+
+    Raises:
+        Exception: Built by the factory set with
+            `set_invalid_image_error_factory` (`ValueError` by default) when
+            the image has a zero width or height.
+    """
     original_size_wh = (int(image.shape[1]), int(image.shape[0]))
     if original_size_wh[0] <= 0 or original_size_wh[1] <= 0:
         width, height = original_size_wh
-        raise ValueError(
+        raise _INVALID_IMAGE_ERROR_FACTORY(
             "Could not prepare image for registration because its dimensions "
             f"are invalid: width={width}, height={height}."
         )

@@ -29,6 +29,7 @@ from roboflow_workflows.prototypes.cache import WorkflowsCache
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
+    resolve_platform_blocks_client,
 )
 
 SHORT_DESCRIPTION = "Update attributes and tags for Asset Library images."
@@ -181,7 +182,7 @@ def call_asset_library_attributes_endpoint(
     workspace_id: str,
     updates: List[Dict[str, Any]],
     api_key: str,
-    platform_client: RoboflowPlatformClient,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Dict[str, Any]:
     if len(updates) == 1:
         return call_single_image_endpoint(
@@ -212,12 +213,12 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
     ):
         self._api_key = api_key
         self._cache = cache
-        self._platform_client = platform_client
+        self._platform_client = resolve_platform_blocks_client(platform_client)
         self._offloader: UpdateAssetLibraryAttributesOffloader = (
             update_attributes_offloader
             or partial(
                 call_asset_library_attributes_endpoint,
-                platform_client=platform_client,
+                platform_client=self._platform_client,
             )
         )
         self._disable_sinks = disable_sinks
@@ -306,8 +307,9 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
 def get_workspace_name(
     api_key: str,
     cache: WorkflowsCache,
-    platform_client: RoboflowPlatformClient,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> str:
+    platform_client = resolve_platform_blocks_client(platform_client)
     api_key_hash = hashlib.md5(
         api_key.encode("utf-8"), usedforsecurity=False
     ).hexdigest()
@@ -413,8 +415,9 @@ def call_single_image_endpoint(
     workspace_id: str,
     update: Dict[str, Any],
     api_key: str,
-    platform_client: RoboflowPlatformClient,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Dict[str, Any]:
+    platform_client = resolve_platform_blocks_client(platform_client)
     try:
         platform_client.update_image_metadata_at_roboflow(
             api_key=api_key,
@@ -440,8 +443,9 @@ def call_batch_endpoint(
     workspace_id: str,
     updates: List[Dict[str, Any]],
     api_key: str,
-    platform_client: RoboflowPlatformClient,
+    platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Dict[str, Any]:
+    platform_client = resolve_platform_blocks_client(platform_client)
     try:
         response = platform_client.batch_update_image_metadata_at_roboflow(
             api_key=api_key,

@@ -3,8 +3,9 @@ under every module path they have shipped from.
 
 Inference 1.6.1-1.7.2 shipped these 9 blocks from the separate
 `inference.roboflow_workflows_plugin` package. They are core blocks again, and
-that package is no longer importable, but a pattern an operator wrote against
-it must still disable the same blocks - as must the pre-1.6.1
+that package is now an importable compatibility stub that contributes no
+blocks, but a pattern an operator wrote against it must still disable the same
+blocks - as must the pre-1.6.1
 `inference.core.workflows.*` spelling and the canonical `roboflow_workflows.*`
 one.
 """

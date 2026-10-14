@@ -144,6 +144,27 @@ POLICY_CASES = [
     ([], ["core_steps.sinks.roboflow"], RELOCATED_BLOCKS - RELOCATED_SINKS),
     (
         [],
+        ["inference.core.workflows.core_steps.sinks.roboflow"],
+        RELOCATED_BLOCKS - RELOCATED_SINKS,
+    ),
+    (
+        [],
+        ["inference.roboflow_workflows_plugin.integrations"],
+        RELOCATED_SINKS,
+    ),
+    (
+        [],
+        ["inference.roboflow_workflows_plugin.sinks.dataset_upload"],
+        RELOCATED_BLOCKS
+        - {
+            "roboflow_core/roboflow_dataset_upload@v1",
+            "roboflow_core/roboflow_dataset_upload@v2",
+        },
+    ),
+    ([], ["roboflow_workflows.core_steps.sinks"], RELOCATED_BLOCKS - RELOCATED_SINKS),
+    ([], ["roboflow_workflows.core_steps"], set()),
+    (
+        [],
         ["roboflowdatasetuploadblockv1"],
         RELOCATED_BLOCKS - {"roboflow_core/roboflow_dataset_upload@v1"},
     ),
@@ -230,6 +251,7 @@ def test_new_module_path_pattern_disables_the_sinks_in_both_modes(tensor_mode) -
         "PYTHONPATH": os.pathsep.join(
             [
                 str(REPO_ROOT),
+                str(REPO_ROOT / "workflows"),
                 str(REPO_ROOT / "inference_models"),
                 str(REPO_ROOT / "stream_vision"),
             ]
@@ -252,3 +274,137 @@ def test_new_module_path_pattern_disables_the_sinks_in_both_modes(tensor_mode) -
             for identifier in survivor_identifiers
         },
     }
+
+
+def test_a_listed_legacy_plugin_loader_does_not_duplicate_the_blocks(
+    monkeypatch,
+) -> None:
+    # given
+    expected = [
+        block.manifest_type_identifier
+        for block in describe_available_blocks(dynamic_blocks=[]).blocks
+    ]
+    monkeypatch.setenv(
+        "WORKFLOWS_PLUGINS", "inference.roboflow_workflows_plugin.loader"
+    )
+
+    # when
+    described = [
+        block.manifest_type_identifier
+        for block in describe_available_blocks(dynamic_blocks=[]).blocks
+    ]
+
+    # then
+    assert described == expected
+    assert len(set(described) & RELOCATED_BLOCKS) == 9
+
+
+DESCRIBE_PROBE = """
+import json
+
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    describe_available_blocks,
+)
+
+print(
+    json.dumps(
+        [
+            b.fully_qualified_block_class_name
+            for b in describe_available_blocks(dynamic_blocks=[]).blocks
+            if b.block_source == "workflows_core"
+        ]
+    )
+)
+"""
+
+_HISTORIC_PREFIX = "inference.core.workflows.core_steps."
+
+
+def _historic_names(tensor_mode: str) -> list:
+    tensor = tensor_mode == "True"
+
+    def leaf(version: str) -> str:
+        return f"{version}_tensor" if tensor else version
+
+    return [
+        f"{_HISTORIC_PREFIX}integrations.roboflow.visual_search.v1"
+        ".RoboflowVisualSearchBlockV1",
+        f"{_HISTORIC_PREFIX}integrations.roboflow.visual_search_classifier."
+        f"{leaf('v1')}.RoboflowVisualSearchClassifierBlockV1",
+        f"{_HISTORIC_PREFIX}sinks.roboflow.dataset_upload.{leaf('v1')}"
+        ".RoboflowDatasetUploadBlockV1",
+        f"{_HISTORIC_PREFIX}sinks.roboflow.asset_library_attributes.v1"
+        ".RoboflowAssetLibraryAttributesBlockV1",
+        f"{_HISTORIC_PREFIX}sinks.roboflow.custom_metadata.{leaf('v1')}"
+        ".RoboflowCustomMetadataBlockV1",
+        f"{_HISTORIC_PREFIX}sinks.roboflow.model_monitoring_inference_aggregator."
+        f"{leaf('v1')}.ModelMonitoringInferenceAggregatorBlockV1",
+        f"{_HISTORIC_PREFIX}sinks.roboflow.dataset_upload.{leaf('v2')}"
+        ".RoboflowDatasetUploadBlockV2",
+        f"{_HISTORIC_PREFIX}sinks.roboflow.vision_events.{leaf('v1')}"
+        ".RoboflowVisionEventsBlockV1",
+        f"{_HISTORIC_PREFIX}sinks.roboflow.vision_events_bundle.{leaf('v1')}"
+        ".VisionEventBundleSinkBlockV1",
+    ]
+
+
+# Groups of the 9 blocks with the historic blocks around them in the core list
+# before they moved into a plugin; blocks added to main later may sit between.
+_HISTORIC_NEIGHBOURS = [
+    ("DepthEstimationBlockV1", 0, 2, "ByteTrackerBlockV1"),
+    ("DetectionsTransformationBlockV1", 2, 4, "ContinueIfBlockV1"),
+    (
+        "RoboflowClassificationModelBlockV1",
+        4,
+        7,
+        "RoboflowInstanceSegmentationModelBlockV1",
+    ),
+    ("ONVIFSinkBlockV1", 7, 9, "GLMOCRBlockV1"),
+]
+
+
+@pytest.mark.parametrize("tensor_mode", ["False", "True"])
+def test_describe_lists_the_blocks_under_historic_names_and_order(
+    tensor_mode,
+) -> None:
+    # given
+    env = {
+        **os.environ,
+        "DISABLE_VERSION_CHECK": "True",
+        "ENABLE_TENSOR_DATA_REPRESENTATION": tensor_mode,
+        "PYTHONPATH": os.pathsep.join(
+            [
+                str(REPO_ROOT),
+                str(REPO_ROOT / "workflows"),
+                str(REPO_ROOT / "inference_models"),
+                str(REPO_ROOT / "stream_vision"),
+            ]
+        ),
+    }
+    for name in (
+        "WORKFLOWS_PLUGINS",
+        "LOAD_ENTERPRISE_BLOCKS",
+        "WORKFLOW_DISABLED_BLOCK_TYPES",
+        "WORKFLOW_DISABLED_BLOCK_PATTERNS",
+    ):
+        env.pop(name, None)
+
+    # when
+    result = subprocess.run(
+        [sys.executable, "-c", DESCRIBE_PROBE],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    # then
+    assert result.returncode == 0, result.stderr
+    names = json.loads(result.stdout.strip().splitlines()[-1])
+    expected = _historic_names(tensor_mode)
+    assert [name for name in names if name in expected] == expected
+    class_names = [name.rsplit(".", 1)[1] for name in names]
+    for predecessor, start, end, successor in _HISTORIC_NEIGHBOURS:
+        group = [names.index(name) for name in expected[start:end]]
+        assert group == list(range(group[0], group[0] + len(group)))
+        assert class_names.index(predecessor) == group[0] - 1
+        assert group[-1] < class_names.index(successor)
