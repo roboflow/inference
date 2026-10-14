@@ -229,9 +229,15 @@ def _build_usage_collector() -> Any:
 
 def _stop_collector(collector: Any, deadline: float, *, flush: bool) -> None:
     def _flush_and_stop() -> None:
-        try:
-            if flush:
+        if flush:
+            try:
                 collector.flush()
+            except Exception as error:
+                logger.warning(
+                    "Could not flush the pipeline usage collector: %s",
+                    type(error).__name__,
+                )
+        try:
             collector.stop(max(deadline - time.monotonic(), 0.0))
         except BaseException as error:
             logger.warning(

@@ -417,6 +417,7 @@ class _RecordingCollector:
         self.calls = []
         self.events = None
         self.flush_delay = 0.0
+        self.flush_error = None
         self.stop_timeouts = []
         _RecordingCollector.instances.append(self)
 
@@ -434,6 +435,8 @@ class _RecordingCollector:
     def flush(self):
         time.sleep(self.flush_delay)
         self._note("flush")
+        if self.flush_error is not None:
+            raise self.flush_error
 
     def stop(self, timeout=None):
         self.stop_timeouts.append(timeout)
@@ -543,6 +546,17 @@ def test_close_flushes_and_stops_the_collector_before_the_gateway_shutdown(
     assert collector.calls == ["start", "flush", "stop"]
     assert 0 < collector.stop_timeouts[0] <= streams_host.CLOSE_TIMEOUT_S
     assert _loop_threads() == []
+
+
+def test_close_stops_the_collector_when_its_flush_raises(gateway, collectors):
+    host = ServerPipelineHost(gateway_kind="direct")
+    _prepare(host)
+    collector = _only_collector(collectors)
+    collector.flush_error = AttributeError("boom")
+
+    host.close()
+
+    assert collector.calls == ["start", "flush", "stop"]
 
 
 @pytest.mark.timeout(20)
