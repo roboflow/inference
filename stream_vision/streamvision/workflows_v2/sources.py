@@ -102,6 +102,7 @@ def frame_to_image(frame: VideoFrame, *, member_id: str) -> ImageData:
         fps=frame.fps,
         measured_fps=frame.measured_fps,
         comes_from_video_file=frame.comes_from_video_file,
+        total_frames=frame.total_frames,
     )
     pixels = frame.image
     if isinstance(pixels, torch.Tensor):

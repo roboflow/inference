@@ -15,7 +15,10 @@ from streamvision.camera.video_source import VideoConsumer
     [BufferFillingStrategy.DROP_OLDEST, BufferFillingStrategy.ADAPTIVE_DROP_OLDEST],
 )
 @pytest.mark.parametrize("declared_fps", [29.97, 0.0, None])
-def test_eviction_preserves_declared_and_measured_fps(strategy, declared_fps):
+@pytest.mark.parametrize("is_file, total_frames", [(False, 0), (True, 431), (True, -1)])
+def test_eviction_preserves_frame_metadata(
+    strategy, declared_fps, is_file, total_frames
+):
     consumer = VideoConsumer.init(
         buffer_filling_strategy=strategy,
         adaptive_mode_stream_pace_tolerance=0.1,
@@ -31,7 +34,11 @@ def test_eviction_preserves_declared_and_measured_fps(strategy, declared_fps):
     pixels = np.zeros((2, 2, 3), dtype=np.uint8)
     video.retrieve.return_value = (True, pixels)
     video.discover_source_properties.return_value = SourceProperties(
-        width=2, height=2, total_frames=0, is_file=False, fps=declared_fps
+        width=2,
+        height=2,
+        total_frames=total_frames,
+        is_file=is_file,
+        fps=declared_fps,
     )
     frames = Queue(maxsize=1)
 
@@ -39,7 +46,7 @@ def test_eviction_preserves_declared_and_measured_fps(strategy, declared_fps):
         assert consumer.consume_frame(
             video=video,
             declared_source_fps=declared_fps,
-            is_source_video_file=False,
+            is_source_video_file=is_file,
             buffer=frames,
             frames_buffering_allowed=True,
             source_id=3,
@@ -57,8 +64,11 @@ def test_eviction_preserves_declared_and_measured_fps(strategy, declared_fps):
     assert replacement.frame_id == 2
     for frame in (first, replacement):
         assert frame.fps == declared_fps
-        assert frame.measured_fps == 28.5
+        assert frame.measured_fps == (declared_fps if is_file else 28.5)
         assert frame.source_id == 3
-        assert frame.comes_from_video_file is False
+        assert frame.comes_from_video_file is is_file
+        assert frame.total_frames == (
+            total_frames if is_file and total_frames > 0 else None
+        )
         assert frame.image is pixels
     assert frames.empty()

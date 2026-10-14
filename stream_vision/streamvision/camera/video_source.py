@@ -1352,6 +1352,8 @@ class VideoConsumer:
             decoding_pace_monitor=self._decoding_pace_monitor,
             source_id=source_id,
             comes_from_video_file=is_video_file,
+            declared_source_fps=declared_source_fps,
+            measured_source_fps=measured_source_fps,
             total_frames=self._source_total_frames,
         )
 

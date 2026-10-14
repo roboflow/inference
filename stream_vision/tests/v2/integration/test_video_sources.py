@@ -308,6 +308,8 @@ def test_stream_delivers_tensor_images_with_member_identity_and_timing(mode) -> 
         metadata = image.video_metadata
         assert metadata.video_identifier == "cam"
         assert metadata.comes_from_video_file is True
+        assert metadata.fps == metadata.measured_fps == 30.0
+        assert metadata.total_frames == 6
         assert int(image.tensor_image[1, 0, 0]) == metadata.frame_number
         frame_numbers.append(metadata.frame_number)
         sample = result.outputs.metadata["image"].sample_at(())
@@ -343,6 +345,24 @@ def test_stream_converts_opencv_bgr_arrays_to_rgb_cpu_tensors() -> None:
     assert tuple(image.tensor_image.shape) == (3, 4, 6)
     assert int(image.tensor_image[0, 0, 0]) == 9  # red first
     assert int(image.tensor_image[2, 0, 0]) == 0
+    assert image.video_metadata.total_frames == 2
+
+
+@pytest.mark.parametrize("is_file", [False, True])
+def test_stream_leaves_unknown_frame_count_unset(is_file) -> None:
+    outcome = run_session(
+        {"type": VideoStream.type, "name": "cam", "reference": "unknown-length"},
+        {"unknown-length": factory(value=1, frames=None, is_file=is_file)},
+        stop_after=5,
+    )
+
+    assert outcome["failure"] is None
+    assert outcome["results"]
+    for result in outcome["results"]:
+        metadata = result.outputs.data["image"].video_metadata
+        assert metadata.comes_from_video_file is is_file
+        assert metadata.total_frames is None
+    assert not video_threads()
 
 
 def test_live_stream_end_is_a_failure_not_an_end_of_stream() -> None:
@@ -403,6 +423,9 @@ def test_stream_set_emits_partial_batches_with_stable_sparse_indices(mode) -> No
             member_id = f"cams/{camera}"
             assert int(image.tensor_image[0, 0, 0]) == 10 + camera
             assert image.video_metadata.video_identifier == member_id
+            assert image.video_metadata.fps == 30.0
+            assert image.video_metadata.measured_fps == 30.0
+            assert image.video_metadata.total_frames == (12, 3, 12)[camera]
             sample = metadata.sample_at((camera,))
             assert sample.source_id == member_id
             assert sample.source_metadata == {"stream": camera}
