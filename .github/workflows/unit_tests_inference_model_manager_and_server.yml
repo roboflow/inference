@@ -74,6 +74,10 @@ jobs:
         timeout-minutes: 10
         working-directory: inference_server
         run: ../.venv/bin/pytest tests/unit_tests
+      - name: 🧪 Integration Tests of Inference Server
+        timeout-minutes: 10
+        working-directory: inference_server
+        run: ../.venv/bin/pytest tests/integration_tests
       - name: 🧪 Unit Tests of Inference Model Manager
         timeout-minutes: 10
         working-directory: inference_model_manager
