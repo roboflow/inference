@@ -283,6 +283,7 @@ class Route:
     metadata_ts: float = 0.0
     model_architecture: Optional[str] = None
     model_variant: Optional[str] = None
+    model_latency_ms: Optional[float] = None
     is_stub: bool = False
     stream_pipeline_depth: int = 1
 
@@ -1246,6 +1247,7 @@ def _apply_stat(route: Route, stat: Optional[ModelStat]) -> None:
     route.action = stat.default_action or route.action
     route.model_architecture = stat.model_architecture
     route.model_variant = stat.model_variant
+    route.model_latency_ms = stat.model_latency_ms
 
 
 def _record_model_invocation(
@@ -1326,6 +1328,8 @@ def _usage_details(route: Route, model_id: str) -> dict[str, Any]:
     details: dict[str, Any] = {}
     if architecture:
         details["model_architecture"] = architecture
+    if route.model_latency_ms is not None:
+        details["model_latency_ms"] = float(route.model_latency_ms)
     if variant:
         details["model_variant"] = variant
     details["task_type"] = task_type

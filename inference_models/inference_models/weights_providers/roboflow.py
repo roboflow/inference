@@ -1,10 +1,10 @@
 import json
 import urllib.parse
-from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import backoff
 import requests
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from requests import Response, Timeout
 
 from inference_models.configuration import (
@@ -115,7 +115,16 @@ class RoboflowModelMetadata(BaseModel):
     recommended_parameters: Optional[RecommendedParameters] = Field(
         alias="recommendedParameters", default=None
     )
+    model_latency_ms: Optional[float] = Field(alias="modelLatencyMs", default=None)
     next_page: Optional[str] = Field(alias="nextPage", default=None)
+
+    @field_validator("model_latency_ms", mode="before")
+    @classmethod
+    def _drop_non_numeric_latency(cls, value: Any) -> Any:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+
+        return value
 
 
 def get_roboflow_model(

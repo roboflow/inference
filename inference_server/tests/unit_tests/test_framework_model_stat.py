@@ -490,6 +490,51 @@ async def test_details_leave_out_an_architecture_or_variant_the_registry_omits()
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "registry_latency, expected",
+    [
+        (12.5, 12.5),
+        (7, 7.0),
+        (0, None),
+        (-3.0, None),
+        (float("inf"), None),
+        (float("nan"), None),
+        (True, None),
+        ("12.5", None),
+        (None, None),
+    ],
+)
+async def test_details_carry_the_registry_latency_normalised_like_the_legacy_server(
+    registry_latency, expected
+):
+    meta = _registry_meta()
+    meta.model_latency_ms = registry_latency
+    with patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        return_value=meta,
+    ):
+        details = await stat_model_details_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="k")
+        )
+
+    assert details.model_latency_ms == expected
+    assert expected is None or type(details.model_latency_ms) is float
+
+
+@pytest.mark.asyncio
+async def test_details_leave_out_a_latency_the_registry_omits():
+    with patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        return_value=_registry_meta(),
+    ):
+        details = await stat_model_details_while_checking_auth(
+            CommonRequestParams(model_id="acme/1", api_key="k")
+        )
+
+    assert details.model_latency_ms is None
+
+
+@pytest.mark.asyncio
 async def test_details_of_a_pipeline_id_name_its_family_and_stage_tokens():
     table = {_DET_SMALL: "object-detection", _REC_MEDIUM: "text-only-ocr"}
     with _recording_registry(table, []):

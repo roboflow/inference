@@ -2642,3 +2642,40 @@ def test_parse_coreml_model_package_when_invalid_manifest_provided(
 
     # then
     assert result is None
+
+
+@pytest.mark.parametrize(
+    "raw_latency, expected",
+    [(12.5, 12.5), (7, 7.0), (None, None), (True, None), ("fast", None), ({}, None)],
+)
+def test_roboflow_model_metadata_parses_model_latency_ms(
+    raw_latency: object, expected: object
+) -> None:
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolo-nas",
+            "modelPackages": [],
+            "modelLatencyMs": raw_latency,
+        }
+    )
+
+    # then
+    assert result.model_latency_ms == expected
+
+
+def test_roboflow_model_metadata_leaves_model_latency_ms_unset_when_absent() -> None:
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [],
+        }
+    )
+
+    # then
+    assert result.model_latency_ms is None

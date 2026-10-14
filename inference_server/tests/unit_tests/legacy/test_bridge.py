@@ -1980,6 +1980,57 @@ async def test_model_row_carries_the_descriptor_the_legacy_server_reports(
     assert route.task_type == runtime_task_type
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "registry_latency, expected",
+    [(12.5, 12.5), (7, 7.0)],
+)
+async def test_model_row_carries_the_latency_the_registry_reports(
+    fake_stat, registry_latency, expected
+):
+    fake_stat["ds/1"] = (
+        "object-detection",
+        "infer",
+        "yolo-nas",
+        "yolo-nas-s",
+        registry_latency,
+    )
+    bridge = LegacyModelBridge(FakeGateway(predictions=_AnyPrediction()))
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("ds/1", "k")
+        await bridge.infer(route, "k", route.action, [ImagePayload(b"a", 1, 1)], {})
+
+    (row,) = collector.rows
+    latency = row["resource_details"]["model_latency_ms"]
+    assert type(latency) is float
+    assert latency == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "registry_latency", [None, 0, -3.0, float("inf"), float("nan"), True, "12.5"]
+)
+async def test_model_row_leaves_out_a_latency_the_registry_omits_or_garbles(
+    fake_stat, registry_latency
+):
+    fake_stat["ds/1"] = (
+        "object-detection",
+        "infer",
+        "yolo-nas",
+        "yolo-nas-s",
+        registry_latency,
+    )
+    bridge = LegacyModelBridge(FakeGateway(predictions=_AnyPrediction()))
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve("ds/1", "k")
+        await bridge.infer(route, "k", route.action, [ImagePayload(b"a", 1, 1)], {})
+
+    (row,) = collector.rows
+    assert "model_latency_ms" not in row["resource_details"]
+
+
 class _AnyPrediction(dict):
     def __bool__(self):
         return True

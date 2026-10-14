@@ -14,6 +14,8 @@
   Same-size tensors bypass resizing and Triton preparation. Set the flag to
   `false` to retain the previous PyTorch bilinear resize. Float tensors, NumPy
   preprocessing and RF-DETR's separate Pillow resize are unaffected by the flag.
+- `RoboflowModelMetadata.model_latency_ms` exposes the registry's `modelLatencyMs`.
+  A non-numeric value is read as `None` instead of failing the metadata parse.
 
 ### Fixed
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from collections import OrderedDict
 from typing import NamedTuple, Optional
@@ -42,12 +43,15 @@ class ModelStat(NamedTuple):
         default_action: Action run when a request names none.
         model_architecture: Registry ``modelArchitecture``; None when unknown.
         model_variant: Registry ``modelVariant``; None when unknown.
+        model_latency_ms: Registry ``modelLatencyMs`` when finite and positive;
+            None otherwise.
     """
 
     task_type: str
     default_action: str
     model_architecture: Optional[str] = None
     model_variant: Optional[str] = None
+    model_latency_ms: Optional[float] = None
 
 
 class _TtlLruCache:
@@ -190,6 +194,16 @@ def _reported_label(meta: object, name: str) -> Optional[str]:
     return label
 
 
+def _reported_latency_ms(meta: object) -> Optional[float]:
+    latency = getattr(meta, "model_latency_ms", None)
+    if isinstance(latency, bool) or not isinstance(latency, (int, float)):
+        return None
+    if not math.isfinite(latency) or latency <= 0:
+        return None
+
+    return float(latency)
+
+
 async def _fetch_and_map(
     common_params: CommonRequestParams, extra_headers: dict[str, str]
 ) -> ModelStat:
@@ -232,6 +246,7 @@ async def _fetch_and_map(
         default_action,
         model_architecture=_reported_label(meta, "model_architecture"),
         model_variant=_reported_label(meta, "model_variant"),
+        model_latency_ms=_reported_latency_ms(meta),
     )
 
 

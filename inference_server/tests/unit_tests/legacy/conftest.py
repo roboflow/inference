@@ -165,6 +165,8 @@ def fake_stat(monkeypatch):
         meta = SimpleNamespace(task_type=outcome[0])
         if len(outcome) > 2:
             meta.model_architecture, meta.model_variant = outcome[2], outcome[3]
+        if len(outcome) > 4:
+            meta.model_latency_ms = outcome[4]
         return meta
 
     monkeypatch.setattr(model_stat, "get_one_page_of_model_metadata", _metadata)
