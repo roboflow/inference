@@ -92,6 +92,16 @@ class RoboflowModelPackageV1(BaseModel):
         alias="memoryProfile", default_factory=MemoryProfile
     )
 
+    @field_validator("memory_profile", mode="before")
+    @classmethod
+    def _drop_malformed_memory_profile(cls, value: Any) -> MemoryProfile:
+        try:
+            memory_profile = MemoryProfile.model_validate(value)
+        except ValidationError:
+            return MemoryProfile()
+
+        return memory_profile
+
 
 class RoboflowModelDependencyV1(BaseModel):
     type: Literal["model-dependency-v1"]
@@ -124,7 +134,12 @@ class RoboflowModelMetadata(BaseModel):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
 
-        return value
+        try:
+            latency_ms = float(value)
+        except OverflowError:
+            return None
+
+        return latency_ms
 
 
 def get_roboflow_model(

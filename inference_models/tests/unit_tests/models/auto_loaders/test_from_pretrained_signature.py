@@ -63,8 +63,11 @@ def test_from_pretrained_keeps_positional_binding_of_every_parameter_on_main() -
     ]
 
     assert positional == PARAMETERS_ON_MAIN
-    assert set(keyword_only) == {"preloaded_model_dependencies", "disabled_backends"}
-    assert all(parameters[name].default is None for name in keyword_only)
+    assert {name: parameters[name].default for name in keyword_only} == {
+        "preloaded_model_dependencies": None,
+        "disabled_backends": None,
+        "allow_vllm_proxy": False,
+    }
 
 
 def _metadata() -> ModelMetadata:
@@ -232,5 +235,6 @@ def test_auto_load_cache_helper_keeps_positional_binding_of_main() -> None:
     ]
 
     assert positional == CACHE_HELPER_PARAMETERS_ON_MAIN
-    assert keyword_only == ["preloaded_model_dependencies"]
+    assert keyword_only == ["preloaded_model_dependencies", "allow_vllm_proxy"]
     assert parameters["preloaded_model_dependencies"].default is None
+    assert parameters["allow_vllm_proxy"].default is False

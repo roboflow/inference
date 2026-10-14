@@ -164,8 +164,8 @@ def with_load_defaults(model_id: str, load_kwargs: dict) -> dict:
 
     Adds the RF-DETR input resolution cap and the disabled backends from the
     model manager configuration, and extends ``forwarded_kwargs`` so dependent
-    models receive them. Values already present in ``load_kwargs`` take
-    precedence.
+    models receive them. Opts into the vLLM proxy when ``VLLM_PROXY_ENABLED``
+    is set. Values already present in ``load_kwargs`` take precedence.
 
     Args:
         model_id: Identifier of the model about to be loaded.
@@ -175,6 +175,7 @@ def with_load_defaults(model_id: str, load_kwargs: dict) -> dict:
         A new dictionary with the defaults applied; ``load_kwargs`` is not mutated.
     """
     from inference_model_manager import configuration
+    from inference_models import configuration as models_configuration
     from inference_models.models.auto_loaders.core import (
         DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS,
     )
@@ -188,6 +189,8 @@ def with_load_defaults(model_id: str, load_kwargs: dict) -> dict:
             "disabled_backends",
             sorted(configuration.DISABLED_INFERENCE_MODELS_BACKENDS),
         )
+    if getattr(models_configuration, "VLLM_PROXY_ENABLED", False):
+        load_kwargs.setdefault("allow_vllm_proxy", True)
     forwarded_kwargs = load_kwargs.get("forwarded_kwargs")
     if forwarded_kwargs is None:
         forwarded_kwargs = DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS

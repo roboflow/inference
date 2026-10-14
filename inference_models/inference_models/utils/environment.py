@@ -89,7 +89,7 @@ def str2bool(value: Any, variable_name: str) -> bool:
     v = value.strip().lower()
     if v in ("true", "1", "t", "yes", "y", "on"):
         return True
-    elif v in ("false", "0", "f", "no", "n", "off", ""):
+    elif v in ("false", "0", "f", "no", "n", "off"):
         return False
     else:
         raise InvalidEnvVariable(

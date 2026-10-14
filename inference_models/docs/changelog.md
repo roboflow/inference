@@ -44,9 +44,11 @@
 - `SAM3Torch.embed_images(..., return_embeddings=False)` populates the embeddings cache
   without returning the embedding tensors (`SAM3ImageEmbeddings.embeddings` is `None`).
 - A `vllm` backend proxies Qwen3-VL, Qwen3.5 and Qwen3.8 VLM requests to a vLLM HTTP
-  sidecar and registers LoRA adapters there. It is selected only when `VLLM_PROXY_ENABLED`
-  is set; the `VLLM_*` settings are validated by `validate_vllm_proxy_settings()` when the
-  proxy is selected, so an invalid value never breaks importing the package.
+  sidecar and registers LoRA adapters there. It is selected only when the caller passes
+  `AutoModel.from_pretrained(..., allow_vllm_proxy=True)` and `VLLM_PROXY_ENABLED` is set;
+  without the argument, loading is unchanged. The `VLLM_*` settings are validated by
+  `validate_vllm_proxy_settings()` only when the proxy is selected, so an invalid value never
+  breaks importing the package or other loads.
 - `AutoModel.from_pretrained(..., preloaded_model_dependencies=...)` reuses already loaded
   dependency models (validated against the dependency's model id and package id) instead
   of loading them again. `AutoModel.from_pretrained(..., disabled_backends=...)` excludes
@@ -56,17 +58,17 @@
   exclusions to dependency models too. Both parameters are keyword-only and default to the
   previous behaviour.
 - `ModelPackageMetadata.memory_profile` carries the package's `MemoryProfile` (peak VRAM
-  per batch size, `vram_for_batch(...)`) from the Roboflow API.
+  per batch size, `vram_for_batch(...)`) from the Roboflow API. A malformed profile is
+  replaced with an empty one and never rejects the package.
 - `InstanceSegmentationModel.max_batch_size` reports the model's batch limit.
 - SAM and SAM2 accept plain Python lists for point, label, box and mask prompts.
 - OWLv2 `infer_from_reference_examples(...)` accepts reference examples as dictionaries.
 
 ### Changed
 
-- TensorRT models import `tensorrt_lean` when it is installed and fall back to `tensorrt`.
-- Boolean environment variables also accept `1/0`, `t/f`, `yes/no`, `y/n`, `on/off` and an
-  empty value (`false`).
-- `InvalidEnvVariable` is also a `ValueError`.
+- TensorRT models fall back to `tensorrt_lean` when `tensorrt` is not installed.
+- Boolean environment variables also accept `1/0`, `t/f`, `yes/no`, `y/n`, `on/off` and
+  surrounding whitespace. An empty value is still rejected.
 
 
 ## `0.39.3`

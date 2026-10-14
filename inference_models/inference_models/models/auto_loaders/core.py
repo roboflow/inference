@@ -1570,6 +1570,7 @@ class AutoModel:
         *,
         preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]] = None,
         disabled_backends: Optional[Iterable[str]] = None,
+        allow_vllm_proxy: bool = False,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -1720,6 +1721,11 @@ class AutoModel:
                 `backend` is not given and the model is not a local path. Not applied
                 by default; pass `configuration.DISABLED_INFERENCE_MODELS_BACKENDS`
                 to honour the `DISABLED_INFERENCE_MODELS_BACKENDS` environment variable.
+
+            allow_vllm_proxy: When True and `VLLM_PROXY_ENABLED` is set, models with a
+                registered vLLM proxy are served through it. The model metadata is then
+                fetched before the auto-resolution cache is consulted. Forwarded to
+                dependency models. Default: False.
 
             **kwargs: Additional model-specific parameters passed to the model's
                 `from_pretrained()` method. Varies by model type. For image embeddings,
@@ -1899,7 +1905,7 @@ class AutoModel:
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
             prefetched_model_metadata: Optional[ModelMetadata] = None
-            if configuration.VLLM_PROXY_ENABLED:
+            if allow_vllm_proxy and configuration.VLLM_PROXY_ENABLED:
                 configuration.validate_vllm_proxy_settings()
                 try:
                     prefetched_model_metadata = get_model_from_provider(
@@ -2037,6 +2043,7 @@ class AutoModel:
                     weights_provider_extra_headers=weights_provider_extra_headers,
                     point_model_directory=point_model_directory,
                     content_addressed_artifact_cache=content_addressed_artifact_cache,
+                    allow_vllm_proxy=allow_vllm_proxy,
                 )
 
             warm_up_metadata: Optional[ModelMetadata] = None
@@ -2251,6 +2258,7 @@ class AutoModel:
                     point_model_directory=model_directory_pointer,
                     weights_provider_extra_query_params=weights_provider_extra_query_params,
                     weights_provider_extra_headers=weights_provider_extra_headers,
+                    allow_vllm_proxy=allow_vllm_proxy,
                     **resolved_model_parameters.kwargs,
                 )
                 model_dependencies_instances[model_dependency.name] = (
@@ -2426,6 +2434,7 @@ def attempt_loading_model_with_auto_load_cache(
     content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
     *,
     preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]] = None,
+    allow_vllm_proxy: bool = False,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
         return None
@@ -2578,6 +2587,7 @@ def attempt_loading_model_with_auto_load_cache(
                 point_model_directory=dependency_directory_pointer,
                 weights_provider_extra_query_params=weights_provider_extra_query_params,
                 weights_provider_extra_headers=weights_provider_extra_headers,
+                allow_vllm_proxy=allow_vllm_proxy,
                 **resolved_model_parameters.kwargs,
             )
             # An empty pointer list means an access manager served the

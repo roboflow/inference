@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from inference_models import _offline, configuration
-from inference_models.errors import InvalidEnvVariable
+from inference_models.errors import InvalidEnvVariable, ModelRetrievalError
 from inference_models.models.auto_loaders import core
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.models.auto_loaders.models_registry import (
@@ -25,8 +25,12 @@ from inference_models.models.vllm_proxy.qwen3_8_vllm import Qwen38VLLMProxy
 from inference_models.models.vllm_proxy.qwen3vl_vllm import Qwen3VLVLLMProxy
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
+    ModelDependency,
     ModelMetadata,
     ModelPackageMetadata,
+)
+from inference_models.weights_providers.roboflow_offline import (
+    ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER,
 )
 from tests.unit_tests.models.vllm_proxy.common import write_adapter_package
 
@@ -145,6 +149,7 @@ def test_flag_on_returns_proxy_without_negotiation_or_package_download(
             "ws/proj/1",
             api_key="tenant-key",
             weights_provider_extra_headers={"X-Extra": "1"},
+            allow_vllm_proxy=True,
         )
 
     assert isinstance(result, Qwen35VLLMProxy)
@@ -182,6 +187,7 @@ def test_flag_on_forwards_metadata_credentials_and_init_kwargs_to_proxy(
             weights_provider_extra_headers={"X-Extra": "1"},
             device="cpu",
             custom_option="kept",
+            allow_vllm_proxy=True,
         )
 
     assert result is sentinel
@@ -203,7 +209,9 @@ def test_flag_on_base_model_id_short_circuits_without_adapter_registration(
     with mock.patch.object(
         core, "get_model_from_provider", return_value=metadata
     ), mock.patch.object(core, "negotiate_model_packages") as negotiate:
-        result = core.AutoModel.from_pretrained("qwen3_5-0.8b", api_key="key")
+        result = core.AutoModel.from_pretrained(
+            "qwen3_5-0.8b", api_key="key", allow_vllm_proxy=True
+        )
 
     assert isinstance(result, Qwen35VLLMProxy)
     assert result._served_name == "qwen3_5-0.8b"
@@ -256,7 +264,10 @@ def test_flag_on_non_qwen_architecture_falls_through_with_single_metadata_fetch(
         core, "attempt_loading_matching_model_packages", return_value=expected_model
     ):
         result = core.AutoModel.from_pretrained(
-            "ws/proj/1", api_key="key", use_auto_resolution_cache=False
+            "ws/proj/1",
+            api_key="key",
+            use_auto_resolution_cache=False,
+            allow_vllm_proxy=True,
         )
 
     assert result is expected_model
@@ -286,7 +297,10 @@ def test_flag_on_non_qwen_architecture_with_warm_up_fetches_metadata_once(
         core, "attempt_loading_matching_model_packages", return_value=expected_model
     ):
         result = core.AutoModel.from_pretrained(
-            "ws/proj/1", api_key="key", use_auto_resolution_cache=False
+            "ws/proj/1",
+            api_key="key",
+            use_auto_resolution_cache=False,
+            allow_vllm_proxy=True,
         )
 
     assert result is expected_model
@@ -339,6 +353,179 @@ def test_offline_mode_with_flag_rejects_remote_loads_when_the_proxy_is_selected(
 
     with mock.patch.object(core, "get_model_from_provider") as provider:
         with pytest.raises(InvalidEnvVariable, match="OFFLINE_MODE"):
-            core.AutoModel.from_pretrained("qwen3_5-0.8b", api_key="key")
+            core.AutoModel.from_pretrained(
+                "qwen3_5-0.8b", api_key="key", allow_vllm_proxy=True
+            )
 
     provider.assert_not_called()
+
+
+def test_flag_on_without_opt_in_loads_cached_model_without_metadata_fetch(
+    vllm_pool,
+) -> None:
+    cached_model = MagicMock()
+
+    with mock.patch.object(
+        core,
+        "get_model_from_provider",
+        side_effect=ModelRetrievalError(message="network unavailable", help_url=""),
+    ) as provider, mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=cached_model
+    ) as cache_load, mock.patch.object(
+        configuration, "validate_vllm_proxy_settings"
+    ) as validate:
+        result = core.AutoModel.from_pretrained("ws/yolo/1", api_key="key")
+
+    assert result is cached_model
+    cache_load.assert_called_once()
+    provider.assert_not_called()
+    validate.assert_not_called()
+
+
+def test_flag_on_without_opt_in_keeps_qwen_model_on_the_regular_path(
+    vllm_pool,
+) -> None:
+    metadata = build_metadata()
+    expected_model = MagicMock()
+
+    with mock.patch.object(
+        core, "get_model_from_provider", return_value=metadata
+    ), mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=None
+    ), mock.patch.object(
+        core, "negotiate_model_packages", return_value=[]
+    ) as negotiate, mock.patch.object(
+        core, "attempt_loading_matching_model_packages", return_value=expected_model
+    ), mock.patch.object(
+        Qwen35VLLMProxy, "from_model_metadata"
+    ) as from_model_metadata:
+        result = core.AutoModel.from_pretrained(
+            "ws/proj/1", api_key="key", use_auto_resolution_cache=False
+        )
+
+    assert result is expected_model
+    negotiate.assert_called_once()
+    from_model_metadata.assert_not_called()
+
+
+def test_flag_on_with_offline_mode_and_without_opt_in_uses_offline_registry_only(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(core, "OFFLINE_MODE", True)
+    monkeypatch.setattr(configuration, "VLLM_PROXY_ENABLED", True)
+    metadata = build_metadata()
+    expected_model = MagicMock()
+
+    with mock.patch.object(
+        core, "get_model_from_provider", return_value=metadata
+    ) as provider, mock.patch.object(
+        core, "negotiate_model_packages", return_value=[]
+    ) as negotiate, mock.patch.object(
+        core, "attempt_loading_matching_model_packages", return_value=expected_model
+    ), mock.patch.object(
+        configuration, "validate_vllm_proxy_settings"
+    ) as validate, mock.patch.object(
+        Qwen35VLLMProxy, "from_model_metadata"
+    ) as from_model_metadata:
+        result = core.AutoModel.from_pretrained("ws/proj/1", api_key="key")
+
+    assert result is expected_model
+    provider.assert_called_once()
+    assert (
+        provider.call_args.kwargs["provider"] == ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER
+    )
+    negotiate.assert_called_once()
+    validate.assert_not_called()
+    from_model_metadata.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "setting_name, raw_value",
+    [
+        ("VLLM_PROXY_ENABLED", "maybe"),
+        ("VLLM_REQUEST_TIMEOUT_S", "slow"),
+        ("VLLM_MAX_LORA_RANK", "big"),
+    ],
+)
+def test_malformed_vllm_setting_fails_only_loads_that_opt_in(
+    vllm_pool, monkeypatch, setting_name: str, raw_value: str
+) -> None:
+    monkeypatch.setattr(configuration, setting_name, raw_value)
+    monkeypatch.setenv(setting_name, raw_value)
+    cached_model = MagicMock()
+
+    with mock.patch.object(
+        core, "get_model_from_provider"
+    ) as provider, mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=cached_model
+    ):
+        result = core.AutoModel.from_pretrained("ws/yolo/1", api_key="key")
+        with pytest.raises(InvalidEnvVariable, match=setting_name):
+            core.AutoModel.from_pretrained(
+                "ws/yolo/1", api_key="key", allow_vllm_proxy=True
+            )
+
+    assert result is cached_model
+    provider.assert_not_called()
+
+
+@pytest.mark.parametrize("allow_vllm_proxy", [True, False])
+def test_opt_in_is_forwarded_to_cached_load(vllm_pool, allow_vllm_proxy: bool) -> None:
+    metadata = build_metadata(
+        model_architecture="yolov8",
+        task_type="object-detection",
+        model_variant=None,
+        with_adapter_files=False,
+    )
+    cached_model = MagicMock()
+
+    with mock.patch.object(
+        core, "get_model_from_provider", return_value=metadata
+    ), mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=cached_model
+    ) as cache_load:
+        result = core.AutoModel.from_pretrained(
+            "ws/yolo/1", api_key="key", allow_vllm_proxy=allow_vllm_proxy
+        )
+
+    assert result is cached_model
+    assert cache_load.call_args.kwargs["allow_vllm_proxy"] is allow_vllm_proxy
+
+
+@pytest.mark.parametrize("allow_vllm_proxy", [True, False])
+def test_opt_in_is_forwarded_to_online_dependency_load(
+    vllm_pool, allow_vllm_proxy: bool
+) -> None:
+    metadata = ModelMetadata(
+        model_id="ws/yolo/1",
+        model_architecture="yolov8",
+        model_packages=[],
+        task_type="object-detection",
+        model_dependencies=[
+            ModelDependency(
+                name="encoder",
+                model_id="dependency/1",
+                model_package_id="dependencyPackage",
+            )
+        ],
+    )
+    outer_load = core.AutoModel.from_pretrained
+
+    with mock.patch.object(
+        core, "get_model_from_provider", return_value=metadata
+    ), mock.patch.object(
+        core, "negotiate_model_packages", return_value=[]
+    ), mock.patch.object(
+        core, "attempt_loading_matching_model_packages", return_value=MagicMock()
+    ), mock.patch.object(
+        core.AutoModel, "from_pretrained", return_value=MagicMock()
+    ) as dependency_load:
+        outer_load(
+            "ws/yolo/1",
+            api_key="key",
+            use_auto_resolution_cache=False,
+            allow_vllm_proxy=allow_vllm_proxy,
+        )
+
+    dependency_load.assert_called_once()
+    assert dependency_load.call_args.kwargs["allow_vllm_proxy"] is allow_vllm_proxy

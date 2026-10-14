@@ -340,9 +340,9 @@ def get_trt_version() -> Optional[Version]:
         return trt_version
     try:
         try:
-            import tensorrt_lean as trt
-        except ImportError:
             import tensorrt as trt
+        except ImportError:
+            import tensorrt_lean as trt
 
         return Version(trt.__version__)
     except Exception:
@@ -490,9 +490,9 @@ def get_driver_version() -> Optional[Version]:
 def is_trt_python_package_available() -> bool:
     try:
         try:
-            import tensorrt_lean as tensorrt  # noqa: F401
-        except ImportError:
             import tensorrt  # noqa: F401
+        except ImportError:
+            import tensorrt_lean as tensorrt  # noqa: F401
 
         return True
     except ImportError:

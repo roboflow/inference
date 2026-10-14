@@ -13,6 +13,7 @@ from inference_model_manager.pipelines import (
     DISABLED_STAGE,
     PPOCRv6StructuredOCR,
     default_stage_tokens,
+    load_model,
     pipeline_model_id,
     pipeline_stage_model_ids,
     resolve_pipeline_request,
@@ -20,6 +21,7 @@ from inference_model_manager.pipelines import (
     with_load_defaults,
 )
 from inference_model_manager.registry_defaults import lazy_register
+from inference_models import configuration as models_configuration
 from inference_models.errors import ModelNotFoundError
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.pp_ocrv6.pp_ocrv6_pipeline import PPOCRv6Pipeline
@@ -421,3 +423,43 @@ def test_with_load_defaults_applies_configuration_and_keeps_explicit_values(
     )
     assert explicit["rf_detr_max_input_resolution"] == 800
     assert explicit["disabled_backends"] == ["x"]
+
+
+def test_with_load_defaults_opts_into_vllm_proxy_when_enabled(monkeypatch):
+    monkeypatch.setattr(models_configuration, "VLLM_PROXY_ENABLED", True)
+
+    result = with_load_defaults("m/1", {})
+    explicit = with_load_defaults("m/1", {"allow_vllm_proxy": False})
+
+    assert result["allow_vllm_proxy"] is True
+    assert "allow_vllm_proxy" not in result["forwarded_kwargs"]
+    assert explicit["allow_vllm_proxy"] is False
+
+
+def test_with_load_defaults_does_not_opt_into_vllm_proxy_when_disabled(
+    monkeypatch,
+):
+    monkeypatch.setattr(models_configuration, "VLLM_PROXY_ENABLED", False)
+
+    result = with_load_defaults("m/1", {})
+
+    assert "allow_vllm_proxy" not in result
+
+
+def test_with_load_defaults_tolerates_configuration_without_vllm_setting(
+    monkeypatch,
+):
+    monkeypatch.delattr(models_configuration, "VLLM_PROXY_ENABLED")
+
+    result = with_load_defaults("m/1", {})
+
+    assert "allow_vllm_proxy" not in result
+
+
+def test_load_model_passes_vllm_proxy_opt_in_to_auto_model(monkeypatch):
+    monkeypatch.setattr(models_configuration, "VLLM_PROXY_ENABLED", True)
+
+    with patch(_FROM_PRETRAINED, return_value=object()) as from_pretrained:
+        load_model("m/1", api_key="k")
+
+    assert from_pretrained.call_args.kwargs["allow_vllm_proxy"] is True
