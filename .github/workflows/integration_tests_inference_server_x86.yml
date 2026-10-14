@@ -2,8 +2,8 @@ name: INTEGRATION TESTS - Inference Server CPU x86
 permissions:
   contents: read
 on:
-  push:
-    branches: [ main ]
+  # Pushes to main run this suite through main_images.yml, against the image
+  # docker.cpu.yml built for the commit (no in-job rebuild).
   workflow_dispatch:
     inputs:
       use-inference-models:
@@ -19,7 +19,7 @@ on:
         type: string
         default: ""
   workflow_call:
-    # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
+    # Called by fast_track_integration_tests.yml and main_images.yml with a prebuilt image tag, so
     # the 15-minute in-job image build is skipped.
     inputs:
       use-inference-models:

@@ -103,7 +103,12 @@ runs:
           # Pushes to non-main release branches need a deterministic image tag,
           # too. This is required for the MVP JP7.2 wheel workflow, which runs
           # before its changes land on main.
-          if [ "$EVENT_NAME" == "push" ]; then
+          # A push-triggered caller passing a custom tag (main_images.yml, via
+          # workflow_call) gets <VERSION>-<custom_tag>, as on workflow_dispatch.
+          # Direct push triggers have no inputs, so CUSTOM_TAG is empty there.
+          if [ "$EVENT_NAME" == "push" ] && [ -n "$CUSTOM_TAG" ]; then
+            IMAGE_TAGS="$BASE_IMAGE:$VERSION-$CUSTOM_TAG"
+          elif [ "$EVENT_NAME" == "push" ]; then
             PUSH_TAG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g' | sed 's/-\{2,\}/-/g' | sed 's/^-//;s/-$//')
             IMAGE_TAGS="$BASE_IMAGE:$PUSH_TAG"
           fi

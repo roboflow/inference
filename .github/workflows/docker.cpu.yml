@@ -4,8 +4,8 @@ permissions:
 on:
   release:
     types: [created]
-  push:
-    branches: [main]
+  # Pushes to main no longer trigger this workflow directly: main_images.yml
+  # calls it (build once, test that image, optionally publish it as an RC).
   workflow_dispatch:
     inputs:
       force_push:
@@ -17,7 +17,7 @@ on:
         description: "Custom tag to use for the image (overrides VERSION)"
         default: ""
   workflow_call:
-    # Called by fast_track_integration_tests.yml. A non-empty custom_tag is
+    # Called by fast_track_integration_tests.yml and main_images.yml. A non-empty custom_tag is
     # mandatory on this path: an empty one would publish to the bare
     # :$VERSION tag and overwrite the released image.
     inputs:
@@ -33,6 +33,9 @@ on:
       image_tag:
         description: "Tag (without repository) the image was pushed under, e.g. 1.6.2-post3-rc1"
         value: ${{ jobs.docker.outputs.image_tag }}
+      digest:
+        description: "Manifest digest of the pushed image (empty when not pushed)"
+        value: ${{ jobs.docker.outputs.digest }}
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
@@ -59,13 +62,14 @@ jobs:
       contents: read
     outputs:
       image_tag: ${{ steps.image_tag.outputs.image_tag }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Refuse a called build without a custom tag
         # Inside a called workflow github.workflow is the caller's name.
-        # Also refuse a called build outside a manual dispatch: determine-tags
-        # derives the tag from the caller's event, so only workflow_dispatch
-        # callers produce <VERSION>-<custom_tag>.
-        if: ${{ github.workflow != 'Build and Push CPU Container' && (inputs.custom_tag == '' || github.event_name != 'workflow_dispatch') }}
+        # Also refuse a called build outside a manual dispatch or a push:
+        # determine-tags derives the tag from the caller's event, and only
+        # workflow_dispatch and push callers produce <VERSION>-<custom_tag>.
+        if: ${{ github.workflow != 'Build and Push CPU Container' && (inputs.custom_tag == '' || (github.event_name != 'workflow_dispatch' && github.event_name != 'push')) }}
         run: |
           echo "::error::custom_tag is required when this workflow is called; an empty tag would overwrite the released :VERSION image"
           exit 1
@@ -129,6 +133,7 @@ jobs:
           echo "Single build will push to Docker Hub and Artifact Registry:"
           echo "${DH_TAGS},${GCP_TAGS}"
       - name: Build and push (Docker Hub and GCP from one build)
+        id: build
         uses: depot/build-push-action@v1
         with:
           push: ${{ github.event_name == 'release' || inputs.force_push == true }}

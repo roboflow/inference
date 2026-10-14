@@ -1,0 +1,152 @@
+name: Main - Build, Test and Publish RC Images
+# Build once, test that image, optionally publish the same image as an RC.
+#
+# Every push to main builds the CPU and GPU server images once (docker.cpu.yml,
+# docker.gpu.yml; Depot, same cache and registries as releases) and pushes them
+# under a per-commit staging tag <VERSION>-sha-<commit sha>. The CPU x86 and
+# NVIDIA T4 integration suites then pull that exact image instead of rebuilding
+# the Dockerfile inside every test job.
+#
+# Publishing is a separate, opt-in step: dispatch this workflow on main with
+# publish_rc=true. When both suites pass, the tested image digests are retagged
+# (no rebuild) as <VERSION>-rc.<UTC YYYYMMDDHHMMSS> in Docker Hub and Artifact
+# Registry. Push-triggered runs never publish an RC.
+#
+# Release (v* tag) images are unchanged: docker.cpu.yml / docker.gpu.yml still
+# build and push them on the `release` event.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish_rc:
+        description: "After the tests pass, publish the tested CPU and GPU images as <VERSION>-rc.<UTC timestamp> (main only)"
+        type: boolean
+        default: false
+
+run-name: "Main images - ${{ github.ref_name }} @ ${{ github.sha }}${{ inputs.publish_rc == true && ' - publish RC' || '' }}"
+
+concurrency:
+  # A newer merge to main supersedes the older push run. Manual dispatches get
+  # their own group so a publish run is never cancelled by a later merge.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  build-cpu:
+    name: Build CPU image
+    # The build workflow authenticates to GCP with OIDC; a called workflow
+    # cannot hold more permissions than its caller grants here.
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/docker.cpu.yml
+    with:
+      custom_tag: sha-${{ github.sha }}
+      force_push: true
+    secrets: inherit
+
+  build-gpu:
+    name: Build GPU image
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/docker.gpu.yml
+    with:
+      custom_tag: sha-${{ github.sha }}
+      force_push: true
+    secrets: inherit
+
+  server-cpu:
+    name: Server CPU regression
+    needs: build-cpu
+    uses: ./.github/workflows/integration_tests_inference_server_x86.yml
+    with:
+      image_tag: ${{ needs.build-cpu.outputs.image_tag }}
+    secrets: inherit
+
+  t4:
+    name: NVIDIA T4 regression
+    needs: build-gpu
+    uses: ./.github/workflows/test.nvidia_t4.yml
+    with:
+      image_tag: ${{ needs.build-gpu.outputs.image_tag }}
+    secrets: inherit
+
+  publish-rc:
+    name: Publish tested images as RC
+    needs: [build-cpu, build-gpu, server-cpu, t4]
+    # The only publish path: a manual dispatch on main with publish_rc=true,
+    # and only after both suites passed against the images built above.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_rc == true && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Compute RC tag
+        id: rc
+        run: |
+          set -euo pipefail
+          version=$(DISABLE_VERSION_CHECK=true python3 ./inference/core/version.py)
+          rc_tag="${version}-rc.$(date -u +%Y%m%d%H%M%S)"
+          if [[ ! "$rc_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::invalid RC tag '$rc_tag'"
+            exit 1
+          fi
+          echo "rc_tag=$rc_tag" >> "$GITHUB_OUTPUT"
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Authenticate gcloud
+        uses: google-github-actions/auth@v3
+        id: auth
+        with:
+          workload_identity_provider: "projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github"
+          service_account: "gha-inference@roboflow-staging.iam.gserviceaccount.com"
+          token_format: access_token
+      - name: Login to Google Artifact Registry
+        uses: docker/login-action@v4
+        with:
+          registry: us-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Retag tested images (no rebuild)
+        env:
+          RC_TAG: ${{ steps.rc.outputs.rc_tag }}
+          CPU_TAG: ${{ needs.build-cpu.outputs.image_tag }}
+          CPU_DIGEST: ${{ needs.build-cpu.outputs.digest }}
+          GPU_TAG: ${{ needs.build-gpu.outputs.image_tag }}
+          GPU_DIGEST: ${{ needs.build-gpu.outputs.digest }}
+        run: |
+          set -euo pipefail
+          retag() {  # repository staging_tag digest
+            local repo="$1" tag="$2" digest="$3" registry src
+            [ -n "$tag" ] || { echo "::error::no staging tag for $repo"; exit 1; }
+            for registry in "" "us-docker.pkg.dev/roboflow-artifacts/"; do
+              # Retag by digest so the RC is exactly the image the suites
+              # tested, even if the staging tag moved meanwhile.
+              if [ -n "$digest" ]; then
+                src="${registry}${repo}@${digest}"
+              else
+                echo "::warning::no build digest for $repo; retagging by staging tag $tag"
+                src="${registry}${repo}:${tag}"
+              fi
+              docker buildx imagetools create --tag "${registry}${repo}:${RC_TAG}" "$src"
+              echo "- \`${registry}${repo}:${RC_TAG}\` <- \`$src\`" >> "$GITHUB_STEP_SUMMARY"
+            done
+          }
+          echo "## Published RC \`$RC_TAG\` (commit \`$GITHUB_SHA\`)" >> "$GITHUB_STEP_SUMMARY"
+          retag roboflow/roboflow-inference-server-cpu "$CPU_TAG" "$CPU_DIGEST"
+          retag roboflow/roboflow-inference-server-gpu "$GPU_TAG" "$GPU_DIGEST"
