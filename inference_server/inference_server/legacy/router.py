@@ -548,13 +548,14 @@ async def _infer_and_repack(
         getattr(inference_request, "visualize_predictions", False)
     )
     images, is_batch = as_image_list(inference_request.image)
-    payloads = await load_request_images(
-        images,
-        ndarray_ok=bridge.accepts_ndarray,
-        keep_orientation=bool(
-            getattr(inference_request, "disable_preproc_auto_orient", False)
-        ),
-    )
+    with bridge.image_load_usage(route, api_key, len(images)):
+        payloads = await load_request_images(
+            images,
+            ndarray_ok=bridge.accepts_ndarray,
+            keep_orientation=bool(
+                getattr(inference_request, "disable_preproc_auto_orient", False)
+            ),
+        )
     params = build_task_params(route.task_type, route.action, inference_request, route)
     started = time.perf_counter()
     predictions = await bridge.infer(
@@ -766,7 +767,8 @@ async def _embed_images(
 ) -> ImageEmbeddingResponse:
     images, _ = as_image_list(inference_request.image)
     started = time.perf_counter()
-    payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
+    with bridge.image_load_usage(route, api_key, len(images)):
+        payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
     if inference_request.disable_preproc_auto_orient:
         payloads = [
             keep_image_orientation(payload, ndarray_ok=bridge.accepts_ndarray)
@@ -1188,15 +1190,21 @@ async def _resolve_core_model(
     return route, core_model_id, api_key
 
 
-async def _load_images(inference_request, bridge: LegacyModelBridge):
+async def _load_images(
+    inference_request,
+    bridge: LegacyModelBridge,
+    route: Route,
+    api_key: Optional[str],
+):
     images, is_batch = as_image_list(inference_request.image)
-    payloads = await load_request_images(
-        images,
-        ndarray_ok=bridge.accepts_ndarray,
-        keep_orientation=bool(
-            getattr(inference_request, "disable_preproc_auto_orient", False)
-        ),
-    )
+    with bridge.image_load_usage(route, api_key, len(images)):
+        payloads = await load_request_images(
+            images,
+            ndarray_ok=bridge.accepts_ndarray,
+            keep_orientation=bool(
+                getattr(inference_request, "disable_preproc_auto_orient", False)
+            ),
+        )
     return payloads, is_batch
 
 
@@ -1214,10 +1222,11 @@ async def _run_embedding(
     image_positions = [
         position for position, call in enumerate(calls) if call["image"] is not None
     ]
-    payloads = await load_request_images(
-        [calls[position]["image"] for position in image_positions],
-        ndarray_ok=bridge.accepts_ndarray,
-    )
+    with bridge.image_load_usage(route, api_key, len(image_positions)):
+        payloads = await load_request_images(
+            [calls[position]["image"] for position in image_positions],
+            ndarray_ok=bridge.accepts_ndarray,
+        )
     payload_by_position = dict(zip(image_positions, payloads))
     await bridge.ensure_loaded(route, api_key)
     model_monitoring = _model_monitoring_enabled(inference_request)
@@ -1281,7 +1290,7 @@ async def _run_ocr(
     route, _, api_key = await _resolve_core_model(
         request, inference_request, bridge, core
     )
-    payloads, is_batch = await _load_images(inference_request, bridge)
+    payloads, is_batch = await _load_images(inference_request, bridge, route, api_key)
     started = time.perf_counter()
     predictions = await bridge.infer(
         route,
@@ -1326,7 +1335,7 @@ async def _run_open_vocabulary_detection(
     )
     ensure_request_supported(core_model_id, inference_request, route)
     class_names = requested_open_vocabulary_classes(inference_request)
-    payloads, is_batch = await _load_images(inference_request, bridge)
+    payloads, is_batch = await _load_images(inference_request, bridge, route, api_key)
     started = time.perf_counter()
     predictions = await bridge.infer(
         route,
@@ -1359,11 +1368,12 @@ async def _run_few_shot_detection(
     route, _, api_key = await _resolve_core_model(
         request, inference_request, bridge, core
     )
-    payloads, is_batch = await _load_images(inference_request, bridge)
-    references = await load_request_images(
-        [example.image for example in inference_request.training_data],
-        ndarray_ok=False,
-    )
+    payloads, is_batch = await _load_images(inference_request, bridge, route, api_key)
+    with bridge.image_load_usage(route, api_key, len(payloads)):
+        references = await load_request_images(
+            [example.image for example in inference_request.training_data],
+            ndarray_ok=False,
+        )
     params = build_few_shot_params(
         inference_request, [reference.data for reference in references]
     )
@@ -1677,7 +1687,7 @@ async def _run_lmm(
         params = build_vlm_params(
             inference_request, model_class_name=route.model_class_name
         )
-    payloads, is_batch = await _load_images(inference_request, bridge)
+    payloads, is_batch = await _load_images(inference_request, bridge, route, api_key)
     started = time.perf_counter()
     predictions = await bridge.infer(
         route,
@@ -1788,7 +1798,8 @@ async def _run_depth_estimation(
         path=request.scope["path"],
     )
     bridge.record_request(route, inference_request.model_id, request.scope["path"])
-    payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
+    with bridge.image_load_usage(route, api_key, len(images)):
+        payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
     started = time.perf_counter()
     predictions = await bridge.infer(
         route,
@@ -1976,7 +1987,10 @@ async def _run_interactive_segmentation(
         )
     else:
         images, _ = as_image_list(image)
-        payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
+        with bridge.image_load_usage(route, api_key, len(images)):
+            payloads = await load_request_images(
+                images, ndarray_ok=bridge.accepts_ndarray
+            )
         prediction = (
             await bridge.infer(
                 route,

@@ -45,6 +45,7 @@ from inference_server.legacy.errors import (
     SERVICE_MISCONFIGURATION_MESSAGE,
     UNAUTHORIZED_MESSAGE,
     ImageFetchError,
+    InputImageLoadError,
     LegacyHTTPError,
     ModelNotReadyError,
 )
@@ -171,6 +172,39 @@ class _UsageCall:
 
 
 @contextmanager
+def image_load_usage(
+    route: "Route", api_key: Optional[str], images: int
+) -> Iterator[None]:
+    """Record a ``model`` row for images that cannot be loaded for a model call.
+
+    The legacy server loaded request images inside the model call, so a
+    request whose images fail to load still recorded the call, with the error
+    and one frame per image.
+
+    Args:
+        route: Route of the model the images are loaded for.
+        api_key: Key the model is called with.
+        images: Number of images of the call.
+
+    Yields:
+        Nothing.
+    """
+    started = time.perf_counter()
+    try:
+        yield
+    except InputImageLoadError as error:
+        record_telemetry(
+            _record_image_load_failure,
+            route,
+            api_key,
+            images,
+            time.perf_counter() - started,
+            error,
+        )
+        raise
+
+
+@contextmanager
 def usage_call(
     route: "Route",
     api_key: Optional[str],
@@ -278,6 +312,31 @@ _CORE_MODEL_ARCHITECTURES = {
 }
 
 _REGISTRY_ID_ALIASES = {"perception_encoder": "perception-encoder"}
+
+_LEGACY_CORE_MODEL_DESCRIPTORS: dict[str, tuple[str, str]] = {
+    "clip": ("clip", "embedding"),
+    "depth-anything-v2": ("depth-anything-v2", "depth-estimation"),
+    "depth-anything-v3": ("depth-anything-v3", "depth-estimation"),
+    "doctr": ("doctr", "ocr"),
+    "easy_ocr": ("easy_ocr", "ocr"),
+    "grounding_dino": ("grounding-dino", "object-detection"),
+    "owlv2": ("owlv2", "object-detection"),
+    "perception_encoder": ("perception_encoder", "embedding"),
+    "pp_ocr": ("pp_ocr", "ocr"),
+    "sam": ("sam", "unsupervised-segmentation"),
+    "sam2": ("sam2", "unsupervised-segmentation"),
+    "sam3": ("sam3", "unsupervised-segmentation"),
+    "trocr": ("trocr", "ocr"),
+    "yolo_world": ("yolo-world", "object-detection"),
+}
+
+_LEGACY_USAGE_TASK_TYPES = {
+    "multi-label-classification": "classification",
+    "open-vocabulary-object-detection": "object-detection",
+    "interactive-instance-segmentation": "unsupervised-segmentation",
+    "structured-ocr": "ocr",
+    "text-only-ocr": "ocr",
+}
 
 _TASK_TYPE_BY_MRO = {
     "ObjectDetectionModel": "object-detection",
@@ -780,6 +839,21 @@ class LegacyModelBridge:
         """
         return usage_call(route, api_key, images=images)
 
+    def image_load_usage(
+        self, route: Route, api_key: Optional[str], images: int
+    ) -> Any:
+        """Record a ``model`` row when the images of a call cannot be loaded.
+
+        Args:
+            route: Route of the model the images are loaded for.
+            api_key: Key the model is called with.
+            images: Number of images of the call.
+
+        Returns:
+            The context manager recording the failed load on exit.
+        """
+        return image_load_usage(route, api_key, images)
+
     async def infer_params_only(
         self,
         route: Route,
@@ -1186,15 +1260,7 @@ def _record_model_invocation(
     if scope is None:
         return
 
-    details: dict[str, Any] = {}
-    if route.model_architecture:
-        details["model_architecture"] = route.model_architecture
-    if route.model_variant:
-        details["model_variant"] = route.model_variant
-    details["task_type"] = route.task_type
-    if route.input_height is not None and route.input_width is not None:
-        details["model_input_height"] = route.input_height
-        details["model_input_width"] = route.input_width
+    model_id = resolve_roboflow_model_alias(requested_model_id_for(route.registry_id))
     present = [image for image in images if image is not None]
     frames = max(1, len(present))
     model_duration = execution_duration(
@@ -1202,18 +1268,72 @@ def _record_model_invocation(
     )
     record_model_usage(
         scope,
-        model_id=resolve_roboflow_model_alias(
-            requested_model_id_for(route.registry_id)
-        ),
+        model_id=model_id,
         api_key=api_key,
         frames=frames,
         duration=model_duration,
-        details=details,
+        details=_usage_details(route, model_id),
         megapixel_buckets=_megapixel_buckets(
             route, images, frames, model_duration, model_durations
         ),
         error=error,
     )
+
+
+def _record_image_load_failure(
+    route: Route,
+    api_key: Optional[str],
+    images: int,
+    duration: float,
+    error: InputImageLoadError,
+) -> None:
+    scope = USAGE_SCOPE.get()
+    if scope is None:
+        return
+
+    model_id = resolve_roboflow_model_alias(requested_model_id_for(route.registry_id))
+    frames = max(1, images)
+    floored = execution_duration(duration)
+    buckets: dict[str, dict[str, Any]] = {}
+    add_megapixel_bucket(
+        buckets,
+        megapixel_bucket(route.input_height, route.input_width),
+        frames=frames,
+        duration=floored,
+    )
+    record_model_usage(
+        scope,
+        model_id=model_id,
+        api_key=api_key,
+        frames=frames,
+        duration=floored,
+        details=_usage_details(route, model_id),
+        megapixel_buckets=buckets,
+        error=error,
+    )
+
+
+def _usage_details(route: Route, model_id: str) -> dict[str, Any]:
+    architecture = route.model_architecture
+    variant = route.model_variant
+    task_type = _LEGACY_USAGE_TASK_TYPES.get(route.task_type, route.task_type)
+    family, _, suffix = model_id.partition("/")
+    core = _LEGACY_CORE_MODEL_DESCRIPTORS.get(family)
+    if core is not None:
+        architecture, task_type = core
+        variant = suffix or None
+
+    details: dict[str, Any] = {}
+    if architecture:
+        details["model_architecture"] = architecture
+    if variant:
+        details["model_variant"] = variant
+    details["task_type"] = task_type
+    if route.input_height is not None and route.input_width is not None:
+        details["model_input_height"] = route.input_height
+        details["model_input_width"] = route.input_width
+
+    return details
 
 
 def _add_to_usage_call(
@@ -1397,6 +1517,12 @@ class SyncLegacyBridge:
     def usage_call(self, route, api_key, *, images=None) -> Iterator[None]:
         with bound_scope(self._usage_scope):
             with usage_call(route, api_key, images=images):
+                yield
+
+    @contextmanager
+    def image_load_usage(self, route, api_key, images) -> Iterator[None]:
+        with bound_scope(self._usage_scope):
+            with image_load_usage(route, api_key, images):
                 yield
 
     def __contains__(self, model_id) -> bool:

@@ -115,6 +115,19 @@ class ImageFetchError(LegacyHTTPError):
     pass
 
 
+class InputImageLoadError(LegacyHTTPError):
+    def __init__(self, message: str) -> None:
+        super().__init__(400, message)
+
+
+class InvalidImageTypeDeclared(InputImageLoadError):
+    pass
+
+
+class InvalidNumpyInput(InputImageLoadError):
+    pass
+
+
 class MissingServiceSecretError(LegacyHTTPError):
     def __init__(self) -> None:
         super().__init__(500, SERVICE_MISCONFIGURATION_MESSAGE)

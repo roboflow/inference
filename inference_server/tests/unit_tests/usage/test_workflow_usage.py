@@ -22,6 +22,7 @@ from inference_server.legacy.bridge import (
     LoopBridge,
     SyncLegacyBridge,
 )
+from inference_server.legacy.errors import LegacyHTTPError
 from inference_server.usage.observer import UsageExecutionObserver
 from inference_server.usage.rows import (
     USAGE_SCOPE,
@@ -1108,3 +1109,46 @@ def test_concurrent_requests_keep_their_model_runs_apart(fake_stat, server_loop)
     for model_id, collector in collectors.items():
         assert [row["resource_id"] for row in collector.rows] == [model_id] * 3
         assert sum(row["frames"] for row in collector.rows) == 3
+
+
+def _detect_in_tensor_native_mode(provider, image):
+    return provider.run_tensor_native_inference("ds/1", images=[image, image])
+
+
+def _detect_in_legacy_mode(provider, image):
+    return provider.run_object_detection(
+        "ds/1",
+        [{"type": "numpy_object", "value": image}] * 2,
+        api_key="k",
+        confidence=0.2,
+    )
+
+
+@pytest.mark.parametrize(
+    "detect", [_detect_in_legacy_mode, _detect_in_tensor_native_mode]
+)
+def test_provider_image_that_cannot_be_loaded_records_the_model_row(
+    fake_stat, server_loop, detect
+):
+    gateway = _detection_gateway(fake_stat, "ds/1")
+    collector = FakeUsageCollector()
+    with bound_scope(UsageScope(collector=collector, api_key="k")):
+        provider = _request_provider(gateway, server_loop)
+
+    def _call():
+        provider.add_model("ds/1", "k")
+        return detect(provider, np.zeros(3, dtype=np.uint8))
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with pytest.raises(LegacyHTTPError):
+            pool.submit(_call).result(timeout=10)
+
+    (row,) = collector.rows
+    assert (
+        row["category"],
+        row["resource_id"],
+        row["frames"],
+        row["error_type"],
+        row["error_status_code"],
+    ) == ("model", "ds/1", 2, "InvalidNumpyInput", None)
+    assert row["resource_details"]["task_type"] == "object-detection"

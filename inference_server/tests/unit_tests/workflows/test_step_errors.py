@@ -753,7 +753,7 @@ def test_bad_base64_image_in_a_step_stays_client_caused_400(
         "Could not load input image. Cause: Malformed base64 input image."
     )
     assert body["error_type"] == "ClientCausedStepExecutionError"
-    assert body["inner_error_type"] == "LegacyHTTPError"
+    assert body["inner_error_type"] == "InputImageLoadError"
     assert [call for call in gateway.calls if call[0] == "infer"] == []
 
 

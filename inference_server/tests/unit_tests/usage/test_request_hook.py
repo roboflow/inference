@@ -292,7 +292,7 @@ def test_registry_denial_records_the_cause_as_error_type(
     assert "error_status_code" not in row["resource_details"]
 
 
-def test_invalid_image_records_the_status_of_the_error(
+def test_invalid_image_records_the_legacy_error_type_without_a_status(
     usage_client, usage_collector, detection_gateway
 ):
     client = usage_client(detection_gateway)
@@ -308,9 +308,9 @@ def test_invalid_image_records_the_status_of_the_error(
 
     assert response.status_code == 400
     row = _request_row(usage_collector)
-    assert row["error_type"] == "LegacyHTTPError"
-    assert row["error_status_code"] == 400
-    assert row["resource_details"]["error"].startswith("LegacyHTTPError: ")
+    assert row["error_type"] == "InputImageLoadError"
+    assert row["error_status_code"] is None
+    assert row["resource_details"]["error"].startswith("InputImageLoadError: ")
 
 
 def test_wrong_task_type_is_an_error_row_with_the_status(
@@ -889,7 +889,7 @@ def test_doctr_records_a_structured_ocr_invocation(usage_client, usage_collector
     _assert_success_row(row, resource_id="doctr/default")
     model = _model_row(usage_collector)
     assert model["resource_id"] == "doctr/default"
-    assert model["resource_details"]["task_type"] == "structured-ocr"
+    assert model["resource_details"]["task_type"] == "ocr"
     assert model["frames"] == 1
 
 
@@ -914,9 +914,7 @@ def test_grounding_dino_records_an_open_vocabulary_invocation(
     model = _model_row(usage_collector)
     assert model["resource_id"] == model_id
     assert model["resource_details"]["model_architecture"] == "grounding-dino"
-    assert model["resource_details"]["task_type"] == (
-        "open-vocabulary-object-detection"
-    )
+    assert model["resource_details"]["task_type"] == "object-detection"
 
 
 def test_yolo_world_404_is_an_error_row(usage_client, usage_collector):
@@ -1027,7 +1025,7 @@ def test_sam2_embed_image_records_an_interactive_segmentation_invocation(
     details = _model_row(usage_collector)["resource_details"]
     assert details["model_architecture"] == "sam2"
     assert details["model_variant"] == "hiera_large"
-    assert details["task_type"] == "interactive-instance-segmentation"
+    assert details["task_type"] == "unsupervised-segmentation"
     assert "execution_mode" not in row["resource_details"]
 
 
@@ -1546,3 +1544,245 @@ def test_embeddings_request_records_one_billable_row(
     assert model["resource_details"]["model_architecture"] == "resnet"
     assert model["resource_details"]["task_type"] == "classification"
     assert model["frames"] == 1
+
+
+_UNDECODABLE = {"type": "base64", "value": "bm90LWFuLWltYWdl"}
+_UNDECODABLE_MESSAGE = (
+    "Could not load input image. Cause: Malformed base64 input image."
+)
+_ALL_ACTIONS = {
+    action: {}
+    for action in (
+        "infer",
+        "embed",
+        "embed_images",
+        "infer_with_reference_examples",
+        "prompt",
+    )
+}
+
+
+def _owlv2_reference(image):
+    return [
+        {
+            "image": image,
+            "boxes": [{"x": 1, "y": 1, "w": 2, "h": 2, "cls": "cat"}],
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "path,body,stats,resource_id,frames,descriptor",
+    [
+        (
+            "/infer/object_detection",
+            {"model_id": "ds/1", "image": [_UNDECODABLE, _UNDECODABLE]},
+            {"ds/1": OBJECT_DETECTION},
+            "ds/1",
+            2,
+            ("yolov8", "yolov8-n", "object-detection"),
+        ),
+        (
+            "/infer/embeddings",
+            {
+                "model_id": "classifiers/4",
+                "output_type": "feature_vector",
+                "image": _UNDECODABLE,
+            },
+            {"classifiers/4": ("classification", "infer", "resnet", "resnet101")},
+            "classifiers/4",
+            1,
+            ("resnet", "resnet101", "classification"),
+        ),
+        (
+            "/clip/embed_image",
+            {"image": [_UNDECODABLE, _UNDECODABLE, _UNDECODABLE]},
+            {},
+            "clip/ViT-B-16",
+            3,
+            ("clip", "ViT-B-16", "embedding"),
+        ),
+        (
+            "/doctr/ocr",
+            {"image": _UNDECODABLE},
+            {},
+            "doctr/default",
+            1,
+            ("doctr", "default", "ocr"),
+        ),
+        (
+            "/grounding_dino/infer",
+            {"image": _UNDECODABLE, "text": ["cat"]},
+            {},
+            "grounding_dino/default",
+            1,
+            ("grounding-dino", "default", "object-detection"),
+        ),
+        (
+            "/infer/lmm",
+            {"model_id": "my-vlm/1", "image": _UNDECODABLE, "prompt": "hi"},
+            {"my-vlm/1": ("vlm", "prompt", "paligemma", "paligemma-3b")},
+            "my-vlm/1",
+            1,
+            ("paligemma", "paligemma-3b", "vlm"),
+        ),
+        (
+            "/infer/depth-estimation",
+            {"image": _UNDECODABLE},
+            {},
+            "depth-anything-v2/small",
+            1,
+            ("depth-anything-v2", "small", "depth-estimation"),
+        ),
+        (
+            "/sam2/embed_image",
+            {"image": _UNDECODABLE, "image_id": "img-1"},
+            {},
+            "sam2/hiera_large",
+            1,
+            ("sam2", "hiera_large", "unsupervised-segmentation"),
+        ),
+    ],
+)
+def test_undecodable_image_records_the_model_row_legacy_records(
+    usage_client,
+    usage_collector,
+    fake_stat,
+    path,
+    body,
+    stats,
+    resource_id,
+    frames,
+    descriptor,
+):
+    fake_stat.update(stats)
+    client = usage_client(FakeGateway(predictions={}, model_info=_AllModelInfo()))
+
+    response = client.post(path, json={**body, "api_key": "k"})
+
+    _assert_undecodable_rows(response, usage_collector, resource_id, frames, descriptor)
+
+
+@pytest.mark.parametrize(
+    "image,reference,frames",
+    [
+        (_UNDECODABLE, _image(4, 4), 1),
+        ([_image(), _image()], _UNDECODABLE, 2),
+    ],
+)
+def test_undecodable_owlv2_image_records_the_model_row_legacy_records(
+    usage_collector, fake_stat, monkeypatch, image, reference, frames
+):
+    from inference_server.legacy.bridge import LegacyModelBridge
+    from inference_server.legacy.router import include_legacy_routers
+
+    monkeypatch.setattr("inference_server.configuration.CORE_MODEL_OWLV2_ENABLED", True)
+    app = FastAPI()
+    app.state.legacy_bridge = LegacyModelBridge(
+        FakeGateway(predictions={}, model_info=_AllModelInfo())
+    )
+    app.state.usage_collector = usage_collector
+    include_legacy_routers(app)
+
+    response = TestClient(app, raise_server_exceptions=False).post(
+        "/owlv2/infer",
+        json={
+            "image": image,
+            "training_data": _owlv2_reference(reference),
+            "api_key": "k",
+        },
+    )
+
+    _assert_undecodable_rows(
+        response,
+        usage_collector,
+        "owlv2/owlv2-large-patch14-ensemble",
+        frames,
+        ("owlv2", "owlv2-large-patch14-ensemble", "object-detection"),
+    )
+
+
+def _assert_undecodable_rows(
+    response, usage_collector, resource_id, frames, descriptor
+):
+    assert response.status_code == 400, response.text
+    assert response.json() == {"message": _UNDECODABLE_MESSAGE}
+    assert sorted(_categories(usage_collector)) == ["model", "request"]
+    request_row = _request_row(usage_collector)
+    assert (request_row["error_type"], request_row["error_status_code"]) == (
+        "InputImageLoadError",
+        None,
+    )
+    model = _model_row(usage_collector)
+    assert (model["resource_id"], model["api_key"], model["frames"]) == (
+        resource_id,
+        "k",
+        frames,
+    )
+    assert (model["error_type"], model["error_status_code"]) == (
+        "InputImageLoadError",
+        None,
+    )
+    details = model["resource_details"]
+    assert (
+        details["model_architecture"],
+        details.get("model_variant"),
+        details["task_type"],
+    ) == descriptor
+    assert details["error"] == f"InputImageLoadError: {_UNDECODABLE_MESSAGE}"
+    assert details["error_type"] == "InputImageLoadError"
+    assert "error_status_code" not in details
+    assert (
+        sum(
+            bucket["processed_frames"] for bucket in model["megapixel_buckets"].values()
+        )
+        == frames
+    )
+
+
+class _AllModelInfo(dict):
+    def __missing__(self, key):
+        return {"actions": _ALL_ACTIONS, "class_names": ["cat"]}
+
+
+def test_undecodable_image_is_bucketed_by_the_fixed_model_input(
+    usage_client, usage_collector, detection_gateway
+):
+    client = usage_client(detection_gateway)
+
+    client.post(
+        "/infer/object_detection",
+        json={"model_id": "ds/1", "api_key": "k", "image": [_UNDECODABLE] * 2},
+    )
+
+    model = _model_row(usage_collector)
+    assert model["megapixel_buckets"] == {
+        "0.25-0.5": {
+            "processed_frames": 2,
+            "execution_duration": model["execution_duration"],
+        }
+    }
+    assert (
+        model["resource_details"]["model_input_height"],
+        model["resource_details"]["model_input_width"],
+    ) == (640, 640)
+
+
+@pytest.mark.parametrize(
+    "stat,status_code",
+    [(UnauthorizedModelAccessError("denied"), 401), (None, 404)],
+)
+def test_undecodable_image_records_no_model_row_when_the_model_does_not_resolve(
+    usage_client, usage_collector, fake_stat, stat, status_code
+):
+    if stat is not None:
+        fake_stat["ds/1"] = stat
+    client = usage_client(FakeGateway())
+
+    response = client.post(
+        "/infer/object_detection",
+        json={"model_id": "ds/1", "api_key": "k", "image": _UNDECODABLE},
+    )
+
+    assert response.status_code == status_code
+    assert _categories(usage_collector) == ["request"]

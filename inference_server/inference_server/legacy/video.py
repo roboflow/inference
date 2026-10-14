@@ -28,7 +28,7 @@ from inference_server.framework.input_parsers.url_fetch import (
     fetch_to_sink,
 )
 from inference_server.legacy.common import _check_url, image_load_error
-from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.legacy.errors import InvalidImageTypeDeclared, LegacyHTTPError
 
 VIDEO_TYPE_URL = "url"
 VIDEO_TYPE_BASE64 = "base64"
@@ -69,13 +69,14 @@ async def video_source_path(video_type: str, value: str) -> AsyncIterator[str]:
     if video_type not in (VIDEO_TYPE_URL, VIDEO_TYPE_BASE64):
         raise image_load_error(
             f"Video type '{video_type}' is not supported, expected one of "
-            f"'{VIDEO_TYPE_URL}' or '{VIDEO_TYPE_BASE64}'."
+            f"'{VIDEO_TYPE_URL}' or '{VIDEO_TYPE_BASE64}'.",
+            InvalidImageTypeDeclared,
         )
     if video_type == VIDEO_TYPE_URL:
         if LEGACY_OFFLINE_MODE:
             raise image_load_error(_VIDEO_OFFLINE_ERROR)
         if not ALLOW_URL_INPUT:
-            raise image_load_error(_URL_INPUT_DISABLED_ERROR)
+            raise image_load_error(_URL_INPUT_DISABLED_ERROR, InvalidImageTypeDeclared)
         prepared_url, refusal = _check_url(value)
         if refusal is not None:
             raise _video_fetch_error(refusal)
@@ -136,7 +137,7 @@ def _video_fetch_error(response: Response) -> LegacyHTTPError:
     if error_code == _URL_REFUSED_CODE:
         return image_load_error(body["description"])
     if error_code == "URL_INPUT_DISABLED":
-        return image_load_error(_URL_INPUT_DISABLED_ERROR)
+        return image_load_error(_URL_INPUT_DISABLED_ERROR, InvalidImageTypeDeclared)
     if error_code == "URL_DESTINATION_FORBIDDEN":
         return image_load_error(_URL_DESTINATION_ERROR)
     if error_code in _URL_FETCH_FAILED_CODES:

@@ -1805,6 +1805,189 @@ async def test_infer_records_one_model_row_on_the_scope_collector(
     ]
 
 
+_PP_OCR_STAGES = {
+    "pp-ocrv6-det/small": ("object-detection", "infer"),
+    "pp-ocrv6-rec/small": ("text-only-ocr", "infer"),
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model_id,stats,expected",
+    [
+        (
+            "catdog/28",
+            {
+                "catdog/28": (
+                    "multi-label-classification",
+                    "infer",
+                    "vit",
+                    "base-patch16-224",
+                )
+            },
+            ("vit", "base-patch16-224", "classification"),
+        ),
+        (
+            "multilabel_face-rcu3l/5",
+            {
+                "multilabel_face-rcu3l/5": (
+                    "multi-label-classification",
+                    "infer",
+                    "dinov3_probe",
+                    "vit_small_patch16_dinov3.lvd1689m",
+                )
+            },
+            ("dinov3_probe", "vit_small_patch16_dinov3.lvd1689m", "classification"),
+        ),
+        (
+            "flower-classification--multi-label-format/29",
+            {
+                "flower-classification--multi-label-format/29": (
+                    "multi-label-classification",
+                    "infer",
+                    "resnet",
+                    None,
+                )
+            },
+            ("resnet", None, "classification"),
+        ),
+        (
+            "trocr/trocr-base-printed",
+            {
+                "trocr/trocr-base-printed": (
+                    "text-only-ocr",
+                    "infer",
+                    "tr-ocr",
+                    "base",
+                )
+            },
+            ("trocr", "trocr-base-printed", "ocr"),
+        ),
+        ("trocr/trocr-base-printed", {}, ("trocr", "trocr-base-printed", "ocr")),
+        (
+            "easy_ocr/english_g2",
+            {"easy_ocr/english_g2": ("structured-ocr", "infer", "easy-ocr", "craft")},
+            ("easy_ocr", "english_g2", "ocr"),
+        ),
+        (
+            "doctr/default",
+            {
+                "doctr/default": (
+                    "structured-ocr",
+                    "infer",
+                    "doctr",
+                    "dbnet-rn50/crnn-vgg16",
+                )
+            },
+            ("doctr", "default", "ocr"),
+        ),
+        ("pp_ocr/small-small", _PP_OCR_STAGES, ("pp_ocr", "small-small", "ocr")),
+        (
+            "pp_ocr/none-small",
+            {"pp-ocrv6-rec/small": ("text-only-ocr", "infer")},
+            ("pp_ocr", "none-small", "ocr"),
+        ),
+        (
+            "sam/vit_h",
+            {
+                "sam/vit_h": (
+                    "interactive-instance-segmentation",
+                    "embed",
+                    "sam",
+                    "vit_h",
+                )
+            },
+            ("sam", "vit_h", "unsupervised-segmentation"),
+        ),
+        (
+            "sam2/hiera_tiny",
+            {
+                "sam2/hiera_tiny": (
+                    "interactive-instance-segmentation",
+                    "embed",
+                    "sam2",
+                    "hiera-tiny",
+                )
+            },
+            ("sam2", "hiera_tiny", "unsupervised-segmentation"),
+        ),
+        (
+            "perception_encoder/PE-Core-L14-336",
+            {
+                "perception-encoder/PE-Core-L14-336": (
+                    "embedding",
+                    "embed_images",
+                    "perception-encoder",
+                    "core-l14-336",
+                )
+            },
+            ("perception_encoder", "PE-Core-L14-336", "embedding"),
+        ),
+        (
+            "grounding_dino/default",
+            {
+                "grounding_dino/default": (
+                    "open-vocabulary-object-detection",
+                    "infer",
+                    "grounding-dino",
+                    "swin-t",
+                )
+            },
+            ("grounding-dino", "default", "object-detection"),
+        ),
+        (
+            "owlv2/owlv2-large-patch14-ensemble",
+            {
+                "owlv2/owlv2-large-patch14-ensemble": (
+                    "open-vocabulary-object-detection",
+                    "infer",
+                    "owlv2",
+                    "large/patch14",
+                )
+            },
+            ("owlv2", "owlv2-large-patch14-ensemble", "object-detection"),
+        ),
+        (
+            "clip/ViT-B-16",
+            {"clip/ViT-B-16": ("embedding", "embed_images", "clip", "vit-b-16")},
+            ("clip", "ViT-B-16", "embedding"),
+        ),
+        (
+            "ds/1",
+            {"ds/1": ("object-detection", "infer", "yolov8", "yolov8-n")},
+            ("yolov8", "yolov8-n", "object-detection"),
+        ),
+    ],
+)
+async def test_model_row_carries_the_descriptor_the_legacy_server_reports(
+    fake_stat, model_id, stats, expected
+):
+    fake_stat.update(stats)
+    bridge = LegacyModelBridge(FakeGateway(predictions=_AnyPrediction()))
+    scope, collector = _scope()
+    with bound_scope(scope):
+        route = await bridge.resolve(model_id, "k")
+        runtime_task_type = route.task_type
+        await bridge.infer(route, "k", route.action, [ImagePayload(b"a", 1, 1)], {})
+
+    (row,) = collector.rows
+    details = row["resource_details"]
+    assert (
+        details["model_architecture"],
+        details.get("model_variant"),
+        details["task_type"],
+    ) == expected
+    assert route.task_type == runtime_task_type
+
+
+class _AnyPrediction(dict):
+    def __bool__(self):
+        return True
+
+    def __missing__(self, key):
+        return "pred"
+
+
 @pytest.mark.asyncio
 async def test_infer_sums_the_model_side_durations_of_the_fanned_out_calls(
     fake_stat, monkeypatch

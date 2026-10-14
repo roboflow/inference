@@ -356,7 +356,7 @@ class GatewayModelsProvider:
         key = self._key_for(model_id, api_key)
         route = self._embedding_route(model_id, key, output_type)
         started = time.perf_counter()
-        payloads = self._request_payloads(request)
+        payloads = self._request_payloads(request, route, key)
         if request.disable_preproc_auto_orient:
             payloads = [
                 keep_image_orientation(payload, ndarray_ok=self._bridge.accepts_ndarray)
@@ -403,9 +403,10 @@ class GatewayModelsProvider:
         """
         key = self._key_for(model_id, api_key)
         route = self._embedding_route(model_id, key, output_type)
-        payloads = native_image_payloads(
-            images, ndarray_ok=self._bridge.accepts_ndarray
-        )
+        with self._bridge.image_load_usage(route, key, len(images)):
+            payloads = native_image_payloads(
+                images, ndarray_ok=self._bridge.accepts_ndarray
+            )
         params = {"output_type": output_type, "input_color_format": input_color_format}
         results = self._bridge.infer(
             route, key, IMAGE_EMBEDDINGS_ACTION, payloads, params
@@ -565,7 +566,7 @@ class GatewayModelsProvider:
         self, request: Any, key: Optional[str], route: Route, context_id: str
     ) -> List[Any]:
         ensure_request_supported(route.model_id, request, route)
-        payloads = self._request_payloads(request)
+        payloads = self._request_payloads(request, route, key)
         params = build_task_params(route.task_type, route.action, request, route)
         params[STREAM_PIPELINE_CONTEXT_ID_KWARG] = context_id
         params[STREAM_PIPELINE_PRODUCER_ID_KWARG] = self._producer_id
@@ -677,7 +678,7 @@ class GatewayModelsProvider:
         request = DepthEstimationRequest(image=image, source=_WORKFLOW_SOURCE)
         key = self._key_for(model_id)
         route = self._resolve(model_id, key)
-        payloads = self._request_payloads(request)
+        payloads = self._request_payloads(request, route, key)
         predictions = self._bridge.infer(route, key, route.action, payloads, {})
         depth = repack_depth_estimation(predictions[0])
         pingback.record_inference(route.registry_id, request, depth)
@@ -950,9 +951,10 @@ class GatewayModelsProvider:
         if images is None:
             raw = [self._bridge.infer_params_only(route, key, action, params)]
         else:
-            payloads = native_image_payloads(
-                images, ndarray_ok=self._bridge.accepts_ndarray
-            )
+            with self._bridge.image_load_usage(route, key, len(images)):
+                payloads = native_image_payloads(
+                    images, ndarray_ok=self._bridge.accepts_ndarray
+                )
             raw = self._bridge.infer(route, key, action, payloads, params)
 
         result = assemble_native_result(
@@ -1046,26 +1048,31 @@ class GatewayModelsProvider:
             return route
         return self._resolve(model_id, self._key_for(model_id))
 
-    def _payloads(self, images: List[Any]) -> List[ImagePayload]:
+    def _payloads(
+        self, images: List[Any], route: Route, api_key: Optional[str]
+    ) -> List[ImagePayload]:
         limit_error = too_many_images(len(images))
         if limit_error is not None:
             raise _error_from_response(limit_error)
         payloads: List[ImagePayload] = []
-        for image in images:
-            image_type, value = split_image(image)
-            if image_type == "url":
-                data = self._bridge.fetch_image(value)
-                width, height = image_dims(data)
-                payloads.append(ImagePayload(data, width, height))
-                continue
-            payloads.append(
-                decode_inline_image(image, ndarray_ok=self._bridge.accepts_ndarray)
-            )
+        with self._bridge.image_load_usage(route, api_key, len(images)):
+            for image in images:
+                image_type, value = split_image(image)
+                if image_type == "url":
+                    data = self._bridge.fetch_image(value)
+                    width, height = image_dims(data)
+                    payloads.append(ImagePayload(data, width, height))
+                    continue
+                payloads.append(
+                    decode_inline_image(image, ndarray_ok=self._bridge.accepts_ndarray)
+                )
         return payloads
 
-    def _request_payloads(self, request: Any) -> List[ImagePayload]:
+    def _request_payloads(
+        self, request: Any, route: Route, api_key: Optional[str]
+    ) -> List[ImagePayload]:
         images, _ = as_image_list(request.image)
-        return self._payloads(images)
+        return self._payloads(images, route, api_key)
 
     def _run_cv(
         self,
@@ -1079,7 +1086,7 @@ class GatewayModelsProvider:
         if route is None:
             route = self._resolve(model_id, key)
         ensure_request_supported(model_id, request, route)
-        payloads = self._request_payloads(request)
+        payloads = self._request_payloads(request, route, key)
         params = build_task_params(route.task_type, route.action, request, route)
         params.update(extra_params or {})
         started = time.perf_counter()
@@ -1122,7 +1129,7 @@ class GatewayModelsProvider:
             params = {"classes": [getattr(request, "prompt", None)]}
         else:
             params = build_vlm_params(request, model_class_name=route.model_class_name)
-        payloads = self._request_payloads(request)
+        payloads = self._request_payloads(request, route, key)
         started = time.perf_counter()
         predictions = self._bridge.infer(route, key, action, payloads, params)
         elapsed = time.perf_counter() - started
@@ -1143,7 +1150,7 @@ class GatewayModelsProvider:
         ensure_ocr_request_supported(request)
         key = self._key_for(model_id, api_key)
         route = self._resolve(model_id, key)
-        payloads = self._request_payloads(request)
+        payloads = self._request_payloads(request, route, key)
         started = time.perf_counter()
         predictions = self._bridge.infer(route, key, route.action, payloads, {})
         elapsed = time.perf_counter() - started
@@ -1164,7 +1171,7 @@ class GatewayModelsProvider:
         route = self._resolve(model_id, key)
         ensure_request_supported(model_id, request, route)
         class_names = requested_open_vocabulary_classes(request)
-        payloads = self._request_payloads(request)
+        payloads = self._request_payloads(request, route, key)
         started = time.perf_counter()
         predictions = self._bridge.infer(route, key, route.action, payloads, params)
         elapsed = time.perf_counter() - started
@@ -1193,7 +1200,7 @@ class GatewayModelsProvider:
             position for position, call in enumerate(calls) if call["image"] is not None
         ]
         payloads = self._payloads(
-            [calls[position]["image"] for position in image_positions]
+            [calls[position]["image"] for position in image_positions], route, key
         )
         payload_by_position = dict(zip(image_positions, payloads))
         self._bridge.ensure_loaded(route, key)
@@ -1245,7 +1252,7 @@ class GatewayModelsProvider:
             prediction = self._bridge.infer_params_only(route, key, action, params)
         else:
             images, _ = as_image_list(image)
-            payloads = self._payloads(images)
+            payloads = self._payloads(images, route, key)
             prediction = self._bridge.infer(route, key, action, payloads, params)[0]
         elapsed = time.perf_counter() - started
         response = repack_interactive_segmentation_response(

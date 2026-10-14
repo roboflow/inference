@@ -1183,3 +1183,63 @@ async def test_truncated_jpeg_from_url_answers_like_legacy(monkeypatch, case):
 
     assert exc.value.status_code == 400
     assert exc.value.message == f"{PREFIX}{URL_NOT_IMAGE}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "image,settings,error_type,public_message",
+    [
+        (
+            {"type": "base64", "value": NOT_AN_IMAGE_B64},
+            {},
+            "InputImageLoadError",
+            MALFORMED_BASE64,
+        ),
+        ({"type": "bogus", "value": "x"}, {}, "InvalidImageTypeDeclared", UNKNOWN_TYPE),
+        (
+            {"type": "numpy", "value": "x"},
+            {},
+            "InvalidImageTypeDeclared",
+            NUMPY_UNSUPPORTED,
+        ),
+        (
+            {"type": "numpy_object", "value": np.zeros(3, dtype=np.uint8)},
+            {},
+            "InvalidNumpyInput",
+            NDARRAY_DIMENSIONS,
+        ),
+        (
+            {"type": "numpy_object", "value": "x"},
+            {},
+            "InvalidNumpyInput",
+            NOT_NDARRAY,
+        ),
+        (12345, {}, "InvalidImageTypeDeclared", NUMPY_UNSUPPORTED),
+        (
+            {"type": "url", "value": "https://example.com/a.jpg"},
+            {"ALLOW_URL_INPUT": False},
+            "InvalidImageTypeDeclared",
+            URL_INPUT_DISABLED,
+        ),
+        (
+            {"type": "url", "value": "https://example.com/a.jpg"},
+            {"LEGACY_OFFLINE_MODE": True},
+            "InputImageLoadError",
+            URL_OFFLINE,
+        ),
+    ],
+)
+async def test_image_load_errors_carry_the_legacy_error_class(
+    monkeypatch, image, settings, error_type, public_message
+):
+    for name, value in settings.items():
+        monkeypatch.setattr(f"inference_server.legacy.common.{name}", value)
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await load_request_images([image], ndarray_ok=True)
+
+    assert type(exc.value).__name__ == error_type
+    assert (exc.value.status_code, exc.value.message) == (
+        400,
+        f"{PREFIX}{public_message}",
+    )

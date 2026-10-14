@@ -64,6 +64,9 @@ class FakeSyncBridge:
     def usage_call(self, route, api_key, *, images=None):
         return nullcontext()
 
+    def image_load_usage(self, route, api_key, images):
+        return nullcontext()
+
     def fetch_image(self, url):
         raise AssertionError("not used")
 

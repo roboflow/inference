@@ -42,7 +42,12 @@ from inference_server.framework.input_parsers.url_fetch import (
     DestinationPolicy,
     fetch_images_from_urls,
 )
-from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.legacy.errors import (
+    InputImageLoadError,
+    InvalidImageTypeDeclared,
+    InvalidNumpyInput,
+    LegacyHTTPError,
+)
 
 _NPY_MAGIC = b"\x93NUMPY"
 _FILE_CHUNK_BYTES = 64 * 1024
@@ -116,8 +121,11 @@ def resolve_api_key(
     return DEFAULT_API_KEY
 
 
-def image_load_error(public_message: str) -> LegacyHTTPError:
-    return LegacyHTTPError(400, f"{_IMAGE_LOAD_ERROR_PREFIX}{public_message}")
+def image_load_error(
+    public_message: str,
+    error_class: type[InputImageLoadError] = InputImageLoadError,
+) -> InputImageLoadError:
+    return error_class(f"{_IMAGE_LOAD_ERROR_PREFIX}{public_message}")
 
 
 def image_dims(
@@ -172,7 +180,7 @@ def split_image(image: Any) -> tuple[Optional[str], Any]:
             return "url", value
         return None, value
     if not isinstance(image_type, str) or image_type.lower() not in _IMAGE_TYPES:
-        raise image_load_error(_UNKNOWN_IMAGE_TYPE_ERROR)
+        raise image_load_error(_UNKNOWN_IMAGE_TYPE_ERROR, InvalidImageTypeDeclared)
 
     return image_type.lower(), value
 
@@ -214,7 +222,7 @@ async def load_request_images(
         image_type, value = split_image(image)
         if image_type == "url":
             if LEGACY_OFFLINE_MODE or not ALLOW_URL_INPUT:
-                raise image_load_error(_url_input_refused_message())
+                raise _url_input_refused_error()
             url_positions.append(position)
             urls.append(value)
         else:
@@ -330,7 +338,7 @@ def _inline_payload(
     if image_type == "url":
         raise ValueError("url")
     if image_type == "numpy":
-        raise image_load_error(_NUMPY_UNSUPPORTED_ERROR)
+        raise image_load_error(_NUMPY_UNSUPPORTED_ERROR, InvalidImageTypeDeclared)
     if image_type == "numpy_object":
         return _numpy_object_payload(value, ndarray_ok=ndarray_ok)
     if image_type == "base64":
@@ -343,7 +351,7 @@ def _inline_payload(
         return _local_file_payload(value, budget=file_budget)
     if image_type is None:
         return _inferred_payload(value, ndarray_ok=ndarray_ok, file_budget=file_budget)
-    raise image_load_error(_UNKNOWN_IMAGE_TYPE_ERROR)
+    raise image_load_error(_UNKNOWN_IMAGE_TYPE_ERROR, InvalidImageTypeDeclared)
 
 
 def keep_image_orientation(payload: ImagePayload, *, ndarray_ok: bool) -> ImagePayload:
@@ -387,11 +395,11 @@ _decode_as_stored = guard_decoder(_imdecode_as_stored)
 
 def _numpy_object_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:
     if not isinstance(value, np.ndarray):
-        raise image_load_error(_NOT_NDARRAY_ERROR)
+        raise image_load_error(_NOT_NDARRAY_ERROR, InvalidNumpyInput)
     if value.ndim not in (2, 3):
-        raise image_load_error(_NDARRAY_DIMENSIONS_ERROR)
+        raise image_load_error(_NDARRAY_DIMENSIONS_ERROR, InvalidNumpyInput)
     if value.ndim == 3 and value.shape[-1] not in (1, 3):
-        raise image_load_error(_NDARRAY_CHANNELS_ERROR)
+        raise image_load_error(_NDARRAY_CHANNELS_ERROR, InvalidNumpyInput)
 
     width, height = int(value.shape[1]), int(value.shape[0])
     if ndarray_ok:
@@ -475,7 +483,7 @@ def _inferred_payload(
         except Exception:
             continue
         return payload
-    raise image_load_error(_NUMPY_UNSUPPORTED_ERROR)
+    raise image_load_error(_NUMPY_UNSUPPORTED_ERROR, InvalidImageTypeDeclared)
 
 
 def _encoded_bytes(value: Any) -> bytes:
@@ -513,10 +521,10 @@ def _decode_base64(value: Any) -> bytes:
     return data
 
 
-def _url_input_refused_message() -> str:
+def _url_input_refused_error() -> InputImageLoadError:
     if LEGACY_OFFLINE_MODE:
-        return _URL_OFFLINE_ERROR
-    return _URL_INPUT_DISABLED_ERROR
+        return image_load_error(_URL_OFFLINE_ERROR)
+    return image_load_error(_URL_INPUT_DISABLED_ERROR, InvalidImageTypeDeclared)
 
 
 def _check_url(url: str) -> tuple[Optional[str], Optional[Response]]:
@@ -564,7 +572,7 @@ def _url_fetch_error(response: Response) -> LegacyHTTPError:
     if error_code == _URL_REFUSED_CODE:
         return image_load_error(body["description"])
     if error_code == "URL_INPUT_DISABLED":
-        return image_load_error(_url_input_refused_message())
+        return _url_input_refused_error()
     if error_code == "URL_DESTINATION_FORBIDDEN":
         return image_load_error(_URL_DESTINATION_ERROR)
     if error_code in ("URL_FETCH_FAILED", "URL_FETCH_TIMEOUT"):
