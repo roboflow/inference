@@ -288,11 +288,18 @@ def test_disabled_sinks_leave_search_active_without_sink_effects():
     ]
 
 
-def test_retirement_and_q3_deferral_remain_default_rejections():
+def test_retired_types_are_rejected_and_active_qwen_is_registered():
     from tests.v2.unit.blocks.test_not_ported_v1_types import RETIRED_V2_TYPES
 
     catalogue = blocks.create_catalogue()
-    for identity in (*RETIRED_V2_TYPES, "v2/qwen3_5vl@v2"):
+    from roboflow_workflows.v2.blocks.models.vlm import Qwen35VLBlock
+    from roboflow_workflows.v2.engine.declaration import spec_of
+
+    # Q3 is active in the reviewed tail; retired families still fail compilation.
+    assert catalogue.block_types.count("v2/qwen3_5vl@v2") == 1
+    assert catalogue.entry("v2/qwen3_5vl@v2").spec is spec_of(Qwen35VLBlock)
+    assert blocks.Qwen35VLBlock is Qwen35VLBlock
+    for identity in RETIRED_V2_TYPES:
         assert catalogue.find(identity) is None
         definition = {
             "version": "2.0",

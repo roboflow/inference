@@ -270,10 +270,19 @@ def to_csv(rows: List[Dict[str, Any]], *, columns: List[str]) -> str:
         The CSV text with ``\\n`` line ends.
     """
     buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(columns)
+    # CRLF makes minimal quoting protect both CR and LF on every supported Python.
+    writer = csv.writer(buffer, lineterminator="\r\n")
+
+    def write_record(values: List[str]) -> None:
+        writer.writerow(values)
+        # Replace only the just-written record delimiter; quoted cell text stays intact.
+        buffer.seek(buffer.tell() - 2)
+        buffer.write("\n")
+        buffer.truncate()
+
+    write_record(columns)
     for row in rows:
-        writer.writerow([csv_cell(row[name]) for name in columns])
+        write_record([csv_cell(row[name]) for name in columns])
     document = buffer.getvalue()
 
     return document

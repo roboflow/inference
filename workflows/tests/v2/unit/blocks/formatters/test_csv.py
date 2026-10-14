@@ -134,3 +134,41 @@ def test_operations_for_an_unknown_column_fail_validation() -> None:
         CsvFormatterBlock.Params(
             columns_data={"a": 1}, columns_operations={"count": LENGTH}
         )
+
+
+@pytest.mark.parametrize(
+    "header,value,encoded_header,encoded_value",
+    [
+        ("plain", "plain", "plain", "plain"),
+        ("head\rpart", "cell\rpart", '"head\rpart"', '"cell\rpart"'),
+        ("head\npart", "cell\npart", '"head\npart"', '"cell\npart"'),
+        ("head\r\npart", "cell\r\npart", '"head\r\npart"', '"cell\r\npart"'),
+        ("head,part", 'cell,"part"', '"head,part"', '"cell,""part"""'),
+        ("head\r", "cell\r", '"head\r"', '"cell\r"'),
+        ("\rhead", "\rSUM(A1)", '"\rhead"', '"\'\rSUM(A1)"'),
+        ("=header", "=SUM(A1)", "=header", "'=SUM(A1)"),
+    ],
+    ids=[
+        "plain",
+        "cr",
+        "lf",
+        "crlf",
+        "comma-quotes",
+        "trailing-cr",
+        "leading-cr",
+        "formula",
+    ],
+)
+def test_record_delimiters_preserve_header_and_cell_text(
+    header, value, encoded_header, encoded_value
+) -> None:
+    document = _run({header: value})["csv_content"]
+
+    assert document == (
+        f"{encoded_header},timestamp\n" f"{encoded_value},2026-07-01T10:00:00+00:00\n"
+    )
+    expected_value = "'" + value if value.startswith(("=", "\r")) else value
+    assert list(csv.reader(io.StringIO(document, newline=""))) == [
+        [header, "timestamp"],
+        [expected_value, "2026-07-01T10:00:00+00:00"],
+    ]

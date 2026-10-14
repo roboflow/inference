@@ -662,7 +662,7 @@ def test_prompt_and_frame_validation_before_backend_call():
     backend = _VisualBackend()
     block = SegmentAnything2VideoBlock({SAM2_VIDEO_MODEL_ID: backend})
     image = _image()
-    with pytest.raises(ValueError, match="boxes were predicted"):
+    with pytest.raises(ValueError, match="Frame mismatch:.*image_id.*other:0.*a:0"):
         _direct(block, image, boxes=Batch([_boxes(_image("other"))]))
     with pytest.raises(ValueError, match="outside image"):
         _direct(block, image, points=[[100, 1]])
@@ -693,7 +693,7 @@ def test_invalid_prompt_on_due_frame_discards_established_source(invalid):
     _direct(block, _image(frame=1), points=[], prompt_mode="every_frame")
     assert [c[0] for c in backend.calls] == ["prompt", "track"]
 
-    with pytest.raises(ValueError, match="outside image|boxes were predicted"):
+    with pytest.raises(ValueError, match="outside image|Frame mismatch:.*image_id.*other:2.*a:2"):
         _direct(block, _image(frame=2), prompt_mode="every_frame", **invalid())
     after = _direct(block, _image(frame=3), points=[], prompt_mode="every_frame")
     # Discarded, so the source is unseeded again: no rows and no tracking call.

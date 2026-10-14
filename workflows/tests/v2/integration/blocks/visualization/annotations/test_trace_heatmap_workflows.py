@@ -1,9 +1,11 @@
 """Trace and heatmap blocks in compiled V2 workflows over video frames.
 
 Real blocks end to end: ``v2/instance_segmentation@v1`` with the painted-scene
-fake model (``scene``; not model inference), ``v2/byte_tracker@v1``, then
+fake model (``scene``; not model inference), ``v2/trackers_bytetrack@v1``, then
 the trace and heatmap blocks. One session runs frame after frame, so state
-lives in the session's block instances as in a video pipeline.
+lives in the session's block instances as in a video pipeline. The active
+tracker confirms a new track on its second frame; its ids are shared across
+tracker instances, so the checks compare continuity rather than a fixed id.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -47,11 +49,15 @@ SEGMENT_AND_TRACK = [
         "model_id": "shapes-seg",
     },
     {
-        "type": "v2/byte_tracker@v1",
+        "type": "v2/trackers_bytetrack@v1",
         "name": "tracker",
         "image": "$inputs.image",
         "predictions": "$steps.seg.predictions",
         "frame_rate": 30.0,
+        "minimum_iou_threshold": 0.3,
+        "minimum_consecutive_frames": 2,
+        "track_activation_threshold": 0.5,
+        "high_conf_det_threshold": 0.5,
     },
 ]
 TRACE = {
@@ -138,6 +144,14 @@ def run_frames(
     return results
 
 
+def warm_up_tracker(session: Any, batch: Sequence[ImageData]) -> None:
+    """Observe the real tracker's unconfirmed frame before measuring trails."""
+    rows = run_frames(session, [batch])[0]
+    assert all(len(row["tracked"]) == 0 for row in rows)
+    assert all(not green(row["trace"]).any() for row in rows)
+    assert all(not changed(row["trace"], row["heat"]).any() for row in rows)
+
+
 def centre_of(tracked: Any) -> List[int]:
     x1, y1, x2, y2 = tracked.xyxy[0].tolist()
     centre = [int((x1 + x2) / 2), int((y1 + y2) / 2)]
@@ -154,11 +168,18 @@ def green(image: ImageData) -> np.ndarray:
 @pytest.mark.parametrize("mode", MODES)
 def test_a_tracked_object_leaves_a_trail_and_a_heat_track(mode: str) -> None:
     session = compile_plan(mode).create_session({"models": ModelCache(SceneLoader())})
-    frames = [[video_frame("street", number, x=8 + 8 * number)] for number in range(5)]
+    warm_up_tracker(session, [video_frame("street", 0, x=8)])
+    frames = [
+        [video_frame("street", number + 1, x=8 + 8 * number)]
+        for number in range(5)
+    ]
     rows = [batch[0] for batch in run_frames(session, frames)]
 
     centres = [centre_of(row["tracked"]) for row in rows]
-    assert [row["tracked"].bboxes_metadata[0]["tracker_id"] for row in rows] == [1] * 5
+    assert all(len(row["tracked"]) == 1 for row in rows)
+    tracker_ids = [row["tracked"].bboxes_metadata[0]["tracker_id"] for row in rows]
+    assert tracker_ids[0] >= 0
+    assert tracker_ids == [tracker_ids[0]] * 5
     assert not green(rows[0]["trace"]).any()
     last = green(rows[-1]["trace"])
     assert all(last[y, x] for x, y in centres)
@@ -172,10 +193,13 @@ def test_a_tracked_object_leaves_a_trail_and_a_heat_track(mode: str) -> None:
 
 def test_two_cameras_in_one_batch_keep_their_own_trails() -> None:
     session = compile_plan().create_session({"models": ModelCache(SceneLoader())})
+    warm_up_tracker(
+        session, [video_frame("left", 0, x=6), video_frame("right", 0, x=80)]
+    )
     batches = [
         [
-            video_frame("left", number, x=6 + 6 * number),
-            video_frame("right", number, x=80 - 6 * number),
+            video_frame("left", number + 1, x=6 + 6 * number),
+            video_frame("right", number + 1, x=80 - 6 * number),
         ]
         for number in range(4)
     ]
@@ -225,7 +249,11 @@ def test_a_resized_frame_gets_its_trail_and_heat_at_its_own_scale() -> None:
     ]
     plan = compile_steps(steps, OUTPUTS)
     session = plan.create_session({"models": ModelCache(SceneLoader())})
-    frames = [[video_frame("street", number, x=8 + 8 * number)] for number in range(4)]
+    warm_up_tracker(session, [video_frame("street", 0, x=8)])
+    frames = [
+        [video_frame("street", number + 1, x=8 + 8 * number)]
+        for number in range(4)
+    ]
     rows = [batch[0] for batch in run_frames(session, frames)]
 
     trace, heat = rows[-1]["trace"], rows[-1]["heat"]
