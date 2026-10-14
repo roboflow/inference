@@ -626,7 +626,11 @@ _WORKSPACES_WHITELISTED_RAW = os.environ.get(
 WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT = (
     None
     if _WORKSPACES_WHITELISTED_RAW is None
-    else [entry.strip() for entry in _WORKSPACES_WHITELISTED_RAW.split(",")]
+    else [
+        entry.strip()
+        for entry in _WORKSPACES_WHITELISTED_RAW.split(",")
+        if entry.strip()
+    ]
 )
 ROBOFLOW_SERVICE_SECRET = os.environ.get("ROBOFLOW_SERVICE_SECRET")
 TRANSIENT_ROBOFLOW_API_ERRORS = {

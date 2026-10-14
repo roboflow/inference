@@ -151,6 +151,23 @@ def test_hosted_flags_read_legacy_spellings():
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.parametrize(
+    "raw,expected", [("", []), (" , ", []), ("a,,b, ", ["a", "b"])]
+)
+def test_workspace_allow_list_drops_empty_entries_like_legacy(raw, expected):
+    code = (
+        "import inference_server.configuration as c; "
+        f"assert c.WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT == {expected!r}"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env={**os.environ, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT": raw},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 _URL_RULE_SWITCHES = (
     "ALLOW_NON_HTTPS_URL_INPUT",
     "ALLOW_URL_INPUT_WITHOUT_FQDN",
