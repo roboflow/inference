@@ -48,6 +48,25 @@ _RESERVED_QUERY_KEYS: frozenset[str] = frozenset(
     }
 )
 
+_NON_MODEL_PARAMS: frozenset[str] = frozenset(
+    {
+        "self",
+        "model",
+        "model_id",
+        "action",
+        "raw_input",
+        "validate",
+        "serialize",
+        "wire_marshalling",
+        "timing",
+        "api_key",
+        "countinference",
+        "service_secret",
+        "stream_pipeline_context_id",
+        "stream_pipeline_producer_id",
+    }
+)
+
 _COERCIBLE_QUERY_TYPES: frozenset[str] = frozenset({"str", "int", "float", "bool"})
 
 
@@ -213,8 +232,11 @@ async def handle_model_inference_request(
         logger.debug("[dispatch] client disconnected during body read")
         return Response(status_code=499)
 
+    params = input_data.setdefault("params", {})
+    for name in _NON_MODEL_PARAMS:
+        params.pop(name, None)
     params_spec = description.interface_provider().params
-    err = _validate_action_params(params_spec, input_data.setdefault("params", {}))
+    err = _validate_action_params(params_spec, params)
     if err is not None:
         return err
     _apply_param_defaults(params_spec, input_data["params"])

@@ -771,6 +771,184 @@ async def test_failed_reload_after_eviction_answers_inference_failed(
     ] == ["[dispatch] inference failed (ref X): reload after eviction failed"]
 
 
+class _RecordingModelManager:
+    def __init__(self):
+        self.loaded = {"acme/1"}
+        self.executor = None
+        self.calls: list = []
+
+    def __contains__(self, key):
+        return key in self.loaded
+
+    async def process_async(
+        self,
+        model_id,
+        action=None,
+        *,
+        serialize=True,
+        wire_marshalling=False,
+        timing=None,
+        **kwargs,
+    ):
+        self.calls.append((model_id, action, serialize, wire_marshalling, kwargs))
+        return MagicMock()
+
+
+@pytest.mark.asyncio
+async def test_request_params_named_like_manager_or_auth_kwargs_are_dropped(
+    fake_handler_entry,
+):
+    async def _infer(action, input_data, proxy, server_hooks):
+        return await proxy.infer(
+            model_id="acme/1", image=b"x", params=input_data["params"]
+        )
+
+    fake_handler_entry["handler"].side_effect = _infer
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {
+            "confidence": 0.5,
+            "self": "x",
+            "model_id": "other/1",
+            "action": "embed",
+            "serialize": "1",
+            "wire_marshalling": "0",
+            "timing": "x",
+            "api_key": "k1",
+            "stream_pipeline_context_id": "c",
+            "stream_pipeline_producer_id": "p",
+        },
+    }
+    manager = _RecordingModelManager()
+
+    with _stat_returns(("fake-task", "infer")):
+        response = await handle_model_inference_request(
+            _request(query=b"model_id=acme/1"), ModelManagerGateway(manager)
+        )
+
+    assert response.status_code == 200
+    assert manager.calls == [
+        ("acme/1", None, False, True, {"confidence": 0.5, "images": b"x"})
+    ]
+
+
+_COLLIDING_PARAMS = {
+    "confidence": 0.5,
+    "self": "x",
+    "model": "x",
+    "model_id": "other/1",
+    "action": "embed",
+    "raw_input": "x",
+    "validate": "x",
+    "serialize": "1",
+    "wire_marshalling": "0",
+    "timing": "x",
+    "api_key": "k1",
+    "stream_pipeline_context_id": "c",
+    "stream_pipeline_producer_id": "p",
+}
+
+
+class _DirectModel:
+    def __init__(self):
+        self.calls: list = []
+
+    def predict(self, **kwargs):
+        self.calls.append(kwargs)
+        return MagicMock()
+
+
+class _DirectBackend:
+    state = "loaded"
+    is_accepting = True
+    is_healthy = True
+
+    def __init__(self):
+        self.model = _DirectModel()
+
+    def _decode_input(self, raw):
+        return "DECODED"
+
+    def record_inference(self, t0, error=False):
+        pass
+
+
+class _RemoteBackend:
+    state = "loaded"
+    is_accepting = True
+    is_healthy = True
+
+    def __init__(self):
+        self.calls: list = []
+
+    def submit_request(self, **kwargs):
+        from concurrent.futures import Future
+
+        self.calls.append(kwargs)
+        future = Future()
+        future.set_result(MagicMock())
+        return future
+
+
+async def _dispatch_colliding_params(fake_handler_entry, backend):
+    from inference_model_manager.model_manager import ModelManager
+
+    async def _infer(action, input_data, proxy, server_hooks):
+        return await proxy.infer(
+            model_id="acme/1", image=b"x", params=input_data["params"]
+        )
+
+    fake_handler_entry["handler"].side_effect = _infer
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": dict(_COLLIDING_PARAMS),
+    }
+    manager = ModelManager()
+    manager._backends["acme/1"] = backend
+    try:
+        with _stat_returns(("fake-task", "infer")):
+            return await handle_model_inference_request(
+                _request(query=b"model_id=acme/1"), ModelManagerGateway(manager)
+            )
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_colliding_params_never_reach_a_direct_backend_call(fake_handler_entry):
+    from inference_model_manager.dispatch import _get_registry
+
+    _get_registry().register(
+        _DirectModel,
+        "predict",
+        default=True,
+        validator=lambda kwargs: kwargs,
+        serializer=lambda out, model: out,
+        response_type="test-v1",
+    )
+    backend = _DirectBackend()
+
+    response = await _dispatch_colliding_params(fake_handler_entry, backend)
+
+    assert response.status_code == 200
+    assert backend.model.calls == [{"confidence": 0.5, "images": "DECODED"}]
+
+
+@pytest.mark.asyncio
+async def test_colliding_params_never_reach_a_remote_backend_submission(
+    fake_handler_entry,
+):
+    backend = _RemoteBackend()
+
+    response = await _dispatch_colliding_params(fake_handler_entry, backend)
+
+    assert response.status_code == 200
+    assert backend.calls == [
+        {"action": None, "raw_input": b"x", "validate": None, "confidence": 0.5}
+    ]
+
+
 @pytest.mark.asyncio
 async def test_loaded_model_is_refused_to_a_key_without_access(fake_handler_entry):
     from inference_models.errors import UnauthorizedModelAccessError
