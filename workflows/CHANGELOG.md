@@ -16,9 +16,19 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+Here you state unreleased work.
+
+## `0.2.8`
+
 ### Added
 
 - Google Gemini v6: Argon-only instance segmentation with normalized YX polygons, detached components, holes, and RLE mask output.
+
+## `0.2.7`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
 
 - Meta block (`roboflow_core/meta_vlm@v3`): Muse Wonder (`meta/muse-wonder` via OpenRouter), reasoning levels `minimal` through `xhigh`, with the same flat 0-1000 `named_0_1000` detection decoding as the Spark models.
 
