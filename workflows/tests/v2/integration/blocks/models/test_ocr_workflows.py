@@ -14,7 +14,9 @@ import pytest
 import torch
 from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.object_detection_model.v3 import (
+    ObjectDetectionBlock,
+)
 from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import EasyOCRBlock
 from roboflow_workflows.v2.blocks.models.ocr_model.v1 import OCRModelBlock
 from roboflow_workflows.v2.blocks.models.pp_ocr.v1 import PPOCRBlock

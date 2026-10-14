@@ -26,9 +26,16 @@ from roboflow_workflows.core_steps.common.openrouter import get_native_quantizat
 from roboflow_workflows.core_steps.models.foundation.qwen_vlm import v4 as v1_qwen
 from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
 from roboflow_workflows.v2.blocks.geometry.detection_offset.v1 import DetectionOffsetBlock
-from roboflow_workflows.v2.blocks.language._shared import openrouter_vendors as openrouter_vendors
-from roboflow_workflows.v2.blocks.language.chat import ChatRequestError
-from roboflow_workflows.v2.blocks.language.openrouter.v3 import MODEL_NATIVE_QUANTIZATIONS, OPENROUTER_TASKS
+from roboflow_workflows.v2.blocks.models.vision_language_models._shared import (
+    openrouter_vendors as openrouter_vendors,
+)
+from roboflow_workflows.v2.blocks.models.vision_language_models.chat import (
+    ChatRequestError,
+)
+from roboflow_workflows.v2.blocks.models.vision_language_models.openrouter.v3 import (
+    MODEL_NATIVE_QUANTIZATIONS,
+    OPENROUTER_TASKS,
+)
 from roboflow_workflows.v2.blocks.models.qwen_vlm import v4 as qwen_vlm
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.blocks.models.qwen_vlm.v4 import QwenVLMBlock

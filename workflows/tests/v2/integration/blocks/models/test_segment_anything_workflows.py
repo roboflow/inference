@@ -20,8 +20,12 @@ import torch
 from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.blocks.image.mask_edge_snap.v1 import MaskEdgeSnapBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
-from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.object_detection_model.v3 import (
+    ObjectDetectionBlock,
+)
+from roboflow_workflows.v2.blocks.models.roboflow_platform.instance_segmentation_model.v4 import (
+    InstanceSegmentationBlock,
+)
 from roboflow_workflows.v2.blocks.models.segment_anything.v1 import (
     SAM2_DEFAULT_MODEL_ID,
     SegmentAnything2Block,

@@ -16,6 +16,8 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- **V2 model package layout** — Move `blocks.language` to `blocks.models.vision_language_models` and group the seven `blocks.models.roboflow_*` model families under `blocks.models.roboflow_platform`, dropping the `roboflow_` prefix from each Python family package. Public `roboflow_core/...@vX` block identifiers and parameters are unchanged.
+
 - **V2 block definitions are explicit** — Block parameters, output declarations and ordinary execution now live in their family/version module. Shared model, geometry, drawing, state and transport algorithms remain shared. Concrete `Params` classes replace thin declaration bases. Some schema titles and direct Pydantic validation headers therefore change to `Params`; obsolete inherited descriptions are removed. Parameter validation and workflow compiler diagnostics are preserved.
 
 - **V2 model configuration per call** — Model IDs, package IDs and configuration options now have one value for the entire image batch of a block invocation. Images and per-image user prompts remain batched; list-valued configuration such as class filters is one list for the call. Scalar input selectors can choose a different model or configuration on the next call. Per-image configuration selectors are rejected during compilation; use separate model steps for different models. A selected `None` model ID raises an error; it no longer skips an image. Direct empty image batches do not load or call a model. Custom instance-segmentation subclasses receive a call-local `ModelInput` in `_segmentations(network_input, raw_output)`, replacing `ModelGroup` and its per-row grouping fields.

@@ -3,8 +3,12 @@
 from fractions import Fraction
 
 import pytest
-from roboflow_workflows.v2.blocks.models.roboflow_action_recognition_model import v1 as action
-from roboflow_workflows.v2.blocks.models.roboflow_action_recognition_model.v1 import ActionRecognitionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.action_recognition_model import (
+    v1 as action,
+)
+from roboflow_workflows.v2.blocks.models.roboflow_platform.action_recognition_model.v1 import (
+    ActionRecognitionBlock,
+)
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.data.batch import (
     Batch,

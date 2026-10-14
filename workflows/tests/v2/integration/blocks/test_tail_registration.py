@@ -16,10 +16,10 @@ from roboflow_workflows.v2.engine.errors import UnknownBlockError
 
 from inference_models.models.base.object_detection import Detections
 from tests.v2.integration.blocks.analytics import test_motion_workflows as motion
-from tests.v2.integration.blocks.language import (
+from tests.v2.integration.blocks.models.vision_language_models import (
     test_compatible_vendor_workflows as compatible,
 )
-from tests.v2.integration.blocks.language import (
+from tests.v2.integration.blocks.models.vision_language_models import (
     test_openrouter_vendor_workflows as router,
 )
 from tests.v2.integration.blocks.models import test_vlm_workflows as q3
@@ -42,71 +42,71 @@ RECORDS = [
         "owner": "G04",
         "class": "OpenRouterBlock",
         "type": "roboflow_core/openrouter@v3",
-        "module": 'roboflow_workflows.v2.blocks.language.openrouter.v3',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.openrouter.v3',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "KimiOpenRouterBlock",
         "type": "roboflow_core/kimi_openrouter@v3",
-        "module": 'roboflow_workflows.v2.blocks.language.kimi_openrouter.v3',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.kimi_openrouter.v3',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "MetaVlmBlock",
         "type": "roboflow_core/meta_vlm@v3",
-        "module": 'roboflow_workflows.v2.blocks.language.meta_vlm.v3',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.meta_vlm.v3',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "ZaiVlmBlock",
         "type": "roboflow_core/zai_vlm@v2",
-        "module": 'roboflow_workflows.v2.blocks.language.zai_vlm.v2',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.zai_vlm.v2',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "GoogleGemmaBlock",
         "type": "roboflow_core/google_gemma@v4",
-        "module": 'roboflow_workflows.v2.blocks.language.google_gemma.v4',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.google_gemma.v4',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "SpaceXAIBlock",
         "type": "roboflow_core/spacexai@v3",
-        "module": 'roboflow_workflows.v2.blocks.language.spacexai.v3',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.spacexai.v3',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "OpenAIBlock",
         "type": "roboflow_core/open_ai@v7",
-        "module": 'roboflow_workflows.v2.blocks.language.open_ai.v7',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.open_ai.v7',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "OpenAICompatibleBlock",
         "type": "roboflow_core/openai_compatible@v1",
-        "module": 'roboflow_workflows.v2.blocks.language.openai_compatible.v1',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.openai_compatible.v1',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "AnthropicClaudeBlock",
         "type": "roboflow_core/anthropic_claude@v5",
-        "module": 'roboflow_workflows.v2.blocks.language.anthropic_claude.v5',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.anthropic_claude.v5',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "GoogleGeminiBlock",
         "type": "roboflow_core/google_gemini@v6",
-        "module": 'roboflow_workflows.v2.blocks.language.google_gemini.v6',
-        "package": "language",
+        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.google_gemini.v6',
+        "package": "models.vision_language_models",
     },
     {
         "owner": "G05",

@@ -59,7 +59,7 @@ from pydantic import (
     model_validator,
 )
 from roboflow_workflows.execution_engine.entities.workload import WorkOperation
-from roboflow_workflows.v2.blocks.language.chat import (
+from roboflow_workflows.v2.blocks.models.vision_language_models.chat import (
     DEFAULT_MANAGED_KEY,
     TASK_METADATA,
     WORK_OPERATIONS,
@@ -70,12 +70,12 @@ from roboflow_workflows.v2.blocks.language.chat import (
     third_party_model,
     token_outputs,
 )
-from roboflow_workflows.v2.blocks.language.decoding import (
+from roboflow_workflows.v2.blocks.models.vision_language_models.decoding import (
     build_object_detection_prompt,
     checked_classes,
     vlm_prediction_outputs,
 )
-from roboflow_workflows.v2.blocks.language.openrouter.v3 import (
+from roboflow_workflows.v2.blocks.models.vision_language_models.openrouter.v3 import (
     CAPTION_SYSTEM_PROMPT,
     CLASS_LIST_TEXT,
     CLASSIFICATION_SYSTEM_PROMPT,
@@ -90,7 +90,7 @@ from roboflow_workflows.v2.blocks.language.openrouter.v3 import (
     OpenRouterTask,
     PrivacyLevel,
 )
-from roboflow_workflows.v2.blocks.language._shared.openrouter_vendors import (
+from roboflow_workflows.v2.blocks.models.vision_language_models._shared.openrouter_vendors import (
     DECODED_PARSERS,
     DECODING_TASKS,
     ZAI_REQUIRED_REASONING_FALLBACK,

@@ -231,8 +231,10 @@ from roboflow_workflows.v2.blocks.analytics import (
     BackgroundSubtractionBlock,
     MotionDetectionBlock,
 )
-from roboflow_workflows.v2.blocks.language import BLOCKS as LANGUAGE_BLOCKS
-from roboflow_workflows.v2.blocks.language import (
+from roboflow_workflows.v2.blocks.models.vision_language_models import (
+    BLOCKS as LANGUAGE_BLOCKS,
+)
+from roboflow_workflows.v2.blocks.models.vision_language_models import (
     OpenRouterBlock,
     KimiOpenRouterBlock,
     MetaVlmBlock,

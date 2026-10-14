@@ -27,7 +27,9 @@ from roboflow_workflows.v2.blocks.generation.stability_ai_image_gen.v1 import St
 from roboflow_workflows.v2.blocks.generation.stability_ai_inpainting.v1 import StabilityAIInpaintingBlock
 from roboflow_workflows.v2.blocks.generation.stability_ai_outpainting.v1 import StabilityAIOutpaintingBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.instance_segmentation_model.v4 import (
+    InstanceSegmentationBlock,
+)
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import SECRET_KIND
 from roboflow_workflows.v2.engine.catalogue import Catalogue

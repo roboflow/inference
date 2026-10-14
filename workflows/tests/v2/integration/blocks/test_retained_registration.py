@@ -354,7 +354,7 @@ def test_default_compiled_cpu_journeys(journey, monkeypatch):
 
 
 def test_secret_provider_and_geometry_use_final_public_catalogue(monkeypatch):
-    from tests.v2.integration.blocks.language import (
+    from tests.v2.integration.blocks.models.vision_language_models import (
         test_openrouter_vendor_workflows as owner,
     )
 
@@ -365,7 +365,7 @@ def test_secret_provider_and_geometry_use_final_public_catalogue(monkeypatch):
 def test_default_secret_store_output_feeds_real_provider_and_geometry():
     from roboflow_workflows.v2.engine import compile_workflow
     from roboflow_workflows.v2.blocks.secrets import StaticSecrets
-    from tests.v2.integration.blocks.language import (
+    from tests.v2.integration.blocks.models.vision_language_models import (
         test_openrouter_vendor_workflows as owner,
     )
 

@@ -27,7 +27,9 @@ from roboflow_workflows.v2.blocks import create_catalogue, geometry, models
 from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelRequest
 from roboflow_workflows.v2.blocks.models.common import ModelInput
-from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.instance_segmentation_model.v4 import (
+    InstanceSegmentationBlock,
+)
 from roboflow_workflows.v2.blocks.visualization import annotations
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView

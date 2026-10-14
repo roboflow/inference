@@ -1,11 +1,11 @@
 """Default discovery composes local models, direct OCR and retirement guards."""
-import roboflow_workflows.v2.blocks.language._catalogue_openrouter_vendors as _v2_family_0
-import roboflow_workflows.v2.blocks.language._catalogue_compatible_vendors as _v2_family_1
-import roboflow_workflows.v2.blocks.language.kimi_openrouter.v3 as _v2_family_2
-import roboflow_workflows.v2.blocks.language.meta_vlm.v3 as _v2_family_3
-import roboflow_workflows.v2.blocks.language.zai_vlm.v2 as _v2_family_4
-import roboflow_workflows.v2.blocks.language.google_gemma.v4 as _v2_family_5
-import roboflow_workflows.v2.blocks.language.spacexai.v3 as _v2_family_6
+import roboflow_workflows.v2.blocks.models.vision_language_models._catalogue_openrouter_vendors as _v2_family_0
+import roboflow_workflows.v2.blocks.models.vision_language_models._catalogue_compatible_vendors as _v2_family_1
+import roboflow_workflows.v2.blocks.models.vision_language_models.kimi_openrouter.v3 as _v2_family_2
+import roboflow_workflows.v2.blocks.models.vision_language_models.meta_vlm.v3 as _v2_family_3
+import roboflow_workflows.v2.blocks.models.vision_language_models.zai_vlm.v2 as _v2_family_4
+import roboflow_workflows.v2.blocks.models.vision_language_models.google_gemma.v4 as _v2_family_5
+import roboflow_workflows.v2.blocks.models.vision_language_models.spacexai.v3 as _v2_family_6
 
 import json
 import re
@@ -377,7 +377,11 @@ def test_default_qwen_openrouter_backend_uses_mock_transport():
 
 
 def test_active_q3_and_g04_module_contracts_remain_available():
-    from roboflow_workflows.v2.blocks.language._shared import compatible_vendors as compatible_vendors, openrouter_vendors as openrouter_vendors, parsers as parsers
+    from roboflow_workflows.v2.blocks.models.vision_language_models._shared import (
+        compatible_vendors as compatible_vendors,
+        openrouter_vendors as openrouter_vendors,
+        parsers as parsers,
+    )
     from roboflow_workflows.v2.blocks.models.qwen3_5vl.v2 import Qwen35VLBlock
 
     assert Qwen35VLBlock.type == "roboflow_core/qwen3_5vl@v2"

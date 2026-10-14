@@ -21,7 +21,9 @@ from typing import Any, Dict, List, Tuple
 
 import torch
 from roboflow_workflows.v2.blocks.models.common import ModelInput
-from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.instance_segmentation_model.v4 import (
+    InstanceSegmentationBlock,
+)
 from roboflow_workflows.v2.data.masks.grid import MaskGridGeometry, SegmentationView
 
 from inference_models.models.base.object_detection import Detections

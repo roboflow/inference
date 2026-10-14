@@ -26,7 +26,9 @@ from pydantic import ValidationError
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.object_detection_model.v3 import (
+    ObjectDetectionBlock,
+)
 from roboflow_workflows.v2.blocks.models._shared.sam_video import (
     VideoSessionLimitError,
     VideoSourceCapacityError,

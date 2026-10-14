@@ -15,18 +15,30 @@ from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.blocks.models.depth_estimation.v1 import DepthEstimationBlock
 from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import EasyOCRBlock
 from roboflow_workflows.v2.blocks.models.ocr_model.v1 import OCRModelBlock
-from roboflow_workflows.v2.blocks.models.roboflow_classification_model.v3 import ClassificationBlock
-from roboflow_workflows.v2.blocks.models.roboflow_multi_label_classification_model.v3 import MultiLabelClassificationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.classification_model.v3 import (
+    ClassificationBlock,
+)
+from roboflow_workflows.v2.blocks.models.roboflow_platform.multi_label_classification_model.v3 import (
+    MultiLabelClassificationBlock,
+)
 from roboflow_workflows.v2.blocks.models.common import (
     ModelOption,
     checked_confidence,
     confidence_option,
     post_process_options,
 )
-from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
-from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
-from roboflow_workflows.v2.blocks.models.roboflow_keypoint_detection_model.v3 import KeypointDetectionBlock
-from roboflow_workflows.v2.blocks.models.roboflow_semantic_segmentation_model.v2 import SemanticSegmentationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.object_detection_model.v3 import (
+    ObjectDetectionBlock,
+)
+from roboflow_workflows.v2.blocks.models.roboflow_platform.instance_segmentation_model.v4 import (
+    InstanceSegmentationBlock,
+)
+from roboflow_workflows.v2.blocks.models.roboflow_platform.keypoint_detection_model.v3 import (
+    KeypointDetectionBlock,
+)
+from roboflow_workflows.v2.blocks.models.roboflow_platform.semantic_segmentation_model.v2 import (
+    SemanticSegmentationBlock,
+)
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData

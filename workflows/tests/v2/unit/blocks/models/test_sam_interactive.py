@@ -30,7 +30,9 @@ from roboflow_workflows.v2.blocks.models.cache import (
     ModelRequest,
     ModelRequestConflict,
 )
-from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.object_detection_model.v3 import (
+    ObjectDetectionBlock,
+)
 from roboflow_workflows.v2.blocks.models.sam3_interactive.v1 import SAM3_INTERACTIVE_DEFAULT_MODEL_ID, SegmentAnything3InteractiveBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of

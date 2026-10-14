@@ -12,7 +12,9 @@ from typing import Any, Dict, List
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.object_detection_model.v3 import (
+    ObjectDetectionBlock,
+)
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import FRAME_RECORD_KEY, FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData

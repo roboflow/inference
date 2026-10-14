@@ -23,7 +23,9 @@ from roboflow_workflows.core_steps.transformations.byte_tracker.v3_tensor import
     _write_tracker_ids,
 )
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.object_detection_model.v3 import (
+    ObjectDetectionBlock,
+)
 from roboflow_workflows.v2.blocks.tracking.byte_tracker.v3 import DEFAULT_MAX_SOURCES, ByteTrackerBlock, TrackerCapacityError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
