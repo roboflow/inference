@@ -1,6 +1,6 @@
 import logging
 from copy import copy
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Dict, Iterator, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
@@ -723,8 +723,8 @@ def with_nmm(
         detections.mask, torch.Tensor
     ):
         # Dense device masks: run the torch NMM port, which keeps the (N, H, W)
-        # masks on device end-to-end (only the tiny xyxy/confidence/class_id and
-        # the (N, N) resized-mask intersection matrix cross the PCIe bus).
+        # masks on device end-to-end (only the tiny xyxy/confidence/class_id, the
+        # masks' tight boxes and integer pixel counts cross the PCIe bus).
         # Decision- and value-identical to the sv path below; the sv path stays
         # as insurance and for RLE / mask-less inputs.
         try:
@@ -804,14 +804,11 @@ def _with_nmm_sv(
     )
 
 
-# Constants of the torch NMM port. _NMM_MASK_DIMENSION mirrors the default
-# `mask_dimension` of `sv...mask_non_max_merge` (grouping decisions are taken on
-# masks resized to this max dimension). The float budget caps the transient
-# float32 copy of the flattened resized masks used by the pairwise-intersection
-# matmul; above it the matmul is tiled (results are identical either way — the
-# counts are exact integers, see `_pairwise_mask_intersection_on_device`).
-_NMM_MASK_DIMENSION = 640
-_NMM_PAIRWISE_FLOAT_BUDGET_BYTES = 128 * 1024 * 1024
+# Constant of the torch NMM port: the budget caps the transient memory of one
+# counting step, that is the bool copy of the gathered mask crops plus the int64
+# copy the sum makes of it on CPU; a larger gather is split (results are
+# identical either way — the counts are exact integers).
+_NMM_COUNTING_BUDGET_BYTES = 128 * 1024 * 1024
 
 
 def _with_nmm_dense_masks_torch(
@@ -821,56 +818,58 @@ def _with_nmm_dense_masks_torch(
     """Mask-based NMM equivalent to `sv.Detections.with_nmm` (class-aware, IoU
     metric) that never ships the dense (N, H, W) masks through host memory.
 
-    supervision semantics replicated exactly (from supervision 0.29.1 sources):
+    supervision semantics replicated exactly (from supervision 0.30.6 sources):
 
-    * grouping decisions run on masks resized to max-dim 640 with the
-      nearest-index grid of `sv...resize_masks` (`np.linspace(0, dim - 1,
-      new_dim).astype(int)` sampling — upsamples when the mask is smaller);
+    * grouping decisions run on the masks at their native resolution (0.30
+      ignores `mask_dimension`; nothing is resized);
     * per class id (ascending `np.unique` order), detections are seeded by
       descending confidence (`scores.argsort()` pop-from-the-back) and the
-      merge candidate is the *union* of already-absorbed resized masks;
-      absorption is retried against the growing union until a fixed point
+      merge candidate is the *union* of already-absorbed masks; absorption is
+      retried against the growing union until a fixed point
       (`sv..._group_overlapping_masks`);
-    * IoU arithmetic mirrors `sv..._mask_iou_batch_split`: float32
-      integer-exact intersection counts, `union = area_a + area_b - inter` in
-      float32, division into a float64 zeros buffer where union != 0;
+    * IoU arithmetic mirrors `sv..._mask_iou_batch_split`: intersection counts
+      and areas in float32 (float64 when a mask has more than 2**24 pixels, as
+      in supervision), `union = area_a + area_b - inter` in that dtype,
+      division into a float64 zeros buffer where union != 0. The counts are
+      taken on device as integers and converted on host: supervision's counts
+      are integers that its counting dtype holds exactly, so the conversion
+      yields the same bits;
     * each group merges into one output detection (`sv._merge_detection_group`):
-      union box via float32 min/max, confidence = box-area-weighted mean of
-      member confidences (`np.dot(f32 areas, f64 confs) / total_area`, cast to
-      float32; the winner's confidence when total area <= 0), the winning
-      (highest-confidence) member's class id, mask = logical OR of the ORIGINAL
-      full-resolution masks; singleton groups pass through unchanged.
+      union box via min/max of the float64 member boxes cast to float32,
+      confidence = box-area-weighted mean of member confidences
+      (`np.dot(f64 areas, f64 confs) / total_area`, cast to float32; the
+      winner's confidence when total area <= 0), the winning
+      (highest-confidence) member's class id, mask = logical OR of the member
+      masks; singleton groups pass through unchanged.
 
-    Device traffic: one D2H of xyxy/confidence/class_id, one D2H of the (N, N)
-    intersection matrix + (N,) areas of the resized masks, one tiny D2H per
-    union-growth round (rare: only groups that absorb members and re-test), and
-    one small H2D of the merged xyxy/confidence/class_id. Full-resolution masks
-    never leave the device.
+    Device traffic: one D2H of xyxy/confidence/class_id, one D2H of the (N, 4)
+    tight mask boxes, one H2D of the mask indices of the pairs to count and one
+    D2H of their counts (one integer per same-class pair with overlapping mask
+    boxes), one small H2D + D2H per union-growth round whose candidate box
+    overlaps the box of a remaining mask, and one small H2D of the merged
+    xyxy/confidence/class_id. Full-resolution masks never leave the device.
     """
     device = detections.xyxy.device
     masks = detections.mask.detach()
     if masks.dtype is not torch.bool:
         masks = masks.to(dtype=torch.bool)
-    number_of_input_detections = int(masks.shape[0])
     # Host copies of the small per-detection fields with the same dtypes the
     # sv-based path feeds into sv.Detections (float64 boxes / confidences,
     # int class ids) so every downstream decision is bit-identical.
     xyxy_host = detections.xyxy.detach().to("cpu").numpy().astype(float)
     confidence_host = detections.confidence.detach().to("cpu").numpy().astype(float)
     class_id_host = detections.class_id.detach().to("cpu").numpy().astype(int)
-    resized_masks = _resize_masks_like_supervision(
-        masks=masks, max_dimension=_NMM_MASK_DIMENSION
+    mask_boxes = _mask_tight_boxes_on_device(masks=masks)
+    intersection, areas = _pairwise_mask_intersection_on_device(
+        masks=masks, mask_boxes=mask_boxes, class_id=class_id_host
     )
-    flat_masks = resized_masks.reshape(number_of_input_detections, -1)
-    intersection, areas = _pairwise_mask_intersection_on_device(flat_masks=flat_masks)
-    intersection_host = intersection.to("cpu").numpy()
-    areas_host = areas.to("cpu").numpy()
     merge_groups = _mask_non_max_merge_groups(
         confidence=confidence_host,
         class_id=class_id_host,
-        intersection=intersection_host,
-        areas=areas_host,
-        flat_masks=flat_masks,
+        intersection=intersection,
+        areas=areas,
+        masks=masks,
+        mask_boxes=mask_boxes,
         iou_threshold=threshold,
     )
     xyxy_out, confidence_out, class_id_out = _merge_detection_groups_bookkeeping(
@@ -898,74 +897,132 @@ def _with_nmm_dense_masks_torch(
     )
 
 
-def _resize_masks_like_supervision(
-    masks: torch.Tensor, max_dimension: int
-) -> torch.Tensor:
-    """Torch replica of `sv...resize_masks`: nearest-index resampling so the
-    largest mask dimension becomes `max_dimension` (aspect ratio kept). The
-    integer sampling grids are computed on host with the exact numpy expression
-    supervision uses, so the resampled masks match sv's pixel-for-pixel."""
+def _mask_tight_boxes_on_device(masks: torch.Tensor) -> np.ndarray:
+    """Host (N, 4) integer `[x_min, y_min, x_max, y_max)` boxes (max exclusive)
+    tightly enclosing the True pixels of each mask, reduced on the masks'
+    device and shipped as one small D2H. They are read from the mask content
+    because `detections.xyxy` need not enclose the mask. An empty mask gets
+    `[W, H, 0, 0)`, which overlaps no box, itself included."""
     height, width = int(masks.shape[1]), int(masks.shape[2])
-    scale = min(max_dimension / height, max_dimension / width)
-    new_height = int(scale * height)
-    new_width = int(scale * width)
-    if new_height == height and new_width == width:
-        # np.linspace(0, dim - 1, dim).astype(int) is the identity grid.
-        return masks
-    y_indices = torch.as_tensor(
-        np.linspace(0, height - 1, new_height).astype(int),
-        dtype=torch.long,
-        device=masks.device,
+    occupied_rows = masks.any(dim=2)
+    occupied_columns = masks.any(dim=1)
+    ys = torch.arange(height, device=masks.device)
+    xs = torch.arange(width, device=masks.device)
+
+    boxes = torch.stack(
+        [
+            torch.where(occupied_columns, xs, width).amin(dim=1),
+            torch.where(occupied_rows, ys, height).amin(dim=1),
+            torch.where(occupied_columns, xs, -1).amax(dim=1) + 1,
+            torch.where(occupied_rows, ys, -1).amax(dim=1) + 1,
+        ],
+        dim=1,
     )
-    x_indices = torch.as_tensor(
-        np.linspace(0, width - 1, new_width).astype(int),
-        dtype=torch.long,
-        device=masks.device,
+    boxes_host = boxes.to("cpu").numpy()
+
+    return boxes_host
+
+
+def _boxes_overlap(boxes: np.ndarray, other_boxes: np.ndarray) -> np.ndarray:
+    """Whether `[x_min, y_min, x_max, y_max)` integer boxes share at least one
+    pixel (broadcast over the leading axes; boxes touching at an edge do not)."""
+    overlap = (
+        np.maximum(boxes[..., 0], other_boxes[..., 0])
+        < np.minimum(boxes[..., 2], other_boxes[..., 2])
+    ) & (
+        np.maximum(boxes[..., 1], other_boxes[..., 1])
+        < np.minimum(boxes[..., 3], other_boxes[..., 3])
     )
-    return masks.index_select(1, y_indices).index_select(2, x_indices)
+
+    return overlap
+
+
+def _gather_mask_crops(
+    crops: torch.Tensor, mask_ids: torch.Tensor
+) -> Iterator[torch.Tensor]:
+    """Copies of `crops[mask_ids]`, where `crops` is a box-shaped view of the
+    device masks, split so that counting a single copy stays within
+    _NMM_COUNTING_BUDGET_BYTES (at least one crop per copy)."""
+    # 9 bytes per pixel: the bool copy and its int64 widening.
+    crop_bytes = 9 * int(crops.shape[1]) * int(crops.shape[2])
+    step = max(1, _NMM_COUNTING_BUDGET_BYTES // crop_bytes)
+    for start in range(0, int(mask_ids.shape[0]), step):
+        yield crops.index_select(0, mask_ids[start : start + step])
+
+
+def _count_shared_pixels(
+    gathered: torch.Tensor, reference: torch.Tensor
+) -> torch.Tensor:
+    """Per-crop int64 counts of the pixels the `gathered` crops share with the
+    `reference` crop; `gathered` is overwritten with the AND."""
+    # Summed over one flattened dim: MPS is several times slower at reducing
+    # over two.
+    counts = gathered.logical_and_(reference).flatten(1).sum(dim=1)
+
+    return counts
 
 
 def _pairwise_mask_intersection_on_device(
-    flat_masks: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """(N, N) float32 intersection pixel counts and (N,) float32 areas of the
-    flattened bool masks, computed on the masks' device.
+    masks: torch.Tensor,
+    mask_boxes: np.ndarray,
+    class_id: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Host (N, N) intersection pixel counts and (N,) areas of the bool masks
+    in supervision's counting dtype: float32, which holds every count exactly
+    while a mask has at most 2**24 pixels, float64 above.
 
-    Counts are exact integers: the matmul operands are 0/1 (exact in float32
-    and in TF32's 10-bit mantissa) and every partial sum stays below
-    2**24 (P <= 640 * 640 after resize), so any accumulation order — cuBLAS,
-    TF32-with-fp32-accumulate, CPU BLAS — yields the exact count, matching
-    supervision's float32 numpy matmul bit-for-bit. Memory: the transient
-    float32 copy of the flattened masks is tiled once it would exceed
-    _NMM_PAIRWISE_FLOAT_BUDGET_BYTES (the bool masks themselves stay resident).
+    Two masks share pixels only inside the intersection of their tight boxes,
+    so only pairs with overlapping boxes are counted on device; every other
+    entry is 0. Pairs of different classes are left at 0 as well: the
+    class-aware grouping never reads them. Every non-empty mask is paired with
+    itself, which puts its area on the diagonal.
+
+    A pair is counted inside the smaller of its two boxes, together with all
+    other pairs sharing that box: two gathers, one AND and one sum per box
+    (more only when counting a gather exceeds _NMM_COUNTING_BUDGET_BYTES). The
+    counts are int64 on device and stay there until a single D2H of all of
+    them, so no floating-point dtype is needed on the device.
     """
-    number_of_masks, pixels = int(flat_masks.shape[0]), int(flat_masks.shape[1])
-    if number_of_masks * pixels * 4 <= _NMM_PAIRWISE_FLOAT_BUDGET_BYTES:
-        flat_f32 = flat_masks.to(dtype=torch.float32)
-        return flat_f32 @ flat_f32.T, flat_f32.sum(dim=1)
-    chunk = max(1, _NMM_PAIRWISE_FLOAT_BUDGET_BYTES // (2 * max(pixels, 1) * 4))
-    intersection = torch.empty(
-        (number_of_masks, number_of_masks),
-        dtype=torch.float32,
-        device=flat_masks.device,
+    number_of_masks = int(masks.shape[0])
+    pixels = int(masks.shape[1]) * int(masks.shape[2])
+    count_dtype = np.float32 if pixels <= 2**24 else np.float64
+    intersection = np.zeros((number_of_masks, number_of_masks), dtype=count_dtype)
+
+    counted = _boxes_overlap(boxes=mask_boxes[:, None], other_boxes=mask_boxes) & (
+        class_id[:, None] == class_id
     )
-    areas = torch.empty(
-        (number_of_masks,), dtype=torch.float32, device=flat_masks.device
+    box_pixels = (mask_boxes[:, 2] - mask_boxes[:, 0]) * (
+        mask_boxes[:, 3] - mask_boxes[:, 1]
     )
-    for row_start in range(0, number_of_masks, chunk):
-        row_end = min(row_start + chunk, number_of_masks)
-        rows_f32 = flat_masks[row_start:row_end].to(dtype=torch.float32)
-        areas[row_start:row_end] = rows_f32.sum(dim=1)
-        for col_start in range(row_start, number_of_masks, chunk):
-            col_end = min(col_start + chunk, number_of_masks)
-            if col_start == row_start:
-                cols_f32 = rows_f32
-            else:
-                cols_f32 = flat_masks[col_start:col_end].to(dtype=torch.float32)
-            block = rows_f32 @ cols_f32.T
-            intersection[row_start:row_end, col_start:col_end] = block
-            if col_start != row_start:
-                intersection[col_start:col_end, row_start:row_end] = block.T
+    box_rank = np.argsort(np.argsort(box_pixels, kind="stable"), kind="stable")
+    counted &= box_rank[:, None] <= box_rank
+    box_owners, partners = np.nonzero(counted)
+
+    if len(box_owners) > 0:
+        pairs_on_device = torch.as_tensor(
+            np.stack([box_owners, partners]), dtype=torch.long, device=masks.device
+        )
+        # np.nonzero lists the pairs sorted by owner: one run per box.
+        starts = np.flatnonzero(np.diff(box_owners, prepend=-1)).tolist()
+        counts: List[torch.Tensor] = []
+        for start, end in zip(starts, starts[1:] + [len(box_owners)]):
+            x_min, y_min, x_max, y_max = mask_boxes[box_owners[start]].tolist()
+            crops = masks[:, y_min:y_max, x_min:x_max]
+            # The owner's crop is gathered too, not used as a view of the
+            # masks: MPS rejects some views of a tensor with more than
+            # INT_MAX elements as operands.
+            owner_crop = crops.index_select(0, pairs_on_device[0, start : start + 1])
+            for gathered in _gather_mask_crops(
+                crops=crops, mask_ids=pairs_on_device[1, start:end]
+            ):
+                counts.append(
+                    _count_shared_pixels(gathered=gathered, reference=owner_crop)
+                )
+        counts_host = torch.cat(counts).to("cpu").numpy()
+        intersection[box_owners, partners] = counts_host
+        intersection[partners, box_owners] = counts_host
+    areas = intersection.diagonal().copy()
+
     return intersection, areas
 
 
@@ -974,7 +1031,8 @@ def _mask_non_max_merge_groups(
     class_id: np.ndarray,
     intersection: np.ndarray,
     areas: np.ndarray,
-    flat_masks: torch.Tensor,
+    masks: torch.Tensor,
+    mask_boxes: np.ndarray,
     iou_threshold: float,
 ) -> List[List[int]]:
     """Port of `sv...mask_non_max_merge` (class-aware, IoU metric): per class id
@@ -988,7 +1046,8 @@ def _mask_non_max_merge_groups(
             global_indices=current_indices,
             intersection=intersection,
             areas=areas,
-            flat_masks=flat_masks,
+            masks=masks,
+            mask_boxes=mask_boxes,
             iou_threshold=iou_threshold,
         )
         for local_group in local_groups:
@@ -1001,14 +1060,15 @@ def _group_overlapping_masks_greedy(
     global_indices: np.ndarray,
     intersection: np.ndarray,
     areas: np.ndarray,
-    flat_masks: torch.Tensor,
+    masks: torch.Tensor,
+    mask_boxes: np.ndarray,
     iou_threshold: float,
 ) -> List[List[int]]:
     """Port of `sv..._group_overlapping_masks` returning groups of positions
     into `global_indices` (sv's class-local indices). The first absorption round
     of every group is answered from the precomputed pairwise intersection
     matrix (the candidate is still a single mask); only rounds against a grown
-    union candidate query the device — one small D2H each."""
+    union candidate query the device — at most one small D2H each."""
     merge_groups: List[List[int]] = []
     order = scores.argsort()
     while len(order) > 0:
@@ -1023,24 +1083,19 @@ def _group_overlapping_masks_greedy(
             remaining_global = global_indices[order]
             if first_round:
                 seed_global = int(global_indices[idx])
-                intersection_vector = intersection[remaining_global, seed_global]
-                candidate_area = areas[seed_global]
+                ious = _mask_ious_like_supervision(
+                    intersection_vector=intersection[remaining_global, seed_global],
+                    areas=areas[remaining_global],
+                    candidate_area=areas[seed_global],
+                )
             else:
-                intersection_vector, candidate_area = _union_candidate_iou_inputs(
-                    flat_masks=flat_masks,
+                ious = _union_candidate_ious(
+                    masks=masks,
+                    mask_boxes=mask_boxes,
+                    areas=areas,
                     member_global_ids=global_indices[candidate_group],
                     remaining_global_ids=remaining_global,
                 )
-            # Same arithmetic as sv._mask_iou_batch_split: float32 union,
-            # division into a float64 zeros buffer where union != 0.
-            union_area = areas[remaining_global] + candidate_area - intersection_vector
-            ious = np.divide(
-                intersection_vector,
-                union_area,
-                out=np.zeros_like(intersection_vector, dtype=float),
-                where=union_area != 0,
-            )
-            ious = np.nan_to_num(ious)
             above_threshold = ious >= iou_threshold
             if not above_threshold.any():
                 break
@@ -1052,27 +1107,89 @@ def _group_overlapping_masks_greedy(
     return merge_groups
 
 
-def _union_candidate_iou_inputs(
-    flat_masks: torch.Tensor,
+def _mask_ious_like_supervision(
+    intersection_vector: np.ndarray,
+    areas: np.ndarray,
+    candidate_area: np.generic,
+) -> np.ndarray:
+    """IoU of masks against one merge candidate from their pixel counts, all in
+    supervision's counting dtype."""
+    # Same arithmetic as sv._mask_iou_batch_split: union in the counting
+    # dtype, division into a float64 zeros buffer where union != 0.
+    union_area = areas + candidate_area - intersection_vector
+    ious = np.divide(
+        intersection_vector,
+        union_area,
+        out=np.zeros_like(intersection_vector, dtype=float),
+        where=union_area != 0,
+    )
+    ious = np.nan_to_num(ious)
+
+    return ious
+
+
+def _union_candidate_ious(
+    masks: torch.Tensor,
+    mask_boxes: np.ndarray,
+    areas: np.ndarray,
     member_global_ids: np.ndarray,
     remaining_global_ids: np.ndarray,
-) -> Tuple[np.ndarray, np.float32]:
-    """Intersection counts of the remaining resized masks against the union of
-    the current group members, plus the union's area — computed on device and
-    shipped as one packed vector (single small D2H sync). Counts are exact
-    integers, matching sv's float32 numpy arithmetic bit-for-bit."""
-    device = flat_masks.device
-    members = torch.as_tensor(member_global_ids, dtype=torch.long, device=device)
-    remaining = torch.as_tensor(remaining_global_ids, dtype=torch.long, device=device)
-    candidate_f32 = (
-        flat_masks.index_select(0, members).any(dim=0).to(dtype=torch.float32)
+) -> np.ndarray:
+    """IoU of the remaining masks against the union of the current group
+    members.
+
+    The union lies inside the union of the members' tight boxes, so it is
+    built and counted there, and only against the remaining masks whose box
+    overlaps that box; every other intersection is 0. When no box overlaps,
+    every IoU is 0 and the device is not queried. Otherwise the integer
+    intersection counts and the union's area are shipped as one packed vector
+    (single small D2H sync) and converted to supervision's counting dtype.
+    """
+    member_boxes = mask_boxes[member_global_ids]
+    x_min, y_min = member_boxes[:, :2].min(axis=0).tolist()
+    x_max, y_max = member_boxes[:, 2:].max(axis=0).tolist()
+    overlapping = _boxes_overlap(
+        boxes=mask_boxes[remaining_global_ids],
+        other_boxes=np.array([x_min, y_min, x_max, y_max]),
     )
-    intersection_vector = (
-        flat_masks.index_select(0, remaining).to(dtype=torch.float32) @ candidate_f32
+    if not overlapping.any():
+        ious = np.zeros(len(remaining_global_ids), dtype=float)
+        return ious
+
+    device = masks.device
+    number_of_members = len(member_global_ids)
+    mask_ids = torch.as_tensor(
+        np.concatenate([member_global_ids, remaining_global_ids[overlapping]]),
+        dtype=torch.long,
+        device=device,
     )
-    packed = torch.cat([intersection_vector, candidate_f32.sum().reshape(1)])
-    packed_host = packed.to("cpu").numpy()
-    return packed_host[:-1], np.float32(packed_host[-1])
+    crops = masks[:, y_min:y_max, x_min:x_max]
+    candidate = torch.zeros(
+        (1, y_max - y_min, x_max - x_min), dtype=torch.bool, device=device
+    )
+    for gathered in _gather_mask_crops(
+        crops=crops, mask_ids=mask_ids[:number_of_members]
+    ):
+        candidate |= gathered.any(dim=0)
+    counts = [
+        _count_shared_pixels(gathered=gathered, reference=candidate)
+        for gathered in _gather_mask_crops(
+            crops=crops, mask_ids=mask_ids[number_of_members:]
+        )
+    ]
+    # The candidate shares all of its pixels with itself: its area.
+    counts.append(_count_shared_pixels(gathered=candidate, reference=candidate))
+    counts_host = torch.cat(counts).to("cpu").numpy().astype(areas.dtype)
+
+    intersection_vector = np.zeros(len(remaining_global_ids), dtype=areas.dtype)
+    intersection_vector[overlapping] = counts_host[:-1]
+    ious = _mask_ious_like_supervision(
+        intersection_vector=intersection_vector,
+        areas=areas[remaining_global_ids],
+        candidate_area=counts_host[-1],
+    )
+
+    return ious
 
 
 def _merge_detection_groups_bookkeeping(
@@ -1083,7 +1200,8 @@ def _merge_detection_groups_bookkeeping(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Port of the AABB branch of `sv._merge_detection_group` (+ the trivial
     concatenation of `sv.Detections.merge`), on host numpy with the exact
-    dtypes sv uses so merged boxes and confidences are bit-identical."""
+    dtypes sv uses (float64 member boxes and areas) so merged boxes and
+    confidences are bit-identical."""
     number_of_groups = len(merge_groups)
     xyxy_out = np.empty((number_of_groups, 4), dtype=np.float64)
     confidence_out = np.empty((number_of_groups,), dtype=np.float64)
@@ -1097,7 +1215,7 @@ def _merge_detection_groups_bookkeeping(
             continue
         group_confidences = confidence[group]
         winner_index = int(np.argmax(group_confidences))
-        all_xyxy = xyxy[group].astype(np.float32)
+        all_xyxy = xyxy[group]
         box_areas = (all_xyxy[:, 2] - all_xyxy[:, 0]) * (
             all_xyxy[:, 3] - all_xyxy[:, 1]
         )
@@ -1108,12 +1226,15 @@ def _merge_detection_groups_bookkeeping(
             )
         else:
             merged_confidence = group_confidences[winner_index]
-        xyxy_out[position] = [
-            all_xyxy[:, 0].min(),
-            all_xyxy[:, 1].min(),
-            all_xyxy[:, 2].max(),
-            all_xyxy[:, 3].max(),
-        ]
+        xyxy_out[position] = np.array(
+            [
+                all_xyxy[:, 0].min(),
+                all_xyxy[:, 1].min(),
+                all_xyxy[:, 2].max(),
+                all_xyxy[:, 3].max(),
+            ],
+            dtype=np.float32,
+        )
         confidence_out[position] = merged_confidence
         class_id_out[position] = class_id[group[winner_index]]
     return xyxy_out, confidence_out, class_id_out

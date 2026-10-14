@@ -6,6 +6,7 @@ from typing import Optional, Set
 import pytest
 
 from inference.core.managers.inference_models_cache_watchdog import (
+    COREML_CACHE_DIR,
     MODELS_CACHE_DIR,
     SHARED_BLOBS_DIR,
     FileInfo,
@@ -882,6 +883,96 @@ def test_purge_with_undeletable_file_reclaims_partial_amount(
     # then — deletable removed, protected survives
     assert not os.path.exists(deletable.path)
     assert os.path.exists(protected.path)
+
+
+def test_list_files_reports_coreml_cache_as_single_entry(
+    empty_local_dir: str,
+) -> None:
+    # given
+    package_dir = os.path.join(empty_local_dir, "model-a", "package-1")
+    compiled_dir = _make_coreml_cache(package_dir)
+    os.makedirs(package_dir, exist_ok=True)
+    _create_file(package_dir, "weights.onnx", size_mb=1.0)
+    _create_file(compiled_dir, "weight.bin", size_mb=2.0)
+    _create_file(compiled_dir, "model.mil", size_mb=0.5)
+
+    # when
+    result = list_files(empty_local_dir)
+
+    # then
+    coreml_cache_dir = os.path.join(package_dir, COREML_CACHE_DIR)
+    assert _paths(result) == {
+        os.path.join(package_dir, "weights.onnx"),
+        coreml_cache_dir,
+    }
+    cache_entry = next(f for f in result if f.path == coreml_cache_dir)
+    assert cache_entry.size_mb == 2.5
+
+
+def test_list_files_skips_empty_coreml_cache(empty_local_dir: str) -> None:
+    # given
+    _make_coreml_cache(os.path.join(empty_local_dir, "package-1"))
+
+    # when
+    result = list_files(empty_local_dir)
+
+    # then
+    assert result == []
+
+
+def test_purge_files_removes_coreml_cache_directory_as_a_whole(
+    empty_local_dir: str,
+) -> None:
+    # given
+    package_dir = os.path.join(empty_local_dir, "package-1")
+    compiled_dir = _make_coreml_cache(package_dir)
+    _create_file(compiled_dir, "weight.bin", size_mb=1.0)
+    cache_entry = next(
+        f
+        for f in list_files(empty_local_dir)
+        if os.path.basename(f.path) == COREML_CACHE_DIR
+    )
+
+    # when
+    result = purge_files(files=[cache_entry])
+
+    # then
+    assert result == 1.0
+    assert not os.path.exists(os.path.join(package_dir, COREML_CACHE_DIR))
+    assert os.path.isdir(package_dir)
+
+
+def test_purge_inference_models_cache_never_leaves_partial_coreml_cache(
+    empty_local_dir: str,
+) -> None:
+    # given
+    _, models = _setup_inference_home(empty_local_dir)
+    package_dir = os.path.join(models, "model-a", "package-1")
+    compiled_dir = _make_coreml_cache(package_dir)
+    _create_file(package_dir, "weights.onnx", size_mb=1.0)
+    _create_file(compiled_dir, "weight.bin", size_mb=3.0)
+    _create_file(compiled_dir, "coremldata.bin", size_mb=0.1)
+
+    # when — 1 MB over the limit, so a per-file purge would remove only weight.bin
+    purge_inference_models_cache(inference_home=empty_local_dir, max_cache_size_mb=3.1)
+
+    # then
+    assert not os.path.exists(os.path.join(package_dir, COREML_CACHE_DIR))
+    assert os.path.exists(os.path.join(package_dir, "weights.onnx"))
+
+
+def _make_coreml_cache(package_dir: str) -> str:
+    compiled_dir = os.path.join(
+        package_dir,
+        COREML_CACHE_DIR,
+        "ort-1.22.1-MLProgram-CPUAndGPU",
+        "1234",
+        "0_static_mlprogram",
+        "model",
+        "compiled_model.mlmodelc",
+    )
+    os.makedirs(compiled_dir, exist_ok=True)
+    return compiled_dir
 
 
 def _days_ago(from_date: datetime, days: float) -> datetime:

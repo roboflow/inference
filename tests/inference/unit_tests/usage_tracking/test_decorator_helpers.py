@@ -166,6 +166,12 @@ def test_sam2_inference_request_model_id_defaults_to_sam2_version():
 
 
 def test_extract_usage_params_for_sam3_request(usage_collector_with_mocked_threads):
+    """Keep SAM3 request metadata separate from the deployment identity.
+
+    Args:
+        usage_collector_with_mocked_threads: Collector fixture without background senders.
+    """
+
     def handler(
         inference_request,
         request,
@@ -207,7 +213,7 @@ def test_extract_usage_params_for_sam3_request(usage_collector_with_mocked_threa
 
     assert usage_params["api_key"] == "query-api-key"
     assert usage_params["resource_id"] == "sam3/sam3_interactive"
-    assert usage_params["roboflow_service_name"] == "async-serverless-gpu"
+    assert usage_params["roboflow_service_name"] is None
     assert usage_params["roboflow_internal_secret"] == "internal-secret"
     assert usage_params["resource_details"]["billable"] is True
     assert usage_params["resource_details"]["source_info"] == "async-serverless-gpu"

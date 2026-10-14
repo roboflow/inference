@@ -1,5 +1,6 @@
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, List, Optional, Type
 from unittest import mock
@@ -27,6 +28,7 @@ from inference.core.exceptions import (
     RoboflowAPIIAlreadyAnnotatedError,
     RoboflowAPIIAnnotationRejectionError,
     RoboflowAPIImageUploadRejectionError,
+    RoboflowAPIImageUploadUncertainError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
@@ -1146,8 +1148,10 @@ def test_get_roboflow_model_data_when_wrong_api_key_used(requests_mock: Mocker) 
         assert param in requests_mock.last_request.query
 
 
+@pytest.mark.parametrize("api_key", [None, "my_api_key"])
 def test_get_model_metadata_from_inference_models_registry_when_wrong_api_key_used(
     requests_mock: Mocker,
+    api_key,
 ) -> None:
     # given
     requests_mock.get(
@@ -1158,12 +1162,17 @@ def test_get_model_metadata_from_inference_models_registry_when_wrong_api_key_us
     # when
     with pytest.raises(RoboflowAPINotAuthorizedError):
         _ = get_model_metadata_from_inference_models_registry(
-            api_key="my_api_key",
+            api_key=api_key,
             model_id="coins_detection/1",
         )
 
     assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
-    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
+    if api_key:
+        assert (
+            requests_mock.last_request.headers["Authorization"] == f"Bearer {api_key}"
+        )
+    else:
+        assert "Authorization" not in requests_mock.last_request.headers
 
 
 def test_get_roboflow_model_data_when_wrong_model_used(requests_mock: Mocker) -> None:
@@ -1365,8 +1374,11 @@ def test_get_roboflow_model_data_excludes_api_key_when_local(
     assert result == expected_response
 
 
+@pytest.mark.parametrize("api_key", [None, "", "my_api_key"])
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
 def test_get_model_metadata_from_inference_models_registry_when_valid_response_expected(
     requests_mock: Mocker,
+    api_key,
 ) -> None:
     # given
     expected_response = {
@@ -1387,13 +1399,18 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 
     # when
     result = get_model_metadata_from_inference_models_registry(
-        api_key="my_api_key",
+        api_key=api_key,
         model_id="coins_detection/1",
     )
 
     # then
     assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
-    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
+    if api_key:
+        assert (
+            requests_mock.last_request.headers["Authorization"] == f"Bearer {api_key}"
+        )
+    else:
+        assert "Authorization" not in requests_mock.last_request.headers
     assert result == {
         "modelType": "rfdetr",
         "taskType": "object-detection",
@@ -1778,6 +1795,85 @@ def test_register_image_at_roboflow_when_response_parsing_error_occurs(
     )
 
 
+@pytest.mark.parametrize("operation", ["upload", "annotate"])
+@pytest.mark.parametrize(
+    "failure, expected_error",
+    [
+        (503, RoboflowAPIUnsuccessfulRequestError),
+        (requests.exceptions.ConnectionError, RoboflowAPIConnectionError),
+        (requests.exceptions.Timeout, RoboflowAPITimeoutError),
+    ],
+)
+@pytest.mark.parametrize(
+    "retry_enabled, failures, expected_attempts",
+    [(False, 1, 1), (True, 1, 2), (True, 3, 3)],
+)
+def test_dataset_upload_post_retries(
+    requests_mock: Mocker,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    failure,
+    expected_error,
+    retry_enabled: bool,
+    failures: int,
+    expected_attempts: int,
+) -> None:
+    monkeypatch.setattr(
+        roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", {503} if retry_enabled else set()
+    )
+    monkeypatch.setattr(
+        roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", retry_enabled
+    )
+    bodies = []
+
+    def respond(request, context):
+        body = request.body
+        if hasattr(body, "read"):
+            body = body.read()
+        if isinstance(body, str):
+            body = body.encode()
+        bodies.append(body)
+        if len(bodies) <= failures:
+            if isinstance(failure, int):
+                context.status_code = failure
+                return {}
+            raise failure("Transient error")
+        return {"success": True, "id": "roboflow_id"}
+
+    endpoint = "upload" if operation == "upload" else "annotate/roboflow_id"
+    request_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/coins_detection/{endpoint}"),
+        json=respond,
+    )
+    succeeds = retry_enabled and failures == 1
+    with nullcontext() if succeeds else pytest.raises(expected_error):
+        if operation == "upload":
+            response = register_image_at_roboflow(
+                api_key="my_api_key",
+                dataset_id="coins_detection",
+                local_image_id="local_id",
+                image_bytes=b"SOME_IMAGE_BYTES",
+                batch_name="my-batch",
+            )
+        else:
+            response = annotate_image_at_roboflow(
+                api_key="my_api_key",
+                dataset_id="coins_detection",
+                local_image_id="local_id",
+                roboflow_image_id="roboflow_id",
+                annotation_content="some",
+                annotation_file_type="txt",
+            )
+        assert response == {"success": True, "id": "roboflow_id"}
+
+    assert request_mock.call_count == expected_attempts
+    if operation == "upload":
+        assert all(b"SOME_IMAGE_BYTES" in body for body in bodies)
+        assert all(b"local_id.jpg" in body for body in bodies)
+    else:
+        assert bodies == [b"some"] * expected_attempts
+
+
 def test_register_image_at_roboflow_when_valid_response_returned(
     requests_mock: Mocker,
 ) -> None:
@@ -1867,6 +1963,52 @@ def test_register_image_at_roboflow_when_duplicate_response_returned(
         "image/jpeg",
     )
     assert response == {"duplicate": True, "id": "xxx"}
+
+
+@pytest.mark.parametrize(
+    "first_attempt_fails, annotation_follows, expect_error",
+    [(True, True, True), (True, False, False), (False, True, False)],
+)
+def test_register_image_at_roboflow_when_duplicate_returned_after_failed_attempt(
+    requests_mock: Mocker,
+    monkeypatch: pytest.MonkeyPatch,
+    first_attempt_fails: bool,
+    annotation_follows: bool,
+    expect_error: bool,
+) -> None:
+    # given
+    monkeypatch.setattr(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", True)
+    duplicate = {"json": {"duplicate": True, "id": "xxx"}}
+    request_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/coins_detection/upload"),
+        response_list=(
+            [{"exc": requests.exceptions.ReadTimeout}, duplicate]
+            if first_attempt_fails
+            else [duplicate]
+        ),
+    )
+
+    # when
+    with (
+        pytest.raises(
+            RoboflowAPIImageUploadUncertainError,
+            match="may already have been uploaded .* ReadTimeout",
+        )
+        if expect_error
+        else nullcontext()
+    ):
+        response = register_image_at_roboflow(
+            api_key="my_api_key",
+            dataset_id="coins_detection",
+            local_image_id="local_id",
+            image_bytes=b"SOME_IMAGE_BYTES",
+            batch_name="my-batch",
+            annotation_follows=annotation_follows,
+        )
+        assert response == {"duplicate": True, "id": "xxx"}
+
+    # then
+    assert request_mock.call_count == (2 if first_attempt_fails else 1)
 
 
 def test_register_image_at_roboflow_when_error_response_returned(
@@ -2033,11 +2175,12 @@ def test_annotate_image_at_roboflow_when_wrong_image_id_selected_used(
     )
 
 
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", {503})
 def test_annotate_image_at_roboflow_when_image_already_annotated(
     requests_mock: Mocker,
 ) -> None:
     # given
-    requests_mock.post(
+    request_mock = requests_mock.post(
         url=wrap_url(f"{API_BASE_URL}/dataset/coins_detection/annotate/roboflow_id"),
         status_code=409,
     )
@@ -2055,6 +2198,7 @@ def test_annotate_image_at_roboflow_when_image_already_annotated(
         )
 
     # then
+    assert request_mock.call_count == 1
     assert (
         requests_mock.last_request.query
         == "api_key=my_api_key&name=local_id.txt&prediction=true"

@@ -57,6 +57,20 @@ class BaseInference:
     def run_tensor_native_inference(self, **kwargs) -> Any:
         raise NotImplementedError
 
+    def run_tensor_native_embeddings(self, **kwargs) -> dict:
+        """Generate native embeddings when implemented by a classifier.
+
+        Args:
+            **kwargs: Native images and embedding options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+
+        Raises:
+            NotImplementedError: If this model has no tensor-embedding operation.
+        """
+        raise NotImplementedError
+
     def preprocess(
         self, image: Any, **kwargs
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:

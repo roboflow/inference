@@ -421,8 +421,8 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
                 class_filter=class_filter,
                 max_detections=max_detections,
                 max_candidates=max_candidates,
-                mask_decode_mode=mask_decode_mode,
-                tradeoff_factor=tradeoff_factor,
+                mask_decode_mode="accurate",
+                tradeoff_factor=1.0,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             )
@@ -492,8 +492,8 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            mask_decode_mode=mask_decode_mode,
-            tradeoff_factor=tradeoff_factor,
+            mask_decode_mode="accurate",
+            tradeoff_factor=1.0,
             response_mask_format="rle",
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -593,8 +593,8 @@ def _extract_polygon_points(prediction: dict) -> Optional[List[dict]]:
     """Pull the polygon ``points`` ([{"x": .., "y": ..}, ...]) from a standard
     inference instance-seg prediction dict that carries a polygon mask instead of
     RLE. Returns ``None`` when the key is absent or the polygon is degenerate
-    (< 3 points) - mirroring supervision's ``Detections.from_inference`` / the numpy
-    ``filter_out_invalid_polygons``, which drop such instances entirely."""
+    (< 3 points) - mirroring the numpy ``filter_out_invalid_polygons``, which drops
+    such instances entirely."""
     points = prediction.get(POLYGON_KEY)
     if points is not None and len(points) >= 3:
         return points
@@ -642,7 +642,7 @@ def _native_instance_detections_from_inference_predictions(
     ``detection_id`` are built here too.
 
     Degenerate (< 3-point) polygons are dropped exactly like the numpy path
-    (``filter_out_invalid_polygons`` / supervision's ``from_inference``). When a
+    (``filter_out_invalid_polygons``). When a
     prediction omits its ``class`` key, the class name is backfilled from
     ``model_class_names`` (the model's ``get_class_names`` map) so the tensor
     serialiser does not hard-raise on an unmapped ``class_id``.

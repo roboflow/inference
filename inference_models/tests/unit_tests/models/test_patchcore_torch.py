@@ -151,7 +151,8 @@ def test_memory_bank_images_score_zero_and_other_images_are_anomalous(
     assert single.images_metadata[0]["anomaly_score"] == pytest.approx(
         scores[1], rel=1e-5
     )
-    assert single.images_metadata[0]["anomaly_map"].shape == (48, 80)
+    assert single.images_metadata[0]["anomaly_map"].shape == (IMAGE_SIZE, IMAGE_SIZE)
+    assert single.images_metadata[0]["anomaly_map"].dtype == np.float32
     assert single.images_metadata[0]["anomaly_threshold"] == 1.0
 
 

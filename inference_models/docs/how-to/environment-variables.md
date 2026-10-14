@@ -255,8 +255,48 @@ Override ONNX execution providers, comma separated, no spaces.
 Default: `CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider`
 
 ```bash
-export ONNX_EXECUTION_PROVIDERS="CPUExecutionProvider"
+export ONNXRUNTIME_EXECUTION_PROVIDERS="CPUExecutionProvider"
 ```
+
+### CoreML (Apple Silicon)
+
+These apply to models that configure the `CoreMLExecutionProvider` themselves (currently RF-DETR),
+and only with onnxruntime 1.21 or newer; older versions run CoreML with onnxruntime's defaults.
+`INFERENCE_MODELS_COREML_COMPUTE_UNITS` also sets where native Core ML packages (the `coreml` backend) run.
+
+**`INFERENCE_MODELS_COREML_MODEL_FORMAT`**
+CoreML model format. `MLProgram` supports the transformer ops RF-DETR needs; `NeuralNetwork`
+(onnxruntime's own default) runs most of the graph on the CPU.
+Default: `MLProgram`
+
+**`INFERENCE_MODELS_COREML_COMPUTE_UNITS`**
+CoreML compute units: `CPUAndGPU`, `ALL`, `CPUAndNeuralEngine` or `CPUOnly`. FP32 models never run
+on the Neural Engine, so `ALL` gives the same speed as `CPUAndGPU` but compiles slower.
+Default: `CPUAndGPU`
+
+**`INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED`**
+Cache the compiled CoreML model in the model package (`coreml_cache/`), so only the first load of a
+model compiles it (about 20 s for RF-DETR) and later loads take well under a second. The cache takes
+roughly 4x the model's size on disk and is never written for offline or read-only packages.
+Default: `true`
+
+### Pre-processing
+
+**`INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV`**
+Use OpenCV-compatible `INTER_LINEAR` values for uint8 tensor inputs to the shared Roboflow
+stretch, letterbox and fit-longer-edge preprocessor. CPU tensors use `cv2.resize`; CUDA tensors
+use a torch port of OpenCV's generic fixed-point arithmetic. Platform-specific OpenCV
+implementations (such as Carotene) can differ. Triton accelerates the CUDA path after a background
+check against the torch reference, not the installed OpenCV build. While preparation is pending,
+when Triton is unavailable or unsupported, or after a recognized Triton JIT failure, CUDA tensors
+use that same reference.
+
+This replaces the previous PyTorch bilinear tensor resize by default. Set
+`INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV=false` to retain the previous resize behavior.
+Float tensors, the existing NumPy route (including standard HTTP JPEG preprocessing), and
+RF-DETR's separate Pillow resize are unaffected by this flag. Matching resize values does not
+guarantee identical predictions across different model backends or devices.
+Default: `true`
 
 ## Prediction Parameter Defaults
 

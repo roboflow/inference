@@ -1,7 +1,10 @@
-from inference_sdk.config import outbound_service_secret
+import pytest
+
+from inference_sdk.config import outbound_service_secret, usage_source_tags
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
     DEFAULT_IMAGE_EXTENSIONS,
+    INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
     HTTPClientMode,
     InferenceConfiguration,
@@ -81,6 +84,60 @@ def test_source_attributes() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "serializer",
+    [
+        "to_object_detection_parameters",
+        "to_classification_parameters",
+        "to_keypoints_detection_parameters",
+        "to_instance_segmentation_parameters",
+        "to_legacy_call_parameters",
+    ],
+)
+def test_source_context_overrides_block_defaults_at_send_time(serializer) -> None:
+    """Use request attribution even when a client was configured earlier.
+
+    Args:
+        serializer (str): Configuration serializer for the outgoing model call.
+    """
+    configuration = InferenceConfiguration(
+        source="workflow-execution", source_info="block-default"
+    )
+    token = usage_source_tags.set({"source": "app", "source_info": "workflowEvals"})
+    try:
+        parameters = getattr(configuration, serializer)()
+    finally:
+        usage_source_tags.reset(token)
+
+    assert parameters["source"] == "app"
+    assert parameters["source_info"] == "workflowEvals"
+    if serializer == "to_legacy_call_parameters":
+        assert parameters["source_info_origin"] == "context"
+    else:
+        assert "source_info_origin" not in parameters
+
+    direct_parameters = getattr(configuration, serializer)()
+    assert direct_parameters["source_info"] == "block-default"
+    assert "source_info_origin" not in direct_parameters
+
+
+def test_source_context_does_not_change_billing_suppression() -> None:
+    """Forward attribution alongside an authenticated billing opt-out."""
+    source_token = usage_source_tags.set({"source_info": "labelAssist"})
+    secret_token = outbound_service_secret.set("ctx-secret")
+    try:
+        parameters = InferenceConfiguration(
+            count_inference=True
+        ).to_legacy_call_parameters()
+    finally:
+        outbound_service_secret.reset(secret_token)
+        usage_source_tags.reset(source_token)
+
+    assert parameters["source_info"] == "labelAssist"
+    assert parameters["service_secret"] == "ctx-secret"
+    assert parameters["countinference"] is False
+
+
 def test_to_api_call_parameters_for_api_v0() -> None:
     # when
     result = REFERENCE_IMAGE_CONFIGURATION.to_api_call_parameters(
@@ -93,6 +150,7 @@ def test_to_api_call_parameters_for_api_v0() -> None:
         "format": "json",
         "labels": True,
         "mask_decode_mode": "fast",
+        "allow_reduced_mask_resolution": False,
         "tradeoff_factor": 0.0,
         "max_detections": 20,
         "overlap": 0.7,
@@ -282,3 +340,40 @@ def test_to_legacy_call_parameters_context_overrides_explicit_count_inference_tr
     # then
     assert parameters["countinference"] is False
     assert parameters["service_secret"] == "ctx-secret"
+
+
+@pytest.mark.parametrize("client_mode", [HTTPClientMode.V0, HTTPClientMode.V1])
+@pytest.mark.parametrize("opt_in", [None, False, True])
+def test_mask_resolution_opt_in_is_serialized_only_when_selected(client_mode, opt_in):
+    configuration = InferenceConfiguration(allow_reduced_mask_resolution=opt_in)
+
+    parameters = configuration.to_api_call_parameters(
+        client_mode=client_mode, task_type=INSTANCE_SEGMENTATION_TASK
+    )
+
+    if opt_in is None:
+        assert "allow_reduced_mask_resolution" not in parameters
+    else:
+        assert parameters["allow_reduced_mask_resolution"] is opt_in
+
+
+def test_mask_resolution_opt_in_does_not_leak_to_object_detection():
+    configuration = InferenceConfiguration(allow_reduced_mask_resolution=True)
+
+    parameters = configuration.to_api_call_parameters(
+        client_mode=HTTPClientMode.V1, task_type=OBJECT_DETECTION_TASK
+    )
+
+    assert "allow_reduced_mask_resolution" not in parameters
+
+
+@pytest.mark.parametrize("client_mode", [HTTPClientMode.V0, HTTPClientMode.V1])
+def test_mask_resolution_opt_in_defaults_to_false(client_mode):
+    configuration = InferenceConfiguration()
+    assert configuration.allow_reduced_mask_resolution is False
+    assert (
+        configuration.to_api_call_parameters(
+            client_mode=client_mode, task_type=INSTANCE_SEGMENTATION_TASK
+        )["allow_reduced_mask_resolution"]
+        is False
+    )

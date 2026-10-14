@@ -350,7 +350,7 @@ We would love your input to improve Roboflow Inference! Please see our [contribu
             width="3%"
           /></a>
       <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
-      <a href="https://disuss.roboflow.com">
+      <a href="https://discuss.roboflow.com">
           <img
             src="https://media.roboflow.com/notebooks/template/icons/purple/forum.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949633584"
             width="3%"

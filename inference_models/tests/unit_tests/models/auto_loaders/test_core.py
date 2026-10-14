@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
+from packaging.version import Version
 
 from inference_models import ClassificationPrediction
 from inference_models.errors import (
@@ -52,6 +53,7 @@ from inference_models.models.auto_loaders.entities import (
     BackendType,
     InferenceModelConfig,
 )
+from inference_models.runtime_introspection.core import RuntimeXRayResult
 from inference_models.weights_providers import core as weights_providers_core
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
@@ -4204,4 +4206,49 @@ def test_matching_package_loader_forwards_artifact_cache() -> None:
     assert (
         initialize.call_args.kwargs["content_addressed_artifact_cache"]
         is artifact_cache
+    )
+
+
+def _runtime_x_ray(coremltools_version=None) -> RuntimeXRayResult:
+    return RuntimeXRayResult(
+        gpu_available=False,
+        gpu_devices=[],
+        gpu_devices_cc=[],
+        driver_version=None,
+        cuda_version=None,
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=None,
+        os_version="darwin",
+        torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.22.1"),
+        available_onnx_execution_providers={"CPUExecutionProvider"},
+        hf_transformers_available=False,
+        trt_python_package_available=False,
+        coremltools_version=coremltools_version,
+    )
+
+
+def test_runtime_compatibility_content_without_core_ml_keeps_its_existing_keys() -> (
+    None
+):
+    content = core._runtime_compatibility_content(runtime_x_ray=_runtime_x_ray())
+
+    assert "coremltools_version" not in content
+    assert content["version"] == 1
+
+
+def test_runtime_compatibility_content_changes_once_core_ml_can_run() -> None:
+    without_core_ml = core._runtime_compatibility_content(
+        runtime_x_ray=_runtime_x_ray()
+    )
+    with_core_ml = core._runtime_compatibility_content(
+        runtime_x_ray=_runtime_x_ray(coremltools_version=Version("9.0"))
+    )
+
+    assert with_core_ml["coremltools_version"] == "9.0"
+    assert {k: v for k, v in with_core_ml.items() if k != "coremltools_version"} == (
+        without_core_ml
     )

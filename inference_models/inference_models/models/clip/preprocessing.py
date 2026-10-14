@@ -26,6 +26,27 @@ PreprocessorFun = Callable[
     torch.Tensor,
 ]
 
+CLIP_CONTEXT_LENGTH_ERROR_MARKER = "is too long for context length"
+
+
+def tokenize_texts(
+    texts: List[str], tokenizer: Callable[[List[str]], torch.Tensor]
+) -> torch.Tensor:
+    try:
+        return tokenizer(texts)
+    except RuntimeError as error:
+        # Brittle but necessary: clip.tokenize() signals a text exceeding the
+        # context length only via a bare RuntimeError, so we match its message.
+        # Any other RuntimeError is a server-side fault and propagates as is.
+        # The original message embeds the whole text, so it is not echoed back.
+        if CLIP_CONTEXT_LENGTH_ERROR_MARKER not in str(error):
+            raise
+        raise ModelInputError(
+            message="Text input is too long for the model context length. "
+            "Shorten the text and retry.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        ) from error
+
 
 def create_clip_preprocessor(image_size: int) -> PreprocessorFun:
     """

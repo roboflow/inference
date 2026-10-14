@@ -288,6 +288,7 @@ class FakeMQTTBroker:
         keep_serving: bool = False,
         tls_context: Optional[ssl.SSLContext] = None,
         session_aware: bool = False,
+        connack_gate: Optional[threading.Event] = None,
     ):
         # Bind to "localhost" for maximum performance, as described in:
         # http://docs.python.org/howto/sockets.html#ipc
@@ -308,6 +309,9 @@ class FakeMQTTBroker:
         # wrapped with it before any MQTT packet is read
         self.tls_context = tls_context
         self.session_aware = session_aware
+        # connack_gate: every CONNACK is withheld until the event is set
+        self.connack_gate = connack_gate
+        self.disconnects = 0
         self.handshake_failures = 0
         self.subscriptions = []
         self.retained = {}
@@ -462,6 +466,7 @@ class FakeMQTTBroker:
                 self._send(connection, bytes([MQTT_PUBCOMP, 2]) + packet[2:4])
             return False
         if packet_type == MQTT_DISCONNECT:
+            self.disconnects += 1
             return False
         self.messages.append(packet)
         if packet_type == MQTT_PUBLISH and self.session_aware:
@@ -483,6 +488,8 @@ class FakeMQTTBroker:
         return body[index : index + length].decode("utf-8"), index + length
 
     def _handle_connect(self, connection: _Connection, packet: bytes) -> None:
+        if self.connack_gate is not None:
+            self.connack_gate.wait()
         print("sending CONNACK")
         if not self.session_aware:
             self._send(connection, b"\x20\x02\x00" + bytes([self.connack_reason_code]))

@@ -19,6 +19,7 @@ from inference_models.configuration import (
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
+from inference_models.models.base.image_embeddings import TorchClassifierEmbeddings
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -59,11 +60,16 @@ class DinoV3Model(nn.Module):
         """Extract features using the CLS token (position 0)."""
         return self.backbone.forward_features(x)[:, 0]
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear_layer(self.forward_embedding(x))
 
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.forward_logits(x)
 
-class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tensor]):
+
+class DinoV3ForClassificationTorch(
+    TorchClassifierEmbeddings, ClassificationModel[torch.Tensor, torch.Tensor]
+):
 
     @classmethod
     def from_pretrained(
@@ -206,7 +212,7 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
 
 
 class DinoV3ForMultiLabelClassificationTorch(
-    MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
+    TorchClassifierEmbeddings, MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
 ):
 
     @classmethod
@@ -307,6 +313,7 @@ class DinoV3ForMultiLabelClassificationTorch(
         self._class_names = class_names
         self._device = device
         self.recommended_parameters = recommended_parameters
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -329,7 +336,7 @@ class DinoV3ForMultiLabelClassificationTorch(
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(pre_processed_images)
 
     def post_process(

@@ -29,13 +29,18 @@ BASE_CHECKS = (
     "manager_roundtrip",
 )
 WEBRTC_CHECKS = ("webrtc",)
-WEBRTC_MODULES = frozenset({"aiortc", "av"})
+WEBRTC_MODULES = frozenset({"aioice", "aiortc", "av", "orjson"})
 # The only streamvision modules that legitimately import aiortc/av at module level.
 WEBRTC_IMPORT_ALLOWLIST = frozenset(
     {
         "streamvision.stream_manager.manager_app.webrtc",
         "streamvision.stream_manager.manager_app.inference_pipeline_manager",
         "streamvision.stream_manager.manager_app.app",
+        "streamvision.webrtc_worker.sources",
+        "streamvision.webrtc_worker.sources.file",
+        "streamvision.webrtc_worker.sources.rtsp",
+        "streamvision.webrtc_worker.utils",
+        "streamvision.webrtc_worker.webrtc",
     }
 )
 
@@ -56,6 +61,24 @@ def classify_import_error(module_name: str, missing_module: str, webrtc: bool) -
         return "failed"
 
     return "skipped" if module_name in WEBRTC_IMPORT_ALLOWLIST else "failed"
+
+
+def import_candidates(discovered, allowlist):
+    """List the modules the probe imports: discovered ones plus the allow-list.
+
+    `pkgutil.walk_packages` cannot descend into a package whose import fails,
+    so allow-listed modules under such a package are added by name.
+
+    Args:
+        discovered: Module names found by walking the installed package.
+        allowlist: Module names allowed to need an optional dependency.
+
+    Returns:
+        The sorted union of both.
+    """
+    candidates = sorted(set(discovered) | set(allowlist))
+
+    return candidates
 
 
 BLOCKER = r"""
@@ -86,6 +109,7 @@ CHILD = (
     + f"WEBRTC_MODULES = {WEBRTC_MODULES!r}\n"
     + f"WEBRTC_IMPORT_ALLOWLIST = {WEBRTC_IMPORT_ALLOWLIST!r}\n"
     + inspect.getsource(classify_import_error)
+    + inspect.getsource(import_candidates)
     + r"""
 import asyncio, importlib, importlib.machinery, importlib.metadata, json, os
 import pkgutil, signal, socket, subprocess, time, traceback
@@ -145,18 +169,21 @@ def import_everything():
     import streamvision
     infos = list(pkgutil.walk_packages(streamvision.__path__, "streamvision."))
     assert infos, "streamvision has no submodules"
+    names = import_candidates(
+        [info.name for info in infos], WEBRTC_IMPORT_ALLOWLIST
+    )
     failures, skipped = {}, {}
-    for info in infos:
+    for name in names:
         try:
-            importlib.import_module(info.name)
+            importlib.import_module(name)
         except ModuleNotFoundError as error:
             root = (error.name or "").split(".")[0]
-            if classify_import_error(info.name, root, WEBRTC) == "skipped":
-                skipped[info.name] = error.name
+            if classify_import_error(name, root, WEBRTC) == "skipped":
+                skipped[name] = error.name
             else:
-                failures[info.name] = repr(error)
+                failures[name] = repr(error)
         except Exception as error:  # noqa: BLE001
-            failures[info.name] = repr(error)
+            failures[name] = repr(error)
     assert not failures, json.dumps({"import_failures": failures}, indent=1)
     attempted = sorted(set(ServerImportBlocker.attempted))
     assert not attempted, json.dumps({"blocked_import_attempts": attempted})

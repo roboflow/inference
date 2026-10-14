@@ -6,13 +6,13 @@ import numpy as np
 import pytest
 import supervision as sv
 from fastapi import BackgroundTasks
-
-from inference.core.cache import MemoryCache
-from inference.roboflow_workflows_plugin.sinks.custom_metadata.v1 import (
+from roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
     add_custom_metadata_request,
     get_workspace_name,
 )
+
+from inference.core.cache import MemoryCache
 
 
 def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
@@ -23,22 +23,23 @@ def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
     cache.set(key=expected_cache_key, value="my_workspace")
+    platform_client = MagicMock()
 
     # when
-    result = get_workspace_name(api_key=api_key, cache=cache)
+    result = get_workspace_name(
+        api_key=api_key, cache=cache, platform_client=platform_client
+    )
 
     # then
     assert (
         result == "my_workspace"
     ), "Expected return value from the cache to be returned"
+    platform_client.get_roboflow_workspace.assert_not_called()
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.get_roboflow_workspace"
-)
-def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
-    get_roboflow_workspace_mock: MagicMock,
-) -> None:
+def test_get_workspace_name_when_cache_does_not_contain_workspace_name() -> None:
+    platform_client = MagicMock()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
     # given
     api_key = "my_api_key"
     cache = MemoryCache()
@@ -48,7 +49,9 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     get_roboflow_workspace_mock.return_value = "workspace_from_api"
 
     # when
-    result = get_workspace_name(api_key=api_key, cache=cache)
+    result = get_workspace_name(
+        api_key=api_key, cache=cache, platform_client=platform_client
+    )
 
     # then
     assert (
@@ -59,12 +62,9 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     ), "Expected retrieved workspace to be saved in cache"
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata"
-)
-def test_add_custom_metadata_request_success(
-    add_custom_metadata_mock: MagicMock,
-) -> None:
+def test_add_custom_metadata_request_success() -> None:
+    platform_client = MagicMock()
+    add_custom_metadata_mock = platform_client.add_custom_metadata
     # given
     add_custom_metadata_mock.return_value = True
     cache = MemoryCache()
@@ -80,6 +80,7 @@ def test_add_custom_metadata_request_success(
     # when
     result = add_custom_metadata_request(
         cache=cache,
+        platform_client=platform_client,
         api_key=api_key,
         inference_ids=inference_ids,
         field_name=field_name,
@@ -96,12 +97,9 @@ def test_add_custom_metadata_request_success(
     ), "Expected workspace name to be in cache"
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata"
-)
-def test_add_custom_metadata_request_failure(
-    add_custom_metadata_mock: MagicMock,
-) -> None:
+def test_add_custom_metadata_request_failure() -> None:
+    platform_client = MagicMock()
+    add_custom_metadata_mock = platform_client.add_custom_metadata
     # given
     add_custom_metadata_mock.side_effect = Exception("API error")
     cache = MemoryCache()
@@ -117,6 +115,7 @@ def test_add_custom_metadata_request_failure(
     # when
     result = add_custom_metadata_request(
         cache=cache,
+        platform_client=platform_client,
         api_key=api_key,
         inference_ids=inference_ids,
         field_name=field_name,
@@ -182,7 +181,7 @@ def test_run_when_no_inference_ids() -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
+    "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_when_fire_and_forget_with_background_tasks(
     add_custom_metadata_request_mock: MagicMock,
@@ -222,7 +221,7 @@ def test_run_when_fire_and_forget_with_background_tasks(
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
+    "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_with_classification_results(
     add_custom_metadata_request_mock: MagicMock,
@@ -258,7 +257,7 @@ def test_run_with_classification_results(
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
+    "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_with_classification_results_when_inference_id_is_not_given(
     add_custom_metadata_request_mock: MagicMock,
@@ -295,7 +294,7 @@ def test_run_with_classification_results_when_inference_id_is_not_given(
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
+    "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_when_fire_and_forget_with_thread_pool(
     add_custom_metadata_request_mock: MagicMock,
@@ -335,7 +334,7 @@ def test_run_when_fire_and_forget_with_thread_pool(
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
+    "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_when_not_fire_and_forget(
     add_custom_metadata_request_mock: MagicMock,
@@ -375,17 +374,19 @@ def test_run_when_not_fire_and_forget(
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
+    "roboflow_workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_with_field_value(
     add_custom_metadata_request_mock: MagicMock,
 ) -> None:
     # given
+    platform_client = MagicMock()
     block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
         api_key="my_api_key",
         background_tasks=None,
         thread_pool_executor=None,
+        platform_client=platform_client,
     )
     add_custom_metadata_request_mock.return_value = (
         False,
@@ -414,6 +415,7 @@ def test_run_with_field_value(
     }, "Expected success message"
     add_custom_metadata_request_mock.assert_called_once_with(
         cache=block._cache,
+        platform_client=platform_client,
         api_key=block._api_key,
         inference_ids=["id1"],
         field_name="location",

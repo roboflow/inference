@@ -38,6 +38,7 @@ from inference.core.entities.requests.clip import (
 )
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
+from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     DepthEstimationRequest,
@@ -64,6 +65,7 @@ from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRe
 from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
+from inference.core.models.embeddings import IMAGE_EMBEDDINGS, model_cache_key
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.prototypes.models_provider import (
     UNSET,
@@ -170,6 +172,56 @@ class ModelManagerModelsProvider:
         return self._dump(
             self._infer(model_id=model_id, request=request, **(inference_kwargs or {}))
         )
+
+    def run_image_embeddings(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        output_type: str = "feature_vector",
+    ) -> dict:
+        request = ImageEmbeddingRequest(
+            model_id=model_id,
+            image=images,
+            api_key=api_key,
+            output_type=output_type,
+            source=_WORKFLOW_SOURCE,
+        )
+        response = self._infer(
+            model_id=model_cache_key(model_id, [IMAGE_EMBEDDINGS], output_type),
+            request=request,
+        )[0]
+        return response.model_dump(exclude_none=True)
+
+    def run_tensor_image_embeddings(
+        self,
+        model_id: str,
+        images: List[Any],
+        *,
+        input_color_format: str,
+        api_key: Optional[str] = None,
+        output_type: str = "feature_vector",
+    ) -> dict:
+        """Execute a registered embedding model without HTTP response conversion.
+
+        Args:
+            model_id: Classification model version or alias.
+            images: Tensor or NumPy images retained in their existing format.
+            input_color_format: RGB for tensor images or BGR for NumPy images.
+            api_key: Registration credential; registration precedes this call.
+            output_type: Feature vector or pre-activation logits.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+        """
+        result = self._model_manager.run_tensor_native_embeddings(
+            model_id=model_cache_key(model_id, [IMAGE_EMBEDDINGS], output_type),
+            images=images,
+            input_color_format=input_color_format,
+            output_type=output_type,
+        )
+
+        return result
 
     def run_keypoints_detection(
         self,

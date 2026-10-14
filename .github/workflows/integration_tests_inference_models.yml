@@ -40,9 +40,14 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          key: ${{ runner.os }}-pip-integration-tests-inference-models-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+      - name: 📦 Cache test model packages
+        uses: actions/cache@v5
+        with:
+          path: tests/inference/models_predictions_tests/assets/*.zip
+          key: models-predictions-test-assets-${{ hashFiles('tests/inference/models_predictions_tests/conftest.py') }}
           restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+            models-predictions-test-assets-
       - name: 🚧 Install GDAL OS library
         run: sudo apt-get update && sudo apt-get install libgdal-dev
       - name: 📦 Install dependencies

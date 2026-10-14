@@ -13,7 +13,10 @@ from inference_models.errors import (
     MissingDependencyError,
 )
 from inference_models.models.base.embeddings import TextImageEmbeddingModel
-from inference_models.models.clip.preprocessing import create_clip_preprocessor
+from inference_models.models.clip.preprocessing import (
+    create_clip_preprocessor,
+    tokenize_texts,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
@@ -150,7 +153,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             texts = [texts]
         pre_process_stream = self._pre_process_stream
         with use_cuda_stream(pre_process_stream):
-            tokenized_batch = clip.tokenize(texts).to(self._device)
+            tokenized_batch = tokenize_texts(texts, clip.tokenize).to(self._device)
         if pre_process_stream is not None:
             pre_process_stream.synchronize()
         with self._textual_session_thread_lock:

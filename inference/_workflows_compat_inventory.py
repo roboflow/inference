@@ -881,6 +881,13 @@ _STREAM_INVENTORY_LEGACY = frozenset(
         "inference.core.interfaces.stream_manager.manager_app.serialisation",
         "inference.core.interfaces.stream_manager.manager_app.tcp_server",
         "inference.core.interfaces.stream_manager.manager_app.webrtc",
+        "inference.core.interfaces.webrtc_worker.entities",
+        "inference.core.interfaces.webrtc_worker.serializers",
+        "inference.core.interfaces.webrtc_worker.sources",
+        "inference.core.interfaces.webrtc_worker.sources.file",
+        "inference.core.interfaces.webrtc_worker.sources.rtsp",
+        "inference.core.interfaces.webrtc_worker.watchdog",
+        "inference.core.interfaces.webrtc_worker.webrtc",
         "streamvision.stream.model_handlers.roboflow_models",
         "streamvision.stream.model_handlers.yolo_world",
         "streamvision.stream.inference_pipeline",
@@ -897,11 +904,69 @@ _STREAM_INVENTORY_PACKAGES = frozenset(
         "inference.core.interfaces.stream_manager",
         "inference.core.interfaces.stream_manager.api",
         "inference.core.interfaces.stream_manager.manager_app",
+        "inference.core.interfaces.webrtc_worker.sources",
     )
 )
 
-_INVENTORY_LEGACY = _WORKFLOWS_INVENTORY_LEGACY | _STREAM_INVENTORY_LEGACY
-_INVENTORY_PACKAGES = _WORKFLOWS_INVENTORY_PACKAGES | _STREAM_INVENTORY_PACKAGES
+# Submodules of the 1.6.1-1.7.2 Roboflow-platform blocks plugin, now core blocks.
+_PLATFORM_BLOCKS_PLUGIN_INVENTORY_LEGACY = frozenset(
+    (
+        "inference.roboflow_workflows_plugin.integrations",
+        "inference.roboflow_workflows_plugin.integrations.visual_search",
+        "inference.roboflow_workflows_plugin.integrations.visual_search.helpers",
+        "inference.roboflow_workflows_plugin.integrations.visual_search.v1",
+        "inference.roboflow_workflows_plugin.integrations.visual_search_classifier",
+        "inference.roboflow_workflows_plugin.integrations.visual_search_classifier.classification_annotations",
+        "inference.roboflow_workflows_plugin.integrations.visual_search_classifier.v1",
+        "inference.roboflow_workflows_plugin.integrations.visual_search_classifier.v1_tensor",
+        "inference.roboflow_workflows_plugin.sinks",
+        "inference.roboflow_workflows_plugin.sinks.asset_library_attributes",
+        "inference.roboflow_workflows_plugin.sinks.asset_library_attributes.v1",
+        "inference.roboflow_workflows_plugin.sinks.custom_metadata",
+        "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1",
+        "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1_tensor",
+        "inference.roboflow_workflows_plugin.sinks.dataset_upload",
+        "inference.roboflow_workflows_plugin.sinks.dataset_upload.v1",
+        "inference.roboflow_workflows_plugin.sinks.dataset_upload.v1_tensor",
+        "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2",
+        "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2_tensor",
+        "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator",
+        "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1",
+        "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1_tensor",
+        "inference.roboflow_workflows_plugin.sinks.vision_events",
+        "inference.roboflow_workflows_plugin.sinks.vision_events.v1",
+        "inference.roboflow_workflows_plugin.sinks.vision_events.v1_tensor",
+        "inference.roboflow_workflows_plugin.sinks.vision_events_bundle",
+        "inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1",
+        "inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1_tensor",
+    )
+)
+
+_PLATFORM_BLOCKS_PLUGIN_INVENTORY_PACKAGES = frozenset(
+    (
+        "inference.roboflow_workflows_plugin.integrations",
+        "inference.roboflow_workflows_plugin.integrations.visual_search",
+        "inference.roboflow_workflows_plugin.integrations.visual_search_classifier",
+        "inference.roboflow_workflows_plugin.sinks",
+        "inference.roboflow_workflows_plugin.sinks.asset_library_attributes",
+        "inference.roboflow_workflows_plugin.sinks.custom_metadata",
+        "inference.roboflow_workflows_plugin.sinks.dataset_upload",
+        "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator",
+        "inference.roboflow_workflows_plugin.sinks.vision_events",
+        "inference.roboflow_workflows_plugin.sinks.vision_events_bundle",
+    )
+)
+
+_INVENTORY_LEGACY = (
+    _WORKFLOWS_INVENTORY_LEGACY
+    | _STREAM_INVENTORY_LEGACY
+    | _PLATFORM_BLOCKS_PLUGIN_INVENTORY_LEGACY
+)
+_INVENTORY_PACKAGES = (
+    _WORKFLOWS_INVENTORY_PACKAGES
+    | _STREAM_INVENTORY_PACKAGES
+    | _PLATFORM_BLOCKS_PLUGIN_INVENTORY_PACKAGES
+)
 
 # Empty enterprise packages were lightweight imports before the extraction.
 # Only these implementation modules historically triggered server bootstrap.

@@ -2,12 +2,18 @@ import contextvars
 import json
 import os
 import threading
-from typing import Iterable, Optional, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 from inference_sdk.regions import resolve_roboflow_service_url
 from inference_sdk.utils.environment import str2bool
 
 execution_id = contextvars.ContextVar("execution_id", default=None)
+
+# Request-origin attribution shared with the usage collector. Read at send time
+# so remote model calls inherit it without each workflow block forwarding tags.
+usage_source_tags: contextvars.ContextVar[Dict[str, str]] = contextvars.ContextVar(
+    "usage_source_tags", default={}
+)
 
 # Outbound billing-forwarding authority: the validated service secret to send
 # with every outgoing request while it is set, forcing `countinference=false`

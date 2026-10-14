@@ -167,6 +167,35 @@ def render_boxes(
         on_frame_rendered(images)
 
 
+def _filter_out_invalid_polygons(predictions: List[dict]) -> List[dict]:
+    if not isinstance(predictions, list):
+        return predictions
+
+    valid_predictions = [p for p in predictions if not _is_short_polygon(p)]
+
+    return valid_predictions
+
+
+def _is_short_polygon(prediction: dict) -> bool:
+    # Mirrors supervision: a `points` sequence with < 3 entries is kept as a box-only
+    # detection (which then drops masks of the whole response) unless RLE is valid.
+    if not isinstance(prediction, dict) or _has_valid_rle_payload(prediction):
+        return False
+
+    points = prediction.get("points")
+    is_short_polygon = isinstance(points, (list, tuple)) and len(points) < 3
+
+    return is_short_polygon
+
+
+def _has_valid_rle_payload(prediction: dict) -> bool:
+    # supervision prefers a valid RLE payload over `points`.
+    return any(
+        isinstance(rle_data, dict) and {"size", "counts"}.issubset(rle_data)
+        for rle_data in (prediction.get("rle"), prediction.get("rle_mask"))
+    )
+
+
 def _handle_frame_rendering(
     frame: Optional[VideoFrame],
     prediction: dict,
@@ -182,6 +211,12 @@ def _handle_frame_rendering(
         # the consumer boundary (dispatch hands tensor frames through as-is).
         frame = materialise_video_frame_for_sink(frame)
         try:
+            # supervision>=0.30 keeps polygons with < 3 points as box-only and then
+            # drops masks of the whole frame; skip them so labels stay aligned too.
+            prediction = {
+                **prediction,
+                "predictions": _filter_out_invalid_polygons(prediction["predictions"]),
+            }
             labels = [p["class"] for p in prediction["predictions"]]
             if hasattr(sv.Detections, "from_inference"):
                 detections = sv.Detections.from_inference(prediction)

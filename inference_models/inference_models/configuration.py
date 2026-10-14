@@ -23,6 +23,22 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     .strip("[")
     .strip("]")
 )
+# CoreMLExecutionProvider options applied to models that opt in (currently RF-DETR). NeuralNetwork is ORT's
+# default format but lacks LayerNorm/GELU/GridSample support, so transformer graphs fall back to CPU and end up
+# slower than CPU-only. MLProgram keeps them on the GPU. FP32 MLProgram never runs on the Neural Engine, so
+# CPUAndGPU matches ALL on latency while skipping the Neural Engine compile at session creation.
+INFERENCE_MODELS_COREML_MODEL_FORMAT = os.getenv(
+    "INFERENCE_MODELS_COREML_MODEL_FORMAT", "MLProgram"
+)
+INFERENCE_MODELS_COREML_COMPUTE_UNITS = os.getenv(
+    "INFERENCE_MODELS_COREML_COMPUTE_UNITS", "CPUAndGPU"
+)
+INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED", default=True
+)
+INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV", default=True
+)
 DEFAULT_DEVICE_STR = os.getenv(
     "DEFAULT_DEVICE",
     ("cuda" if torch.cuda.is_available() else "cpu"),
@@ -466,6 +482,10 @@ INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE = get_float_from_env(
 )
 INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_RFDETR_SEMANTIC_SEGMENTATION_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_SEMANTIC_SEGMENTATION_DEFAULT_CONFIDENCE",
     default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
 )
 INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS = get_integer_from_env(

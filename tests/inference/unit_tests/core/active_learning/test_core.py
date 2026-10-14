@@ -361,6 +361,7 @@ def test_safe_register_image_at_roboflow_when_registration_fails(
         batch_name="some-batch",
         tags=[],
         inference_id=None,
+        annotation_follows=False,
     )
     return_strategy_credit_mock.assert_called_once_with(
         cache=cache,
@@ -452,6 +453,7 @@ def test_safe_register_image_at_roboflow_when_registration_detects_duplicate(
         batch_name="some-batch",
         tags=[],
         inference_id="inference-id-234",
+        annotation_follows=False,
     )
     return_strategy_credit_mock.assert_not_called()
     assert result == "roboflow-id"
@@ -500,6 +502,7 @@ def test_register_datapoint_at_roboflow_when_predictions_not_to_be_persisted(
         batch_name="some-batch",
         tags=["a", "b"],
         inference_id="inference-id-987",
+        annotation_follows=False,
     )
     annotate_image_at_roboflow_mock.assert_not_called()
 
@@ -547,6 +550,7 @@ def test_register_datapoint_at_roboflow_when_predictions_to_be_persisted_but_dup
         batch_name="some-batch",
         tags=["a", "b"],
         inference_id="inference-id-123",
+        annotation_follows=False,
     )
     annotate_image_at_roboflow_mock.assert_not_called()
 
@@ -594,6 +598,7 @@ def test_register_datapoint_at_roboflow_when_predictions_to_be_persisted(
         batch_name="some-batch",
         tags=["a", "b"],
         inference_id="inference-id-ABC",
+        annotation_follows=True,
     )
     annotate_image_at_roboflow_mock.assert_called_once_with(
         api_key="api-key",
@@ -652,6 +657,7 @@ def test_register_datapoint_at_roboflow_when_image_registration_error_occurs(
         batch_name="some-batch",
         tags=["a", "b"],
         inference_id="inference-id-876",
+        annotation_follows=False,
     )
     annotate_image_at_roboflow_mock.assert_not_called()
 

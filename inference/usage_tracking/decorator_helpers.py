@@ -48,9 +48,13 @@ EXTERNAL_SOURCE_SENTINEL = "external"
 # same way as billing suppression - so a nested model decorator, which is
 # handed only the typed request, can attribute its row to the caller. The
 # default is never mutated, only replaced by `set()`.
-usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
-    "usage_source_tags", default={}
-)
+try:
+    from inference_sdk.config import usage_source_tags
+except ImportError:
+    # Older SDK releases retain in-process attribution until they are upgraded.
+    usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
+        "usage_source_tags", default={}
+    )
 
 # Whether the current workflow run is a builder/editor preview. Bound by the
 # `usage_collector` wrapper from `usage_workflow_preview` on `run_workflow`,
@@ -101,7 +105,7 @@ def _source_tag_bound_to_handler(
     """Resolve a source tag from a handler's arguments, however it was declared.
 
     Handlers spell these three ways. The legacy route declares them plainly. Two
-    SAM3 routes declare them under ``request_``-prefixed names, deliberately, so
+    SAM3 routes use ``request_``-prefixed names, deliberately, so
     that the raw names stay out of ``func_kwargs`` where ``source_info`` would
     displace ``roboflow_service_name``. Every other route declares nothing at
     all, leaving the value reachable only through the request's query string.
@@ -370,13 +374,22 @@ def get_model_descriptor_from_kwargs(
 def get_model_resource_details_from_kwargs(
     func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """Resolve model metadata with request-origin usage attribution.
+
+    Args:
+        func_kwargs (Dict[str, Any]): Bound model call arguments and request payload.
+
+    Returns:
+        Dict[str, Any]: Model metadata using the caller's source when available,
+        falling back to the model call's source outside a tagged request.
+    """
     resource_details = {}
     # A model decorator nested under an HTTP handler never sees the query
     # string, so a tag that arrived there reaches it only as request context.
     source = (
-        _meaningful_source(_lookup_in_func_kwargs(func_kwargs, "source"))
+        usage_source_tags.get().get("source")
+        or _meaningful_source(_lookup_in_func_kwargs(func_kwargs, "source"))
         or _source_tag_on_bound_requests(func_kwargs, "source")
-        or usage_source_tags.get().get("source")
     )
     if source is not None:
         resource_details["source"] = source

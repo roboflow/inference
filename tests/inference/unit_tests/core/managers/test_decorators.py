@@ -12,6 +12,7 @@ from inference.core.managers.model_load_collector import (
     current_request_path,
     request_model_ids,
 )
+from inference.core.models.embeddings import model_cache_key
 
 
 def test_model_manager_decorator_records_request_metadata_for_warm_model() -> None:
@@ -97,6 +98,32 @@ def test_fixed_size_cache_skips_online_authorization_in_offline_mode() -> None:
 
     access_check_mock.assert_not_called()
     assert "some/1" in model_manager.models()
+
+
+def test_nested_decorators_refresh_native_embedding_model_cache() -> None:
+    embedding_key = model_cache_key("some/1", ["image_embeddings"], "logits")
+    model = MagicMock()
+    result = {"embeddings": object(), "embedding_info": {"output_type": "logits"}}
+    model.run_tensor_native_embeddings.return_value = result
+    base_manager = ModelManager(model_registry=MagicMock())
+    base_manager._models = {embedding_key: model, "other/1": MagicMock()}
+    decorator = WithFixedSizeCache(
+        LockedLoadModelManagerDecorator(base_manager), max_size=2
+    )
+    images = [object()]
+
+    actual = decorator.run_tensor_native_embeddings(
+        model_id=embedding_key,
+        images=images,
+        output_type="logits",
+        input_color_format="rgb",
+    )
+
+    assert actual is result
+    assert list(decorator._key_queue) == ["other/1", embedding_key]
+    model.run_tensor_native_embeddings.assert_called_once_with(
+        images=images, output_type="logits", input_color_format="rgb"
+    )
 
 
 def test_nested_decorators_record_request_metadata_for_warm_model() -> None:

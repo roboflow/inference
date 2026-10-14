@@ -18,7 +18,8 @@ def rle_masks_to_polygons(masks: object) -> List[np.ndarray]:
     only the foreground bounding crop needed by OpenCV.
     """
 
-    height, width = masks.image_size
+    # decode on the grid the counts were encoded on, not the image grid
+    height, width = getattr(masks, "mask_size", None) or masks.image_size
     sparse_counts = _get_lazy_uncompressed_counts(masks=masks)
     if sparse_counts is not None:
         counts, lengths = sparse_counts

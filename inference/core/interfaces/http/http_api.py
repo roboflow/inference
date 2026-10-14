@@ -58,6 +58,7 @@ from inference.core.entities.requests.clip import (
 )
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
+from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
@@ -111,6 +112,7 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
+from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
     AnomalyDetectionResponse,
     ClassificationInferenceResponse,
@@ -278,6 +280,9 @@ from inference.core.interfaces.http.request_metrics import (
     GCPServerlessMiddleware,
     build_model_response_headers,
 )
+from inference.core.interfaces.http.video_processing import (
+    infer_action_recognition_request,
+)
 from inference.core.interfaces.roboflow_platform_client import (
     install_workflows_platform_bindings,
 )
@@ -334,6 +339,7 @@ from inference.core.managers.model_load_collector import (
     request_workflow_id,
 )
 from inference.core.managers.prometheus import InferenceInstrumentator
+from inference.core.models.embeddings import IMAGE_EMBEDDINGS, model_cache_key
 from inference.core.roboflow_api import (
     assume_identity_authorised_workspace_db_id,
     build_roboflow_api_headers,
@@ -1594,6 +1600,14 @@ class HttpInterface(BaseInterface):
                 model_id_alias=model_id_alias,
                 countinference=countinference,
                 service_secret=service_secret,
+                **(
+                    {
+                        "required_capabilities": [IMAGE_EMBEDDINGS],
+                        "output_type": inference_request.output_type,
+                    }
+                    if isinstance(inference_request, ImageEmbeddingRequest)
+                    else {}
+                ),
             )
             inference_model_id = (
                 requested_model_id
@@ -1601,7 +1615,15 @@ class HttpInterface(BaseInterface):
                 else de_aliased_model_id
             )
             resp = self.model_manager.infer_from_request_sync(
-                inference_model_id,
+                (
+                    model_cache_key(
+                        inference_model_id,
+                        [IMAGE_EMBEDDINGS],
+                        inference_request.output_type,
+                    )
+                    if isinstance(inference_request, ImageEmbeddingRequest)
+                    else inference_model_id
+                ),
                 inference_request,
                 **kwargs,
             )
@@ -2172,6 +2194,29 @@ class HttpInterface(BaseInterface):
                 )
 
             @app.post(
+                "/infer/embeddings",
+                response_model=ImageEmbeddingResponse,
+                summary="Image embeddings",
+                description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+            )
+            @with_route_exceptions
+            @usage_collector("request")
+            def infer_embeddings(
+                inference_request: ImageEmbeddingRequest,
+                api_key: Optional[str] = Query(
+                    default=None, description="Roboflow API key"
+                ),
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
+                return process_inference_request(
+                    inference_request,
+                    api_key=api_key,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+
+            @app.post(
                 "/infer/keypoints_detection",
                 response_model=Union[KeypointsDetectionInferenceResponse, StubResponse],
                 summary="Keypoints detection infer",
@@ -2448,7 +2493,38 @@ class HttpInterface(BaseInterface):
                 # neither.
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
+                request_source: Optional[str] = Query(
+                    None,
+                    alias="source",
+                    description="The source of the inference request",
+                ),
+                request_source_info: Optional[str] = Query(
+                    None,
+                    alias="source_info",
+                    description="The detailed source information of the inference request",
+                ),
             ) -> WorkflowInferenceResponse:
+                """Fetch and execute a saved workflow with request usage attribution.
+
+                Args:
+                    workspace_name (str): Workspace containing the saved workflow.
+                    workflow_id (str): Identifier of the saved workflow to execute.
+                    workflow_request (PredefinedWorkflowInferenceRequest):
+                        Workflow inputs and execution options.
+                    background_tasks (BackgroundTasks): Tasks for deferred execution
+                        outside serverless environments.
+                    countinference (Optional[bool]): Caller billing intent, read by
+                        the usage collector.
+                    service_secret (Optional[str]): Internal service credential used
+                        by the usage collector to validate billing intent.
+                    request_source (Optional[str]): Usage source from the ``source``
+                        query parameter.
+                    request_source_info (Optional[str]): Detailed usage attribution
+                        from the ``source_info`` query parameter.
+
+                Returns:
+                    WorkflowInferenceResponse: Workflow outputs and execution metadata.
+                """
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 workflow_request.api_key = api_key_override(workflow_request.api_key)
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
@@ -2507,7 +2583,36 @@ class HttpInterface(BaseInterface):
                 # neither.
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
+                request_source: Optional[str] = Query(
+                    None,
+                    alias="source",
+                    description="The source of the inference request",
+                ),
+                request_source_info: Optional[str] = Query(
+                    None,
+                    alias="source_info",
+                    description="The detailed source information of the inference request",
+                ),
             ) -> WorkflowInferenceResponse:
+                """Execute an inline workflow with request usage attribution.
+
+                Args:
+                    workflow_request (WorkflowSpecificationInferenceRequest):
+                        Workflow inputs and execution options.
+                    background_tasks (BackgroundTasks): Tasks for deferred execution
+                        outside serverless environments.
+                    countinference (Optional[bool]): Caller billing intent, read by
+                        the usage collector.
+                    service_secret (Optional[str]): Internal service credential used
+                        by the usage collector to validate billing intent.
+                    request_source (Optional[str]): Usage source from the ``source``
+                        query parameter.
+                    request_source_info (Optional[str]): Detailed usage attribution
+                        from the ``source_info`` query parameter.
+
+                Returns:
+                    WorkflowInferenceResponse: Workflow outputs and execution metadata.
+                """
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
@@ -4471,8 +4576,11 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = self.model_manager.infer_from_request_sync(
-                        model_id, inference_request
+                    response = infer_action_recognition_request(
+                        self.model_manager,
+                        model_id=model_id,
+                        inference_request=inference_request,
+                        request=request,
                     )
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
@@ -4729,6 +4837,10 @@ class HttpInterface(BaseInterface):
                         "zero-shot model answers in its own words and ignores it."
                     ),
                 ),
+                include_candidates: bool = Query(
+                    False,
+                    description="Action recognition: return raw scored candidates",
+                ),
                 labels: Optional[bool] = Query(
                     False,
                     description="If true, labels will be include in any inference visualization.",
@@ -4736,6 +4848,12 @@ class HttpInterface(BaseInterface):
                 mask_decode_mode: Optional[str] = Query(
                     "accurate",
                     description="One of 'accurate' or 'fast'. If 'accurate' the mask will be decoded using the original image size. If 'fast' the mask will be decoded using the original mask size. 'accurate' is slower but more accurate.",
+                ),
+                allow_reduced_mask_resolution: bool = Query(
+                    False,
+                    description="Opt into mask_decode_mode and tradeoff_factor on "
+                    "inference_models. Otherwise masks stay at image resolution. "
+                    "Legacy backend decoding is unchanged.",
                 ),
                 tradeoff_factor: Optional[float] = Query(
                     0.0,
@@ -4785,7 +4903,7 @@ class HttpInterface(BaseInterface):
                 ),
                 include_anomaly_map: Optional[bool] = Query(
                     default=False,
-                    description="Anomaly detection only: include the raw anomaly heatmap in original image coordinates",
+                    description="Anomaly detection only: include the raw anomaly heatmap at the network input resolution",
                 ),
                 source: Optional[str] = Query(
                     "external",
@@ -4824,9 +4942,16 @@ class HttpInterface(BaseInterface):
                 )
                 api_key = api_key_fallback(api_key)
                 model_id = f"{dataset_id}/{version_id}"
+                if isinstance(confidence, (int, float)) and confidence >= 1:
+                    confidence /= 100
+
+                # Action recognition permits zero and uses its saved default when omitted.
+                action_confidence = (
+                    confidence
+                    if "confidence" in request.query_params and confidence != "default"
+                    else None
+                )
                 if isinstance(confidence, (int, float)):
-                    if confidence >= 1:
-                        confidence /= 100
                     if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
                         # allowing lower confidence results in RAM usage explosion
                         confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
@@ -4905,13 +5030,14 @@ class HttpInterface(BaseInterface):
                     # carries a URL here, which is the transport to prefer: a
                     # base64 body grows the clip by a third and is held whole
                     # in memory.
-                    inference_response = self.model_manager.infer_from_request_sync(
+                    inference_response = infer_action_recognition_request(
+                        self.model_manager,
                         # add_model above registers under the alias, which is
                         # model_id, so the lookup asks for that. Under Lambda
                         # request_model_id is the authorizer's endpoint and
                         # names nothing the manager holds.
-                        model_id,
-                        ActionRecognitionInferenceRequest(
+                        model_id=model_id,
+                        inference_request=ActionRecognitionInferenceRequest(
                             api_key=api_key,
                             model_id=model_id,
                             video=InferenceRequestVideo(
@@ -4920,7 +5046,10 @@ class HttpInterface(BaseInterface):
                             class_filter=_parse_legacy_class_filter(
                                 class_filter=class_filter
                             ),
+                            confidence=action_confidence,
+                            include_candidates=include_candidates,
                         ),
+                        request=request,
                     )
                     logger.debug("Response ready.")
                     return orjson_response(inference_response)
@@ -4931,6 +5060,7 @@ class HttpInterface(BaseInterface):
                     args = {
                         "mask_decode_mode": mask_decode_mode,
                         "tradeoff_factor": tradeoff_factor,
+                        "allow_reduced_mask_resolution": allow_reduced_mask_resolution,
                     }
                     if response_mask_format:
                         args["response_mask_format"] = response_mask_format

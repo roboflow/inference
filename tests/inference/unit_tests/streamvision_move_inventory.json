@@ -31,6 +31,10 @@
     {
       "legacy": "inference.core.interfaces.stream_manager.manager_app",
       "canonical": "streamvision.stream_manager.manager_app"
+    },
+    {
+      "legacy": "inference.core.interfaces.webrtc_worker.sources",
+      "canonical": "streamvision.webrtc_worker.sources"
     }
   ],
   "modules": [
@@ -237,6 +241,30 @@
     {
       "legacy": "inference.core.interfaces.stream_manager.manager_app.webrtc",
       "canonical": "streamvision.stream_manager.manager_app.webrtc"
+    },
+    {
+      "legacy": "inference.core.interfaces.webrtc_worker.entities",
+      "canonical": "streamvision.webrtc_worker.entities"
+    },
+    {
+      "legacy": "inference.core.interfaces.webrtc_worker.serializers",
+      "canonical": "streamvision.webrtc_worker.serializers"
+    },
+    {
+      "legacy": "inference.core.interfaces.webrtc_worker.sources.file",
+      "canonical": "streamvision.webrtc_worker.sources.file"
+    },
+    {
+      "legacy": "inference.core.interfaces.webrtc_worker.sources.rtsp",
+      "canonical": "streamvision.webrtc_worker.sources.rtsp"
+    },
+    {
+      "legacy": "inference.core.interfaces.webrtc_worker.watchdog",
+      "canonical": "streamvision.webrtc_worker.watchdog"
+    },
+    {
+      "legacy": "inference.core.interfaces.webrtc_worker.webrtc",
+      "canonical": "streamvision.webrtc_worker.webrtc"
     }
   ],
   "retained_legacy": [

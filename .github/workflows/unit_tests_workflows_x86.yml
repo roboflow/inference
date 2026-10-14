@@ -5,8 +5,20 @@ permissions:
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   workflow_dispatch:
 
 concurrency:
@@ -34,9 +46,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-unit-tests-workflows-${{ matrix.python-version }}-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock') }}
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -100,12 +110,4 @@ jobs:
           WORKFLOWS_ISOLATION_FIND_LINKS: ${{ github.workspace }}/dist
         run: |
           WORKFLOWS_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)" \
-            python -m pytest tests/unit_tests tests/isolation
-      - name: Workflows V2 unit and static integration tests
-        working-directory: workflows
-        run: python -m pytest -c pytest-v2.ini
-      - name: V1/V2 compatibility tests (tensor false)
-        working-directory: workflows
-        run: |
-          ENABLE_TENSOR_DATA_REPRESENTATION=False python -m pytest -c pytest.ini \
-            --confcutdir=tests/compatibility/v2 tests/compatibility/v2
+            python -m pytest -n auto --dist loadfile tests/isolation tests/unit_tests

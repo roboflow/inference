@@ -4,8 +4,20 @@ permissions:
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   workflow_dispatch:
     inputs:
       python-version:
@@ -30,8 +42,11 @@ jobs:
   build-dev-test:
     needs: call_is_mergeable
     if: ${{ (github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
+    # I/O-bound workflow integration tests. Measured on Depot over 2,360 jobs on the
+    # 16c/64GB machine: ~15% average CPU and ~12.8GB peak RAM. 8c/32GB keeps the peak
+    # at ~40% of memory; 4c/16GB would leave only ~3GB headroom.
     runs-on:
-      labels: depot-ubuntu-22.04-16
+      labels: depot-ubuntu-22.04-8
       group: public-depot
     strategy:
       matrix:
@@ -49,9 +64,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-integration-tests-workflows-tensor-native-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 🚧 Install GDAL
         run: sudo apt-get update && sudo apt-get install -y libgdal-dev
       - name: 📦 Install dependencies

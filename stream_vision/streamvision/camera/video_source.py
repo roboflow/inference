@@ -16,6 +16,7 @@ from streamvision.camera.buffer_strategies import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
 )
+from streamvision.camera.capture_properties import apply_capture_properties
 from streamvision.camera.entities import (
     SourceProperties,
     StatusUpdate,
@@ -162,10 +163,10 @@ class CV2VideoFrameProducer(VideoFrameProducer):
     def retrieve(self) -> Tuple[bool, ndarray]:
         return self.stream.retrieve()
 
-    def initialize_source_properties(self, properties: Dict[str, float]) -> None:
-        for property_id, value in properties.items():
-            cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
-            self.stream.set(cv2_id, value)
+    def initialize_source_properties(
+        self, properties: Dict[str, Union[float, str]]
+    ) -> None:
+        apply_capture_properties(self.stream, properties=properties)
 
     def discover_source_properties(self) -> SourceProperties:
         width = int(self.stream.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -299,7 +300,7 @@ class VideoSource:
         adaptive_mode_reader_pace_tolerance: float = DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
         source_id: Optional[int] = None,
         desired_fps: Optional[Union[float, int]] = None,
         allow_tensor_frames: bool = False,
@@ -460,7 +461,7 @@ class VideoSource:
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
         video_consumer: "VideoConsumer",
-        video_source_properties: Optional[Dict[str, float]],
+        video_source_properties: Optional[Dict[str, Union[float, str]]],
         source_id: Optional[int],
         allow_tensor_frames: bool = False,
     ):
@@ -768,7 +769,13 @@ class VideoSource:
                 )
                 self._video = CV2VideoFrameProducer(self._stream_reference)
                 self._initialise_selected_video()
-            self._video_consumer.reset(source_properties=self._source_properties)
+            self._video_consumer.reset(
+                source_properties=self._source_properties,
+                initial_seek=any(
+                    str(key).lower().startswith("pos_")
+                    for key in self._video_source_properties
+                ),
+            )
             if self._source_properties.is_file:
                 self._set_file_mode_consumption_strategies()
             else:
@@ -1038,6 +1045,8 @@ class VideoConsumer:
         self._desired_fps = desired_fps
         self._declared_source_fps = None
         self._is_source_video_file = None
+        self._source_total_frames: Optional[int] = None
+        self._initial_seek = False
         self._timestamp_created: Optional[datetime] = None
         self._status_update_handlers = status_update_handlers
         self._next_frame_from_video_to_accept = 1
@@ -1047,7 +1056,21 @@ class VideoConsumer:
     def buffer_filling_strategy(self) -> Optional[BufferFillingStrategy]:
         return self._buffer_filling_strategy
 
-    def reset(self, source_properties: SourceProperties) -> None:
+    def reset(
+        self, source_properties: SourceProperties, *, initial_seek: bool = False
+    ) -> None:
+        """Prepare the consumer for a fresh start of the video source.
+
+        Frame numbering continues across resets, so the source frame count is
+        withheld once it no longer matches the frame position.
+
+        Args:
+            source_properties: Properties of the (re)opened source.
+            initial_seek: Whether the source was opened at a seek position.
+        """
+        self._initial_seek = initial_seek
+        if self._frame_counter > 0 or initial_seek:
+            self._source_total_frames = None
         if source_properties.is_file:
             self._set_file_mode_buffering_strategies()
         else:
@@ -1078,6 +1101,12 @@ class VideoConsumer:
             self._is_source_video_file = source_properties.is_file
             self._declared_source_fps = source_properties.fps
             self._timestamp_created = source_properties.timestamp_created
+            if (
+                source_properties.is_file
+                and source_properties.total_frames > 0
+                and not self._initial_seek
+            ):
+                self._source_total_frames = source_properties.total_frames
 
         if self._timestamp_created:
             frame_timestamp = self._timestamp_created + timedelta(
@@ -1207,6 +1236,7 @@ class VideoConsumer:
                 declared_source_fps=declared_source_fps,
                 measured_source_fps=measured_source_fps,
                 comes_from_video_file=is_source_video_file,
+                total_frames=self._source_total_frames,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
             return self._process_stream_frame_dropping_oldest(
@@ -1322,8 +1352,7 @@ class VideoConsumer:
             decoding_pace_monitor=self._decoding_pace_monitor,
             source_id=source_id,
             comes_from_video_file=is_video_file,
-            declared_source_fps=declared_source_fps,
-            measured_source_fps=measured_source_fps,
+            total_frames=self._source_total_frames,
         )
 
 
@@ -1435,6 +1464,7 @@ def decode_video_frame_to_buffer(
     declared_source_fps: Optional[float] = None,
     measured_source_fps: Optional[float] = None,
     comes_from_video_file: Optional[bool] = None,
+    total_frames: Optional[int] = None,
 ) -> bool:
     success, image = video.retrieve()
     if not success:
@@ -1448,6 +1478,7 @@ def decode_video_frame_to_buffer(
         measured_fps=measured_source_fps,
         source_id=source_id,
         comes_from_video_file=comes_from_video_file,
+        total_frames=total_frames,
     )
     buffer.put(video_frame)
     return True

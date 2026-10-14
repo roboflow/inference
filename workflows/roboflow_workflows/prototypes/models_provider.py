@@ -107,6 +107,38 @@ class ModelsProvider(Protocol):
         inference_kwargs: Optional[Dict[str, Any]] = None,
     ) -> List[dict]: ...
 
+    def run_image_embeddings(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        output_type: str = "feature_vector",
+    ) -> dict: ...
+
+    def run_tensor_image_embeddings(
+        self,
+        model_id: str,
+        images: List[Any],
+        *,
+        input_color_format: str,
+        api_key: Optional[str] = None,
+        output_type: str = "feature_vector",
+    ) -> dict:
+        """Generate embeddings without serializing model inputs or outputs.
+
+        Args:
+            model_id: Previously registered classification model version.
+            images: Materialized CHW RGB tensors or HWC BGR NumPy images.
+            input_color_format: Color ordering of the supplied images.
+            api_key: Credential used to register the model.
+            output_type: Feature vector or pre-activation logits.
+
+        Returns:
+            Mapping with a batched tensor under ``embeddings`` and plain
+            compatibility metadata under ``embedding_info``.
+        """
+        ...
+
     def run_keypoints_detection(
         self,
         model_id: str,

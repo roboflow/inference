@@ -34,7 +34,9 @@ T = TypeVar("T")
 def prepare_video_sources(
     video_reference: Union[VideoSourceIdentifier, List[VideoSourceIdentifier]],
     video_source_properties: Optional[
-        Union[Dict[str, float], List[Optional[Dict[str, float]]]]
+        Union[
+            Dict[str, Union[float, str]], List[Optional[Dict[str, Union[float, str]]]]
+        ]
     ],
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
@@ -87,7 +89,7 @@ def broadcast_elements(
 
 def initialise_video_sources(
     video_reference: List[VideoSourceIdentifier],
-    video_source_properties: List[Optional[Dict[str, float]]],
+    video_source_properties: List[Optional[Dict[str, Union[float, str]]]],
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],

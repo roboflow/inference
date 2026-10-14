@@ -9,7 +9,7 @@ transformers>=4.57.3,<5.16.0
 # diffusers @ git+https://github.com/huggingface/diffusers.git@86e6dac5360703ddf09fe250db50be667eb93662
 diffusers>=0.39.0,<0.41.0
 timm>=1.0.0
-accelerate>=1.0.0,<2.0.0
+accelerate>=1.15.0,<2.0.0
 einops>=0.7.0
 peft>=0.15.0
 num2words~=0.5.14
