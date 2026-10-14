@@ -16,13 +16,13 @@ from roboflow_workflows.v2.engine.errors import UnknownBlockError
 
 from inference_models.models.base.object_detection import Detections
 from tests.v2.integration.blocks.analytics import test_motion_workflows as motion
+from tests.v2.integration.blocks.models import test_vlm_workflows as q3
 from tests.v2.integration.blocks.models.vision_language_models import (
     test_compatible_vendor_workflows as compatible,
 )
 from tests.v2.integration.blocks.models.vision_language_models import (
     test_openrouter_vendor_workflows as router,
 )
-from tests.v2.integration.blocks.models import test_vlm_workflows as q3
 from tests.v2.integration.blocks.visualization.annotations import (
     test_counter_drawing_composition as counters,
 )
@@ -35,154 +35,154 @@ RECORDS = [
         "owner": "G03",
         "class": "Qwen35VLBlock",
         "type": "roboflow_core/qwen3_5vl@v2",
-        "module": 'roboflow_workflows.v2.blocks.models.qwen3_5vl.v2',
+        "module": "roboflow_workflows.v2.blocks.models.qwen3_5vl.v2",
         "package": "models",
     },
     {
         "owner": "G04",
         "class": "OpenRouterBlock",
         "type": "roboflow_core/openrouter@v3",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.openrouter.v3',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.openrouter.v3",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "KimiOpenRouterBlock",
         "type": "roboflow_core/kimi_openrouter@v3",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.kimi_openrouter.v3',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.kimi_openrouter.v3",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "MetaVlmBlock",
         "type": "roboflow_core/meta_vlm@v3",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.meta_vlm.v3',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.meta_vlm.v3",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "ZaiVlmBlock",
         "type": "roboflow_core/zai_vlm@v2",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.zai_vlm.v2',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.zai_vlm.v2",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "GoogleGemmaBlock",
         "type": "roboflow_core/google_gemma@v4",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.google_gemma.v4',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.google_gemma.v4",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "SpaceXAIBlock",
         "type": "roboflow_core/spacexai@v3",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.spacexai.v3',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.spacexai.v3",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "OpenAIBlock",
         "type": "roboflow_core/open_ai@v7",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.open_ai.v7',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.open_ai.v7",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "OpenAICompatibleBlock",
         "type": "roboflow_core/openai_compatible@v1",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.openai_compatible.v1',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.openai_compatible.v1",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "AnthropicClaudeBlock",
         "type": "roboflow_core/anthropic_claude@v5",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.anthropic_claude.v5',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.anthropic_claude.v5",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G04",
         "class": "GoogleGeminiBlock",
         "type": "roboflow_core/google_gemini@v6",
-        "module": 'roboflow_workflows.v2.blocks.models.vision_language_models.google_gemini.v6',
+        "module": "roboflow_workflows.v2.blocks.models.vision_language_models.google_gemini.v6",
         "package": "models.vision_language_models",
     },
     {
         "owner": "G05",
         "class": "LineCounterBlock",
         "type": "roboflow_core/line_counter@v2",
-        "module": 'roboflow_workflows.v2.blocks.analytics.line_counter.v2',
+        "module": "roboflow_workflows.v2.blocks.analytics.line_counter.v2",
         "package": "analytics",
     },
     {
         "owner": "G05",
         "class": "TimeInZoneBlock",
         "type": "roboflow_core/time_in_zone@v3",
-        "module": 'roboflow_workflows.v2.blocks.analytics.time_in_zone.v3',
+        "module": "roboflow_workflows.v2.blocks.analytics.time_in_zone.v3",
         "package": "analytics",
     },
     {
         "owner": "G05",
         "class": "PathDeviationBlock",
         "type": "roboflow_core/path_deviation_analytics@v2",
-        "module": 'roboflow_workflows.v2.blocks.analytics.path_deviation_analytics.v2',
+        "module": "roboflow_workflows.v2.blocks.analytics.path_deviation_analytics.v2",
         "package": "analytics",
     },
     {
         "owner": "G05",
         "class": "DetectionEventLogBlock",
         "type": "roboflow_core/detection_event_log@v1",
-        "module": 'roboflow_workflows.v2.blocks.analytics.detection_event_log.v1',
+        "module": "roboflow_workflows.v2.blocks.analytics.detection_event_log.v1",
         "package": "analytics",
     },
     {
         "owner": "G05",
         "class": "OverlapFilterBlock",
         "type": "roboflow_core/overlap@v1",
-        "module": 'roboflow_workflows.v2.blocks.analytics.overlap.v1',
+        "module": "roboflow_workflows.v2.blocks.analytics.overlap.v1",
         "package": "analytics",
     },
     {
         "owner": "G05",
         "class": "BackgroundSubtractionBlock",
         "type": "roboflow_core/background_subtraction@v1",
-        "module": 'roboflow_workflows.v2.blocks.analytics.background_subtraction.v1',
+        "module": "roboflow_workflows.v2.blocks.analytics.background_subtraction.v1",
         "package": "analytics",
     },
     {
         "owner": "G05",
         "class": "MotionDetectionBlock",
         "type": "roboflow_core/motion_detection@v1",
-        "module": 'roboflow_workflows.v2.blocks.analytics.motion_detection.v1',
+        "module": "roboflow_workflows.v2.blocks.analytics.motion_detection.v1",
         "package": "analytics",
     },
     {
         "owner": "G12",
         "class": "OnvifTrackingBlock",
         "type": "roboflow_core/onvif_sink@v1",
-        "module": 'roboflow_workflows.v2.blocks.industrial.onvif_sink.v1',
+        "module": "roboflow_workflows.v2.blocks.industrial.onvif_sink.v1",
         "package": "industrial",
     },
     {
         "owner": "G08",
         "class": "BackgroundColorVisualizationBlock",
         "type": "roboflow_core/background_color_visualization@v1",
-        "module": 'roboflow_workflows.v2.blocks.visualization.annotations.background_color_visualization.v1',
+        "module": "roboflow_workflows.v2.blocks.visualization.annotations.background_color_visualization.v1",
         "package": "visualization.annotations",
     },
     {
         "owner": "G08",
         "class": "ColorVisualizationBlock",
         "type": "roboflow_core/color_visualization@v1",
-        "module": 'roboflow_workflows.v2.blocks.visualization.annotations.color_visualization.v1',
+        "module": "roboflow_workflows.v2.blocks.visualization.annotations.color_visualization.v1",
         "package": "visualization.annotations",
     },
     {
         "owner": "G08",
         "class": "GridVisualizationBlock",
         "type": "roboflow_core/grid_visualization@v1",
-        "module": 'roboflow_workflows.v2.blocks.visualization.annotations.grid_visualization.v1',
+        "module": "roboflow_workflows.v2.blocks.visualization.annotations.grid_visualization.v1",
         "package": "visualization.annotations",
     },
 ]
@@ -270,11 +270,6 @@ BASELINE = {
         "roboflow_core/first_non_empty_or_default@v1",
         "roboflow_core/current_time@v1",
         "roboflow_core/json_parser@v1",
-        "roboflow_core/detection_drawing@v1",
-        "roboflow_core/simple_box_visualization@v1",
-        "roboflow_core/simple_label_visualization@v1",
-        "roboflow_core/detection_visualization@v1",
-        "roboflow_core/simple_label_visualization_in_place@v1",
         "roboflow_core/bounding_box_visualization@v1",
         "roboflow_core/label_visualization@v2",
         "roboflow_core/polygon_visualization@v2",
@@ -317,7 +312,6 @@ BASELINE = {
         "classification_prediction",
         "crop_summary",
         "detection",
-        "detection_drawing",
         "detections_overlaps",
         "dictionary",
         "embedding",
@@ -523,8 +517,6 @@ def test_three_default_decorative_drawings_form_exact_composite_tiles(
     monkeypatch.setattr(decorative, "annotation_catalogue", blocks.create_catalogue)
     monkeypatch.setattr(decorative, "DECORATIVE_BLOCKS", ())
     decorative.test_grid_shows_an_image_and_its_drawings_on_one_canvas_per_image(mode)
-
-
 
 
 def test_industrial_selection_session_and_disabled_paths_acquire_no_optional_resources(

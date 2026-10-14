@@ -124,7 +124,9 @@ def run_selected(
         }
     )
     arguments = {**dict(params), **values, "image": image, "predictions": predictions}
-    result = block_class().run(**arguments)
+    result = (getattr(block_class, "implementations", ()) or (block_class,))[0]().run(
+        **arguments
+    )
 
     return result["image"]
 

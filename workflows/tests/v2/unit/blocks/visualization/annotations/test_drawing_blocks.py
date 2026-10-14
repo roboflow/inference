@@ -200,7 +200,9 @@ def _run_selected(
         }
     )
     arguments = {**dict(params), **selected, "image": image, "predictions": predictions}
-    result = block_class().run(**arguments)
+    result = (getattr(block_class, "implementations", ()) or (block_class,))[0]().run(
+        **arguments
+    )
 
     return result["image"]
 
@@ -1249,7 +1251,7 @@ def test_output_keeps_identity_frames_video_metadata_and_parent_row(
 
 def test_one_block_instance_draws_images_with_different_row_counts() -> None:
     # Ragged rows across images: no state carries over between invocations.
-    block = LabelVisualizationBlock()
+    block = LabelVisualizationBlock.implementations[0]()
     params = dict(
         spec_of(LabelVisualizationBlock).validate_params(
             {

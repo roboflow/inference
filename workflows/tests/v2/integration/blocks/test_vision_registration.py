@@ -26,10 +26,22 @@ _ADDED = (
     (models, "SegmentAnything3InteractiveBlock", "roboflow_core/sam3_interactive@v1"),
     (models, "SegmentAnything3VideoBlock", "roboflow_core/sam3_video@v1"),
     (image, "MaskEdgeSnapBlock", "roboflow_core/mask_edge_snap@v1"),
-    (annotations, "HeatmapVisualizationBlock", "roboflow_core/heatmap_visualization@v1"),
+    (
+        annotations,
+        "HeatmapVisualizationBlock",
+        "roboflow_core/heatmap_visualization@v1",
+    ),
     (annotations, "TraceVisualizationBlock", "roboflow_core/trace_visualization@v1"),
-    (annotations, "PolygonZoneVisualizationBlock", "roboflow_core/polygon_zone_visualization@v1"),
-    (annotations, "LineCounterVisualizationBlock", "roboflow_core/line_counter_visualization@v1"),
+    (
+        annotations,
+        "PolygonZoneVisualizationBlock",
+        "roboflow_core/polygon_zone_visualization@v1",
+    ),
+    (
+        annotations,
+        "LineCounterVisualizationBlock",
+        "roboflow_core/line_counter_visualization@v1",
+    ),
     (
         annotations,
         "ReferencePathVisualizationBlock",
@@ -66,8 +78,7 @@ def test_default_discovery_public_exports_and_schemas(route):
         assert "image" in schemas[identity]["properties"]
 
     # Keep both public label versions and Action/stable19 additions discoverable.
-    assert blocks.AnnotationLabelVisualizationBlock.type == "roboflow_core/label_visualization@v2"
-    assert blocks.LabelVisualizationBlock.type == "roboflow_core/simple_label_visualization@v1"
+    assert blocks.LabelVisualizationBlock.type == "roboflow_core/label_visualization@v2"
     for identity in (
         "roboflow_core/roboflow_action_recognition_model@v1",
         "roboflow_core/cosmos3_edge@v1",
@@ -104,7 +115,11 @@ def test_default_segmentation_snap_and_drawing_preserve_pixels_and_identity(
         return model
 
     step = {
-        "type": "roboflow_core/segment_anything@v1" if backend == "sam2" else "roboflow_core/sam3@v3",
+        "type": (
+            "roboflow_core/segment_anything@v1"
+            if backend == "sam2"
+            else "roboflow_core/sam3@v3"
+        ),
         "name": "sam",
         "image": "$inputs.image",
     }
@@ -184,9 +199,9 @@ def test_default_drawings_compose_with_explicit_current_real_producers(
     def compile_default(definition, *, catalogue, **kwargs):
         # The tail cohort registers the current real producers by default.
         assert catalogue.block_types == expected
-        assert catalogue.entry("roboflow_core/line_counter_visualization@v1").spec is spec_of(
-            annotations.LineCounterVisualizationBlock
-        )
+        assert catalogue.entry(
+            "roboflow_core/line_counter_visualization@v1"
+        ).spec is spec_of(annotations.LineCounterVisualizationBlock)
         return original(definition, catalogue=catalogue, **kwargs)
 
     monkeypatch.setattr(counters, "compile_workflow", compile_default)

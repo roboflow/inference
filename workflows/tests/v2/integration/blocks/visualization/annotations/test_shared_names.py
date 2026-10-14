@@ -1,16 +1,8 @@
-"""A list ``class_names`` map names rows alike in every consumer (HK-1).
+"""Canonical accurate/fast labels preserve relabelled row names through compilation.
 
-Before decision 034, the painters read a list map but the query and the
-per-class filter called ``.get`` on it and failed. One compiled workflow now
-sends rows named by a list map to every class-name consumer::
-
-    named ─┬─▶ per_class_confidence_filter   box, disc >= 0.6; others >= 0
-           ├─▶ detections_filter              class_name in ["box"]
-           ├─▶ detection_drawing ─▶ label_visualization (prepared labels)
-           └─▶ label_visualization                      (native rows)
-
-Every row has confidence 0.5, so a row survives the per-class filter exactly
-when it is not named box or disc. Row ``i``'s box starts at ``x = 10 * i``.
+Class replacement, model combination and query consumers share the canonical
+label name resolver. Both label implementations must paint the same supported
+style while the workflow retains native detections and per-row names.
 """
 
 from typing import Any, Dict
@@ -20,6 +12,10 @@ import pytest
 import torch
 from pydantic import Field
 from roboflow_workflows.v2.blocks import create_catalogue, transforms
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import (
+    label_texts,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.rows import read_rows
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
@@ -103,29 +99,31 @@ def run(names: str) -> dict:
             "predictions": "$steps.named.predictions",
             "operations": [BOXES_ONLY],
         },
-        {"type": "roboflow_core/detection_drawing@v1", "name": "drawing", "predictions": "$steps.named.predictions"},
         {
-            "type": "roboflow_core/simple_label_visualization@v1",
-            "name": "native_labels",
+            "type": "roboflow_core/label_visualization@v2",
+            "text": "Class and Confidence",
+            "name": "accurate_labels",
             "image": "$inputs.image",
             "predictions": "$steps.named.predictions",
         },
         {
-            "type": "roboflow_core/simple_label_visualization@v1",
-            "name": "prepared_labels",
+            "type": "roboflow_core/label_visualization@v2",
+            "text": "Class and Confidence",
+            "name": "fast_labels",
             "image": "$inputs.image",
-            "predictions": "$steps.drawing.drawing",
+            "predictions": "$steps.named.predictions",
         },
     ]  # fmt: skip
     outputs = {
         "confident": "$steps.confident.predictions",
         "boxes": "$steps.boxes.predictions",
-        "drawing": "$steps.drawing.drawing",
-        "native_labels": "$steps.native_labels.image",
-        "prepared_labels": "$steps.prepared_labels.image",
+        "named_predictions": "$steps.named.predictions",
+        "accurate_labels": "$steps.accurate_labels.image",
+        "fast_labels": "$steps.fast_labels.image",
     }
     workflow = {
         "version": "2.0",
+        "execution": {"step_quality": {"$steps.fast_labels": "fast"}},
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": steps,
         "outputs": [
@@ -153,7 +151,14 @@ def test_list_and_dict_maps_name_rows_alike_in_every_consumer(names: str) -> Non
     row = run(names)
 
     # then
-    assert row["drawing"].labels == (
+    assert tuple(
+        label_texts(
+            read_rows(row["named_predictions"]),
+            "Class and Confidence",
+            masks=None,
+            block="test",
+        )
+    ) == (
         "box 0.50",
         "disc 0.50",
         "car 0.50",
@@ -162,5 +167,5 @@ def test_list_and_dict_maps_name_rows_alike_in_every_consumer(names: str) -> Non
     )
     assert rows_at(row["boxes"]) == [0]
     assert rows_at(row["confident"]) == [2, 4]
-    native, prepared = row["native_labels"], row["prepared_labels"]
+    native, prepared = row["accurate_labels"], row["fast_labels"]
     assert native.tensor_image.equal(prepared.tensor_image)

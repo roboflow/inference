@@ -70,7 +70,9 @@ def object_masks(height: int = HEIGHT, width: int = WIDTH) -> np.ndarray:
     for x1, y1, x2, y2, _, _ in OBJECTS:
         centre_x, centre_y = (x1 + x2) / 2, (y1 + y2) / 2
         radius_x, radius_y = (x2 - x1) / 2, (y2 - y1) / 2
-        masks.append(((xs - centre_x) / radius_x) ** 2 + ((ys - centre_y) / radius_y) ** 2 <= 1)
+        masks.append(
+            ((xs - centre_x) / radius_x) ** 2 + ((ys - centre_y) / radius_y) ** 2 <= 1
+        )
     masks[1][28:32, 30:36] = False  # a hole: inner contour for polygons
 
     return np.stack(masks)
@@ -98,8 +100,12 @@ def detections(
     boxes = torch.tensor([list(obj[:4]) for obj in objects], dtype=torch.float32)
     predictions = Detections(
         xyxy=boxes.reshape(-1, 4).to(device),
-        class_id=torch.tensor([obj[4] for obj in objects], dtype=torch.int64).to(device),
-        confidence=torch.tensor([obj[5] for obj in objects], dtype=torch.float32).to(device),
+        class_id=torch.tensor([obj[4] for obj in objects], dtype=torch.int64).to(
+            device
+        ),
+        confidence=torch.tensor([obj[5] for obj in objects], dtype=torch.float32).to(
+            device
+        ),
         image_metadata=metadata_for(image),
         bboxes_metadata=list(rows) if rows is not None else None,
     )
@@ -216,7 +222,9 @@ def multi_label(image: ImageData) -> MultiLabelClassificationPrediction:
     return prediction
 
 
-def semantic(image: ImageData, *, names: Optional[Dict[int, str]] = None) -> SemanticSegmentationResult:
+def semantic(
+    image: ImageData, *, names: Optional[Dict[int, str]] = None
+) -> SemanticSegmentationResult:
     """A class grid: 0 background, 1 road in the lower half, 2 car in a box."""
     height, width = image.size_hw
     grid = torch.zeros((height, width), dtype=torch.int64)
@@ -234,13 +242,17 @@ def semantic(image: ImageData, *, names: Optional[Dict[int, str]] = None) -> Sem
     return result
 
 
-def run_v2(block_class: type, *, image: ImageData, predictions: Any, **parameters: Any) -> ImageData:
+def run_v2(
+    block_class: type, *, image: ImageData, predictions: Any, **parameters: Any
+) -> ImageData:
     """Run one invocation as the engine does: validate parameters, then ``run``."""
     params = spec_of(block_class).validate_params(
         {**parameters, "image": "$inputs.image", "predictions": "$inputs.predictions"}
     )
     arguments = {**dict(params), "image": image, "predictions": predictions}
-    result = block_class().run(**arguments)
+    result = (getattr(block_class, "implementations", ()) or (block_class,))[0]().run(
+        **arguments
+    )
 
     return result["image"]
 
@@ -261,7 +273,9 @@ def v1_detections(
 ) -> sv.Detections:
     """The V1 form of the same rows (class names in ``data``)."""
     predictions = sv.Detections(
-        xyxy=np.array([list(obj[:4]) for obj in objects], dtype=np.float32).reshape(-1, 4),
+        xyxy=np.array([list(obj[:4]) for obj in objects], dtype=np.float32).reshape(
+            -1, 4
+        ),
         class_id=np.array([obj[4] for obj in objects], dtype=int),
         confidence=np.array([obj[5] for obj in objects], dtype=np.float32),
         mask=masks,
@@ -281,7 +295,9 @@ def run_v1(block_class: type, pixels: np.ndarray, **arguments: Any) -> np.ndarra
         parent_metadata=ImageParentMetadata(parent_id="frame"),
         numpy_image=np.ascontiguousarray(pixels[:, :, ::-1]),
     )
-    result = block_class().run(image=image, copy_image=True, **arguments)
+    result = (getattr(block_class, "implementations", ()) or (block_class,))[0]().run(
+        image=image, copy_image=True, **arguments
+    )
     output = result["image"].numpy_image[:, :, ::-1]
 
     return output

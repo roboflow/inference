@@ -9,19 +9,26 @@ from typing import Any, Dict
 
 import numpy as np
 import pytest
-from roboflow_workflows.v2.blocks.image.primitives.static_crop.v1 import StaticCropBlock
+import torch
 from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
+from roboflow_workflows.v2.blocks.image.primitives.static_crop.v1 import StaticCropBlock
+from roboflow_workflows.v2.blocks.models.vision_language_models._shared.parsers import (
+    decode_florence_2_detections,
+)
 from roboflow_workflows.v2.blocks.models.vision_language_models.kimi_openrouter.v3 import (
     KimiOpenRouterBlock,
 )
 from roboflow_workflows.v2.blocks.models.vision_language_models.meta_vlm.v3 import (
     MetaVlmBlock,
 )
-from roboflow_workflows.v2.blocks.models.vision_language_models._shared.parsers import (
-    decode_florence_2_detections,
+from roboflow_workflows.v2.blocks.transforms.detections_filter.v1 import (
+    DetectionsFilterBlock,
 )
-from roboflow_workflows.v2.blocks.transforms.detections_filter.v1 import DetectionsFilterBlock
-from roboflow_workflows.v2.blocks.visualization.native.detection_drawing.v1 import DetectionDrawingBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import (
+    LabelVisualizationBlock,
+    label_texts,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.rows import read_rows
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import (
@@ -35,6 +42,7 @@ from roboflow_workflows.v2.engine.errors import (
     ParamsValidationError,
     StepExecutionError,
 )
+
 from tests.v2.support.language.fake_chat import FakeChatServer, chat_completion_body
 
 CATALOGUE = Catalogue(
@@ -189,9 +197,10 @@ def test_florence_helper_rows_feed_filters_and_drawing_with_their_own_text() -> 
         ],
         "labels": ["STOP", "EXIT"],
     }
+    source = ImageData.from_numpy_rgb(IMAGE)
     error, boxes = decode_florence_2_detections(
         answer,
-        image=ImageData.from_numpy_rgb(IMAGE),
+        image=source,
         task_type="ocr-with-text-detection",
         classes=None,
         inference_id="florence-ocr",
@@ -226,7 +235,8 @@ def test_florence_helper_rows_feed_filters_and_drawing_with_their_own_text() -> 
                 "type": "WorkflowParameter",
                 "name": "boxes",
                 "kind": ["object_detection_prediction"],
-            }
+            },
+            {"type": "WorkflowParameter", "name": "image", "kind": ["image"]},
         ],
         "steps": [
             {
@@ -236,27 +246,38 @@ def test_florence_helper_rows_feed_filters_and_drawing_with_their_own_text() -> 
                 "operations": [exit_only],
             },
             {
-                "type": "roboflow_core/detection_drawing@v1",
+                "type": "roboflow_core/label_visualization@v2",
+                "image": "$inputs.image",
+                "text": "Class and Confidence",
                 "name": "drawing",
                 "predictions": "$inputs.boxes",
             },
         ],
         "outputs": [
             _output("exits", "$steps.exits.predictions"),
-            _output("drawing", "$steps.drawing.drawing"),
+            _output("drawing", "$steps.drawing.image"),
         ],
     }
-    catalogue = Catalogue([DetectionsFilterBlock, DetectionDrawingBlock])
+    catalogue = Catalogue([DetectionsFilterBlock, LabelVisualizationBlock])
     session = compile_workflow(definition, catalogue=catalogue).create_session()
     try:
-        row = session.run({"boxes": boxes}).rows()[0]
+        row = session.run(
+            {
+                "boxes": boxes,
+                "image": source,
+            }
+        ).rows()[0]
     finally:
         session.close()
     assert boxes.class_id.tolist() == [0, 0]
     assert boxes.image_metadata["class_names"] == {}
     assert row["exits"].xyxy.tolist() == [[100, 100, 140, 120]]
     assert row["exits"].bboxes_metadata == [{"class": "EXIT"}]
-    assert row["drawing"].labels == ("STOP 1.00", "EXIT 1.00")
+    assert tuple(
+        label_texts(read_rows(boxes), "Class and Confidence", masks=None, block="test")
+    ) == ("STOP 1.00", "EXIT 1.00")
+    assert row["drawing"].image_id == source.image_id
+    assert not torch.equal(row["drawing"].tensor_image, source.tensor_image)
 
 
 def test_detector_configuration_is_checked_at_compile_time() -> None:

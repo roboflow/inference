@@ -1,16 +1,8 @@
-"""One row name for filtering, per-class thresholds and labels in one workflow.
+"""Canonical accurate/fast labels preserve relabelled row names through compilation.
 
-A detector stand-in returns rows whose ``bboxes_metadata["class"]`` values are
-chosen per test, with or without a ``class_names`` map. One compiled workflow
-sends them to every class-name consumer (decision 031)::
-
-    named ─┬─▶ per_class_confidence_filter   box, disc >= 0.6; others >= 0
-           ├─▶ detections_filter              class_name in ["box"]
-           ├─▶ detection_drawing ─▶ label_visualization (prepared labels)
-           └─▶ label_visualization                      (native rows)
-
-Every row has confidence 0.5, so a row survives the per-class filter exactly
-when it is not named box or disc. Row ``i``'s box starts at ``x = 10 * i``.
+Class replacement, model combination and query consumers share the canonical
+label name resolver. Both label implementations must paint the same supported
+style while the workflow retains native detections and per-row names.
 """
 
 from typing import Any, Dict
@@ -19,6 +11,10 @@ import numpy as np
 import torch
 from pydantic import Field
 from roboflow_workflows.v2.blocks import create_catalogue, transforms
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import (
+    label_texts,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.rows import read_rows
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
@@ -105,29 +101,31 @@ def run(case: str) -> dict:
             "predictions": "$steps.named.predictions",
             "operations": [BOXES_ONLY],
         },
-        {"type": "roboflow_core/detection_drawing@v1", "name": "drawing", "predictions": "$steps.named.predictions"},
         {
-            "type": "roboflow_core/simple_label_visualization@v1",
-            "name": "native_labels",
+            "type": "roboflow_core/label_visualization@v2",
+            "text": "Class and Confidence",
+            "name": "accurate_labels",
             "image": "$inputs.image",
             "predictions": "$steps.named.predictions",
         },
         {
-            "type": "roboflow_core/simple_label_visualization@v1",
-            "name": "prepared_labels",
+            "type": "roboflow_core/label_visualization@v2",
+            "text": "Class and Confidence",
+            "name": "fast_labels",
             "image": "$inputs.image",
-            "predictions": "$steps.drawing.drawing",
+            "predictions": "$steps.named.predictions",
         },
     ]  # fmt: skip
     outputs = {
         "confident": "$steps.confident.predictions",
         "boxes": "$steps.boxes.predictions",
-        "drawing": "$steps.drawing.drawing",
-        "native_labels": "$steps.native_labels.image",
-        "prepared_labels": "$steps.prepared_labels.image",
+        "named_predictions": "$steps.named.predictions",
+        "accurate_labels": "$steps.accurate_labels.image",
+        "fast_labels": "$steps.fast_labels.image",
     }
     workflow = {
         "version": "2.0",
+        "execution": {"step_quality": {"$steps.fast_labels": "fast"}},
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": steps,
         "outputs": [
@@ -150,7 +148,7 @@ def rows_at(predictions: Detections) -> list:
 
 
 def assert_same_label_pixels(row: dict) -> None:
-    native, prepared = row["native_labels"], row["prepared_labels"]
+    native, prepared = row["accurate_labels"], row["fast_labels"]
     assert native.tensor_image.shape == prepared.tensor_image.shape
     assert native.tensor_image.equal(prepared.tensor_image)
 
@@ -160,7 +158,14 @@ def test_non_string_row_values_are_named_by_the_map_in_every_consumer() -> None:
     row = run("malformed")
 
     # then
-    assert row["drawing"].labels == (
+    assert tuple(
+        label_texts(
+            read_rows(row["named_predictions"]),
+            "Class and Confidence",
+            masks=None,
+            block="test",
+        )
+    ) == (
         "box 0.50",
         "disc 0.50",
         "car 0.50",
@@ -177,7 +182,14 @@ def test_string_row_names_need_no_map_in_any_consumer() -> None:
     row = run("strings_without_map")
 
     # then
-    assert row["drawing"].labels == ("car 0.50", " 0.50", "box 0.50")
+    assert tuple(
+        label_texts(
+            read_rows(row["named_predictions"]),
+            "Class and Confidence",
+            masks=None,
+            block="test",
+        )
+    ) == ("car 0.50", " 0.50", "box 0.50")
     assert rows_at(row["boxes"]) == [2]
     assert rows_at(row["confident"]) == [0, 1]
     assert_same_label_pixels(row)

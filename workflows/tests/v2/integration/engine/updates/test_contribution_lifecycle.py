@@ -1,31 +1,23 @@
-"""A host-supplied implementation of the real ``roboflow_core/simple_box_visualization@v1`` block.
+"""Canonical per-image painter contributions preserve the generic lifecycle.
 
-The contributed implementation paints each box's four border bands with
-NumPy slicing, one box at a time on the host: an independent route to the band
-geometry the public tensor kernel documents (``thickness``-wide bands centred
-on the box edge, clipped to the frame, later boxes painted over earlier ones).
-The public parity criterion for deterministic drawing is pixel identity: the
-same workflow definition must return identical images with and without the
-contribution. Calls the implementation does not support are checked before any
-work, delegated to the public block, and counted.
-
-It runs on CPU and returns complete images, which meets the readiness rule of
-contributions without any stream handling.
+A host implementation draws square borders independently with OpenCV and
+falls back to the accurate implementation for unsupported styles/classes.
+Selection, origin metadata, version resets and reactivation remain covered.
 """
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
-import numpy as np
+import cv2
 import pytest
+import supervision as sv
 import torch
 from pydantic import Field
 from roboflow_workflows.v2.blocks import visualization
-from roboflow_workflows.v2.blocks.visualization.native.simple_box_visualization.v1 import BoxVisualizationBlock
-from roboflow_workflows.v2.blocks.visualization.drawing import (
-    BOX_THICKNESS,
-    PALETTE,
-    DetectionDrawing,
-    prepare_drawings,
+from roboflow_workflows.v2.blocks.visualization.annotations.bounding_box_visualization.v1 import (
+    AccurateBoundingBoxes,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.bounding_box_visualization.v1 import (
+    BoundingBoxVisualizationBlock as BoxVisualizationBlock,
 )
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
@@ -49,7 +41,6 @@ from roboflow_workflows.v2.engine import (
 )
 from roboflow_workflows.v2.engine.errors import (
     GraphUpdateError,
-    StepExecutionError,
 )
 from roboflow_workflows.v2.engine.updates import compare_plans
 
@@ -80,80 +71,63 @@ class FixedDetector(Block):
 
 
 class HostBoxes(Implementation):
-    """Box borders painted per box with NumPy on CPU images; same pixels as the block."""
+    """Independent CPU square-box renderer with reference fallback."""
 
     name = "host-boxes"
     requires = ("cpu", "host-drawing")
+    quality = ("accurate",)
 
     def __init__(self) -> None:
-        self.reference = BoxVisualizationBlock()
+        self.reference = AccurateBoundingBoxes()
         self.delegated = 0
 
-    def run(self, *, image: Batch, predictions: Batch) -> List[Dict[str, Any]]:
-        images, members = list(image), list(predictions)
-        drawings = self._supported_drawings(images, members)
-        if drawings is None:
-            self.delegated += 1
-            delegated = self.reference.run(image=image, predictions=predictions)
-            return delegated
-
-        results = [
-            {"image": member.with_pixels(self._paint(member.tensor_image, drawing))}
-            for member, drawing in zip(images, drawings)
-        ]
-
-        return results
-
-    def _supported_drawings(
-        self, images: List[ImageData], members: List[Any]
-    ) -> Optional[List[DetectionDrawing]]:
-        # Preflight only: nothing is painted before every check passed.
-        if len(images) != len(members):
-            return None
-        if any(
-            member.channels != 3 or member.tensor_image.device.type != "cpu"
-            for member in images
+    def run(
+        self,
+        *,
+        image,
+        predictions,
+        color_palette,
+        palette_size,
+        custom_colors,
+        color_axis,
+        thickness,
+        roundness
+    ):
+        arguments = dict(
+            image=image,
+            predictions=predictions,
+            color_palette=color_palette,
+            palette_size=palette_size,
+            custom_colors=custom_colors,
+            color_axis=color_axis,
+            thickness=thickness,
+            roundness=roundness,
+        )
+        if (
+            image.channels != 3
+            or image.tensor_image.device.type != "cpu"
+            or color_palette != "DEFAULT"
+            or color_axis != "CLASS"
+            or roundness != 0
+            or (predictions.class_id < 0).any()
         ):
-            return None
+            self.delegated += 1
+            return self.reference.run(**arguments)
 
-        native = [one for one in members if not isinstance(one, DetectionDrawing)]
-        prepared = iter(prepare_drawings(native))
-        drawings = [
-            one if isinstance(one, DetectionDrawing) else next(prepared)
-            for one in members
-        ]
-        if any((np.asarray(one.class_id) < 0).any() for one in drawings):
-            return None
-
-        return drawings
-
-    def _paint(self, pixels: torch.Tensor, drawing: DetectionDrawing) -> torch.Tensor:
-        scene = pixels.permute(1, 2, 0).numpy().copy()
-        height, width = scene.shape[:2]
-        thickness, outer = BOX_THICKNESS, BOX_THICKNESS // 2
-        corners = np.asarray(drawing.xyxy).reshape(-1, 4).astype(np.int64)
-        for (a, b, c, d), class_id in zip(corners, drawing.class_id):
-            left, right = min(a, c), max(a, c)
-            top, bottom = min(b, d), max(b, d)
-            x1, x2, y1, y2 = left - outer, right + outer, top - outer, bottom + outer
-            color = PALETTE.by_idx(int(class_id)).as_rgb()
-            bands = (
-                (y1, y1 + thickness - 1, x1, x2),
-                (y2 - thickness + 1, y2, x1, x2),
-                (top, bottom, x1, x1 + thickness - 1),
-                (top, bottom, x2 - thickness + 1, x2),
+        scene = image.tensor_image.permute(1, 2, 0).numpy().copy()
+        for corners, class_id in zip(
+            predictions.xyxy.int().tolist(), predictions.class_id.tolist()
+        ):
+            x1, y1, x2, y2 = corners
+            cv2.rectangle(
+                scene,
+                (x1, y1),
+                (x2, y2),
+                sv.ColorPalette.DEFAULT.by_idx(class_id).as_rgb(),
+                thickness,
             )
-            for row_from, row_to, column_from, column_to in bands:
-                # Inclusive band corners, clipped to the frame; empty off-frame.
-                row_from, row_to = max(row_from, 0), min(row_to, height - 1)
-                column_from, column_to = max(column_from, 0), min(column_to, width - 1)
-                if row_from > row_to or column_from > column_to:
-                    continue
-                scene[row_from : row_to + 1, column_from : column_to + 1] = color
-
         painted = torch.from_numpy(scene).permute(2, 0, 1).contiguous()
-
-        return painted
+        return {"image": image.with_pixels(painted)}
 
 
 def host_boxes(version: str = "1.0.0") -> ImplementationContribution:
@@ -169,9 +143,7 @@ def host_boxes(version: str = "1.0.0") -> ImplementationContribution:
 
 
 def public() -> Catalogue:
-    catalogue = Catalogue(
-        (FixedDetector, *visualization.BLOCKS), kinds=list(visualization.KINDS)
-    )
+    catalogue = Catalogue((FixedDetector, *visualization.BLOCKS))
 
     return catalogue
 
@@ -219,7 +191,7 @@ def images() -> List[ImageData]:
     return loaded
 
 
-def definition(*, prepared: bool = False) -> dict:
+def definition() -> dict:
     painter = {
         "type": BoxVisualizationBlock.type,
         "name": "boxes",
@@ -229,15 +201,6 @@ def definition(*, prepared: bool = False) -> dict:
     steps = [
         {"type": "test/fixed_detector@v1", "name": "detector", "image": "$inputs.image"}
     ]
-    if prepared:
-        steps.append(
-            {
-                "type": "roboflow_core/detection_drawing@v1",
-                "name": "drawing",
-                "predictions": "$steps.detector.predictions",
-            }
-        )
-        painter["predictions"] = "$steps.drawing.drawing"
     workflow = {
         "version": "2.0",
         "inputs": [{"type": "WorkflowBatchInput", "name": "image", "kind": ["image"]}],
@@ -269,16 +232,15 @@ def annotate(plan: CompiledWorkflow) -> List[ImageData]:
     return annotated
 
 
-@pytest.mark.parametrize("prepared", [False, True], ids=["detections", "drawings"])
-def test_contributed_painter_draws_the_public_blocks_pixels(prepared: bool) -> None:
-    public_plan = compiled(public(), prepared=prepared)
-    plan = compiled(public().with_contributions([host_boxes()]), prepared=prepared)
+def test_contributed_painter_draws_the_public_blocks_pixels() -> None:
+    public_plan = compiled(public())
+    plan = compiled(public().with_contributions([host_boxes()]))
 
     expected = annotate(public_plan)
     session = plan.create_session({"detections_by_image": scene()})
     actual = [row["annotated"] for row in session.run({"image": images()}).rows()]
 
-    assert public_plan.step(("boxes",)).selected.name == "default"
+    assert public_plan.step(("boxes",)).selected.name == "accurate"
     assert plan.step(("boxes",)).selected.name == "host-boxes"
     assert session.instances[("boxes",)].delegated == 0
     for got, wanted, source in zip(actual, expected, images()):
@@ -291,17 +253,18 @@ def test_contributed_painter_draws_the_public_blocks_pixels(prepared: bool) -> N
 def test_target_without_the_capability_keeps_the_public_painter() -> None:
     plan = compiled(public().with_contributions([host_boxes()]), Target.cpu())
 
-    assert plan.step(("boxes",)).selected.name == "default"
+    assert plan.step(("boxes",)).selected.name == "accurate"
     assert plan.step(("boxes",)).implementation.considered == (
         ("host-boxes", ("host-drawing",)),
-        ("default", ()),
+        ("accurate", ()),
+        ("fast", ()),
     )
     for got, wanted in zip(annotate(plan), annotate(compiled(public()))):
         assert torch.equal(got.tensor_image, wanted.tensor_image)
 
 
 def test_unsupported_calls_are_delegated_before_any_work_and_counted() -> None:
-    # A negative class id has no palette color: the public block refuses it.
+    # Negative ids require canonical grey coloring, outside the host fast path.
     unsupported = {
         image_id: Detections(
             xyxy=torch.tensor([[10.0, 10.0, 40.0, 40.0]]),
@@ -318,14 +281,13 @@ def test_unsupported_calls_are_delegated_before_any_work_and_counted() -> None:
         {"detections_by_image": unsupported}
     )
 
-    with pytest.raises(StepExecutionError) as public_error:
-        public_session.run({"image": images()})
-    with pytest.raises(StepExecutionError) as contributed_error:
-        session.run({"image": images()})
-
-    assert session.instances[("boxes",)].delegated == 1
-    assert isinstance(contributed_error.value.__cause__, ValueError)
-    assert str(contributed_error.value.__cause__) == str(public_error.value.__cause__)
+    expected = public_session.run({"image": images()}).rows()
+    actual = session.run({"image": images()}).rows()
+    assert session.instances[("boxes",)].delegated == 3
+    for got, wanted in zip(actual, expected):
+        assert torch.equal(
+            got["annotated"].tensor_image, wanted["annotated"].tensor_image
+        )
 
 
 def test_public_plan_description_has_no_origin_and_the_contributed_one_does() -> None:
@@ -345,7 +307,7 @@ def test_public_plan_description_has_no_origin_and_the_contributed_one_does() ->
         "version": "1.0.0",
         "contract": contract_digest(BoxVisualizationBlock),
     }
-    assert public_painter[0]["implementation"]["name"] == "default"
+    assert public_painter[0]["implementation"]["name"] == "accurate"
 
 
 def test_provider_version_update_resets_and_reactivation_preserves() -> None:

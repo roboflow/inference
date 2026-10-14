@@ -7,7 +7,6 @@ the row. Each test asks the real consumers which name each row has::
     filter        DetectionsFilter on class_name: which rows equal each name
     property      detections_property(value, "class_name")
     per-class     keep_confident_rows: which rows a name's threshold drops
-    prepared      prepare_drawings(...).labels         ("<name> 0.50")
     annotation    label_texts(read_rows(...), "Class")
 
 Before this correction a non-string row value was a name for the first three
@@ -26,10 +25,13 @@ from roboflow_workflows.v2.blocks.query.detections import (
     row_class_name,
 )
 from roboflow_workflows.v2.blocks.query.errors import OperationFailure
-from roboflow_workflows.v2.blocks.transforms.per_class_confidence_filter.v1 import keep_confident_rows
-from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import label_texts
+from roboflow_workflows.v2.blocks.transforms.per_class_confidence_filter.v1 import (
+    keep_confident_rows,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import (
+    label_texts,
+)
 from roboflow_workflows.v2.blocks.visualization.annotations.rows import read_rows
-from roboflow_workflows.v2.blocks.visualization.drawing import prepare_drawings
 
 from inference_models.models.base.object_detection import Detections
 
@@ -115,13 +117,6 @@ def names_seen_by_per_class(value: Detections) -> List[Optional[str]]:
     return names
 
 
-def names_seen_by_prepared_labels(value: Detections) -> List[str]:
-    (prepared,) = prepare_drawings([value])
-    names = [label.rsplit(" ", 1)[0] for label in prepared.labels]
-
-    return names
-
-
 def names_seen_by_annotation_labels(value: Detections) -> List[str]:
     names = label_texts(read_rows(value), "Class", masks=None, block="test")
 
@@ -133,7 +128,6 @@ def names_by_consumer(value: Detections) -> Dict[str, list]:
         "filter": names_seen_by_filter(value),
         "property": detections_property(value, "class_name"),
         "per_class": names_seen_by_per_class(value),
-        "prepared": names_seen_by_prepared_labels(value),
         "annotation": names_seen_by_annotation_labels(value),
     }
 
@@ -191,8 +185,6 @@ def test_non_string_row_without_class_map_has_no_name_anywhere(row_class) -> Non
     assert note in filter_error.value.detail
     with pytest.raises(OperationFailure, match="class id 4 has no name"):
         detections_property(value, "class_name")
-    with pytest.raises(ValueError, match="row 1 with class id 4 has no name"):
-        prepare_drawings([value])
     with pytest.raises(ValueError, match="class id 4 has no name"):
         names_seen_by_annotation_labels(value)
     # per-class: a row without a name uses default_threshold, as before
@@ -215,8 +207,6 @@ def test_non_string_row_with_unlisted_id_reports_the_ignored_value() -> None:
         "class id 5 is missing from image_metadata['class_names'] (keys: [0, 1]); "
         "bboxes_metadata['class'] is 7, not a string"
     )
-    with pytest.raises(ValueError, match="row 1 with class id 5 has no name"):
-        prepare_drawings([value])
 
 
 def test_only_non_string_row_values_without_map_count_as_no_names_attached() -> None:

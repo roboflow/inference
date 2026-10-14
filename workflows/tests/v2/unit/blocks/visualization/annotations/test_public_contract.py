@@ -105,7 +105,9 @@ def run_with_selected_quality(
         "predictions": predictions,
         "mask_quality": quality,
     }
-    result = block_class().run(**arguments)
+    result = (getattr(block_class, "implementations", ()) or (block_class,))[0]().run(
+        **arguments
+    )
 
     return result
 

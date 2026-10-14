@@ -21,7 +21,6 @@ from roboflow_workflows.v2.blocks import (
     CROP_SUMMARY_KIND,
     IMAGE_KIND,
     TIMESTAMP_KIND,
-    AnnotationLabelVisualizationBlock,
     ContinueIfBlock,
     ContinueIfQueryBlock,
     CropBlock,
@@ -94,7 +93,9 @@ def _run(block_class: type, *, data: Dict[str, Any], **parameters: Any) -> Any:
     params = spec_of(block_class).validate_params({**parameters, **selectors})
     arguments = {**dict(params), **data}
 
-    result = block_class().run(**arguments)
+    result = (getattr(block_class, "implementations", ()) or (block_class,))[0]().run(
+        **arguments
+    )
 
     return result
 
@@ -755,11 +756,6 @@ class TestCatalogue:
             "roboflow_core/first_non_empty_or_default@v1",
             "roboflow_core/current_time@v1",
             "roboflow_core/json_parser@v1",
-            "roboflow_core/detection_drawing@v1",
-            "roboflow_core/simple_box_visualization@v1",
-            "roboflow_core/simple_label_visualization@v1",
-            "roboflow_core/detection_visualization@v1",
-            "roboflow_core/simple_label_visualization_in_place@v1",
             "roboflow_core/bounding_box_visualization@v1",
             "roboflow_core/label_visualization@v2",
             "roboflow_core/polygon_visualization@v2",
@@ -827,27 +823,33 @@ class TestCatalogue:
             "roboflow_core/onvif_sink@v1",
         )
         assert catalogue.entry("roboflow_core/crop@v1").spec is spec_of(CropBlock)
-        assert catalogue.entry("roboflow_core/static_crop@v1").spec is spec_of(StaticCropBlock)
-        assert catalogue.entry("roboflow_core/best_frame@v1").spec is spec_of(BestFrameBlock)
-        assert catalogue.entry("roboflow_core/top_k_brightest@v1").spec is spec_of(TopKBrightestBlock)
+        assert catalogue.entry("roboflow_core/static_crop@v1").spec is spec_of(
+            StaticCropBlock
+        )
+        assert catalogue.entry("roboflow_core/best_frame@v1").spec is spec_of(
+            BestFrameBlock
+        )
+        assert catalogue.entry("roboflow_core/top_k_brightest@v1").spec is spec_of(
+            TopKBrightestBlock
+        )
         assert catalogue.kind("image") is IMAGE_KIND
         assert catalogue.kind("crop_summary") is CROP_SUMMARY_KIND
         assert catalogue.kind("boolean") is BOOLEAN_KIND
 
-    def test_keeps_prototypes_beside_their_v1_ports(self) -> None:
+    def test_keeps_canonical_labels_and_distinct_boolean_gate(self) -> None:
         catalogue = create_catalogue()
 
         boolean_gate = catalogue.entry("roboflow_core/continue_if_boolean@v1").spec
         query_gate = catalogue.entry("roboflow_core/continue_if@v1").spec
-        prototype_label = catalogue.entry("roboflow_core/simple_label_visualization@v1").spec
         ported_label = catalogue.entry("roboflow_core/label_visualization@v2").spec
 
         assert boolean_gate is spec_of(ContinueIfBlock)
         assert query_gate is spec_of(ContinueIfQueryBlock)
-        assert prototype_label is spec_of(LabelVisualizationBlock)
-        assert ported_label is spec_of(AnnotationLabelVisualizationBlock)
+        assert ported_label is spec_of(LabelVisualizationBlock)
         assert "roboflow_core/continue_if@v1" in boolean_gate.description
-        assert "roboflow_core/label_visualization@v2" in prototype_label.description
+        assert (
+            "roboflow_core/simple_label_visualization@v1" not in catalogue.block_types
+        )
 
     def test_registers_the_timestamp_kind_of_current_time(self) -> None:
         catalogue = create_catalogue()

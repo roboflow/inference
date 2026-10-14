@@ -22,9 +22,10 @@ batch may lack it on some rows. Masks are read only for ``Area`` and
 ``CENTER_OF_MASS`` on mask carriers, at ``mask_quality``. Text is drawn on the host in label-sized patches (``text``).
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Sequence
 
 import numpy as np
+import torch
 from pydantic import Field, StrictInt, model_validator
 from roboflow_workflows.v2.blocks.visualization.annotations.anchors import (
     CENTER_OF_MASS,
@@ -39,6 +40,9 @@ from roboflow_workflows.v2.blocks.visualization.annotations.colors import (
     COLOR_AXES,
     PALETTE_NAMES,
     parse_color,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization._sprites import (
+    _LabelSprites,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.params import (
     POSITIONS_WITH_MASS,
@@ -63,6 +67,7 @@ from roboflow_workflows.v2.blocks.visualization.annotations.rows import (
     read_rows,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.text import (
+    Label,
     TextStyle,
     detection_labels,
     paint_labels,
@@ -77,6 +82,7 @@ from roboflow_workflows.v2.data.kinds import (
 )
 from roboflow_workflows.v2.data.prediction_ops import CLASS_NAMES_KEY, row_class_name
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
+from roboflow_workflows.v2.engine.implementations import Implementation
 
 TEXT_OPTIONS = (
     "Class",
@@ -100,17 +106,160 @@ _REFERENCE_TEXT_SCALE = 0.7
 _TEXT_SCALE_LIMITS = (0.3, 5.0)
 
 
+BLOCK_TYPE = "roboflow_core/label_visualization@v2"
+
+
+class AccurateLabels(Implementation):
+    """Render canonical label patches with the exact reference pixels."""
+
+    name = "accurate"
+    quality = ("accurate",)
+
+    def run(
+        self,
+        *,
+        image: ImageData,
+        predictions: Any,
+        color_palette: str,
+        palette_size: int,
+        custom_colors: Any,
+        color_axis: str,
+        text: str,
+        text_position: str,
+        text_color: str,
+        text_size_mode: str,
+        text_scale: float,
+        text_thickness: int,
+        text_padding: int,
+        border_radius: int,
+        mask_quality: str,
+    ) -> Dict[str, Any]:
+        """Draw one label per row of ``predictions`` onto a copy of ``image``.
+
+        Args:
+            image: RGB image; not modified.
+            predictions: A box carrier (see ``rows``).
+            color_palette: Palette name.
+            palette_size: Matplotlib sample count.
+            custom_colors: ``CUSTOM`` palette colors.
+            color_axis: ``CLASS``, ``INDEX`` or ``TRACK``; label backgrounds.
+            text: Text option or ``bboxes_metadata`` key.
+            text_position: Anchor of each label.
+            text_color: Text color.
+            text_size_mode: ``Manual`` or ``Automatic``.
+            text_scale: Font scale.
+            text_thickness: Text stroke width.
+            text_padding: Background padding.
+            border_radius: Background corner radius.
+            mask_quality: Mask quality for ``Area`` and ``CENTER_OF_MASS``.
+
+        Returns:
+            ``image``: the new annotated image.
+
+        Raises:
+            ValueError: On invalid parameters, a row without a class name for
+                ``Class``, an unknown text key, ``CENTER_OF_MASS`` without
+                masks, keypoints without boxes or predictions of another
+                workflow input.
+        """
+        values = dict(
+            text_position=text_position,
+            text_color=text_color,
+            text_size_mode=text_size_mode,
+            text_scale=text_scale,
+            text_thickness=text_thickness,
+            text_padding=text_padding,
+            border_radius=border_radius,
+            mask_quality=mask_quality,
+        )
+        for name, check in _CHECKS.items():
+            check(values[name])
+        canvas = canvas_of(image, block=BLOCK_TYPE)
+        boxes = placed_in(
+            boxes_of(predictions, block=BLOCK_TYPE), image, block=BLOCK_TYPE
+        )
+        rows = read_rows(boxes)
+        if len(rows) == 0:
+            result = annotated(image, canvas)
+            return result
+
+        needs_masks = text_position == CENTER_OF_MASS or text == "Area"
+        masks = None
+        if needs_masks and has_masks(predictions):
+            dense = dense_masks_of(predictions, quality=mask_quality, block=BLOCK_TYPE)
+            masks = placed_in(dense, image, block=BLOCK_TYPE).mask
+        if text_position == CENTER_OF_MASS:
+            if masks is None:
+                raise ValueError(
+                    f"{BLOCK_TYPE}: text_position CENTER_OF_MASS needs instance "
+                    "masks; these predictions have none"
+                )
+            anchors = mass_centres(masks)
+        else:
+            anchors = box_anchors(rows.xyxy, text_position)
+
+        colors = row_colors(
+            rows.class_id,
+            rows.tracker_ids(),
+            color_palette=color_palette,
+            palette_size=palette_size,
+            custom_colors=custom_colors,
+            color_axis=color_axis,
+        )
+        style = TextStyle(
+            scale=_effective_scale(
+                text_scale, mode=text_size_mode, size_hw=image.size_hw
+            ),
+            thickness=text_thickness,
+            padding=text_padding,
+            border_radius=border_radius,
+        )
+        labels = detection_labels(
+            label_texts(rows, text, masks=masks, block=BLOCK_TYPE),
+            anchors,
+            position=text_position,
+            style=style,
+            background_rgb=[tuple(color) for color in colors.tolist()],
+            text_rgb=parse_color(text_color, field="text_color"),
+        )
+        self._paint_labels(canvas, labels)
+        result = annotated(image, canvas)
+
+        return result
+
+    def _paint_labels(self, canvas: torch.Tensor, labels: Sequence[Label]) -> None:
+        paint_labels(canvas, labels)
+
+
+class FastLabels(AccurateLabels):
+    """Cache opaque label sprites; use exact patches for other label styles.
+
+    CUDA painting finishes before return, including when reference patches are
+    needed. The fast label names a strategy, not a throughput guarantee.
+    """
+
+    name = "fast"
+    quality = ("fast",)
+
+    def __init__(self) -> None:
+        self._sprites = _LabelSprites()
+
+    def _paint_labels(self, canvas: torch.Tensor, labels: Sequence[Label]) -> None:
+        self._sprites.paint(canvas, labels)
+
+
 class LabelVisualizationBlock(Block):
     """Draw a text label at each detection onto a copy of the image.
 
-    Full port of V1 roboflow_core/label_visualization@v2 with all its text
-    options; not the limited prototype painter roboflow_core/simple_label_visualization@v1.
+    Accurate rendering is the default. The fast implementation caches opaque
+    single-line sprites and uses reference rendering for scene-dependent text.
 
     Example: ``text="Class and Confidence"`` writes ``"car 0.93"`` in white
     on the class color above each box's top-left corner.
     """
 
-    type = "roboflow_core/label_visualization@v2"
+    type = BLOCK_TYPE
+    implementations = (AccurateLabels, FastLabels)
     prunable = True
     metadata = {
         "name": "Label Visualization",
@@ -272,118 +421,6 @@ class LabelVisualizationBlock(Block):
             check_literals(self.__dict__, _CHECKS)
 
             return self
-
-    def run(
-        self,
-        *,
-        image: ImageData,
-        predictions: Any,
-        color_palette: str,
-        palette_size: int,
-        custom_colors: Any,
-        color_axis: str,
-        text: str,
-        text_position: str,
-        text_color: str,
-        text_size_mode: str,
-        text_scale: float,
-        text_thickness: int,
-        text_padding: int,
-        border_radius: int,
-        mask_quality: str,
-    ) -> Dict[str, Any]:
-        """Draw one label per row of ``predictions`` onto a copy of ``image``.
-
-        Args:
-            image: RGB image; not modified.
-            predictions: A box carrier (see ``rows``).
-            color_palette: Palette name.
-            palette_size: Matplotlib sample count.
-            custom_colors: ``CUSTOM`` palette colors.
-            color_axis: ``CLASS``, ``INDEX`` or ``TRACK``; label backgrounds.
-            text: Text option or ``bboxes_metadata`` key.
-            text_position: Anchor of each label.
-            text_color: Text color.
-            text_size_mode: ``Manual`` or ``Automatic``.
-            text_scale: Font scale.
-            text_thickness: Text stroke width.
-            text_padding: Background padding.
-            border_radius: Background corner radius.
-            mask_quality: Mask quality for ``Area`` and ``CENTER_OF_MASS``.
-
-        Returns:
-            ``image``: the new annotated image.
-
-        Raises:
-            ValueError: On invalid parameters, a row without a class name for
-                ``Class``, an unknown text key, ``CENTER_OF_MASS`` without
-                masks, keypoints without boxes or predictions of another
-                workflow input.
-        """
-        values = dict(
-            text_position=text_position,
-            text_color=text_color,
-            text_size_mode=text_size_mode,
-            text_scale=text_scale,
-            text_thickness=text_thickness,
-            text_padding=text_padding,
-            border_radius=border_radius,
-            mask_quality=mask_quality,
-        )
-        for name, check in _CHECKS.items():
-            check(values[name])
-        canvas = canvas_of(image, block=self.type)
-        boxes = placed_in(
-            boxes_of(predictions, block=self.type), image, block=self.type
-        )
-        rows = read_rows(boxes)
-        if len(rows) == 0:
-            result = annotated(image, canvas)
-            return result
-
-        needs_masks = text_position == CENTER_OF_MASS or text == "Area"
-        masks = None
-        if needs_masks and has_masks(predictions):
-            dense = dense_masks_of(predictions, quality=mask_quality, block=self.type)
-            masks = placed_in(dense, image, block=self.type).mask
-        if text_position == CENTER_OF_MASS:
-            if masks is None:
-                raise ValueError(
-                    f"{self.type}: text_position CENTER_OF_MASS needs instance "
-                    "masks; these predictions have none"
-                )
-            anchors = mass_centres(masks)
-        else:
-            anchors = box_anchors(rows.xyxy, text_position)
-
-        colors = row_colors(
-            rows.class_id,
-            rows.tracker_ids(),
-            color_palette=color_palette,
-            palette_size=palette_size,
-            custom_colors=custom_colors,
-            color_axis=color_axis,
-        )
-        style = TextStyle(
-            scale=_effective_scale(
-                text_scale, mode=text_size_mode, size_hw=image.size_hw
-            ),
-            thickness=text_thickness,
-            padding=text_padding,
-            border_radius=border_radius,
-        )
-        labels = detection_labels(
-            label_texts(rows, text, masks=masks, block=self.type),
-            anchors,
-            position=text_position,
-            style=style,
-            background_rgb=[tuple(color) for color in colors.tolist()],
-            text_rgb=parse_color(text_color, field="text_color"),
-        )
-        paint_labels(canvas, labels)
-        result = annotated(image, canvas)
-
-        return result
 
 
 def label_texts(

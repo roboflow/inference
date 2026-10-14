@@ -180,7 +180,9 @@ def test_a_selected_value_fails_with_the_literal_error_text(
         "predictions": predictions_for(block_class, image),
     }
     with pytest.raises(ValueError) as run_error:
-        block_class().run(**arguments)
+        (getattr(block_class, "implementations", ()) or (block_class,))[0]().run(
+            **arguments
+        )
 
     # then
     assert message in str(compile_error.value)

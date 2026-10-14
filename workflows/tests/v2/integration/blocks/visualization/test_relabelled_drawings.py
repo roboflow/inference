@@ -1,20 +1,17 @@
-"""Drawings of relabelled rows through the real V2 compiler and session.
+"""Canonical accurate/fast labels preserve relabelled row names through compilation.
 
-Two workflows give rows a shared class id but different names (decision 025)::
-
-    detect ─▶ dynamic_crop ─▶ color_name (text, like OCR) ─▶ classes_replacement
-    people ──┐                                                (crops bound)
-             ├─▶ detections_combine     both models use class id 0
-    vehicles ┘
-
-Each result goes to ``roboflow_core/detection_drawing@v1`` and to
-``roboflow_core/simple_label_visualization@v1`` twice: once with the native predictions and once
-with the prepared drawing. Both painter routes must give the same pixels.
+Class replacement, model combination and query consumers share the canonical
+label name resolver. Both label implementations must paint the same supported
+style while the workflow retains native detections and per-row names.
 """
 
 import numpy as np
 from roboflow_workflows.v2.blocks import transforms
 from roboflow_workflows.v2.blocks.combine import DetectionsCombineBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import (
+    label_texts,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.rows import read_rows
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 
 from tests.v2.integration.blocks.combine.synthetic import STREET, PaintedDetectorBlock
@@ -27,18 +24,19 @@ from tests.v2.integration.blocks.geometry.deterministic import (
 
 def drawing_steps(predictions: str) -> list:
     steps = [
-        {"type": "roboflow_core/detection_drawing@v1", "name": "drawing", "predictions": predictions},
         {
-            "type": "roboflow_core/simple_label_visualization@v1",
-            "name": "native_labels",
+            "type": "roboflow_core/label_visualization@v2",
+            "text": "Class and Confidence",
+            "name": "accurate_labels",
             "image": "$inputs.image",
             "predictions": predictions,
         },
         {
-            "type": "roboflow_core/simple_label_visualization@v1",
-            "name": "prepared_labels",
+            "type": "roboflow_core/label_visualization@v2",
+            "text": "Class and Confidence",
+            "name": "fast_labels",
             "image": "$inputs.image",
-            "predictions": "$steps.drawing.drawing",
+            "predictions": predictions,
         },
     ]  # fmt: skip
 
@@ -46,15 +44,16 @@ def drawing_steps(predictions: str) -> list:
 
 
 DRAWING_OUTPUTS = {
-    "drawing": "$steps.drawing.drawing",
-    "native_labels": "$steps.native_labels.image",
-    "prepared_labels": "$steps.prepared_labels.image",
+    "accurate_labels": "$steps.accurate_labels.image",
+    "fast_labels": "$steps.fast_labels.image",
 }
 
 
 def run(steps: list, outputs: dict, image: np.ndarray) -> dict:
+    outputs = {**outputs, "named_predictions": steps[-1]["predictions"]}
     workflow = {
         "version": "2.0",
+        "execution": {"step_quality": {"$steps.fast_labels": "fast"}},
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": steps,
         "outputs": [
@@ -72,7 +71,7 @@ def run(steps: list, outputs: dict, image: np.ndarray) -> dict:
 
 
 def assert_same_pixels(row: dict) -> None:
-    native, prepared = row["native_labels"], row["prepared_labels"]
+    native, prepared = row["accurate_labels"], row["fast_labels"]
     assert native.tensor_image.shape == prepared.tensor_image.shape
     assert native.tensor_image.equal(prepared.tensor_image)
 
@@ -119,8 +118,15 @@ def test_each_text_read_from_a_crop_labels_its_own_row() -> None:
     assert relabelled.class_id.tolist() == [0, 0]
     assert relabelled.image_metadata["class_names"] == {0: "red"}
     assert [r["class"] for r in relabelled.bboxes_metadata] == ["red", "green"]
-    assert row["drawing"].labels == ("red 1.00", "green 1.00")
-    assert row["drawing"].class_id.tolist() == [0, 0]
+    assert tuple(
+        label_texts(
+            read_rows(row["named_predictions"]),
+            "Class and Confidence",
+            masks=None,
+            block="test",
+        )
+    ) == ("red 1.00", "green 1.00")
+    assert row["named_predictions"].class_id.tolist() == [0, 0]
     assert_same_pixels(row)
 
 
@@ -174,7 +180,14 @@ def test_combined_models_with_clashing_class_ids_keep_each_models_names() -> Non
     # then: drawing and the class-name filter agree on which rows are cars
     assert row["combined"].class_id.tolist() == [0, 0, 0, 1, 0]
     assert row["combined"].image_metadata["class_names"] == {0: "person", 1: "bus"}
-    assert row["drawing"].labels == (
+    assert tuple(
+        label_texts(
+            read_rows(row["named_predictions"]),
+            "Class and Confidence",
+            masks=None,
+            block="test",
+        )
+    ) == (
         "person 0.90",
         "person 0.60",
         "car 0.80",
@@ -201,5 +214,12 @@ def test_rows_without_own_names_draw_as_before() -> None:
 
     # then
     assert row["people"].bboxes_metadata is None
-    assert row["drawing"].labels == ("person 0.90", "person 0.60")
+    assert tuple(
+        label_texts(
+            read_rows(row["named_predictions"]),
+            "Class and Confidence",
+            masks=None,
+            block="test",
+        )
+    ) == ("person 0.90", "person 0.60")
     assert_same_pixels(row)

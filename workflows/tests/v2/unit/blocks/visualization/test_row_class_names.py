@@ -1,4 +1,4 @@
-"""Label names of ``prepare_drawings``: a row's own name wins (decision 025).
+"""Canonical label names: a row's own name wins (decision 025).
 
 Name of row ``i``::
 
@@ -12,8 +12,10 @@ from typing import Any, List, Optional
 import numpy as np
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.visualization import drawing
-from roboflow_workflows.v2.blocks.visualization.drawing import prepare_drawings
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import (
+    label_texts,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.rows import read_rows
 
 from inference_models.models.base.object_detection import Detections
 
@@ -39,9 +41,14 @@ def detections(
 
 
 def labels_of(prediction: Detections) -> tuple:
-    (prepared,) = prepare_drawings([prediction])
+    rows = read_rows(prediction)
+    names = label_texts(rows, "Class", masks=None, block="test")
+    labels = tuple(
+        f"{name} {score:.2f}"
+        for name, score in zip(names, rows.confidence.astype(np.float32))
+    )
 
-    return prepared.labels
+    return labels
 
 
 def test_without_row_names_labels_come_from_the_class_map() -> None:
@@ -73,11 +80,11 @@ def test_ocr_texts_with_one_class_id_keep_their_own_names() -> None:
     )
 
     # when
-    (prepared,) = prepare_drawings([prediction])
+    labels = labels_of(prediction)
 
     # then: names per row; colours still follow the shared class id
-    assert prepared.labels == ("ABC123 1.00", "XYZ789 1.00", " 1.00")
-    assert prepared.class_id.tolist() == [0, 0, 0]
+    assert labels == ("ABC123 1.00", "XYZ789 1.00", " 1.00")
+    assert prediction.class_id.tolist() == [0, 0, 0]
 
 
 def test_combined_models_with_clashing_ids_label_each_row_by_its_model() -> None:
@@ -114,23 +121,23 @@ def test_malformed_row_names_fall_back_to_the_class_map() -> None:
 
 
 @pytest.mark.parametrize(
-    "class_names, rows, message",
+    "class_names, rows",
     [
-        (None, None, "row 0 with class id 0 has no name: image_metadata has no class_names"),
-        ({1: "disc"}, [{}], r"row 0 with class id 0 has no name: class_names does not name it \(ids: \[1\]\)"),
-        (None, [{"class": 5}], "image_metadata has no class_names; bboxes_metadata\\['class'\\] is 5, not a string"),
-        ({1: "disc"}, [{"class": None}], "bboxes_metadata\\['class'\\] is None, not a string"),
+        (None, None),
+        ({1: "disc"}, [{}]),
+        (None, [{"class": 5}]),
+        ({1: "disc"}, [{"class": None}]),
     ],
-)  # fmt: skip
+)
 def test_a_row_without_any_name_is_an_error_saying_why(
-    class_names: Any, rows: Optional[list], message: str
+    class_names: Any, rows: Optional[list]
 ) -> None:
     # given
     prediction = detections([0], class_names=class_names, rows=rows)
 
     # then
-    with pytest.raises(ValueError, match=message):
-        prepare_drawings([prediction])
+    with pytest.raises(ValueError, match="class id 0 has no name"):
+        labels_of(prediction)
 
 
 def test_row_metadata_of_another_length_is_an_error() -> None:
@@ -138,8 +145,10 @@ def test_row_metadata_of_another_length_is_an_error() -> None:
     prediction = detections([0, 0], class_names={0: "box"}, rows=[{"class": "a"}])
 
     # then
-    with pytest.raises(ValueError, match="bboxes_metadata has 1 rows for 2 boxes"):
-        prepare_drawings([prediction])
+    from roboflow_workflows.v2.data.predictions import OBJECT_DETECTION_PREDICTION_KIND
+
+    with pytest.raises(ValueError, match="bboxes_metadata has 1 entries for 2 rows"):
+        OBJECT_DETECTION_PREDICTION_KIND.check(prediction)
 
 
 def test_empty_detections_need_no_names() -> None:
@@ -148,33 +157,3 @@ def test_empty_detections_need_no_names() -> None:
 
     # then
     assert labels_of(prediction) == ()
-
-
-def test_a_mixed_batch_still_makes_one_host_transfer(monkeypatch) -> None:
-    # given
-    transfers = []
-    to_host = drawing._to_host
-
-    def counted(tensors):
-        transfers.append(len(tensors))
-        return to_host(tensors)
-
-    monkeypatch.setattr(drawing, "_to_host", counted)
-    named = detections(
-        [0, 0], class_names={0: "a"}, rows=[{"class": "a"}, {"class": "b"}]
-    )
-    mapped = detections([1], class_names={1: "disc"})
-
-    # when
-    first, second = prepare_drawings([named, mapped])
-
-    # then
-    assert transfers == [6]
-    assert first.labels == ("a 0.50", "b 0.50")
-    assert second.labels == ("disc 0.50",)
-    for prepared in (first, second):
-        assert not any(
-            array.flags.writeable
-            for array in (prepared.xyxy, prepared.class_id, prepared.confidence)
-        )
-    np.testing.assert_array_equal(first.xyxy, named.xyxy.numpy())
