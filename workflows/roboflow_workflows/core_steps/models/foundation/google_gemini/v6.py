@@ -11,6 +11,8 @@ normalized to 0-1000 - the shared ``yxyx_0_1000`` coordinate contract.
 """
 
 import base64
+import copy
+import io
 import json
 import re
 from functools import partial
@@ -18,6 +20,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import requests
+from PIL import Image
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from requests import Response
 from roboflow_workflows.core_steps.common.reasoning import (
@@ -35,6 +38,11 @@ from roboflow_workflows.core_steps.common.vlm_decoding import (
     build_object_detection_prompt,
     decode_vlm_output,
     describe_vlm_prediction_outputs,
+)
+from roboflow_workflows.core_steps.common.vlm_decoding.argon_segmentation import (
+    ARGON_SEGMENTATION_PROMPT,
+    ARGON_SEGMENTATION_SCHEMA,
+    decode_argon_segmentations,
 )
 from roboflow_workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from roboflow_workflows.environment import (
@@ -90,6 +98,12 @@ MODEL_ALIASES = {
 # `minimal`. 2.5 pages contradict (`thinking_level` vs `thinking_budget` only);
 # we keep 2.5 unsupported.
 GEMINI_MODELS = [
+    {
+        "id": "gemini-4-argon",
+        "name": "Gemini 4 Argon",
+        "thinking_levels": ["low", "high"],
+        "supports_native_code_execution": False,
+    },
     {
         "id": "gemini-3.8-flash",
         "name": "Gemini 3.8 Flash",
@@ -199,6 +213,7 @@ SUPPORTED_TASK_TYPES_LIST = [
     "caption",
     "detailed-caption",
     "object-detection",
+    "instance-segmentation",
 ]
 SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
 
@@ -210,6 +225,10 @@ RELEVANT_TASKS_METADATA["object-detection"] = {
     "description": "Model detects bounding boxes for the provided classes, "
     "returning a Gemini-native `box_2d` JSON list (y_min, x_min, y_max, x_max "
     "integers normalized to 0-1000), decoded into predictions by the block.",
+}
+RELEVANT_TASKS_METADATA["instance-segmentation"] = {
+    "name": "Instance Segmentation",
+    "description": "Gemini 4 Argon only: predict masks with detached components and holes, decoded to RLE predictions.",
 }
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
@@ -225,12 +244,17 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 ## Version Differences
 
+Instance segmentation is available only for `gemini-4-argon`. It uses lossless PNG
+images up to 1600 pixels on the long edge and normalized YX polygons with
+detached components and holes. Predictions use RLE masks; bounding boxes are
+derived from the masks. Other Gemini models reject this task.
+
 This version (v6) decodes the model answer inside the block, adding
 `predictions`, `error_status` and `inference_id` outputs next to the raw
 `output` string:
 
-* `predictions` holds object detections for the `object-detection` task and a
-classification prediction for the `classification` /
+* `predictions` holds object detections for `object-detection`, RLE instance
+masks for `instance-segmentation`, and a classification prediction for `classification` /
 `multi-label-classification` tasks - the kind of the output follows the
 selected task type.
 * `predictions` is `None` for every other task (unconstrained prompting, OCR,
@@ -271,6 +295,7 @@ TASKS_REQUIRING_CLASSES = {
     "classification",
     "multi-label-classification",
     "object-detection",
+    "instance-segmentation",
 }
 
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
@@ -444,6 +469,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
+        if (
+            self.task_type == "instance-segmentation"
+            and self.model_version != "gemini-4-argon"
+            and not self.model_version.startswith("$")
+        ):
+            raise ValueError(
+                "Instance segmentation is supported only for gemini-4-argon"
+            )
         if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
             raise ValueError(
                 f"`prompt` parameter required to be set for task `{self.task_type}`"
@@ -475,7 +508,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             *cls._describe_raw_outputs(),
-            *describe_vlm_prediction_outputs(),
+            *describe_vlm_prediction_outputs(SUPPORTED_TASK_TYPES_LIST),
         ]
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
@@ -573,14 +606,22 @@ class GoogleGeminiBlockV6(WorkflowBlock):
         results = []
         for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
             inference_id = str(uuid4())
-            error_status, predictions = decode_vlm_output(
-                task_type=task_type,
-                raw_output=content,
-                image=image,
-                classes=classes,
-                inference_id=inference_id,
-                box_format=DETECTION_BOX_FORMAT,
-            )
+            if task_type == "instance-segmentation":
+                error_status, predictions = decode_argon_segmentations(
+                    content,
+                    image=image,
+                    classes=classes,
+                    inference_id=inference_id,
+                )
+            else:
+                error_status, predictions = decode_vlm_output(
+                    task_type=task_type,
+                    raw_output=content,
+                    image=image,
+                    classes=classes,
+                    inference_id=inference_id,
+                    box_format=DETECTION_BOX_FORMAT,
+                )
             results.append(
                 {
                     "output": content,
@@ -613,12 +654,25 @@ def run_gemini_prompting(
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
+    if task_type == "instance-segmentation" and model_version != "gemini-4-argon":
+        raise ValueError("Instance segmentation is supported only for gemini-4-argon")
+    if task_type == "instance-segmentation" and google_code_execution:
+        raise ValueError(
+            "Code execution is not supported with segmentation JSON output"
+        )
     gemini_prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
-        base64_image = base64.b64encode(
-            encode_image_to_jpeg_bytes(loaded_image)
-        ).decode("ascii")
+        if task_type == "instance-segmentation":
+            uploaded = Image.fromarray(loaded_image[:, :, ::-1])
+            uploaded.thumbnail((1600, 1600))
+            buffer = io.BytesIO()
+            uploaded.save(buffer, format="PNG")
+            base64_image = base64.b64encode(buffer.getvalue()).decode("ascii")
+        else:
+            base64_image = base64.b64encode(
+                encode_image_to_jpeg_bytes(loaded_image)
+            ).decode("ascii")
         generated_prompt = PROMPT_BUILDERS[task_type](
             base64_image=base64_image,
             prompt=prompt,
@@ -1166,6 +1220,62 @@ def prepare_object_detection_prompt(
     }
 
 
+def prepare_instance_segmentation_prompt(
+    base64_image: str,
+    classes: List[str],
+    model_version: str,
+    temperature: Optional[float],
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
+    **kwargs,
+) -> dict:
+    """Build an Argon-only structured request for components and holes.
+
+    Args:
+        base64_image (str): Lossless PNG image encoded as base64.
+        classes (List[str]): Allowed instance labels.
+        model_version (str): Must be gemini-4-argon.
+        temperature (Optional[float]): Sampling temperature.
+        thinking_level (Optional[str]): Model reasoning level.
+        max_tokens (Optional[int]): Output token budget.
+        **kwargs: Unused shared prompt-builder arguments.
+
+    Returns:
+        dict: Gemini generateContent payload with a constrained mask schema.
+
+    Raises:
+        ValueError: If model or classes do not support segmentation.
+    """
+    if model_version != "gemini-4-argon" or not classes:
+        raise ValueError("Argon segmentation requires gemini-4-argon and classes")
+
+    config = prepare_generation_config(
+        max_tokens=max_tokens,
+        temperature=temperature,
+        thinking_level=thinking_level,
+        model_version=model_version,
+        response_mime_type="application/json",
+    )
+    if temperature is not None:
+        config["temperature"] = temperature
+    config["response_schema"] = copy.deepcopy(ARGON_SEGMENTATION_SCHEMA)
+    payload = {
+        "contents": {
+            "role": "user",
+            "parts": [
+                {"inline_data": {"mime_type": "image/png", "data": base64_image}},
+                {
+                    "text": ARGON_SEGMENTATION_PROMPT.format(
+                        class_list=", ".join(classes)
+                    )
+                },
+            ],
+        },
+        "generationConfig": config,
+    }
+    return payload
+
+
 def prepare_generation_config(
     max_tokens: Optional[int],
     temperature: Optional[float],
@@ -1225,4 +1335,5 @@ PROMPT_BUILDERS = {
     "multi-label-classification": prepare_multi_label_classification_prompt,
     "structured-answering": prepare_structured_answering_prompt,
     "object-detection": prepare_object_detection_prompt,
+    "instance-segmentation": prepare_instance_segmentation_prompt,
 }

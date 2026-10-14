@@ -16,6 +16,16 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## Unreleased
+
+## `0.2.8`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Google Gemini v6: Argon-only instance segmentation with normalized YX polygons, detached components, holes, and RLE mask output.
+
 ## `0.2.7`
 
 Bundled execution engine: `1.16.1`.
