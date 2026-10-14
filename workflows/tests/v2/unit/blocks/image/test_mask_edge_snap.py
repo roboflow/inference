@@ -1,4 +1,4 @@
-"""``v2/mask_edge_snap@v1``: V1 parity, representations, rows and validation.
+"""``roboflow_core/mask_edge_snap@v1``: V1 parity, representations, rows and validation.
 
 V1 parity runs the latest V1 implementation (``v1_tensor.refine_masks``) on the
 same synthetic scenes. Scenes are drawn shapes with seeded noise; each mask is
@@ -22,8 +22,8 @@ from roboflow_workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImageData,
 )
-from roboflow_workflows.v2.blocks.image import mask_edge_snap
-from roboflow_workflows.v2.blocks.image.mask_edge_snap import MaskEdgeSnapBlock
+from roboflow_workflows.v2.blocks.image.mask_edge_snap import v1 as mask_edge_snap
+from roboflow_workflows.v2.blocks.image.mask_edge_snap.v1 import MaskEdgeSnapBlock
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView

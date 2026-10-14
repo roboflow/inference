@@ -20,11 +20,8 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.tracking import botsort
-from roboflow_workflows.v2.blocks.tracking.botsort import (
-    BoTSORTTrackerBlock,
-    host_bgr_frame,
-)
+from roboflow_workflows.v2.blocks.tracking.trackers_botsort import v1 as botsort
+from roboflow_workflows.v2.blocks.tracking.trackers_botsort.v1 import BoTSORTTrackerBlock, host_bgr_frame
 from roboflow_workflows.v2.data.image import ImageData
 
 from inference_models.models.base.object_detection import Detections

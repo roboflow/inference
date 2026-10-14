@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/detections_nearest_neighbor@v1`` with hand-computed distances."""
+"""Unit tests of ``roboflow_core/detections_nearest_neighbor@v1`` with hand-computed distances."""
 
 from copy import deepcopy
 from dataclasses import replace
@@ -6,9 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.geometry.nearest_neighbor import (
-    DetectionsNearestNeighborBlock,
-)
+from roboflow_workflows.v2.blocks.geometry.detections_nearest_neighbor.v1 import DetectionsNearestNeighborBlock
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.frames import FrameRef

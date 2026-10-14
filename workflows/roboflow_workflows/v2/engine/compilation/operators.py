@@ -5,7 +5,7 @@ reads values at the end of pulses of its upstream domains and emits pulses of
 its own domain, so its inputs depend on their producers and every consumer of
 its ports depends on it::
 
-    {"type": "v2/window@v1", "name": "clip", "size": 4,
+    {"type": "roboflow_core/window@v1", "name": "clip", "size": 4,
      "collect": {"frames": "$steps.crop.crops"}, "hold": {"ref": "$sources.cam.image"}}
 
     OperatorSite(path=("$operators", "clip"), dependencies={("crop",)})
@@ -23,7 +23,7 @@ stationary or already a time axis). When the class rejects one input
 written and which producer declared the offending axis, including whether that
 axis is a selected collection's K::
 
-    $operators.clip (v2/window@v1): collect 'frames': axis 'pick:picked' ...
+    $operators.clip (roboflow_core/window@v1): collect 'frames': axis 'pick:picked' ...
       collect.frames ($steps.pick.picked): axis 'pick:picked' comes from
       $steps.pick.picked, a selected collection. ...
 """

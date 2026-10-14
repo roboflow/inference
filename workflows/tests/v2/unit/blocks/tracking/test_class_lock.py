@@ -8,11 +8,7 @@ import torch
 from pycocotools import mask as coco_mask
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks.tracking.base import TrackerCapacityError
-from roboflow_workflows.v2.blocks.tracking.class_lock import (
-    CLASS_LOCKED_KEY,
-    DEFAULT_SOURCE,
-    TrackClassLockBlock,
-)
+from roboflow_workflows.v2.blocks.tracking.track_class_lock.v1 import CLASS_LOCKED_KEY, DEFAULT_SOURCE, TrackClassLockBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView
 from roboflow_workflows.v2.data.row_identity import row_record, with_row_identity

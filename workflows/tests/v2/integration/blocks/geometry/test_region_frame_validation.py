@@ -44,7 +44,7 @@ MISSING_BOXES = "keypoint prediction has no bounding boxes"
 
 PREPARE = {
     "resize": {
-        "type": "v2/image_preprocessing@v1",
+        "type": "roboflow_core/image_preprocessing@v1",
         "name": "prepare",
         "image": "$inputs.image",
         "task_type": "resize",
@@ -52,7 +52,7 @@ PREPARE = {
         "height": 50,
     },
     "static_crop": {
-        "type": "v2/absolute_static_crop@v1",
+        "type": "roboflow_core/absolute_static_crop@v1",
         "name": "prepare",
         "image": "$inputs.image",
         "x_center": 65,
@@ -61,7 +61,7 @@ PREPARE = {
         "height": 100,
     },
     "rotate": {
-        "type": "v2/image_preprocessing@v1",
+        "type": "roboflow_core/image_preprocessing@v1",
         "name": "prepare",
         "image": "$inputs.image",
         "task_type": "rotate",
@@ -103,7 +103,7 @@ def crop_of_input(prepare, *, detector="test/marker_detector@v1", **crop_options
         PREPARE[prepare],
         {"type": detector, "name": "detect", "image": PREPARED_IMAGE[prepare]},
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "predictions": "$steps.detect.predictions",
@@ -155,7 +155,7 @@ def test_crop_of_a_static_crop_maps_boxes_detected_on_the_input():
         PREPARE["static_crop"],
         {"type": "test/marker_detector@v1", "name": "detect", "image": "$inputs.image"},
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$steps.prepare.crops",
             "predictions": "$steps.detect.predictions",
@@ -228,7 +228,7 @@ def test_grid_view_boxes_from_a_resize_crop_the_input_without_masks(materializat
             "confidence": 0.0,
         },
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "predictions": "$steps.segmenter.segmentation",
@@ -253,20 +253,20 @@ def test_grid_view_boxes_from_a_resize_crop_the_input_without_masks(materializat
 
 
 KEY_POINTS_STEP = {
-    "type": "v2/keypoint_detection@v1",
+    "type": "roboflow_core/roboflow_keypoint_detection_model@v3",
     "name": "kp",
     "image": "$inputs.image",
     "model_id": "kp",
     "confidence": 0.0,
 }
 CROP_STEP = {
-    "type": "v2/dynamic_crop@v1",
+    "type": "roboflow_core/dynamic_crop@v1",
     "name": "crop",
     "image": "$inputs.image",
     "predictions": "$steps.kp.predictions",
 }
 OFFSET_STEP = {
-    "type": "v2/detection_offset@v1",
+    "type": "roboflow_core/detection_offset@v1",
     "name": "offset",
     "predictions": "$steps.kp.predictions",
     "offset_width": 4,
@@ -276,7 +276,7 @@ OFFSET_STEP = {
 
 def replace_step(text_source):
     step = {
-        "type": "v2/detections_classes_replacement@v1",
+        "type": "roboflow_core/detections_classes_replacement@v1",
         "name": "replace",
         "object_detection_predictions": "$steps.kp.predictions",
         "classification_predictions": "$steps.text.text",
@@ -293,7 +293,7 @@ def text_step(images):
 # Without boxes there are no crops to classify: the replacement is fed text
 # of slices instead, so that its own check is reached.
 SLICE_STEP = {
-    "type": "v2/image_slicer@v1",
+    "type": "roboflow_core/image_slicer@v2",
     "name": "slicer",
     "image": "$inputs.image",
     "slice_width": 16,
@@ -348,9 +348,9 @@ def test_keypoints_with_boxes_reach_every_box_consumer():
 @pytest.mark.parametrize(
     ("consumer", "step_type"),
     [
-        ("crop", "v2/dynamic_crop@v1"),
-        ("offset", "v2/detection_offset@v1"),
-        ("replace", "v2/detections_classes_replacement@v1"),
+        ("crop", "roboflow_core/dynamic_crop@v1"),
+        ("offset", "roboflow_core/detection_offset@v1"),
+        ("replace", "roboflow_core/detections_classes_replacement@v1"),
     ],
 )
 @pytest.mark.parametrize("brightness", [BRIGHT, DARK])
@@ -370,13 +370,13 @@ def test_box_consumers_refuse_keypoints_without_boxes(consumer, step_type, brigh
 def test_gated_keypoints_without_boxes_reach_no_box_consumer():
     steps = [
         {
-            "type": "v2/has_brightness",
+            "type": "roboflow_core/has_brightness@v1",
             "name": "bright",
             "image": "$inputs.image",
             "minimum": 255.0,
         },
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "gate",
             "condition": "$steps.bright.keep",
             "next_steps": ["$steps.kp"],
@@ -399,14 +399,14 @@ def test_empty_detections_pass_every_box_consumer():
     steps = [
         {"type": "test/marker_detector@v1", "name": "detect", "image": "$inputs.image"},
         {
-            "type": "v2/detection_offset@v1",
+            "type": "roboflow_core/detection_offset@v1",
             "name": "offset",
             "predictions": "$steps.detect.predictions",
             "offset_width": 4,
             "offset_height": 4,
         },
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "predictions": "$steps.offset.predictions",

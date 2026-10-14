@@ -3,12 +3,8 @@
 import pytest
 import torch
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.roboflow_platform.asset_library import (
-    AssetLibraryAttributesBlock,
-)
-from roboflow_workflows.v2.blocks.roboflow_platform.dataset_upload import (
-    DatasetUploadBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.asset_library_attributes.v1 import AssetLibraryAttributesBlock
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_dataset_upload.v2 import DatasetUploadBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret
 from roboflow_workflows.v2.engine.compilation import compile_workflow
@@ -45,14 +41,14 @@ def plan():
         ],
         "steps": [
             {
-                "type": "v2/asset_library_attributes@v1",
+                "type": "roboflow_core/asset_library_attributes@v1",
                 "name": "attributes",
                 "source_id": "$inputs.source_id",
                 "metadata": {"label": "$inputs.label"},
                 "tags": ["collected", "$inputs.label"],
             },
             {
-                "type": "v2/roboflow_dataset_upload@v2",
+                "type": "roboflow_core/roboflow_dataset_upload@v2",
                 "name": "collect",
                 "images": "$inputs.image",
                 "target_project": "project",

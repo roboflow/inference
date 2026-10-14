@@ -10,6 +10,7 @@ validators of literal-only fields instead, so a warm run compiles nothing:
 
 Selected templates still get their placeholder check per invocation.
 """
+import roboflow_workflows.v2.blocks.formatters.expression.v1 as _v2_family_0
 
 import csv
 import io
@@ -18,9 +19,10 @@ from typing import Any, Dict
 
 import pytest
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.control import conditions
-from roboflow_workflows.v2.blocks.formatters import csv as csv_block
-from roboflow_workflows.v2.blocks.formatters import properties, text
+from roboflow_workflows.v2.blocks.control.continue_if import v1 as conditions
+from roboflow_workflows.v2.blocks.formatters.csv_formatter import v1 as csv_block
+from roboflow_workflows.v2.blocks.formatters._shared import properties as properties
+from roboflow_workflows.v2.blocks.formatters.string_template import v1 as text
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import (
     ParamsValidationError,
@@ -72,13 +74,13 @@ def compilations(monkeypatch) -> Counter:
 def _workflow(**step_overrides: Dict[str, Any]) -> Dict[str, Any]:
     steps = [
         {
-            "type": "v2/property_definition@v1",
+            "type": "roboflow_core/property_definition@v1",
             "name": "double",
             "data": "$inputs.x",
             "operations": [{"type": "Multiply", "other": 2}],
         },
         {
-            "type": "v2/expression@v1",
+            "type": "roboflow_core/expression@v1",
             "name": "score",
             "data": {"score": "$steps.double.output", "unused": 1},
             "data_operations": {"score": [{"type": "Multiply", "other": 3}]},
@@ -99,7 +101,7 @@ def _workflow(**step_overrides: Dict[str, Any]) -> Dict[str, Any]:
             },
         },
         {
-            "type": "v2/continue_if@v1",
+            "type": "roboflow_core/continue_if@v1",
             "name": "gate",
             "condition_statement": _score_at_least(0),
             "evaluation_parameters": {"score": "$steps.score.output"},
@@ -107,14 +109,14 @@ def _workflow(**step_overrides: Dict[str, Any]) -> Dict[str, Any]:
             "stop_delay": "$inputs.delay",
         },
         {
-            "type": "v2/string_template@v1",
+            "type": "roboflow_core/string_template@v1",
             "name": "text",
             "template": "$inputs.template",
             "data": {"value": "$steps.score.output", "unit": "px"},
             "data_operations": {"value": [{"type": "Multiply", "other": 10}]},
         },
         {
-            "type": "v2/csv_formatter@v1",
+            "type": "roboflow_core/csv_formatter@v1",
             "name": "csv",
             "columns_data": {"text": "$steps.text.output", "camera": "gate"},
             "columns_operations": {"text": [{"type": "StringToUpperCase"}]},
@@ -224,7 +226,7 @@ def test_invalid_definitions_still_fail_workflow_compilation(
 def test_direct_calls_compile_once_per_definition_and_names(
     compilations: Counter,
 ) -> None:
-    block = properties.ExpressionBlock()
+    block = _v2_family_0.ExpressionBlock()
     switch = properties.CasesDefinition.model_validate(
         _workflow()["steps"][1]["switch"]
     )

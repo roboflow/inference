@@ -1,4 +1,4 @@
-"""``v2/icon_visualization@v1``: icons at fixed points or on detections.
+"""``roboflow_core/icon_visualization@v1``: icons at fixed points or on detections.
 
 Icons are small arrays generated here; nothing is read from files or URLs.
 Expected pixels come from hand-computed placements of solid icons and from
@@ -24,9 +24,7 @@ from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.icon import (
-    IconVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.icon_visualization.v1 import IconVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError

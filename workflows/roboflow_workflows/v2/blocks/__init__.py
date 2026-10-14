@@ -14,12 +14,12 @@ it. Every contract detail lives on the block classes themselves.
 Where an older V2 prototype and a later V1 port do the same job, both stay
 registered under different types::
 
-    v2/continue_if                     ready boolean (ContinueIfBlock)
-    v2/continue_if@v1                  V1 UQL condition (ContinueIfQueryBlock)
-    v2/label_visualization@v1          fast prototype (LabelVisualizationBlock)
-    v2/label_visualization@v2          V1 port (AnnotationLabelVisualizationBlock)
-    v2/box_visualization@v1            fast prototype (BoxVisualizationBlock)
-    v2/bounding_box_visualization@v1   V1 port (BoundingBoxVisualizationBlock)
+    roboflow_core/continue_if_boolean@v1                     ready boolean (ContinueIfBlock)
+    roboflow_core/continue_if@v1                  V1 UQL condition (ContinueIfQueryBlock)
+    roboflow_core/simple_label_visualization@v1          fast prototype (LabelVisualizationBlock)
+    roboflow_core/label_visualization@v2          V1 port (AnnotationLabelVisualizationBlock)
+    roboflow_core/simple_box_visualization@v1            fast prototype (BoxVisualizationBlock)
+    roboflow_core/bounding_box_visualization@v1   V1 port (BoundingBoxVisualizationBlock)
 """
 
 from roboflow_workflows.v2.blocks.analytics import VelocityBlock
@@ -129,30 +129,18 @@ from roboflow_workflows.v2.blocks.sampling import (
     IdentifyOutliersBlock,
     SamplingCapacityError,
 )
-from roboflow_workflows.v2.blocks.state.machines import StateMachineSetBlock
-from roboflow_workflows.v2.blocks.state.object_cache import (
-    CacheGetBlock,
-    CacheSetBlock,
-    ObjectCache,
-)
-from roboflow_workflows.v2.blocks.state.values import (
-    StateCompareAndSetBlock,
-    StateGetBlock,
-    StateIncrementBlock,
-    StateSetBlock,
-)
-from roboflow_workflows.v2.blocks.temporal.blocks import (
-    BestFrameBlock,
-    TopKBrightestBlock,
-)
-from roboflow_workflows.v2.blocks.temporal.frame_delay import (
-    FrameDelayBlock,
-    FrameHistoryCapacityError,
-)
-from roboflow_workflows.v2.blocks.temporal.image_stack import (
-    ImageStackBlock,
-    ImageStackCapacityError,
-)
+from roboflow_workflows.v2.blocks.state.state_machine_set.v1 import StateMachineSetBlock
+from roboflow_workflows.v2.blocks.state.cache_get.v1 import CacheGetBlock
+from roboflow_workflows.v2.blocks.state.cache_set.v1 import CacheSetBlock
+from roboflow_workflows.v2.blocks.state._shared.object_cache import ObjectCache
+from roboflow_workflows.v2.blocks.state.state_compare_and_set.v1 import StateCompareAndSetBlock
+from roboflow_workflows.v2.blocks.state.state_get.v1 import StateGetBlock
+from roboflow_workflows.v2.blocks.state.state_increment.v1 import StateIncrementBlock
+from roboflow_workflows.v2.blocks.state.state_set.v1 import StateSetBlock
+from roboflow_workflows.v2.blocks.temporal.best_frame.v1 import BestFrameBlock
+from roboflow_workflows.v2.blocks.temporal.top_k_brightest.v1 import TopKBrightestBlock
+from roboflow_workflows.v2.blocks.temporal.frame_delay.v1 import FrameDelayBlock, FrameHistoryCapacityError
+from roboflow_workflows.v2.blocks.temporal.image_stack.v1 import ImageStackBlock, ImageStackCapacityError
 from roboflow_workflows.v2.blocks.tracking import (
     BoTSORTTrackerBlock,
     ByteTrackTrackerBlock,
@@ -257,153 +245,60 @@ from roboflow_workflows.v2.blocks.language import (
     GoogleGeminiBlock,
 )
 from roboflow_workflows.v2.blocks.industrial import BLOCKS as INDUSTRIAL_BLOCKS
-from roboflow_workflows.v2.blocks.industrial import (
-    PlcReaderBlock,
-    PlcWriterBlock,
-    PostgreSQLSinkBlock,
-    SQLServerSinkBlock,
-    MQTTReaderBlock,
-    MQTTWriterBlock,
-    KafkaConsumerBlock,
-    KafkaProducerSinkBlock,
-    OPCWriterSinkBlock,
-    OnvifTrackingBlock,
-)
-from roboflow_workflows.v2.blocks.models.vlm import (
-    Qwen35VLBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.background_color import (
-    BackgroundColorVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.color import (
-    ColorVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.grid import (
-    GridVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.industrial import OnvifTrackingBlock
+from roboflow_workflows.v2.blocks.models.qwen3_5vl.v2 import Qwen35VLBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.background_color_visualization.v1 import BackgroundColorVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.color_visualization.v1 import ColorVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.grid_visualization.v1 import GridVisualizationBlock
 from roboflow_workflows.v2.data.language import LANGUAGE_MODEL_OUTPUT_KIND
 from roboflow_workflows.v2.data.secrets import SECRET_KIND
 from roboflow_workflows.v2.blocks.codes import BLOCKS as CODES_BLOCKS
 from roboflow_workflows.v2.blocks.generation import BLOCKS as GENERATION_BLOCKS
 from roboflow_workflows.v2.blocks.secrets import BLOCKS as SECRETS_BLOCKS
 from roboflow_workflows.v2.blocks.sinks import BLOCKS as SINKS_BLOCKS
-from roboflow_workflows.v2.blocks.analytics.data_aggregator import (
-    DataAggregatorBlock,
-)
-from roboflow_workflows.v2.blocks.codes.detectors import (
-    BarcodeDetectorBlock,
-    QRCodeDetectorBlock,
-)
-from roboflow_workflows.v2.blocks.codes.generator import (
-    QRCodeGeneratorBlock,
-)
-from roboflow_workflows.v2.blocks.codes.ocr_stitch import (
-    StitchOCRDetectionsBlock,
-)
-from roboflow_workflows.v2.blocks.generation.stability import (
-    StabilityAIImageGenerationBlock,
-    StabilityAIInpaintingBlock,
-    StabilityAIOutpaintingBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.calibration import (
-    CameraCalibrationBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.contours import (
-    ContoursDetectionBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.dynamic_zone import (
-    DynamicZoneBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.geotag import (
-    GeotagDetectionBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.nearest_neighbor import (
-    DetectionsNearestNeighborBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.perspective import (
-    PerspectiveCorrectionBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.sift import (
-    SiftBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.sift_comparison import (
-    SiftComparisonBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.template_matching import (
-    TemplateMatchingBlock,
-)
-from roboflow_workflows.v2.blocks.image.auto_rotate import (
-    AutoRotateOnEdgesBlock,
-)
-from roboflow_workflows.v2.blocks.image.camera_focus import (
-    CameraFocusBlock,
-)
-from roboflow_workflows.v2.blocks.image.dominant_color import (
-    DominantColorBlock,
-)
-from roboflow_workflows.v2.blocks.image.stitch_images import (
-    StitchImagesBlock,
-)
-from roboflow_workflows.v2.blocks.models.clip_comparison import (
-    ClipComparisonBlock,
-)
-from roboflow_workflows.v2.blocks.models.depth import (
-    DepthEstimationBlock,
-)
-from roboflow_workflows.v2.blocks.models.embeddings import (
-    ClipEmbeddingBlock,
-    PerceptionEncoderEmbeddingBlock,
-)
-from roboflow_workflows.v2.blocks.models.glm_ocr import (
-    GlmOcrBlock,
-)
-from roboflow_workflows.v2.blocks.models.ocr import (
-    OCRModelBlock,
-    EasyOCRBlock,
-    PPOCRBlock,
-)
-from roboflow_workflows.v2.blocks.models.vlm import (
-    SmolVLM2Block,
-)
-from roboflow_workflows.v2.blocks.secrets.environment_store import (
-    EnvironmentSecretsStoreBlock,
-)
-from roboflow_workflows.v2.blocks.sinks.email import (
-    EmailNotificationBlock,
-)
-from roboflow_workflows.v2.blocks.sinks.event_writer import (
-    EventWriterSinkBlock,
-)
-from roboflow_workflows.v2.blocks.sinks.local_file import (
-    LocalFileSinkBlock,
-)
-from roboflow_workflows.v2.blocks.sinks.s3 import (
-    S3SinkBlock,
-)
-from roboflow_workflows.v2.blocks.sinks.slack import (
-    SlackNotificationBlock,
-)
-from roboflow_workflows.v2.blocks.sinks.twilio import (
-    TwilioSmsNotificationBlock,
-)
-from roboflow_workflows.v2.blocks.sinks.webhook import (
-    WebhookSinkBlock,
-)
-from roboflow_workflows.v2.blocks.transforms.similarity import (
-    CosineSimilarityBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.icon import (
-    IconVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison import (
-    ModelComparisonVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.rich_label import (
-    RichLabelVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.text_display import (
-    TextDisplayBlock,
-)
+from roboflow_workflows.v2.blocks.analytics.data_aggregator.v1 import DataAggregatorBlock
+from roboflow_workflows.v2.blocks.codes.barcode_detector.v1 import BarcodeDetectorBlock
+from roboflow_workflows.v2.blocks.codes.qr_code_detector.v1 import QRCodeDetectorBlock
+from roboflow_workflows.v2.blocks.codes.qr_code_generator.v1 import QRCodeGeneratorBlock
+from roboflow_workflows.v2.blocks.codes.stitch_ocr_detections.v2 import StitchOCRDetectionsBlock
+from roboflow_workflows.v2.blocks.generation.stability_ai_image_gen.v1 import StabilityAIImageGenerationBlock
+from roboflow_workflows.v2.blocks.generation.stability_ai_inpainting.v1 import StabilityAIInpaintingBlock
+from roboflow_workflows.v2.blocks.generation.stability_ai_outpainting.v1 import StabilityAIOutpaintingBlock
+from roboflow_workflows.v2.blocks.geometry.camera_calibration.v1 import CameraCalibrationBlock
+from roboflow_workflows.v2.blocks.geometry.contours_detection.v1 import ContoursDetectionBlock
+from roboflow_workflows.v2.blocks.geometry.dynamic_zone.v1 import DynamicZoneBlock
+from roboflow_workflows.v2.blocks.geometry.geotag_detection.v1 import GeotagDetectionBlock
+from roboflow_workflows.v2.blocks.geometry.detections_nearest_neighbor.v1 import DetectionsNearestNeighborBlock
+from roboflow_workflows.v2.blocks.geometry.perspective_correction.v1 import PerspectiveCorrectionBlock
+from roboflow_workflows.v2.blocks.geometry.sift.v1 import SiftBlock
+from roboflow_workflows.v2.blocks.geometry.sift_comparison.v2 import SiftComparisonBlock
+from roboflow_workflows.v2.blocks.geometry.template_matching.v1 import TemplateMatchingBlock
+from roboflow_workflows.v2.blocks.image.auto_rotate_on_edges.v1 import AutoRotateOnEdgesBlock
+from roboflow_workflows.v2.blocks.image.camera_focus.v2 import CameraFocusBlock
+from roboflow_workflows.v2.blocks.image.dominant_color.v1 import DominantColorBlock
+from roboflow_workflows.v2.blocks.image.stitch_images.v1 import StitchImagesBlock
+from roboflow_workflows.v2.blocks.models.clip_comparison.v2 import ClipComparisonBlock
+from roboflow_workflows.v2.blocks.models.depth_estimation.v1 import DepthEstimationBlock
+from roboflow_workflows.v2.blocks.models.clip.v1 import ClipEmbeddingBlock
+from roboflow_workflows.v2.blocks.models.perception_encoder.v1 import PerceptionEncoderEmbeddingBlock
+from roboflow_workflows.v2.blocks.models.glm_ocr.v1 import GlmOcrBlock
+from roboflow_workflows.v2.blocks.models.ocr_model.v1 import OCRModelBlock
+from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import EasyOCRBlock
+from roboflow_workflows.v2.blocks.models.pp_ocr.v1 import PPOCRBlock
+from roboflow_workflows.v2.blocks.models.smolvlm2.v1 import SmolVLM2Block
+from roboflow_workflows.v2.blocks.secrets.environment_secrets_store.v1 import EnvironmentSecretsStoreBlock
+from roboflow_workflows.v2.blocks.sinks.email_notification.v2 import EmailNotificationBlock
+
+from roboflow_workflows.v2.blocks.sinks.local_file_sink.v1 import LocalFileSinkBlock
+from roboflow_workflows.v2.blocks.sinks.s3_sink.v1 import S3SinkBlock
+from roboflow_workflows.v2.blocks.sinks.slack_notification.v1 import SlackNotificationBlock
+from roboflow_workflows.v2.blocks.sinks.twilio_sms_notification.v2 import TwilioSmsNotificationBlock
+from roboflow_workflows.v2.blocks.sinks.webhook_sink.v1 import WebhookSinkBlock
+from roboflow_workflows.v2.blocks.transforms.cosine_similarity.v1 import CosineSimilarityBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.icon_visualization.v1 import IconVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison_visualization.v1 import ModelComparisonVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.rich_label_visualization.v1 import RichLabelVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.text_display.v1 import TextDisplayBlock
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.operators.alignment import Align
 from roboflow_workflows.v2.engine.operators.window import Window
@@ -701,15 +596,6 @@ __all__ = [
     "OverlapFilterBlock",
     "BackgroundSubtractionBlock",
     "MotionDetectionBlock",
-    "PlcReaderBlock",
-    "PlcWriterBlock",
-    "PostgreSQLSinkBlock",
-    "SQLServerSinkBlock",
-    "MQTTReaderBlock",
-    "MQTTWriterBlock",
-    "KafkaConsumerBlock",
-    "KafkaProducerSinkBlock",
-    "OPCWriterSinkBlock",
     "OnvifTrackingBlock",
     "BackgroundColorVisualizationBlock",
     "ColorVisualizationBlock",
@@ -758,5 +644,4 @@ __all__ = [
     "TextDisplayBlock",
     "TwilioSmsNotificationBlock",
     "WebhookSinkBlock",
-    "EventWriterSinkBlock",
 ]

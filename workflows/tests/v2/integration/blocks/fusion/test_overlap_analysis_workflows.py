@@ -9,7 +9,7 @@ from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
 )
-from roboflow_workflows.v2.blocks.fusion.overlap_analysis import OverlapAnalysisBlock
+from roboflow_workflows.v2.blocks.fusion.overlap_analysis.v1 import OverlapAnalysisBlock
 from roboflow_workflows.v2.data.batch import EntryMetadata, InputValue, SampleContext
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks.grid import MaskGridGeometry, SegmentationView

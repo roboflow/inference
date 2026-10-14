@@ -1,4 +1,4 @@
-"""``v2/rich_label_visualization@v1`` against the latest V1 block.
+"""``roboflow_core/rich_label_visualization@v1`` against the latest V1 block.
 
 The V1 oracle (``support.run_v1``) gets exactly the validated V2 values;
 labels, fonts, wrapping, anchors and edge clipping must be pixel-equal.
@@ -18,10 +18,8 @@ from roboflow_workflows.core_steps.visualizations.common.fonts.registry import (
 from roboflow_workflows.core_steps.visualizations.rich_label.v1 import (
     RichLabelVisualizationBlockV1,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations import rich_label
-from roboflow_workflows.v2.blocks.visualization.annotations.rich_label import (
-    RichLabelVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.rich_label_visualization import v1 as rich_label
+from roboflow_workflows.v2.blocks.visualization.annotations.rich_label_visualization.v1 import RichLabelVisualizationBlock
 from roboflow_workflows.v2.blocks.visualization.annotations.text import background_rect
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError

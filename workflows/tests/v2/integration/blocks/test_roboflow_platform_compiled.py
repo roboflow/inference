@@ -4,10 +4,10 @@ The blocks are registered explicitly on top of the V2 catalogue; the shared
 catalogue does not list them yet. Ports are in-process fakes, so these tests
 prove wiring, demand and failure routing, not HTTP behaviour::
 
-    image ─▶ v2/visual_search_classifier@v1 ─▶ predictions, inference_id
+    image ─▶ roboflow_core/visual_search_classifier@v1 ─▶ predictions, inference_id
                      │                                    │
                      └─▶ visual_search_port (fake)        ▼
-                                          v2/roboflow_custom_metadata@v1
+                                          roboflow_core/roboflow_custom_metadata@v1
                                                     └─▶ custom_metadata_port (fake)
 
 Every credential is an invented sentinel.
@@ -21,14 +21,10 @@ import pytest
 import torch
 from roboflow_workflows.v2.blocks import create_catalogue
 from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
-from roboflow_workflows.v2.blocks.roboflow_platform.custom_metadata import (
-    RoboflowCustomMetadataBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_custom_metadata.v1 import RoboflowCustomMetadataBlock
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
-from roboflow_workflows.v2.blocks.roboflow_platform.visual_search import (
-    VisualSearchBlock,
-    VisualSearchClassifierBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.visual_search.v1 import VisualSearchBlock
+from roboflow_workflows.v2.blocks.roboflow_platform.visual_search_classifier.v1 import VisualSearchClassifierBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 from roboflow_workflows.v2.engine.compilation import compile_workflow
@@ -102,7 +98,7 @@ def _tagging_plan(outputs: List[Dict[str, str]]):
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "v2/visual_search_classifier@v1",
+                "type": "roboflow_core/visual_search_classifier@v1",
                 "name": "classify",
                 "image": "$inputs.image",
                 "target_project": "shelf-refs",
@@ -132,7 +128,7 @@ def _search_plan(outputs: List[Dict[str, str]], **step: Any):
         ],
         "steps": [
             {
-                "type": "v2/visual_search@v1",
+                "type": "roboflow_core/visual_search@v1",
                 "name": "search",
                 "image": "$inputs.image",
                 "workspace": "shop",

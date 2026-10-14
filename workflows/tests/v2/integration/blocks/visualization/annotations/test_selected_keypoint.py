@@ -34,13 +34,13 @@ def plan_for(annotator_type: Any):
         ],
         "steps": [
             {
-                "type": "v2/keypoint_detection@v1",
+                "type": "roboflow_core/roboflow_keypoint_detection_model@v3",
                 "name": "keypoints",
                 "image": "$inputs.image",
                 "model_id": "shapes-keypoints",
             },
             {
-                "type": "v2/keypoint_visualization@v1",
+                "type": "roboflow_core/keypoint_visualization@v1",
                 "name": "draw",
                 "image": "$inputs.image",
                 "predictions": "$steps.keypoints.predictions",

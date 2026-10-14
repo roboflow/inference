@@ -9,17 +9,13 @@ from typing import Any, Dict
 
 import numpy as np
 import pytest
-from roboflow_workflows.v2.blocks.image.blocks import StaticCropBlock
-from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
-from roboflow_workflows.v2.blocks.language.openrouter_vendors import (
-    KimiOpenRouterBlock,
-    MetaVlmBlock,
-)
-from roboflow_workflows.v2.blocks.language.parsers import decode_florence_2_detections
-from roboflow_workflows.v2.blocks.transforms.operations_chain import (
-    DetectionsFilterBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.blocks import DetectionDrawingBlock
+from roboflow_workflows.v2.blocks.image.primitives.static_crop.v1 import StaticCropBlock
+from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
+from roboflow_workflows.v2.blocks.language.kimi_openrouter.v3 import KimiOpenRouterBlock
+from roboflow_workflows.v2.blocks.language.meta_vlm.v3 import MetaVlmBlock
+from roboflow_workflows.v2.blocks.language._shared.parsers import decode_florence_2_detections
+from roboflow_workflows.v2.blocks.transforms.detections_filter.v1 import DetectionsFilterBlock
+from roboflow_workflows.v2.blocks.visualization.native.detection_drawing.v1 import DetectionDrawingBlock
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import (
@@ -57,7 +53,7 @@ def _detect_then_classify_crops() -> Dict[str, Any]:
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "v2/meta_vlm@v3",
+                "type": "roboflow_core/meta_vlm@v3",
                 "name": "detector",
                 "images": "$inputs.image",
                 "task_type": "object-detection",
@@ -65,13 +61,13 @@ def _detect_then_classify_crops() -> Dict[str, Any]:
                 "api_key": "sk-or-fake-parser-demo",
             },
             {
-                "type": "v2/dynamic_crop@v1",
+                "type": "roboflow_core/dynamic_crop@v1",
                 "name": "crop",
                 "image": "$inputs.image",
                 "predictions": "$steps.detector.predictions",
             },
             {
-                "type": "v2/kimi_openrouter@v3",
+                "type": "roboflow_core/kimi_openrouter@v3",
                 "name": "classifier",
                 "images": "$steps.crop.crops",
                 "task_type": "classification",
@@ -146,13 +142,13 @@ def test_boxes_read_on_static_crops_map_back_to_the_input_image() -> None:
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "v2/static_crop",
+                "type": "roboflow_core/static_crop@v1",
                 "name": "tiles",
                 "image": "$inputs.image",
                 "regions": [[0, 0, 200, 200], [200, 0, 400, 200]],
             },
             {
-                "type": "v2/meta_vlm@v3",
+                "type": "roboflow_core/meta_vlm@v3",
                 "name": "detector",
                 "images": "$steps.tiles.crops",
                 "task_type": "object-detection",
@@ -228,13 +224,13 @@ def test_florence_helper_rows_feed_filters_and_drawing_with_their_own_text() -> 
         ],
         "steps": [
             {
-                "type": "v2/detections_filter@v1",
+                "type": "roboflow_core/detections_filter@v1",
                 "name": "exits",
                 "predictions": "$inputs.boxes",
                 "operations": [exit_only],
             },
             {
-                "type": "v2/detection_drawing@v1",
+                "type": "roboflow_core/detection_drawing@v1",
                 "name": "drawing",
                 "predictions": "$inputs.boxes",
             },

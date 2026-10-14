@@ -5,7 +5,7 @@ import json
 import pytest
 import torch
 from pydantic import Field
-from roboflow_workflows.v2.blocks.image.blocks import ResizeBlock
+from roboflow_workflows.v2.blocks.image.primitives.resize.v1 import ResizeBlock
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
@@ -67,7 +67,7 @@ def _segmenting(*, resize, coordinates_system):
     if resize:
         steps.append(
             {
-                "type": "v2/resize",
+                "type": "roboflow_core/resize@v1",
                 "name": "resize",
                 "image": source,
                 "width": 3,

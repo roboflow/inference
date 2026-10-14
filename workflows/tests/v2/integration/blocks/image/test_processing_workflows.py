@@ -21,18 +21,12 @@ from roboflow_workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.image.blur import ImageBlurBlock
-from roboflow_workflows.v2.blocks.image.contrast_enhancement import (
-    ContrastEnhancementBlock,
-)
-from roboflow_workflows.v2.blocks.image.contrast_equalization import (
-    ContrastEqualizationBlock,
-)
-from roboflow_workflows.v2.blocks.image.grayscale import ConvertGrayscaleBlock
-from roboflow_workflows.v2.blocks.image.morphology import (
-    MorphologicalTransformationBlock,
-)
-from roboflow_workflows.v2.blocks.image.threshold import ImageThresholdBlock
+from roboflow_workflows.v2.blocks.image.image_blur.v1 import ImageBlurBlock
+from roboflow_workflows.v2.blocks.image.contrast_enhancement.v1 import ContrastEnhancementBlock
+from roboflow_workflows.v2.blocks.image.contrast_equalization.v1 import ContrastEqualizationBlock
+from roboflow_workflows.v2.blocks.image.convert_grayscale.v1 import ConvertGrayscaleBlock
+from roboflow_workflows.v2.blocks.image.morphological_transformation.v2 import MorphologicalTransformationBlock
+from roboflow_workflows.v2.blocks.image.threshold.v1 import ImageThresholdBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import (
@@ -156,23 +150,23 @@ def _same_lineage(result: ImageData, source: ImageData) -> None:
 
 
 CLEANUP_STEPS = [
-    {"type": "v2/convert_grayscale@v1", "name": "gray", "image": "$inputs.images"},
+    {"type": "roboflow_core/convert_grayscale@v1", "name": "gray", "image": "$inputs.images"},
     {
-        "type": "v2/image_blur@v1",
+        "type": "roboflow_core/image_blur@v1",
         "name": "blur",
         "image": "$steps.gray.image",
         "blur_type": "gaussian",
         "kernel_size": 5,
     },
     {
-        "type": "v2/threshold@v1",
+        "type": "roboflow_core/threshold@v1",
         "name": "threshold",
         "image": "$steps.blur.image",
         "threshold_type": "otsu",
         "thresh_value": 0,
     },
     {
-        "type": "v2/morphological_transformation@v2",
+        "type": "roboflow_core/morphological_transformation@v2",
         "name": "morphology",
         "image": "$steps.threshold.image",
         "kernel_size": 3,
@@ -220,7 +214,7 @@ def test_contrast_chain_matches_v1_and_scikit_image(mode: str) -> None:
     # given
     steps = [
         {
-            "type": "v2/contrast_enhancement@v1",
+            "type": "roboflow_core/contrast_enhancement@v1",
             "name": "enhance",
             "image": "$inputs.images",
             "clip_limit": 2,
@@ -228,7 +222,7 @@ def test_contrast_chain_matches_v1_and_scikit_image(mode: str) -> None:
             "normalize_brightness": True,
         },
         {
-            "type": "v2/contrast_equalization@v1",
+            "type": "roboflow_core/contrast_equalization@v1",
             "name": "equalize",
             "image": "$steps.enhance.image",
         },
@@ -257,28 +251,28 @@ def test_selector_knobs_change_results_between_runs_of_one_plan() -> None:
     # given
     steps = [
         {
-            "type": "v2/image_blur@v1",
+            "type": "roboflow_core/image_blur@v1",
             "name": "blur",
             "image": "$inputs.images",
             "blur_type": "$inputs.blur_type",
             "kernel_size": "$inputs.blur_size",
         },
         {
-            "type": "v2/threshold@v1",
+            "type": "roboflow_core/threshold@v1",
             "name": "threshold",
             "image": "$steps.blur.image",
             "threshold_type": "$inputs.threshold_type",
             "thresh_value": "$inputs.thresh_value",
         },
         {
-            "type": "v2/morphological_transformation@v2",
+            "type": "roboflow_core/morphological_transformation@v2",
             "name": "morphology",
             "image": "$steps.threshold.image",
             "kernel_size": "$inputs.morphology_size",
             "operation": "$inputs.operation",
         },
         {
-            "type": "v2/contrast_equalization@v1",
+            "type": "roboflow_core/contrast_equalization@v1",
             "name": "equalize",
             "image": "$inputs.images",
             "equalization_type": "$inputs.equalization_type",
@@ -351,26 +345,26 @@ def test_selector_knobs_change_results_between_runs_of_one_plan() -> None:
     "step, value, cause, message",
     [
         (
-            {"type": "v2/image_blur@v1", "blur_type": "$inputs.value"},
+            {"type": "roboflow_core/image_blur@v1", "blur_type": "$inputs.value"},
             "box",
             ValueError,
             "blur_type",
         ),
         (
-            {"type": "v2/threshold@v1", "threshold_type": "$inputs.value"},
+            {"type": "roboflow_core/threshold@v1", "threshold_type": "$inputs.value"},
             "otsu",
             ValueError,
-            "v2/convert_grayscale@v1",
+            "roboflow_core/convert_grayscale@v1",
         ),
         (
-            {"type": "v2/threshold@v1", "thresh_value": "$inputs.value"},
+            {"type": "roboflow_core/threshold@v1", "thresh_value": "$inputs.value"},
             "127",
             ResolvedParameterError,
             "thresh_value",
         ),
         (
             {
-                "type": "v2/morphological_transformation@v2",
+                "type": "roboflow_core/morphological_transformation@v2",
                 "kernel_size": "$inputs.value",
             },
             0,
@@ -379,7 +373,7 @@ def test_selector_knobs_change_results_between_runs_of_one_plan() -> None:
         ),
         (
             {
-                "type": "v2/morphological_transformation@v2",
+                "type": "roboflow_core/morphological_transformation@v2",
                 "operation": "$inputs.value",
             },
             "Thinning",
@@ -388,7 +382,7 @@ def test_selector_knobs_change_results_between_runs_of_one_plan() -> None:
         ),
         (
             {
-                "type": "v2/contrast_equalization@v1",
+                "type": "roboflow_core/contrast_equalization@v1",
                 "equalization_type": "$inputs.value",
             },
             "Histogram",
@@ -402,7 +396,7 @@ def test_invalid_selected_values_fail_the_step(
 ) -> None:
     # given
     step = {"name": "step", "image": "$inputs.images", "thresh_value": 127, **step}
-    if not step["type"].startswith("v2/threshold"):
+    if not step["type"].startswith("roboflow_core/threshold@v1"):
         del step["thresh_value"]
     definition = _definition(
         [step], {"image": "$steps.step.image"}, [_parameter("value")]
@@ -421,16 +415,16 @@ def test_invalid_selected_values_fail_the_step(
 @pytest.mark.parametrize(
     "step",
     [
-        {"type": "v2/image_blur@v1", "blur_type": "box"},
-        {"type": "v2/image_blur@v1", "kernel_size": 5.0},
-        {"type": "v2/threshold@v1"},
-        {"type": "v2/threshold@v1", "thresh_value": 127, "threshold_type": "otsu_x"},
-        {"type": "v2/morphological_transformation@v2", "kernel_size": 0},
-        {"type": "v2/morphological_transformation@v2", "operation": "Thinning"},
-        {"type": "v2/contrast_enhancement@v1", "clip_limit": 51},
-        {"type": "v2/contrast_enhancement@v1", "contrast_multiplier": 0.05},
-        {"type": "v2/contrast_enhancement@v1", "clip_limit": "$inputs.value"},
-        {"type": "v2/contrast_equalization@v1", "equalization_type": "CLAHE"},
+        {"type": "roboflow_core/image_blur@v1", "blur_type": "box"},
+        {"type": "roboflow_core/image_blur@v1", "kernel_size": 5.0},
+        {"type": "roboflow_core/threshold@v1"},
+        {"type": "roboflow_core/threshold@v1", "thresh_value": 127, "threshold_type": "otsu_x"},
+        {"type": "roboflow_core/morphological_transformation@v2", "kernel_size": 0},
+        {"type": "roboflow_core/morphological_transformation@v2", "operation": "Thinning"},
+        {"type": "roboflow_core/contrast_enhancement@v1", "clip_limit": 51},
+        {"type": "roboflow_core/contrast_enhancement@v1", "contrast_multiplier": 0.05},
+        {"type": "roboflow_core/contrast_enhancement@v1", "clip_limit": "$inputs.value"},
+        {"type": "roboflow_core/contrast_equalization@v1", "equalization_type": "CLAHE"},
     ],
 )
 def test_invalid_literal_parameters_fail_compilation(step: dict) -> None:
@@ -450,7 +444,7 @@ def test_crops_keep_their_geometry_through_the_chain(mode: str) -> None:
     # given
     steps = [
         {
-            "type": "v2/crop",
+            "type": "roboflow_core/crop@v1",
             "name": "crop",
             "image": "$inputs.images",
             "regions": [[4, 6, 36, 30], [20, 10, 60, 44]],
@@ -483,15 +477,15 @@ def test_missing_static_crop_stays_missing(mode: str) -> None:
     # given
     steps = [
         {
-            "type": "v2/static_crop",
+            "type": "roboflow_core/static_crop@v1",
             "name": "crop",
             "image": "$inputs.images",
             "regions": [[0, 0, 16, 16], [500, 500, 520, 520]],
             "outside": "none",
         },
-        {"type": "v2/image_blur@v1", "name": "blur", "image": "$steps.crop.crops"},
+        {"type": "roboflow_core/image_blur@v1", "name": "blur", "image": "$steps.crop.crops"},
         {
-            "type": "v2/contrast_equalization@v1",
+            "type": "roboflow_core/contrast_equalization@v1",
             "name": "equalize",
             "image": "$steps.blur.image",
         },
@@ -513,7 +507,7 @@ def test_requested_outputs_drop_undemanded_steps(mode: str) -> None:
     steps = [
         *CLEANUP_STEPS[:3],
         {
-            "type": "v2/contrast_enhancement@v1",
+            "type": "roboflow_core/contrast_enhancement@v1",
             "name": "enhance",
             "image": "$inputs.images",
         },

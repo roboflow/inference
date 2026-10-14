@@ -1,4 +1,4 @@
-"""``v2/background_color_visualization@v1``: cover everything outside detections.
+"""``roboflow_core/background_color_visualization@v1``: cover everything outside detections.
 
 Expected pixels come from small hand-computed oracles (which pixels a box or
 mask keeps, the blend formula) and from the latest V1 block on the same
@@ -14,9 +14,7 @@ import torch
 from roboflow_workflows.core_steps.visualizations.background_color.v1 import (
     BackgroundColorVisualizationBlockV1,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.background_color import (
-    BackgroundColorVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.background_color_visualization.v1 import BackgroundColorVisualizationBlock
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError
 

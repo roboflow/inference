@@ -10,8 +10,8 @@ they read from a ``SegmentationView`` depends on whether they need mask pixels:
                                                      mask_provider_of(view)
                                                      .binary(fidelity="reference")
 
-``v2/dynamic_crop@v1`` needs boxes, and masks only for its fade.
-``v2/detections_stitch@v1`` and ``v2/bounding_rect@v1`` need mask pixels.
+``roboflow_core/dynamic_crop@v1`` needs boxes, and masks only for its fade.
+``roboflow_core/detections_stitch@v1`` and ``roboflow_core/bounding_rect@v1`` need mask pixels.
 
 Reference masks are never an approximation. They cost what the view's
 representation costs: nothing for a dense-fallback view, one full-resolution

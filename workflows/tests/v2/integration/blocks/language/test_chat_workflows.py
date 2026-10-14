@@ -5,9 +5,9 @@ server are ``httpx.MockTransport`` fakes injected as session resources, and
 the Roboflow platform client is a recording fake. This checks wiring and
 composition, not any real model::
 
-    image ─▶ v2/open_ai@v7 (detection) ─▶ v2/detection_offset@v1 ─▶ outputs
-    image ─▶ v2/openrouter@v3 (structured) ─▶ v2/json_parser@v1 ─▶ outputs
-    image ─▶ v2/openai_compatible@v1 (image parameter) ─▶ outputs
+    image ─▶ roboflow_core/open_ai@v7 (detection) ─▶ roboflow_core/detection_offset@v1 ─▶ outputs
+    image ─▶ roboflow_core/openrouter@v3 (structured) ─▶ roboflow_core/json_parser@v1 ─▶ outputs
+    image ─▶ roboflow_core/openai_compatible@v1 (image parameter) ─▶ outputs
 """
 
 import json
@@ -15,13 +15,11 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
-from roboflow_workflows.v2.blocks.geometry.offset import DetectionOffsetBlock
-from roboflow_workflows.v2.blocks.language.openai import (
-    OpenAIBlock,
-    OpenAICompatibleBlock,
-)
-from roboflow_workflows.v2.blocks.language.openrouter import OpenRouterBlock
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
+from roboflow_workflows.v2.blocks.geometry.detection_offset.v1 import DetectionOffsetBlock
+from roboflow_workflows.v2.blocks.language.open_ai.v7 import OpenAIBlock
+from roboflow_workflows.v2.blocks.language.openai_compatible.v1 import OpenAICompatibleBlock
+from roboflow_workflows.v2.blocks.language.openrouter.v3 import OpenRouterBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.language import LANGUAGE_MODEL_OUTPUT_KIND
 from roboflow_workflows.v2.data.secrets import SECRET_KIND
@@ -104,7 +102,7 @@ def test_detections_from_a_secret_keyed_request_feed_a_geometry_step() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/open_ai@v7",
+                "type": "roboflow_core/open_ai@v7",
                 "name": "gpt",
                 "images": "$inputs.image",
                 "task_type": "object-detection",
@@ -113,7 +111,7 @@ def test_detections_from_a_secret_keyed_request_feed_a_geometry_step() -> None:
                 "api_key": "$inputs.openai_key",
             },
             {
-                "type": "v2/detection_offset@v1",
+                "type": "roboflow_core/detection_offset@v1",
                 "name": "offset",
                 "predictions": "$steps.gpt.predictions",
                 "offset_width": 10,
@@ -157,7 +155,7 @@ def test_a_gated_image_sends_no_request() -> None:
                 "next_steps": ["$steps.gpt"],
             },
             {
-                "type": "v2/open_ai@v7",
+                "type": "roboflow_core/open_ai@v7",
                 "name": "gpt",
                 "images": "$inputs.image",
                 "prompt": "Describe.",
@@ -188,7 +186,7 @@ def test_managed_key_uses_the_host_platform_client_and_roboflow_key() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/open_ai@v7",
+                "type": "roboflow_core/open_ai@v7",
                 "name": "gpt",
                 "images": "$inputs.image",
                 "task_type": "ocr",
@@ -220,7 +218,7 @@ def test_a_failed_request_fails_the_step_without_the_key() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/open_ai@v7",
+                "type": "roboflow_core/open_ai@v7",
                 "name": "gpt",
                 "images": "$inputs.image",
                 "prompt": "Describe.",
@@ -248,7 +246,7 @@ def test_openrouter_structured_answer_feeds_the_json_parser() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/openrouter@v3",
+                "type": "roboflow_core/openrouter@v3",
                 "name": "router",
                 "images": "$inputs.image",
                 "model_id": "qwen/qwen3.6-27b",
@@ -257,7 +255,7 @@ def test_openrouter_structured_answer_feeds_the_json_parser() -> None:
                 "api_key": "sk-or-literal",
             },
             {
-                "type": "v2/json_parser@v1",
+                "type": "roboflow_core/json_parser@v1",
                 "name": "parse",
                 "raw_json": "$steps.router.output",
                 "expected_fields": ["count"],
@@ -289,7 +287,7 @@ def test_openai_compatible_sends_a_workflow_image_as_a_vision_part() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/openai_compatible@v1",
+                "type": "roboflow_core/openai_compatible@v1",
                 "name": "local",
                 "base_url": "http://llm.test/v1",
                 "model_name": "qwen",
@@ -323,14 +321,14 @@ def test_workload_introspection_reports_the_remote_models() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/open_ai@v7",
+                "type": "roboflow_core/open_ai@v7",
                 "name": "gpt",
                 "images": "$inputs.image",
                 "task_type": "instance-segmentation",
                 "classes": ["car"],
             },
             {
-                "type": "v2/openrouter@v3",
+                "type": "roboflow_core/openrouter@v3",
                 "name": "router",
                 "images": "$inputs.image",
                 "model_id": "$inputs.model",
@@ -351,14 +349,14 @@ def test_workload_introspection_reports_the_remote_models() -> None:
 @pytest.mark.parametrize(
     "block_type,resource,extra",
     [
-        ("v2/open_ai@v7", "openai_http_client", {"images": "$inputs.image"}),
+        ("roboflow_core/open_ai@v7", "openai_http_client", {"images": "$inputs.image"}),
         (
-            "v2/openrouter@v3",
+            "roboflow_core/openrouter@v3",
             "openrouter_http_client",
             {"images": "$inputs.image", "model_id": "openai/gpt-4o-mini"},
         ),
         (
-            "v2/openai_compatible@v1",
+            "roboflow_core/openai_compatible@v1",
             "openai_compatible_http_client",
             {"base_url": "http://llm.test/v1", "model_name": "local"},
         ),
@@ -387,7 +385,7 @@ def test_compiled_temperature_selectors_validate_resolved_values_before_requests
     )
     body = (
         responses_body("ok")
-        if block_type == "v2/open_ai@v7"
+        if block_type == "roboflow_core/open_ai@v7"
         else chat_completion_body("ok")
     )
     server = FakeChatServer(lambda path, request: (200, body))

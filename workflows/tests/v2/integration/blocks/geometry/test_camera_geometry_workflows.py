@@ -4,7 +4,7 @@ These run the real compiler, session and executor. The blocks are added to
 the catalogue here because the shared catalogue does not list them yet.
 Images paint numbered markers that ``test/marker_detector@v1`` finds exactly,
 so a detector run on a warped image can be compared with predictions moved
-into it by ``v2/perspective_correction@v1``. ``test/marker_corner_key_points@v1``
+into it by ``roboflow_core/perspective_correction@v1``. ``test/marker_corner_key_points@v1``
 (defined here) gives the markers' corners as keypoints with covariance.
 
 Warped, rotated and undistorted images are new root frames: predictions made
@@ -18,10 +18,10 @@ import numpy as np
 import pytest
 import torch
 from pydantic import Field
-from roboflow_workflows.v2.blocks.geometry.calibration import CameraCalibrationBlock
-from roboflow_workflows.v2.blocks.geometry.perspective import PerspectiveCorrectionBlock
-from roboflow_workflows.v2.blocks.image.auto_rotate import AutoRotateOnEdgesBlock
-from roboflow_workflows.v2.blocks.image.camera_focus import CameraFocusBlock
+from roboflow_workflows.v2.blocks.geometry.camera_calibration.v1 import CameraCalibrationBlock
+from roboflow_workflows.v2.blocks.geometry.perspective_correction.v1 import PerspectiveCorrectionBlock
+from roboflow_workflows.v2.blocks.image.auto_rotate_on_edges.v1 import AutoRotateOnEdgesBlock
+from roboflow_workflows.v2.blocks.image.camera_focus.v2 import CameraFocusBlock
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import FrameMapping, ImageData
@@ -100,7 +100,7 @@ DETECT = {
     "image": "$inputs.images",
 }
 PERSPECTIVE = {
-    "type": "v2/perspective_correction@v1",
+    "type": "roboflow_core/perspective_correction@v1",
     "name": "perspective",
     "images": "$inputs.images",
     "predictions": "$steps.detect.predictions",
@@ -186,7 +186,7 @@ def test_detections_on_the_warped_view_match_the_corrected_ones(mode: str) -> No
             "image": "$steps.perspective.warped_image",
         },
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$steps.perspective.warped_image",
             "predictions": "$steps.detect_top.predictions",
@@ -275,7 +275,7 @@ def test_top_down_predictions_do_not_map_back_to_the_input(mode: str) -> None:
         DETECT,
         {**PERSPECTIVE, "warp_image": False},
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.images",
             "predictions": "$steps.perspective.corrected_coordinates",
@@ -297,7 +297,7 @@ def test_undistort_warp_and_score_focus_per_box(mode: str) -> None:
     # given
     steps = [
         {
-            "type": "v2/camera_calibration@v1",
+            "type": "roboflow_core/camera-calibration@v1",
             "name": "undistort",
             "image": "$inputs.images",
             **{name: f"$inputs.{name}" for name in CAMERA},
@@ -314,7 +314,7 @@ def test_undistort_warp_and_score_focus_per_box(mode: str) -> None:
             "image": "$steps.perspective.warped_image",
         },
         {
-            "type": "v2/camera_focus@v2",
+            "type": "roboflow_core/camera_focus@v2",
             "name": "focus",
             "image": "$steps.perspective.warped_image",
             "detections": "$steps.detect_top.predictions",
@@ -357,13 +357,13 @@ def test_auto_rotate_feeds_a_new_root_to_the_next_step(mode: str) -> None:
     # given
     steps = [
         {
-            "type": "v2/auto_rotate_on_edges@v1",
+            "type": "roboflow_core/auto_rotate_on_edges@v1",
             "name": "rotate",
             "image": "$inputs.images",
             "target_orientation": "$inputs.orientation",
         },
         {
-            "type": "v2/camera_focus@v2",
+            "type": "roboflow_core/camera_focus@v2",
             "name": "focus",
             "image": "$steps.rotate.image",
             **FOCUS_OFF,
@@ -442,7 +442,7 @@ def test_a_new_polygon_is_used_on_the_next_run_of_one_plan() -> None:
         ),
         (
             {
-                "type": "v2/auto_rotate_on_edges@v1",
+                "type": "roboflow_core/auto_rotate_on_edges@v1",
                 "name": "rotate",
                 "image": "$inputs.images",
                 "target_orientation": "$inputs.value",
@@ -453,7 +453,7 @@ def test_a_new_polygon_is_used_on_the_next_run_of_one_plan() -> None:
         ),
         (
             {
-                "type": "v2/camera_calibration@v1",
+                "type": "roboflow_core/camera-calibration@v1",
                 "name": "undistort",
                 "image": "$inputs.images",
                 **CAMERA,
@@ -485,24 +485,24 @@ def test_invalid_selected_values_fail_the_step(step, inputs, cause, message) -> 
 @pytest.mark.parametrize(
     "step",
     [
-        {"type": "v2/camera_calibration@v1", **CAMERA, "fx": 0.0},
-        {"type": "v2/camera_calibration@v1", "fy": 1.0},
-        {"type": "v2/camera_focus@v2", "grid_overlay": "6x6"},
-        {"type": "v2/camera_focus@v2", "overexposed_threshold_percent": 101},
-        {"type": "v2/auto_rotate_on_edges@v1", "internal_resolution": 0},
-        {"type": "v2/auto_rotate_on_edges@v1", "target_orientation": "diagonal"},
+        {"type": "roboflow_core/camera-calibration@v1", **CAMERA, "fx": 0.0},
+        {"type": "roboflow_core/camera-calibration@v1", "fy": 1.0},
+        {"type": "roboflow_core/camera_focus@v2", "grid_overlay": "6x6"},
+        {"type": "roboflow_core/camera_focus@v2", "overexposed_threshold_percent": 101},
+        {"type": "roboflow_core/auto_rotate_on_edges@v1", "internal_resolution": 0},
+        {"type": "roboflow_core/auto_rotate_on_edges@v1", "target_orientation": "diagonal"},
         {
-            "type": "v2/perspective_correction@v1",
+            "type": "roboflow_core/perspective_correction@v1",
             "perspective_polygons": SHIFT_POLYGON,
             "transformed_rect_width": 0,
         },
         {
-            "type": "v2/perspective_correction@v1",
+            "type": "roboflow_core/perspective_correction@v1",
             "perspective_polygons": SHIFT_POLYGON,
             "transformed_rect_height": 1,
         },
         {
-            "type": "v2/perspective_correction@v1",
+            "type": "roboflow_core/perspective_correction@v1",
             "perspective_polygons": SHIFT_POLYGON,
             "extend_perspective_polygon_by_detections_anchor": "MIDDLE",
         },
@@ -525,7 +525,7 @@ def test_requested_outputs_drop_undemanded_steps(mode: str) -> None:
         DETECT,
         PERSPECTIVE,
         {
-            "type": "v2/camera_focus@v2",
+            "type": "roboflow_core/camera_focus@v2",
             "name": "focus",
             "image": "$inputs.images",
             **FOCUS_OFF,

@@ -12,13 +12,7 @@ The codec writes a secret's name only; reading a recording restores an
 unavailable ``Secret`` whose ``reveal()`` raises ``SecretUnavailableError``.
 """
 
-from roboflow_workflows.v2.blocks.secrets.environment_store import (
-    EnvironmentAccessError,
-    EnvironmentSecrets,
-    EnvironmentSecretsStoreBlock,
-    SecretSource,
-    StaticSecrets,
-)
+from roboflow_workflows.v2.blocks.secrets.environment_secrets_store.v1 import EnvironmentAccessError, EnvironmentSecrets, EnvironmentSecretsStoreBlock, SecretSource, StaticSecrets
 from roboflow_workflows.v2.data.secrets import (
     SECRET_CODEC_NAME,
     Secret,

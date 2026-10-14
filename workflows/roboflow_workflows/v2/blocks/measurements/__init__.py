@@ -11,10 +11,10 @@ supplies; the blocks cannot detect perspective or lens distortion.
 ``BLOCKS`` lists the blocks to register in the catalogue.
 """
 
-from roboflow_workflows.v2.blocks.measurements.distance import DistanceMeasurementBlock
-from roboflow_workflows.v2.blocks.measurements.mask_area import MaskAreaMeasurementBlock
-from roboflow_workflows.v2.blocks.measurements.pixel_color import PixelColorCountBlock
-from roboflow_workflows.v2.blocks.measurements.size import SizeMeasurementBlock
+from roboflow_workflows.v2.blocks.measurements.distance_measurement.v1 import DistanceMeasurementBlock
+from roboflow_workflows.v2.blocks.measurements.mask_area_measurement.v1 import MaskAreaMeasurementBlock
+from roboflow_workflows.v2.blocks.measurements.pixel_color_count.v1 import PixelColorCountBlock
+from roboflow_workflows.v2.blocks.measurements.size_measurement.v1 import SizeMeasurementBlock
 
 BLOCKS = (
     DistanceMeasurementBlock,

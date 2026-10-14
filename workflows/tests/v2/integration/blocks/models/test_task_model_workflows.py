@@ -2,10 +2,11 @@
 
 Fake models (``tests/v2/support/models``) stand in for loaded weights; nothing
 is downloaded and this is not real inference. The tests check what a workflow
-builder relies on: models load at run time once per request, per-image
-requests group and scatter back in row order, run and phase execution agree,
-selected options reach the model, gates skip images, and families compose in
-one workflow over one cache.
+builder relies on: models load at run time once per request, one model
+serves every image of a call in row order, the model may change between
+runs, a per-image model selector fails compilation, run and phase execution
+agree, selected options reach the model, gates skip images, and families
+compose in one workflow over one cache.
 """
 
 import datetime
@@ -25,6 +26,7 @@ from roboflow_workflows.v2.data.row_identity import row_record
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import (
+    LineageError,
     ParamsValidationError,
     StepExecutionError,
 )
@@ -72,32 +74,32 @@ def _detections(p: Any) -> List[torch.Tensor]:
 
 FAMILIES = {
     "object_detection": Family(
-        "v2/object_detection@v1", NmsDetector, _detections, options={"confidence": 0.0}
+        "roboflow_core/roboflow_object_detection_model@v3", NmsDetector, _detections, options={"confidence": 0.0}
     ),
     "classification": Family(
-        "v2/classification@v1", Classifier, lambda p: [p.class_id, p.confidence]
+        "roboflow_core/roboflow_classification_model@v3", Classifier, lambda p: [p.class_id, p.confidence]
     ),
     "multi_label": Family(
-        "v2/multi_label_classification@v1",
+        "roboflow_core/roboflow_multi_label_classification_model@v3",
         MultiLabelClassifier,
         lambda p: [p.class_ids, p.confidence],
         options={"confidence": 0.3},
     ),
     "keypoints": Family(
-        "v2/keypoint_detection@v1",
+        "roboflow_core/roboflow_keypoint_detection_model@v3",
         KeypointModel,
         lambda p: [p[0].xy, p[0].class_id, p[0].confidence, *_detections(p[1])],
         options={"confidence": 0.0},
     ),
     "instance_segmentation": Family(
-        "v2/instance_segmentation@v1",
+        "roboflow_core/roboflow_instance_segmentation_model@v4",
         InstanceModel,
         lambda p: [*_detections(p), p.mask],
         options={"confidence": 0.0},
         extra_outputs=("segmentation",),
     ),
     "semantic_segmentation": Family(
-        "v2/semantic_segmentation@v1",
+        "roboflow_core/roboflow_semantic_segmentation_model@v2",
         SemanticModel,
         lambda p: [p.segmentation_map, p.confidence],
         options={"confidence": "default"},
@@ -209,25 +211,39 @@ def _frame_ids(rows: List[Dict[str, Any]]) -> List[Optional[str]]:
 
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("name", FAMILIES)
-def test_per_image_models_load_once_and_results_keep_row_order(
+def test_selected_models_load_once_and_results_keep_row_order(
     name: str, mode: str
 ) -> None:
     family = FAMILIES[name]
     loader = FakeLoader(family.model_type)
-    plan = _plan(family, mode=mode, per_image_model=True)
+    plan = _plan(family, mode=mode)
 
     session = plan.create_session({"models": ModelCache(loader)})
     assert loader.loaded == []  # compiling and constructing load nothing
-    rows = session.run({"image": _images(), "model_id": ["a", "b", "a"]}).rows()
-    again = session.run({"image": _images(), "model_id": ["b", "b", "a"]}).rows()
+    rows = session.run({"image": _images(), "model_id": "a"}).rows()
+    other = session.run({"image": _images(), "model_id": "b"}).rows()
+    again = session.run({"image": _images(), "model_id": "a"}).rows()
 
     assert loader.loaded == [ModelRequest("a"), ModelRequest("b")]
     first, second = loader.models
-    assert (first.batch_sizes, second.batch_sizes) == ([2, 1], [1, 2])
-    assert [row["model_id"] for row in rows + again] == ["a", "b", "a", "b", "b", "a"]
-    assert _frame_ids(rows) == _frame_ids(again) == ["x", "y", "z"]
-    inference_ids = [row["inference_id"] for row in rows + again]
-    assert len(set(inference_ids)) == 6
+    assert (first.batch_sizes, second.batch_sizes) == ([3, 3], [3])
+    assert [row["model_id"] for row in rows + other + again] == ["a"] * 3 + [
+        "b"
+    ] * 3 + ["a"] * 3
+    assert _frame_ids(rows) == _frame_ids(other) == _frame_ids(again) == [
+        "x",
+        "y",
+        "z",
+    ]
+    inference_ids = [row["inference_id"] for row in rows + other + again]
+    assert len(set(inference_ids)) == 9
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("name", FAMILIES)
+def test_a_per_image_model_selector_fails_compilation(name: str, mode: str) -> None:
+    with pytest.raises(LineageError, match="model model_id is passed once per call"):
+        _plan(FAMILIES[name], mode=mode, per_image_model=True)
 
 
 @pytest.mark.parametrize("name", FAMILIES)
@@ -235,12 +251,14 @@ def test_run_and_phase_execution_give_identical_predictions(name: str) -> None:
     family = FAMILIES[name]
     by_mode = {}
     for mode in MODES:
-        session = _plan(family, mode=mode, per_image_model=True).create_session(
+        session = _plan(family, mode=mode).create_session(
             {"models": ModelCache(FakeLoader(family.model_type))}
         )
-        by_mode[mode] = session.run(
-            {"image": _images(), "model_id": ["a", "b", "a"]}
-        ).rows()
+        by_mode[mode] = [
+            row
+            for model_id in ("a", "b")
+            for row in session.run({"image": _images(), "model_id": model_id}).rows()
+        ]
 
     for run_row, phase_row in zip(by_mode["run"], by_mode["phases"]):
         run_tensors = family.tensors(run_row["predictions"])

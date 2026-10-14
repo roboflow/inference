@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/data_aggregator@v1``: statistics, intervals and checks."""
+"""Unit tests of ``roboflow_core/data_aggregator@v1``: statistics, intervals and checks."""
 
 from typing import Any, Dict, List
 
@@ -6,10 +6,7 @@ import numpy as np
 import pytest
 import torch
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.analytics.data_aggregator import (
-    DataAggregatorBlock,
-    output_names,
-)
+from roboflow_workflows.v2.blocks.analytics.data_aggregator.v1 import DataAggregatorBlock, output_names
 from roboflow_workflows.v2.data.kinds import (
     BOOLEAN_KIND,
     DICTIONARY_KIND,

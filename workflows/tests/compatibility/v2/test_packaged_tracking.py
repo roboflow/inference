@@ -1,4 +1,4 @@
-"""Packaged ``v2/byte_tracker@v1``: per-source ByteTrack over native predictions.
+"""Packaged ``roboflow_core/byte_tracker@v3``: per-source ByteTrack over native predictions.
 
 Reference results come from stock ``sv.ByteTrack`` and from the unchanged V1
 tensor helpers, run on the same rows. The block must match them per source,
@@ -23,14 +23,8 @@ from roboflow_workflows.core_steps.transformations.byte_tracker.v3_tensor import
     _write_tracker_ids,
 )
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.models.detection import (
-    ObjectDetectionBlock,
-)
-from roboflow_workflows.v2.blocks.tracking.byte_track import (
-    DEFAULT_MAX_SOURCES,
-    ByteTrackerBlock,
-    TrackerCapacityError,
-)
+from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.tracking.byte_tracker.v3 import DEFAULT_MAX_SOURCES, ByteTrackerBlock, TrackerCapacityError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import FLOAT_KIND
@@ -473,14 +467,14 @@ def _tracking_plan(
         "inputs": [{"type": "WorkflowBatchInput", "name": "image", "kind": ["image"]}],
         "steps": [
             {
-                "type": "v2/object_detection@v1",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "detector",
                 "image": "$inputs.image",
                 "model_id": "fake",
                 "confidence": 0.0,
             },
             {
-                "type": "v2/byte_tracker@v1",
+                "type": "roboflow_core/byte_tracker@v3",
                 "name": "tracker",
                 "image": "$inputs.image",
                 "predictions": "$steps.detector.predictions",

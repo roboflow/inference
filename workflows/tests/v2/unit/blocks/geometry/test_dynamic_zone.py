@@ -1,10 +1,10 @@
-"""Unit tests of ``v2/dynamic_zone@v1`` on analytic masks."""
+"""Unit tests of ``roboflow_core/dynamic_zone@v1`` on analytic masks."""
 
 import cv2
 import numpy as np
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.geometry.dynamic_zone import DynamicZoneBlock
+from roboflow_workflows.v2.blocks.geometry.dynamic_zone.v1 import DynamicZoneBlock
 from roboflow_workflows.v2.blocks.geometry.mask_inputs import boxes_of_view
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView

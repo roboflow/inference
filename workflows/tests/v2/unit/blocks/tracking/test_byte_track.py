@@ -1,7 +1,7 @@
 """ByteTrack's per-source state and direct-call contract."""
 
 import pytest
-from roboflow_workflows.v2.blocks.tracking.byte_track import ByteTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.byte_tracker.v3 import ByteTrackerBlock
 from roboflow_workflows.v2.engine import NoExecutionContextError
 from roboflow_workflows.v2.engine.errors import EventEmissionError
 
@@ -82,7 +82,7 @@ def test_empty_frames_age_tracker_and_new_id_is_reported_on_return():
 
 
 def test_direct_run_only_falls_back_for_public_missing_context(monkeypatch):
-    from roboflow_workflows.v2.blocks.tracking import byte_track
+    from roboflow_workflows.v2.blocks.tracking.byte_tracker import v3 as byte_track
 
     block = ByteTrackerBlock()
 

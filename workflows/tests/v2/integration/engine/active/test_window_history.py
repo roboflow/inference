@@ -120,7 +120,7 @@ CATALOGUE = Catalogue(
 
 def window(name: str, *, hold: str) -> Dict[str, Any]:
     return {
-        "type": "v2/window@v1",
+        "type": "roboflow_core/window@v1",
         "name": name,
         "size": 3,
         "align": "position",

@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 from matplotlib import colormaps
-from roboflow_workflows.v2.blocks.models import depth
+from roboflow_workflows.v2.blocks.models.depth_estimation import v1 as depth
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
@@ -103,7 +103,7 @@ def test_same_size_backends_keep_batches(backend_types, backend):
     assert model.calls == [("pre", 2), ("forward", 2), ("post", 2)]
 
 
-def test_request_shape_grouping_scatter_cache_and_noncontiguous_rows(backend_types):
+def test_shape_chunks_scatter_cache_and_noncontiguous_rows(backend_types):
     loaded = []
     models = {}
 
@@ -120,30 +120,20 @@ def test_request_shape_grouping_scatter_cache_and_noncontiguous_rows(backend_typ
         make_image((4, 1, 3, 2)),
         make_image(size=(1, 4)),
     ]
-    ids = Batch(["local", "local", "other", "local", "local"])
-    packages = Batch(["p", "p", None, "p", "q"])
-    expected_groups = [
-        (ModelRequest("local", "p"), (0, 3)),
-        (ModelRequest("local", "p"), (1,)),
-        (ModelRequest("other"), (2,)),
-        (ModelRequest("local", "q"), (4,)),
-    ]
-    for _ in range(2):
+    for package in ("p", "p", "q"):
         with block_call(block):
-            groups = block.network_input(Batch(images), ids, packages)
-            assert [(g.request, g.rows) for g in groups] == expected_groups
-            result = block.result(block.raw_output(groups), groups, Batch(images))
+            prepared = block.network_input(Batch(images), "local", package)
+            assert prepared.request == ModelRequest("local", package)
+            assert [chunk.rows for chunk in prepared.chunks] == [(0, 2, 3), (1, 4)]
+            result = block.result(block.raw_output(prepared), prepared, Batch(images))
         for image, row in zip(images, result):
             raw = image.tensor_image[0].float()
             assert torch.equal(
                 row["normalized_depth"], (raw - raw.min()) / (raw.max() - raw.min())
             )
             assert row["normalized_depth"].shape == image.size_hw
-    assert loaded == [
-        ModelRequest("local", "p"),
-        ModelRequest("other"),
-        ModelRequest("local", "q"),
-    ]
+    assert loaded == [ModelRequest("local", "p"), ModelRequest("local", "q")]
+    assert models[loaded[0]].calls.count(("forward", 3)) == 2
     assert models[loaded[0]].calls.count(("forward", 2)) == 2
 
 
@@ -199,17 +189,13 @@ def test_bf16_global_flip_counterexample_and_dav3_single_row_policy(backend_type
 
 
 def test_unknown_backend_fails_before_any_preprocessing(backend_types):
-    good, unknown = backend_types[0](), FakeDepth()
-    block = depth.DepthEstimationBlock(
-        models={"good": good, "depth-anything-v3/small": unknown}
-    )
+    unknown = FakeDepth()
+    block = depth.DepthEstimationBlock(models={"depth-anything-v3/small": unknown})
     with pytest.raises(PhaseFailure, match="unsupported depth backend.*FakeDepth"):
         block.network_input(
-            Batch([make_image(), make_image()]),
-            Batch(["good", "depth-anything-v3/small"]),
-            None,
+            Batch([make_image(), make_image()]), "depth-anything-v3/small", None
         )
-    assert good.calls == unknown.calls == []
+    assert unknown.calls == []
 
 
 @pytest.mark.parametrize(
@@ -233,14 +219,15 @@ def test_bad_results_are_explicit(backend_types, bad, match):
 
 
 def test_first_invalid_original_row_diagnostic(backend_types):
+    # Rows 0 and 2 share a size chunk; its second map is the original row 2.
     model = backend_types[0](output=lambda maps: [maps[0], torch.ones_like(maps[1])])
-    block = depth.DepthEstimationBlock(models={"a": model, "b": backend_types[0]()})
+    block = depth.DepthEstimationBlock(models={"a": model})
     with block_call(block), pytest.raises(
         PhaseFailure, match="row 2: Depth map has no variation"
     ):
         block.run(
-            image=Batch([make_image(), make_image(), make_image()]),
-            model_id=Batch(["a", "b", "a"]),
+            image=Batch([make_image(), make_image(size=(1, 4)), make_image()]),
+            model_id="a",
         )
 
 
@@ -279,11 +266,11 @@ def test_no_mutation_or_alias_to_model_or_input(backend_types):
     assert torch.equal(model.last_maps[0], before[0].float())
 
 
-def test_empty_batch_and_request_length_errors(backend_types):
+def test_empty_batch_and_per_image_model_id_errors(backend_types):
     model = backend_types[0]()
     assert call(model, []) == []
     block = depth.DepthEstimationBlock(models={"a": model})
-    with pytest.raises(PhaseFailure, match="model_id has 1 values for 2 rows"):
+    with pytest.raises(PhaseFailure, match="model_id is one value for every image"):
         block.network_input(Batch([make_image(), make_image()]), Batch(["a"]), None)
     assert model.calls == []
 

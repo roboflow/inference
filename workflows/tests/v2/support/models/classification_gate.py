@@ -2,7 +2,7 @@
 
 The classification block keeps the full distribution and the top class; a
 downstream step decides what is confident enough. V2 has no product block for
-this comparison yet, so the gating tests use this one with ``v2/continue_if``.
+this comparison yet, so the gating tests use this one with ``roboflow_core/continue_if_boolean@v1``.
 """
 
 from pydantic import Field, StrictFloat

@@ -28,14 +28,14 @@ def images():
 def definition(*, gated=False, regions=REGIONS):
     steps = [
         {
-            "type": "v2/crop",
+            "type": "roboflow_core/crop@v1",
             "name": "crop",
             "image": "$inputs.images",
             "regions": regions,
         },
-        {"type": "v2/invert", "name": "invert", "image": "$steps.crop.crops"},
+        {"type": "roboflow_core/invert@v1", "name": "invert", "image": "$steps.crop.crops"},
         {
-            "type": "v2/mosaic",
+            "type": "roboflow_core/mosaic@v1",
             "name": "mosaic",
             "images": "$steps.invert.image",
             "tile_size": 16,
@@ -45,13 +45,13 @@ def definition(*, gated=False, regions=REGIONS):
     if gated:
         steps[1:1] = [
             {
-                "type": "v2/has_brightness",
+                "type": "roboflow_core/has_brightness@v1",
                 "name": "bright",
                 "image": "$steps.crop.crops",
                 "minimum": 100,
             },
             {
-                "type": "v2/continue_if",
+                "type": "roboflow_core/continue_if_boolean@v1",
                 "name": "gate",
                 "condition": "$steps.bright.keep",
                 "next_steps": ["$steps.invert"],

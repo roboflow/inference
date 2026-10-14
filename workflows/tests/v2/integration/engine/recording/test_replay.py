@@ -252,7 +252,7 @@ def test_operators_run_over_replayed_frames_and_time_axes_replay(
     window_workflow = {
         "operators": [
             {
-                "type": "v2/window@v1",
+                "type": "roboflow_core/window@v1",
                 "name": "w",
                 "size": 2,
                 "collect": {"v": "$sources.frames.value"},

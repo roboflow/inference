@@ -1,4 +1,4 @@
-"""``v2/identify_outliers@v1``: vMF window rank per source, bounded and checked.
+"""``roboflow_core/identify_outliers@v1``: vMF window rank per source, bounded and checked.
 
 ``V1_*`` were recorded by running V1 ``identify_outliers/v1_tensor.py`` in
 float32 on the camera sequences of ``test_changes.camera`` (threshold 0.2,
@@ -18,10 +18,7 @@ from roboflow_workflows.v2.blocks.sampling import (
     IdentifyOutliersBlock,
     SamplingCapacityError,
 )
-from roboflow_workflows.v2.blocks.sampling.outliers import (
-    _mean_direction,
-    _percentile,
-)
+from roboflow_workflows.v2.blocks.sampling.identify_outliers.v1 import _mean_direction, _percentile
 from roboflow_workflows.v2.data.batch import SampleContext
 from roboflow_workflows.v2.engine.context import (
     ExecutionContext,

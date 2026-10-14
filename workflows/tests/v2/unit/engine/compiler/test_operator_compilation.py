@@ -141,7 +141,7 @@ CATALOGUE = Catalogue(
 CAM = {"type": "test/frames@v1", "name": "cam"}
 PROBE = {"type": "test/probe@v1", "name": "probe"}
 PAIR = {
-    "type": "v2/align@v1",
+    "type": "roboflow_core/align@v1",
     "name": "pair",
     "clock": "media",
     "tolerance_ms": 50,
@@ -151,7 +151,7 @@ PAIR = {
 
 def window(name, collect, *, hold=None, size=3):
     declaration = {
-        "type": "v2/window@v1",
+        "type": "roboflow_core/window@v1",
         "name": name,
         "size": size,
         "collect": collect,
@@ -219,7 +219,7 @@ def test_an_alignment_becomes_a_domain_its_consumers_and_groups_follow() -> None
 
     [operator] = plan.operators.values()
     assert isinstance(operator, PlannedOperator)
-    assert operator.spec.type == "v2/align@v1" and operator.namespace == "test"
+    assert operator.spec.type == "roboflow_core/align@v1" and operator.namespace == "test"
     assert operator.params.tolerance_ms == 50
     assert [(item.name, item.role, item.domain) for item in operator.inputs] == [
         ("left", "input", "cam"),
@@ -644,7 +644,7 @@ def test_t_oriented_groups_require_a_final_time_axis_and_s_groups_do_not() -> No
         (
             [
                 {
-                    "type": "v2/window@v1",
+                    "type": "roboflow_core/window@v1",
                     "name": "clip",
                     "size": 2,
                     "inputs": {"x": "$sources.cam.image"},
@@ -690,7 +690,7 @@ def test_t_oriented_groups_require_a_final_time_axis_and_s_groups_do_not() -> No
             [{**PAIR, "inputs": {"left": "$inputs.p", "right": "$inputs.p"}}],
             (),
             WorkflowCompileError,
-            r"\(v2/align@v1\) does not declare passive_max_emissions = 1",
+            r"\(roboflow_core/align@v1\) does not declare passive_max_emissions = 1",
         ),
     ],
     ids=[
@@ -1107,12 +1107,12 @@ def test_hand_built_operator_ports_must_be_what_the_class_plans() -> None:
     )
     for forged in (without_t, renamed, other_kind):
         with pytest.raises(
-            ContractError, match="records ports .* but v2/window@v1 plans"
+            ContractError, match="records ports .* but roboflow_core/window@v1 plans"
         ):
             _rebuilt(plan, operators={"clip": forged})
 
     invalid_params = replace(clip, params=type(clip.params).model_construct(size=0))
-    with pytest.raises(ContractError, match="is not a valid v2/window@v1: .*size"):
+    with pytest.raises(ContractError, match="is not a valid roboflow_core/window@v1: .*size"):
         _rebuilt(plan, operators={"clip": invalid_params})
 
     pair_plan = compile_definition(operators=[PAIR])

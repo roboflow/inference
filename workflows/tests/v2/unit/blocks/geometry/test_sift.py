@@ -1,9 +1,9 @@
-"""Unit tests of ``v2/sift@v1`` against OpenCV references."""
+"""Unit tests of ``roboflow_core/sift@v1`` against OpenCV references."""
 
 import cv2
 import numpy as np
 import torch
-from roboflow_workflows.v2.blocks.geometry.sift import KEYPOINT_COLUMNS, SiftBlock
+from roboflow_workflows.v2.blocks.geometry.sift.v1 import KEYPOINT_COLUMNS, SiftBlock
 from roboflow_workflows.v2.data.image import ImageData
 
 

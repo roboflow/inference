@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.analytics import event_log as module
-from roboflow_workflows.v2.blocks.analytics.event_log import DetectionEventLogBlock
-from roboflow_workflows.v2.blocks.tracking.byte_track import TrackerCapacityError
+from roboflow_workflows.v2.blocks.analytics.detection_event_log import v1 as module
+from roboflow_workflows.v2.blocks.analytics.detection_event_log.v1 import DetectionEventLogBlock
+from roboflow_workflows.v2.blocks.tracking.byte_tracker.v3 import TrackerCapacityError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView
 

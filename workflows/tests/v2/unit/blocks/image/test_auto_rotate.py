@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/auto_rotate_on_edges@v1``, called directly.
+"""Unit tests of ``roboflow_core/auto_rotate_on_edges@v1``, called directly.
 
 Synthetic ruled pages are tilted by a known angle with OpenCV. The block must
 find roughly the opposite correction: V1's angle search reads these pages
@@ -22,13 +22,8 @@ from roboflow_workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImageData,
 )
-from roboflow_workflows.v2.blocks.image.auto_rotate import (
-    AutoRotateOnEdgesBlock,
-    canvas_size,
-    correction_angle,
-    rotation_matrix,
-)
-from roboflow_workflows.v2.blocks.image.camera_focus import gray_plane
+from roboflow_workflows.v2.blocks.image.auto_rotate_on_edges.v1 import AutoRotateOnEdgesBlock, canvas_size, correction_angle, rotation_matrix
+from roboflow_workflows.v2.blocks.image.camera_focus.v2 import gray_plane
 from roboflow_workflows.v2.data.image import FrameMapping, ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
 

@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.tracking.botsort import BoTSORTTrackerBlock
-from roboflow_workflows.v2.blocks.tracking.bytetrack import ByteTrackTrackerBlock
-from roboflow_workflows.v2.blocks.tracking.ocsort import OCSORTTrackerBlock
-from roboflow_workflows.v2.blocks.tracking.sort import SORTTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.trackers_botsort.v1 import BoTSORTTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.trackers_bytetrack.v1 import ByteTrackTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.trackers_ocsort.v1 import OCSORTTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.trackers_sort.v1 import SORTTrackerBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.prediction_ops import select_predictions
 from roboflow_workflows.v2.engine.catalogue import Catalogue

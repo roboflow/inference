@@ -2,8 +2,8 @@
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.control.blocks import ContinueIfBlock
-from roboflow_workflows.v2.blocks.fusion.difference import DetectionsDifferenceBlock
+from roboflow_workflows.v2.blocks.control.continue_if_boolean.v1 import ContinueIfBlock
+from roboflow_workflows.v2.blocks.fusion.detections_difference.v1 import DetectionsDifferenceBlock
 from roboflow_workflows.v2.data.batch import (
     EntryMetadata,
     InputValue,

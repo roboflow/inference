@@ -1,4 +1,4 @@
-"""``v2/per_class_confidence_filter@v1``: thresholds, names, carriers and errors.
+"""``roboflow_core/per_class_confidence_filter@v1``: thresholds, names, carriers and errors.
 
 Scene (``scene.py``): car 0.875, person 0.5, car 0.875, bus 0.375.
 """

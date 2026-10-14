@@ -1,10 +1,10 @@
-"""``v2/pixel_color_count@v1``: inclusive per-channel ranges and colour forms."""
+"""``roboflow_core/pixel_color_count@v1``: inclusive per-channel ranges and colour forms."""
 
 import numpy as np
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.measurements import PixelColorCountBlock
-from roboflow_workflows.v2.blocks.measurements.pixel_color import parse_rgb_color
+from roboflow_workflows.v2.blocks.measurements.pixel_color_count.v1 import parse_rgb_color
 from roboflow_workflows.v2.data.image import ImageData
 
 

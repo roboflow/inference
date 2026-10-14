@@ -3,6 +3,7 @@
 Every request goes to an in-process fake transport or platform client; the
 answers are fixed strings, not model output.
 """
+import roboflow_workflows.v2.blocks.language._catalogue_compatible_vendors as _v2_family_0
 
 import base64
 import json
@@ -12,13 +13,11 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.language import compatible_vendors
+from roboflow_workflows.v2.blocks.language._shared import compatible_vendors as compatible_vendors
 from roboflow_workflows.v2.blocks.language.chat import ChatRequestError
-from roboflow_workflows.v2.blocks.language.compatible_vendors import (
-    GoogleGemmaBlock,
-    SpaceXAIBlock,
-    xai_task_request,
-)
+from roboflow_workflows.v2.blocks.language.google_gemma.v4 import GoogleGemmaBlock
+from roboflow_workflows.v2.blocks.language.spacexai.v3 import SpaceXAIBlock
+from roboflow_workflows.v2.blocks.language._shared.compatible_vendors import xai_task_request
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import (
@@ -642,5 +641,5 @@ def test_xai_managed_key_ignores_ambient_key_without_sdk(monkeypatch) -> None:
 
 
 def test_only_active_compatible_vendor_blocks_are_discoverable() -> None:
-    assert compatible_vendors.BLOCKS == (GoogleGemmaBlock, SpaceXAIBlock)
-    assert all("qwen3_" not in block.type for block in compatible_vendors.BLOCKS)
+    assert _v2_family_0.BLOCKS == (GoogleGemmaBlock, SpaceXAIBlock)
+    assert all("qwen3_" not in block.type for block in _v2_family_0.BLOCKS)

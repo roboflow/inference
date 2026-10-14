@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.control.routing import DeltaFilterBlock
+from roboflow_workflows.v2.blocks.control.delta_filter.v1 import DeltaFilterBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.engine.catalogue import Catalogue

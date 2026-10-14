@@ -5,7 +5,12 @@ read_rows        one packed host transfer; exact int64 class ids, own
 placed_in        another or an unnamed workflow input -> error + remedy
 mask_quality     accurate | coarse; literals fail at compile, selected
                  values at run with one message, also on box-only paths
-copy_image       rejected with either value; error says delete + chain
+copy_image       rejected with either value by every annotation block (each
+                 writes its own validator); error says delete + chain
+palette          every palette block checks literal palette_size and
+                 custom_colors when the workflow is compiled
+image output     every annotation block declares exactly one image output
+                 sourced from its image; only stateful blocks are not prunable
 """
 
 from typing import Any
@@ -14,14 +19,17 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.visualization.annotations import (
+    BLOCKS,
     BlurVisualizationBlock,
-    BoundingBoxVisualizationBlock,
     CropVisualizationBlock,
+    GridVisualizationBlock,
+    HeatmapVisualizationBlock,
     LabelVisualizationBlock,
     MaskVisualizationBlock,
     PixelateVisualizationBlock,
     PolygonVisualizationBlock,
     SemanticSegmentationVisualizationBlock,
+    TraceVisualizationBlock,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.rows import (
     placed_in,
@@ -29,6 +37,7 @@ from roboflow_workflows.v2.blocks.visualization.annotations.rows import (
 )
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import FrameMapping, ImageData
+from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError
 
@@ -50,6 +59,17 @@ MASK_READERS = (
     CropVisualizationBlock,
     LabelVisualizationBlock,
 )
+# Grid draws no annotation and never had copy_image.
+COPY_IMAGE_REJECTERS = tuple(
+    block for block in BLOCKS if block is not GridVisualizationBlock
+)
+PALETTE_BLOCKS = tuple(
+    block
+    for block in BLOCKS
+    if "palette_size" in spec_of(block).params_model.model_fields
+)
+# Stateful blocks accumulate over frames, so they must run on every frame.
+STATEFUL_BLOCKS = frozenset({HeatmapVisualizationBlock, TraceVisualizationBlock})
 QUALITY_MESSAGE = "mask_quality must be one of ['accurate', 'coarse']"
 HAS_MPS = torch.backends.mps.is_available()
 
@@ -346,7 +366,7 @@ def test_mask_quality_description_states_cost_and_current_no_op(
     # then
     assert "one full-image mask per detection, at either quality" in field.description
     assert "blocky" in field.description
-    assert "v2/instance_segmentation@v1 currently returns full-resolution" in (
+    assert "roboflow_core/roboflow_instance_segmentation_model@v4 currently returns full-resolution" in (
         field.description
     )
     assert "same result" in field.description
@@ -354,7 +374,7 @@ def test_mask_quality_description_states_cost_and_current_no_op(
 
 @pytest.mark.parametrize("value", [True, False])
 @pytest.mark.parametrize(
-    "block_class", (BoundingBoxVisualizationBlock, MaskVisualizationBlock)
+    "block_class", COPY_IMAGE_REJECTERS, ids=lambda block: block.type
 )
 def test_copy_image_is_rejected_with_delete_and_chain_remedy(
     block_class: type, value: bool
@@ -367,3 +387,48 @@ def test_copy_image_is_rejected_with_delete_and_chain_remedy(
     message = str(error.value) + str(error.value.__cause__)
     assert "delete the field" in message
     assert "$steps.<previous>.image" in message
+
+
+@pytest.mark.parametrize(
+    "parameters, message",
+    [
+        ({"palette_size": 0}, "palette_size must be at least 1, got 0"),
+        (
+            {"custom_colors": ["#FF0000", "bad"]},
+            "custom_colors[1]: invalid color 'bad'",
+        ),
+    ],
+)
+@pytest.mark.parametrize("block_class", PALETTE_BLOCKS, ids=lambda block: block.type)
+def test_palette_literals_are_checked_at_compile_by_every_palette_block(
+    block_class: type, parameters: dict, message: str
+) -> None:
+    # when
+    with pytest.raises(ParamsValidationError) as error:
+        validate(block_class, **parameters)
+
+    # then
+    assert message in str(error.value)
+
+
+def test_palette_blocks_are_the_sixteen_colored_annotations() -> None:
+    # then: guards the parametrization above against an empty or partial list
+    assert len(PALETTE_BLOCKS) == 16
+    assert len(COPY_IMAGE_REJECTERS) == 27
+
+
+@pytest.mark.parametrize(
+    "block_class", COPY_IMAGE_REJECTERS, ids=lambda block: block.type
+)
+def test_annotation_block_declares_one_image_output_with_image_lineage(
+    block_class: type,
+) -> None:
+    # given
+    expected_prunable = block_class not in STATEFUL_BLOCKS
+
+    # then
+    assert block_class.prunable is expected_prunable
+    assert list(block_class.outputs) == ["image"]
+    output = block_class.outputs["image"]
+    assert output.source == "image"
+    assert output.kinds == (IMAGE_KIND,)

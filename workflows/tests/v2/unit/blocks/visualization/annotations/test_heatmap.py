@@ -1,4 +1,4 @@
-"""``v2/heatmap_visualization@v1``: heat accumulated per source.
+"""``roboflow_core/heatmap_visualization@v1``: heat accumulated per source.
 
 The V1 oracle is the latest V1 block class itself, one instance kept across
 frames, fed the same rows as ``sv.Detections``; V1 test modules are not
@@ -22,9 +22,7 @@ from roboflow_workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImageData,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.heatmap import (
-    HeatmapVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.heatmap_visualization.v1 import HeatmapVisualizationBlock
 from roboflow_workflows.v2.blocks.visualization.annotations.sources import (
     SourceCapacityError,
 )

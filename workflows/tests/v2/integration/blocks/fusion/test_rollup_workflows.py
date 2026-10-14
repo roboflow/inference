@@ -3,7 +3,7 @@
 import pytest
 import torch
 from pydantic import Field
-from roboflow_workflows.v2.blocks.fusion.rollup import DetectionsListRollUpBlock
+from roboflow_workflows.v2.blocks.fusion.detections_list_rollup.v1 import DetectionsListRollUpBlock
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.predictions import (
@@ -75,7 +75,7 @@ def definition(detector="test/marker_detector@v1", *, nested=False, proposals=Fa
     if nested:
         steps.append(
             dict(
-                type="v2/absolute_static_crop@v1",
+                type="roboflow_core/absolute_static_crop@v1",
                 name="outer",
                 image=source,
                 x_center=30,
@@ -95,14 +95,14 @@ def definition(detector="test/marker_detector@v1", *, nested=False, proposals=Fa
                 image=source,
             ),
             dict(
-                type="v2/dynamic_crop@v1",
+                type="roboflow_core/dynamic_crop@v1",
                 name="crop",
                 image=source,
                 predictions="$steps.parents.predictions",
             ),
             dict(type=detector, name="child", image="$steps.crop.crops"),
             dict(
-                type="v2/dimension_collapse@v1",
+                type="roboflow_core/dimension_collapse@v1",
                 name="collect",
                 data="$steps.child.predictions",
             ),

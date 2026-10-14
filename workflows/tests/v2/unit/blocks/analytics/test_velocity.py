@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.analytics import velocity as velocity_module
-from roboflow_workflows.v2.blocks.analytics.velocity import VelocityBlock
+from roboflow_workflows.v2.blocks.analytics.velocity import v1 as velocity_module
+from roboflow_workflows.v2.blocks.analytics.velocity.v1 import VelocityBlock
 from roboflow_workflows.v2.blocks.tracking.base import TrackerCapacityError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView

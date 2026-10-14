@@ -848,7 +848,7 @@ def test_definitions_are_not_modified() -> None:
 
 
 def test_draft_style_state_handler_counts_entries_through_managed_state() -> None:
-    from roboflow_workflows.v2.blocks.state.values import StateIncrementBlock
+    from roboflow_workflows.v2.blocks.state.state_increment.v1 import StateIncrementBlock
     from roboflow_workflows.v2.engine.state import MISSING
 
     catalogue = Catalogue([Zone, Note, StateIncrementBlock], sources=[Feed])
@@ -861,7 +861,7 @@ def test_draft_style_state_handler_counts_entries_through_managed_state() -> Non
             "inputs": [{"name": "zone", "kind": ["string"]}],
             "steps": [
                 {
-                    "type": "v2/state_increment",
+                    "type": "roboflow_core/state_increment@v1",
                     "name": "global_count",
                     "trigger": "$inputs.zone",
                     "scope": "global",

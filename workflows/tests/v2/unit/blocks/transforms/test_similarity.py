@@ -1,8 +1,8 @@
-"""``v2/cosine_similarity@v1`` on analytic vectors."""
+"""``roboflow_core/cosine_similarity@v1`` on analytic vectors."""
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.transforms.similarity import CosineSimilarityBlock
+from roboflow_workflows.v2.blocks.transforms.cosine_similarity.v1 import CosineSimilarityBlock
 
 
 def _similarity(first: torch.Tensor, second: torch.Tensor) -> float:

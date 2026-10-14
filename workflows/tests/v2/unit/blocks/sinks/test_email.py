@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/email_notification@v2``: loopback SMTP and a fake platform.
+"""Unit tests of ``roboflow_core/email_notification@v2``: loopback SMTP and a fake platform.
 
 Every credential is an invented sentinel; SMTP goes to ``127.0.0.1`` only and
 the managed provider is a recording fake, so nothing is sent anywhere.
@@ -13,13 +13,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.v2.blocks.query import QueryRuntimeError
-from roboflow_workflows.v2.blocks.sinks.email import (
-    NON_MEMBER_MESSAGE,
-    RATE_LIMIT_MESSAGE,
-    TOO_LARGE_MESSAGE,
-    EmailNotificationBlock,
-    SmtpSslConnector,
-)
+from roboflow_workflows.v2.blocks.sinks.email_notification.v2 import NON_MEMBER_MESSAGE, RATE_LIMIT_MESSAGE, TOO_LARGE_MESSAGE, EmailNotificationBlock, SmtpSslConnector
 from roboflow_workflows.v2.blocks.sinks.runtime import (
     BACKGROUND_MESSAGE,
     BackgroundEffects,

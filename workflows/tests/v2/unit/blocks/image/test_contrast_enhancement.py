@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/contrast_enhancement@v1``, called directly.
+"""Unit tests of ``roboflow_core/contrast_enhancement@v1``, called directly.
 
 Simple ramps are worked out by hand. Random images are compared with V1's
 own NumPy implementation (``core_steps/classical_cv/contrast_enhancement``),
@@ -19,9 +19,7 @@ from roboflow_workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImageData,
 )
-from roboflow_workflows.v2.blocks.image.contrast_enhancement import (
-    ContrastEnhancementBlock,
-)
+from roboflow_workflows.v2.blocks.image.contrast_enhancement.v1 import ContrastEnhancementBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
 
@@ -190,6 +188,6 @@ def test_channels_last_view_equals_v1() -> None:
 
 
 def test_declares_a_pure_prunable_block() -> None:
-    assert ContrastEnhancementBlock.type == "v2/contrast_enhancement@v1"
+    assert ContrastEnhancementBlock.type == "roboflow_core/contrast_enhancement@v1"
     assert ContrastEnhancementBlock.prunable is True
     assert ContrastEnhancementBlock.mutates == ()

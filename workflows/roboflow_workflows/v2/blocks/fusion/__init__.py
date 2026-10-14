@@ -9,13 +9,10 @@
 ``BLOCKS`` lists the blocks to register in the catalogue.
 """
 
-from roboflow_workflows.v2.blocks.fusion.consensus import DetectionsConsensusBlock
-from roboflow_workflows.v2.blocks.fusion.difference import DetectionsDifferenceBlock
-from roboflow_workflows.v2.blocks.fusion.overlap_analysis import (
-    DETECTIONS_OVERLAPS_KIND,
-    OverlapAnalysisBlock,
-)
-from roboflow_workflows.v2.blocks.fusion.rollup import DetectionsListRollUpBlock
+from roboflow_workflows.v2.blocks.fusion.detections_consensus.v1 import DetectionsConsensusBlock
+from roboflow_workflows.v2.blocks.fusion.detections_difference.v1 import DetectionsDifferenceBlock
+from roboflow_workflows.v2.blocks.fusion.overlap_analysis.v1 import DETECTIONS_OVERLAPS_KIND, OverlapAnalysisBlock
+from roboflow_workflows.v2.blocks.fusion.detections_list_rollup.v1 import DetectionsListRollUpBlock
 
 BLOCKS = (
     DetectionsConsensusBlock,

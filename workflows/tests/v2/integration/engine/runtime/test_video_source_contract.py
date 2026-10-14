@@ -8,7 +8,7 @@ stationary camera axis and keeps the camera position as the index::
 
     cams.frame[camera] ──▶ member   one call per camera, state.source
                        ├─▶ batch    one call per pulse (batch="always"), state.at
-                       └─▶ w        v2/window@v1, size 2: camera axis, then T
+                       └─▶ w        roboflow_core/window@v1, size 2: camera axis, then T
     groups: frames (frame, seen, tally) and clips (clip)
 
 Each member carries its own context, built by the source:
@@ -231,7 +231,7 @@ def camera_definition(*, recorded: bool = False) -> Dict[str, Any]:
         "sources": [{"type": CameraSet.type, "name": "cams", "script": "sparse"}],
         "operators": [
             {
-                "type": "v2/window@v1",
+                "type": "roboflow_core/window@v1",
                 "name": "w",
                 "size": 2,
                 "collect": {"frame": "$sources.cams.frame"},

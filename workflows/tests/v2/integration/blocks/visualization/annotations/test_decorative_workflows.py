@@ -21,18 +21,10 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.models.cache import ModelCache
-from roboflow_workflows.v2.blocks.visualization.annotations.background_color import (
-    BackgroundColorVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.color import (
-    ColorVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.grid import (
-    GridVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.icon import (
-    IconVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.background_color_visualization.v1 import BackgroundColorVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.color_visualization.v1 import ColorVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.grid_visualization.v1 import GridVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.icon_visualization.v1 import IconVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.plan import CompileOptions
@@ -60,13 +52,13 @@ DECORATIVE_BLOCKS = (
     IconVisualizationBlock,
 )
 SEG = {
-    "type": "v2/instance_segmentation@v1",
+    "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
     "name": "seg",
     "image": "$inputs.image",
     "model_id": "shapes-seg",
 }
 CROP = {
-    "type": "v2/dynamic_crop@v1",
+    "type": "roboflow_core/dynamic_crop@v1",
     "name": "crop",
     "image": "$inputs.image",
     "predictions": "$steps.seg.predictions",
@@ -126,7 +118,7 @@ def solid_icon(count: int) -> List[ImageData]:
 DECORATION = [
     SEG,
     {
-        "type": "v2/background_color_visualization@v1",
+        "type": "roboflow_core/background_color_visualization@v1",
         "name": "background",
         "image": "$inputs.image",
         "predictions": "$steps.seg.segmentation",
@@ -134,7 +126,7 @@ DECORATION = [
         "opacity": 1.0,
     },
     {
-        "type": "v2/color_visualization@v1",
+        "type": "roboflow_core/color_visualization@v1",
         "name": "color",
         "image": "$steps.background.image",
         "predictions": "$steps.seg.segmentation",
@@ -143,7 +135,7 @@ DECORATION = [
         "opacity": 1.0,
     },
     {
-        "type": "v2/icon_visualization@v1",
+        "type": "roboflow_core/icon_visualization@v1",
         "name": "marks",
         "image": "$steps.color.image",
         "icon": "$inputs.icon",
@@ -153,7 +145,7 @@ DECORATION = [
         "icon_height": 4,
     },
     {
-        "type": "v2/icon_visualization@v1",
+        "type": "roboflow_core/icon_visualization@v1",
         "name": "watermark",
         "image": "$steps.marks.image",
         "icon": "$inputs.icon",
@@ -220,7 +212,7 @@ def test_background_color_and_icons_chain_over_a_ragged_batch(mode: str) -> None
 
 def test_selected_style_values_draw_like_the_same_literals() -> None:
     literal = {
-        "type": "v2/color_visualization@v1",
+        "type": "roboflow_core/color_visualization@v1",
         "name": "fill",
         "image": "$inputs.image",
         "predictions": "$steps.seg.segmentation",
@@ -250,7 +242,7 @@ def test_selected_style_values_draw_like_the_same_literals() -> None:
 
 def test_rows_pick_colors_by_class_or_by_position() -> None:
     fill = {
-        "type": "v2/color_visualization@v1",
+        "type": "roboflow_core/color_visualization@v1",
         "name": "fill",
         "image": "$inputs.image",
         "predictions": "$steps.seg.segmentation",
@@ -281,7 +273,7 @@ def test_rows_pick_colors_by_class_or_by_position() -> None:
 
 def test_a_selected_invalid_opacity_fails_the_row_with_the_literal_text() -> None:
     step = {
-        "type": "v2/background_color_visualization@v1",
+        "type": "roboflow_core/background_color_visualization@v1",
         "name": "background",
         "image": "$inputs.image",
         "predictions": "$steps.seg.segmentation",
@@ -308,7 +300,7 @@ ICON_ALPHA_COLUMNS = (0, 0, 128, 255)
 ALPHA_STEPS = [
     SEG,
     {
-        "type": "v2/icon_visualization@v1",
+        "type": "roboflow_core/icon_visualization@v1",
         "name": "marks",
         "image": "$inputs.image",
         "icon": "$inputs.icon",
@@ -391,7 +383,7 @@ LOGO_INPUTS = [
 LOGO_POSITIONS = {"watermark": (-2, -2), "clipped": (-62, -46)}
 LOGO_STEPS = [
     {
-        "type": "v2/icon_visualization@v1",
+        "type": "roboflow_core/icon_visualization@v1",
         "name": name,
         "image": "$inputs.image",
         "icon": "$inputs.logo",
@@ -474,7 +466,7 @@ def test_one_parameter_logo_and_alpha_mark_each_image_at_its_own_corners(
 
 GRID_STEPS = DECORATION[:3] + [
     {
-        "type": "v2/grid_visualization@v1",
+        "type": "roboflow_core/grid_visualization@v1",
         "name": "grid",
         "images": ["$inputs.image", "$steps.background.image", "$steps.color.image"],
         "width": 224,
@@ -528,13 +520,13 @@ def test_grid_shows_an_image_and_its_drawings_on_one_canvas_per_image(
 def test_a_gated_image_gets_no_grid_and_the_others_do() -> None:
     steps = [
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "keep",
             "condition": "$inputs.keep",
             "next_steps": ["$steps.grid"],
         },
         {
-            "type": "v2/grid_visualization@v1",
+            "type": "roboflow_core/grid_visualization@v1",
             "name": "grid",
             "images": ["$inputs.image"],
             "width": 56,
@@ -562,14 +554,14 @@ def test_parent_rows_drawn_on_crops_keep_each_crops_own_region() -> None:
         SEG,
         CROP,
         {
-            "type": "v2/background_color_visualization@v1",
+            "type": "roboflow_core/background_color_visualization@v1",
             "name": "on_crop",
             "image": "$steps.crop.crops",
             "predictions": "$steps.seg.segmentation",
             "opacity": 1.0,
         },
         {
-            "type": "v2/background_color_visualization@v1",
+            "type": "roboflow_core/background_color_visualization@v1",
             "name": "direct",
             "image": "$inputs.image",
             "predictions": "$steps.seg.segmentation",

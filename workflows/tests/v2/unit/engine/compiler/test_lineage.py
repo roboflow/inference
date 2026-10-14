@@ -403,26 +403,26 @@ def test_native_image_workflow_layouts_and_literal_errors() -> None:
         "steps": [
             {
                 "name": "crop",
-                "type": "v2/crop",
+                "type": "roboflow_core/crop@v1",
                 "image": "$inputs.images",
                 "regions": [[40, 40, 100, 100], [120, 10, 180, 70]],
             },
             {
                 "name": "keep",
-                "type": "v2/has_brightness",
+                "type": "roboflow_core/has_brightness@v1",
                 "image": "$steps.crop.crops",
                 "minimum": 100,
             },
             {
                 "name": "gate",
-                "type": "v2/continue_if",
+                "type": "roboflow_core/continue_if_boolean@v1",
                 "condition": "$steps.keep.keep",
                 "next_steps": ["$steps.invert"],
             },
-            {"name": "invert", "type": "v2/invert", "image": "$steps.crop.crops"},
+            {"name": "invert", "type": "roboflow_core/invert@v1", "image": "$steps.crop.crops"},
             {
                 "name": "mosaic",
-                "type": "v2/mosaic",
+                "type": "roboflow_core/mosaic@v1",
                 "images": "$steps.invert.image",
                 "tile_size": 48,
                 "background": 128,

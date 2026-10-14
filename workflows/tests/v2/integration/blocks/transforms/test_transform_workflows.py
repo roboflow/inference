@@ -51,21 +51,21 @@ def chain_steps(source: str):
     return [
         {"type": "test/synthetic_segmenter@v1", "name": "segment", "image": "$inputs.image"},
         {
-            "type": "v2/per_class_confidence_filter@v1",
+            "type": "roboflow_core/per_class_confidence_filter@v1",
             "name": "confident",
             "predictions": f"$steps.segment.{source}",
             "class_thresholds": "$inputs.thresholds",
             "default_threshold": 0.35,
         },
         {
-            "type": "v2/detections_filter@v1",
+            "type": "roboflow_core/detections_filter@v1",
             "name": "wanted",
             "predictions": "$steps.confident.predictions",
             "operations": [CLASS_IN],
             "operations_parameters": {"classes": "$inputs.classes"},
         },
         {
-            "type": "v2/detections_transformation@v1",
+            "type": "roboflow_core/detections_transformation@v1",
             "name": "ordered",
             "predictions": "$steps.wanted.predictions",
             "operations": [
@@ -173,7 +173,7 @@ def test_sorted_and_filtered_rows_still_join_their_crop_classifications() -> Non
     steps = [
         *chain_steps("predictions")[:4],
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "predictions": "$steps.ordered.predictions",
@@ -184,7 +184,7 @@ def test_sorted_and_filtered_rows_still_join_their_crop_classifications() -> Non
             "image": "$steps.crop.crops",
         },
         {
-            "type": "v2/detections_classes_replacement@v1",
+            "type": "roboflow_core/detections_classes_replacement@v1",
             "name": "replace",
             "object_detection_predictions": "$steps.ordered.predictions",
             "classification_predictions": "$steps.classify.predictions",
@@ -213,7 +213,7 @@ def test_gated_filter_produces_no_output() -> None:
     steps = [
         *chain_steps("predictions")[:2],
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "gate",
             "condition": "$inputs.enabled",
             "next_steps": ["$steps.wanted"],

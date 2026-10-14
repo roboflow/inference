@@ -1,4 +1,4 @@
-"""``v2/grid_visualization@v1``: images tiled on one composite canvas.
+"""``roboflow_core/grid_visualization@v1``: images tiled on one composite canvas.
 
 Expected pixels come from hand-computed layouts of solid images and from the
 latest V1 block on the same images (an exact oracle: both resize with
@@ -17,9 +17,7 @@ from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.grid import (
-    GridVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.grid_visualization.v1 import GridVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError

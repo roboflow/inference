@@ -25,7 +25,7 @@ from roboflow_workflows.execution_engine.entities.workload import (
     Severity,
     WorkOperation,
 )
-from roboflow_workflows.v2.blocks.control.blocks import ContinueIfBlock
+from roboflow_workflows.v2.blocks.control.continue_if_boolean.v1 import ContinueIfBlock
 from roboflow_workflows.v2.data.kinds import (
     BOOLEAN_KIND,
     BUILTIN_KINDS,
@@ -314,7 +314,7 @@ def compile_fixture(sentinel: Path) -> CompiledWorkflow:
             },
             {"type": "demo/positive@v1", "name": "positive", "value": "$inputs.values"},
             {
-                "type": "v2/continue_if",
+                "type": "roboflow_core/continue_if_boolean@v1",
                 "name": "gate",
                 "condition": "$steps.positive.ok",
                 "next_steps": ["$steps.child"],

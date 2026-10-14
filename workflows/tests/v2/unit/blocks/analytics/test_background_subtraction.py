@@ -1,4 +1,4 @@
-"""``v2/background_subtraction@v1`` called directly on generated scenes.
+"""``roboflow_core/background_subtraction@v1`` called directly on generated scenes.
 
 The oracle is a static gradient with a 32 px white square moving 12 px per
 frame. Once the background is learned, the strip the square newly covers is
@@ -13,11 +13,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.analytics.background_subtraction import (
-    DEFAULT_MAX_SOURCES,
-    BackgroundModelCapacityError,
-    BackgroundSubtractionBlock,
-)
+from roboflow_workflows.v2.blocks.analytics.background_subtraction.v1 import DEFAULT_MAX_SOURCES, BackgroundModelCapacityError, BackgroundSubtractionBlock
 from roboflow_workflows.v2.data.batch import SampleContext
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.context import ExecutionContext, use_execution_context

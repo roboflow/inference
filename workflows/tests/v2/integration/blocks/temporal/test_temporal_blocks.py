@@ -16,17 +16,13 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.control.blocks import ContinueIfBlock
-from roboflow_workflows.v2.blocks.image.blocks import (
-    HasBrightnessBlock,
-    InvertBlock,
-    MosaicBlock,
-    StaticCropBlock,
-)
-from roboflow_workflows.v2.blocks.temporal.blocks import (
-    BestFrameBlock,
-    TopKBrightestBlock,
-)
+from roboflow_workflows.v2.blocks.control.continue_if_boolean.v1 import ContinueIfBlock
+from roboflow_workflows.v2.blocks.image.primitives.has_brightness.v1 import HasBrightnessBlock
+from roboflow_workflows.v2.blocks.image.primitives.invert.v1 import InvertBlock
+from roboflow_workflows.v2.blocks.image.primitives.mosaic.v1 import MosaicBlock
+from roboflow_workflows.v2.blocks.image.primitives.static_crop.v1 import StaticCropBlock
+from roboflow_workflows.v2.blocks.temporal.best_frame.v1 import BestFrameBlock
+from roboflow_workflows.v2.blocks.temporal.top_k_brightest.v1 import TopKBrightestBlock
 from roboflow_workflows.v2.data.batch import (
     Batch,
     EntryMetadata,
@@ -212,7 +208,7 @@ BEST_FRAME_WORKFLOW = {
     "inputs": [FRAMES_INPUT, REFERENCE_INPUT],
     "steps": [
         {
-            "type": "v2/best_frame",
+            "type": "roboflow_core/best_frame@v1",
             "name": "best",
             "frames": "$inputs.frames",
             "reference": "$inputs.reference",
@@ -296,20 +292,20 @@ def test_selection_uses_full_logical_indices_of_filtered_ragged_groups() -> None
         "inputs": [FRAMES_INPUT, REFERENCE_INPUT],
         "steps": [
             {
-                "type": "v2/has_brightness",
+                "type": "roboflow_core/has_brightness@v1",
                 "name": "bright",
                 "image": "$inputs.frames",
                 "minimum": 20.0,
             },
             {
-                "type": "v2/continue_if",
+                "type": "roboflow_core/continue_if_boolean@v1",
                 "name": "gate",
                 "condition": "$steps.bright.keep",
                 "next_steps": ["$steps.invert"],
             },
-            {"type": "v2/invert", "name": "invert", "image": "$inputs.frames"},
+            {"type": "roboflow_core/invert@v1", "name": "invert", "image": "$inputs.frames"},
             {
-                "type": "v2/best_frame",
+                "type": "roboflow_core/best_frame@v1",
                 "name": "best",
                 "frames": "$steps.invert.image",
                 "reference": "$inputs.reference",
@@ -334,7 +330,7 @@ TOP_K_WORKFLOW = {
     "inputs": [FRAMES_INPUT, {"type": "WorkflowParameter", "name": "k"}],
     "steps": [
         {
-            "type": "v2/top_k_brightest",
+            "type": "roboflow_core/top_k_brightest@v1",
             "name": "top",
             "images": "$inputs.frames",
             "k": "$inputs.k",
@@ -399,7 +395,7 @@ def test_first_and_last_policies_time_a_collapsed_window_by_its_ends() -> None:
         "inputs": [FRAMES_INPUT],
         "steps": [
             {"type": "test/window_size", "name": "ends", "frames": "$inputs.frames"},
-            {"type": "v2/mosaic", "name": "mosaic", "images": "$inputs.frames"},
+            {"type": "roboflow_core/mosaic@v1", "name": "mosaic", "images": "$inputs.frames"},
         ],
         "outputs": [
             _output("first", "$steps.ends.first"),
@@ -433,7 +429,7 @@ def test_an_empty_window_does_not_inherit_an_unrelated_root_timestamp() -> None:
         "inputs": [FRAMES_INPUT],
         "steps": [
             {"type": "test/window_size", "name": "ends", "frames": "$inputs.frames"},
-            {"type": "v2/mosaic", "name": "mosaic", "images": "$inputs.frames"},
+            {"type": "roboflow_core/mosaic@v1", "name": "mosaic", "images": "$inputs.frames"},
         ],
         "outputs": [
             _output("common", "$steps.ends.common"),
@@ -464,13 +460,13 @@ def test_static_crop_keeps_every_region_position_and_its_geometry() -> None:
         "inputs": [IMAGES_INPUT],
         "steps": [
             {
-                "type": "v2/static_crop",
+                "type": "roboflow_core/static_crop@v1",
                 "name": "crop",
                 "image": "$inputs.images",
                 "regions": [[0, 0, 4, 4], [100, 100, 120, 120], [6, 2, 12, 12]],
                 "outside": "none",
             },
-            {"type": "v2/invert", "name": "invert", "image": "$steps.crop.crops"},
+            {"type": "roboflow_core/invert@v1", "name": "invert", "image": "$steps.crop.crops"},
         ],
         "outputs": [
             _output("crops", "$steps.crop.crops"),
@@ -504,7 +500,7 @@ def test_static_crop_rejects_a_region_outside_the_image_by_default() -> None:
         "inputs": [IMAGES_INPUT],
         "steps": [
             {
-                "type": "v2/static_crop",
+                "type": "roboflow_core/static_crop@v1",
                 "name": "crop",
                 "image": "$inputs.images",
                 "regions": [[0, 0, 4, 4], [100, 100, 120, 120]],
@@ -524,7 +520,7 @@ def test_static_crop_regions_cannot_be_selected_at_run_time() -> None:
         "inputs": [IMAGES_INPUT, {"type": "WorkflowParameter", "name": "regions"}],
         "steps": [
             {
-                "type": "v2/static_crop",
+                "type": "roboflow_core/static_crop@v1",
                 "name": "crop",
                 "image": "$inputs.images",
                 "regions": "$inputs.regions",
@@ -545,14 +541,14 @@ def test_crops_after_a_window_collapse_trailing_first_then_time() -> None:
         "inputs": [FRAMES_INPUT, REFERENCE_INPUT],
         "steps": [
             {
-                "type": "v2/static_crop",
+                "type": "roboflow_core/static_crop@v1",
                 "name": "crop",
                 "image": "$inputs.frames",
                 "regions": [[0, 0, 4, 4], [4, 4, 8, 8]],
             },
-            {"type": "v2/mosaic", "name": "tiles", "images": "$steps.crop.crops"},
+            {"type": "roboflow_core/mosaic@v1", "name": "tiles", "images": "$steps.crop.crops"},
             {
-                "type": "v2/best_frame",
+                "type": "roboflow_core/best_frame@v1",
                 "name": "best",
                 "frames": "$steps.tiles.image",
                 "reference": "$inputs.reference",
@@ -586,13 +582,13 @@ def test_temporal_group_rejects_time_that_is_not_the_last_axis() -> None:
         "inputs": [FRAMES_INPUT, REFERENCE_INPUT],
         "steps": [
             {
-                "type": "v2/static_crop",
+                "type": "roboflow_core/static_crop@v1",
                 "name": "crop",
                 "image": "$inputs.frames",
                 "regions": [[0, 0, 4, 4]],
             },
             {
-                "type": "v2/best_frame",
+                "type": "roboflow_core/best_frame@v1",
                 "name": "best",
                 "frames": "$steps.crop.crops",
                 "reference": "$inputs.reference",
@@ -614,7 +610,7 @@ def test_temporal_group_rejects_a_group_without_time() -> None:
         "inputs": [IMAGES_INPUT, {"name": "reference", "kind": ["image"]}],
         "steps": [
             {
-                "type": "v2/best_frame",
+                "type": "roboflow_core/best_frame@v1",
                 "name": "best",
                 "frames": "$inputs.images",
                 "reference": "$inputs.reference",

@@ -10,7 +10,7 @@ The host nests three blocks; they exit in reverse order::
         ):
             run.wait()
 
-    scripted source ─▶ v2/webhook_sink@v1 ─▶ group "out" (error_status, message)
+    scripted source ─▶ roboflow_core/webhook_sink@v1 ─▶ group "out" (error_status, message)
                             └ webhook_client: in-process recording fake
 
 Order is proved with events, not clocks: the client holds every request
@@ -31,7 +31,7 @@ from roboflow_workflows.v2.blocks.sinks.runtime import (
     FULL_MESSAGE,
     BackgroundEffects,
 )
-from roboflow_workflows.v2.blocks.sinks.webhook import SENT_MESSAGE, WebhookSinkBlock
+from roboflow_workflows.v2.blocks.sinks.webhook_sink.v1 import SENT_MESSAGE, WebhookSinkBlock
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 

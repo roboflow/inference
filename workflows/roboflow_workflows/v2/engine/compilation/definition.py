@@ -56,7 +56,7 @@ Operators relate pulses of sources explicitly. They are root declarations with
 named selector maps (``inputs`` for alignment, ``collect``/``hold`` for a
 window); every other key is a literal parameter of the operator class::
 
-      "operators": [{"type": "v2/window@v1", "name": "clip", "size": 4,
+      "operators": [{"type": "roboflow_core/window@v1", "name": "clip", "size": 4,
                      "collect": {"frames": "$sources.camera.image"}}]
 
 Their ports are addressed as ``$operators.<operator>.<port>``, also as an
@@ -83,7 +83,7 @@ outputs, ``$handlers.<handler>.<output>``) delivers that handler's results.
 
 ``state_machines`` move between declared states. A fixed transition fires on
 an event (``on``); a handler-selected one names the handler whose
-``v2/state_machine_set`` step picks one of its ``to`` states. A transition may
+``roboflow_core/state_machine_set@v1`` step picks one of its ``to`` states. A transition may
 emit a machine event (``$state_machines.<machine>.events.<name>``) built from
 ``$event.<field>``, ``$transition.from|to|name`` and literals::
 
@@ -1826,7 +1826,7 @@ def _parse_transition(
     if ("on" in raw) == ("handler" in raw):
         raise WorkflowCompileError(
             f"{where} needs exactly one of 'on' (an event fires it) or 'handler' "
-            "(that handler's v2/state_machine_set step picks the target)"
+            "(that handler's roboflow_core/state_machine_set@v1 step picks the target)"
         )
     sources = _state_names(raw.get("from"), location=f"{where}.from", states=states)
     raw_targets = raw.get("to")

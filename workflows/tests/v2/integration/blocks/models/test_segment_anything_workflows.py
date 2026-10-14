@@ -17,17 +17,17 @@ from typing import Any, Callable, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
-from roboflow_workflows.v2.blocks.image.mask_edge_snap import MaskEdgeSnapBlock
+from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
+from roboflow_workflows.v2.blocks.image.mask_edge_snap.v1 import MaskEdgeSnapBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.detection import ObjectDetectionBlock
-from roboflow_workflows.v2.blocks.models.instance_segmentation import (
-    InstanceSegmentationBlock,
-)
-from roboflow_workflows.v2.blocks.models.segment_anything import (
+from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
+from roboflow_workflows.v2.blocks.models.segment_anything.v1 import (
     SAM2_DEFAULT_MODEL_ID,
-    SAM3_DEFAULT_MODEL_ID,
     SegmentAnything2Block,
+)
+from roboflow_workflows.v2.blocks.models.sam3.v3 import (
+    SAM3_DEFAULT_MODEL_ID,
     SegmentAnything3Block,
 )
 from roboflow_workflows.v2.data.frames import frame_of
@@ -144,14 +144,14 @@ def _masks_of(xyxy: List[List[int]], size_hw) -> torch.Tensor:
 
 
 DETECTOR_STEP = {
-    "type": "v2/object_detection@v1",
+    "type": "roboflow_core/roboflow_object_detection_model@v3",
     "name": "detector",
     "image": "$inputs.image",
     "model_id": "od",
     "confidence": 0.0,
 }
 SAM2_STEP = {
-    "type": "v2/segment_anything@v1",
+    "type": "roboflow_core/segment_anything@v1",
     "name": "sam",
     "image": "$inputs.image",
     "boxes": "$steps.detector.predictions",
@@ -241,7 +241,7 @@ def test_sam2_keeps_image_embeddings_across_runs_of_one_session() -> None:
 def test_an_instance_segmentation_view_prompts_sam2(mode: str) -> None:
     steps = [
         {
-            "type": "v2/instance_segmentation@v1",
+            "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
             "name": "segmenter",
             "image": "$inputs.image",
             "model_id": "seg",
@@ -294,7 +294,7 @@ def test_sam2_reports_its_model_and_loads_it_only_at_run_time() -> None:
 # --- SAM3 ------------------------------------------------------------------------
 
 SAM3_STEP = {
-    "type": "v2/sam3@v3",
+    "type": "roboflow_core/sam3@v3",
     "name": "sam3",
     "image": "$inputs.image",
     "class_names": "$inputs.classes",

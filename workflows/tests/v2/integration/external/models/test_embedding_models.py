@@ -21,12 +21,10 @@ from roboflow_workflows.v2.blocks.models.cache import (
     ModelRequest,
     auto_model_loader,
 )
-from roboflow_workflows.v2.blocks.models.clip_comparison import ClipComparisonBlock
-from roboflow_workflows.v2.blocks.models.embeddings import (
-    ClipEmbeddingBlock,
-    PerceptionEncoderEmbeddingBlock,
-)
-from roboflow_workflows.v2.blocks.transforms.similarity import CosineSimilarityBlock
+from roboflow_workflows.v2.blocks.models.clip_comparison.v2 import ClipComparisonBlock
+from roboflow_workflows.v2.blocks.models.clip.v1 import ClipEmbeddingBlock
+from roboflow_workflows.v2.blocks.models.perception_encoder.v1 import PerceptionEncoderEmbeddingBlock
+from roboflow_workflows.v2.blocks.transforms.cosine_similarity.v1 import CosineSimilarityBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import NATIVE_KINDS
 from roboflow_workflows.v2.engine.catalogue import Catalogue
@@ -101,7 +99,7 @@ def _caption_workflow(block_type: str, model_id: str) -> Dict[str, Any]:
         )
         steps.append(
             {
-                "type": "v2/cosine_similarity@v1",
+                "type": "roboflow_core/cosine_similarity@v1",
                 "name": f"similarity_{n}",
                 "embedding_1": "$steps.image.embedding",
                 "embedding_2": f"$steps.text_{n}.embedding",
@@ -127,8 +125,8 @@ def _caption_workflow(block_type: str, model_id: str) -> Dict[str, Any]:
 @pytest.mark.parametrize(
     "variable, block_type",
     [
-        ("V2_CLIP_PACKAGE", "v2/clip@v1"),
-        ("V2_PERCEPTION_ENCODER_PACKAGE", "v2/perception_encoder@v1"),
+        ("V2_CLIP_PACKAGE", "roboflow_core/clip@v1"),
+        ("V2_PERCEPTION_ENCODER_PACKAGE", "roboflow_core/perception_encoder@v1"),
     ],
     ids=["clip", "perception_encoder"],
 )
@@ -153,7 +151,7 @@ def test_real_clip_comparison_picks_the_matching_caption() -> None:
         "inputs": [{"type": "WorkflowBatchInput", "name": "image", "kind": ["image"]}],
         "steps": [
             {
-                "type": "v2/clip_comparison@v1",
+                "type": "roboflow_core/clip_comparison@v2",
                 "name": "compare",
                 "images": "$inputs.image",
                 "classes": list(CAPTIONS),

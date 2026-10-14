@@ -1,4 +1,4 @@
-"""``v2/window@v1``: collect successive arrivals into a time axis.
+"""``roboflow_core/window@v1``: collect successive arrivals into a time axis.
 
 Each upstream pulse contributes one row: the value of every ``collect`` and
 ``hold`` input. A window of ``size`` rows emits one pulse; the operator then
@@ -122,7 +122,7 @@ _UNSTABLE_INPUT = (
 
 
 class WindowParams(OperatorParams):
-    """Parameters of ``v2/window@v1``."""
+    """Parameters of ``roboflow_core/window@v1``."""
 
     size: int = Field(
         ge=1, strict=True, description="Rows in one full window.", examples=[3]
@@ -223,7 +223,7 @@ class Window(Operator):
     keeps its own contexts.
     """
 
-    type = "v2/window@v1"
+    type = "roboflow_core/window@v1"
     passive_max_emissions = 1  # push emits at most one window, in every align
     Params = WindowParams
     input_roles = ("collect", "hold")

@@ -13,7 +13,7 @@ path, on the image's device::
 
 ``require_same_image`` guards blocks that pair an image with predictions.
 
-``v2/image_preprocessing@v1`` rotate still uses its own copies of the
+``roboflow_core/image_preprocessing@v1`` rotate still uses its own copies of the
 sampling and new-root steps. Its sampling neither rounds positions to 1/32
 pixel nor maps non-finite positions to black, so it is not yet shared.
 """
@@ -92,7 +92,7 @@ def new_root_image(
 
     Rotations, homographies and lens undistortion cannot be written as scale
     and offset, so the result is its own root, as in
-    ``v2/image_preprocessing@v1`` rotate. It keeps ``like``'s source and time
+    ``roboflow_core/image_preprocessing@v1`` rotate. It keeps ``like``'s source and time
     (``video_metadata``) and detection row (``parent_row``).
 
     Args:

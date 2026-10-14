@@ -1,4 +1,4 @@
-"""``v2/color_visualization@v1``: solid box fills blended over the image.
+"""``roboflow_core/color_visualization@v1``: solid box fills blended over the image.
 
 Expected pixels come from small hand-computed oracles (which pixels a box
 covers, the blend formula) and from the latest V1 block on the same data.
@@ -11,9 +11,7 @@ import pytest
 from roboflow_workflows.core_steps.visualizations.color.v1 import (
     ColorVisualizationBlockV1,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.color import (
-    ColorVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.color_visualization.v1 import ColorVisualizationBlock
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError
 

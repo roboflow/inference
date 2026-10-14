@@ -1,7 +1,7 @@
 """Trace and heatmap blocks in compiled V2 workflows over video frames.
 
-Real blocks end to end: ``v2/instance_segmentation@v1`` with the painted-scene
-fake model (``scene``; not model inference), ``v2/trackers_bytetrack@v1``, then
+Real blocks end to end: ``roboflow_core/roboflow_instance_segmentation_model@v4`` with the painted-scene
+fake model (``scene``; not model inference), ``roboflow_core/trackers_bytetrack@v1``, then
 the trace and heatmap blocks. One session runs frame after frame, so state
 lives in the session's block instances as in a video pipeline. The active
 tracker confirms a new track on its second frame; its ids are shared across
@@ -16,12 +16,8 @@ import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks.models.cache import ModelCache
-from roboflow_workflows.v2.blocks.visualization.annotations.heatmap import (
-    HeatmapVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.trace import (
-    TraceVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.heatmap_visualization.v1 import HeatmapVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.trace_visualization.v1 import TraceVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import StepExecutionError
@@ -43,13 +39,13 @@ GREEN = (0, 255, 0)
 MODES = ("run", "phases")
 SEGMENT_AND_TRACK = [
     {
-        "type": "v2/instance_segmentation@v1",
+        "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
         "name": "seg",
         "image": "$inputs.image",
         "model_id": "shapes-seg",
     },
     {
-        "type": "v2/trackers_bytetrack@v1",
+        "type": "roboflow_core/trackers_bytetrack@v1",
         "name": "tracker",
         "image": "$inputs.image",
         "predictions": "$steps.seg.predictions",
@@ -61,7 +57,7 @@ SEGMENT_AND_TRACK = [
     },
 ]
 TRACE = {
-    "type": "v2/trace_visualization@v1",
+    "type": "roboflow_core/trace_visualization@v1",
     "name": "trace",
     "image": "$inputs.image",
     "predictions": "$steps.tracker.tracked_detections",
@@ -71,7 +67,7 @@ TRACE = {
     "custom_colors": ["#00FF00"],
 }
 HEAT = {
-    "type": "v2/heatmap_visualization@v1",
+    "type": "roboflow_core/heatmap_visualization@v1",
     "name": "heat",
     "image": "$steps.trace.image",
     "predictions": "$steps.tracker.tracked_detections",
@@ -214,7 +210,7 @@ def test_two_cameras_in_one_batch_keep_their_own_trails() -> None:
 @pytest.mark.parametrize("drawing", [TRACE, HEAT])
 def test_a_cropped_frame_is_refused_with_draw_before_cropping(drawing: Dict) -> None:
     crop = {
-        "type": "v2/absolute_static_crop@v1",
+        "type": "roboflow_core/absolute_static_crop@v1",
         "name": "crop",
         "image": "$inputs.image",
         "x_center": 40,
@@ -234,7 +230,7 @@ def test_a_cropped_frame_is_refused_with_draw_before_cropping(drawing: Dict) -> 
 
 def test_a_resized_frame_gets_its_trail_and_heat_at_its_own_scale() -> None:
     resize = {
-        "type": "v2/image_preprocessing@v1",
+        "type": "roboflow_core/image_preprocessing@v1",
         "name": "resize",
         "image": "$inputs.image",
         "task_type": "resize",

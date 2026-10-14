@@ -8,14 +8,12 @@ from threading import Event
 import pytest
 import torch
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.roboflow_platform import vision_events as events
+from roboflow_workflows.v2.blocks.roboflow_platform._shared import vision_events as events
 from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
-from roboflow_workflows.v2.blocks.roboflow_platform.vision_events import (
-    EventBundle,
-    RoboflowVisionEventsBlock,
-    VisionEventBundleBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform._shared.vision_events import EventBundle
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_vision_events.v1 import RoboflowVisionEventsBlock
+from roboflow_workflows.v2.blocks.roboflow_platform.vision_event_bundle.v1 import VisionEventBundleBlock
 from roboflow_workflows.v2.blocks.sinks.runtime import (
     BACKGROUND_MESSAGE,
     FULL_MESSAGE,
@@ -66,6 +64,22 @@ class Port:
 
 def bundle_port():
     return Port(EventBundle(event_id="event-2", bundle_path="/bundles/b.tar.gz"))
+
+
+def configured(block, port, **options):
+    """The block with ``port`` injected; the event block also gets a key."""
+    if block is RoboflowVisionEventsBlock:
+        return block(vision_events_port=port, api_key="invented", **options)
+    return block(vision_event_bundle_port=port, **options)
+
+
+def throttled(block):
+    """The throttled outcome, in the block's output order."""
+    outcome = {"error_status": False, "throttling_status": True, "event_id": ""}
+    if block is VisionEventBundleBlock:
+        outcome["bundle_path"] = ""
+    outcome["message"] = "Sink cooldown applies"
+    return outcome
 
 
 def held_effects(**options):
@@ -235,15 +249,20 @@ def test_optional_images_and_predictions_are_none():
 
 
 @pytest.mark.parametrize(
-    "change", [{"event_type": "unknown"}, {"cooldown_seconds": float("nan")}]
+    "block,change",
+    [
+        (RoboflowVisionEventsBlock, {"event_type": "unknown"}),
+        (RoboflowVisionEventsBlock, {"cooldown_seconds": float("nan")}),
+        (VisionEventBundleBlock, {"cooldown_seconds": float("nan")}),
+    ],
 )
-def test_invalid_selector_values_fail_before_any_call(change):
-    port = Port()
+def test_invalid_selector_values_fail_before_any_call(block, change):
+    # A bundle checks event_type only after prepare_destination, so only its
+    # NaN cooldown fails before any call.
+    port = bundle_port() if block is VisionEventBundleBlock else Port()
 
     with pytest.raises(ValueError):
-        RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented").run(
-            **arguments(**change)
-        )
+        configured(block, port).run(**arguments(block, **change))
 
     assert not port.calls
 
@@ -427,22 +446,42 @@ def test_local_store_without_id_is_still_created_as_in_v1():
     assert result["error_status"] is False and result["event_id"] == ""
 
 
-def test_cooldown_throttles_without_preparing_and_ignores_failures():
+@pytest.mark.parametrize("block", [RoboflowVisionEventsBlock, VisionEventBundleBlock])
+def test_cooldown_throttles_without_preparing_and_ignores_failures(block):
     port = Port(PlatformRequestError("failed", error_type="x"))
-    block = RoboflowVisionEventsBlock(vision_events_port=port, api_key="invented")
+    configured_block = configured(block, port)
 
-    first = block.run(**arguments(cooldown_seconds=100))
-    second = block.run(**arguments(cooldown_seconds=100, event_type="unknown"))
+    first = configured_block.run(**arguments(block, cooldown_seconds=100))
+    delivered = list(port.calls)
+    second = configured_block.run(
+        **arguments(block, cooldown_seconds=100, event_type="unknown")
+    )
 
     # As in V1 a failed delivery still starts the window; the throttled call
-    # is not prepared, so its invalid event_type is never seen.
-    assert first["error_status"] is True and len(port.calls) == 1
-    assert second == {
-        "error_status": False,
-        "throttling_status": True,
-        "event_id": "",
-        "message": "Sink cooldown applies",
-    }
+    # is not prepared (no prepare_destination either), so its invalid
+    # event_type is never seen.
+    assert first["error_status"] is True
+    assert [call[0] for call in delivered] == (
+        ["submit"] if block is RoboflowVisionEventsBlock else ["prepare", "bundle"]
+    )
+    assert port.calls == delivered
+    assert list(second.items()) == list(throttled(block).items())
+
+
+@pytest.mark.parametrize("block", [RoboflowVisionEventsBlock, VisionEventBundleBlock])
+def test_losing_the_cooldown_race_throttles_without_delivery(block):
+    # Another call started the window between cooling() and try_start().
+    port = bundle_port() if block is VisionEventBundleBlock else Port()
+    configured_block = configured(block, port)
+    configured_block._cooldown.try_start = lambda seconds: False
+
+    result = configured_block.run(**arguments(block, cooldown_seconds=100))
+
+    assert list(result.items()) == list(throttled(block).items())
+    # The bundle already prepared its destination; nothing was delivered.
+    assert [call[0] for call in port.calls] == (
+        [] if block is RoboflowVisionEventsBlock else ["prepare"]
+    )
 
 
 def test_negative_cooldown_from_a_selector_disables_throttling():

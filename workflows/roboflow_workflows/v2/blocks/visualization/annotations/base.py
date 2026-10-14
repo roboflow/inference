@@ -1,4 +1,4 @@
-"""What every annotation block shares: one output, a fresh canvas, the result.
+"""What every annotation block's ``run`` shares: a fresh canvas and the result.
 
 Blocks run once per image on the image's device. The canvas is a contiguous
 copy of the input queued on the caller's current stream; nothing here waits
@@ -9,24 +9,6 @@ from typing import Any, Dict
 
 import torch
 from roboflow_workflows.v2.data.image import ImageData
-from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
-from roboflow_workflows.v2.engine.declaration import Block, Output
-
-
-class AnnotationBlock(Block):
-    """Base of the annotation blocks: a pure function of image and parameters."""
-
-    prunable = True
-    outputs = {
-        "image": Output(
-            IMAGE_KIND,
-            source="image",
-            description=(
-                "New annotated image with the input's identity, frame, source, "
-                "time and parent row."
-            ),
-        ),
-    }
 
 
 def canvas_of(image: ImageData, *, block: str) -> torch.Tensor:

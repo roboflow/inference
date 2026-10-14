@@ -5,10 +5,10 @@ fakes injected as session resources, and the Roboflow platform client is a
 recording fake. Answers are fixed strings. This checks wiring and
 composition, not any real model::
 
-    image ─▶ v2/google_gemma@v4 (detection, secret key) ─▶ v2/detection_offset@v1
-    image ─▶ v2/spacexai@v3 (detection, managed key) ─▶ v2/detection_offset@v1
-    image ─▶ v2/google_gemma@v4 (structured) ─▶ v2/json_parser@v1
-    image ─▶ v2/google_gemma@v4 (native classification)
+    image ─▶ roboflow_core/google_gemma@v4 (detection, secret key) ─▶ roboflow_core/detection_offset@v1
+    image ─▶ roboflow_core/spacexai@v3 (detection, managed key) ─▶ roboflow_core/detection_offset@v1
+    image ─▶ roboflow_core/google_gemma@v4 (structured) ─▶ roboflow_core/json_parser@v1
+    image ─▶ roboflow_core/google_gemma@v4 (native classification)
 """
 
 import json
@@ -16,9 +16,9 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
-from roboflow_workflows.v2.blocks.geometry.offset import DetectionOffsetBlock
-from roboflow_workflows.v2.blocks.language.compatible_vendors import BLOCKS
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
+from roboflow_workflows.v2.blocks.geometry.detection_offset.v1 import DetectionOffsetBlock
+from roboflow_workflows.v2.blocks.language._catalogue_compatible_vendors import BLOCKS
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.language import LANGUAGE_MODEL_OUTPUT_KIND
 from roboflow_workflows.v2.data.secrets import SECRET_KIND
@@ -78,7 +78,7 @@ def _chain_text(error: BaseException) -> str:
 
 def _offset(predictions: str) -> Dict[str, Any]:
     step = {
-        "type": "v2/detection_offset@v1",
+        "type": "roboflow_core/detection_offset@v1",
         "name": "offset",
         "predictions": predictions,
         "offset_width": 10,
@@ -92,7 +92,7 @@ def test_gemma_detections_from_a_secret_key_feed_a_geometry_step() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/google_gemma@v4",
+                "type": "roboflow_core/google_gemma@v4",
                 "name": "gemma",
                 "images": "$inputs.image",
                 "task_type": "object-detection",
@@ -146,7 +146,7 @@ def test_spacexai_managed_key_uses_the_host_platform_client() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/spacexai@v3",
+                "type": "roboflow_core/spacexai@v3",
                 "name": "grok",
                 "images": "$inputs.image",
                 "task_type": "object-detection",
@@ -183,7 +183,7 @@ def test_gemma_structured_answer_feeds_the_json_parser() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/google_gemma@v4",
+                "type": "roboflow_core/google_gemma@v4",
                 "name": "gemma",
                 "images": "$inputs.image",
                 "task_type": "structured-answering",
@@ -191,7 +191,7 @@ def test_gemma_structured_answer_feeds_the_json_parser() -> None:
                 "api_key": "$inputs.key",
             },
             {
-                "type": "v2/json_parser@v1",
+                "type": "roboflow_core/json_parser@v1",
                 "name": "parse",
                 "raw_json": "$steps.gemma.output",
                 "expected_fields": ["count"],
@@ -217,7 +217,7 @@ def test_gemma_classification_returns_a_native_prediction() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/google_gemma@v4",
+                "type": "roboflow_core/google_gemma@v4",
                 "name": "gemma",
                 "images": "$inputs.image",
                 "task_type": "classification",
@@ -257,7 +257,7 @@ def test_a_gated_image_sends_no_request() -> None:
                 "next_steps": ["$steps.grok"],
             },
             {
-                "type": "v2/spacexai@v3",
+                "type": "roboflow_core/spacexai@v3",
                 "name": "grok",
                 "images": "$inputs.image",
                 "task_type": "caption",
@@ -286,7 +286,7 @@ def test_a_failed_request_fails_the_step_without_the_key() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/spacexai@v3",
+                "type": "roboflow_core/spacexai@v3",
                 "name": "grok",
                 "images": "$inputs.image",
                 "task_type": "ocr",
@@ -310,12 +310,12 @@ def test_a_failed_request_fails_the_step_without_the_key() -> None:
     "step, message",
     [
         (
-            {"type": "v2/google_gemma@v4", "task_type": "structured-answering"},
+            {"type": "roboflow_core/google_gemma@v4", "task_type": "structured-answering"},
             "output_structure",
         ),
         (
             {
-                "type": "v2/spacexai@v3",
+                "type": "roboflow_core/spacexai@v3",
                 "task_type": "ocr",
                 "model_version": "grok-4.5",
                 "reasoning_effort": "xhigh",
@@ -323,7 +323,7 @@ def test_a_failed_request_fails_the_step_without_the_key() -> None:
             "grok-4.5 supports reasoning_effort",
         ),
         (
-            {"type": "v2/google_gemma@v4", "task_type": "object-detection"},
+            {"type": "roboflow_core/google_gemma@v4", "task_type": "object-detection"},
             "`classes` parameter required",
         ),
     ],
@@ -341,13 +341,13 @@ def test_workload_introspection_reports_the_remote_models() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/google_gemma@v4",
+                "type": "roboflow_core/google_gemma@v4",
                 "name": "gemma",
                 "images": "$inputs.image",
                 "prompt": "Describe.",
             },
             {
-                "type": "v2/google_gemma@v4",
+                "type": "roboflow_core/google_gemma@v4",
                 "name": "selected_gemma",
                 "images": "$inputs.image",
                 "prompt": "Describe.",
@@ -355,7 +355,7 @@ def test_workload_introspection_reports_the_remote_models() -> None:
                 "model_version": "$inputs.model",
             },
             {
-                "type": "v2/spacexai@v3",
+                "type": "roboflow_core/spacexai@v3",
                 "name": "grok",
                 "images": "$inputs.image",
                 "task_type": "ocr",

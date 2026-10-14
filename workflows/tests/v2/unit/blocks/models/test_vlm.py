@@ -15,14 +15,12 @@ from typing import Any, Dict, List, Tuple
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.vlm import (
-    BLOCKS,
-    DEFAULT_PROMPT,
-    Qwen3VLBlock,
-    Qwen25VLBlock,
-    Qwen35VLBlock,
-    SmolVLM2Block,
-)
+from roboflow_workflows.v2.blocks.models._catalogue_vlm import BLOCKS
+from roboflow_workflows.v2.blocks.models._shared.vlm import DEFAULT_PROMPT
+from roboflow_workflows.v2.blocks.models.qwen3vl.v1 import Qwen3VLBlock
+from roboflow_workflows.v2.blocks.models.qwen25vl.v1 import Qwen25VLBlock
+from roboflow_workflows.v2.blocks.models.qwen3_5vl.v2 import Qwen35VLBlock
+from roboflow_workflows.v2.blocks.models.smolvlm2.v1 import SmolVLM2Block
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 
@@ -339,26 +337,59 @@ def test_a_marker_in_a_later_image_prompt_fails_before_any_model_loads() -> None
 # --- per-image values and model resolution -------------------------------------
 
 
-def test_per_image_prompts_and_models_resolve_once_per_request() -> None:
+def test_per_image_prompts_share_the_calls_one_model() -> None:
     block, loader = _block("smolvlm2")
     images = [_image(1, "a"), _image(2, "b"), _image(3, "c")]
 
     results = block.run(
-        image=Batch(images),
-        model_id=Batch(["x", "y", "x"]),
-        prompt=Batch(["first", None, "third"]),
+        image=Batch(images), model_id="x", prompt=Batch(["first", None, "third"])
     )
+    block.run(image=Batch(images[:1]), model_id="y", prompt="later")
 
     assert loader.loaded == [ModelRequest("x"), ModelRequest("y")]
     first, second = loader.models
-    assert [call["prompt"] for call in first.calls] == ["first", "third"]
-    assert [call["prompt"] for call in second.calls] == [DEFAULT_PROMPT]
-    assert [result["model_id"] for result in results] == ["x", "y", "x"]
+    assert [call["prompt"] for call in first.calls] == [
+        "first",
+        DEFAULT_PROMPT,
+        "third",
+    ]
+    assert [call["prompt"] for call in second.calls] == ["later"]
+    assert [result["model_id"] for result in results] == ["x", "x", "x"]
     assert [result["parsed_output"].split("|")[3] for result in results] == [
         "1",
         "2",
         "3",
     ]
+
+
+def test_one_system_prompt_joins_every_per_image_prompt() -> None:
+    block, loader = _block("qwen3vl")
+
+    block.run(
+        image=Batch([_image(1, "a"), _image(2, "b")]),
+        model_id="m",
+        prompt=Batch(["Count cars.", "Count people."]),
+        system_prompt="Answer with a number.",
+    )
+
+    (model,) = loader.models
+    assert [call["prompt"] for call in model.calls] == [
+        "Count cars.<system_prompt>Answer with a number.",
+        "Count people.<system_prompt>Answer with a number.",
+    ]
+
+
+def test_a_per_image_system_prompt_fails_before_any_model_loads() -> None:
+    block, loader = _block("qwen25vl")
+
+    with pytest.raises(ValueError, match="system_prompt is one value for every image"):
+        block.run(
+            image=Batch([_image(1, "a"), _image(2, "b")]),
+            model_id="m",
+            system_prompt=Batch(["one", "two"]),
+        )
+
+    assert loader.loaded == []
 
 
 def test_a_supplied_mapping_serves_models_and_names_missing_ones() -> None:
@@ -372,18 +403,24 @@ def test_a_supplied_mapping_serves_models_and_names_missing_ones() -> None:
     assert len(model.calls) == 1
 
 
-def test_a_missing_later_model_fails_before_an_earlier_model_is_called() -> None:
-    # All rows' models resolve before the first prompt() call.
+def test_per_image_model_ids_fail_before_any_model_call() -> None:
     model = FakeQwen3VL()
     block = Qwen3VLBlock(models={"m": model})
 
-    with pytest.raises(LookupError, match="not in the 'models' resource"):
+    with pytest.raises(ValueError, match="model_id is one value for every image"):
         block.run(
             image=Batch([_image(1, "a"), _image(2, "b")]),
             model_id=Batch(["m", "missing"]),
         )
 
     assert model.calls == []
+
+
+def test_an_empty_batch_loads_no_model() -> None:
+    block, loader = _block("qwen3_5")
+
+    assert block.run(image=Batch([]), model_id="m") == []
+    assert loader.loaded == []
 
 
 def test_a_prompt_batch_of_the_wrong_length_fails() -> None:
@@ -461,10 +498,60 @@ def test_model_ids_default_to_v1_and_are_reported_as_vlm_resources(
 
 def test_blocks_have_distinct_types_and_the_same_outputs() -> None:
     assert [block.type for block in BLOCKS] == [
-        "v2/qwen25vl@v1",
-        "v2/qwen3vl@v1",
-        "v2/qwen3_5vl@v2",
-        "v2/smolvlm2@v1",
+        "roboflow_core/qwen25vl@v1",
+        "roboflow_core/qwen3vl@v1",
+        "roboflow_core/qwen3_5vl@v2",
+        "roboflow_core/smolvlm2@v1",
     ]
     for block in BLOCKS:
         assert list(block.outputs) == ["parsed_output", "model_id", "inference_id"]
+
+
+# --- one-per-call options and aligned prompts (r2: C1, C2) ---------------------
+
+
+@pytest.mark.parametrize("name", ["qwen25vl", "smolvlm2"])
+def test_a_batch_of_equal_generation_limits_fails_before_any_load(name: str) -> None:
+    block, loader = _block(name)
+
+    with pytest.raises(ValueError, match="max_new_tokens is one value for every image"):
+        block.run(
+            image=Batch([_image(1, "a"), _image(2, "b")]),
+            model_id="m",
+            max_new_tokens=Batch([64, 64]),
+        )
+
+    assert loader.loaded == []
+
+
+@pytest.mark.parametrize(
+    "prompt_indices",
+    [[(0, 2), (1, 3)], [(1, 2), (0, 1)]],
+    ids=["other-images", "reordered"],
+)
+def test_prompts_must_carry_the_image_indices_before_any_load(
+    prompt_indices: List[Tuple[int, ...]]
+) -> None:
+    block, loader = _block("qwen3vl")
+    images = Batch([_image(1, "a"), _image(2, "b")], indices=[(0, 1), (1, 2)])
+    prompts = Batch(["Count cars.", "Count people."], indices=prompt_indices)
+
+    with pytest.raises(ValueError, match="prompt rows .* do not match image rows"):
+        block.run(image=images, model_id="m", prompt=prompts)
+
+    assert loader.loaded == []
+
+
+def test_aligned_sparse_prompts_follow_their_images() -> None:
+    block, loader = _block("smolvlm2")
+    indices = [(0, 1), (2, 5)]
+
+    block.run(
+        image=Batch([_image(1, "a"), _image(2, "b")], indices=indices),
+        model_id="m",
+        prompt=Batch(["Count cars.", "Count people."], indices=indices),
+    )
+
+    (model,) = loader.models
+    assert [call["prompt"] for call in model.calls] == ["Count cars.", "Count people."]
+

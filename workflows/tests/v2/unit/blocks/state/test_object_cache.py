@@ -14,14 +14,9 @@ from typing import Any, Dict, Optional
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.state.object_cache import (
-    DEFAULT_SOURCE,
-    GLOBAL_NAMESPACE,
-    CacheGetBlock,
-    CacheNamespace,
-    CacheSetBlock,
-    ObjectCache,
-)
+from roboflow_workflows.v2.blocks.state._shared.object_cache import DEFAULT_SOURCE, GLOBAL_NAMESPACE, CacheNamespace, ObjectCache
+from roboflow_workflows.v2.blocks.state.cache_get.v1 import CacheGetBlock
+from roboflow_workflows.v2.blocks.state.cache_set.v1 import CacheSetBlock
 from roboflow_workflows.v2.data.batch import SampleContext
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.context import (

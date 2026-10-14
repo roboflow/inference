@@ -1,4 +1,4 @@
-"""``v2/clip_comparison@v1`` called directly with a fake embedding model.
+"""``roboflow_core/clip_comparison@v2`` called directly with a fake embedding model.
 
 The fake's red, green and blue labels are unit color axes and an image's
 embedding is its mean color, so similarities are exact: a pure red image
@@ -11,10 +11,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.clip_comparison import (
-    DEFAULT_MODEL_ID,
-    ClipComparisonBlock,
-)
+from roboflow_workflows.v2.blocks.models.clip_comparison.v2 import DEFAULT_MODEL_ID, ClipComparisonBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData
@@ -88,31 +85,58 @@ def test_fixed_labels_embed_once_across_runs_and_images_batch() -> None:
     assert [row["most_similar_class"] for row in first + second] == ["red", "green"] * 2
 
 
-def test_per_image_labels_share_one_image_call_and_stay_correct() -> None:
+def test_labels_may_change_between_runs_and_only_new_labels_are_embedded() -> None:
     model = FakeEmbeddingModel()
-    images = [_image(255, 0, 0, "a"), _image(0, 0, 255, "b"), _image(0, 255, 0, "c")]
-    classes = Batch([["red", "blue"], ["green", "blue"], ["red", "blue"]])
+    block = ClipComparisonBlock(models={DEFAULT_MODEL_ID: model})
+    images = Batch([_image(255, 0, 0, "a"), _image(0, 0, 255, "b")])
 
-    results = _run(model, images, classes=classes)
+    first = block.run(images=images, classes=["red", "blue"])
+    second = block.run(images=images, classes=["green", "blue"])
 
-    assert model.image_calls == [3]
+    assert model.image_calls == [2, 2]
     assert model.text_calls == [["red", "blue"], ["green"]]
-    assert [row["most_similar_class"] for row in results] == ["red", "blue", "red"]
-    assert results[1]["similarities"].tolist() == [0.0, 1.0]
+    assert [row["most_similar_class"] for row in first] == ["red", "blue"]
+    assert [row["most_similar_class"] for row in second] == ["green", "blue"]
+    assert second[1]["similarities"].tolist() == [0.0, 1.0]
 
 
-def test_per_image_models_group_images_by_request() -> None:
+def test_per_image_labels_fail_before_any_model_call() -> None:
+    model = FakeEmbeddingModel()
+    classes = Batch([["red", "blue"], ["green", "blue"]])
+
+    with pytest.raises(ValueError, match="classes is one value for every image"):
+        _run(model, [_image(255, 0, 0, "a"), _image(0, 0, 255, "b")], classes=classes)
+
+    assert model.image_calls == model.text_calls == []
+
+
+def test_the_model_may_change_between_runs_and_loads_once() -> None:
     loader = FakeLoader(FakeEmbeddingModel)
     block = ClipComparisonBlock(models=ModelCache(loader))
     images = Batch(
         [_image(255, 0, 0, "a"), _image(0, 255, 0, "b"), _image(0, 0, 255, "c")]
     )
 
-    results = block.run(images=images, classes=COLORS, model_id=Batch(["x", "y", "x"]))
+    for model_id in ("x", "y", "x"):
+        results = block.run(images=images, classes=COLORS, model_id=model_id)
 
     assert loader.loaded == [ModelRequest("x"), ModelRequest("y")]
-    assert [model.image_calls for model in loader.models] == [[2], [1]]
+    assert [model.image_calls for model in loader.models] == [[3, 3], [3]]
     assert [row["most_similar_class"] for row in results] == ["red", "green", "blue"]
+
+
+def test_per_image_model_ids_fail_before_any_load() -> None:
+    loader = FakeLoader(FakeEmbeddingModel)
+    block = ClipComparisonBlock(models=ModelCache(loader))
+
+    with pytest.raises(ValueError, match="model_id is one value for every image"):
+        block.run(
+            images=Batch([_image(255, 0, 0, "a"), _image(0, 255, 0, "b")]),
+            classes=COLORS,
+            model_id=Batch(["x", "y"]),
+        )
+
+    assert loader.loaded == []
 
 
 def test_similarities_keep_the_model_dtype() -> None:

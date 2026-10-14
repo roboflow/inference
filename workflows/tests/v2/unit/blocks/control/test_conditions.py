@@ -1,4 +1,4 @@
-"""``v2/continue_if@v1``: compiled UQL gate and its per-lane ``stop_delay`` hold.
+"""``roboflow_core/continue_if@v1``: compiled UQL gate and its per-lane ``stop_delay`` hold.
 
 Calls run inside a hand-built execution context whose scope answers the
 source and time of the call's index, as the engine's does.
@@ -10,12 +10,7 @@ from typing import Optional
 
 import pytest
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.control.conditions import (
-    CONDITION_STATEMENT_EXAMPLE,
-    ContinueIfQueryBlock,
-    HoldCapacityError,
-    ObservationOrderError,
-)
+from roboflow_workflows.v2.blocks.control.continue_if.v1 import CONDITION_STATEMENT_EXAMPLE, ContinueIfQueryBlock, HoldCapacityError, ObservationOrderError
 from roboflow_workflows.v2.blocks.query import QueryRuntimeError
 from roboflow_workflows.v2.data.batch import (
     SampleContext,

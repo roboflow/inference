@@ -1,15 +1,13 @@
-"""``v2/first_non_empty_or_default@v1`` and ``v2/current_time@v1``."""
+"""``roboflow_core/first_non_empty_or_default@v1`` and ``roboflow_core/current_time@v1``."""
 
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.formatters.values import (
-    TIMESTAMP_KIND,
-    CurrentTimeBlock,
-    FirstNonEmptyOrDefaultBlock,
-)
+from roboflow_workflows.v2.blocks.formatters._shared.values import TIMESTAMP_KIND
+from roboflow_workflows.v2.blocks.formatters.current_time.v1 import CurrentTimeBlock
+from roboflow_workflows.v2.blocks.formatters.first_non_empty_or_default.v1 import FirstNonEmptyOrDefaultBlock
 
 
 def _first(values: list, **params) -> object:

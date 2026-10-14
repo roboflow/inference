@@ -10,7 +10,7 @@
 With the CENTER anchor both cross on step 4. With all four corners (the
 default) the whole box must be across, so its trailing edge decides: step 5.
 
-The tracker, ``v2/trackers_bytetrack@v1``, does not report a track on the
+The tracker, ``roboflow_core/trackers_bytetrack@v1``, does not report a track on the
 frame that creates it. Sessions therefore start with step 0, which only
 creates the tracks; the counters see the tracks from step 1. Tracker ids come
 from a process-wide counter, so tests read them from the outputs.
@@ -23,8 +23,8 @@ import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.analytics.line_counter import LineCounterBlock
-from roboflow_workflows.v2.blocks.analytics.time_in_zone import TimeInZoneBlock
+from roboflow_workflows.v2.blocks.analytics.line_counter.v2 import LineCounterBlock
+from roboflow_workflows.v2.blocks.analytics.time_in_zone.v3 import TimeInZoneBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.prediction_ops import select_predictions
 from roboflow_workflows.v2.engine.compilation import compile_workflow
@@ -102,7 +102,7 @@ def _definition(*, line=None, zone=None):
         ],
         "steps": [
             {
-                "type": "v2/trackers_bytetrack@v1",
+                "type": "roboflow_core/trackers_bytetrack@v1",
                 "name": "track",
                 "image": "$inputs.image",
                 "predictions": "$inputs.predictions",
@@ -113,7 +113,7 @@ def _definition(*, line=None, zone=None):
                 "minimum_consecutive_frames": 2,
             },
             {
-                "type": "v2/line_counter@v2",
+                "type": "roboflow_core/line_counter@v2",
                 "name": "line",
                 "image": "$inputs.image",
                 "predictions": "$steps.track.tracked_detections",
@@ -121,7 +121,7 @@ def _definition(*, line=None, zone=None):
                 **(line or {}),
             },
             {
-                "type": "v2/time_in_zone@v3",
+                "type": "roboflow_core/time_in_zone@v3",
                 "name": "zone",
                 "image": "$inputs.image",
                 "predictions": "$steps.track.tracked_detections",

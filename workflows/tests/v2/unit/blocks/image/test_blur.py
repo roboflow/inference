@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/image_blur@v1``, called directly.
+"""Unit tests of ``roboflow_core/image_blur@v1``, called directly.
 
 Small cases are worked out by hand. Every other case is compared with the
 OpenCV call V1 made, on the same image in V1's BGR layout: all results are
@@ -12,12 +12,8 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.image import blur as blur_module
-from roboflow_workflows.v2.blocks.image.blur import (
-    ImageBlurBlock,
-    torch_blur,
-    torch_blur_is_exact,
-)
+from roboflow_workflows.v2.blocks.image.image_blur import v1 as blur_module
+from roboflow_workflows.v2.blocks.image.image_blur.v1 import ImageBlurBlock, torch_blur, torch_blur_is_exact
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
 
@@ -296,6 +292,6 @@ def test_unknown_blur_type_is_rejected() -> None:
 
 
 def test_declares_a_pure_prunable_block() -> None:
-    assert ImageBlurBlock.type == "v2/image_blur@v1"
+    assert ImageBlurBlock.type == "roboflow_core/image_blur@v1"
     assert ImageBlurBlock.prunable is True
     assert ImageBlurBlock.mutates == ()

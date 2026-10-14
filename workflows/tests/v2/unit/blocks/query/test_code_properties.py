@@ -12,7 +12,7 @@ the image frame, ``class_names`` and a row identity::
 
 import numpy as np
 import pytest
-from roboflow_workflows.v2.blocks.codes.detectors import code_detections
+from roboflow_workflows.v2.blocks.codes._shared.detectors import code_detections
 from roboflow_workflows.v2.blocks.query import (
     DETECTION_PROPERTIES,
     QueryDefinitionError,

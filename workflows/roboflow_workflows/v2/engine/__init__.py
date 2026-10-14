@@ -28,7 +28,7 @@ closes session-owned state; finish active runs and passive pipelines before
 leaving it. Caller-supplied model and service resources remain caller-owned.
 
 Root ``operators`` (class-owned ``Operator`` plugins, such as the built-in
-``v2/align@v1`` and ``v2/window@v1``) turn pulses of sources into pulses of
+``roboflow_core/align@v1`` and ``roboflow_core/window@v1``) turn pulses of sources into pulses of
 their own domain; ``$operators.<name>.<port>`` selects their outputs.
 
 A block declares the events it may emit (``events = {"entered": Event(...)}``)
@@ -36,7 +36,7 @@ and calls ``self.emit(...)``. Definition ``handlers`` run their own passive
 workflows on those events or on declared ``signals``; ``state`` declares
 initial values of the session's ``ManagedState`` (the reserved
 ``managed_state`` resource). ``state_machines`` move one managed record per
-source (or one global record) on events and on ``v2/state_machine_set`` steps
+source (or one global record) on events and on ``roboflow_core/state_machine_set@v1`` steps
 of their handlers. The state package loads on first use.
 
 A block may list alternative implementations; ``CompileOptions(target=...)``

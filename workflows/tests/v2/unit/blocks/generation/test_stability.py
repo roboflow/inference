@@ -14,18 +14,10 @@ import pycocotools.mask as mask_utils
 import pydantic
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.generation.stability import (
-    ERROR_DETAIL_LIMIT,
-    GENERATION_ENDPOINTS,
-    INPAINTING_ENDPOINT,
-    OUTPAINTING_ENDPOINT,
-    StabilityAIClient,
-    StabilityAIError,
-    StabilityAIImageGenerationBlock,
-    StabilityAIInpaintingBlock,
-    StabilityAIOutpaintingBlock,
-    edited_image,
-)
+from roboflow_workflows.v2.blocks.generation._shared.stability import ERROR_DETAIL_LIMIT, GENERATION_ENDPOINTS, INPAINTING_ENDPOINT, OUTPAINTING_ENDPOINT, StabilityAIClient, StabilityAIError, edited_image
+from roboflow_workflows.v2.blocks.generation.stability_ai_image_gen.v1 import StabilityAIImageGenerationBlock
+from roboflow_workflows.v2.blocks.generation.stability_ai_inpainting.v1 import StabilityAIInpaintingBlock
+from roboflow_workflows.v2.blocks.generation.stability_ai_outpainting.v1 import StabilityAIOutpaintingBlock
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView

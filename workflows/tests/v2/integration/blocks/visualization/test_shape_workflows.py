@@ -18,24 +18,12 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.models.cache import ModelCache
-from roboflow_workflows.v2.blocks.visualization.annotations.circle import (
-    CircleVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.corner import (
-    CornerVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.dot import (
-    DotVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.ellipse import (
-    EllipseVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.halo import (
-    HaloVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.triangle import (
-    TriangleVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.circle_visualization.v1 import CircleVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.corner_visualization.v1 import CornerVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.dot_visualization.v1 import DotVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.ellipse_visualization.v1 import EllipseVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.halo_visualization.v2 import HaloVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.triangle_visualization.v1 import TriangleVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.declaration import spec_of
@@ -63,7 +51,7 @@ SHAPE_BLOCKS = (
     TriangleVisualizationBlock,
 )
 SEG = {
-    "type": "v2/instance_segmentation@v1",
+    "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
     "name": "seg",
     "image": "$inputs.image",
     "model_id": "shapes-seg",
@@ -346,7 +334,7 @@ def test_a_selected_value_fails_with_the_literal_compile_error_text() -> None:
 
 def test_halo_refuses_boxes_without_masks_at_compile_time() -> None:
     steps = [
-        {**SEG, "type": "v2/object_detection@v1", "name": "detect"},
+        {**SEG, "type": "roboflow_core/roboflow_object_detection_model@v3", "name": "detect"},
         {
             "type": HaloVisualizationBlock.type,
             "name": "halo",

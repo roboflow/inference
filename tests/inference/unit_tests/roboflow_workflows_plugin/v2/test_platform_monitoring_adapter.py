@@ -262,9 +262,7 @@ def test_block_background_runner_calls_real_adapter_boundary_on_worker(
 ):
     from datetime import timedelta
 
-    from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring import (
-        ModelMonitoringInferenceAggregatorBlock,
-    )
+    from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring_inference_aggregator.v1 import ModelMonitoringInferenceAggregatorBlock
     from roboflow_workflows.v2.blocks.sinks.runtime import BackgroundEffects
 
     caller = threading.get_ident()

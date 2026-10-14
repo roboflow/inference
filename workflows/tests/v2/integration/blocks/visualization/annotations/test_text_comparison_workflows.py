@@ -19,15 +19,9 @@ from typing import Any, Dict, List, Optional, Sequence
 import numpy as np
 import pytest
 from roboflow_workflows.v2.blocks.models.cache import ModelCache
-from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison import (
-    ModelComparisonVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.rich_label import (
-    RichLabelVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.text_display import (
-    TextDisplayBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison_visualization.v1 import ModelComparisonVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.rich_label_visualization.v1 import RichLabelVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.text_display.v1 import TextDisplayBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.declaration import spec_of
@@ -52,7 +46,7 @@ MODES = ("run", "phases")
 OPACITY = 0.5
 GREEN, RED, BLACK = (0, 255, 0), (255, 0, 0), (0, 0, 0)
 STRICT = {
-    "type": "v2/instance_segmentation@v1",
+    "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
     "name": "seg_strict",
     "image": "$inputs.image",
     "model_id": "shapes-seg",
@@ -60,7 +54,7 @@ STRICT = {
 }
 LOOSE = {**STRICT, "name": "seg_loose", "confidence": 0.35}
 COMPARE = {
-    "type": "v2/model_comparison_visualization@v1",
+    "type": "roboflow_core/model_comparison_visualization@v1",
     "name": "compare",
     "image": "$inputs.image",
     "predictions_a": "$steps.seg_strict.predictions",
@@ -68,7 +62,7 @@ COMPARE = {
     "opacity": OPACITY,
 }
 LABELS = {
-    "type": "v2/rich_label_visualization@v1",
+    "type": "roboflow_core/rich_label_visualization@v1",
     "name": "labels",
     "image": "$steps.compare.image",
     "predictions": "$steps.seg_loose.predictions",
@@ -77,7 +71,7 @@ LABELS = {
     "text_padding": 2,
 }
 COUNTS = {
-    "type": "v2/text_display@v1",
+    "type": "roboflow_core/text_display@v1",
     "name": "counts",
     "image": "$steps.labels.image",
     "text": "A {{ $parameters.a }} B {{ $parameters.b }}",

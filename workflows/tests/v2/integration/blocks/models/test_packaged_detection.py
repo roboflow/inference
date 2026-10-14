@@ -1,4 +1,4 @@
-"""Packaged ``v2/object_detection@v1`` through compiled workflows.
+"""Packaged ``roboflow_core/roboflow_object_detection_model@v3`` through compiled workflows.
 
 A fake model with the native ``inference_models`` API (``pre_process``,
 ``forward``, ``post_process``, ``class_names``) stands in for loaded weights,
@@ -12,9 +12,7 @@ from typing import Any, Dict, List
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.models.detection import (
-    ObjectDetectionBlock,
-)
+from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import FRAME_RECORD_KEY, FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
@@ -125,7 +123,7 @@ def _definition(*, batch_input: bool, model_id: str = MODEL_ID) -> Dict[str, Any
         ],
         "steps": [
             {
-                "type": "v2/object_detection@v1",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "detector",
                 "image": "$inputs.image",
                 "model_id": model_id,
@@ -370,7 +368,7 @@ def test_mapping_snapshot_keeps_the_model_objects_themselves() -> None:
 
     block = ObjectDetectionBlock(models=models)
     models.clear()
-    (network_input,) = block.network_input(
+    network_input = block.network_input(
         Batch([_image()]), MODEL_ID, None, **UNSET_OPTIONS
     )
 

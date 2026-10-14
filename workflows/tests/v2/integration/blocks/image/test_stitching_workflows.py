@@ -1,5 +1,5 @@
-"""Compiled workflows over ``v2/stitch_images@v1`` and
-``v2/stitch_ocr_detections@v2``.
+"""Compiled workflows over ``roboflow_core/stitch_images@v1`` and
+``roboflow_core/stitch_ocr_detections@v2``.
 
 These run the real compiler, session and executor. The catalogue is
 ``create_catalogue()`` plus these two blocks only while it lacks them; once
@@ -14,8 +14,8 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.codes.ocr_stitch import StitchOCRDetectionsBlock
-from roboflow_workflows.v2.blocks.image.stitch_images import StitchImagesBlock
+from roboflow_workflows.v2.blocks.codes.stitch_ocr_detections.v2 import StitchOCRDetectionsBlock
+from roboflow_workflows.v2.blocks.image.stitch_images.v1 import StitchImagesBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import with_row_identity
 from roboflow_workflows.v2.engine.catalogue import Catalogue
@@ -122,7 +122,7 @@ def _panorama_detections_definition(**output_settings: Any) -> dict:
                 "image": "$steps.stitch.stitched_image",
             },
             {
-                "type": "v2/dynamic_crop@v1",
+                "type": "roboflow_core/dynamic_crop@v1",
                 "name": "crop",
                 "image": "$steps.stitch.stitched_image",
                 "predictions": "$steps.detect.predictions",
@@ -182,7 +182,7 @@ def _stitch_definition(**params: Any) -> dict:
                 **params,
             },
             {
-                "type": "v2/invert",
+                "type": "roboflow_core/invert@v1",
                 "name": "invert",
                 "image": "$steps.stitch.stitched_image",
             },

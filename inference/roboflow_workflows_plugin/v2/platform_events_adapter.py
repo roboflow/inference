@@ -39,10 +39,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 import requests
-from roboflow_workflows.v2.blocks.roboflow_platform.vision_events import (
-    EventBundle,
-    VisionEventRequest,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform._shared.vision_events import EventBundle, VisionEventRequest
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret
 

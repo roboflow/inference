@@ -5,7 +5,7 @@ Backend-independent cases live in ``tests/v2/support/state/state_blocks_contract
 """
 
 import pytest
-from roboflow_workflows.v2.blocks.state.values import StateCompareAndSetBlock
+from roboflow_workflows.v2.blocks.state.state_compare_and_set.v1 import StateCompareAndSetBlock
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError
 from roboflow_workflows.v2.engine.state import StateBackendError
@@ -35,7 +35,7 @@ def test_default_state_lives_for_one_session():
     plan = _plan(
         [
             {
-                "type": "v2/state_increment",
+                "type": "roboflow_core/state_increment@v1",
                 "name": "count",
                 "trigger": "$inputs.x",
                 "key": "runs",
@@ -108,7 +108,7 @@ def test_ambiguous_compare_and_set_step_fails_compilation():
         _plan(
             [
                 {
-                    "type": "v2/state_compare_and_set",
+                    "type": "roboflow_core/state_compare_and_set@v1",
                     "name": "bump",
                     "key": "level",
                     "new": 1,

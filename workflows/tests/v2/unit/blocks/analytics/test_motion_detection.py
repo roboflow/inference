@@ -1,4 +1,4 @@
-"""``v2/motion_detection@v1`` called directly on generated scenes.
+"""``roboflow_core/motion_detection@v1`` called directly on generated scenes.
 
 Scene: a static gradient with a 32 px white square at ``x = 12 * t``. With
 ``history=5`` the oracle is analytic: frames 0-4 are warmup, then every
@@ -23,16 +23,8 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.analytics.background_subtraction import (
-    BackgroundModelCapacityError,
-)
-from roboflow_workflows.v2.blocks.analytics.motion_detection import (
-    DEFAULT_MINIMUM_CONTOUR_AREA,
-    DEFAULT_MORPHOLOGICAL_KERNEL_SIZE,
-    MotionDetectionBlock,
-    _moving_contours,
-    _simplified_polygons,
-)
+from roboflow_workflows.v2.blocks.analytics.background_subtraction.v1 import BackgroundModelCapacityError
+from roboflow_workflows.v2.blocks.analytics.motion_detection.v1 import DEFAULT_MINIMUM_CONTOUR_AREA, DEFAULT_MORPHOLOGICAL_KERNEL_SIZE, MotionDetectionBlock, _moving_contours, _simplified_polygons
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.prediction_ops import class_names_by_id

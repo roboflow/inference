@@ -1,4 +1,4 @@
-"""``v2/corner_visualization@v1``: pixels equal V1 ``corner_visualization@v1``.
+"""``roboflow_core/corner_visualization@v1``: pixels equal V1 ``corner_visualization@v1``.
 
 The oracle is the latest V1 block (``sv.BoxCornerAnnotator``) run on the
 same rows; V1 test modules are not imported.
@@ -12,10 +12,7 @@ import torch
 from roboflow_workflows.core_steps.visualizations.corner.v1 import (
     CornerVisualizationBlockV1,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.corner import (
-    CornerVisualizationBlock,
-    corner_segments,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.corner_visualization.v1 import CornerVisualizationBlock, corner_segments
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError

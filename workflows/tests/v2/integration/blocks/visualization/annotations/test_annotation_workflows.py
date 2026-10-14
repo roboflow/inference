@@ -49,19 +49,19 @@ MODES = ("run", "phases")
 # V1's default text scale 1.0 is too large for these small scenes.
 LABEL_SCALE = 0.35
 SEG = {
-    "type": "v2/instance_segmentation@v1",
+    "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
     "name": "seg",
     "image": "$inputs.image",
     "model_id": "shapes-seg",
 }
 SEMANTIC = {
-    "type": "v2/semantic_segmentation@v1",
+    "type": "roboflow_core/roboflow_semantic_segmentation_model@v2",
     "name": "semantic",
     "image": "$inputs.image",
     "model_id": "shapes-semantic",
 }
 CROP = {
-    "type": "v2/dynamic_crop@v1",
+    "type": "roboflow_core/dynamic_crop@v1",
     "name": "crop",
     "image": "$inputs.image",
     "predictions": "$steps.seg.predictions",
@@ -160,15 +160,15 @@ def bounding_rect(region: np.ndarray):
 
 CHAIN = [
     SEG,
-    draw("v2/mask_visualization@v1", "mask", "$steps.seg.segmentation"),
+    draw("roboflow_core/mask_visualization@v1", "mask", "$steps.seg.segmentation"),
     draw(
-        "v2/bounding_box_visualization@v1",
+        "roboflow_core/bounding_box_visualization@v1",
         "box",
         "$steps.seg.segmentation",
         image="$steps.mask.image",
     ),
     draw(
-        "v2/label_visualization@v2",
+        "roboflow_core/label_visualization@v2",
         "label",
         "$steps.seg.segmentation",
         image="$steps.box.image",
@@ -250,42 +250,42 @@ def gallery_steps():
         SEG,
         SEMANTIC,
         {
-            "type": "v2/keypoint_detection@v1",
+            "type": "roboflow_core/roboflow_keypoint_detection_model@v3",
             "name": "keypoints",
             "image": "$inputs.image",
             "model_id": "shapes-keypoints",
         },
         {
-            "type": "v2/classification@v1",
+            "type": "roboflow_core/roboflow_classification_model@v3",
             "name": "scene_class",
             "image": "$inputs.image",
             "model_id": "colors",
         },
         draw(
-            "v2/bounding_box_visualization@v1",
+            "roboflow_core/bounding_box_visualization@v1",
             "bounding_box",
             "$steps.seg.segmentation",
         ),
-        draw("v2/label_visualization@v2", "label", "$steps.seg.segmentation"),
-        draw("v2/polygon_visualization@v2", "polygon", "$steps.seg.segmentation"),
-        draw("v2/mask_visualization@v1", "mask", "$steps.seg.segmentation"),
+        draw("roboflow_core/label_visualization@v2", "label", "$steps.seg.segmentation"),
+        draw("roboflow_core/polygon_visualization@v2", "polygon", "$steps.seg.segmentation"),
+        draw("roboflow_core/mask_visualization@v1", "mask", "$steps.seg.segmentation"),
         # V1 has no default skeleton for two keypoints; name the one edge
         draw(
-            "v2/keypoint_visualization@v1",
+            "roboflow_core/keypoint_visualization@v1",
             "keypoint",
             "$steps.keypoints.predictions",
             edges=[[1, 2]],
         ),
         draw(
-            "v2/classification_label_visualization@v1",
+            "roboflow_core/classification_label_visualization@v1",
             "classification_label",
             "$steps.scene_class.predictions",
         ),
-        draw("v2/crop_visualization@v1", "crop", "$steps.seg.segmentation"),
-        draw("v2/blur_visualization@v1", "blur", "$steps.seg.segmentation"),
-        draw("v2/pixelate_visualization@v1", "pixelate", "$steps.seg.segmentation"),
+        draw("roboflow_core/crop_visualization@v1", "crop", "$steps.seg.segmentation"),
+        draw("roboflow_core/blur_visualization@v1", "blur", "$steps.seg.segmentation"),
+        draw("roboflow_core/pixelate_visualization@v1", "pixelate", "$steps.seg.segmentation"),
         draw(
-            "v2/semantic_segmentation_visualization@v1",
+            "roboflow_core/semantic_segmentation_visualization@v1",
             "semantic_overlay",
             "$steps.semantic.predictions",
         ),
@@ -326,7 +326,7 @@ def test_native_semantic_model_feeds_the_semantic_overlay() -> None:
     steps = [
         SEMANTIC,
         draw(
-            "v2/semantic_segmentation_visualization@v1",
+            "roboflow_core/semantic_segmentation_visualization@v1",
             "overlay",
             "$steps.semantic.predictions",
             opacity=0.5,
@@ -367,7 +367,7 @@ def test_semantic_overlay_lists_the_model_classes_for_an_unknown_skip_class() ->
     steps = [
         SEMANTIC,
         draw(
-            "v2/semantic_segmentation_visualization@v1",
+            "roboflow_core/semantic_segmentation_visualization@v1",
             "overlay",
             "$steps.semantic.predictions",
             skip_classes=["truck"],
@@ -386,7 +386,7 @@ def test_semantic_overlay_lists_the_model_classes_for_an_unknown_skip_class() ->
 def test_semantic_grid_of_a_resized_image_is_not_drawn_on_the_original() -> None:
     steps = [
         {
-            "type": "v2/resize",
+            "type": "roboflow_core/resize@v1",
             "name": "small",
             "image": "$inputs.image",
             "width": 56,
@@ -394,7 +394,7 @@ def test_semantic_grid_of_a_resized_image_is_not_drawn_on_the_original() -> None
         },
         {**SEMANTIC, "image": "$steps.small.image"},
         draw(
-            "v2/semantic_segmentation_visualization@v1",
+            "roboflow_core/semantic_segmentation_visualization@v1",
             "overlay",
             "$steps.semantic.predictions",
         ),
@@ -414,13 +414,13 @@ def quality_steps(producer: str, quality: str, *, field: str = "segmentation"):
     steps = [
         seg,
         draw(
-            "v2/mask_visualization@v1",
+            "roboflow_core/mask_visualization@v1",
             "mask",
             f"$steps.seg.{field}",
             mask_quality=quality,
         ),
         draw(
-            "v2/polygon_visualization@v2",
+            "roboflow_core/polygon_visualization@v2",
             "polygon",
             f"$steps.seg.{field}",
             mask_quality=quality,
@@ -443,7 +443,7 @@ def test_accurate_and_coarse_draw_the_same_pixels_for_the_dense_model() -> None:
 
     # when
     for quality in ("accurate", "coarse"):
-        steps, outputs = quality_steps("v2/instance_segmentation@v1", quality)
+        steps, outputs = quality_steps("roboflow_core/roboflow_instance_segmentation_model@v4", quality)
         rows = run_rows(steps, outputs, images)
         pixels[quality] = [pixels_of(row["polygon"]) for row in rows]
 
@@ -511,9 +511,9 @@ def test_coarse_on_a_compact_view_differs_only_along_mask_edges() -> None:
 def test_box_and_label_readers_never_materialize_a_compact_view() -> None:
     steps = [
         {**SEG, "type": COMPACT},
-        draw("v2/bounding_box_visualization@v1", "box", "$steps.seg.segmentation"),
+        draw("roboflow_core/bounding_box_visualization@v1", "box", "$steps.seg.segmentation"),
         draw(
-            "v2/label_visualization@v2",
+            "roboflow_core/label_visualization@v2",
             "label",
             "$steps.seg.segmentation",
             image="$steps.box.image",
@@ -541,9 +541,9 @@ def test_detections_found_in_crops_are_drawn_at_their_place_on_the_parent() -> N
         CROP,
         {**SEG, "name": "inner", "image": "$steps.crop.crops"},
         draw(
-            "v2/bounding_box_visualization@v1", "on_parent", "$steps.inner.segmentation"
+            "roboflow_core/bounding_box_visualization@v1", "on_parent", "$steps.inner.segmentation"
         ),
-        draw("v2/bounding_box_visualization@v1", "direct", "$steps.seg.segmentation"),
+        draw("roboflow_core/bounding_box_visualization@v1", "direct", "$steps.seg.segmentation"),
     ]
     outputs = {"on_parent": "$steps.on_parent.image", "direct": "$steps.direct.image"}
     image = street_image()
@@ -574,12 +574,12 @@ def test_parent_detections_drawn_on_a_crop_are_clipped_to_it() -> None:
         SEG,
         CROP,
         draw(
-            "v2/bounding_box_visualization@v1",
+            "roboflow_core/bounding_box_visualization@v1",
             "on_crop",
             "$steps.seg.segmentation",
             image="$steps.crop.crops",
         ),
-        draw("v2/bounding_box_visualization@v1", "direct", "$steps.seg.segmentation"),
+        draw("roboflow_core/bounding_box_visualization@v1", "direct", "$steps.seg.segmentation"),
     ]
     outputs = {
         "on_crop": "$steps.on_crop.image",
@@ -609,26 +609,26 @@ def test_each_relabelled_row_is_drawn_with_its_own_name() -> None:
         SEG,
         CROP,
         {
-            "type": "v2/classification@v1",
+            "type": "roboflow_core/roboflow_classification_model@v3",
             "name": "colors",
             "image": "$steps.crop.crops",
             "model_id": "colors",
         },
         {
-            "type": "v2/detections_classes_replacement@v1",
+            "type": "roboflow_core/detections_classes_replacement@v1",
             "name": "relabel",
             "object_detection_predictions": "$steps.seg.predictions",
             "classification_predictions": "$steps.colors.predictions",
             "crops": "$steps.crop.crops",
         },
         draw(
-            "v2/label_visualization@v2",
+            "roboflow_core/label_visualization@v2",
             "model_names",
             "$steps.seg.predictions",
             text_scale=LABEL_SCALE,
         ),
         draw(
-            "v2/label_visualization@v2",
+            "roboflow_core/label_visualization@v2",
             "row_names",
             "$steps.relabel.predictions",
             text_scale=LABEL_SCALE,
@@ -669,14 +669,14 @@ def styled_steps(opacity: Any, thickness: Any, palette: Any):
     steps = [
         SEG,
         draw(
-            "v2/mask_visualization@v1",
+            "roboflow_core/mask_visualization@v1",
             "mask",
             "$steps.seg.segmentation",
             opacity=opacity,
             color_palette=palette,
         ),
         draw(
-            "v2/bounding_box_visualization@v1",
+            "roboflow_core/bounding_box_visualization@v1",
             "box",
             "$steps.seg.segmentation",
             image="$steps.mask.image",
@@ -741,12 +741,12 @@ def test_a_gated_image_is_not_drawn_and_the_others_are(mode: str) -> None:
     steps = [
         SEG,
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "keep",
             "condition": "$inputs.keep",
             "next_steps": ["$steps.box"],
         },
-        draw("v2/bounding_box_visualization@v1", "box", "$steps.seg.segmentation"),
+        draw("roboflow_core/bounding_box_visualization@v1", "box", "$steps.seg.segmentation"),
     ]
     images = [street_image(), alley_image(), street_image()]
 
@@ -769,7 +769,7 @@ def test_a_gated_image_is_not_drawn_and_the_others_are(mode: str) -> None:
 
 
 def test_copy_image_is_rejected_with_the_chaining_remedy() -> None:
-    steps = [SEG, draw("v2/mask_visualization@v1", "mask", "$steps.seg.segmentation")]
+    steps = [SEG, draw("roboflow_core/mask_visualization@v1", "mask", "$steps.seg.segmentation")]
     steps[1]["copy_image"] = False
 
     with pytest.raises(Exception) as error:
@@ -783,8 +783,8 @@ def test_copy_image_is_rejected_with_the_chaining_remedy() -> None:
 
 def test_boxes_without_masks_cannot_feed_a_mask_reader() -> None:
     steps = [
-        {**SEG, "type": "v2/object_detection@v1", "name": "detect"},
-        draw("v2/mask_visualization@v1", "mask", "$steps.detect.predictions"),
+        {**SEG, "type": "roboflow_core/roboflow_object_detection_model@v3", "name": "detect"},
+        draw("roboflow_core/mask_visualization@v1", "mask", "$steps.detect.predictions"),
     ]
 
     with pytest.raises(Exception) as error:

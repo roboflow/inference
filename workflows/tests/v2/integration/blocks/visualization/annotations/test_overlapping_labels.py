@@ -17,7 +17,9 @@ from typing import Any, Dict, List, Sequence
 import numpy as np
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.visualization.annotations import keypoint, label, text
+from roboflow_workflows.v2.blocks.visualization.annotations.keypoint_visualization import v1 as keypoint
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization import v2 as label
+from roboflow_workflows.v2.blocks.visualization.annotations import text
 from roboflow_workflows.v2.blocks.visualization.annotations.text import Label
 
 from tests.v2.integration.blocks.visualization.annotations.scene import (
@@ -32,7 +34,7 @@ from tests.v2.integration.blocks.visualization.annotations.test_annotation_workf
 )
 
 KEYPOINTS = {
-    "type": "v2/keypoint_detection@v1",
+    "type": "roboflow_core/roboflow_keypoint_detection_model@v3",
     "name": "keypoints",
     "image": "$inputs.image",
     "model_id": "shapes-keypoints",
@@ -43,7 +45,7 @@ CASES = {
         [
             SEG,
             draw(
-                "v2/label_visualization@v2",
+                "roboflow_core/label_visualization@v2",
                 "drawn",
                 "$steps.seg.segmentation",
                 text_scale=0.6,
@@ -56,7 +58,7 @@ CASES = {
         [
             KEYPOINTS,
             draw(
-                "v2/keypoint_visualization@v1",
+                "roboflow_core/keypoint_visualization@v1",
                 "drawn",
                 "$steps.keypoints.predictions",
                 annotator_type="vertex_label",

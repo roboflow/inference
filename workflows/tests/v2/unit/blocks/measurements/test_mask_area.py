@@ -1,4 +1,4 @@
-"""``v2/mask_area_measurement@v1``: exact areas per mask representation.
+"""``roboflow_core/mask_area_measurement@v1``: exact areas per mask representation.
 
 Masks are drawn on a 40 x 60 image with known pixel counts:
 
@@ -14,7 +14,7 @@ import torch
 from pycocotools import mask as mask_utils
 from pydantic import ValidationError
 from roboflow_workflows.v2.blocks.measurements import MaskAreaMeasurementBlock
-from roboflow_workflows.v2.blocks.measurements import mask_area as mask_area_module
+from roboflow_workflows.v2.blocks.measurements.mask_area_measurement import v1 as mask_area_module
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import SegmentationView

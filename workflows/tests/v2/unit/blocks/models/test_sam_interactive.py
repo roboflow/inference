@@ -24,17 +24,14 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import pydantic
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
+from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models.cache import (
     ModelCache,
     ModelRequest,
     ModelRequestConflict,
 )
-from roboflow_workflows.v2.blocks.models.detection import ObjectDetectionBlock
-from roboflow_workflows.v2.blocks.models.sam_interactive import (
-    SAM3_INTERACTIVE_DEFAULT_MODEL_ID,
-    SegmentAnything3InteractiveBlock,
-)
+from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.sam3_interactive.v1 import SAM3_INTERACTIVE_DEFAULT_MODEL_ID, SegmentAnything3InteractiveBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
@@ -1001,14 +998,14 @@ def _images() -> List[ImageData]:
 
 
 DETECTOR_STEP = {
-    "type": "v2/object_detection@v1",
+    "type": "roboflow_core/roboflow_object_detection_model@v3",
     "name": "detector",
     "image": "$inputs.image",
     "model_id": "od",
     "confidence": 0.0,
 }
 SAM_STEP = {
-    "type": "v2/sam3_interactive@v1",
+    "type": "roboflow_core/sam3_interactive@v1",
     "name": "sam",
     "image": "$inputs.image",
     "boxes": "$steps.detector.predictions",

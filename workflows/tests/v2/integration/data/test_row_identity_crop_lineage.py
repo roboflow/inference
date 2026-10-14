@@ -11,7 +11,7 @@ selection and keeps its row ids without materializing masks.
 import pytest
 import torch
 from pydantic import Field
-from roboflow_workflows.v2.blocks.image.blocks import ResizeBlock
+from roboflow_workflows.v2.blocks.image.primitives.resize.v1 import ResizeBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import LIST_OF_VALUES_KIND
@@ -208,7 +208,7 @@ def _plan(indices):
             "predictions": "$steps.select.predictions",
         },
         {
-            "type": "v2/resize",
+            "type": "roboflow_core/resize@v1",
             "name": "resize",
             "image": "$steps.crop.crop",
             "width": 4,

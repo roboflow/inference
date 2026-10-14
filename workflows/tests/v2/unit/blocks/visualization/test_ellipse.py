@@ -1,4 +1,4 @@
-"""``v2/ellipse_visualization@v1``: pixels equal V1 ``ellipse_visualization@v1``.
+"""``roboflow_core/ellipse_visualization@v1``: pixels equal V1 ``ellipse_visualization@v1``.
 
 The oracle is the latest V1 block (``sv.EllipseAnnotator``) run on the same
 rows; V1 test modules are not imported. One deliberate difference: a box
@@ -13,9 +13,7 @@ import torch
 from roboflow_workflows.core_steps.visualizations.ellipse.v1 import (
     EllipseVisualizationBlockV1,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.ellipse import (
-    EllipseVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.ellipse_visualization.v1 import EllipseVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError

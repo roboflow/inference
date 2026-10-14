@@ -4,8 +4,8 @@ The real ``StabilityAIClient`` posts multipart requests to a fake Stability AI
 service on ``127.0.0.1``; no request leaves the machine and the key is an
 invented sentinel. A fake model stands in for segmentation weights::
 
-    image ─▶ v2/instance_segmentation@v1 (fake model: red pixels)
-          └▶ v2/stability_ai_inpainting@v1 ─▶ v2/stability_ai_outpainting@v1
+    image ─▶ roboflow_core/roboflow_instance_segmentation_model@v4 (fake model: red pixels)
+          └▶ roboflow_core/stability_ai_inpainting@v1 ─▶ roboflow_core/stability_ai_outpainting@v1
     secret input ──────────┘                                  │
     loopback service: records requests, answers PNGs of the requested size
 """
@@ -22,18 +22,12 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.generation.stability import (
-    ERROR_DETAIL_LIMIT,
-    StabilityAIClient,
-    StabilityAIError,
-    StabilityAIImageGenerationBlock,
-    StabilityAIInpaintingBlock,
-    StabilityAIOutpaintingBlock,
-)
+from roboflow_workflows.v2.blocks.generation._shared.stability import ERROR_DETAIL_LIMIT, StabilityAIClient, StabilityAIError
+from roboflow_workflows.v2.blocks.generation.stability_ai_image_gen.v1 import StabilityAIImageGenerationBlock
+from roboflow_workflows.v2.blocks.generation.stability_ai_inpainting.v1 import StabilityAIInpaintingBlock
+from roboflow_workflows.v2.blocks.generation.stability_ai_outpainting.v1 import StabilityAIOutpaintingBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.instance_segmentation import (
-    InstanceSegmentationBlock,
-)
+from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import SECRET_KIND
 from roboflow_workflows.v2.engine.catalogue import Catalogue
@@ -215,13 +209,13 @@ def _session(base_url: str, steps: List[dict], outputs: Dict[str, str], **extra)
 
 EDIT_STEPS = [
     {
-        "type": "v2/instance_segmentation@v1",
+        "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
         "name": "seg",
         "image": "$inputs.image",
         "model_id": "red-objects",
     },
     {
-        "type": "v2/stability_ai_inpainting@v1",
+        "type": "roboflow_core/stability_ai_inpainting@v1",
         "name": "inpaint",
         "image": "$inputs.image",
         "segmentation_mask": "$steps.seg.segmentation",
@@ -230,7 +224,7 @@ EDIT_STEPS = [
         "api_key": "$inputs.api_key",
     },
     {
-        "type": "v2/stability_ai_outpainting@v1",
+        "type": "roboflow_core/stability_ai_outpainting@v1",
         "name": "outpaint",
         "image": "$steps.inpaint.image",
         "left": 16,
@@ -309,7 +303,7 @@ def test_generation_per_image_with_a_selected_model(service) -> None:
     base_url, handler = service
     steps = [
         {
-            "type": "v2/stability_ai_image_gen@v1",
+            "type": "roboflow_core/stability_ai_image_gen@v1",
             "name": "generate",
             "prompt": "$inputs.prompt",
             "model": "$inputs.model",
@@ -354,7 +348,7 @@ def test_text_only_generation_sends_multipart_without_an_image(service) -> None:
     base_url, handler = service
     steps = [
         {
-            "type": "v2/stability_ai_image_gen@v1",
+            "type": "roboflow_core/stability_ai_image_gen@v1",
             "name": "generate",
             "prompt": "a lighthouse",
             "negative_prompt": "people",

@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/threshold@v1``, called directly.
+"""Unit tests of ``roboflow_core/threshold@v1``, called directly.
 
 Expected values are worked out by hand from OpenCV's documented rules, come
 from an independent Otsu search written here, or from the OpenCV call V1
@@ -12,12 +12,8 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.image import threshold as threshold_module
-from roboflow_workflows.v2.blocks.image.threshold import (
-    ImageThresholdBlock,
-    otsu_threshold,
-    torch_adaptive_mean,
-)
+from roboflow_workflows.v2.blocks.image.threshold import v1 as threshold_module
+from roboflow_workflows.v2.blocks.image.threshold.v1 import ImageThresholdBlock, otsu_threshold, torch_adaptive_mean
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
 
@@ -278,7 +274,7 @@ def test_off_cpu_adaptive_mean_stays_on_the_device(
     "threshold_type", ["otsu", "adaptive_mean", "adaptive_gaussian"]
 )
 def test_one_channel_types_reject_rgb_and_name_the_fix(threshold_type: str) -> None:
-    with pytest.raises(ValueError, match="v2/convert_grayscale@v1"):
+    with pytest.raises(ValueError, match="roboflow_core/convert_grayscale@v1"):
         run_threshold(random_pixels(3, 5, 5, seed=0), threshold_type)
 
 
@@ -335,6 +331,6 @@ def test_channels_last_view_equals_opencv() -> None:
 
 
 def test_declares_a_pure_prunable_block() -> None:
-    assert ImageThresholdBlock.type == "v2/threshold@v1"
+    assert ImageThresholdBlock.type == "roboflow_core/threshold@v1"
     assert ImageThresholdBlock.prunable is True
     assert ImageThresholdBlock.mutates == ()

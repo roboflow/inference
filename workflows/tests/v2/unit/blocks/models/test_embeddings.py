@@ -1,4 +1,4 @@
-"""``v2/clip@v1`` and ``v2/perception_encoder@v1`` called directly with fakes.
+"""``roboflow_core/clip@v1`` and ``roboflow_core/perception_encoder@v1`` called directly with fakes.
 
 The fake (``tests/v2/support/models/fake_embedding_models.py``) tests the
 model-resource contract, batching, the text cache and errors; it is not real
@@ -15,13 +15,9 @@ from roboflow_workflows.v2.blocks.models.cache import (
     ModelRequest,
     ModelRequestConflict,
 )
-from roboflow_workflows.v2.blocks.models.embeddings import (
-    DEFAULT_CLIP_MODEL_ID,
-    DEFAULT_PERCEPTION_ENCODER_MODEL_ID,
-    ClipEmbeddingBlock,
-    PerceptionEncoderEmbeddingBlock,
-    TextEmbeddingCache,
-)
+from roboflow_workflows.v2.blocks.models._shared.embeddings import DEFAULT_CLIP_MODEL_ID, DEFAULT_PERCEPTION_ENCODER_MODEL_ID, TextEmbeddingCache
+from roboflow_workflows.v2.blocks.models.clip.v1 import ClipEmbeddingBlock
+from roboflow_workflows.v2.blocks.models.perception_encoder.v1 import PerceptionEncoderEmbeddingBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 
@@ -89,18 +85,19 @@ def test_empty_batch_runs_no_model() -> None:
     assert model.image_calls == [] and model.text_calls == []
 
 
-def test_per_row_model_ids_load_each_model_once_and_group_rows() -> None:
+def test_the_model_may_change_between_runs_and_each_loads_once() -> None:
     loader = FakeLoader(FakeEmbeddingModel)
     block = _block(ModelCache(loader))
     images = Batch(
         [_image(255, 0, 0, "a"), _image(0, 255, 0, "b"), _image(9, 9, 9, "c")]
     )
 
-    results = block.run(data=images, model_id=Batch(["x", "y", "x"]))
+    for model_id in ("x", "y", "x"):
+        results = block.run(data=images, model_id=model_id)
 
     assert loader.loaded == [ModelRequest("x"), ModelRequest("y")]
     first, second = loader.models
-    assert (first.image_calls, second.image_calls) == ([2], [1])
+    assert (first.image_calls, second.image_calls) == ([3, 3], [3])
     assert torch.equal(results[1]["embedding"][:3], torch.tensor([0.0, 1.0, 0.0]))
 
 
@@ -284,11 +281,16 @@ def test_a_wrong_number_of_model_embeddings_fails() -> None:
         _block({"m": Short()}).run(data=images, model_id="m")
 
 
-def test_a_per_row_model_id_batch_of_another_length_fails() -> None:
-    block = _block({"m": FakeEmbeddingModel()})
+@pytest.mark.parametrize("name", ["model_id", "model_package_id"])
+def test_a_per_row_model_selection_fails_before_any_model_call(name) -> None:
+    model = FakeEmbeddingModel()
+    block = _block({"m": model})
+    selection = {"model_id": "m", name: Batch(["m", "m"])}
 
-    with pytest.raises(ValueError, match="model_id has 1 values for 2 rows"):
-        block.run(data=Batch(["red", "blue"]), model_id=Batch(["m"]))
+    with pytest.raises(ValueError, match=f"{name} is one value for every image"):
+        block.run(data=Batch(["red", "blue"]), **selection)
+
+    assert model.image_calls == model.text_calls == []
 
 
 def test_negative_cache_capacity_is_rejected() -> None:

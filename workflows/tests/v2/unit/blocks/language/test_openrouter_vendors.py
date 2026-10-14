@@ -3,6 +3,7 @@
 Every request goes to an in-process fake transport or platform client; the
 answers are fixed strings, not model output.
 """
+import roboflow_workflows.v2.blocks.language._catalogue_openrouter_vendors as _v2_family_0
 
 import base64
 import re
@@ -14,15 +15,12 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.language import openrouter_vendors
+from roboflow_workflows.v2.blocks.language._shared import openrouter_vendors as openrouter_vendors
 from roboflow_workflows.v2.blocks.language.chat import ChatRequestError
-from roboflow_workflows.v2.blocks.language.openrouter_vendors import (
-    KimiOpenRouterBlock,
-    MetaVlmBlock,
-    VendorModel,
-    ZaiVlmBlock,
-    encode_capped_jpeg,
-)
+from roboflow_workflows.v2.blocks.language.kimi_openrouter.v3 import KimiOpenRouterBlock
+from roboflow_workflows.v2.blocks.language.meta_vlm.v3 import MetaVlmBlock
+from roboflow_workflows.v2.blocks.language._shared.openrouter_vendors import VendorModel, encode_capped_jpeg
+from roboflow_workflows.v2.blocks.language.zai_vlm.v2 import ZaiVlmBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import (
@@ -219,6 +217,29 @@ def test_zai_reasoning_rules(model_version, reasoning_effort, reasoning) -> None
     )
 
     assert server.requests[0].body["reasoning"] == reasoning
+
+
+def test_zai_reads_the_shared_required_reasoning_fallback_at_call_time(
+    monkeypatch,
+) -> None:
+    # given: the shared fallback changed after the block module was imported
+    monkeypatch.setattr(openrouter_vendors, "ZAI_REQUIRED_REASONING_FALLBACK", "high")
+    server = _answering("ok")
+    block = _block(ZaiVlmBlock, server)
+
+    # when
+    for model_version in ("GLM 5.3 Flash", "GLM 5V Turbo"):
+        _run(
+            block,
+            [_image()],
+            prompt="p",
+            model_version=model_version,
+            reasoning_effort="none",
+        )
+
+    # then: only the model that requires reasoning uses the patched value
+    reasoning = [request.body["reasoning"] for request in server.requests]
+    assert reasoning == [{"effort": "high"}, {"enabled": False}]
 
 
 def test_zai_flash_uses_its_own_detection_prompt_and_fp8_floor() -> None:
@@ -550,5 +571,5 @@ def test_managed_key_without_host_fails_before_platform_effects(
 
 
 def test_only_active_openrouter_vendor_blocks_are_discoverable() -> None:
-    assert openrouter_vendors.BLOCKS == (KimiOpenRouterBlock, MetaVlmBlock, ZaiVlmBlock)
-    assert all("llama" not in block.type for block in openrouter_vendors.BLOCKS)
+    assert _v2_family_0.BLOCKS == (KimiOpenRouterBlock, MetaVlmBlock, ZaiVlmBlock)
+    assert all("llama" not in block.type for block in _v2_family_0.BLOCKS)

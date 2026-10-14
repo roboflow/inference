@@ -6,7 +6,7 @@ moving at a constant speed, so every expected value is analytic::
     cam-a   x1 = 3 * frame          30 px/s at 10 fps
     cam-b   y1 = 100 - 2 * frame    -20 px/s at 10 fps
 
-The tracker, ``v2/trackers_bytetrack@v1``, does not report a track on the
+The tracker, ``roboflow_core/trackers_bytetrack@v1``, does not report a track on the
 frame that creates it. Every session therefore starts with frame 0, which only
 creates the tracks: the consumers see zero rows there, and the analytic
 values start on frame 1. Tracker ids come from a process-wide counter, so
@@ -20,9 +20,9 @@ import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.analytics.velocity import VelocityBlock
-from roboflow_workflows.v2.blocks.tracking.class_lock import TrackClassLockBlock
-from roboflow_workflows.v2.blocks.tracking.stabilize import StabilizeDetectionsBlock
+from roboflow_workflows.v2.blocks.analytics.velocity.v1 import VelocityBlock
+from roboflow_workflows.v2.blocks.tracking.track_class_lock.v1 import TrackClassLockBlock
+from roboflow_workflows.v2.blocks.tracking.stabilize_detections.v1 import StabilizeDetectionsBlock
 from roboflow_workflows.v2.data.batch import EntryMetadata, InputValue, SampleContext
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.prediction_ops import select_predictions
@@ -87,7 +87,7 @@ def _definition(*, lock=None, stable=None, speed=None, outputs=OUTPUTS):
     # Explicit knobs: confidence 0.9 starts a track; a box moves at most 3 px
     # per frame, so consecutive 40 px boxes overlap with IoU above 0.8.
     track = {
-        "type": "v2/trackers_bytetrack@v1",
+        "type": "roboflow_core/trackers_bytetrack@v1",
         "name": "track",
         "frame_rate": 10.0,
         "minimum_iou_threshold": 0.3,
@@ -97,7 +97,7 @@ def _definition(*, lock=None, stable=None, speed=None, outputs=OUTPUTS):
     steps = [
         {**track, "image": "$inputs.image", "predictions": "$inputs.predictions"},
         {
-            "type": "v2/track_class_lock@v1",
+            "type": "roboflow_core/track_class_lock@v1",
             "name": "lock",
             "image": "$inputs.image",
             "predictions": tracked,
@@ -107,7 +107,7 @@ def _definition(*, lock=None, stable=None, speed=None, outputs=OUTPUTS):
             **(lock or {}),
         },
         {
-            "type": "v2/stabilize_detections@v1",
+            "type": "roboflow_core/stabilize_detections@v1",
             "name": "stable",
             "image": "$inputs.image",
             "predictions": tracked,
@@ -115,7 +115,7 @@ def _definition(*, lock=None, stable=None, speed=None, outputs=OUTPUTS):
             **(stable or {}),
         },
         {
-            "type": "v2/velocity@v1",
+            "type": "roboflow_core/velocity@v1",
             "name": "speed",
             "image": "$inputs.image",
             "predictions": tracked,
@@ -380,7 +380,7 @@ def test_images_without_video_identifier_use_their_own_source():
         ],
         "steps": [
             {
-                "type": "v2/track_class_lock@v1",
+                "type": "roboflow_core/track_class_lock@v1",
                 "name": "lock",
                 "image": "$inputs.image",
                 "predictions": "$inputs.predictions",

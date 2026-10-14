@@ -1,10 +1,10 @@
-"""Unit tests of ``v2/contours_detection@v1`` against OpenCV references."""
+"""Unit tests of ``roboflow_core/contours_detection@v1`` against OpenCV references."""
 
 import cv2
 import numpy as np
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.geometry.contours import ContoursDetectionBlock
+from roboflow_workflows.v2.blocks.geometry.contours_detection.v1 import ContoursDetectionBlock
 from roboflow_workflows.v2.data.image import ImageData
 
 

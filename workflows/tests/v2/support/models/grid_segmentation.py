@@ -20,10 +20,8 @@ Image sides must be even.
 from typing import Any, Dict, List, Tuple
 
 import torch
-from roboflow_workflows.v2.blocks.models.common import ModelGroup
-from roboflow_workflows.v2.blocks.models.instance_segmentation import (
-    InstanceSegmentationBlock,
-)
+from roboflow_workflows.v2.blocks.models.common import ModelInput
+from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
 from roboflow_workflows.v2.data.masks.grid import MaskGridGeometry, SegmentationView
 
 from inference_models.models.base.object_detection import Detections
@@ -87,11 +85,11 @@ class GridInstanceSegmentationBlock(InstanceSegmentationBlock):
         return answer
 
     def _segmentations(
-        self, group: ModelGroup, group_output: Any
+        self, network_input: ModelInput, raw_output: Any
     ) -> List[SegmentationView]:
-        group.model.demand = dict(self.asked)
-        decoded = group.model.post_process_grid(
-            group_output, group.metadata, **_grid_options(group.options)
+        network_input.model.demand = dict(self.asked)
+        decoded = network_input.model.post_process_grid(
+            raw_output, network_input.metadata, **_grid_options(network_input.options)
         )
         views = [
             SegmentationView.from_selected_rows(

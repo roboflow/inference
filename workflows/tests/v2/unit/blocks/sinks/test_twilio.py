@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/twilio_sms_notification@v2``.
+"""Unit tests of ``roboflow_core/twilio_sms_notification@v2``.
 
 Custom Twilio runs the real ``twilio`` client over a recording ``HttpClient``;
 the managed provider is a recording ``platform_client``. Credentials are
@@ -16,11 +16,7 @@ from roboflow_workflows.v2.blocks.sinks.runtime import (
     BACKGROUND_MESSAGE,
     BackgroundEffects,
 )
-from roboflow_workflows.v2.blocks.sinks.twilio import (
-    CREDITS_MESSAGE,
-    NO_UPLOADER_MESSAGE,
-    TwilioSmsNotificationBlock,
-)
+from roboflow_workflows.v2.blocks.sinks.twilio_sms_notification.v2 import CREDITS_MESSAGE, NO_UPLOADER_MESSAGE, TwilioSmsNotificationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 from twilio.http import HttpClient

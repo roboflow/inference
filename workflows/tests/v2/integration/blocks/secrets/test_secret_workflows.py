@@ -3,7 +3,7 @@
 Every value here is an invented sentinel; requests go only to an in-process
 fake client and recordings only to pytest's temporary directory::
 
-    secrets resource ─▶ v2/environment_secrets_store@v1 ─▶ test/secret_sink@v1 ─▶ client
+    secrets resource ─▶ roboflow_core/environment_secrets_store@v1 ─▶ test/secret_sink@v1 ─▶ client
                                      │                         (reveals, scrubs)
                                      └─▶ outputs / recording (name only)
     recording ─▶ replay ─▶ test/secret_sink@v1 ─▶ SecretUnavailableError, nothing sent
@@ -20,7 +20,7 @@ from roboflow_workflows.v2.blocks.secrets import (
     EnvironmentSecretsStoreBlock,
     StaticSecrets,
 )
-from roboflow_workflows.v2.blocks.state.values import StateSetBlock
+from roboflow_workflows.v2.blocks.state.state_set.v1 import StateSetBlock
 from roboflow_workflows.v2.data.kinds import BOOLEAN_KIND, STRING_KIND
 from roboflow_workflows.v2.data.secrets import (
     SECRET_KIND,
@@ -99,7 +99,7 @@ CATALOGUE = Catalogue(
     codecs=[SECRET_RECORDING_CODEC],
 )
 STORE_STEP = {
-    "type": "v2/environment_secrets_store@v1",
+    "type": "roboflow_core/environment_secrets_store@v1",
     "name": "secrets",
     "variables_storing_secrets": ["SLACK_TOKEN", "HEADER_TOKEN"],
 }
@@ -293,7 +293,7 @@ def test_writing_a_secret_to_managed_state_fails_without_the_value() -> None:
         [
             STORE_STEP,
             {
-                "type": "v2/state_set",
+                "type": "roboflow_core/state_set@v1",
                 "name": "keep",
                 "key": "token",
                 "value": "$steps.secrets.slack_token",

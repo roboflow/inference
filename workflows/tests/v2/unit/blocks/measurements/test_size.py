@@ -1,4 +1,4 @@
-"""``v2/size_measurement@v1``: reference scaling, mask rectangles and errors.
+"""``roboflow_core/size_measurement@v1``: reference scaling, mask rectangles and errors.
 
 Box sizes are exact. Mask sizes follow OpenCV's pixel-centre contours, so a
 filled w x h rectangle measures (w - 1) x (h - 1).
@@ -12,7 +12,7 @@ import pytest
 import torch
 from pycocotools import mask as mask_utils
 from roboflow_workflows.v2.blocks.measurements import SizeMeasurementBlock
-from roboflow_workflows.v2.blocks.measurements.size import parse_reference_dimensions
+from roboflow_workflows.v2.blocks.measurements.size_measurement.v1 import parse_reference_dimensions
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import SegmentationView
 from roboflow_workflows.v2.data.masks.grid import MaskGridGeometry

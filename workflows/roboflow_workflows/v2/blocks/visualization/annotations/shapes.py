@@ -16,14 +16,10 @@ Circle and ellipse outlines take OpenCV's thickness: ``>= 1`` pixels, or
 from typing import Any
 
 import numpy as np
-from pydantic import Field
 from roboflow_workflows.v2.blocks.visualization.annotations.anchors import (
     CENTER_OF_MASS,
     box_anchors,
     mass_centres,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.params import (
-    POSITIONS_WITH_MASS,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.rows import (
     DrawRows,
@@ -49,29 +45,6 @@ def checked_outline_or_fill(value: Any, *, name: str) -> int:
         )
 
     return value
-
-
-def position_field(*, default: str, marker: str) -> Any:
-    """Return the ``position`` field declaration of an anchored marker block.
-
-    Args:
-        default: V1 default position.
-        marker: What is placed, completing "Where each ... sits".
-
-    Returns:
-        The pydantic ``Field``.
-    """
-    field = Field(
-        default=default,
-        description=(
-            f"Where each {marker} sits on its detection: a point of the box "
-            f"({', '.join(POSITIONS_WITH_MASS[:-1])}) or CENTER_OF_MASS, the "
-            "mean of the instance mask (needs instance masks; see mask_quality)."
-        ),
-        examples=[default, "CENTER_OF_MASS", "$inputs.position"],
-    )
-
-    return field
 
 
 def marker_anchors(

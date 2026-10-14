@@ -135,7 +135,7 @@ def produce(cases, *, boxes=None, image="$inputs.image"):
 
 def crop_fade(predictions="$steps.produce.predictions"):
     step = {
-        "type": "v2/dynamic_crop@v1",
+        "type": "roboflow_core/dynamic_crop@v1",
         "name": "consume",
         "image": "$inputs.image",
         "predictions": predictions,
@@ -147,7 +147,7 @@ def crop_fade(predictions="$steps.produce.predictions"):
 
 def bounding_rect():
     step = {
-        "type": "v2/bounding_rect@v1",
+        "type": "roboflow_core/bounding_rect@v1",
         "name": "consume",
         "predictions": "$steps.produce.predictions",
     }
@@ -157,7 +157,7 @@ def bounding_rect():
 
 def stitch(strategy):
     step = {
-        "type": "v2/detections_stitch@v1",
+        "type": "roboflow_core/detections_stitch@v1",
         "name": "consume",
         "reference_image": "$inputs.image",
         "predictions": "$steps.produce.predictions",
@@ -335,7 +335,7 @@ def test_stitch_rejects_malformed_masks(strategy, case, native_decode_forbidden)
 def crop_frame_masks(case):
     # A 4x4 crop at offset (3, 3); the fixture predicts in the crop's frame.
     prepare = {
-        "type": "v2/absolute_static_crop@v1",
+        "type": "roboflow_core/absolute_static_crop@v1",
         "name": "prepare",
         "image": "$inputs.image",
         "x_center": 5,

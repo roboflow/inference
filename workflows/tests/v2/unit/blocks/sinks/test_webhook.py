@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/webhook_sink@v1`` with in-process and loopback transports."""
+"""Unit tests of ``roboflow_core/webhook_sink@v1`` with in-process and loopback transports."""
 
 import threading
 from typing import Any, Dict
@@ -11,11 +11,7 @@ from roboflow_workflows.v2.blocks.sinks.runtime import (
     BACKGROUND_MESSAGE,
     BackgroundEffects,
 )
-from roboflow_workflows.v2.blocks.sinks.webhook import (
-    HttpWebhookClient,
-    WebhookRequest,
-    WebhookSinkBlock,
-)
+from roboflow_workflows.v2.blocks.sinks.webhook_sink.v1 import HttpWebhookClient, WebhookRequest, WebhookSinkBlock
 
 from tests.v2.support.sinks.loopback import (
     LoopbackHttpServer,

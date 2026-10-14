@@ -1,8 +1,8 @@
 """Message helpers shared by the e-mail, Slack and Twilio notification blocks.
 
-Used by ``email.py`` (``v2/email_notification@v2``), ``slack.py``
-(``v2/slack_notification@v1``) and ``twilio.py``
-(``v2/twilio_sms_notification@v2``). A change here changes all three::
+Used by ``email.py`` (``roboflow_core/email_notification@v2``), ``slack.py``
+(``roboflow_core/slack_notification@v1``) and ``twilio.py``
+(``roboflow_core/twilio_sms_notification@v2``). A change here changes all three::
 
     message ── referenced_parameters ──▶ names
             ── ParameterOperations.apply (UQL, compiled once per step) ──▶ values

@@ -12,21 +12,19 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
+from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.detection import ObjectDetectionBlock
-from roboflow_workflows.v2.blocks.models.ocr import (
-    EasyOCRBlock,
-    OCRModelBlock,
-    PPOCRBlock,
-)
+from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import EasyOCRBlock
+from roboflow_workflows.v2.blocks.models.ocr_model.v1 import OCRModelBlock
+from roboflow_workflows.v2.blocks.models.pp_ocr.v1 import PPOCRBlock
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks.grid import INSTANCE_SEGMENTATION_VIEW_KIND
 from roboflow_workflows.v2.data.predictions import NATIVE_KINDS
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
-from roboflow_workflows.v2.engine.errors import ParamsValidationError
+from roboflow_workflows.v2.engine.errors import LineageError, ParamsValidationError
 from roboflow_workflows.v2.engine.introspection import discover_workload
 from roboflow_workflows.v2.engine.plan import CompileOptions
 from tests.v2.support.models.fake_ocr_models import FakeOCRLoader
@@ -101,14 +99,14 @@ def _image(value: int, image_id: str, *, height: int = 40, width: int = 60):
 
 
 OCR_STEPS = [
-    {"type": "v2/ocr_model@v1", "name": "doctr", "image": "$inputs.image"},
+    {"type": "roboflow_core/ocr_model@v1", "name": "doctr", "image": "$inputs.image"},
     {
-        "type": "v2/easy_ocr@v1",
+        "type": "roboflow_core/easy_ocr@v1",
         "name": "easy",
         "image": "$inputs.image",
         "language": "Japanese",
     },
-    {"type": "v2/pp_ocr@v1", "name": "paddle", "image": "$inputs.image"},
+    {"type": "roboflow_core/pp_ocr@v1", "name": "paddle", "image": "$inputs.image"},
 ]
 OCR_SELECTORS = {
     f"{step['name']}_{output}": f"$steps.{step['name']}.{output}"
@@ -186,20 +184,20 @@ def test_run_and_phase_execution_read_the_same_text_and_boxes() -> None:
 def test_ocr_reads_each_crop_of_a_detection_step(mode: str) -> None:
     steps = [
         {
-            "type": "v2/object_detection@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "detect",
             "image": "$inputs.image",
             "model_id": "detector",
             "confidence": 0.0,
         },
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "predictions": "$steps.detect.predictions",
         },
         {
-            "type": "v2/pp_ocr@v1",
+            "type": "roboflow_core/pp_ocr@v1",
             "name": "read",
             "image": "$steps.crop.crops",
             "text_detection": "none",
@@ -249,11 +247,11 @@ def test_workload_lists_every_model_the_steps_need() -> None:
 @pytest.mark.parametrize(
     "step",
     [
-        {"type": "v2/pp_ocr@v1", "text_detection": "none", "text_recognition": "none"},
-        {"type": "v2/pp_ocr@v1", "text_detection": "large"},
-        {"type": "v2/easy_ocr@v1", "language": "Klingon"},
-        {"type": "v2/easy_ocr@v1", "quantize": True},
-        {"type": "v2/ocr_model@v1", "model_id": ""},
+        {"type": "roboflow_core/pp_ocr@v1", "text_detection": "none", "text_recognition": "none"},
+        {"type": "roboflow_core/pp_ocr@v1", "text_detection": "large"},
+        {"type": "roboflow_core/easy_ocr@v1", "language": "Klingon"},
+        {"type": "roboflow_core/easy_ocr@v1", "quantize": True},
+        {"type": "roboflow_core/ocr_model@v1", "model_id": ""},
     ],
 )
 def test_invalid_steps_fail_at_compile_time(step: Dict[str, Any]) -> None:
@@ -369,3 +367,21 @@ def test_doctr_and_easyocr_still_resolve_package_selectors(
     finally:
         session.close()
     assert loader.loaded == [ModelRequest(model_id, "actual")]
+
+
+@pytest.mark.parametrize(
+    "block_type, field",
+    [
+        (OCRModelBlock.type, "model_id"),
+        (OCRModelBlock.type, "model_package_id"),
+        (EasyOCRBlock.type, "model_package_id"),
+    ],
+)
+def test_doctr_and_easyocr_reject_a_per_image_model_selector_at_compile_time(
+    block_type: str, field: str
+) -> None:
+    definition = _package_workflow(block_type, {field: "$inputs.package"})
+    definition["inputs"][1] = {"type": "WorkflowBatchInput", "name": "package"}
+
+    with pytest.raises(LineageError, match=f"ocr {field} is passed once per call"):
+        compile_workflow(definition, catalogue=_catalogue())

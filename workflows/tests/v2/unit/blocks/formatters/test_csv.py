@@ -1,4 +1,4 @@
-"""``v2/csv_formatter@v1`` on plain values and engine-shaped batches."""
+"""``roboflow_core/csv_formatter@v1`` on plain values and engine-shaped batches."""
 
 import csv
 import io
@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.formatters.csv import CsvFormatterBlock
+from roboflow_workflows.v2.blocks.formatters.csv_formatter.v1 import CsvFormatterBlock
 from roboflow_workflows.v2.data.batch import Batch
 
 START = datetime(2026, 7, 1, 10, 0, tzinfo=timezone.utc)

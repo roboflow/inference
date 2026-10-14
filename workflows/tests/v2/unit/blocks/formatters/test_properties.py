@@ -1,4 +1,4 @@
-"""``v2/property_definition@v1`` and ``v2/expression@v1`` on plain values."""
+"""``roboflow_core/property_definition@v1`` and ``roboflow_core/expression@v1`` on plain values."""
 
 import pytest
 import torch
@@ -8,7 +8,7 @@ from roboflow_workflows.v2.blocks.formatters import (
     ExpressionBlock,
     PropertyDefinitionBlock,
 )
-from roboflow_workflows.v2.blocks.formatters.properties import SWITCH_EXAMPLE
+from roboflow_workflows.v2.blocks.formatters.expression.v1 import SWITCH_EXAMPLE
 from roboflow_workflows.v2.blocks.query import QueryRuntimeError
 
 from inference_models.models.base.classification import (
@@ -79,8 +79,8 @@ def _run_expression(data: dict, switch: dict, data_operations=None):
 def test_the_package_lists_both_formatters() -> None:
     assert PropertyDefinitionBlock in BLOCKS
     assert ExpressionBlock in BLOCKS
-    assert PropertyDefinitionBlock.type == "v2/property_definition@v1"
-    assert ExpressionBlock.type == "v2/expression@v1"
+    assert PropertyDefinitionBlock.type == "roboflow_core/property_definition@v1"
+    assert ExpressionBlock.type == "roboflow_core/expression@v1"
 
 
 def test_property_definition_extracts_the_top_class_confidence() -> None:

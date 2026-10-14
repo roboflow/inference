@@ -1,4 +1,4 @@
-"""Zone geometry shared by ``v2/line_counter@v2`` and ``v2/time_in_zone@v3``.
+"""Zone geometry shared by ``roboflow_core/line_counter@v2`` and ``roboflow_core/time_in_zone@v3``.
 
 Expected values are derived by hand from latest V1
 ``core_steps/analytics/_zone_geometry.py``; the task's randomized parity

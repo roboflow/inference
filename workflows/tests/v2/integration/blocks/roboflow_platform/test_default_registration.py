@@ -8,7 +8,7 @@ import pytest
 import torch
 from roboflow_workflows.v2 import blocks
 from roboflow_workflows.v2.blocks import roboflow_platform
-from roboflow_workflows.v2.blocks.roboflow_platform.vision_events import EventBundle
+from roboflow_workflows.v2.blocks.roboflow_platform._shared.vision_events import EventBundle
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret
 from roboflow_workflows.v2.engine.catalogue import Catalogue
@@ -18,11 +18,11 @@ from roboflow_workflows.v2.engine.errors import UnknownBlockError
 from roboflow_workflows.v2.engine.plan import CompileOptions
 
 _ADDED = (
-    ("RoboflowCustomMetadataBlock", "v2/roboflow_custom_metadata@v1"),
-    ("VisualSearchBlock", "v2/visual_search@v1"),
-    ("VisualSearchClassifierBlock", "v2/visual_search_classifier@v1"),
-    ("RoboflowVisionEventsBlock", "v2/roboflow_vision_events@v1"),
-    ("VisionEventBundleBlock", "v2/vision_event_bundle@v1"),
+    ("RoboflowCustomMetadataBlock", "roboflow_core/roboflow_custom_metadata@v1"),
+    ("VisualSearchBlock", "roboflow_core/visual_search@v1"),
+    ("VisualSearchClassifierBlock", "roboflow_core/visual_search_classifier@v1"),
+    ("RoboflowVisionEventsBlock", "roboflow_core/roboflow_vision_events@v1"),
+    ("VisionEventBundleBlock", "roboflow_core/vision_event_bundle@v1"),
 )
 
 
@@ -33,20 +33,20 @@ def _definition():
         "steps": [
             {
                 "name": "search",
-                "type": "v2/visual_search@v1",
+                "type": "roboflow_core/visual_search@v1",
                 "image": "$inputs.image",
                 "workspace": "shop",
                 "target_project": "references",
             },
             {
                 "name": "classify",
-                "type": "v2/visual_search_classifier@v1",
+                "type": "roboflow_core/visual_search_classifier@v1",
                 "image": "$inputs.image",
                 "target_project": "references",
             },
             {
                 "name": "tag",
-                "type": "v2/roboflow_custom_metadata@v1",
+                "type": "roboflow_core/roboflow_custom_metadata@v1",
                 "predictions": "$steps.classify.predictions",
                 "inference_id": "$steps.classify.inference_id",
                 "field_name": "source",
@@ -54,7 +54,7 @@ def _definition():
             },
             {
                 "name": "event",
-                "type": "v2/roboflow_vision_events@v1",
+                "type": "roboflow_core/roboflow_vision_events@v1",
                 "event_type": "custom",
                 "solution": "use-case",
                 "input_image": "$inputs.image",
@@ -64,7 +64,7 @@ def _definition():
             },
             {
                 "name": "bundle",
-                "type": "v2/vision_event_bundle@v1",
+                "type": "roboflow_core/vision_event_bundle@v1",
                 "event_type": "operator_feedback",
                 "related_event_id": "$steps.event.event_id",
                 "feedback": "correct",
@@ -167,15 +167,15 @@ def test_default_exports_and_family_tuple_share_exact_classes(route):
         assert catalogue.block_types.count(identity) == 1
         assert catalogue.entry(identity).spec is spec_of(block)
     for identity in (
-        "v2/asset_library_attributes@v1",
-        "v2/roboflow_dataset_upload@v2",
-        "v2/model_monitoring_inference_aggregator@v1",
-        "v2/action_recognition@v1",
-        "v2/cosmos3_edge@v1",
-        "v2/florence_2@v2",
-        "v2/google_vision_ocr@v1",
-        "v2/moondream2@v1",
-        "v2/qwen_vlm@v4",
+        "roboflow_core/asset_library_attributes@v1",
+        "roboflow_core/roboflow_dataset_upload@v2",
+        "roboflow_core/model_monitoring_inference_aggregator@v1",
+        "roboflow_core/roboflow_action_recognition_model@v1",
+        "roboflow_core/cosmos3_edge@v1",
+        "roboflow_core/florence_2@v2",
+        "roboflow_core/google_vision_ocr@v1",
+        "roboflow_core/moondream2@v1",
+        "roboflow_core/qwen_vlm@v4",
     ):
         assert identity in catalogue.block_types
 
@@ -292,12 +292,12 @@ def test_retired_types_are_rejected_and_active_qwen_is_registered():
     from tests.v2.unit.blocks.test_not_ported_v1_types import RETIRED_V2_TYPES
 
     catalogue = blocks.create_catalogue()
-    from roboflow_workflows.v2.blocks.models.vlm import Qwen35VLBlock
+    from roboflow_workflows.v2.blocks.models.qwen3_5vl.v2 import Qwen35VLBlock
     from roboflow_workflows.v2.engine.declaration import spec_of
 
     # Q3 is active in the reviewed tail; retired families still fail compilation.
-    assert catalogue.block_types.count("v2/qwen3_5vl@v2") == 1
-    assert catalogue.entry("v2/qwen3_5vl@v2").spec is spec_of(Qwen35VLBlock)
+    assert catalogue.block_types.count("roboflow_core/qwen3_5vl@v2") == 1
+    assert catalogue.entry("roboflow_core/qwen3_5vl@v2").spec is spec_of(Qwen35VLBlock)
     assert blocks.Qwen35VLBlock is Qwen35VLBlock
     for identity in RETIRED_V2_TYPES:
         assert catalogue.find(identity) is None

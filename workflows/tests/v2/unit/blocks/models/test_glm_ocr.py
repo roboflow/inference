@@ -31,19 +31,13 @@ from inference_models.configuration import (
     INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
     INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
 )
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
 from roboflow_workflows.v2.blocks.models.cache import (
     ModelCache,
     ModelRequest,
     auto_model_loader,
 )
-from roboflow_workflows.v2.blocks.models.glm_ocr import (
-    BLOCKS,
-    FIXED_TASK_PROMPTS,
-    STRUCTURED_ANSWERING_PROMPT_TEMPLATE,
-    TASK_TYPES,
-    GlmOcrBlock,
-)
+from roboflow_workflows.v2.blocks.models.glm_ocr.v1 import BLOCKS, FIXED_TASK_PROMPTS, STRUCTURED_ANSWERING_PROMPT_TEMPLATE, TASK_TYPES, GlmOcrBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.catalogue import Catalogue
@@ -395,10 +389,17 @@ def test_a_supplied_mapping_serves_its_model_and_names_a_missing_one() -> None:
             "must map field names to text descriptions",
         ),
         (
-            {"task_type": Batch(["custom", "custom"]), "prompt": Batch(["ok", None])},
+            {"task_type": "custom", "prompt": Batch(["ok", None])},
             "`prompt` is required",
         ),
-        ({"task_type": Batch(["custom"])}, "task_type has 1 values for 2 images"),
+        (
+            {"task_type": Batch(["custom", "custom"])},
+            "task_type is one value for every image",
+        ),
+        (
+            {"model_package_id": Batch([None, None])},
+            "model_package_id is one value for every image",
+        ),
         ({"prompt": Batch(["a", "b", "c"])}, "prompt has 3 values for 2 images"),
     ],
 )
@@ -451,7 +452,7 @@ def test_the_block_module_imports_neither_the_backend_nor_transformers() -> None
     # The V2 image type already imports parts of inference_models; the GLM-OCR
     # backend and transformers load only with a model.
     code = (
-        "import sys, roboflow_workflows.v2.blocks.models.glm_ocr\n"
+        "import sys, roboflow_workflows.v2.blocks.models.glm_ocr.v1\n"
         "print(sorted(m for m in ('inference_models.models.glm_ocr.glm_ocr_hf', "
         "'transformers') if m in sys.modules))"
     )
@@ -467,23 +468,37 @@ def test_the_block_module_imports_neither_the_backend_nor_transformers() -> None
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_per_image_models_load_once_and_answers_keep_row_order(mode: str) -> None:
+def test_selected_models_load_once_and_answers_keep_row_order(mode: str) -> None:
     loader = FakeLoader()
     session = _session(
         loader,
         mode=mode,
-        inputs=({"type": "WorkflowBatchInput", "name": "model_id"},),
+        inputs=({"type": "WorkflowParameter", "name": "model_id"},),
         model_id="$inputs.model_id",
     )
     assert loader.loaded == []  # compiling and constructing load nothing
 
-    rows = session.run({"image": _images(), "model_id": ["a", "b", "a"]}).rows()
-    again = session.run({"image": _images(), "model_id": ["b", "b", "a"]}).rows()
+    rows = session.run({"image": _images(), "model_id": "a"}).rows()
+    other = session.run({"image": _images(), "model_id": "b"}).rows()
+    again = session.run({"image": _images(), "model_id": "a"}).rows()
 
     assert loader.loaded == [ModelRequest("a"), ModelRequest("b")]
-    assert [row["model_id"] for row in rows + again] == ["a", "b", "a", "b", "b", "a"]
+    assert [row["model_id"] for row in rows + other + again] == ["a"] * 3 + [
+        "b"
+    ] * 3 + ["a"] * 3
     assert [row["parsed_output"].split("|")[2] for row in rows] == ["20", "100", "200"]
-    assert len({row["inference_id"] for row in rows + again}) == 6
+    assert len({row["inference_id"] for row in rows + other + again}) == 9
+
+
+@pytest.mark.parametrize("name", ["model_id", "task"])
+def test_a_per_image_model_or_task_selector_fails_compilation(name: str) -> None:
+    field = {"model_id": "model_id", "task": "task_type"}[name]
+    with pytest.raises(Exception, match=f"{field} is passed once per call"):
+        _session(
+            FakeLoader(),
+            inputs=({"type": "WorkflowBatchInput", "name": name},),
+            **{field: f"$inputs.{name}"},
+        )
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -529,12 +544,12 @@ def test_task_type_prompt_and_max_new_tokens_come_from_inputs_per_run() -> None:
     assert len(loader.loaded) == 1
 
 
-def test_task_type_and_prompt_come_from_inputs_per_image() -> None:
+def test_the_custom_prompt_comes_from_an_input_per_image() -> None:
     loader = FakeLoader()
     session = _session(
         loader,
         inputs=(
-            {"type": "WorkflowBatchInput", "name": "task", "kind": ["string"]},
+            {"type": "WorkflowParameter", "name": "task", "kind": ["string"]},
             {"type": "WorkflowBatchInput", "name": "prompt", "kind": ["string"]},
         ),
         task_type="$inputs.task",
@@ -544,14 +559,14 @@ def test_task_type_and_prompt_come_from_inputs_per_image() -> None:
     rows = session.run(
         {
             "image": _images(),
-            "task": ["custom", "formula-recognition", "custom"],
-            "prompt": ["Read the date.", None, "Read the serial."],
+            "task": "custom",
+            "prompt": ["Read the date.", "Read the time.", "Read the serial."],
         }
     ).rows()
 
     assert [row["parsed_output"].split("|")[0] for row in rows] == [
         "Read the date.",
-        "Formula Recognition:",
+        "Read the time.",
         "Read the serial.",
     ]
 
@@ -782,3 +797,68 @@ def test_a_real_local_package_returns_text_for_every_image() -> None:
     ).rows()
 
     assert [type(row["parsed_output"]) for row in rows] == [str, str]
+
+
+# --- one-per-call options and aligned prompts (r2: C1, C2) ---------------------
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("max_new_tokens", Batch([64, 64])),
+        ("output_structure", Batch([{"a": "b"}, {"a": "b"}])),
+    ],
+)
+def test_a_batch_of_equal_option_values_fails_before_any_load(
+    field: str, value: Batch
+) -> None:
+    loader = FakeLoader()
+    block = GlmOcrBlock(models=ModelCache(loader))
+
+    with pytest.raises(ValueError, match=f"{field} is one value for every image"):
+        block.run(
+            image=Batch([_image(1, "a"), _image(2, "b")]),
+            model_id="m",
+            **{field: value},
+        )
+
+    assert loader.loaded == []
+
+
+@pytest.mark.parametrize(
+    "prompt_indices",
+    [[(0, 2), (1, 3)], [(1, 2), (0, 1)]],
+    ids=["other-images", "reordered"],
+)
+def test_custom_prompts_must_carry_the_image_indices_before_any_load(
+    prompt_indices: List[Tuple[int, ...]]
+) -> None:
+    loader = FakeLoader()
+    block = GlmOcrBlock(models=ModelCache(loader))
+    images = Batch([_image(1, "a"), _image(2, "b")], indices=[(0, 1), (1, 2)])
+    prompts = Batch(["Read A.", "Read B."], indices=prompt_indices)
+
+    with pytest.raises(ValueError, match="prompt rows .* do not match image rows"):
+        block.run(image=images, model_id="m", task_type="custom", prompt=prompts)
+
+    assert loader.loaded == []
+
+
+def test_aligned_sparse_custom_prompts_follow_their_images() -> None:
+    loader = FakeLoader()
+    block = GlmOcrBlock(models=ModelCache(loader))
+    indices = [(0, 1), (2, 5)]
+    images = Batch([_image(1, "a"), _image(2, "b")], indices=indices)
+
+    rows = block.run(
+        image=images,
+        model_id="m",
+        task_type="custom",
+        prompt=Batch(["Read A.", "Read B."], indices=indices),
+    )
+
+    assert [row["parsed_output"].split("|")[0] for row in rows] == [
+        "Read A.",
+        "Read B.",
+    ]
+

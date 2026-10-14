@@ -13,13 +13,14 @@ workflow builder relies on: the blocks chain, images of different sizes keep
 their rows, selected values draw like literals and fail with the same text,
 gates skip images and inputs stay unchanged.
 """
+import roboflow_workflows.v2.blocks.visualization.annotations._catalogue_zones as _v2_family_0
 
 from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 import pytest
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.visualization.annotations import zones
+from roboflow_workflows.v2.blocks.visualization.annotations._shared import zones as zones
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import StepExecutionError
@@ -45,14 +46,14 @@ COUNT_INPUTS = [
 def chain(zone: Any, line: Any, path: Any, *, opacity: Any = 0.3) -> List[dict]:
     steps = [
         {
-            "type": "v2/polygon_zone_visualization@v1",
+            "type": "roboflow_core/polygon_zone_visualization@v1",
             "name": "zone",
             "image": "$inputs.image",
             "zone": zone,
             "opacity": opacity,
         },
         {
-            "type": "v2/line_counter_visualization@v1",
+            "type": "roboflow_core/line_counter_visualization@v1",
             "name": "counter",
             "image": "$steps.zone.image",
             "zone": line,
@@ -61,7 +62,7 @@ def chain(zone: Any, line: Any, path: Any, *, opacity: Any = 0.3) -> List[dict]:
             "text_scale": 0.3,
         },
         {
-            "type": "v2/reference_path_visualization@v1",
+            "type": "roboflow_core/reference_path_visualization@v1",
             "name": "path",
             "image": "$steps.counter.image",
             "reference_path": path,
@@ -88,7 +89,7 @@ def compile_plan(
     }
     plan = compile_workflow(
         definition,
-        catalogue=create_catalogue().with_blocks(list(zones.BLOCKS)),
+        catalogue=create_catalogue().with_blocks(list(_v2_family_0.BLOCKS)),
         options=CompileOptions(block_execution=mode),
     )
 
@@ -254,7 +255,7 @@ def test_a_gated_image_is_not_drawn_and_the_others_are(mode: str) -> None:
     # given
     steps = [
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "keep",
             "condition": "$inputs.keep",
             "next_steps": ["$steps.zone"],

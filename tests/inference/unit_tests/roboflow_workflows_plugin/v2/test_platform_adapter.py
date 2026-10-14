@@ -12,6 +12,8 @@ fixture's responses are invented, as is every credential::
 
 Proxy variables are removed, so requests go straight to the loopback server.
 """
+import roboflow_workflows.v2.blocks.roboflow_platform.visual_search.v1 as _v2_family_0
+import roboflow_workflows.v2.blocks.roboflow_platform.visual_search_classifier.v1 as _v2_family_1
 
 import base64
 import json
@@ -28,10 +30,8 @@ import pytest
 import torch
 from roboflow_workflows.utils.images import downscale_image_keeping_aspect_ratio
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.roboflow_platform import visual_search
-from roboflow_workflows.v2.blocks.roboflow_platform.custom_metadata import (
-    RoboflowCustomMetadataBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform._shared import visual_search as visual_search
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_custom_metadata.v1 import RoboflowCustomMetadataBlock
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
@@ -424,8 +424,8 @@ def _tagging_plan():
     catalogue = create_catalogue().with_blocks(
         [
             RoboflowCustomMetadataBlock,
-            visual_search.VisualSearchBlock,
-            visual_search.VisualSearchClassifierBlock,
+            _v2_family_0.VisualSearchBlock,
+            _v2_family_1.VisualSearchClassifierBlock,
         ]
     )
     definition = {
@@ -433,13 +433,13 @@ def _tagging_plan():
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "v2/visual_search_classifier@v1",
+                "type": "roboflow_core/visual_search_classifier@v1",
                 "name": "classify",
                 "image": "$inputs.image",
                 "target_project": "refs",
             },
             {
-                "type": "v2/roboflow_custom_metadata@v1",
+                "type": "roboflow_core/roboflow_custom_metadata@v1",
                 "name": "tag",
                 "predictions": "$steps.classify.predictions",
                 "inference_id": "$steps.classify.inference_id",

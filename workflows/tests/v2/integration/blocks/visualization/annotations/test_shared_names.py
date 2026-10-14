@@ -91,27 +91,27 @@ def run(names: str) -> dict:
     steps = [
         {"type": "test/list_named_detector@v1", "name": "named", "image": "$inputs.image", "names": names},
         {
-            "type": "v2/per_class_confidence_filter@v1",
+            "type": "roboflow_core/per_class_confidence_filter@v1",
             "name": "confident",
             "predictions": "$steps.named.predictions",
             "class_thresholds": {"box": 0.6, "disc": 0.6},
             "default_threshold": 0.0,
         },
         {
-            "type": "v2/detections_filter@v1",
+            "type": "roboflow_core/detections_filter@v1",
             "name": "boxes",
             "predictions": "$steps.named.predictions",
             "operations": [BOXES_ONLY],
         },
-        {"type": "v2/detection_drawing@v1", "name": "drawing", "predictions": "$steps.named.predictions"},
+        {"type": "roboflow_core/detection_drawing@v1", "name": "drawing", "predictions": "$steps.named.predictions"},
         {
-            "type": "v2/label_visualization@v1",
+            "type": "roboflow_core/simple_label_visualization@v1",
             "name": "native_labels",
             "image": "$inputs.image",
             "predictions": "$steps.named.predictions",
         },
         {
-            "type": "v2/label_visualization@v1",
+            "type": "roboflow_core/simple_label_visualization@v1",
             "name": "prepared_labels",
             "image": "$inputs.image",
             "predictions": "$steps.drawing.drawing",

@@ -11,7 +11,8 @@ import pytest
 import torch
 from pydantic import Field
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.image.blocks import ResizeBlock, StaticCropBlock
+from roboflow_workflows.v2.blocks.image.primitives.resize.v1 import ResizeBlock
+from roboflow_workflows.v2.blocks.image.primitives.static_crop.v1 import StaticCropBlock
 from roboflow_workflows.v2.data.boundaries import MEDIA_WILDCARD_KIND
 from roboflow_workflows.v2.data.frames import FRAME_RECORD_KEY, FrameRef, frame_of
 from roboflow_workflows.v2.data.image import FrameMapping, ImageData
@@ -134,13 +135,13 @@ def _plan(model, *, outputs, transformed=True):
     )
     steps = [
         {
-            "type": "v2/static_crop",
+            "type": "roboflow_core/static_crop@v1",
             "name": "crop",
             "image": "$inputs.images",
             "regions": [[7, 3, 27, 13]],
         },
         {
-            "type": "v2/resize",
+            "type": "roboflow_core/resize@v1",
             "name": "resize",
             "image": "$steps.crop.crops",
             "width": 10,

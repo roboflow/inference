@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.analytics import path_deviation as module
-from roboflow_workflows.v2.blocks.analytics.path_deviation import PathDeviationBlock
-from roboflow_workflows.v2.blocks.tracking.byte_track import TrackerCapacityError
+from roboflow_workflows.v2.blocks.analytics.path_deviation_analytics import v2 as module
+from roboflow_workflows.v2.blocks.analytics.path_deviation_analytics.v2 import PathDeviationBlock
+from roboflow_workflows.v2.blocks.tracking.byte_tracker.v3 import TrackerCapacityError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView
 from roboflow_workflows.v2.data.row_identity import row_record, with_row_identity

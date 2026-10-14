@@ -8,10 +8,8 @@ import uuid
 from typing import Iterator
 
 import pytest
-from roboflow_workflows.v2.blocks.state import machines as state_machine
-from roboflow_workflows.v2.blocks.state.machines import (
-    StateMachineSetBlock,
-)
+from roboflow_workflows.v2.blocks.state.state_machine_set import v1 as state_machine
+from roboflow_workflows.v2.blocks.state.state_machine_set.v1 import StateMachineSetBlock
 from roboflow_workflows.v2.engine.reactions.machines import TransitionResult
 from roboflow_workflows.v2.engine.state import InMemoryStateBackend, ManagedState
 

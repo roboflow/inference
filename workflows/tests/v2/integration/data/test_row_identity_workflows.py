@@ -11,7 +11,8 @@ import json
 import pytest
 import torch
 from pydantic import Field
-from roboflow_workflows.v2.blocks.image.blocks import ResizeBlock, StaticCropBlock
+from roboflow_workflows.v2.blocks.image.primitives.resize.v1 import ResizeBlock
+from roboflow_workflows.v2.blocks.image.primitives.static_crop.v1 import StaticCropBlock
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
@@ -128,13 +129,13 @@ def _plan(scenario):
         "inputs": [{"type": "WorkflowImage", "name": "images"}],
         "steps": [
             {
-                "type": "v2/static_crop",
+                "type": "roboflow_core/static_crop@v1",
                 "name": "crop",
                 "image": "$inputs.images",
                 "regions": [[4, 2, 24, 12]],
             },
             {
-                "type": "v2/resize",
+                "type": "roboflow_core/resize@v1",
                 "name": "resize",
                 "image": "$steps.crop.crops",
                 "width": 10,

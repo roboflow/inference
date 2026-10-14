@@ -4,12 +4,7 @@ import copy
 
 import pytest
 from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
-from roboflow_workflows.v2.blocks.roboflow_platform.asset_library import (
-    EMPTY_MESSAGE,
-    MAX_BATCH_UPDATES,
-    SUCCESS_MESSAGE,
-    AssetLibraryAttributesBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.asset_library_attributes.v1 import EMPTY_MESSAGE, MAX_BATCH_UPDATES, SUCCESS_MESSAGE, AssetLibraryAttributesBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 

@@ -12,7 +12,7 @@ the gradient alone. With ``history=5`` the moving camera's oracle is::
 The static camera never has motion. Regions whose simplified outline keeps
 fewer than 3 points (a subpixel zone, an unzoned thin bar) are never motion.
 Every case runs in both block execution modes; one also runs pipelined with
-two pulses in flight. The last three cases feed ``v2/dynamic_zone@v1`` zones
+two pulses in flight. The last three cases feed ``roboflow_core/dynamic_zone@v1`` zones
 (regions candidate, a pinned test prerequisite) into ``detection_zone``:
 union, empty and two sources.
 """
@@ -23,14 +23,11 @@ from typing import Any, Dict, List, Optional
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.analytics.background_subtraction import (
-    BackgroundModelCapacityError,
-    BackgroundSubtractionBlock,
-)
-from roboflow_workflows.v2.blocks.analytics.motion_detection import MotionDetectionBlock
-from roboflow_workflows.v2.blocks.control.blocks import ContinueIfBlock
-from roboflow_workflows.v2.blocks.geometry.dynamic_zone import DynamicZoneBlock
-from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
+from roboflow_workflows.v2.blocks.analytics.background_subtraction.v1 import BackgroundModelCapacityError, BackgroundSubtractionBlock
+from roboflow_workflows.v2.blocks.analytics.motion_detection.v1 import MotionDetectionBlock
+from roboflow_workflows.v2.blocks.control.continue_if_boolean.v1 import ContinueIfBlock
+from roboflow_workflows.v2.blocks.geometry.dynamic_zone.v1 import DynamicZoneBlock
+from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND

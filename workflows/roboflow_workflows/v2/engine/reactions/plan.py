@@ -68,7 +68,7 @@ MACHINE_SCOPES: Tuple[str, ...] = ("source", "global")
 TRANSITION_VALUES: Tuple[str, ...] = ("from", "to", "name")
 DEFAULT_QUEUE_DEPTH = 16
 
-STATE_MACHINE_SET_TYPE = "v2/state_machine_set"
+STATE_MACHINE_SET_TYPE = "roboflow_core/state_machine_set@v1"
 """Block type of the handler-only setter of handler-selected transitions."""
 
 SYSTEM_EVENTS: Mapping[str, Event] = MappingProxyType(

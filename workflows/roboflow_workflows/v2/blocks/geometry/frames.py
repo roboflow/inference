@@ -1,7 +1,7 @@
 """Move native predictions between related image frames by whole pixels.
 
-``v2/dynamic_crop@v1`` moves one detection into its crop, and
-``v2/detections_stitch@v1`` moves slice predictions back into the image they
+``roboflow_core/dynamic_crop@v1`` moves one detection into its crop, and
+``roboflow_core/detections_stitch@v1`` moves slice predictions back into the image they
 were cut from. Both are integer translations::
 
     target_xy = local_xy + (dx, dy)

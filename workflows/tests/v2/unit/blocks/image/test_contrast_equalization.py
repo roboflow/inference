@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/contrast_equalization@v1``, called directly.
+"""Unit tests of ``roboflow_core/contrast_equalization@v1``, called directly.
 
 Small histograms are worked out by hand. Other cases call scikit-image's
 functions directly with V1's arguments, dtypes and BGR layout, as the
@@ -11,9 +11,7 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.image.contrast_equalization import (
-    ContrastEqualizationBlock,
-)
+from roboflow_workflows.v2.blocks.image.contrast_equalization.v1 import ContrastEqualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
 from skimage import exposure
@@ -171,6 +169,6 @@ def test_unknown_equalization_type_is_rejected() -> None:
 
 
 def test_declares_a_pure_prunable_block() -> None:
-    assert ContrastEqualizationBlock.type == "v2/contrast_equalization@v1"
+    assert ContrastEqualizationBlock.type == "roboflow_core/contrast_equalization@v1"
     assert ContrastEqualizationBlock.prunable is True
     assert ContrastEqualizationBlock.mutates == ()

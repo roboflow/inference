@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.control.blocks import ContinueIfBlock
+from roboflow_workflows.v2.blocks.control.continue_if_boolean.v1 import ContinueIfBlock
 from roboflow_workflows.v2.data import IMAGE_KIND, ImageData
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.kinds import BUILTIN_KINDS, FLOAT_KIND, Kind
@@ -763,7 +763,7 @@ class TestInvalidDefinitionsAreReportedWithContext:
             build_dynamic_catalogue(
                 [
                     dynamic_block(
-                        "v2/continue_if",
+                        "roboflow_core/continue_if_boolean@v1",
                         inputs={},
                         outputs={},
                         run="def run(self):\n    return {}\n",
@@ -1167,7 +1167,7 @@ class TestDimensionality:
                 {"type": "Expand", "name": "expand", "value": "$inputs.values"},
                 {"type": "Above", "name": "above", "value": "$steps.expand.child"},
                 {
-                    "type": "v2/continue_if",
+                    "type": "roboflow_core/continue_if_boolean@v1",
                     "name": "gate",
                     "condition": "$steps.above.above",
                     "next_steps": ["$steps.keep"],

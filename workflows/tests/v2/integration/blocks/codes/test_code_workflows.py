@@ -11,21 +11,13 @@ import pytest
 import qrcode
 import torch
 import zxingcpp
-from roboflow_workflows.v2.blocks.codes.detectors import (
-    BarcodeDetectorBlock,
-    QRCodeDetectorBlock,
-)
-from roboflow_workflows.v2.blocks.codes.generator import QRCodeGeneratorBlock
-from roboflow_workflows.v2.blocks.image.blocks import StaticCropBlock
-from roboflow_workflows.v2.blocks.transforms.operations_chain import (
-    DetectionsFilterBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.bounding_box import (
-    BoundingBoxVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.label import (
-    LabelVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.codes.barcode_detector.v1 import BarcodeDetectorBlock
+from roboflow_workflows.v2.blocks.codes.qr_code_detector.v1 import QRCodeDetectorBlock
+from roboflow_workflows.v2.blocks.codes.qr_code_generator.v1 import QRCodeGeneratorBlock
+from roboflow_workflows.v2.blocks.image.primitives.static_crop.v1 import StaticCropBlock
+from roboflow_workflows.v2.blocks.transforms.detections_filter.v1 import DetectionsFilterBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.bounding_box_visualization.v1 import BoundingBoxVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import LabelVisualizationBlock
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.row_identity import row_record
 from roboflow_workflows.v2.engine.catalogue import Catalogue
@@ -88,19 +80,19 @@ def _generate_and_read_definition() -> Dict[str, Any]:
         ],
         "steps": [
             {
-                "type": "v2/qr_code_generator@v1",
+                "type": "roboflow_core/qr_code_generator@v1",
                 "name": "generate",
                 "text": "$inputs.text",
                 "border": "$inputs.border",
                 "fill_color": "navy",
             },
             {
-                "type": "v2/qr_code_detector@v1",
+                "type": "roboflow_core/qr_code_detector@v1",
                 "name": "qr",
                 "image": "$steps.generate.qr_code",
             },
             {
-                "type": "v2/barcode_detector@v1",
+                "type": "roboflow_core/barcode_detector@v1",
                 "name": "barcodes",
                 "image": "$steps.generate.qr_code",
             },
@@ -145,20 +137,20 @@ def _read_filter_draw_steps(image: str, *, detector: str, property_name: str):
     steps = [
         {"type": detector, "name": "read", "image": image},
         {
-            "type": "v2/detections_filter@v1",
+            "type": "roboflow_core/detections_filter@v1",
             "name": "keep",
             "predictions": "$steps.read.predictions",
             "operations": [text_filter],
             "operations_parameters": {"wanted": "$inputs.wanted"},
         },
         {
-            "type": "v2/bounding_box_visualization@v1",
+            "type": "roboflow_core/bounding_box_visualization@v1",
             "name": "boxes",
             "image": image,
             "predictions": "$steps.keep.predictions",
         },
         {
-            "type": "v2/label_visualization@v2",
+            "type": "roboflow_core/label_visualization@v2",
             "name": "labels",
             "image": "$steps.boxes.image",
             "predictions": "$steps.keep.predictions",
@@ -187,13 +179,13 @@ def test_generated_code_is_read_filtered_by_text_and_drawn(text, wanted, kept) -
         ],
         "steps": [
             {
-                "type": "v2/qr_code_generator@v1",
+                "type": "roboflow_core/qr_code_generator@v1",
                 "name": "generate",
                 "text": "$inputs.text",
             },
             *_read_filter_draw_steps(
                 "$steps.generate.qr_code",
-                detector="v2/qr_code_detector@v1",
+                detector="roboflow_core/qr_code_detector@v1",
                 property_name="decoded_text",
             ),
         ],
@@ -223,8 +215,8 @@ def test_generated_code_is_read_filtered_by_text_and_drawn(text, wanted, kept) -
 @pytest.mark.parametrize(
     "detector, property_name",
     [
-        ("v2/qr_code_detector@v1", "decoded_text"),
-        ("v2/barcode_detector@v1", "data"),
+        ("roboflow_core/qr_code_detector@v1", "decoded_text"),
+        ("roboflow_core/barcode_detector@v1", "data"),
     ],
 )
 def test_filter_drops_unwanted_codes_and_painters_draw_only_kept_rows(
@@ -338,7 +330,7 @@ def test_ragged_batch_keeps_one_aligned_result_per_image() -> None:
         "inputs": [IMAGES_INPUT],
         "steps": [
             {
-                "type": "v2/barcode_detector@v1",
+                "type": "roboflow_core/barcode_detector@v1",
                 "name": "codes",
                 "image": "$inputs.images",
             }
@@ -387,13 +379,13 @@ def test_codes_read_in_static_crops_map_back_to_the_input_image() -> None:
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "v2/static_crop",
+                "type": "roboflow_core/static_crop@v1",
                 "name": "crop",
                 "image": "$inputs.image",
                 "regions": [[0, 0, 250, 250], [250, 0, 500, 250]],
             },
             {
-                "type": "v2/qr_code_detector@v1",
+                "type": "roboflow_core/qr_code_detector@v1",
                 "name": "qr",
                 "image": "$steps.crop.crops",
             },

@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/geotag_detection@v1`` with hand-computed positions.
+"""Unit tests of ``roboflow_core/geotag_detection@v1`` with hand-computed positions.
 
 Camera for most tests: latitude 0, longitude 0, 100 m up, 90 degree field of
 view over a 200 x 100 image. The ground strip is ``2 * 100 * tan(45) = 200`` m
@@ -8,7 +8,7 @@ wide and 100 m high, so one pixel is one meter and one meter east is
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.geometry.geotag import GeotagDetectionBlock
+from roboflow_workflows.v2.blocks.geometry.geotag_detection.v1 import GeotagDetectionBlock
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.image import ImageData
 

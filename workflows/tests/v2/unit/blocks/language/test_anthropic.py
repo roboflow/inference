@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/anthropic_claude@v5`` against in-process fakes.
+"""Unit tests of ``roboflow_core/anthropic_claude@v5`` against in-process fakes.
 
 ``FakeAnthropicServer`` answers the SDK's streaming Messages request with
 server-sent events through an ``httpx.MockTransport``; nothing leaves the
@@ -19,18 +19,8 @@ import pytest
 import requests
 import torch
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.language import anthropic
-from roboflow_workflows.v2.blocks.language.anthropic import (
-    CLAUDE_MODELS,
-    DETECTION_MAX_PNG_PAYLOAD_BYTES,
-    AnthropicClaudeBlock,
-    claude_options,
-    claude_request,
-    claude_upload,
-    downscaled_size_wh,
-    normalize_model_id,
-    read_claude_message,
-)
+from roboflow_workflows.v2.blocks.language.anthropic_claude import v5 as anthropic
+from roboflow_workflows.v2.blocks.language.anthropic_claude.v5 import CLAUDE_MODELS, DETECTION_MAX_PNG_PAYLOAD_BYTES, AnthropicClaudeBlock, claude_options, claude_request, claude_upload, downscaled_size_wh, normalize_model_id, read_claude_message
 from roboflow_workflows.v2.blocks.language.chat import ChatRequestError, encode_image
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError

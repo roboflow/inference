@@ -11,22 +11,22 @@ from roboflow_workflows.v2.engine.errors import UnknownBlockError
 # ByteTracker's existing V2 @v1 differs from its latest V1 @v3. Include the
 # historical versions and Llama alias so retirement cannot leave an old route.
 RETIRED_V2_TYPES = (
-    "v2/byte_tracker@v1",
+    "roboflow_core/byte_tracker@v3",
     "v2/byte_tracker@v2",
     "v2/byte_tracker@v3",
     "v2/gaze@v1",
-    "v2/llama_vision@v2",
+    "roboflow_core/llama_vision@v2",
     "v2/llama_3_2_vision@v1",
     "v2/lmm@v1",
     "v2/lmm_for_classification@v1",
     "v2/modbus_tcp@v1",
-    "v2/qwen25vl@v1",
-    "v2/qwen3_5_openrouter@v1",
-    "v2/qwen3_6_openrouter@v1",
-    "v2/qwen3vl@v1",
+    "roboflow_core/qwen25vl@v1",
+    "roboflow_core/qwen3_5_openrouter@v1",
+    "roboflow_core/qwen3_6_openrouter@v1",
+    "roboflow_core/qwen3vl@v1",
     "v2/sinks@v1",
-    "v2/vlm_as_classifier@v2",
-    "v2/vlm_as_detector@v2",
+    "roboflow_core/vlm_as_classifier@v2",
+    "roboflow_core/vlm_as_detector@v2",
     "v2/cog_vlm@v1",
     "v2/yolo_world_model@v1",
 )
@@ -62,10 +62,10 @@ def test_retired_v2_type_fails_compilation_with_named_error(block_type: str) -> 
 @pytest.mark.parametrize(
     "block_type",
     (
-        "v2/trackers_bytetrack@v1",
-        "v2/trackers_sort@v1",
-        "v2/trackers_ocsort@v1",
-        "v2/trackers_botsort@v1",
+        "roboflow_core/trackers_bytetrack@v1",
+        "roboflow_core/trackers_sort@v1",
+        "roboflow_core/trackers_ocsort@v1",
+        "roboflow_core/trackers_botsort@v1",
     ),
 )
 def test_active_trackers_remain_discoverable(block_type: str) -> None:

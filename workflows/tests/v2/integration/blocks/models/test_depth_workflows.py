@@ -5,23 +5,26 @@ import datetime
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.models import depth
+from roboflow_workflows.v2.blocks.models.depth_estimation import v1 as depth
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
+from roboflow_workflows.v2.engine.errors import LineageError
 from roboflow_workflows.v2.engine.plan import CompileOptions
 
 from tests.v2.unit.blocks.models.test_depth import backend_types, make_image
 
 
-def plan(*, outputs=("normalized_depth", "image"), mode="run"):
+def plan(*, outputs=("normalized_depth", "image"), mode="run", per_image=False):
+    # One model per call: model and package are run parameters unless per_image.
+    selection = "WorkflowBatchInput" if per_image else "WorkflowParameter"
     definition = {
         "version": "2.0",
         "inputs": [
             {"type": "WorkflowBatchInput", "name": "image", "kind": ["image"]},
-            {"type": "WorkflowBatchInput", "name": "model", "kind": ["string"]},
-            {"type": "WorkflowBatchInput", "name": "package", "kind": ["string"]},
+            {"type": selection, "name": "model", "kind": ["string"]},
+            {"type": selection, "name": "package", "kind": ["string"]},
         ],
         "steps": [
             {
@@ -74,9 +77,7 @@ def test_compiled_demand_and_frame_linkage(backend_types, monkeypatch, mode, out
     )
     cropped = root.crop((1, 1, 3, 3)).resize((3, 4))
     images = [cropped, make_image(image_id="second")]
-    rows = session.run(
-        {"image": images, "model": ["local", "local"], "package": [None, None]}
-    ).rows()
+    rows = session.run({"image": images, "model": "local", "package": None}).rows()
     assert rendered == ([cropped.image_id, "second"] if "image" in outputs else [])
     for image, row in zip(images, rows):
         assert set(row) == set(outputs)
@@ -97,7 +98,7 @@ def test_compiled_demand_and_frame_linkage(backend_types, monkeypatch, mode, out
 
 
 @pytest.mark.parametrize("mode", ["run", "phases"])
-def test_compiled_multiple_requests_shape_batches_and_model_reuse(backend_types, mode):
+def test_compiled_model_changes_shape_batches_and_model_reuse(backend_types, mode):
     loaded, models = [], {}
 
     def load(request):
@@ -116,18 +117,24 @@ def test_compiled_multiple_requests_shape_batches_and_model_reuse(backend_types,
         make_image((4, 1, 3, 2), image_id="three"),
     ]
     for _ in range(2):
-        rows = session.run(
-            {
-                "image": images,
-                "model": ["a", "a", "b", "a"],
-                "package": ["v2", "v2", "dav3", "v2"],
-            }
-        ).rows()
-        assert [r["image"].image_id for r in rows] == [im.image_id for im in images]
-        assert [tuple(r["normalized_depth"].shape) for r in rows] == [
-            im.size_hw for im in images
-        ]
+        for model, package in (("a", "v2"), ("b", "dav3")):
+            rows = session.run(
+                {"image": images, "model": model, "package": package}
+            ).rows()
+            assert [r["image"].image_id for r in rows] == [
+                im.image_id for im in images
+            ]
+            assert [tuple(r["normalized_depth"].shape) for r in rows] == [
+                im.size_hw for im in images
+            ]
     assert loaded == [ModelRequest("a", "v2"), ModelRequest("b", "dav3")]
-    assert models[loaded[0]].calls.count(("forward", 2)) == 2
+    # DA V2: one chunk of the three 2x2 images and one 1x4 image per call.
+    assert models[loaded[0]].calls.count(("forward", 3)) == 2
     assert models[loaded[0]].calls.count(("forward", 1)) == 2
-    assert models[loaded[1]].calls.count(("forward", 1)) == 2
+    # DA V3: one image per chunk.
+    assert models[loaded[1]].calls.count(("forward", 1)) == 8
+
+
+def test_a_per_image_depth_model_selector_fails_compilation():
+    with pytest.raises(LineageError, match="depth model_id is passed once per call"):
+        plan(per_image=True)

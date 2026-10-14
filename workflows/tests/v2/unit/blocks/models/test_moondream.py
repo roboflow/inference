@@ -15,10 +15,7 @@ from roboflow_workflows.v2.blocks.models.cache import (
     ModelRequest,
     ModelRequestConflict,
 )
-from roboflow_workflows.v2.blocks.models.moondream import (
-    DEFAULT_MODEL_ID,
-    Moondream2Block,
-)
+from roboflow_workflows.v2.blocks.models.moondream2.v1 import DEFAULT_MODEL_ID, Moondream2Block
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
@@ -217,8 +214,10 @@ def test_empty_batch_does_no_model_work():
         {"prompt": 7},
         {"prompt": Batch(["ok", 9])},
         {"prompt": Batch(["too-short"])},
-        {"model_id": Batch(["ok", ""])},
-        {"model_package_id": Batch([None, 4])},
+        {"model_id": ""},
+        {"model_id": Batch(["ok", "ok"])},
+        {"model_package_id": 4},
+        {"model_package_id": Batch([None, None])},
         {"max_new_tokens": 0},
         {"max_new_tokens": True},
         {"max_new_tokens": 1.2},
@@ -237,7 +236,7 @@ def _rows(values, rows):
     return Batch(values, indices=[(row,) for row in rows])
 
 
-@pytest.mark.parametrize("field", ["prompt", "model_id", "model_package_id"])
+@pytest.mark.parametrize("field", ["prompt"])
 @pytest.mark.parametrize(
     "image_rows,value_rows",
     [((0, 1), (1, 0)), ((1, 3), (2, 4))],
@@ -252,11 +251,7 @@ def test_misaligned_per_image_values_fail_before_loading_or_invoking(
         loads.append(request)
         return model
 
-    values = {
-        "prompt": ["cat", "dog"],
-        "model_id": ["m", "m"],
-        "model_package_id": [None, None],
-    }
+    values = {"prompt": ["cat", "dog"]}
     with pytest.raises(ValueError, match=f"{field} rows .* do not match image rows"):
         Moondream2Block(models=ModelCache(load)).run(
             image=_rows(_images()[:2], image_rows),
@@ -271,34 +266,50 @@ def test_aligned_sparse_per_image_values_follow_their_images_and_scalars_broadca
     block = Moondream2Block(models={"a": a, "b": b})
     rows = block.run(
         image=_rows(images, (1, 3, 4)),
-        model_id=_rows(["a", "b", "a"], (1, 3, 4)),
+        model_id="a",
         prompt=_rows(["cat", "dog", "bird"], (1, 3, 4)),
         max_new_tokens=5,
     )
     block.run(image=_rows(images[:2], (2, 5)), model_id="b", prompt="car")
-    assert [row["model_id"] for row in rows] == ["a", "b", "a"]
+    assert [row["model_id"] for row in rows] == ["a", "a", "a"]
     assert [row["predictions"].image_metadata["class_names"][0] for row in rows] == [
         "cat",
         "dog",
         "bird",
     ]
-    assert [call["text"] for call in a.calls] == ["cat", "bird"]
-    assert [call["text"] for call in b.calls] == ["dog", "car", "car"]
+    assert [call["text"] for call in a.calls] == ["cat", "dog", "bird"]
+    assert [call["text"] for call in b.calls] == ["car", "car"]
     sent = [call["image"] for call in a.calls + b.calls]
-    expected = [images[0], images[2], images[1], images[0], images[1]]
+    expected = [images[0], images[1], images[2], images[0], images[1]]
     assert all(tensor is image.tensor_image for tensor, image in zip(sent, expected))
-    assert [call["max_new_tokens"] for call in a.calls] == [5, 5]
+    assert [call["max_new_tokens"] for call in a.calls] == [5, 5, 5]
     # The fakes return one shared carrier; each row must carry its own frame.
     assert [frame_of(row["predictions"]) for row in rows] == [
         FrameRef.from_image(image) for image in images
     ]
 
 
-def test_all_models_resolve_before_first_call():
+@pytest.mark.parametrize("field", ["model_id", "model_package_id"])
+def test_per_image_model_selection_fails_before_loading_or_invoking(field):
+    model, loads = _Fake(), []
+
+    def load(request):
+        loads.append(request)
+        return model
+
+    with pytest.raises(ValueError, match=f"{field} is one value for every image"):
+        Moondream2Block(models=ModelCache(load)).run(
+            image=Batch(_images()[:2]),
+            **{"model_id": "m", field: Batch(["m", "m"])},
+        )
+    assert loads == [] and model.calls == []
+
+
+def test_a_missing_model_fails_before_any_call():
     model = _Fake()
     block = Moondream2Block(models={"a": model})
     with pytest.raises(LookupError):
-        block.run(image=Batch(_images()[:2]), model_id=Batch(["a", "missing"]))
+        block.run(image=Batch(_images()[:2]), model_id="missing")
     assert model.calls == []
 
 
@@ -337,8 +348,8 @@ def test_compiled_source_model_downstream_selectors_and_reuse(mode):
     plan = _plan(
         mode=mode,
         inputs=(
-            {"type": "WorkflowBatchInput", "name": "model", "kind": ["string"]},
-            {"type": "WorkflowBatchInput", "name": "package", "kind": ["string"]},
+            {"type": "WorkflowParameter", "name": "model", "kind": ["string"]},
+            {"type": "WorkflowParameter", "name": "package", "kind": ["string"]},
             {"type": "WorkflowBatchInput", "name": "question", "kind": ["string"]},
             {"type": "WorkflowParameter", "name": "tokens", "kind": ["integer"]},
         ),
@@ -352,29 +363,42 @@ def test_compiled_source_model_downstream_selectors_and_reuse(mode):
     images = _images()
     arguments = {
         "image": images,
-        "model": ["a", "b", "a"],
-        "package": ["p", None, "p"],
+        "model": "a",
+        "package": "p",
         "question": ["first", "second", "third"],
         "tokens": 12,
     }
     rows = session.run(arguments).rows()
+    other = session.run({**arguments, "model": "b", "package": None}).rows()
     again = session.run(arguments).rows()
     assert loaded == [ModelRequest("a", "p"), ModelRequest("b")]
-    assert [row["model_id"] for row in rows] == ["a", "b", "a"]
+    assert [row["model_id"] for row in rows + other] == ["a"] * 3 + ["b"] * 3
     assert [row["consumed"] for row in rows] == ["first", "second", "third"]
-    assert len({row["inference_id"] for row in rows + again}) == 6
-    for result in (rows, again):
+    assert len({row["inference_id"] for row in rows + other + again}) == 9
+    for result in (rows, other, again):
         frames = [frame_of(row["predictions"]) for row in result]
         assert frames == [FrameRef.from_image(image) for image in images]
         assert len({frame.image_id for frame in frames}) == 3
     calls = models[ModelRequest("a", "p")].calls
-    assert [call["text"] for call in calls] == ["first", "third"] * 2
-    assert calls[0]["image"] is images[0].tensor_image
-    assert calls[1]["image"] is images[2].tensor_image
+    assert [call["text"] for call in calls] == ["first", "second", "third"] * 2
+    assert [call["image"] for call in calls[:3]] == [
+        image.tensor_image for image in images
+    ]
     assert all(
         call["input_color_format"] == "rgb" and call["max_new_tokens"] == 12
         for call in calls
     )
+
+
+def test_a_per_image_package_selector_fails_compilation():
+    with pytest.raises(Exception, match="model_package_id is passed once per call"):
+        _plan(
+            inputs=(
+                {"type": "WorkflowBatchInput", "name": "package", "kind": ["string"]},
+            ),
+            model_id="m",
+            model_package_id="$inputs.package",
+        )
 
 
 @pytest.mark.parametrize(
@@ -468,9 +492,7 @@ def test_per_image_none_prompt_is_empty_class_name():
     assert [call["text"] for call in model.calls] == ["", "cat"]
 
 
-def test_wrong_later_model_method_runs_nothing():
-    model = _Fake()
-
+def test_wrong_model_method_runs_nothing():
     class Wrong:
         def detect(self, images, prompt):
             raise AssertionError("Must not be invoked")
@@ -478,10 +500,9 @@ def test_wrong_later_model_method_runs_nothing():
     with pytest.raises(
         ValueError, match=r"model 'b' \(backend Wrong\) does not accept"
     ):
-        Moondream2Block(models={"a": model, "b": Wrong()}).run(
-            image=Batch(_images()[:2]), model_id=Batch(["a", "b"])
+        Moondream2Block(models={"b": Wrong()}).run(
+            image=Batch(_images()[:2]), model_id="b"
         )
-    assert model.calls == []
 
 
 class _NoTokenLimit:
@@ -494,38 +515,32 @@ class _NoTokenLimit:
 
 
 def test_backend_without_token_limit_names_model_and_fix_before_any_call():
-    model, other = _NoTokenLimit(), _Fake()
-    block = Moondream2Block(models={"a": other, "b": model})
+    model = _NoTokenLimit()
+    block = Moondream2Block(models={"b": model})
     with pytest.raises(ValueError) as caught:
-        block.run(
-            image=Batch(_images()[:2]), model_id=Batch(["a", "b"]), max_new_tokens=5
-        )
+        block.run(image=Batch(_images()[:2]), model_id="b", max_new_tokens=5)
     assert str(caught.value) == (
-        "v2/moondream2@v1: model 'b' (backend _NoTokenLimit) does not accept "
+        "roboflow_core/moondream2@v1: model 'b' (backend _NoTokenLimit) does not accept "
         "detect(images, classes, input_color_format, max_new_tokens). Remove "
         "max_new_tokens or set it to null for this model. Checked before any "
         "model runs."
     )
-    assert model.calls == [] and other.calls == []
+    assert model.calls == []
     block.run(image=Batch(_images()[:1]), model_id="b", prompt="cat")
     assert model.calls == ["cat"]
 
 
 def test_model_without_detect_fails_before_any_call():
-    model = _Fake()
     with pytest.raises(ValueError, match=r"\(backend object\) has no detect\(\)"):
-        Moondream2Block(models={"a": model, "b": object()}).run(
-            image=Batch(_images()[:2]), model_id=Batch(["a", "b"])
+        Moondream2Block(models={"b": object()}).run(
+            image=Batch(_images()[:2]), model_id="b"
         )
-    assert model.calls == []
 
 
 @pytest.mark.parametrize(
     "arguments,error",
     [
         ({"prompt": ["ok", 9]}, "prompt must be text or None, got 9"),
-        ({"model_id": ["ok", ""]}, "model_id must be a non-empty string"),
-        ({"model_package_id": [None, ""]}, "model_package_id must be a non-empty"),
     ],
 )
 def test_per_image_errors_name_the_logical_index_before_loading(arguments, error):
@@ -537,7 +552,7 @@ def test_per_image_errors_name_the_logical_index_before_loading(arguments, error
             image=_rows(_images()[:2], (2, 5)),
             **{"model_id": "m", field: _rows(values, (2, 5))},
         )
-    assert str(caught.value).startswith("v2/moondream2@v1: image at index [5]: ")
+    assert str(caught.value).startswith("roboflow_core/moondream2@v1: image at index [5]: ")
     assert error in str(caught.value)
     assert loads == []
 
@@ -555,7 +570,7 @@ def test_grayscale_rejected_before_loading():
             image=_rows([_images()[0], grayscale], (0, 4)), model_id="m"
         )
     assert str(caught.value) == (
-        "v2/moondream2@v1: image at index [4]: a local vision model needs a "
+        "roboflow_core/moondream2@v1: image at index [4]: a local vision model needs a "
         "3-channel RGB image, got 1 channel(s)"
     )
     assert loads == []

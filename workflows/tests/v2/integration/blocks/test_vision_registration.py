@@ -20,20 +20,20 @@ from tests.v2.integration.blocks.visualization.annotations import (
 from tests.v2.support.models.fake_sam_models import FakeSam2, FakeSam3
 
 _ADDED = (
-    (models, "SegmentAnything2Block", "v2/segment_anything@v1"),
-    (models, "SegmentAnything2VideoBlock", "v2/segment_anything_2_video@v1"),
-    (models, "SegmentAnything3Block", "v2/sam3@v3"),
-    (models, "SegmentAnything3InteractiveBlock", "v2/sam3_interactive@v1"),
-    (models, "SegmentAnything3VideoBlock", "v2/sam3_video@v1"),
-    (image, "MaskEdgeSnapBlock", "v2/mask_edge_snap@v1"),
-    (annotations, "HeatmapVisualizationBlock", "v2/heatmap_visualization@v1"),
-    (annotations, "TraceVisualizationBlock", "v2/trace_visualization@v1"),
-    (annotations, "PolygonZoneVisualizationBlock", "v2/polygon_zone_visualization@v1"),
-    (annotations, "LineCounterVisualizationBlock", "v2/line_counter_visualization@v1"),
+    (models, "SegmentAnything2Block", "roboflow_core/segment_anything@v1"),
+    (models, "SegmentAnything2VideoBlock", "roboflow_core/segment_anything_2_video@v1"),
+    (models, "SegmentAnything3Block", "roboflow_core/sam3@v3"),
+    (models, "SegmentAnything3InteractiveBlock", "roboflow_core/sam3_interactive@v1"),
+    (models, "SegmentAnything3VideoBlock", "roboflow_core/sam3_video@v1"),
+    (image, "MaskEdgeSnapBlock", "roboflow_core/mask_edge_snap@v1"),
+    (annotations, "HeatmapVisualizationBlock", "roboflow_core/heatmap_visualization@v1"),
+    (annotations, "TraceVisualizationBlock", "roboflow_core/trace_visualization@v1"),
+    (annotations, "PolygonZoneVisualizationBlock", "roboflow_core/polygon_zone_visualization@v1"),
+    (annotations, "LineCounterVisualizationBlock", "roboflow_core/line_counter_visualization@v1"),
     (
         annotations,
         "ReferencePathVisualizationBlock",
-        "v2/reference_path_visualization@v1",
+        "roboflow_core/reference_path_visualization@v1",
     ),
 )
 
@@ -66,17 +66,17 @@ def test_default_discovery_public_exports_and_schemas(route):
         assert "image" in schemas[identity]["properties"]
 
     # Keep both public label versions and Action/stable19 additions discoverable.
-    assert blocks.AnnotationLabelVisualizationBlock.type == "v2/label_visualization@v2"
-    assert blocks.LabelVisualizationBlock.type == "v2/label_visualization@v1"
+    assert blocks.AnnotationLabelVisualizationBlock.type == "roboflow_core/label_visualization@v2"
+    assert blocks.LabelVisualizationBlock.type == "roboflow_core/simple_label_visualization@v1"
     for identity in (
-        "v2/action_recognition@v1",
-        "v2/cosmos3_edge@v1",
-        "v2/florence_2@v2",
-        "v2/google_vision_ocr@v1",
-        "v2/moondream2@v1",
-        "v2/qwen_vlm@v4",
-        "v2/visual_search@v1",
-        "v2/visual_search_classifier@v1",
+        "roboflow_core/roboflow_action_recognition_model@v1",
+        "roboflow_core/cosmos3_edge@v1",
+        "roboflow_core/florence_2@v2",
+        "roboflow_core/google_vision_ocr@v1",
+        "roboflow_core/moondream2@v1",
+        "roboflow_core/qwen_vlm@v4",
+        "roboflow_core/visual_search@v1",
+        "roboflow_core/visual_search_classifier@v1",
     ):
         assert catalogue.block_types.count(identity) == 1
     for identity in (
@@ -104,7 +104,7 @@ def test_default_segmentation_snap_and_drawing_preserve_pixels_and_identity(
         return model
 
     step = {
-        "type": "v2/segment_anything@v1" if backend == "sam2" else "v2/sam3@v3",
+        "type": "roboflow_core/segment_anything@v1" if backend == "sam2" else "roboflow_core/sam3@v3",
         "name": "sam",
         "image": "$inputs.image",
     }
@@ -112,7 +112,7 @@ def test_default_segmentation_snap_and_drawing_preserve_pixels_and_identity(
         step["class_names"] = ["part"]
 
     drawing = {
-        "type": "v2/mask_visualization@v1",
+        "type": "roboflow_core/mask_visualization@v1",
         "image": "$inputs.image",
         "color_palette": "CUSTOM",
         "custom_colors": ["#ff0000"],
@@ -124,7 +124,7 @@ def test_default_segmentation_snap_and_drawing_preserve_pixels_and_identity(
         "steps": [
             step,
             {
-                "type": "v2/mask_edge_snap@v1",
+                "type": "roboflow_core/mask_edge_snap@v1",
                 "name": "snap",
                 "image": "$inputs.image",
                 "segmentation": "$steps.sam.segmentation",
@@ -184,7 +184,7 @@ def test_default_drawings_compose_with_explicit_current_real_producers(
     def compile_default(definition, *, catalogue, **kwargs):
         # The tail cohort registers the current real producers by default.
         assert catalogue.block_types == expected
-        assert catalogue.entry("v2/line_counter_visualization@v1").spec is spec_of(
+        assert catalogue.entry("roboflow_core/line_counter_visualization@v1").spec is spec_of(
             annotations.LineCounterVisualizationBlock
         )
         return original(definition, catalogue=catalogue, **kwargs)

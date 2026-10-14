@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/morphological_transformation@v2``, called directly.
+"""Unit tests of ``roboflow_core/morphological_transformation@v2``, called directly.
 
 Small shapes are worked out by hand. Every other case is compared with the
 OpenCV call V1 made, with a ``kernel_size`` square of ones, on the same image
@@ -12,10 +12,8 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.image import morphology as morphology_module
-from roboflow_workflows.v2.blocks.image.morphology import (
-    MorphologicalTransformationBlock,
-)
+from roboflow_workflows.v2.blocks.image.morphological_transformation import v2 as morphology_module
+from roboflow_workflows.v2.blocks.image.morphological_transformation.v2 import MorphologicalTransformationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
 
@@ -256,6 +254,6 @@ def test_unknown_operation_is_rejected() -> None:
 
 
 def test_declares_a_pure_prunable_block() -> None:
-    assert MorphologicalTransformationBlock.type == "v2/morphological_transformation@v2"
+    assert MorphologicalTransformationBlock.type == "roboflow_core/morphological_transformation@v2"
     assert MorphologicalTransformationBlock.prunable is True
     assert MorphologicalTransformationBlock.mutates == ()

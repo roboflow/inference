@@ -4,9 +4,7 @@ import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-from roboflow_workflows.v2.blocks.state.machines import (
-    StateMachineSetBlock,
-)
+from roboflow_workflows.v2.blocks.state.state_machine_set.v1 import StateMachineSetBlock
 from roboflow_workflows.v2.data.kinds import (
     FLOAT_KIND,
     STRING_KIND,

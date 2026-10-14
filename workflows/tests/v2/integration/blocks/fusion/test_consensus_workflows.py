@@ -1,4 +1,4 @@
-"""``v2/detections_consensus@v1`` compiled and run by the real V2 engine.
+"""``roboflow_core/detections_consensus@v1`` compiled and run by the real V2 engine.
 
 Three stand-in models predict a batch of two 40x60 images; they arrive as
 workflow batch inputs carrying native predictions::
@@ -22,7 +22,7 @@ import pycocotools.mask as mask_utils
 import pytest
 import torch
 from roboflow_workflows.v2.blocks import create_catalogue, fusion
-from roboflow_workflows.v2.blocks.fusion import consensus
+from roboflow_workflows.v2.blocks.fusion.detections_consensus import v1 as consensus
 from roboflow_workflows.v2.blocks.geometry.mask_inputs import (
     INSTANCE_SEGMENTATION_VIEW_KIND,
 )
@@ -136,14 +136,14 @@ def workflow(step: dict, kinds=None) -> dict:
         ],
         "steps": [
             {
-                "type": "v2/detections_consensus@v1",
+                "type": "roboflow_core/detections_consensus@v1",
                 "name": "consensus",
                 "predictions": [f"$inputs.{model}" for model in kinds],
                 **{knob: f"$inputs.{knob}" for knob in KNOBS},
                 **step,
             },
             {
-                "type": "v2/per_class_confidence_filter@v1",
+                "type": "roboflow_core/per_class_confidence_filter@v1",
                 "name": "confident",
                 "predictions": "$steps.consensus.predictions",
                 "class_thresholds": {"car": 0.75},
@@ -496,13 +496,13 @@ def test_consensus_mask_bounds_compose_with_dynamic_crop(
         ],
         "steps": [
             {
-                "type": "v2/detections_consensus@v1",
+                "type": "roboflow_core/detections_consensus@v1",
                 "name": "consensus",
                 "predictions": ["$inputs.a", "$inputs.b"],
                 "required_votes": 2,
             },
             {
-                "type": "v2/dynamic_crop@v1",
+                "type": "roboflow_core/dynamic_crop@v1",
                 "name": "crop",
                 "image": "$inputs.image",
                 "predictions": "$steps.consensus.predictions",

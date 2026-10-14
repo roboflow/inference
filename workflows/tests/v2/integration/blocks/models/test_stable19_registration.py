@@ -1,4 +1,11 @@
 """Default discovery composes local models, direct OCR and retirement guards."""
+import roboflow_workflows.v2.blocks.language._catalogue_openrouter_vendors as _v2_family_0
+import roboflow_workflows.v2.blocks.language._catalogue_compatible_vendors as _v2_family_1
+import roboflow_workflows.v2.blocks.language.kimi_openrouter.v3 as _v2_family_2
+import roboflow_workflows.v2.blocks.language.meta_vlm.v3 as _v2_family_3
+import roboflow_workflows.v2.blocks.language.zai_vlm.v2 as _v2_family_4
+import roboflow_workflows.v2.blocks.language.google_gemma.v4 as _v2_family_5
+import roboflow_workflows.v2.blocks.language.spacexai.v3 as _v2_family_6
 
 import json
 import re
@@ -19,29 +26,29 @@ from inference_models.models.base.object_detection import Detections
 from tests.v2.support.language.fake_chat import FakeChatServer
 
 _ADDED = (
-    ("Cosmos3EdgeBlock", "v2/cosmos3_edge@v1"),
-    ("Florence2Block", "v2/florence_2@v2"),
-    ("GoogleVisionOCRBlock", "v2/google_vision_ocr@v1"),
-    ("Moondream2Block", "v2/moondream2@v1"),
-    ("QwenVLMBlock", "v2/qwen_vlm@v4"),
+    ("Cosmos3EdgeBlock", "roboflow_core/cosmos3_edge@v1"),
+    ("Florence2Block", "roboflow_core/florence_2@v2"),
+    ("GoogleVisionOCRBlock", "roboflow_core/google_vision_ocr@v1"),
+    ("Moondream2Block", "roboflow_core/moondream2@v1"),
+    ("QwenVLMBlock", "roboflow_core/qwen_vlm@v4"),
 )
 _RETIRED = (
-    "v2/byte_tracker@v1",
+    "roboflow_core/byte_tracker@v3",
     "v2/byte_tracker@v2",
     "v2/byte_tracker@v3",
     "v2/gaze@v1",
-    "v2/llama_vision@v2",
+    "roboflow_core/llama_vision@v2",
     "v2/llama_3_2_vision@v1",
     "v2/lmm@v1",
     "v2/lmm_for_classification@v1",
     "v2/modbus_tcp@v1",
-    "v2/qwen25vl@v1",
-    "v2/qwen3_5_openrouter@v1",
-    "v2/qwen3_6_openrouter@v1",
-    "v2/qwen3vl@v1",
+    "roboflow_core/qwen25vl@v1",
+    "roboflow_core/qwen3_5_openrouter@v1",
+    "roboflow_core/qwen3_6_openrouter@v1",
+    "roboflow_core/qwen3vl@v1",
     "v2/sinks@v1",
-    "v2/vlm_as_classifier@v2",
-    "v2/vlm_as_detector@v2",
+    "roboflow_core/vlm_as_classifier@v2",
+    "roboflow_core/vlm_as_detector@v2",
     "v2/cog_vlm@v1",
     "v2/yolo_world_model@v1",
 )
@@ -70,7 +77,7 @@ def test_five_registrations_share_package_exports_and_default_discovery(route):
         assert models.BLOCKS.count(block) == 1
         assert catalogue.block_types.count(identity) == 1
         assert catalogue.entry(identity).spec is spec_of(block)
-    assert "v2/action_recognition@v1" in catalogue.block_types
+    assert "roboflow_core/roboflow_action_recognition_model@v1" in catalogue.block_types
 
 
 @pytest.mark.parametrize("route", ["create", "plugin", "factory"])
@@ -171,41 +178,41 @@ def test_default_compiled_local_chain_preserves_rows_and_host_cache(route, mode)
     steps = [
         {
             "name": "caption",
-            "type": "v2/florence_2@v2",
+            "type": "roboflow_core/florence_2@v2",
             "image": "$inputs.image",
             "model_id": "florence",
             "task_type": "caption",
         },
         {
             "name": "moon",
-            "type": "v2/moondream2@v1",
+            "type": "roboflow_core/moondream2@v1",
             "image": "$inputs.image",
             "model_id": "moon",
             "prompt": "car",
         },
         {
             "name": "cosmos",
-            "type": "v2/cosmos3_edge@v1",
+            "type": "roboflow_core/cosmos3_edge@v1",
             "image": "$inputs.image",
             "model_id": "cosmos",
             "prompt": "Return JSON",
         },
         {
             "name": "parse",
-            "type": "v2/json_parser@v1",
+            "type": "roboflow_core/json_parser@v1",
             "raw_json": "$steps.cosmos.output",
             "expected_fields": ["answer"],
         },
         {
             "name": "qwen",
-            "type": "v2/qwen_vlm@v4",
+            "type": "roboflow_core/qwen_vlm@v4",
             "images": "$inputs.image",
             "task_type": "object-detection",
             "classes": ["car"],
         },
         {
             "name": "offset",
-            "type": "v2/detection_offset@v1",
+            "type": "roboflow_core/detection_offset@v1",
             "predictions": "$steps.qwen.predictions",
             "offset_width": 10,
             "offset_height": 10,
@@ -286,7 +293,7 @@ def test_default_compiled_google_ocr_uses_only_injected_direct_transport(route, 
         "steps": [
             {
                 "name": "ocr",
-                "type": "v2/google_vision_ocr@v1",
+                "type": "roboflow_core/google_vision_ocr@v1",
                 "image": "$inputs.image",
                 "api_key": "test-google-key",
             }
@@ -339,7 +346,7 @@ def test_default_qwen_openrouter_backend_uses_mock_transport():
         "steps": [
             {
                 "name": "qwen",
-                "type": "v2/qwen_vlm@v4",
+                "type": "roboflow_core/qwen_vlm@v4",
                 "backend": "openrouter",
                 "images": "$inputs.image",
                 "task_type": "structured-answering",
@@ -348,7 +355,7 @@ def test_default_qwen_openrouter_backend_uses_mock_transport():
             },
             {
                 "name": "parse",
-                "type": "v2/json_parser@v1",
+                "type": "roboflow_core/json_parser@v1",
                 "raw_json": "$steps.qwen.output",
                 "expected_fields": ["answer"],
             },
@@ -370,22 +377,18 @@ def test_default_qwen_openrouter_backend_uses_mock_transport():
 
 
 def test_active_q3_and_g04_module_contracts_remain_available():
-    from roboflow_workflows.v2.blocks.language import (
-        compatible_vendors,
-        openrouter_vendors,
-        parsers,
-    )
-    from roboflow_workflows.v2.blocks.models.vlm import Qwen35VLBlock
+    from roboflow_workflows.v2.blocks.language._shared import compatible_vendors as compatible_vendors, openrouter_vendors as openrouter_vendors, parsers as parsers
+    from roboflow_workflows.v2.blocks.models.qwen3_5vl.v2 import Qwen35VLBlock
 
-    assert Qwen35VLBlock.type == "v2/qwen3_5vl@v2"
-    assert openrouter_vendors.BLOCKS == (
-        openrouter_vendors.KimiOpenRouterBlock,
-        openrouter_vendors.MetaVlmBlock,
-        openrouter_vendors.ZaiVlmBlock,
+    assert Qwen35VLBlock.type == "roboflow_core/qwen3_5vl@v2"
+    assert _v2_family_0.BLOCKS == (
+        _v2_family_2.KimiOpenRouterBlock,
+        _v2_family_3.MetaVlmBlock,
+        _v2_family_4.ZaiVlmBlock,
     )
-    assert compatible_vendors.BLOCKS == (
-        compatible_vendors.GoogleGemmaBlock,
-        compatible_vendors.SpaceXAIBlock,
+    assert _v2_family_1.BLOCKS == (
+        _v2_family_5.GoogleGemmaBlock,
+        _v2_family_6.SpaceXAIBlock,
     )
     assert {
         "decode_florence_2_detections",

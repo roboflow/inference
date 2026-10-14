@@ -1,9 +1,9 @@
-"""``v2/continue_if@v1`` lane records in actual active runs.
+"""``roboflow_core/continue_if@v1`` lane records in actual active runs.
 
 A grouped source emits members with their own source and observed time, as a
 collecting source may. The gate selects a nested workflow::
 
-    source.pair ─▶ v2/continue_if@v1 (stop_delay > 0) ─▶ inner_workflow(echo)
+    source.pair ─▶ roboflow_core/continue_if@v1 (stop_delay > 0) ─▶ inner_workflow(echo)
 
 With ``stop_delay > 0`` each lane's observed times must not go backward, and
 a new lane beyond ``max_sources`` fails. Both fail the pulse: a decision is
@@ -15,11 +15,7 @@ from fractions import Fraction
 from typing import List, Optional, Sequence
 
 import pytest
-from roboflow_workflows.v2.blocks.control.conditions import (
-    ContinueIfQueryBlock,
-    HoldCapacityError,
-    ObservationOrderError,
-)
+from roboflow_workflows.v2.blocks.control.continue_if.v1 import ContinueIfQueryBlock, HoldCapacityError, ObservationOrderError
 from roboflow_workflows.v2.data.batch import (
     Axis,
     Batch,

@@ -41,20 +41,20 @@ def chain_steps(output: str = "predictions") -> list:
         detector("people", "people"),
         detector("vehicles", "vehicles"),
         {
-            "type": "v2/detections_combine@v1",
+            "type": "roboflow_core/detections_combine@v1",
             "name": "combined",
             "prediction_one": f"$steps.people.{output}",
             "prediction_two": f"$steps.vehicles.{output}",
         },
         {
-            "type": "v2/per_class_confidence_filter@v1",
+            "type": "roboflow_core/per_class_confidence_filter@v1",
             "name": "confident",
             "predictions": "$steps.combined.predictions",
             "class_thresholds": {"person": 0.7},
             "default_threshold": 0.5,
         },
         {
-            "type": "v2/detections_merge@v1",
+            "type": "roboflow_core/detections_merge@v1",
             "name": "scene",
             "predictions": "$steps.confident.predictions",
             "class_name": "$inputs.merged_name",
@@ -144,7 +144,7 @@ def test_gated_branch_skips_combine_and_merge() -> None:
     # given
     steps = [
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "gate",
             "condition": "$inputs.use_vehicles",
             "next_steps": ["$steps.vehicles"],
@@ -182,21 +182,21 @@ def test_filtered_subsets_of_one_model_keep_its_row_identity() -> None:
     steps = [
         detector("vehicles", "vehicles"),
         {
-            "type": "v2/per_class_confidence_filter@v1",
+            "type": "roboflow_core/per_class_confidence_filter@v1",
             "name": "buses",
             "predictions": "$steps.vehicles.predictions",
             "class_thresholds": {"car": 1.0},
             "default_threshold": 0.0,
         },
         {
-            "type": "v2/per_class_confidence_filter@v1",
+            "type": "roboflow_core/per_class_confidence_filter@v1",
             "name": "sure_cars",
             "predictions": "$steps.vehicles.predictions",
             "class_thresholds": {"bus": 1.0},
             "default_threshold": 0.5,
         },
         {
-            "type": "v2/detections_combine@v1",
+            "type": "roboflow_core/detections_combine@v1",
             "name": "combined",
             "prediction_one": "$steps.buses.predictions",
             "prediction_two": "$steps.sure_cars.predictions",

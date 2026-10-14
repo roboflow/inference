@@ -387,7 +387,7 @@ def multi_source_definition(**sections: Any) -> Dict[str, Any]:
         ],
         "operators": [
             {
-                "type": "v2/align@v1",
+                "type": "roboflow_core/align@v1",
                 "name": "pair",
                 "clock": "media",
                 "tolerance_ms": 10,

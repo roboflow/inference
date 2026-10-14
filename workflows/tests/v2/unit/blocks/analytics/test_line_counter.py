@@ -1,4 +1,4 @@
-"""``v2/line_counter@v2`` called directly.
+"""``roboflow_core/line_counter@v2`` called directly.
 
 The oracle is latest V1 ``roboflow_core/line_counter@v2`` (tensor variant);
 the task's randomized parity probe compares whole sequences with it. These
@@ -16,12 +16,8 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.analytics import line_counter
-from roboflow_workflows.v2.blocks.analytics.line_counter import (
-    MAX_TRACKED_SOURCES,
-    LineCounterBlock,
-    LineCounterCapacityError,
-)
+from roboflow_workflows.v2.blocks.analytics.line_counter import v2 as line_counter
+from roboflow_workflows.v2.blocks.analytics.line_counter.v2 import MAX_TRACKED_SOURCES, LineCounterBlock, LineCounterCapacityError
 from roboflow_workflows.v2.data.batch import SampleContext
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks.grid import SegmentationView
@@ -174,7 +170,7 @@ def _retained_tracks(block: LineCounterBlock, source: str = "cam-a") -> List[int
 
 # -------------------------------------------------------------- declaration
 def test_declaration_keeps_v1_outputs_and_adds_capacity():
-    assert LineCounterBlock.type == "v2/line_counter@v2"
+    assert LineCounterBlock.type == "roboflow_core/line_counter@v2"
     assert set(LineCounterBlock.outputs) == {
         "count_in",
         "count_out",

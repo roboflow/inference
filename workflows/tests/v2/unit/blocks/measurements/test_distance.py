@@ -1,4 +1,4 @@
-"""``v2/distance_measurement@v1``: gaps, calibration, row choice and errors.
+"""``roboflow_core/distance_measurement@v1``: gaps, calibration, row choice and errors.
 
 Expected values are worked out from the boxes below, not read from a run.
 """

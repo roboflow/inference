@@ -1,4 +1,7 @@
-"""Parameters shared by the annotation blocks, and their value checks.
+"""Value checks shared by the annotation blocks' parameters.
+
+Each block writes its own ``Params`` fields and validators; the validators
+call the named checks here.
 
 Every literal may also be a selector. A literal is checked when the workflow
 is compiled; a selected value is checked by the same function when the row
@@ -11,36 +14,26 @@ Each block declares its checks once, in a module ``_CHECKS`` dict of field
 name -> check: its params validator passes it to ``check_literals``, and
 ``run`` applies every check to the received values.
 
-``copy_image`` (V1) is rejected, whatever its value: these blocks always
-return a new image and never change their input. To draw over an earlier
-drawing, chain the blocks (``image: $steps.<previous>.image``).
+``copy_image`` (V1) is rejected by ``reject_copy_image``, whatever its value:
+these blocks always return a new image and never change their input. To draw
+over an earlier drawing, chain the blocks (``image: $steps.<previous>.image``).
+Palette blocks check literal ``palette_size`` and ``custom_colors`` with
+``check_palette_literals`` before their own ``_CHECKS``.
 """
 
-from typing import Any, List, Literal, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
-from pydantic import Field, StrictFloat, StrictInt, ValidationError, model_validator
+from pydantic import StrictFloat, StrictInt, ValidationError
 from pydantic_core import PydanticCustomError
 from roboflow_workflows.v2.blocks.visualization.annotations.colors import (
-    COLOR_AXES,
-    PALETTE_NAMES,
     checked_palette_size,
     colors_of,
     palette_indices,
     parse_color,
     resolve_palette,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.rows import (
-    BOX_KINDS,
-    MASK_QUALITIES,
-)
-from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
-from roboflow_workflows.v2.data.kinds import (
-    INTEGER_KIND,
-    LIST_OF_VALUES_KIND,
-    STRING_KIND,
-)
-from roboflow_workflows.v2.engine.declaration import BlockParams, Ref
+from roboflow_workflows.v2.blocks.visualization.annotations.rows import MASK_QUALITIES
 
 POSITIONS_WITH_MASS = (
     "CENTER",
@@ -162,133 +155,62 @@ def check_literals(values: Mapping[str, Any], checks: Mapping[str, Any]) -> None
             check(value)
 
 
-class AnnotationParams(BlockParams):
-    """``image`` and the rejection of V1 ``copy_image``."""
+def reject_copy_image(values: Any, *, title: str) -> Any:
+    """Reject V1 ``copy_image`` before any field of a step is validated.
 
-    image: Ref(IMAGE_KIND) = Field(
-        description=(
-            "RGB image to draw on; not modified. The output is a new image "
-            "with the same identity, source and time."
-        ),
-        examples=["$inputs.image", "$steps.mask_visualization.image"],
-    )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _reject_copy_image(cls, values: Any) -> Any:
-        # Located at the field, like other parameter errors, and saying why.
-        if isinstance(values, Mapping) and "copy_image" in values:
-            removed = PydanticCustomError("removed_parameter", _COPY_IMAGE_MESSAGE)
-            raise ValidationError.from_exception_data(
-                cls.__name__,
-                [
-                    {
-                        "type": removed,
-                        "loc": ("copy_image",),
-                        "input": values["copy_image"],
-                    }
-                ],
-            )
-
-        return values
-
-
-class PaletteParams(AnnotationParams):
-    """Palette fields: V1 names and defaults."""
-
-    color_palette: Literal[PALETTE_NAMES] | Ref(STRING_KIND) = Field(
-        default="DEFAULT",
-        description="Palette of the drawn elements.",
-        examples=["DEFAULT", "ROBOFLOW", "Matplotlib Viridis", "$inputs.palette"],
-    )
-    palette_size: StrictInt | Ref(INTEGER_KIND) = Field(
-        default=10,
-        description="Number of colors taken from a Matplotlib palette; >= 1.",
-        examples=[10, "$inputs.palette_size"],
-    )
-    custom_colors: List[str] | Ref(LIST_OF_VALUES_KIND) = Field(
-        default_factory=list,
-        description=(
-            "Colors of the CUSTOM palette: #RRGGBB, rgb(R, G, B), bgr(B, G, R) "
-            "or a color name such as WHITE."
-        ),
-        examples=[["#FF0000", "#00FF00", "#0000FF"], "$inputs.custom_colors"],
-    )
-
-    @model_validator(mode="after")
-    def _check_palette_literals(self) -> "PaletteParams":
-        check_literals(
-            {"palette_size": self.palette_size},
-            {"palette_size": checked_palette_size},
-        )
-        if not is_selector(self.custom_colors):
-            for index, color in enumerate(self.custom_colors):
-                if not is_selector(color):
-                    parse_color(color, field=f"custom_colors[{index}]")
-
-        return self
-
-
-class ColorParams(PaletteParams):
-    """Palette fields plus how rows pick colors."""
-
-    color_axis: Literal[COLOR_AXES] | Ref(STRING_KIND) = Field(
-        default="CLASS",
-        description=(
-            "How a row picks its palette color: CLASS (class id), INDEX (row "
-            "position) or TRACK (bboxes_metadata tracker_id). Negative ids are "
-            "grey."
-        ),
-        examples=["CLASS", "$inputs.color_axis"],
-    )
-
-
-class BoxColorParams(ColorParams):
-    """Colorable blocks that read boxes."""
-
-    predictions: Ref(*BOX_KINDS) = Field(
-        description=(
-            "Detections, instance segmentation (dense, RLE or view) or keypoint "
-            "predictions with boxes, of this image or of another frame of the "
-            "same workflow input (for example a crop or its parent). Those are "
-            "mapped into this image; parts outside it are clipped."
-        ),
-        examples=[
-            "$steps.object_detection.predictions",
-            "$steps.segmentation.segmentation",
-        ],
-    )
-
-
-def mask_quality_field(*, reads: str) -> Any:
-    """Return the ``mask_quality`` field declaration shared by mask readers.
+    Called by each annotation block's ``mode="before"`` params validator.
+    The error is located at the field, like other parameter errors, and
+    says why the field is gone.
 
     Args:
-        reads: When this block reads masks, completing "Used when ...".
+        values: Raw step values given to the validator.
+        title: Name of the params class, used as the error title.
 
     Returns:
-        The pydantic ``Field``.
+        ``values``, unchanged.
+
+    Raises:
+        ValidationError: When ``values`` holds ``copy_image``, whatever its
+            value.
     """
-    field = Field(
-        default="accurate",
-        description=(
-            f"How instance masks are drawn; used when {reads}. Each read builds "
-            "one full-image mask per detection, at either quality. accurate: "
-            "the masks the model defines (a low-resolution mask view is "
-            "upscaled with the model's own interpolation). coarse: a mask view's "
-            "grid cells are thresholded, then expanded, so edges can be blocky "
-            "and small parts can be lost; it skips the accurate upscaling only. "
-            "v2/instance_segmentation@v1 currently returns full-resolution "
-            "masks, so both give the same result for it; they differ only for "
-            "producers of compact mask views."
-        ),
-        examples=["accurate", "coarse", "$inputs.mask_quality"],
+    if isinstance(values, Mapping) and "copy_image" in values:
+        removed = PydanticCustomError("removed_parameter", _COPY_IMAGE_MESSAGE)
+        raise ValidationError.from_exception_data(
+            title,
+            [
+                {
+                    "type": removed,
+                    "loc": ("copy_image",),
+                    "input": values["copy_image"],
+                }
+            ],
+        )
+
+    return values
+
+
+def check_palette_literals(*, palette_size: Any, custom_colors: Any) -> None:
+    """Check the literal palette parameters of a step; skip selectors.
+
+    Called by each palette block's ``mode="after"`` params validator, before
+    the block's own ``_CHECKS``.
+
+    Args:
+        palette_size: Literal size or selector.
+        custom_colors: Literal list of colors (items may be selectors), or a
+            selector.
+
+    Raises:
+        ValueError: On a palette size below 1 or an unreadable color.
+    """
+    check_literals(
+        {"palette_size": palette_size},
+        {"palette_size": checked_palette_size},
     )
-
-    return field
-
-
-MaskQuality = Literal[MASK_QUALITIES] | Ref(STRING_KIND)
+    if not is_selector(custom_colors):
+        for index, color in enumerate(custom_colors):
+            if not is_selector(color):
+                parse_color(color, field=f"custom_colors[{index}]")
 
 
 def row_colors(

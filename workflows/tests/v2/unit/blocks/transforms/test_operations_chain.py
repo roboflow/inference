@@ -1,7 +1,9 @@
-"""``v2/detections_filter@v1`` and ``v2/detections_transformation@v1`` on every carrier.
+"""``roboflow_core/detections_filter@v1`` and ``roboflow_core/detections_transformation@v1`` on every carrier.
 
 The scene is described in ``scene.py``. Cars are rows 0 and 2.
 """
+
+import sys
 
 import pytest
 import torch
@@ -10,6 +12,9 @@ from roboflow_workflows.v2.blocks.query import QueryRuntimeError
 from roboflow_workflows.v2.blocks.transforms import (
     DetectionsFilterBlock,
     DetectionsTransformationBlock,
+)
+from roboflow_workflows.v2.blocks.transforms._shared.operations_chain import (
+    compile_chain,
 )
 from roboflow_workflows.v2.data.masks import SegmentationView
 from roboflow_workflows.v2.data.rows import PredictionRows
@@ -142,6 +147,49 @@ def test_empty_predictions_stay_empty() -> None:
     # then
     assert kept.xyxy.shape == (0, 4)
     assert scene.row_ids(kept) == []
+
+
+@pytest.mark.parametrize(
+    "block_class", [DetectionsFilterBlock, DetectionsTransformationBlock]
+)
+def test_one_block_follows_changed_operations_and_parameter_values(
+    block_class, monkeypatch
+) -> None:
+    # given: one instance keeps its compiled chain across calls, as after a
+    # graph update that changes the step's operations
+    block_module = sys.modules[block_class.__module__]
+    compiled = []
+
+    def counting_compile_chain(operations, *, parameter_names):
+        compiled.append(parameter_names)
+        return compile_chain(operations, parameter_names=parameter_names)
+
+    monkeypatch.setattr(block_module, "compile_chain", counting_compile_chain)
+    block = block_class()
+
+    def run(operations, parameters):
+        result = block.run(
+            predictions=scene.boxes(),
+            operations=operations,
+            operations_parameters=parameters,
+        )
+        return scene.row_ids(result["predictions"])
+
+    # when
+    cars = run([CLASS_IN], CARS)
+    people = run([CLASS_IN], {"classes": ["person"]})
+    sorted_same_names = run([SORT_DOWN], CARS)
+    sorted_no_names = run([SORT_DOWN], {})
+    sorted_again = run([SORT_DOWN], {})
+
+    # then: a new value reuses the chain; new operations or new parameter
+    # names compile it again
+    assert cars == [0, 2]
+    assert people == [1]
+    assert sorted_same_names == [0, 2, 1, 3]
+    assert sorted_no_names == [0, 2, 1, 3]
+    assert sorted_again == [0, 2, 1, 3]
+    assert compiled == [("classes",), ("classes",), ()]
 
 
 def test_literal_parameter_values_and_parameter_reuse() -> None:

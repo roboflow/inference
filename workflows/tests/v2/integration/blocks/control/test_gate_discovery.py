@@ -41,18 +41,18 @@ def test_boolean_gate_points_query_conditions_to_the_query_gate(
     condition_statement,
 ) -> None:
     with pytest.raises(ParamsValidationError) as error:
-        _compile_gate("v2/continue_if", condition_statement=condition_statement)
+        _compile_gate("roboflow_core/continue_if_boolean@v1", condition_statement=condition_statement)
 
     message = str(error.value)
-    assert "condition_statement is a field of v2/continue_if@v1" in message
-    assert "v2/continue_if takes a boolean condition" in message
+    assert "condition_statement is a field of roboflow_core/continue_if@v1" in message
+    assert "roboflow_core/continue_if_boolean@v1 takes a boolean condition" in message
 
 
 @pytest.mark.parametrize("condition", [True, "$inputs.value"])
 def test_query_gate_points_boolean_conditions_to_the_boolean_gate(condition) -> None:
     with pytest.raises(ParamsValidationError) as error:
-        _compile_gate("v2/continue_if@v1", condition=condition)
+        _compile_gate("roboflow_core/continue_if@v1", condition=condition)
 
     message = str(error.value)
-    assert "condition is a field of v2/continue_if (ready boolean)" in message
-    assert "v2/continue_if@v1 takes a V1 query condition_statement" in message
+    assert "condition is a field of roboflow_core/continue_if_boolean@v1 (ready boolean)" in message
+    assert "roboflow_core/continue_if@v1 takes a V1 query condition_statement" in message

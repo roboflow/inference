@@ -3,11 +3,8 @@
 ``create_catalogue()`` registers every block in ``BLOCKS``.
 """
 
-from roboflow_workflows.v2.blocks.combine.combine import (
-    DetectionsCombineBlock,
-    combine_predictions,
-)
-from roboflow_workflows.v2.blocks.combine.merge import DetectionsMergeBlock, merge_rows
+from roboflow_workflows.v2.blocks.combine.detections_combine.v1 import DetectionsCombineBlock, combine_predictions
+from roboflow_workflows.v2.blocks.combine.detections_merge.v1 import DetectionsMergeBlock, merge_rows
 
 BLOCKS = (
     DetectionsCombineBlock,

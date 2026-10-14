@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 from pycocotools import mask as mask_utils
-from roboflow_workflows.v2.blocks.fusion.rollup import DetectionsListRollUpBlock
+from roboflow_workflows.v2.blocks.fusion.detections_list_rollup.v1 import DetectionsListRollUpBlock
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView
@@ -601,7 +601,7 @@ def test_valid_empty_children_keep_family_without_materializing_masks(
 
 @pytest.mark.parametrize("dtype", [torch.bool, torch.uint8])
 def test_mask_payload_normalization_preserves_pixels_and_ownership(dtype):
-    from roboflow_workflows.v2.blocks.fusion.rollup import _mask_payloads
+    from roboflow_workflows.v2.blocks.fusion.detections_list_rollup.v1 import _mask_payloads
     from torch.utils._python_dispatch import TorchDispatchMode
 
     masks = torch.tensor([[[0, 1], [1, 0]]], dtype=dtype).transpose(1, 2)

@@ -1,11 +1,11 @@
-"""Compiled workflows gated by ``v2/continue_if@v1`` with product blocks only.
+"""Compiled workflows gated by ``roboflow_core/continue_if@v1`` with product blocks only.
 
 Fake models (``tests/v2/support/models``); not real inference. The fake
 classifier's top confidence depends on mean brightness::
 
     brightness 20 -> person 0.85    100 -> car 0.78    200 -> dog 0.58
 
-    image ─▶ v2/classification@v1 ─▶ v2/continue_if@v1 ─▶ v2/object_detection@v1
+    image ─▶ roboflow_core/roboflow_classification_model@v3 ─▶ roboflow_core/continue_if@v1 ─▶ roboflow_core/roboflow_object_detection_model@v3
                                      top_class_confidence >= minimum
 """
 
@@ -14,10 +14,7 @@ from typing import Any, Dict, List, Sequence
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.control.conditions import (
-    CONDITION_STATEMENT_EXAMPLE,
-    ContinueIfQueryBlock,
-)
+from roboflow_workflows.v2.blocks.control.continue_if.v1 import CONDITION_STATEMENT_EXAMPLE, ContinueIfQueryBlock
 from roboflow_workflows.v2.blocks.formatters import BLOCKS as FORMATTER_BLOCKS
 from roboflow_workflows.v2.blocks.image import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models import BLOCKS as MODEL_BLOCKS
@@ -95,7 +92,7 @@ def _image(value: int, *, name: str, width: int = 30) -> ImageData:
 
 def _gate(on: str, *, next_steps: Sequence[str], stop_delay: Any = 0) -> dict:
     step = {
-        "type": "v2/continue_if@v1",
+        "type": "roboflow_core/continue_if@v1",
         "name": "gate",
         "condition_statement": CONDITION_STATEMENT_EXAMPLE,
         "evaluation_parameters": {"prediction": on, "minimum": "$inputs.minimum"},
@@ -112,13 +109,13 @@ def _classified_detection(*, stop_delay: Any = 0, inputs=()) -> dict:
         "inputs": [IMAGE_INPUT, MINIMUM_INPUT, *inputs],
         "steps": [
             {
-                "type": "v2/classification@v1",
+                "type": "roboflow_core/roboflow_classification_model@v3",
                 "name": "classifier",
                 "image": "$inputs.image",
                 "model_id": "cls",
             },
             {
-                "type": "v2/property_definition@v1",
+                "type": "roboflow_core/property_definition@v1",
                 "name": "top_confidence",
                 "data": "$steps.classifier.predictions",
                 "operations": TOP_CONFIDENCE,
@@ -129,7 +126,7 @@ def _classified_detection(*, stop_delay: Any = 0, inputs=()) -> dict:
                 stop_delay=stop_delay,
             ),
             {
-                "type": "v2/object_detection@v1",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "detector",
                 "image": "$inputs.image",
                 "model_id": "od",
@@ -195,13 +192,13 @@ def test_property_definition_and_expression_label_each_image() -> None:
         "inputs": [IMAGE_INPUT],
         "steps": [
             {
-                "type": "v2/classification@v1",
+                "type": "roboflow_core/roboflow_classification_model@v3",
                 "name": "classifier",
                 "image": "$inputs.image",
                 "model_id": "cls",
             },
             {
-                "type": "v2/property_definition@v1",
+                "type": "roboflow_core/property_definition@v1",
                 "name": "top_class",
                 "data": "$steps.classifier.predictions",
                 "operations": [
@@ -212,7 +209,7 @@ def test_property_definition_and_expression_label_each_image() -> None:
                 ],
             },
             {
-                "type": "v2/expression@v1",
+                "type": "roboflow_core/expression@v1",
                 "name": "label",
                 "data": {"top_class": "$steps.top_class.output"},
                 "switch": {
@@ -283,26 +280,26 @@ def test_each_crop_decides_alone(mode: str) -> None:
         "inputs": [IMAGE_INPUT, MINIMUM_INPUT],
         "steps": [
             {
-                "type": "v2/object_detection@v1",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "halves",
                 "image": "$inputs.image",
                 "model_id": "halves",
             },
             {
-                "type": "v2/dynamic_crop@v1",
+                "type": "roboflow_core/dynamic_crop@v1",
                 "name": "crops",
                 "image": "$inputs.image",
                 "predictions": "$steps.halves.predictions",
             },
             {
-                "type": "v2/classification@v1",
+                "type": "roboflow_core/roboflow_classification_model@v3",
                 "name": "classifier",
                 "image": "$steps.crops.crops",
                 "model_id": "cls",
             },
             _gate("$steps.classifier.predictions", next_steps=["$steps.detector"]),
             {
-                "type": "v2/object_detection@v1",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "detector",
                 "image": "$steps.crops.crops",
                 "model_id": "od",
@@ -399,19 +396,19 @@ def test_crops_of_one_frame_share_a_source_hold_in_any_order(left, right) -> Non
         "inputs": [IMAGE_INPUT, MINIMUM_INPUT],
         "steps": [
             {
-                "type": "v2/object_detection@v1",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "halves",
                 "image": "$inputs.image",
                 "model_id": "halves",
             },
             {
-                "type": "v2/dynamic_crop@v1",
+                "type": "roboflow_core/dynamic_crop@v1",
                 "name": "crops",
                 "image": "$inputs.image",
                 "predictions": "$steps.halves.predictions",
             },
             {
-                "type": "v2/classification@v1",
+                "type": "roboflow_core/roboflow_classification_model@v3",
                 "name": "classifier",
                 "image": "$steps.crops.crops",
                 "model_id": "cls",
@@ -422,7 +419,7 @@ def test_crops_of_one_frame_share_a_source_hold_in_any_order(left, right) -> Non
                 stop_delay=5.0,
             ),
             {
-                "type": "v2/object_detection@v1",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "detector",
                 "image": "$steps.crops.crops",
                 "model_id": "od",

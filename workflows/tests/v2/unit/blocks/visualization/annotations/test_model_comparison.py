@@ -1,4 +1,4 @@
-"""``v2/model_comparison_visualization@v1`` against V1 and analytic pixels.
+"""``roboflow_core/model_comparison_visualization@v1`` against V1 and analytic pixels.
 
 The V1 oracle is the latest V1 block run on the same rows (``support``).
 Opacity 0.5 is an exact blend weight; V1's default 0.7 may differ by one
@@ -14,9 +14,7 @@ import torch
 from roboflow_workflows.core_steps.visualizations.model_comparison.v1 import (
     ModelComparisonVisualizationBlockV1,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison import (
-    ModelComparisonVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison_visualization.v1 import ModelComparisonVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError

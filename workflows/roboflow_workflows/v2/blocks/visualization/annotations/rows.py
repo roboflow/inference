@@ -194,7 +194,7 @@ def boxes_of(predictions: Any, *, block: str) -> Detections:
         if boxes is None:
             raise ValueError(
                 f"{block}: these keypoint predictions have no bounding boxes, "
-                "which this block draws. Use v2/keypoint_visualization@v1 for "
+                "which this block draws. Use roboflow_core/keypoint_visualization@v1 for "
                 "keypoints, or a keypoint model that also returns boxes."
             )
     elif isinstance(predictions, (Detections, InstanceDetections)):

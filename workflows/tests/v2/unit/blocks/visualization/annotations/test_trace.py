@@ -1,4 +1,4 @@
-"""``v2/trace_visualization@v1``: paths of tracks over frames of each source.
+"""``roboflow_core/trace_visualization@v1``: paths of tracks over frames of each source.
 
 The V1 oracle is the latest V1 block class itself, one instance kept across
 frames, fed the same rows as ``sv.Detections``; V1 test modules are not
@@ -24,9 +24,7 @@ from roboflow_workflows.v2.blocks.visualization.annotations.sources import (
     SourceCapacityError,
     covers_root,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.trace import (
-    TraceVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.trace_visualization.v1 import TraceVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.declaration import spec_of
 

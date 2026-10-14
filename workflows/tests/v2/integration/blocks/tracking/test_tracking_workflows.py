@@ -1,6 +1,6 @@
 """Real compiler/session integration for per-source tracking and demand.
 
-The tracker is ``v2/trackers_bytetrack@v1``. It never reports a track on the
+The tracker is ``roboflow_core/trackers_bytetrack@v1``. It never reports a track on the
 frame that creates it, so a source's first frame has zero rows and the two
 fixture rows are first reported, as new, on its second frame. Ids come from
 one counter shared by every ByteTrack tracker in the process: tests compare
@@ -15,7 +15,7 @@ import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks import create_catalogue
 from roboflow_workflows.v2.blocks.tracking import base
-from roboflow_workflows.v2.blocks.tracking.bytetrack import ByteTrackTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.trackers_bytetrack.v1 import ByteTrackTrackerBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.prediction_ops import select_predictions
 from roboflow_workflows.v2.engine.compilation import compile_workflow
@@ -80,7 +80,7 @@ def _definition(*, outputs=OUTPUTS, **params):
         ],
         "steps": [
             {
-                "type": "v2/trackers_bytetrack@v1",
+                "type": "roboflow_core/trackers_bytetrack@v1",
                 "name": "track",
                 "image": "$inputs.image",
                 "predictions": "$inputs.predictions",

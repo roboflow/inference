@@ -7,8 +7,8 @@ Two workflows give rows a shared class id but different names (decision 025)::
              ├─▶ detections_combine     both models use class id 0
     vehicles ┘
 
-Each result goes to ``v2/detection_drawing@v1`` and to
-``v2/label_visualization@v1`` twice: once with the native predictions and once
+Each result goes to ``roboflow_core/detection_drawing@v1`` and to
+``roboflow_core/simple_label_visualization@v1`` twice: once with the native predictions and once
 with the prepared drawing. Both painter routes must give the same pixels.
 """
 
@@ -27,15 +27,15 @@ from tests.v2.integration.blocks.geometry.deterministic import (
 
 def drawing_steps(predictions: str) -> list:
     steps = [
-        {"type": "v2/detection_drawing@v1", "name": "drawing", "predictions": predictions},
+        {"type": "roboflow_core/detection_drawing@v1", "name": "drawing", "predictions": predictions},
         {
-            "type": "v2/label_visualization@v1",
+            "type": "roboflow_core/simple_label_visualization@v1",
             "name": "native_labels",
             "image": "$inputs.image",
             "predictions": predictions,
         },
         {
-            "type": "v2/label_visualization@v1",
+            "type": "roboflow_core/simple_label_visualization@v1",
             "name": "prepared_labels",
             "image": "$inputs.image",
             "predictions": "$steps.drawing.drawing",
@@ -89,14 +89,14 @@ def plates_image() -> np.ndarray:
 OCR_STEPS = [
     {"type": "test/marker_detector@v1", "name": "detect", "image": "$inputs.image"},
     {
-        "type": "v2/dynamic_crop@v1",
+        "type": "roboflow_core/dynamic_crop@v1",
         "name": "crop",
         "image": "$inputs.image",
         "predictions": "$steps.detect.predictions",
     },
     {"type": "test/color_name@v1", "name": "read", "image": "$steps.crop.crops"},
     {
-        "type": "v2/detections_classes_replacement@v1",
+        "type": "roboflow_core/detections_classes_replacement@v1",
         "name": "relabel",
         "object_detection_predictions": "$steps.detect.predictions",
         "classification_predictions": "$steps.read.text",
@@ -130,13 +130,13 @@ def test_combined_models_with_clashing_class_ids_keep_each_models_names() -> Non
         {"type": "test/painted_detector@v1", "name": "people", "image": "$inputs.image", "model": "people"},
         {"type": "test/painted_detector@v1", "name": "vehicles", "image": "$inputs.image", "model": "vehicles"},
         {
-            "type": "v2/detections_combine@v1",
+            "type": "roboflow_core/detections_combine@v1",
             "name": "combined",
             "prediction_one": "$steps.people.predictions",
             "prediction_two": "$steps.vehicles.predictions",
         },
         {
-            "type": "v2/detections_filter@v1",
+            "type": "roboflow_core/detections_filter@v1",
             "name": "cars",
             "predictions": "$steps.combined.predictions",
             "operations": [

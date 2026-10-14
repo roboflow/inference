@@ -1,14 +1,11 @@
-"""Unit tests of ``v2/local_file_sink@v1`` against a temporary directory."""
+"""Unit tests of ``roboflow_core/local_file_sink@v1`` against a temporary directory."""
 
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
-from roboflow_workflows.v2.blocks.sinks.local_file import (
-    FileSystemAccessError,
-    LocalFileSinkBlock,
-)
+from roboflow_workflows.v2.blocks.sinks.local_file_sink.v1 import FileSystemAccessError, LocalFileSinkBlock
 
 CSV_ROW_1 = "name,count\na,1\n"
 CSV_ROW_2 = "name,count\nb,2"

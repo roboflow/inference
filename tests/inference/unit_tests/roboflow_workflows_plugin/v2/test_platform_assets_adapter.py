@@ -17,13 +17,8 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.roboflow_platform.asset_library import (
-    AssetLibraryAttributesBlock,
-)
-from roboflow_workflows.v2.blocks.roboflow_platform.dataset_upload import (
-    DatasetUploadBlock,
-    DatasetUploadRequest,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.asset_library_attributes.v1 import AssetLibraryAttributesBlock
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_dataset_upload.v2 import DatasetUploadBlock, DatasetUploadRequest
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
 from roboflow_workflows.v2.blocks.sinks.runtime import BackgroundEffects
 from roboflow_workflows.v2.data.batch import Batch
@@ -547,7 +542,7 @@ def test_two_v2_sessions_and_full_v1_upload_share_one_credit(wire):
             "inputs": [{"type": "WorkflowImage", "name": "image"}],
             "steps": [
                 {
-                    "type": "v2/roboflow_dataset_upload@v2",
+                    "type": "roboflow_core/roboflow_dataset_upload@v2",
                     "name": "collect",
                     "images": "$inputs.image",
                     "target_project": "project",

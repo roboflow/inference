@@ -1,4 +1,4 @@
-"""``v2/qwen_vlm@v4`` on both backends, against in-process fakes only.
+"""``roboflow_core/qwen_vlm@v4`` on both backends, against in-process fakes only.
 
 Native calls reach fake ``prompt`` models through a ``ModelCache``; OpenRouter
 calls reach ``FakeChatServer`` (an ``httpx.MockTransport``) or a recording
@@ -24,18 +24,15 @@ import pytest
 import torch
 from roboflow_workflows.core_steps.common.openrouter import get_native_quantizations
 from roboflow_workflows.core_steps.models.foundation.qwen_vlm import v4 as v1_qwen
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
-from roboflow_workflows.v2.blocks.geometry.offset import DetectionOffsetBlock
-from roboflow_workflows.v2.blocks.language import openrouter_vendors
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
+from roboflow_workflows.v2.blocks.geometry.detection_offset.v1 import DetectionOffsetBlock
+from roboflow_workflows.v2.blocks.language._shared import openrouter_vendors as openrouter_vendors
 from roboflow_workflows.v2.blocks.language.chat import ChatRequestError
-from roboflow_workflows.v2.blocks.language.openrouter import (
-    MODEL_NATIVE_QUANTIZATIONS,
-    OPENROUTER_TASKS,
-)
-from roboflow_workflows.v2.blocks.models import qwen_vlm
+from roboflow_workflows.v2.blocks.language.openrouter.v3 import MODEL_NATIVE_QUANTIZATIONS, OPENROUTER_TASKS
+from roboflow_workflows.v2.blocks.models.qwen_vlm import v4 as qwen_vlm
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.qwen_vlm import QwenVLMBlock
-from roboflow_workflows.v2.blocks.models.vlm import Qwen35VLBlock
+from roboflow_workflows.v2.blocks.models.qwen_vlm.v4 import QwenVLMBlock
+from roboflow_workflows.v2.blocks.models.qwen3_5vl.v2 import Qwen35VLBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.language import LANGUAGE_MODEL_OUTPUT_KIND
@@ -864,14 +861,14 @@ def test_compiled_native_detections_feed_a_geometry_step() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/qwen_vlm@v4",
+                "type": "roboflow_core/qwen_vlm@v4",
                 "name": "qwen",
                 "images": "$inputs.image",
                 "task_type": "object-detection",
                 "classes": ["car"],
             },
             {
-                "type": "v2/detection_offset@v1",
+                "type": "roboflow_core/detection_offset@v1",
                 "name": "offset",
                 "predictions": "$steps.qwen.predictions",
                 "offset_width": 10,
@@ -899,7 +896,7 @@ def test_compiled_openrouter_structured_answer_feeds_the_json_parser() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/qwen_vlm@v4",
+                "type": "roboflow_core/qwen_vlm@v4",
                 "name": "qwen",
                 "images": "$inputs.image",
                 "backend": "openrouter",
@@ -909,7 +906,7 @@ def test_compiled_openrouter_structured_answer_feeds_the_json_parser() -> None:
                 "api_key": "$inputs.key",
             },
             {
-                "type": "v2/json_parser@v1",
+                "type": "roboflow_core/json_parser@v1",
                 "name": "parse",
                 "raw_json": "$steps.qwen.output",
                 "expected_fields": ["count"],
@@ -941,7 +938,7 @@ def test_compiled_runtime_label_is_checked_before_loading() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/qwen_vlm@v4",
+                "type": "roboflow_core/qwen_vlm@v4",
                 "name": "qwen",
                 "images": "$inputs.image",
                 "model_version": "$inputs.qwen_model",
@@ -977,7 +974,7 @@ def test_a_per_image_prompt_is_rejected_when_compiling() -> None:
         _compile(
             [
                 {
-                    "type": "v2/qwen_vlm@v4",
+                    "type": "roboflow_core/qwen_vlm@v4",
                     "name": "qwen",
                     "images": "$inputs.image",
                     "prompt": "$inputs.question",

@@ -17,9 +17,9 @@ import numpy as np
 import pytest
 import torch
 from pydantic import Field
-from roboflow_workflows.v2.blocks.geometry.contours import ContoursDetectionBlock
-from roboflow_workflows.v2.blocks.geometry.dynamic_zone import DynamicZoneBlock
-from roboflow_workflows.v2.blocks.image.dominant_color import DominantColorBlock
+from roboflow_workflows.v2.blocks.geometry.contours_detection.v1 import ContoursDetectionBlock
+from roboflow_workflows.v2.blocks.geometry.dynamic_zone.v1 import DynamicZoneBlock
+from roboflow_workflows.v2.blocks.image.dominant_color.v1 import DominantColorBlock
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
@@ -103,7 +103,7 @@ def zone_steps(source):
             "image": "$inputs.image",
         },
         {
-            "type": "v2/dynamic_zone@v1",
+            "type": "roboflow_core/dynamic_zone@v1",
             "name": "zone",
             "predictions": f"$steps.segment.{source}",
             "required_number_of_vertices": "$inputs.vertices",
@@ -164,13 +164,13 @@ def test_dominant_color_keeps_the_slot_of_an_empty_crop():
     steps = [
         {"type": "test/fixed_boxes@v1", "name": "boxes", "image": "$inputs.image"},
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "predictions": "$steps.boxes.predictions",
         },
         {
-            "type": "v2/dominant_color@v1",
+            "type": "roboflow_core/dominant_color@v1",
             "name": "color",
             "image": "$steps.crop.crops",
             "color_clusters": 2,
@@ -192,7 +192,7 @@ def test_dominant_color_keeps_the_slot_of_an_empty_crop():
 
 def label_step(name, text_color):
     return {
-        "type": "v2/classification_label_visualization@v1",
+        "type": "roboflow_core/classification_label_visualization@v1",
         "name": name,
         "image": "$inputs.image",
         "predictions": "$steps.classify.predictions",
@@ -205,7 +205,7 @@ def test_hex_color_drives_a_drawing_color():
     pixels = np.zeros((60, 160, 3), dtype=np.uint8)
     pixels[:, 40:] = (30, 160, 90)
     steps = [
-        {"type": "v2/dominant_color@v1", "name": "color", "image": "$inputs.image"},
+        {"type": "roboflow_core/dominant_color@v1", "name": "color", "image": "$inputs.image"},
         {
             "type": "test/color_classifier@v1",
             "name": "classify",
@@ -264,7 +264,7 @@ def test_catalogue_lists_name_section_and_v1_origin():
 def test_contours_of_a_static_crop_are_in_crop_pixels():
     steps = [
         {
-            "type": "v2/absolute_static_crop@v1",
+            "type": "roboflow_core/absolute_static_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "x_center": 50,
@@ -273,7 +273,7 @@ def test_contours_of_a_static_crop_are_in_crop_pixels():
             "height": 30,
         },
         {
-            "type": "v2/contours_detection@v1",
+            "type": "roboflow_core/contours_detection@v1",
             "name": "trace",
             "image": "$steps.crop.crops",
         },

@@ -4,9 +4,9 @@ Credentials are invented sentinels from ``StaticSecrets`` or secret inputs.
 SMTP goes only to a ``127.0.0.1`` server; managed providers are a recording
 ``platform_client``::
 
-    secrets resource ─▶ v2/environment_secrets_store@v1 ─▶ v2/email_notification@v2
+    secrets resource ─▶ roboflow_core/environment_secrets_store@v1 ─▶ roboflow_core/email_notification@v2
     image, count (batch) ──────────────────────────────────▶   └▶ loopback SMTP
-    mute, count ─▶ v2/twilio_sms_notification@v2 ─▶ platform_client (+ sink_effects)
+    mute, count ─▶ roboflow_core/twilio_sms_notification@v2 ─▶ platform_client (+ sink_effects)
 """
 
 import smtplib
@@ -18,10 +18,10 @@ from roboflow_workflows.v2.blocks.secrets import (
     EnvironmentSecretsStoreBlock,
     StaticSecrets,
 )
-from roboflow_workflows.v2.blocks.sinks.email import EmailNotificationBlock
+from roboflow_workflows.v2.blocks.sinks.email_notification.v2 import EmailNotificationBlock
 from roboflow_workflows.v2.blocks.sinks.runtime import BackgroundEffects
-from roboflow_workflows.v2.blocks.sinks.slack import SlackNotificationBlock
-from roboflow_workflows.v2.blocks.sinks.twilio import TwilioSmsNotificationBlock
+from roboflow_workflows.v2.blocks.sinks.slack_notification.v1 import SlackNotificationBlock
+from roboflow_workflows.v2.blocks.sinks.twilio_sms_notification.v2 import TwilioSmsNotificationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.secrets import SECRET_KIND
@@ -103,12 +103,12 @@ def test_stored_password_sends_one_email_per_cooldown_with_image_attachment() ->
     # given: a password from the host's secrets and a batch of two frames
     steps = [
         {
-            "type": "v2/environment_secrets_store@v1",
+            "type": "roboflow_core/environment_secrets_store@v1",
             "name": "secrets",
             "variables_storing_secrets": ["SMTP_PASSWORD"],
         },
         {
-            "type": "v2/email_notification@v2",
+            "type": "roboflow_core/email_notification@v2",
             "name": "email",
             "email_provider": "Custom SMTP",
             "subject": "Gate alert",
@@ -166,7 +166,7 @@ def test_managed_sms_follows_a_runtime_mute_input_and_runs_in_the_background() -
     # given
     steps = [
         {
-            "type": "v2/twilio_sms_notification@v2",
+            "type": "roboflow_core/twilio_sms_notification@v2",
             "name": "sms",
             "receiver_number": "+15550001111",
             "message": "Gate: {{ $parameters.count }} trucks",
@@ -210,7 +210,7 @@ def test_managed_sms_follows_a_runtime_mute_input_and_runs_in_the_background() -
 def test_operation_key_that_is_not_a_parameter_fails_compilation() -> None:
     steps = [
         {
-            "type": "v2/slack_notification@v1",
+            "type": "roboflow_core/slack_notification@v1",
             "name": "slack",
             "slack_token": "$inputs.token",
             "channel": "C1",

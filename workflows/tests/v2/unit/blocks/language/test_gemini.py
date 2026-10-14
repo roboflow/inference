@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/google_gemini@v6`` against in-process fakes.
+"""Unit tests of ``roboflow_core/google_gemini@v6`` against in-process fakes.
 
 Gemini's REST API is a ``FakeChatServer`` behind an ``httpx.MockTransport``;
 the Roboflow proxy is a ``FakePlatformClient``. Nothing leaves the process.
@@ -15,14 +15,7 @@ import requests
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.v2.blocks.language.chat import ChatRequestError, encode_image
-from roboflow_workflows.v2.blocks.language.gemini import (
-    GEMINI_MODELS,
-    GoogleGeminiBlock,
-    check_thinking_level,
-    gemini_usage,
-    generation_config,
-    read_gemini_response,
-)
+from roboflow_workflows.v2.blocks.language.google_gemini.v6 import GEMINI_MODELS, GoogleGeminiBlock, check_thinking_level, gemini_usage, generation_config, read_gemini_response
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 

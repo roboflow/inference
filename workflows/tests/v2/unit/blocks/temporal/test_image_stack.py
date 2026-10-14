@@ -9,10 +9,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.temporal.image_stack import (
-    ImageStackBlock,
-    ImageStackCapacityError,
-)
+from roboflow_workflows.v2.blocks.temporal.image_stack.v1 import ImageStackBlock, ImageStackCapacityError
 from roboflow_workflows.v2.data.batch import SampleContext
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.context import ExecutionContext, use_execution_context
@@ -145,7 +142,7 @@ def test_source_policy_reads_image_context_and_supports_still_images():
 def test_capacity_rejects_before_encoding_without_eviction(monkeypatch):
     block = ImageStackBlock()
     call(block, image(20), max_sources=1)
-    import roboflow_workflows.v2.blocks.temporal.image_stack as module
+    import roboflow_workflows.v2.blocks.temporal.image_stack.v1 as module
 
     with monkeypatch.context() as patch:
         patch.setattr(
@@ -191,7 +188,7 @@ def test_invalid_literals_and_runtime_values_rejected_without_state(field, value
 def test_encoding_failure_preserves_history(monkeypatch):
     block = ImageStackBlock()
     call(block, image(20))
-    import roboflow_workflows.v2.blocks.temporal.image_stack as module
+    import roboflow_workflows.v2.blocks.temporal.image_stack.v1 as module
 
     def fail(*args, **kwargs):
         raise RuntimeError("encoder failure")

@@ -52,14 +52,14 @@ def test_crop_invert_mosaic_keeps_ragged_groups_and_blank_canvas() -> None:
         "inputs": [IMAGES_INPUT],
         "steps": [
             {
-                "type": "v2/crop",
+                "type": "roboflow_core/crop@v1",
                 "name": "crop",
                 "image": "$inputs.images",
                 "regions": REGIONS,
             },
-            {"type": "v2/invert", "name": "invert", "image": "$steps.crop.crops"},
+            {"type": "roboflow_core/invert@v1", "name": "invert", "image": "$steps.crop.crops"},
             {
-                "type": "v2/mosaic",
+                "type": "roboflow_core/mosaic@v1",
                 "name": "mosaic",
                 "images": "$steps.invert.image",
                 "tile_size": 16,
@@ -104,24 +104,24 @@ def test_brightness_gate_filters_crops_without_renumbering() -> None:
         "inputs": [IMAGES_INPUT],
         "steps": [
             {
-                "type": "v2/crop",
+                "type": "roboflow_core/crop@v1",
                 "name": "crop",
                 "image": "$inputs.images",
                 "regions": REGIONS,
             },
             {
-                "type": "v2/has_brightness",
+                "type": "roboflow_core/has_brightness@v1",
                 "name": "keep",
                 "image": "$steps.crop.crops",
                 "minimum": 100,
             },
             {
-                "type": "v2/continue_if",
+                "type": "roboflow_core/continue_if_boolean@v1",
                 "name": "gate",
                 "condition": "$steps.keep.keep",
                 "next_steps": ["$steps.invert"],
             },
-            {"type": "v2/invert", "name": "invert", "image": "$steps.crop.crops"},
+            {"type": "roboflow_core/invert@v1", "name": "invert", "image": "$steps.crop.crops"},
         ],
         "outputs": [
             _output("keep", "$steps.keep.keep"),
@@ -156,7 +156,7 @@ def test_nested_crop_resize_crop_composes_provenance_per_source() -> None:
         "inputs": [{"type": "WorkflowBatchInput", "name": "crops", "kind": ["image"]}],
         "steps": [
             {
-                "type": "v2/resize",
+                "type": "roboflow_core/resize@v1",
                 "name": "resize",
                 "image": "$inputs.crops",
                 "width": 20,
@@ -164,7 +164,7 @@ def test_nested_crop_resize_crop_composes_provenance_per_source() -> None:
                 "interpolation": "nearest",
             },
             {
-                "type": "v2/crop",
+                "type": "roboflow_core/crop@v1",
                 "name": "crop",
                 "image": "$steps.resize.image",
                 "regions": [[5, 3, 15, 8]],
@@ -177,7 +177,7 @@ def test_nested_crop_resize_crop_composes_provenance_per_source() -> None:
         "inputs": [IMAGES_INPUT],
         "steps": [
             {
-                "type": "v2/crop",
+                "type": "roboflow_core/crop@v1",
                 "name": "crop",
                 "image": "$inputs.images",
                 "regions": [[30, 70, 70, 90], [0, 0, 400, 400]],
@@ -238,14 +238,14 @@ def test_serialized_rows_carry_provenance_and_feed_back_as_inputs() -> None:
         "inputs": [IMAGES_INPUT],
         "steps": [
             {
-                "type": "v2/resize",
+                "type": "roboflow_core/resize@v1",
                 "name": "resize",
                 "image": "$inputs.images",
                 "width": 30,
                 "height": 10,
             },
             {
-                "type": "v2/crop",
+                "type": "roboflow_core/crop@v1",
                 "name": "crop",
                 "image": "$steps.resize.image",
                 "regions": [[4, 2, 24, 8]],
@@ -296,7 +296,7 @@ def test_bad_regions_literal_fails_compilation_naming_step_and_field() -> None:
         "inputs": [IMAGES_INPUT],
         "steps": [
             {
-                "type": "v2/crop",
+                "type": "roboflow_core/crop@v1",
                 "name": "crop",
                 "image": "$inputs.images",
                 "regions": [[10, 0, 0, 10]],

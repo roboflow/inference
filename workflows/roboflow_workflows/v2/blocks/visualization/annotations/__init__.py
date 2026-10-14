@@ -1,33 +1,37 @@
 """V2 ports of the latest V1 visualization blocks, plus a semantic grid painter.
 
-=============================================  ==============================================
-V2 type                                        port of
-=============================================  ==============================================
-v2/bounding_box_visualization@v1               roboflow_core/bounding_box_visualization@v1
-v2/label_visualization@v2                      roboflow_core/label_visualization@v2
-v2/polygon_visualization@v2                    roboflow_core/polygon_visualization@v2
-v2/mask_visualization@v1                       roboflow_core/mask_visualization@v1
-v2/keypoint_visualization@v1                   roboflow_core/keypoint_visualization@v1
-v2/classification_label_visualization@v1       roboflow_core/classification_label_visualization@v1
-v2/crop_visualization@v1                       roboflow_core/crop_visualization@v1
-v2/blur_visualization@v1                       roboflow_core/blur_visualization@v1
-v2/pixelate_visualization@v1                   roboflow_core/pixelate_visualization@v1
-v2/semantic_segmentation_visualization@v1      (new) native semantic segmentation grids
-v2/circle_visualization@v1                     roboflow_core/circle_visualization@v1
-v2/corner_visualization@v1                     roboflow_core/corner_visualization@v1
-v2/dot_visualization@v1                        roboflow_core/dot_visualization@v1
-v2/ellipse_visualization@v1                    roboflow_core/ellipse_visualization@v1
-v2/halo_visualization@v2                       roboflow_core/halo_visualization@v2
-v2/triangle_visualization@v1                   roboflow_core/triangle_visualization@v1
-v2/heatmap_visualization@v1                   roboflow_core/heatmap_visualization@v1
-v2/trace_visualization@v1                     roboflow_core/trace_visualization@v1
-v2/polygon_zone_visualization@v1              roboflow_core/polygon_zone_visualization@v1
-v2/line_counter_visualization@v1              roboflow_core/line_counter_visualization@v1
-v2/reference_path_visualization@v1            roboflow_core/reference_path_visualization@v1
-v2/background_color_visualization@v1          roboflow_core/background_color_visualization@v1
-v2/color_visualization@v1                     roboflow_core/color_visualization@v1
-v2/grid_visualization@v1                      roboflow_core/grid_visualization@v1
-=============================================  ==============================================
+====================================================  ===================================================
+V2 type                                               port of
+====================================================  ===================================================
+roboflow_core/bounding_box_visualization@v1           roboflow_core/bounding_box_visualization@v1
+roboflow_core/label_visualization@v2                  roboflow_core/label_visualization@v2
+roboflow_core/polygon_visualization@v2                roboflow_core/polygon_visualization@v2
+roboflow_core/mask_visualization@v1                   roboflow_core/mask_visualization@v1
+roboflow_core/keypoint_visualization@v1               roboflow_core/keypoint_visualization@v1
+roboflow_core/classification_label_visualization@v1   roboflow_core/classification_label_visualization@v1
+roboflow_core/crop_visualization@v1                   roboflow_core/crop_visualization@v1
+roboflow_core/blur_visualization@v1                   roboflow_core/blur_visualization@v1
+roboflow_core/pixelate_visualization@v1               roboflow_core/pixelate_visualization@v1
+roboflow_core/semantic_segmentation_visualization@v1  (new) native semantic segmentation grids
+roboflow_core/circle_visualization@v1                 roboflow_core/circle_visualization@v1
+roboflow_core/corner_visualization@v1                 roboflow_core/corner_visualization@v1
+roboflow_core/dot_visualization@v1                    roboflow_core/dot_visualization@v1
+roboflow_core/ellipse_visualization@v1                roboflow_core/ellipse_visualization@v1
+roboflow_core/halo_visualization@v2                   roboflow_core/halo_visualization@v2
+roboflow_core/triangle_visualization@v1               roboflow_core/triangle_visualization@v1
+roboflow_core/heatmap_visualization@v1                roboflow_core/heatmap_visualization@v1
+roboflow_core/trace_visualization@v1                  roboflow_core/trace_visualization@v1
+roboflow_core/polygon_zone_visualization@v1           roboflow_core/polygon_zone_visualization@v1
+roboflow_core/line_counter_visualization@v1           roboflow_core/line_counter_visualization@v1
+roboflow_core/reference_path_visualization@v1         roboflow_core/reference_path_visualization@v1
+roboflow_core/background_color_visualization@v1       roboflow_core/background_color_visualization@v1
+roboflow_core/color_visualization@v1                  roboflow_core/color_visualization@v1
+roboflow_core/grid_visualization@v1                   roboflow_core/grid_visualization@v1
+roboflow_core/icon_visualization@v1                   roboflow_core/icon_visualization@v1
+roboflow_core/model_comparison_visualization@v1       roboflow_core/model_comparison_visualization@v1
+roboflow_core/rich_label_visualization@v1             roboflow_core/rich_label_visualization@v1
+roboflow_core/text_display@v1                         roboflow_core/text_display@v1
+====================================================  ===================================================
 
 Each block runs once per image on the image's device and returns a new
 image with the input's identity, frame, source and time; inputs are never
@@ -46,98 +50,46 @@ are excluded from default discovery.
 ``create_catalogue()`` registers every block in ``BLOCKS``. The package
 ``roboflow_workflows.v2.blocks`` exports this package's
 ``LabelVisualizationBlock`` as ``AnnotationLabelVisualizationBlock``; its own
-``LabelVisualizationBlock`` stays the ``v2/label_visualization@v1`` prototype.
+``LabelVisualizationBlock`` stays the ``roboflow_core/simple_label_visualization@v1`` prototype.
 
 The older painters in ``roboflow_workflows.v2.blocks.visualization``
-(``v2/box_visualization@v1``, ``v2/label_visualization@v1`` and friends) are
+(``roboflow_core/simple_box_visualization@v1``, ``roboflow_core/simple_label_visualization@v1`` and friends) are
 unchanged and remain available. They are limited fast prototypes, not V1
-ports: for V1 options use ``v2/bounding_box_visualization@v1`` and
-``v2/label_visualization@v2``.
+ports: for V1 options use ``roboflow_core/bounding_box_visualization@v1`` and
+``roboflow_core/label_visualization@v2``.
 """
 
-from roboflow_workflows.v2.blocks.visualization.annotations.blur import (
-    BlurVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.bounding_box import (
-    BoundingBoxVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.circle import (
-    CircleVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.classification_label import (
-    ClassificationLabelVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.corner import (
-    CornerVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.crop import (
-    CropVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.dot import (
-    DotVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.ellipse import (
-    EllipseVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.halo import (
-    HaloVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.keypoint import (
-    KeypointVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.label import (
-    LabelVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.mask import (
-    MaskVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.pixelate import (
-    PixelateVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.polygon import (
-    PolygonVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.semantic_segmentation import (
-    SemanticSegmentationVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.triangle import (
-    TriangleVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.blur_visualization.v1 import BlurVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.bounding_box_visualization.v1 import BoundingBoxVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.circle_visualization.v1 import CircleVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.classification_label_visualization.v1 import ClassificationLabelVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.corner_visualization.v1 import CornerVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.crop_visualization.v1 import CropVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.dot_visualization.v1 import DotVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.ellipse_visualization.v1 import EllipseVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.halo_visualization.v2 import HaloVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.keypoint_visualization.v1 import KeypointVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import LabelVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.mask_visualization.v1 import MaskVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.pixelate_visualization.v1 import PixelateVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.polygon_visualization.v2 import PolygonVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.semantic_segmentation_visualization.v1 import SemanticSegmentationVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.triangle_visualization.v1 import TriangleVisualizationBlock
 
-from roboflow_workflows.v2.blocks.visualization.annotations.heatmap import (
-    HeatmapVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.trace import (
-    TraceVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.zones import (
-    LineCounterVisualizationBlock,
-    PolygonZoneVisualizationBlock,
-    ReferencePathVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.heatmap_visualization.v1 import HeatmapVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.trace_visualization.v1 import TraceVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.line_counter_visualization.v1 import LineCounterVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.polygon_zone_visualization.v1 import PolygonZoneVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.reference_path_visualization.v1 import ReferencePathVisualizationBlock
 
-from roboflow_workflows.v2.blocks.visualization.annotations.background_color import (
-    BackgroundColorVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.color import (
-    ColorVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.grid import (
-    GridVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.background_color_visualization.v1 import BackgroundColorVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.color_visualization.v1 import ColorVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.grid_visualization.v1 import GridVisualizationBlock
 
-from roboflow_workflows.v2.blocks.visualization.annotations.icon import (
-    IconVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison import (
-    ModelComparisonVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.rich_label import (
-    RichLabelVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.text_display import (
-    TextDisplayBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.icon_visualization.v1 import IconVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.model_comparison_visualization.v1 import ModelComparisonVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.rich_label_visualization.v1 import RichLabelVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.text_display.v1 import TextDisplayBlock
 
 BLOCKS = (
     BoundingBoxVisualizationBlock,

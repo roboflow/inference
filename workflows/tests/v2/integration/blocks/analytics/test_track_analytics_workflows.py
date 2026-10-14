@@ -6,7 +6,7 @@ analytic; 20 x 20 px boxes, reference path ``(10, 50) -> (50, 50)``::
     cam-a   centre (10 * step, 50)   on the path line
     cam-b   centre (30, 80)          still; hypot(20, 30) px from both ends
 
-The tracker, ``v2/trackers_bytetrack@v1``, does not report a track on the
+The tracker, ``roboflow_core/trackers_bytetrack@v1``, does not report a track on the
 frame that creates it. Sessions therefore start with step 0, which only
 creates the tracks; consumers see the tracks from step 1. Tracker ids come
 from a process-wide counter, so tests read them from the outputs.
@@ -20,9 +20,9 @@ import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.analytics.event_log import DetectionEventLogBlock
-from roboflow_workflows.v2.blocks.analytics.overlap_filter import OverlapFilterBlock
-from roboflow_workflows.v2.blocks.analytics.path_deviation import PathDeviationBlock
+from roboflow_workflows.v2.blocks.analytics.detection_event_log.v1 import DetectionEventLogBlock
+from roboflow_workflows.v2.blocks.analytics.overlap.v1 import OverlapFilterBlock
+from roboflow_workflows.v2.blocks.analytics.path_deviation_analytics.v2 import PathDeviationBlock
 from roboflow_workflows.v2.data.batch import EntryMetadata, InputValue, SampleContext
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.prediction_ops import select_predictions
@@ -42,7 +42,7 @@ CLASS_NAMES = {0: "person", 1: "bicycle"}
 # Explicit tracker knobs: confidence 0.9 starts a track; cam-a's 20 px box
 # moves 10 px per step, so consecutive boxes overlap with IoU 1/3.
 TRACKER = {
-    "type": "v2/trackers_bytetrack@v1",
+    "type": "roboflow_core/trackers_bytetrack@v1",
     "name": "track",
     "image": "$inputs.image",
     "frame_rate": 10.0,
@@ -101,7 +101,7 @@ def _definition(*, deviation=None, log=None):
     steps = [
         {**TRACKER, "predictions": "$inputs.predictions"},
         {
-            "type": "v2/path_deviation_analytics@v2",
+            "type": "roboflow_core/path_deviation_analytics@v2",
             "name": "deviation",
             "image": "$inputs.image",
             "predictions": "$steps.track.tracked_detections",
@@ -110,7 +110,7 @@ def _definition(*, deviation=None, log=None):
             **(deviation or {}),
         },
         {
-            "type": "v2/detection_event_log@v1",
+            "type": "roboflow_core/detection_event_log@v1",
             "name": "log",
             "image": "$inputs.image",
             "predictions": "$steps.track.tracked_detections",
@@ -384,7 +384,7 @@ def test_images_without_video_identifier_use_their_own_source():
         ],
         "steps": [
             {
-                "type": "v2/detection_event_log@v1",
+                "type": "roboflow_core/detection_event_log@v1",
                 "name": "log",
                 "image": "$inputs.image",
                 "predictions": "$inputs.predictions",
@@ -432,7 +432,7 @@ def _riders_definition():
         ],
         "steps": [
             {
-                "type": "v2/overlap_filter@v1",
+                "type": "roboflow_core/overlap@v1",
                 "name": "riders",
                 "predictions": "$inputs.predictions",
                 "overlap_class_name": "$inputs.reference",
@@ -440,7 +440,7 @@ def _riders_definition():
             },
             {**TRACKER, "predictions": "$steps.riders.overlaps"},
             {
-                "type": "v2/detection_event_log@v1",
+                "type": "roboflow_core/detection_event_log@v1",
                 "name": "log",
                 "image": "$inputs.image",
                 "predictions": "$steps.track.tracked_detections",

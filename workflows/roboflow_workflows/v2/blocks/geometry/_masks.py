@@ -1,6 +1,6 @@
 """Host mask windows and filled-polygon masks shared by the geometry blocks.
 
-``v2/bounding_rect@v1`` and ``v2/dynamic_zone@v1`` both read each instance
+``roboflow_core/bounding_rect@v1`` and ``roboflow_core/dynamic_zone@v1`` both read each instance
 mask as a small host window, fit a polygon with OpenCV, and replace the mask
 by that filled polygon::
 

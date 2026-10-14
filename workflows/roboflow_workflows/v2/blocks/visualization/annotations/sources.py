@@ -125,7 +125,7 @@ def covers_root(image: ImageData) -> bool:
 
 
 def source_key(block: Block, image: ImageData) -> str:
-    """Name the video source of ``image``, as ``v2/frame_delay@v1`` does.
+    """Name the video source of ``image``, as ``roboflow_core/frame_delay@v1`` does.
 
     Args:
         block: The calling block, read for its call context.

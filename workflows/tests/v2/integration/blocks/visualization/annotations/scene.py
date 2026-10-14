@@ -24,12 +24,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from roboflow_workflows.v2.blocks import create_catalogue, geometry, models
-from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
+from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelRequest
-from roboflow_workflows.v2.blocks.models.common import ModelGroup
-from roboflow_workflows.v2.blocks.models.instance_segmentation import (
-    InstanceSegmentationBlock,
-)
+from roboflow_workflows.v2.blocks.models.common import ModelInput
+from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
 from roboflow_workflows.v2.blocks.visualization import annotations
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView
@@ -337,9 +335,9 @@ class SyntheticCompactSegmentationBlock(InstanceSegmentationBlock):
     type = "test/synthetic_compact_segmentation@v1"
 
     def _segmentations(
-        self, group: ModelGroup, group_output: Any
+        self, network_input: ModelInput, raw_output: Any
     ) -> List[SegmentationView]:
-        dense_views = super()._segmentations(group, group_output)
+        dense_views = super()._segmentations(network_input, raw_output)
         views = []
         for dense in dense_views:
             predictions = dense.full_res()
@@ -380,7 +378,7 @@ def compact_view(predictions: InstanceDetections) -> SegmentationView:
 
 def annotation_catalogue() -> Catalogue:
     """The V2 catalogue plus model, crop, relabel and the ten annotation blocks."""
-    extra = [block for block in models.BLOCKS if block.type != "v2/object_detection@v1"]
+    extra = [block for block in models.BLOCKS if block.type != "roboflow_core/roboflow_object_detection_model@v3"]
     catalogue = create_catalogue().with_blocks(
         [
             *extra,

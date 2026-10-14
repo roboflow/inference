@@ -1,11 +1,16 @@
 """Retained Florence-2 decoding behavior and retired parser exports."""
 
 import json
+from typing import get_args
 
 import numpy as np
 import pytest
-from roboflow_workflows.v2.blocks.language import parsers
-from roboflow_workflows.v2.blocks.language.parsers import decode_florence_2_detections
+from roboflow_workflows.v2.blocks.language._shared import parsers as parsers
+from roboflow_workflows.v2.blocks.language._shared.parsers import (
+    MODEL_BOX_FORMATS,
+    decode_florence_2_detections,
+)
+from roboflow_workflows.v2.blocks.language.vlm_as_detector.v2 import ModelType
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import OBJECT_DETECTION_PREDICTION_KIND
 from roboflow_workflows.v2.data.row_identity import row_record
@@ -22,6 +27,11 @@ def _decode(answer, *, task_type="object-detection", classes=None):
         inference_id="florence-helper-test",
     )
     return {"error_status": error, "predictions": predictions}
+
+
+def test_every_detector_model_type_has_a_box_format() -> None:
+    # A model_type without an entry would fail with KeyError at run time.
+    assert set(get_args(ModelType)) == set(MODEL_BOX_FORMATS) | {"florence-2"}
 
 
 def test_retired_parser_classes_are_not_public_exports() -> None:

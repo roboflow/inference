@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/stitch_ocr_detections@v2``, called directly.
+"""Unit tests of ``roboflow_core/stitch_ocr_detections@v2``, called directly.
 
 Layouts are small and analytic. ``HORIZONTAL`` holds two lines, "AB" over
 "CD", of boxes 20 wide and 10 tall with a 4-pixel gap. ``VERTICAL`` is the
@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.codes.ocr_stitch import StitchOCRDetectionsBlock
+from roboflow_workflows.v2.blocks.codes.stitch_ocr_detections.v2 import StitchOCRDetectionsBlock
 
 from inference_models.models.base.object_detection import Detections
 

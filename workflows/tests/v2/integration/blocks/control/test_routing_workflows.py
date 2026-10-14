@@ -21,11 +21,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.control.routing import (
-    DeltaFilterBlock,
-    RateLimiterBlock,
-    SwitchCaseBlock,
-)
+from roboflow_workflows.v2.blocks.control.delta_filter.v1 import DeltaFilterBlock
+from roboflow_workflows.v2.blocks.control.rate_limiter.v1 import RateLimiterBlock
+from roboflow_workflows.v2.blocks.control.switch_case.v1 import SwitchCaseBlock
 from roboflow_workflows.v2.blocks.formatters import BLOCKS as FORMATTER_BLOCKS
 from roboflow_workflows.v2.blocks.image import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models import BLOCKS as MODEL_BLOCKS
@@ -117,7 +115,7 @@ def _output(name: str, selector: str) -> Dict[str, str]:
 
 def _detector(name: str, *, image: str = "$inputs.image") -> Dict[str, Any]:
     return {
-        "type": "v2/object_detection@v1",
+        "type": "roboflow_core/roboflow_object_detection_model@v3",
         "name": name,
         "image": image,
         "model_id": name,
@@ -128,13 +126,13 @@ def _detector(name: str, *, image: str = "$inputs.image") -> Dict[str, Any]:
 def _classified(image: str = "$inputs.image") -> List[Dict[str, Any]]:
     steps = [
         {
-            "type": "v2/classification@v1",
+            "type": "roboflow_core/roboflow_classification_model@v3",
             "name": "classifier",
             "image": image,
             "model_id": "cls",
         },
         {
-            "type": "v2/property_definition@v1",
+            "type": "roboflow_core/property_definition@v1",
             "name": "top_class",
             "data": "$steps.classifier.predictions",
             "operations": TOP_CLASS,
@@ -173,7 +171,7 @@ def _routing(**switch: Any) -> Dict[str, Any]:
         "steps": [
             *_classified(),
             {
-                "type": "v2/switch_case@v1",
+                "type": "roboflow_core/switch_case@v1",
                 "name": "route",
                 "value": "$steps.top_class.output",
                 "cases": {"dog": "$steps.dogs", "car": "$steps.cars"},
@@ -259,20 +257,20 @@ def test_each_crop_is_routed_alone(mode: str) -> None:
         "inputs": [IMAGE_INPUT],
         "steps": [
             {
-                "type": "v2/object_detection@v1",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "halves",
                 "image": "$inputs.image",
                 "model_id": "halves",
             },
             {
-                "type": "v2/dynamic_crop@v1",
+                "type": "roboflow_core/dynamic_crop@v1",
                 "name": "crops",
                 "image": "$inputs.image",
                 "predictions": "$steps.halves.predictions",
             },
             *_classified("$steps.crops.crops"),
             {
-                "type": "v2/switch_case@v1",
+                "type": "roboflow_core/switch_case@v1",
                 "name": "route",
                 "value": "$steps.top_class.output",
                 "cases": {"dog": "$steps.dogs"},
@@ -304,7 +302,7 @@ def _class_changes() -> Dict[str, Any]:
         "steps": [
             *_classified(),
             {
-                "type": "v2/delta_filter@v1",
+                "type": "roboflow_core/delta_filter@v1",
                 "name": "changed",
                 "image": "$inputs.image",
                 "value": "$steps.top_class.output",
@@ -379,20 +377,20 @@ def test_delta_filter_crops_of_a_frame_share_its_video_lane() -> None:
         "inputs": [IMAGE_INPUT],
         "steps": [
             {
-                "type": "v2/object_detection@v1",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "halves",
                 "image": "$inputs.image",
                 "model_id": "halves",
             },
             {
-                "type": "v2/dynamic_crop@v1",
+                "type": "roboflow_core/dynamic_crop@v1",
                 "name": "crops",
                 "image": "$inputs.image",
                 "predictions": "$steps.halves.predictions",
             },
             *_classified("$steps.crops.crops"),
             {
-                "type": "v2/delta_filter@v1",
+                "type": "roboflow_core/delta_filter@v1",
                 "name": "changed",
                 "image": "$steps.crops.crops",
                 "value": "$steps.top_class.output",
@@ -432,7 +430,7 @@ def _throttled(**limiter: Any) -> Dict[str, Any]:
         "steps": [
             *_classified(),
             {
-                "type": "v2/rate_limiter@v1",
+                "type": "roboflow_core/rate_limiter@v1",
                 "name": "limit",
                 "depends_on": "$steps.classifier.predictions",
                 "next_steps": ["$steps.detector"],
@@ -555,7 +553,7 @@ def _beside_context_free_value(control: Dict[str, Any], *, mode: str):
 def test_delta_filter_keys_by_the_image_source_not_the_value(mode: str) -> None:
     changed = _beside_context_free_value(
         {
-            "type": "v2/delta_filter@v1",
+            "type": "roboflow_core/delta_filter@v1",
             "image": "$inputs.image",
             "value": "$steps.echo.out",
         },
@@ -573,7 +571,7 @@ def test_rate_limiter_takes_source_and_time_from_the_reference_image(
 ) -> None:
     allowed = _beside_context_free_value(
         {
-            "type": "v2/rate_limiter@v1",
+            "type": "roboflow_core/rate_limiter@v1",
             "depends_on": "$steps.echo.out",
             "video_reference_image": "$inputs.image",
             "cooldown_seconds": 1.0,

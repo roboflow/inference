@@ -21,12 +21,9 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.models.cache import ModelCache
-from roboflow_workflows.v2.blocks.models.ocr import (
-    DOCTR_MODEL_ID,
-    EasyOCRBlock,
-    OCRModelBlock,
-    PPOCRBlock,
-)
+from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import EasyOCRBlock
+from roboflow_workflows.v2.blocks.models.ocr_model.v1 import DOCTR_MODEL_ID, OCRModelBlock
+from roboflow_workflows.v2.blocks.models.pp_ocr.v1 import PPOCRBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import OBJECT_DETECTION_PREDICTION_KIND

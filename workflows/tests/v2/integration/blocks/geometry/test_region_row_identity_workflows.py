@@ -37,7 +37,7 @@ def select(rows):
 
 
 CROP_SELECTED = {
-    "type": "v2/dynamic_crop@v1",
+    "type": "roboflow_core/dynamic_crop@v1",
     "name": "crop",
     "image": "$inputs.image",
     "predictions": "$steps.select.predictions",
@@ -51,7 +51,7 @@ CLASSIFY = {
 
 def replace(classifications, **extra):
     return {
-        "type": "v2/detections_classes_replacement@v1",
+        "type": "roboflow_core/detections_classes_replacement@v1",
         "name": "replace",
         "object_detection_predictions": "$steps.detect.predictions",
         "classification_predictions": classifications,
@@ -131,20 +131,20 @@ def test_collapse_keeps_a_none_slot_for_a_gated_crop() -> None:
         select([0, 1]),
         CROP_SELECTED,
         {
-            "type": "v2/has_brightness",
+            "type": "roboflow_core/has_brightness@v1",
             "name": "bright",
             "image": "$steps.crop.crops",
             "minimum": 100.0,
         },
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "gate",
             "condition": "$steps.bright.keep",
             "next_steps": ["$steps.classify"],
         },
         CLASSIFY,
         {
-            "type": "v2/dimension_collapse@v1",
+            "type": "roboflow_core/dimension_collapse@v1",
             "name": "collect",
             "data": "$steps.classify.predictions",
         },
@@ -177,7 +177,7 @@ def test_cropping_a_view_never_requests_full_resolution_masks(monkeypatch) -> No
     steps = [
         SEGMENT,
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "predictions": "$steps.detect.segmentation",
@@ -202,12 +202,12 @@ def test_bounding_rect_of_a_view_equals_that_of_its_predictions() -> None:
     steps = [
         SEGMENT,
         {
-            "type": "v2/bounding_rect@v1",
+            "type": "roboflow_core/bounding_rect@v1",
             "name": "from_view",
             "predictions": "$steps.detect.segmentation",
         },
         {
-            "type": "v2/bounding_rect@v1",
+            "type": "roboflow_core/bounding_rect@v1",
             "name": "from_dense",
             "predictions": "$steps.detect.predictions",
         },
@@ -230,7 +230,7 @@ def test_bounding_rect_of_a_view_equals_that_of_its_predictions() -> None:
 def test_stitch_of_slice_views_equals_stitch_of_slice_predictions() -> None:
     def stitch(name, output):
         return {
-            "type": "v2/detections_stitch@v1",
+            "type": "roboflow_core/detections_stitch@v1",
             "name": name,
             "reference_image": "$inputs.image",
             "predictions": f"$steps.detect.{output}",
@@ -240,7 +240,7 @@ def test_stitch_of_slice_views_equals_stitch_of_slice_predictions() -> None:
 
     steps = [
         {
-            "type": "v2/image_slicer@v1",
+            "type": "roboflow_core/image_slicer@v2",
             "name": "slicer",
             "image": "$inputs.image",
             "slice_width": 80,

@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.control.blocks import ContinueIfBlock
-from roboflow_workflows.v2.blocks.temporal.image_stack import ImageStackBlock
+from roboflow_workflows.v2.blocks.control.continue_if_boolean.v1 import ContinueIfBlock
+from roboflow_workflows.v2.blocks.temporal.image_stack.v1 import ImageStackBlock
 from roboflow_workflows.v2.data.batch import (
     Batch,
     EntryMetadata,
@@ -227,7 +227,7 @@ def test_invalid_selected_limits_raise(mode, field, value):
 
 @pytest.mark.parametrize("mode", ["run", "phases"])
 def test_undemanded_history_still_encodes_stateful_arrivals(mode, monkeypatch):
-    import roboflow_workflows.v2.blocks.temporal.image_stack as module
+    import roboflow_workflows.v2.blocks.temporal.image_stack.v1 as module
 
     original = module.encode_image_to_jpeg_bytes
     seen = []

@@ -20,8 +20,8 @@ from roboflow_workflows.v2.blocks.image import (
     ImageSlicerBlock,
     RelativeStaticCropBlock,
 )
-from roboflow_workflows.v2.blocks.image.dynamic_crop import parse_rgb
-from roboflow_workflows.v2.blocks.image.slicer import slice_rectangles
+from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import parse_rgb
+from roboflow_workflows.v2.blocks.image.image_slicer.v2 import slice_rectangles
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import FrameMapping, ImageData

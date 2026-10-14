@@ -1,4 +1,4 @@
-"""``v2/identify_changes@v1``: V1 statistics per source, bounded and checked.
+"""``roboflow_core/identify_changes@v1``: V1 statistics per source, bounded and checked.
 
 Calls run inside a hand-built execution context whose scope answers the
 call's source, as the engine's does. ``V1_CAMERA_A`` was recorded by running
@@ -18,12 +18,7 @@ from roboflow_workflows.v2.blocks.sampling import (
     SamplingCapacityError,
 )
 from roboflow_workflows.v2.blocks.sampling._state import unit_vector
-from roboflow_workflows.v2.blocks.sampling.changes import (
-    EMA,
-    SLIDING_WINDOW,
-    SMA,
-    _cosine,
-)
+from roboflow_workflows.v2.blocks.sampling.identify_changes.v1 import EMA, SLIDING_WINDOW, SMA, _cosine
 from roboflow_workflows.v2.data.batch import SampleContext
 from roboflow_workflows.v2.engine.context import (
     ExecutionContext,

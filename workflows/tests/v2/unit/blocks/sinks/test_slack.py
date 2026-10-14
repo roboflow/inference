@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/slack_notification@v1`` with real ``slack_sdk`` on loopback.
+"""Unit tests of ``roboflow_core/slack_notification@v1`` with real ``slack_sdk`` on loopback.
 
 ``slack_api_url`` points ``WebClient`` at an in-process fake of the Slack Web
 API on ``127.0.0.1``; the token is an invented sentinel.
@@ -17,7 +17,7 @@ from roboflow_workflows.v2.blocks.sinks.runtime import (
     BACKGROUND_MESSAGE,
     BackgroundEffects,
 )
-from roboflow_workflows.v2.blocks.sinks.slack import SlackNotificationBlock
+from roboflow_workflows.v2.blocks.sinks.slack_notification.v1 import SlackNotificationBlock
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 
 from tests.v2.support.sinks.loopback import ManualClock
@@ -343,7 +343,7 @@ def test_background_failure_is_counted_on_the_resource() -> None:
             assert effects.drain(timeout=10)
 
     [failure] = effects.failures()
-    assert failure.label == "v2/slack_notification@v1"
+    assert failure.label == "roboflow_core/slack_notification@v1"
     assert failure.message.endswith("invalid_auth")
 
 

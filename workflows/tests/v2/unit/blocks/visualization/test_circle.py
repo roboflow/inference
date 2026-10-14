@@ -1,4 +1,4 @@
-"""``v2/circle_visualization@v1``: pixels equal V1 ``circle_visualization@v1``.
+"""``roboflow_core/circle_visualization@v1``: pixels equal V1 ``circle_visualization@v1``.
 
 The oracle is the latest V1 block (``sv.CircleAnnotator``) run on the same
 rows; V1 test modules are not imported. Fixtures are shared with the
@@ -13,9 +13,7 @@ import torch
 from roboflow_workflows.core_steps.visualizations.circle.v1 import (
     CircleVisualizationBlockV1,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.circle import (
-    CircleVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.circle_visualization.v1 import CircleVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError

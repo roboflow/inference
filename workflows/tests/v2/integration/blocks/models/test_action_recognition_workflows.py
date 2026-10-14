@@ -3,10 +3,8 @@
 from fractions import Fraction
 
 import pytest
-from roboflow_workflows.v2.blocks.models import action_recognition as action
-from roboflow_workflows.v2.blocks.models.action_recognition import (
-    ActionRecognitionBlock,
-)
+from roboflow_workflows.v2.blocks.models.roboflow_action_recognition_model import v1 as action
+from roboflow_workflows.v2.blocks.models.roboflow_action_recognition_model.v1 import ActionRecognitionBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.data.batch import (
     Batch,
@@ -70,7 +68,7 @@ def make_plan(*, mode="run", window=True, source_fps=4, window_size=8):
     if window:
         definition["operators"] = [
             {
-                "type": "v2/window@v1",
+                "type": "roboflow_core/window@v1",
                 "name": "history",
                 "size": window_size,
                 "step": 1,

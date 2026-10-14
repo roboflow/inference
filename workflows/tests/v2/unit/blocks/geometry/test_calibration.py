@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/camera_calibration@v1``, called directly.
+"""Unit tests of ``roboflow_core/camera-calibration@v1``, called directly.
 
 Two independent oracles: V1's ``remove_distortions`` on V1's BGR layout
 (pixels may differ by 1 level: float bilinear blending, measured on CPU only),
@@ -20,7 +20,7 @@ from roboflow_workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImageData,
 )
-from roboflow_workflows.v2.blocks.geometry.calibration import CameraCalibrationBlock
+from roboflow_workflows.v2.blocks.geometry.camera_calibration.v1 import CameraCalibrationBlock
 from roboflow_workflows.v2.data.image import FrameMapping, ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
 

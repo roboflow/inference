@@ -9,9 +9,7 @@ import hashlib
 from typing import Any, Dict, Sequence, Tuple
 from uuid import uuid4
 
-from roboflow_workflows.v2.blocks.roboflow_platform.dataset_upload import (
-    DatasetUploadRequest,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_dataset_upload.v2 import DatasetUploadRequest
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
 from roboflow_workflows.v2.data.secrets import Secret, reveal_secrets
 

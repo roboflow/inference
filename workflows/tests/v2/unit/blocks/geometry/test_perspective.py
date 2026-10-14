@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/perspective_correction@v1``, called directly.
+"""Unit tests of ``roboflow_core/perspective_correction@v1``, called directly.
 
 Exact cases use a polygon that maps to the rectangle by a pure shift, so the
 expected boxes, masks and pixels are worked out by hand. General
@@ -30,12 +30,8 @@ from roboflow_workflows.core_steps.transformations.perspective_correction.v1 imp
 )
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.geometry import perspective
-from roboflow_workflows.v2.blocks.geometry.perspective import (
-    PerspectiveCorrectionBlock,
-    largest_polygon,
-    top_down_plane,
-)
+from roboflow_workflows.v2.blocks.geometry.perspective_correction import v1 as perspective
+from roboflow_workflows.v2.blocks.geometry.perspective_correction.v1 import PerspectiveCorrectionBlock, largest_polygon, top_down_plane
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import FrameMapping, ImageData
@@ -681,7 +677,7 @@ def test_center_of_mass_stays_on_its_device(device: str) -> None:
 
 def selected_setting_workflow(name: str) -> dict:
     step = {
-        "type": "v2/perspective_correction@v1",
+        "type": "roboflow_core/perspective_correction@v1",
         "name": "perspective",
         "images": "$inputs.images",
         "perspective_polygons": SHIFT_POLYGON,

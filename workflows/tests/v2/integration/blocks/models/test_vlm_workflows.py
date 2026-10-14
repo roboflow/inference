@@ -3,7 +3,8 @@
 Fake prompt models (``tests/v2/support/models/fake_prompt_models.py``) stand
 in for loaded weights; nothing is downloaded and this is not real inference.
 The tests check what a workflow builder relies on: models load at run time
-once per request, prompts can come from inputs per run or per image, gated
+once per request (one model per call), prompts can come from inputs per run
+or per image while system prompts and limits are per run, gated
 images are skipped, literal mistakes fail at compile time, and the text
 answer feeds a downstream text block.
 """
@@ -13,13 +14,14 @@ from typing import Any, Dict, List, Tuple
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.vlm import BLOCKS, DEFAULT_PROMPT
+from roboflow_workflows.v2.blocks.models._catalogue_vlm import BLOCKS
+from roboflow_workflows.v2.blocks.models._shared.vlm import DEFAULT_PROMPT
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
-from roboflow_workflows.v2.engine.errors import ParamsValidationError
+from roboflow_workflows.v2.engine.errors import LineageError, ParamsValidationError
 from roboflow_workflows.v2.engine.introspection import discover_workload
 from roboflow_workflows.v2.engine.plan import CompileOptions
 
@@ -34,10 +36,10 @@ from tests.v2.support.models.fake_prompt_models import (
 
 MODES = ("run", "phases")
 FAMILIES = {
-    "v2/qwen25vl@v1": FakeQwen25VL,
-    "v2/qwen3vl@v1": FakeQwen3VL,
-    "v2/qwen3_5vl@v2": FakeQwen35,
-    "v2/smolvlm2@v1": FakeSmolVLM2,
+    "roboflow_core/qwen25vl@v1": FakeQwen25VL,
+    "roboflow_core/qwen3vl@v1": FakeQwen3VL,
+    "roboflow_core/qwen3_5vl@v2": FakeQwen35,
+    "roboflow_core/smolvlm2@v1": FakeSmolVLM2,
 }
 OUTPUTS = ("parsed_output", "model_id", "inference_id")
 
@@ -98,33 +100,56 @@ def _images() -> List[ImageData]:
 
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("block_type", FAMILIES)
-def test_per_image_models_load_once_and_answers_keep_row_order(
+def test_selected_models_load_once_and_answers_keep_row_order(
     block_type: str, mode: str
 ) -> None:
     loader = FakePromptLoader(FAMILIES[block_type])
     plan = _plan(
         block_type,
         mode=mode,
-        inputs=({"type": "WorkflowBatchInput", "name": "model_id"},),
+        inputs=({"type": "WorkflowParameter", "name": "model_id"},),
         model_id="$inputs.model_id",
     )
 
     session = plan.create_session({"models": ModelCache(loader)})
     assert loader.loaded == []  # compiling and constructing load nothing
-    rows = session.run({"image": _images(), "model_id": ["a", "b", "a"]}).rows()
-    again = session.run({"image": _images(), "model_id": ["b", "b", "a"]}).rows()
+    rows = session.run({"image": _images(), "model_id": "a"}).rows()
+    other = session.run({"image": _images(), "model_id": "b"}).rows()
+    again = session.run({"image": _images(), "model_id": "a"}).rows()
 
     assert loader.loaded == [ModelRequest("a"), ModelRequest("b")]
-    assert [row["model_id"] for row in rows + again] == ["a", "b", "a", "b", "b", "a"]
+    assert [row["model_id"] for row in rows + other + again] == ["a"] * 3 + [
+        "b"
+    ] * 3 + ["a"] * 3
     sizes = [row["parsed_output"].split("|")[2] for row in rows]
     assert sizes == ["6x8", "6x4", "6x10"]
-    assert len({row["inference_id"] for row in rows + again}) == 6
+    assert len({row["inference_id"] for row in rows + other + again}) == 9
+
+
+@pytest.mark.parametrize(
+    "block_type, field",
+    [
+        ("roboflow_core/qwen25vl@v1", "model_id"),
+        ("roboflow_core/smolvlm2@v1", "model_package_id"),
+        ("roboflow_core/qwen3vl@v1", "system_prompt"),
+        ("roboflow_core/qwen3_5vl@v2", "max_new_tokens"),
+    ],
+)
+def test_a_per_image_configuration_selector_fails_compilation(
+    block_type: str, field: str
+) -> None:
+    with pytest.raises(LineageError, match=f"vlm {field} is passed once per call"):
+        _plan(
+            block_type,
+            inputs=({"type": "WorkflowBatchInput", "name": "value"},),
+            **{"model_id": "m", field: "$inputs.value"},
+        )
 
 
 @pytest.mark.parametrize("mode", MODES)
 def test_the_default_model_id_needs_no_step_parameter(mode: str) -> None:
     loader = FakePromptLoader(FakeQwen35)
-    session = _plan("v2/qwen3_5vl@v2", mode=mode).create_session(
+    session = _plan("roboflow_core/qwen3_5vl@v2", mode=mode).create_session(
         {"models": ModelCache(loader)}
     )
 
@@ -142,7 +167,7 @@ def test_the_default_model_id_needs_no_step_parameter(mode: str) -> None:
 def test_prompts_come_from_inputs_per_run_and_per_image() -> None:
     loader = FakePromptLoader(FakeQwen25VL)
     plan = _plan(
-        "v2/qwen25vl@v1",
+        "roboflow_core/qwen25vl@v1",
         inputs=(
             {"type": "WorkflowBatchInput", "name": "question", "kind": ["string"]},
             {"type": "WorkflowParameter", "name": "system", "kind": ["string"]},
@@ -178,7 +203,7 @@ def test_prompts_come_from_inputs_per_run_and_per_image() -> None:
 def test_a_gated_image_is_skipped_and_the_others_keep_their_rows(mode: str) -> None:
     loader = FakePromptLoader(FakeSmolVLM2)
     plan = _plan(
-        "v2/smolvlm2@v1",
+        "roboflow_core/smolvlm2@v1",
         mode=mode,
         inputs=({"type": "WorkflowBatchInput", "name": "keep"},),
         steps=(
@@ -207,11 +232,11 @@ def test_a_gated_image_is_skipped_and_the_others_keep_their_rows(mode: str) -> N
 @pytest.mark.parametrize(
     "block_type, params",
     [
-        ("v2/qwen3vl@v1", {"max_new_tokens": 0}),
-        ("v2/qwen3vl@v1", {"model_id": ""}),
-        ("v2/qwen3vl@v1", {"prompt": 3}),
-        ("v2/smolvlm2@v1", {"system_prompt": "Be brief."}),
-        ("v2/qwen3_5vl@v2", {"enable_thinking": True}),
+        ("roboflow_core/qwen3vl@v1", {"max_new_tokens": 0}),
+        ("roboflow_core/qwen3vl@v1", {"model_id": ""}),
+        ("roboflow_core/qwen3vl@v1", {"prompt": 3}),
+        ("roboflow_core/smolvlm2@v1", {"system_prompt": "Be brief."}),
+        ("roboflow_core/qwen3_5vl@v2", {"enable_thinking": True}),
     ],
 )
 def test_invalid_or_unported_literal_params_fail_at_compile_time(
@@ -222,7 +247,7 @@ def test_invalid_or_unported_literal_params_fail_at_compile_time(
 
 
 def test_the_model_is_declared_as_a_dependent_resource() -> None:
-    plan = _plan("v2/qwen3vl@v1", model_id="qwen3vl-2b-instruct")
+    plan = _plan("roboflow_core/qwen3vl@v1", model_id="qwen3vl-2b-instruct")
 
     (usage,) = discover_workload(plan).resources.items
 
@@ -247,7 +272,7 @@ class _JsonQwen3VL(FakeQwen3VL):
 
 def test_the_text_answer_feeds_a_json_parser_step() -> None:
     plan = _plan(
-        "v2/qwen3vl@v1",
+        "roboflow_core/qwen3vl@v1",
         model_id="m",
         prompt="Return JSON with the brightness.",
         steps=(

@@ -1,4 +1,4 @@
-"""``v2/time_in_zone@v3`` called directly.
+"""``roboflow_core/time_in_zone@v3`` called directly.
 
 The oracle is latest V1 ``roboflow_core/time_in_zone@v3`` (tensor variant);
 the task's randomized parity probe compares whole sequences with it. These
@@ -18,12 +18,8 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.analytics import time_in_zone
-from roboflow_workflows.v2.blocks.analytics.time_in_zone import (
-    MAX_TRACKED_SOURCES,
-    TimeInZoneBlock,
-    TimeInZoneCapacityError,
-)
+from roboflow_workflows.v2.blocks.analytics.time_in_zone import v3 as time_in_zone
+from roboflow_workflows.v2.blocks.analytics.time_in_zone.v3 import MAX_TRACKED_SOURCES, TimeInZoneBlock, TimeInZoneCapacityError
 from roboflow_workflows.v2.data.batch import SampleContext
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks.grid import SegmentationView
@@ -211,7 +207,7 @@ def _retained_tracks(block: TimeInZoneBlock, source: str = "cam-a") -> List[int]
 
 # -------------------------------------------------------------- declaration
 def test_declaration_keeps_v1_output_and_adds_count_and_capacity():
-    assert TimeInZoneBlock.type == "v2/time_in_zone@v3"
+    assert TimeInZoneBlock.type == "roboflow_core/time_in_zone@v3"
     assert set(TimeInZoneBlock.outputs) == {"timed_detections", "count_in_zone"}
     assert TimeInZoneBlock.__block_spec__.prunable is False
     params = _params()

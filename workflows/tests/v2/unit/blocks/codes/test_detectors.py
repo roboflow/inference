@@ -14,13 +14,10 @@ import pytest
 import qrcode
 import torch
 import zxingcpp
-from roboflow_workflows.v2.blocks.codes.detectors import (
-    BarcodeDetectorBlock,
-    QRCodeDetectorBlock,
-    code_detections,
-    host_luminance,
-)
-from roboflow_workflows.v2.blocks.codes.generator import QRCodeGeneratorBlock
+from roboflow_workflows.v2.blocks.codes.barcode_detector.v1 import BarcodeDetectorBlock
+from roboflow_workflows.v2.blocks.codes.qr_code_detector.v1 import QRCodeDetectorBlock
+from roboflow_workflows.v2.blocks.codes._shared.detectors import code_detections, host_luminance
+from roboflow_workflows.v2.blocks.codes.qr_code_generator.v1 import QRCodeGeneratorBlock
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import (

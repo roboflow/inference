@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/stitch_images@v1``, called directly.
+"""Unit tests of ``roboflow_core/stitch_images@v1``, called directly.
 
 Inputs are two overlapping crops of one generated, textured 160 x 320 scene:
 ``left`` covers columns 0-199 and ``right`` columns 120-319. Which crop is
@@ -15,13 +15,8 @@ import cv2 as cv
 import numpy as np
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.image import stitch_images
-from roboflow_workflows.v2.blocks.image.stitch_images import (
-    DEFAULT_MAX_CANVAS_PIXELS,
-    MAX_CANVAS_SIDE,
-    MAX_WARP_SOURCE_SIDE,
-    StitchImagesBlock,
-)
+from roboflow_workflows.v2.blocks.image.stitch_images import v1 as stitch_images
+from roboflow_workflows.v2.blocks.image.stitch_images.v1 import DEFAULT_MAX_CANVAS_PIXELS, MAX_CANVAS_SIDE, MAX_WARP_SOURCE_SIDE, StitchImagesBlock
 from roboflow_workflows.v2.data.image import ImageData
 
 SCENE_HW = (160, 320)

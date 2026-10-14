@@ -4,10 +4,10 @@ Each case runs only when its environment variable names an existing local
 ``inference_models`` package directory; it never downloads. Without them
 every case skips, which is NOT evidence that real inference works:
 
-    QWEN25VL_PACKAGE   v2/qwen25vl@v1
-    QWEN3VL_PACKAGE    v2/qwen3vl@v1
-    QWEN3_5_PACKAGE    v2/qwen3_5vl@v2
-    SMOLVLM2_PACKAGE   v2/smolvlm2@v1
+    QWEN25VL_PACKAGE   roboflow_core/qwen25vl@v1
+    QWEN3VL_PACKAGE    roboflow_core/qwen3vl@v1
+    QWEN3_5_PACKAGE    roboflow_core/qwen3_5vl@v2
+    SMOLVLM2_PACKAGE   roboflow_core/smolvlm2@v1
 
 ``VLM_DEVICE`` selects the device (default ``cpu``). The check is coarse: a
 real model answers every image with non-empty text through a compiled
@@ -23,16 +23,16 @@ from typing import Optional
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, auto_model_loader
-from roboflow_workflows.v2.blocks.models.vlm import BLOCKS
+from roboflow_workflows.v2.blocks.models._catalogue_vlm import BLOCKS
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 
 PACKAGES = {
-    "v2/qwen25vl@v1": "QWEN25VL_PACKAGE",
-    "v2/qwen3vl@v1": "QWEN3VL_PACKAGE",
-    "v2/qwen3_5vl@v2": "QWEN3_5_PACKAGE",
-    "v2/smolvlm2@v1": "SMOLVLM2_PACKAGE",
+    "roboflow_core/qwen25vl@v1": "QWEN25VL_PACKAGE",
+    "roboflow_core/qwen3vl@v1": "QWEN3VL_PACKAGE",
+    "roboflow_core/qwen3_5vl@v2": "QWEN3_5_PACKAGE",
+    "roboflow_core/smolvlm2@v1": "SMOLVLM2_PACKAGE",
 }
 
 

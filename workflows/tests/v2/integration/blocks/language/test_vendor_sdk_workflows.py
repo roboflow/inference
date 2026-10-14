@@ -5,9 +5,9 @@ Gemini are ``httpx.MockTransport`` fakes injected as session resources, and
 the Roboflow platform client is a recording fake. This checks wiring and
 composition, not any real model::
 
-    image ─▶ v2/anthropic_claude@v5 (detection) ─▶ v2/detection_offset@v1
-    image ─▶ v2/google_gemini@v6 (structured) ─▶ v2/json_parser@v1
-    image ─▶ v2/google_gemini@v6 (managed key) ─▶ host platform client
+    image ─▶ roboflow_core/anthropic_claude@v5 (detection) ─▶ roboflow_core/detection_offset@v1
+    image ─▶ roboflow_core/google_gemini@v6 (structured) ─▶ roboflow_core/json_parser@v1
+    image ─▶ roboflow_core/google_gemini@v6 (managed key) ─▶ host platform client
 """
 
 import json
@@ -15,10 +15,10 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
-from roboflow_workflows.v2.blocks.geometry.offset import DetectionOffsetBlock
-from roboflow_workflows.v2.blocks.language.anthropic import AnthropicClaudeBlock
-from roboflow_workflows.v2.blocks.language.gemini import GoogleGeminiBlock
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
+from roboflow_workflows.v2.blocks.geometry.detection_offset.v1 import DetectionOffsetBlock
+from roboflow_workflows.v2.blocks.language.anthropic_claude.v5 import AnthropicClaudeBlock
+from roboflow_workflows.v2.blocks.language.google_gemini.v6 import GoogleGeminiBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.language import LANGUAGE_MODEL_OUTPUT_KIND
 from roboflow_workflows.v2.data.secrets import SECRET_KIND, Secret
@@ -95,7 +95,7 @@ def test_claude_detections_from_a_secret_key_feed_a_geometry_step() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/anthropic_claude@v5",
+                "type": "roboflow_core/anthropic_claude@v5",
                 "name": "claude",
                 "images": "$inputs.image",
                 "task_type": "object-detection",
@@ -103,7 +103,7 @@ def test_claude_detections_from_a_secret_key_feed_a_geometry_step() -> None:
                 "api_key": "$inputs.vendor_key",
             },
             {
-                "type": "v2/detection_offset@v1",
+                "type": "roboflow_core/detection_offset@v1",
                 "name": "offset",
                 "predictions": "$steps.claude.predictions",
                 "offset_width": 10,
@@ -139,7 +139,7 @@ def test_gemini_structured_answer_feeds_the_json_parser() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/google_gemini@v6",
+                "type": "roboflow_core/google_gemini@v6",
                 "name": "gemini",
                 "images": "$inputs.image",
                 "task_type": "structured-answering",
@@ -147,7 +147,7 @@ def test_gemini_structured_answer_feeds_the_json_parser() -> None:
                 "api_key": "$inputs.vendor_key",
             },
             {
-                "type": "v2/json_parser@v1",
+                "type": "roboflow_core/json_parser@v1",
                 "name": "parse",
                 "raw_json": "$steps.gemini.output",
                 "expected_fields": ["count"],
@@ -174,7 +174,7 @@ def test_managed_gemini_key_uses_the_host_platform_client() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/google_gemini@v6",
+                "type": "roboflow_core/google_gemini@v6",
                 "name": "gemini",
                 "images": "$inputs.image",
                 "task_type": "classification",
@@ -217,7 +217,7 @@ def test_a_gated_image_sends_no_request() -> None:
                 "next_steps": ["$steps.claude"],
             },
             {
-                "type": "v2/anthropic_claude@v5",
+                "type": "roboflow_core/anthropic_claude@v5",
                 "name": "claude",
                 "images": "$inputs.image",
                 "prompt": "Describe.",
@@ -248,7 +248,7 @@ def test_a_gated_image_sends_no_request() -> None:
 def test_a_failed_request_fails_the_step_without_the_key(vendor) -> None:
     key = ANTHROPIC_KEY if vendor == "claude" else GOOGLE_KEY
     block_type = (
-        "v2/anthropic_claude@v5" if vendor == "claude" else "v2/google_gemini@v6"
+        "roboflow_core/anthropic_claude@v5" if vendor == "claude" else "roboflow_core/google_gemini@v6"
     )
     plan = _compile(
         [
@@ -283,14 +283,14 @@ def test_workload_introspection_reports_both_vendors() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/anthropic_claude@v5",
+                "type": "roboflow_core/anthropic_claude@v5",
                 "name": "claude",
                 "images": "$inputs.image",
                 "prompt": "Describe.",
                 "model_version": "claude-haiku-4-5",
             },
             {
-                "type": "v2/google_gemini@v6",
+                "type": "roboflow_core/google_gemini@v6",
                 "name": "gemini",
                 "images": "$inputs.image",
                 "prompt": "Describe.",

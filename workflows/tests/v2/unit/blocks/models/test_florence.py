@@ -9,17 +9,13 @@ from pathlib import Path
 import pytest
 import torch
 from pydantic import Field
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
 from roboflow_workflows.v2.blocks.models.cache import (
     ModelCache,
     ModelRequest,
     ModelRequestConflict,
 )
-from roboflow_workflows.v2.blocks.models.florence import (
-    BLOCKS,
-    TASK_TOKENS,
-    Florence2Block,
-)
+from roboflow_workflows.v2.blocks.models.florence_2.v2 import BLOCKS, TASK_TOKENS, Florence2Block
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.kinds import STRING_KIND
@@ -218,19 +214,19 @@ def test_every_v1_task_compiles_and_sends_the_exact_prompt(task, mode):
 @pytest.mark.parametrize("mode", ["run", "phases"])
 def test_selected_tasks_prompts_classes_boxes_and_packages_keep_order_and_cache(mode):
     loader = Loader()
-    names = ("task", "prompt", "classes", "box", "model", "package", "selection")
-    kinds = (
-        "string",
-        "string",
-        "list_of_values",
-        "list_of_values",
-        "string",
-        "string",
-        "string",
+    per_run = (
+        ("task", "string"),
+        ("model", "string"),
+        ("package", "string"),
+        ("classes", "list_of_values"),
     )
+    per_image = (("prompt", "string"), ("box", "list_of_values"))
     inputs = tuple(
+        {"type": "WorkflowParameter", "name": name, "kind": [kind]}
+        for name, kind in per_run + (("selection", "string"),)
+    ) + tuple(
         {"type": "WorkflowBatchInput", "name": name, "kind": [kind]}
-        for name, kind in zip(names, kinds)
+        for name, kind in per_image
     )
     session = _plan(
         mode=mode,
@@ -244,27 +240,66 @@ def test_selected_tasks_prompts_classes_boxes_and_packages_keep_order_and_cache(
         grounding_selection_mode="$inputs.selection",
     ).create_session({"models": ModelCache(loader)})
     images = _images()
-    values = dict(
+    detect = dict(
         image=images,
-        task=["caption", "open-vocabulary-object-detection", "detection-grounded-ocr"],
+        task="open-vocabulary-object-detection",
         prompt=[None, None, None],
-        classes=[None, ["cat"], None],
-        box=[None, None, [0.0, 0.0, 0.5, 0.5]],
-        model=["m", "other", "m"],
-        package=["p", None, "p"],
-        selection=["first"] * 3,
+        classes=["cat", "dog"],
+        box=[None, None, None],
+        model="m",
+        package="p",
+        selection="first",
     )
-    rows = session.run(values).rows()
-    again = session.run(values).rows()
+    read = dict(
+        detect,
+        task="detection-grounded-ocr",
+        classes=None,
+        box=[[0.0, 0.0, 0.5, 0.5], [0, 0, 20, 10], [0.0, 0.0, 1.0, 1.0]],
+        model="other",
+        package=None,
+    )
+    rows = session.run(detect).rows()
+    other = session.run(read).rows()
+    again = session.run(detect).rows()
     assert loader.loaded == [ModelRequest("m", "p"), ModelRequest("other")]
-    assert [row["model_id"] for row in rows] == ["m", "other", "m"]
-    assert json.loads(rows[0]["raw_output"]) == "answer-10"
-    assert json.loads(rows[2]["raw_output"]) == "answer-90"
+    assert [row["model_id"] for row in rows + other] == ["m"] * 3 + ["other"] * 3
+    assert [row["classes"] for row in rows] == [["cat", "dog"]] * 3
     calls = loader.models[ModelRequest("m", "p")].calls
-    assert calls[0]["images"][0] is images[0].tensor_image
-    assert calls[1]["images"][0] is images[2].tensor_image
-    assert calls[1]["prompt"] == "<REGION_TO_OCR><loc_0><loc_0><loc_500><loc_500>"
-    assert len({row["inference_id"] for row in rows + again}) == 6
+    assert [call["prompt"] for call in calls[:3]] == [
+        "<OPEN_VOCABULARY_DETECTION>cat<and>dog"
+    ] * 3
+    assert [call["images"][0] for call in calls[:3]] == [
+        image.tensor_image for image in images
+    ]
+    read_calls = loader.models[ModelRequest("other")].calls
+    assert [call["prompt"] for call in read_calls] == [
+        "<REGION_TO_OCR><loc_0><loc_0><loc_500><loc_500>",
+        "<REGION_TO_OCR><loc_0><loc_0><loc_500><loc_500>",
+        "<REGION_TO_OCR><loc_0><loc_0><loc_999><loc_999>",
+    ]
+    assert [json.loads(row["raw_output"]) for row in other] == [
+        "answer-10",
+        "answer-30",
+        "answer-90",
+    ]
+    assert len({row["inference_id"] for row in rows + other + again}) == 9
+
+
+@pytest.mark.parametrize(
+    "field,kind",
+    [
+        ("model_id", "string"),
+        ("task_type", "string"),
+        ("classes", "list_of_values"),
+        ("grounding_selection_mode", "string"),
+    ],
+)
+def test_a_per_image_configuration_selector_fails_compilation(field, kind):
+    with pytest.raises(Exception, match=f"{field} is passed once per call"):
+        _plan(
+            inputs=({"type": "WorkflowBatchInput", "name": "value", "kind": [kind]},),
+            **{"model_id": "m", "task_type": "caption", field: "$inputs.value"},
+        )
 
 
 @pytest.mark.parametrize("mode", ["run", "phases"])
@@ -405,12 +440,20 @@ def test_empty_grounding_retains_explicit_null_row_and_loads_nothing_for_it():
     loader = Loader()
     block = Florence2Block(models=ModelCache(loader))
     images = _images()[:2]
+    nothing = block.run(
+        image=Batch(images),
+        model_id="unused",
+        task_type="detection-grounded-ocr",
+        grounding_detection=Batch([_detections(()), _detections(())]),
+    )
     rows = block.run(
         image=Batch(images),
-        model_id=Batch(["unused", "m"]),
+        model_id="m",
         task_type="detection-grounded-ocr",
         grounding_detection=Batch([_detections(()), _detections()]),
     )
+    # A call whose every row has no box loads no model.
+    assert [row["raw_output"] for row in nothing] == [None, None]
     assert loader.loaded == [ModelRequest("m")]
     assert [rows[0][name] for name in ("raw_output", "parsed_output", "classes")] == [
         None
@@ -531,14 +574,33 @@ def test_direct_calls_validate_before_load(field, value):
     assert loader.loaded == []
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("model_id", Batch(["m", "m", "m"])),
+        ("model_package_id", Batch([None, None, None])),
+        ("task_type", Batch(["caption", "caption", "caption"])),
+        ("classes", Batch([["cat"], ["dog"], ["cat"]])),
+        ("grounding_selection_mode", Batch(["first", "first", "first"])),
+    ],
+)
+def test_direct_calls_reject_per_image_configuration_before_load(field, value):
+    loader = Loader()
+    params = dict(model_id="m", task_type="caption")
+    params[field] = value
+    with pytest.raises(ValueError, match=f"{field} is one value for every image"):
+        Florence2Block(models=ModelCache(loader)).run(image=Batch(_images()), **params)
+    assert loader.loaded == []
+
+
 def test_a_bad_later_row_does_not_load_or_invoke_earlier_rows():
     loader = Loader()
     with pytest.raises(ValueError, match="prompt must be non-empty"):
         Florence2Block(models=ModelCache(loader)).run(
             image=Batch(_images()[:2]),
             model_id="m",
-            task_type=Batch(["caption", "custom"]),
-            prompt=Batch([None, ""]),
+            task_type="custom",
+            prompt=Batch(["<CUSTOM>ok", ""]),
         )
     assert loader.loaded == []
     with pytest.raises(ValueError, match="has 1 values for 3 images"):
@@ -555,13 +617,8 @@ def _rows(values, rows):
 @pytest.mark.parametrize(
     "field,values",
     [
-        ("model_id", ["m", "m"]),
-        ("model_package_id", [None, None]),
-        ("task_type", ["caption", "caption"]),
         ("prompt", ["one", "two"]),
-        ("classes", [["cat"], ["dog"]]),
         ("grounding_detection", [[0, 0, 20, 10], [0, 0, 10, 10]]),
-        ("grounding_selection_mode", ["first", "last"]),
     ],
 )
 @pytest.mark.parametrize(
@@ -588,33 +645,28 @@ def test_misaligned_per_image_values_fail_before_loading_or_invoking(
 
 
 def test_aligned_sparse_per_image_values_follow_their_images_and_scalars_broadcast():
-    models = {"m": FakeFlorence(), "other": FakeFlorence()}
+    model = FakeFlorence()
     images = _images()
-    rows = Florence2Block(models=models).run(
+    rows = Florence2Block(models={"m": model}).run(
         image=_rows(images, (2, 5, 7)),
-        model_id=_rows(["m", "other", "m"], (2, 5, 7)),
-        task_type=_rows(
-            ["caption", "detection-grounded-ocr", "open-vocabulary-object-detection"],
-            (2, 5, 7),
+        model_id="m",
+        task_type="detection-grounded-ocr",
+        grounding_detection=_rows(
+            [[0.0, 0.0, 0.5, 0.5], _detections(()), [0, 0, 20, 10]], (2, 5, 7)
         ),
-        classes=_rows([None, None, ["cat"]], (2, 5, 7)),
-        grounding_detection=_rows([None, [0.0, 0.0, 0.5, 0.5], None], (2, 5, 7)),
         grounding_selection_mode="first",
     )
-    assert [row["model_id"] for row in rows] == ["m", "other", "m"]
-    assert [c["prompt"] for c in models["m"].calls] == [
-        "<CAPTION>",
-        "<OPEN_VOCABULARY_DETECTION>cat",
+    assert [row["model_id"] for row in rows] == ["m", "m", "m"]
+    assert [c["prompt"] for c in model.calls] == [
+        "<REGION_TO_OCR><loc_0><loc_0><loc_500><loc_500>",
+        "<REGION_TO_OCR><loc_0><loc_0><loc_500><loc_500>",
     ]
-    assert [c["prompt"] for c in models["other"].calls] == [
-        "<REGION_TO_OCR><loc_0><loc_0><loc_500><loc_500>"
-    ]
-    sent = [c["images"][0] for c in models["m"].calls + models["other"].calls]
-    expected = [images[0], images[2], images[1]]
+    sent = [c["images"][0] for c in model.calls]
+    expected = [images[0], images[2]]
     assert all(tensor is image.tensor_image for tensor, image in zip(sent, expected))
     assert json.loads(rows[0]["raw_output"]) == "answer-10"
-    assert json.loads(rows[1]["raw_output"]) == "answer-30"
-    assert rows[2]["classes"] == ["cat"]
+    assert rows[1]["raw_output"] is None
+    assert json.loads(rows[2]["raw_output"]) == "answer-90"
 
 
 @pytest.mark.parametrize(
@@ -829,17 +881,13 @@ def test_compiled_empty_input_and_bad_later_selected_row_load_nothing():
         task_type="$inputs.task",
         prompt="$inputs.prompt",
         inputs=(
-            {"type": "WorkflowBatchInput", "name": "task", "kind": ["string"]},
+            {"type": "WorkflowParameter", "name": "task", "kind": ["string"]},
             {"type": "WorkflowBatchInput", "name": "prompt", "kind": ["string"]},
         ),
     ).create_session({"models": ModelCache(loader)})
     with pytest.raises(WorkflowExecutionError):
         session.run(
-            {
-                "image": _images()[:2],
-                "task": ["caption", "custom"],
-                "prompt": [None, ""],
-            }
+            {"image": _images()[:2], "task": "custom", "prompt": ["<CUSTOM>ok", ""]}
         )
     assert loader.loaded == []
 
@@ -852,14 +900,10 @@ def test_grayscale_and_missing_prompt_model_fail_without_inference():
             image=Batch([gray]), task_type="caption"
         )
     assert loader.loaded == []
-    fake = FakeFlorence()
     with pytest.raises(ValueError, match="provide prompt"):
-        Florence2Block(models={"good": fake, "bad": object()}).run(
-            image=Batch(_images()[:2]),
-            model_id=Batch(["good", "bad"]),
-            task_type="caption",
+        Florence2Block(models={"bad": object()}).run(
+            image=Batch(_images()[:2]), model_id="bad", task_type="caption"
         )
-    assert fake.calls == []
 
 
 @pytest.mark.parametrize("box", [[0, 0.0, 1, 1.0], [False, 0, 2, 3]])
@@ -1148,8 +1192,6 @@ def test_direct_call_rejects_an_unknown_coordinate_system_before_load():
     "field,values,error",
     [
         ("prompt", [None, 4], "prompt must be text or None"),
-        ("task_type", ["caption", "Caption"], "Unsupported Florence task_type"),
-        ("model_id", ["m", ""], "model_id must be a non-empty string"),
         ("grounding_detection", [None, [0, 0, 0.5, 1]], "set grounding_coordinate"),
     ],
 )
@@ -1163,8 +1205,36 @@ def test_direct_call_errors_name_the_logical_index_of_the_failing_image(
         Florence2Block(models=ModelCache(loader)).run(
             image=_rows(_images()[:2], (3, 8)), **params
         )
-    assert str(caught.value).startswith("v2/florence_2@v2: image at index [8]: ")
+    assert str(caught.value).startswith("roboflow_core/florence_2@v2: image at index [8]: ")
     assert error in str(caught.value)
+    assert loader.loaded == []
+
+
+@pytest.mark.parametrize(
+    "settings,error",
+    [
+        ({"task_type": "bogus"}, "Unsupported Florence task_type 'bogus'"),
+        (
+            {"task_type": "open-vocabulary-object-detection", "classes": None},
+            "classes must be a non-empty list for task",
+        ),
+        ({"task_type": "caption", "classes": ["a", ""]}, "non-empty strings"),
+        (
+            {"task_type": "caption", "grounding_selection_mode": "largest"},
+            "Unknown grounding selection mode: 'largest'",
+        ),
+    ],
+)
+def test_direct_call_setting_errors_name_no_image(settings, error):
+    # One-per-call settings fail once, before any per-image check or load.
+    loader = Loader()
+    with pytest.raises(ValueError) as caught:
+        Florence2Block(models=ModelCache(loader)).run(
+            image=_rows(_images()[:2], (3, 8)), model_id="m", **settings
+        )
+    assert str(caught.value).startswith("roboflow_core/florence_2@v2: ")
+    assert error in str(caught.value)
+    assert "image at index" not in str(caught.value)
     assert loader.loaded == []
 
 

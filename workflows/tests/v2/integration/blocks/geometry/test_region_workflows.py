@@ -58,7 +58,7 @@ def run(steps, outputs, *, inputs, extra_inputs=()):
 def sahi_steps(*, image="$inputs.image", strategy="$inputs.strategy"):
     steps = [
         {
-            "type": "v2/image_slicer@v1",
+            "type": "roboflow_core/image_slicer@v2",
             "name": "slicer",
             "image": image,
             "slice_width": 80,
@@ -72,7 +72,7 @@ def sahi_steps(*, image="$inputs.image", strategy="$inputs.strategy"):
             "image": "$steps.slicer.slices",
         },
         {
-            "type": "v2/detections_stitch@v1",
+            "type": "roboflow_core/detections_stitch@v1",
             "name": "stitch",
             "reference_image": image,
             "predictions": "$steps.detect.predictions",
@@ -145,7 +145,7 @@ def test_stitch_into_a_crop_that_was_sliced_again() -> None:
     # Crop x 40..128 of the input, then slice that crop; stitch into the crop.
     steps = [
         {
-            "type": "v2/absolute_static_crop@v1",
+            "type": "roboflow_core/absolute_static_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "x_center": 84,
@@ -185,7 +185,7 @@ def test_stitch_of_an_image_without_detections_is_empty() -> None:
 TWO_STAGE_STEPS = [
     {"type": "test/marker_detector@v1", "name": "detect", "image": "$inputs.image"},
     {
-        "type": "v2/dynamic_crop@v1",
+        "type": "roboflow_core/dynamic_crop@v1",
         "name": "crop",
         "image": "$inputs.image",
         "predictions": "$steps.detect.predictions",
@@ -196,7 +196,7 @@ TWO_STAGE_STEPS = [
         "image": "$steps.crop.crops",
     },
     {
-        "type": "v2/detections_classes_replacement@v1",
+        "type": "roboflow_core/detections_classes_replacement@v1",
         "name": "replace",
         "object_detection_predictions": "$steps.detect.predictions",
         "classification_predictions": "$steps.classify.predictions",
@@ -236,13 +236,13 @@ def test_gated_crop_falls_back_and_ungated_rows_keep_their_classes() -> None:
     steps = [
         *TWO_STAGE_STEPS[:2],
         {
-            "type": "v2/has_brightness",
+            "type": "roboflow_core/has_brightness@v1",
             "name": "bright",
             "image": "$steps.crop.crops",
             "minimum": 100.0,
         },
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "gate",
             "condition": "$steps.bright.keep",
             "next_steps": ["$steps.classify"],
@@ -279,7 +279,7 @@ def test_dimension_collapse_lists_crop_results_per_image() -> None:
     steps = [
         *TWO_STAGE_STEPS[:3],
         {
-            "type": "v2/dimension_collapse@v1",
+            "type": "roboflow_core/dimension_collapse@v1",
             "name": "collect",
             "data": "$steps.classify.predictions",
         },
@@ -328,13 +328,13 @@ def gate_all(source_step, guarded_step):
     # every child is filtered.
     return [
         {
-            "type": "v2/has_brightness",
+            "type": "roboflow_core/has_brightness@v1",
             "name": "bright",
             "image": source_step,
             "minimum": 255.0,
         },
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "gate",
             "condition": "$steps.bright.keep",
             "next_steps": [guarded_step],
@@ -348,7 +348,7 @@ def test_all_children_filtered_still_reach_the_group_blocks() -> None:
         *gate_all("$steps.crop.crops", "$steps.classify"),
         *TWO_STAGE_STEPS[2:],
         {
-            "type": "v2/dimension_collapse@v1",
+            "type": "roboflow_core/dimension_collapse@v1",
             "name": "collect",
             "data": "$steps.classify.predictions",
         },
@@ -394,7 +394,7 @@ def test_stitch_with_every_slice_filtered_is_empty() -> None:
 def test_resize_then_detect_maps_boxes_back_to_the_input() -> None:
     steps = [
         {
-            "type": "v2/image_preprocessing@v1",
+            "type": "roboflow_core/image_preprocessing@v1",
             "name": "resize",
             "image": "$inputs.image",
             "task_type": "resize",
@@ -427,7 +427,7 @@ def test_stitch_refuses_resized_slices_with_a_clear_error() -> None:
     steps.insert(
         1,
         {
-            "type": "v2/image_preprocessing@v1",
+            "type": "roboflow_core/image_preprocessing@v1",
             "name": "resize",
             "image": "$steps.slicer.slices",
             "task_type": "resize",
@@ -460,7 +460,7 @@ def test_compiled_bounding_rect_follows_the_outline(with_hole, output):
                 "image": "$inputs.image",
             },
             {
-                "type": "v2/bounding_rect@v1",
+                "type": "roboflow_core/bounding_rect@v1",
                 "name": "rect",
                 "predictions": f"$steps.detect.{output}",
             },

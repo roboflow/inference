@@ -15,11 +15,8 @@ from inference_models.models.common.roboflow.model_packages import (
 )
 from pycocotools import mask as mask_utils
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.fusion import overlap_analysis as module
-from roboflow_workflows.v2.blocks.fusion.overlap_analysis import (
-    DETECTIONS_OVERLAPS_KIND,
-    OverlapAnalysisBlock,
-)
+from roboflow_workflows.v2.blocks.fusion.overlap_analysis import v1 as module
+from roboflow_workflows.v2.blocks.fusion.overlap_analysis.v1 import DETECTIONS_OVERLAPS_KIND, OverlapAnalysisBlock
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks.grid import MaskGridGeometry, SegmentationView

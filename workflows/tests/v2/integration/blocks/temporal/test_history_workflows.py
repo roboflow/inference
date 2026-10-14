@@ -1,4 +1,4 @@
-"""``v2/frame_delay@v1`` and ``v2/image_copy@v1`` in compiled workflows.
+"""``roboflow_core/frame_delay@v1`` and ``roboflow_core/image_copy@v1`` in compiled workflows.
 
 Two cameras share one sparse source, shaped like ``video/stream_set@v1``: a
 stationary ``camera`` axis whose absent cameras are omitted. Camera 0 has a
@@ -25,10 +25,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.control.blocks import ContinueIfBlock
-from roboflow_workflows.v2.blocks.image.copy import ImageCopyBlock
+from roboflow_workflows.v2.blocks.control.continue_if_boolean.v1 import ContinueIfBlock
+from roboflow_workflows.v2.blocks.image.image_copy.v1 import ImageCopyBlock
 from roboflow_workflows.v2.blocks.temporal import FrameDelayBlock
-from roboflow_workflows.v2.blocks.temporal.frame_delay import FrameHistoryCapacityError
+from roboflow_workflows.v2.blocks.temporal.frame_delay.v1 import FrameHistoryCapacityError
 from roboflow_workflows.v2.data.batch import (
     Axis,
     Batch,

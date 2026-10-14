@@ -21,12 +21,10 @@ from roboflow_workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
 )
 from roboflow_workflows.v2.blocks.analytics.zones import parse_line, parse_polygons
-from roboflow_workflows.v2.blocks.visualization.annotations.zones import (
-    LineCounterVisualizationBlock,
-    PolygonZoneVisualizationBlock,
-    ReferencePathVisualizationBlock,
-    polygon_zones,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.line_counter_visualization.v1 import LineCounterVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.polygon_zone_visualization.v1 import PolygonZoneVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.reference_path_visualization.v1 import ReferencePathVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations._shared.zones import polygon_zones
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError

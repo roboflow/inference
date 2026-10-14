@@ -1,8 +1,6 @@
 """Model blocks and the host-owned model cache they read models from."""
 
-from roboflow_workflows.v2.blocks.models.action_recognition import (
-    ActionRecognitionBlock,
-)
+from roboflow_workflows.v2.blocks.models.roboflow_action_recognition_model.v1 import ActionRecognitionBlock
 from roboflow_workflows.v2.blocks.models.cache import (
     ModelCache,
     ModelLoadError,
@@ -11,63 +9,35 @@ from roboflow_workflows.v2.blocks.models.cache import (
     ModelRequestConflict,
     auto_model_loader,
 )
-from roboflow_workflows.v2.blocks.models.classification import (
-    ClassificationBlock,
-    MultiLabelClassificationBlock,
-)
-from roboflow_workflows.v2.blocks.models.detection import (
-    ObjectDetectionBlock,
-)
-from roboflow_workflows.v2.blocks.models.instance_segmentation import (
-    InstanceSegmentationBlock,
-)
-from roboflow_workflows.v2.blocks.models.keypoints import KeypointDetectionBlock
-from roboflow_workflows.v2.blocks.models.sam_interactive import (
-    SegmentAnything3InteractiveBlock,
-)
-from roboflow_workflows.v2.blocks.models.sam_video import (
-    SegmentAnything2VideoBlock,
-    SegmentAnything3VideoBlock,
-)
-from roboflow_workflows.v2.blocks.models.segment_anything import (
-    SegmentAnything2Block,
-    SegmentAnything3Block,
-)
-from roboflow_workflows.v2.blocks.models.semantic_segmentation import (
-    SemanticSegmentationBlock,
-)
+from roboflow_workflows.v2.blocks.models.roboflow_classification_model.v3 import ClassificationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_multi_label_classification_model.v3 import MultiLabelClassificationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_keypoint_detection_model.v3 import KeypointDetectionBlock
+from roboflow_workflows.v2.blocks.models.sam3_interactive.v1 import SegmentAnything3InteractiveBlock
+from roboflow_workflows.v2.blocks.models.segment_anything_2_video.v1 import SegmentAnything2VideoBlock
+from roboflow_workflows.v2.blocks.models.sam3_video.v1 import SegmentAnything3VideoBlock
+from roboflow_workflows.v2.blocks.models.segment_anything.v1 import SegmentAnything2Block
+from roboflow_workflows.v2.blocks.models.sam3.v3 import SegmentAnything3Block
+from roboflow_workflows.v2.blocks.models.roboflow_semantic_segmentation_model.v2 import SemanticSegmentationBlock
 
-from roboflow_workflows.v2.blocks.models.cosmos import Cosmos3EdgeBlock
-from roboflow_workflows.v2.blocks.models.florence import Florence2Block
-from roboflow_workflows.v2.blocks.models.remote_ocr import GoogleVisionOCRBlock
-from roboflow_workflows.v2.blocks.models.moondream import Moondream2Block
-from roboflow_workflows.v2.blocks.models.qwen_vlm import QwenVLMBlock
+from roboflow_workflows.v2.blocks.models.cosmos3_edge.v1 import Cosmos3EdgeBlock
+from roboflow_workflows.v2.blocks.models.florence_2.v2 import Florence2Block
+from roboflow_workflows.v2.blocks.models.google_vision_ocr.v1 import GoogleVisionOCRBlock
+from roboflow_workflows.v2.blocks.models.moondream2.v1 import Moondream2Block
+from roboflow_workflows.v2.blocks.models.qwen_vlm.v4 import QwenVLMBlock
 
-from roboflow_workflows.v2.blocks.models.vlm import (
-    Qwen35VLBlock,
-)
+from roboflow_workflows.v2.blocks.models.qwen3_5vl.v2 import Qwen35VLBlock
 
-from roboflow_workflows.v2.blocks.models.clip_comparison import (
-    ClipComparisonBlock,
-)
-from roboflow_workflows.v2.blocks.models.depth import (
-    DepthEstimationBlock,
-)
-from roboflow_workflows.v2.blocks.models.embeddings import (
-    ClipEmbeddingBlock,
-    PerceptionEncoderEmbeddingBlock,
-)
-from roboflow_workflows.v2.blocks.models.glm_ocr import (
-    GlmOcrBlock,
-)
-from roboflow_workflows.v2.blocks.models.ocr import (
-    OCRModelBlock,
-    EasyOCRBlock,
-    PPOCRBlock,
-)
-from roboflow_workflows.v2.blocks.models.vlm import (
-    SmolVLM2Block,
-)
+from roboflow_workflows.v2.blocks.models.clip_comparison.v2 import ClipComparisonBlock
+from roboflow_workflows.v2.blocks.models.depth_estimation.v1 import DepthEstimationBlock
+from roboflow_workflows.v2.blocks.models.clip.v1 import ClipEmbeddingBlock
+from roboflow_workflows.v2.blocks.models.perception_encoder.v1 import PerceptionEncoderEmbeddingBlock
+from roboflow_workflows.v2.blocks.models.glm_ocr.v1 import GlmOcrBlock
+from roboflow_workflows.v2.blocks.models.ocr_model.v1 import OCRModelBlock
+from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import EasyOCRBlock
+from roboflow_workflows.v2.blocks.models.pp_ocr.v1 import PPOCRBlock
+from roboflow_workflows.v2.blocks.models.smolvlm2.v1 import SmolVLM2Block
 
 BLOCKS = (
     Cosmos3EdgeBlock,

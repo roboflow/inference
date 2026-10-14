@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/camera_focus@v2``, called directly.
+"""Unit tests of ``roboflow_core/camera_focus@v2``, called directly.
 
 The Tenengrad score of a step edge is worked out by hand. Overlays, scores
 and box scores are compared with V1's ``visualize_tenengrad_measure`` on V1's
@@ -13,7 +13,7 @@ import torch
 from roboflow_workflows.core_steps.classical_cv.camera_focus.v2 import (
     visualize_tenengrad_measure,
 )
-from roboflow_workflows.v2.blocks.image.camera_focus import CameraFocusBlock
+from roboflow_workflows.v2.blocks.image.camera_focus.v2 import CameraFocusBlock
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef

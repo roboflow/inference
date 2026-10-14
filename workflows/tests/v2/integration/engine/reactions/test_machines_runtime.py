@@ -13,9 +13,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pytest
-from roboflow_workflows.v2.blocks.state.machines import (
-    StateMachineSetBlock,
-)
+from roboflow_workflows.v2.blocks.state.state_machine_set.v1 import StateMachineSetBlock
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import ContractError
 from roboflow_workflows.v2.engine.reactions import EventOrigin

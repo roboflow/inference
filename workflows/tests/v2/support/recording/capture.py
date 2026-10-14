@@ -209,7 +209,7 @@ def primary_definition(**sections: Any) -> Dict[str, Any]:
         "sources": [{"type": "test/recorded_feed@v1", "name": "cam", "feed": "cam"}],
         "operators": [
             {
-                "type": "v2/window@v1",
+                "type": "roboflow_core/window@v1",
                 "name": "w",
                 "size": 2,
                 "collect": {"v": "$sources.cam.value"},

@@ -2,7 +2,7 @@
 
 One compiled workflow::
 
-    detections ─▶ v2/trackers_botsort ─▶ v2/dot_visualization (TRACK)
+    detections ─▶ roboflow_core/trackers_botsort@v1 ─▶ roboflow_core/dot_visualization@v1 (TRACK)
 
 With V1 defaults BoT-SORT reports no rows on frame 0 (tracks not yet
 confirmed) and boxes A, B from frame 1. A detector frame with no rows also
@@ -15,10 +15,8 @@ from datetime import datetime
 import numpy as np
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.tracking.botsort import BoTSORTTrackerBlock
-from roboflow_workflows.v2.blocks.visualization.annotations.dot import (
-    DotVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.tracking.trackers_botsort.v1 import BoTSORTTrackerBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.dot_visualization.v1 import DotVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow

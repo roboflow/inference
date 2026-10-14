@@ -13,12 +13,10 @@ import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.analytics.line_counter import LineCounterBlock
-from roboflow_workflows.v2.blocks.analytics.time_in_zone import TimeInZoneBlock
-from roboflow_workflows.v2.blocks.visualization.annotations.zones import (
-    LineCounterVisualizationBlock,
-    PolygonZoneVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.analytics.line_counter.v2 import LineCounterBlock
+from roboflow_workflows.v2.blocks.analytics.time_in_zone.v3 import TimeInZoneBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.line_counter_visualization.v1 import LineCounterVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.polygon_zone_visualization.v1 import PolygonZoneVisualizationBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.plan import CompileOptions
@@ -53,7 +51,7 @@ def _plan(*, mode, tracking=True):
         ],
         "steps": [
             {
-                "type": "v2/trackers_bytetrack@v1",
+                "type": "roboflow_core/trackers_bytetrack@v1",
                 "name": "track",
                 "image": "$inputs.image",
                 "predictions": "$inputs.predictions",

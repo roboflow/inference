@@ -1,12 +1,24 @@
-"""Steps every task-model block shares: models, request groups and options.
+"""Steps every task-model block shares: model selection and options.
 
-A task-model block runs one model call per phase and distinct request::
+A step's model and options are one value for the whole image batch of a
+call; a selector may change them between calls, not between the images of
+one call. A task-model block runs one model call per phase::
 
-    network_input   check images and options, group rows by ModelRequest,
-                    resolve every model, then pre_process each group
-    raw_output      forward each group once
-    result          post_process each group with the options its model reads,
-                    then scatter the per-image results back to row order
+    network_input   check images and options, resolve the call's model,
+                    bind its options, pre_process all images  -> ModelInput
+    raw_output      model.forward(batch)
+    result          model.post_process(raw, metadata, **options), then one
+                    result per image, in batch order
+
+``ModelInput`` is built by each call and passed between its phases; the block
+instance holds only the model cache, so overlapping calls share nothing else.
+An empty batch resolves no model: ``network_input`` returns ``None`` and the
+later phases return nothing.
+
+A selector that varies per image cannot bind a model id, package id, class
+filter or option: these fields are not batch-delivered, so compilation
+rejects such a binding. A direct ``run()`` caller passing a ``Batch`` gets an
+explicit error instead of the first image's value, before any model loads.
 
 Options reach a model only through its ``post_process`` keywords. An option
 the step does not set gets its V1 default, and only when the model names that
@@ -22,8 +34,7 @@ the backends that name a keyword but never use it. Both facts come from a
 source survey of the ``inference_models`` task backends; the task's
 supported-keyword matrix records it.
 
-``class_filter`` may differ per image. Rows that share a model request still
-form one group and one forward; each row keeps its own classes.
+``class_filter`` is one list (or ``None``) for every image of the call.
 """
 
 import difflib
@@ -75,31 +86,28 @@ from roboflow_workflows.v2.engine.declaration import (
 
 MODELS_RESOURCE = "models"
 
-# Literal ids, or selectors; ids that vary per image arrive as a Batch. A
-# selected package may be None (the loader chooses); a selected model id may not.
-ModelIdField = StrictStr | Ref(STRING_KIND, batch="if_varying")
-PackageIdField = Optional[StrictStr] | Ref(
-    STRING_KIND, batch="if_varying", allow_none=True
-)
-# A literal list, or a selector; a filter that varies per image arrives as a
-# Batch whose members may be None (keep every class of that image).
+# Compatibility exports (field aliases, description and output constants,
+# ModelSelectionParams, NmsParams, model_dependency): core model blocks declare
+# their own fields; these stay until the remaining D1 cohorts stop importing them.
+# A literal id, or a selector of one id for the whole call. A selected package
+# may be None (the loader chooses); a selected model id may not.
+ModelIdField = StrictStr | Ref(STRING_KIND)
+PackageIdField = Optional[StrictStr] | Ref(STRING_KIND, allow_none=True)
+# A literal list, or a selector of one list (or None) for the whole call.
 ClassFilterParam = Optional[List[StrictStr]] | Ref(
-    LIST_OF_VALUES_KIND, batch="if_varying", allow_none=True
+    LIST_OF_VALUES_KIND, allow_none=True
 )
-RequestField = Union[None, str, Batch]
-ClassFilterField = Union[None, Sequence[str], Batch]
 
 MODEL_ID_DESCRIPTION = (
-    "Model id (or local path) of the model in the 'models' resource; a "
-    "selector may choose it per run or per image. An image whose per-image "
-    "model id is None or filtered out is skipped and gets no prediction."
+    "Model id (or local path) of the model in the 'models' resource, one for "
+    "every image of the step; a selector may choose it per run, not per image. "
+    "To serve images with different models, route them to one step per model."
 )
 PACKAGE_ID_DESCRIPTION = (
-    "Exact model package to load; None lets the loader choose. A selector may "
-    "choose it per run or per image, and a selected None also lets the loader "
-    "choose for that image. An image whose selected package is filtered out is "
-    "skipped. A model supplied without a package id rejects a package. List a "
-    "model's package ids with "
+    "Exact model package to load, one for every image of the step; None lets "
+    "the loader choose. A selector may choose it per run, not per image. A "
+    "model supplied without a package id rejects a package. List a model's "
+    "package ids with "
     'inference_models.AutoModel.describe_model("<model_id>").'
 )
 
@@ -160,21 +168,26 @@ class ModelOption(NamedTuple):
     default: Any = None
 
 
-class ModelGroup(NamedTuple):
-    """Rows of one call that share a request, preprocessed by its model.
+class ModelInput(NamedTuple):
+    """What ``network_input`` hands the later phases of one call.
 
-    ``options`` are the ``post_process`` keywords bound for this model;
-    ``class_ids`` holds, per row of ``rows``, the ids ``class_filter`` keeps,
-    ``None`` for all classes.
+    Args:
+        request: The call's model request, for errors and the ``model_id``
+            output.
+        model: The resolved model; the cache owns it.
+        batch: ``pre_process`` output for all images of the call.
+        metadata: ``pre_process`` metadata (geometry), passed unchanged to
+            ``post_process``; ``None`` for models that return none.
+        options: ``post_process`` keywords bound for this model.
+        class_ids: Ids ``class_filter`` keeps; ``None`` keeps every class.
     """
 
     request: ModelRequest
     model: Any
-    rows: Tuple[int, ...]
     batch: Any
     metadata: Any
     options: Mapping[str, Any]
-    class_ids: Tuple[Optional[Tuple[int, ...]], ...]
+    class_ids: Optional[Tuple[int, ...]] = None
 
 
 class ModelSelectionParams(BlockParams):
@@ -205,11 +218,10 @@ class NmsParams(ModelSelectionParams):
     class_filter: ClassFilterParam = Field(
         default=None,
         description=(
-            "Class names to keep; omit or null to keep every class. Every name "
-            "must be a class of the serving model. A selector may choose it per "
-            "run or per image; a per-image null keeps every class of that image. "
-            "Applied after the model's own post-processing; images that share a "
-            "model still run in one model call."
+            "Class names to keep for every image of the step; omit or null to "
+            "keep every class. Every name must be a class of the serving model. "
+            "A selector may choose the list per run, not per image. Applied "
+            "after the model's own post-processing."
         ),
         examples=[["person", "car"], "$inputs.class_filter"],
     )
@@ -328,92 +340,78 @@ def models_cache(
     return cache
 
 
-def preprocess_groups(
-    image: Batch,
-    *,
-    cache: ModelCache,
-    model_id: RequestField,
-    model_package_id: RequestField,
-    options: Sequence[ModelOption],
-    block: str,
-    class_filter: ClassFilterField = None,
-    returns_metadata: bool = True,
-) -> Tuple[ModelGroup, ...]:
-    """Group rows by request, resolve all models, then preprocess each group.
+def one_per_call(value: Any, *, name: str, block: str) -> Any:
+    """Return ``value`` unless it is a ``Batch`` of per-image values.
 
-    Every model is resolved and every option and class name checked before
-    the first model call, so one bad row request or option runs nothing.
+    Compiled workflows never deliver a ``Batch`` to a field that is not
+    batch-delivered; this names the mistake for direct ``run()`` callers
+    instead of reading one image's value.
 
     Args:
-        image: The batch of RGB images of one call.
-        cache: Source of the models.
-        model_id: Model id for every image, or a ``Batch`` with one per image.
-        model_package_id: Package id for every image, a ``Batch`` with one
-            per image, or ``None``.
-        options: Step options to bind to each model's ``post_process``.
-        block: Block type, for error messages.
-        class_filter: Class names to keep for every image, a ``Batch`` with
-            one list (or ``None``) per image, or ``None``; ``None`` keeps
-            every class. Differing filters do not split a group.
-        returns_metadata: Whether ``pre_process`` returns ``(batch,
-            metadata)``; classifiers return the batch alone.
+        value: The value of one configuration field for the whole call.
+        name: Field name, for the error message.
+        block: Block type, for the error message.
 
     Returns:
-        One group per distinct request, in order of first appearance.
+        ``value`` unchanged.
 
     Raises:
-        ValueError: On a non-RGB image, a request or filter batch of the wrong
-            length, an option the model does not read, an empty class filter
-            or one naming a class the model does not have.
+        ValueError: When ``value`` is a ``Batch``.
+    """
+    if isinstance(value, Batch):
+        raise ValueError(
+            f"{block}: {name} is one value for every image of a call, got a "
+            f"Batch of {len(value)} values; run the step once per value"
+        )
+
+    return value
+
+
+def model_request(
+    model_id: str, model_package_id: Optional[str], *, block: str
+) -> ModelRequest:
+    """The one model request of a call.
+
+    Args:
+        model_id: Model id for every image of the call.
+        model_package_id: Package id for every image, or ``None``.
+        block: Block type, for error messages.
+
+    Returns:
+        The request to resolve in the model cache.
+
+    Raises:
+        ValueError: On a ``Batch`` of ids (one value per image is not
+            supported), an empty or non-text id.
+    """
+    one_per_call(model_id, name="model_id", block=block)
+    one_per_call(model_package_id, name="model_package_id", block=block)
+    try:
+        request = ModelRequest(model_id, model_package_id)
+    except ValueError as error:
+        raise ValueError(f"{block}: {error}") from error
+
+    return request
+
+
+def rgb_tensors(image: Batch, *, block: str) -> List[torch.Tensor]:
+    """The ``(3, H, W)`` tensors of a batch of RGB images, in batch order.
+
+    Args:
+        image: The batch of images of one call.
+        block: Block type, for error messages.
+
+    Returns:
+        One tensor per image, as ``pre_process`` takes them.
+
+    Raises:
+        ValueError: When an image does not have 3 channels.
     """
     for member in image:
         require_rgb(member, block=block)
-    row_filters = tuple(
-        _checked_class_filter(row_filter, block=block)
-        for row_filter in per_row(
-            class_filter, row_count=len(image), name="class_filter"
-        )
-    )
-    request_rows = rows_by_request(
-        len(image), model_id=model_id, model_package_id=model_package_id
-    )
-    models = {request: cache.get(request) for request in request_rows}
-    bindings = {
-        request: (
-            post_process_options(
-                model.post_process, options, block=block, request=request
-            ),
-            _row_class_ids(
-                [row_filters[row] for row in request_rows[request]],
-                model.class_names,
-                block=block,
-                request=request,
-            ),
-        )
-        for request, model in models.items()
-    }
+    tensors = [member.tensor_image for member in image]
 
-    members = image.content
-    groups = []
-    for request, rows in request_rows.items():
-        model = models[request]
-        processed = model.pre_process(
-            [members[row].tensor_image for row in rows], input_color_format="rgb"
-        )
-        batch, metadata = processed if returns_metadata else (processed, None)
-        group_options, class_ids = bindings[request]
-        groups.append(
-            ModelGroup(request, model, rows, batch, metadata, group_options, class_ids)
-        )
-
-    return tuple(groups)
-
-
-def forward_groups(groups: Tuple[ModelGroup, ...]) -> Tuple[Any, ...]:
-    """Run each group's network once on its rows (``forward``)."""
-    raw_output = tuple(group.model.forward(group.batch) for group in groups)
-
-    return raw_output
+    return tensors
 
 
 def post_process_options(
@@ -454,12 +452,14 @@ def post_process_options(
     return keywords
 
 
-def checked_count(predictions: Any, group: ModelGroup, *, block: str) -> None:
+def checked_count(
+    predictions: Any, *, image_count: int, request: ModelRequest, block: str
+) -> None:
     """Fail when a model returns another number of results than images."""
-    if len(predictions) != len(group.rows):
+    if len(predictions) != image_count:
         raise ValueError(
-            f"{block}: post_process of model {str(group.request)!r} returned "
-            f"{len(predictions)} predictions for {len(group.rows)} images"
+            f"{block}: post_process of model {str(request)!r} returned "
+            f"{len(predictions)} predictions for {image_count} images"
         )
 
 
@@ -477,8 +477,9 @@ def checked_confidence(
         ``confidence`` as a float, or the mode string unchanged.
 
     Raises:
-        ValueError: On another string or a number outside 0..1.
+        ValueError: On a ``Batch``, another string or a number outside 0..1.
     """
+    one_per_call(confidence, name="confidence", block=block)
     if isinstance(confidence, str):
         if confidence not in modes:
             raise ValueError(
@@ -497,26 +498,110 @@ def checked_confidence(
     return value
 
 
-def class_filter_tensors(
-    group: ModelGroup, *, like: torch.Tensor
-) -> Tuple[Optional[torch.Tensor], ...]:
-    """Each row's kept class ids on ``like``'s device; ``None`` keeps all.
+def scalar_options(
+    options: Sequence[ModelOption], *, block: str
+) -> Sequence[ModelOption]:
+    """Return ``options`` unless one holds a ``Batch`` of per-image values.
 
-    One tensor per distinct filter of the group, shared by its rows; pass a
-    row's entry to ``keep_classes``.
+    Call it before resolving the model, so a malformed direct call loads
+    nothing.
+
+    Args:
+        options: Step options of one call.
+        block: Block type, for error messages.
+
+    Returns:
+        ``options`` unchanged.
+
+    Raises:
+        ValueError: When an option value is a ``Batch``.
     """
-    tensors: Dict[Tuple[int, ...], torch.Tensor] = {}
-    for class_ids in group.class_ids:
-        if class_ids is not None and class_ids not in tensors:
-            tensors[class_ids] = torch.tensor(
-                class_ids, dtype=like.dtype, device=like.device
-            )
-    per_row = tuple(
-        None if class_ids is None else tensors[class_ids]
-        for class_ids in group.class_ids
-    )
+    for option in options:
+        one_per_call(option.value, name=option.param, block=block)
 
-    return per_row
+    return options
+
+
+def checked_class_filter(
+    class_filter: Any, *, block: str
+) -> Optional[Tuple[str, ...]]:
+    """Check the structure of a step's ``class_filter`` before any model loads.
+
+    A selected filter skipped the literal validators, so it is checked here
+    the same way. Class names are matched to a model by ``class_filter_ids``.
+
+    Args:
+        class_filter: Class names to keep for every image, or ``None``.
+        block: Block type, for error messages.
+
+    Returns:
+        The names, or ``None`` to keep every class.
+
+    Raises:
+        ValueError: On a ``Batch``, or a value that is not a non-empty list of
+            non-empty names.
+    """
+    if class_filter is None:
+        return None
+
+    one_per_call(class_filter, name="class_filter", block=block)
+    if isinstance(class_filter, str) or not isinstance(class_filter, Sequence):
+        raise ValueError(
+            f"{block}: class_filter must be a list of class names or null, got "
+            f"{class_filter!r}"
+        )
+    names = tuple(class_filter)
+    if not names:
+        raise ValueError(f"{block}: {EMPTY_CLASS_FILTER_MESSAGE}")
+    for name in names:
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{block}: class_filter holds class names, got {name!r}")
+
+    return names
+
+
+def class_filter_ids(
+    names: Optional[Tuple[str, ...]],
+    class_names: Sequence[str],
+    *,
+    block: str,
+    request: ModelRequest,
+) -> Optional[Tuple[int, ...]]:
+    """The class ids that checked ``class_filter`` names keep for one model.
+
+    Args:
+        names: Names from ``checked_class_filter``, or ``None``.
+        class_names: The model's class names.
+        block: Block type, for error messages.
+        request: The model's request, for error messages.
+
+    Returns:
+        Sorted class ids, or ``None`` to keep every class.
+
+    Raises:
+        ValueError: On a name the model does not have (with close matches).
+    """
+    if names is None:
+        return None
+
+    class_ids = _class_ids(names, class_names, block=block, request=request)
+
+    return class_ids
+
+
+def kept_class_ids(
+    class_ids: Optional[Tuple[int, ...]], *, like: torch.Tensor
+) -> Optional[torch.Tensor]:
+    """``class_ids`` as a tensor on ``like``'s device; ``None`` keeps all.
+
+    Build it once per call and pass it to ``keep_classes`` for every image.
+    """
+    if class_ids is None:
+        return None
+
+    kept = torch.tensor(class_ids, dtype=like.dtype, device=like.device)
+
+    return kept
 
 
 def keep_classes(
@@ -608,59 +693,6 @@ def identified_result(prediction: Any, *, model_id: str) -> Dict[str, Any]:
     return result
 
 
-def per_row(value: RequestField, *, row_count: int, name: str) -> Tuple[Any, ...]:
-    """One value per row: a ``Batch``'s members, or one value repeated.
-
-    Args:
-        value: A selected per-row ``Batch`` or one value for every row.
-        row_count: Rows of the call.
-        name: Parameter name, for error messages.
-
-    Returns:
-        ``row_count`` values in row order.
-
-    Raises:
-        ValueError: When a ``Batch`` has another length.
-    """
-    if not isinstance(value, Batch):
-        return (value,) * row_count
-
-    if len(value) != row_count:
-        raise ValueError(f"{name} has {len(value)} values for {row_count} rows")
-
-    return value.content
-
-
-def rows_by_request(
-    row_count: int, *, model_id: RequestField, model_package_id: RequestField
-) -> Dict[ModelRequest, Tuple[int, ...]]:
-    """Group row indices by model request, in order of first appearance.
-
-    Args:
-        row_count: Rows of the call.
-        model_id: Model id for every row, or a ``Batch`` with one per row.
-        model_package_id: Package id for every row, a ``Batch`` with one per
-            row, or ``None``.
-
-    Returns:
-        Row indices of each distinct request, in row order.
-
-    Raises:
-        ValueError: When a ``Batch`` has another length than ``row_count``.
-    """
-    model_ids = per_row(model_id, row_count=row_count, name="model_id")
-    package_ids = per_row(
-        model_package_id, row_count=row_count, name="model_package_id"
-    )
-    rows_by_request: Dict[ModelRequest, List[int]] = {}
-    for row, (row_model_id, row_package_id) in enumerate(zip(model_ids, package_ids)):
-        request = ModelRequest(row_model_id, row_package_id)
-        rows_by_request.setdefault(request, []).append(row)
-    grouped = {request: tuple(rows) for request, rows in rows_by_request.items()}
-
-    return grouped
-
-
 def require_rgb(image: ImageData, *, block: str) -> None:
     """Refuse an image that is not 3-channel RGB.
 
@@ -673,50 +705,6 @@ def require_rgb(image: ImageData, *, block: str) -> None:
     """
     if image.channels != 3:
         raise ValueError(f"{block} needs a 3-channel RGB image, got {image!r}")
-
-
-def _checked_class_filter(
-    class_filter: Optional[Sequence[str]], *, block: str
-) -> Optional[Tuple[str, ...]]:
-    # A selected filter skipped the literal validators; check it the same way.
-    if class_filter is None:
-        return None
-
-    if isinstance(class_filter, str) or not isinstance(class_filter, Sequence):
-        raise ValueError(
-            f"{block}: class_filter must be a list of class names or null, got "
-            f"{class_filter!r}"
-        )
-    names = tuple(class_filter)
-    if not names:
-        raise ValueError(f"{block}: {EMPTY_CLASS_FILTER_MESSAGE}")
-    for name in names:
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"{block}: class_filter holds class names, got {name!r}")
-
-    return names
-
-
-def _row_class_ids(
-    row_filters: Sequence[Optional[Tuple[str, ...]]],
-    class_names: Sequence[str],
-    *,
-    block: str,
-    request: ModelRequest,
-) -> Tuple[Optional[Tuple[int, ...]], ...]:
-    # Each distinct filter is checked and resolved once per model.
-    resolved: Dict[Tuple[str, ...], Tuple[int, ...]] = {}
-    for row_filter in row_filters:
-        if row_filter is not None and row_filter not in resolved:
-            resolved[row_filter] = _class_ids(
-                row_filter, class_names, block=block, request=request
-            )
-    class_ids = tuple(
-        None if row_filter is None else resolved[row_filter]
-        for row_filter in row_filters
-    )
-
-    return class_ids
 
 
 def _class_ids(

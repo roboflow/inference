@@ -20,14 +20,14 @@ import numpy as np
 import pytest
 import supervision as sv
 import torch
+import trackers
 from pycocotools import mask as coco_mask
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.tracking import package
 from roboflow_workflows.v2.blocks.tracking.base import TRACKER_OUTPUTS
-from roboflow_workflows.v2.blocks.tracking.botsort import BoTSORTTrackerBlock
-from roboflow_workflows.v2.blocks.tracking.bytetrack import ByteTrackTrackerBlock
-from roboflow_workflows.v2.blocks.tracking.ocsort import OCSORTTrackerBlock
-from roboflow_workflows.v2.blocks.tracking.sort import SORTTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.trackers_botsort.v1 import BoTSORTTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.trackers_bytetrack.v1 import ByteTrackTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.trackers_ocsort.v1 import OCSORTTrackerBlock
+from roboflow_workflows.v2.blocks.tracking.trackers_sort.v1 import SORTTrackerBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView
 from roboflow_workflows.v2.data.prediction_ops import select_predictions
@@ -46,6 +46,12 @@ BLOCKS = [
     OCSORTTrackerBlock,
     BoTSORTTrackerBlock,
 ]
+LIBRARY_CLASSES = {
+    SORTTrackerBlock: trackers.SORTTracker,
+    ByteTrackTrackerBlock: trackers.ByteTrackTracker,
+    OCSORTTrackerBlock: trackers.OCSORTTracker,
+    BoTSORTTrackerBlock: trackers.BoTSORTTracker,
+}
 START = torch.tensor(
     [[10, 10, 40, 40], [100, 20, 130, 50], [200, 60, 230, 90]], dtype=torch.float32
 )
@@ -248,9 +254,7 @@ def _first_appearance(ids):
 
 def _library_run(block_type, frames):
     """Track the fixture with the bare library tracker, as V1 did."""
-    library = package._load_library_class(
-        block_type.library_class, block_type=block_type.type
-    )
+    library = LIBRARY_CLASSES[block_type]
     tracker = library(frame_rate=30.0, **V1_DEFAULTS[block_type])
     reported = []
     for frame in frames:
@@ -283,7 +287,8 @@ def test_params_defaults_are_the_v1_defaults():
 def test_first_frame_constructs_library_tracker_with_knobs_and_rate(block_type):
     block = block_type()
     created = []
-    library = block._tracker_class
+    library = LIBRARY_CLASSES[block_type]
+    assert block._tracker_class is library
 
     def record(**kwargs):
         created.append(kwargs)
@@ -453,19 +458,21 @@ def test_cache_eviction_makes_a_still_tracked_id_new_again():
     assert _names(outputs["already_seen_instances"]) == ""
 
 
-def test_plain_call_falls_back_only_for_missing_context(monkeypatch):
-    block = SORTTrackerBlock()
+@pytest.mark.parametrize("block_type", BLOCKS)
+def test_plain_call_falls_back_only_for_missing_context(block_type, monkeypatch):
+    block = block_type()
+    module = sys.modules[block_type.__module__]
 
     def absent():
         raise NoExecutionContextError("plain call")
 
-    monkeypatch.setattr(package, "get_execution_context", absent)
+    monkeypatch.setattr(module, "get_execution_context", absent)
     assert set(_run(block)) == set(TRACKER_OUTPUTS)
 
     def broken():
         raise EventEmissionError("bad engine context")
 
-    monkeypatch.setattr(package, "get_execution_context", broken)
+    monkeypatch.setattr(module, "get_execution_context", broken)
     with pytest.raises(EventEmissionError, match="bad engine context"):
         _run(block)
 
@@ -482,10 +489,10 @@ def test_missing_trackers_package_fails_on_construction_with_install_hint(
 def test_importing_the_blocks_does_not_import_trackers():
     code = (
         "import sys\n"
-        "import roboflow_workflows.v2.blocks.tracking.sort\n"
-        "import roboflow_workflows.v2.blocks.tracking.bytetrack\n"
-        "import roboflow_workflows.v2.blocks.tracking.ocsort\n"
-        "import roboflow_workflows.v2.blocks.tracking.botsort\n"
+        "import roboflow_workflows.v2.blocks.tracking.trackers_sort.v1\n"
+        "import roboflow_workflows.v2.blocks.tracking.trackers_bytetrack.v1\n"
+        "import roboflow_workflows.v2.blocks.tracking.trackers_ocsort.v1\n"
+        "import roboflow_workflows.v2.blocks.tracking.trackers_botsort.v1\n"
         "assert 'trackers' not in sys.modules, 'trackers imported eagerly'\n"
     )
     # Keep this process's import path so the child loads the same sources.

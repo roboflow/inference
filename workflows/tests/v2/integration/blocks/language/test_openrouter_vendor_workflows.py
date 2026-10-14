@@ -5,10 +5,10 @@ OpenRouter is an ``httpx.MockTransport`` fake injected as the
 a recording fake. The answers are fixed strings. This checks wiring and
 composition, not any real model::
 
-    image ─▶ v2/meta_vlm@v3 (detection, secret key) ─▶ v2/detection_offset@v1
-    image ─▶ v2/zai_vlm@v2 (structured) ─▶ v2/json_parser@v1
-    image ─▶ v2/kimi_openrouter@v3 (native classification)
-    image ─▶ v2/kimi_openrouter@v3 behind a gate: gated images send nothing
+    image ─▶ roboflow_core/meta_vlm@v3 (detection, secret key) ─▶ roboflow_core/detection_offset@v1
+    image ─▶ roboflow_core/zai_vlm@v2 (structured) ─▶ roboflow_core/json_parser@v1
+    image ─▶ roboflow_core/kimi_openrouter@v3 (native classification)
+    image ─▶ roboflow_core/kimi_openrouter@v3 behind a gate: gated images send nothing
 """
 
 import json
@@ -16,13 +16,11 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
-from roboflow_workflows.v2.blocks.geometry.offset import DetectionOffsetBlock
-from roboflow_workflows.v2.blocks.language.openrouter_vendors import (
-    KimiOpenRouterBlock,
-    MetaVlmBlock,
-    ZaiVlmBlock,
-)
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
+from roboflow_workflows.v2.blocks.geometry.detection_offset.v1 import DetectionOffsetBlock
+from roboflow_workflows.v2.blocks.language.kimi_openrouter.v3 import KimiOpenRouterBlock
+from roboflow_workflows.v2.blocks.language.meta_vlm.v3 import MetaVlmBlock
+from roboflow_workflows.v2.blocks.language.zai_vlm.v2 import ZaiVlmBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.language import LANGUAGE_MODEL_OUTPUT_KIND
 from roboflow_workflows.v2.data.secrets import SECRET_KIND
@@ -97,7 +95,7 @@ def test_meta_detections_from_a_secret_keyed_request_feed_a_geometry_step() -> N
     plan = _compile(
         [
             {
-                "type": "v2/meta_vlm@v3",
+                "type": "roboflow_core/meta_vlm@v3",
                 "name": "muse",
                 "images": "$inputs.image",
                 "task_type": "object-detection",
@@ -105,7 +103,7 @@ def test_meta_detections_from_a_secret_keyed_request_feed_a_geometry_step() -> N
                 "api_key": "$inputs.openrouter_key",
             },
             {
-                "type": "v2/detection_offset@v1",
+                "type": "roboflow_core/detection_offset@v1",
                 "name": "offset",
                 "predictions": "$steps.muse.predictions",
                 "offset_width": 10,
@@ -152,7 +150,7 @@ def test_zai_structured_answer_feeds_the_json_parser() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/zai_vlm@v2",
+                "type": "roboflow_core/zai_vlm@v2",
                 "name": "glm",
                 "images": "$inputs.image",
                 "task_type": "structured-answering",
@@ -160,7 +158,7 @@ def test_zai_structured_answer_feeds_the_json_parser() -> None:
                 "api_key": "sk-or-literal",
             },
             {
-                "type": "v2/json_parser@v1",
+                "type": "roboflow_core/json_parser@v1",
                 "name": "parse",
                 "raw_json": "$steps.glm.output",
                 "expected_fields": ["count"],
@@ -187,7 +185,7 @@ def test_kimi_classification_returns_a_native_prediction() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/kimi_openrouter@v3",
+                "type": "roboflow_core/kimi_openrouter@v3",
                 "name": "classify",
                 "images": "$inputs.image",
                 "task_type": "classification",
@@ -227,7 +225,7 @@ def test_a_gated_image_sends_no_request() -> None:
                 "next_steps": ["$steps.kimi"],
             },
             {
-                "type": "v2/kimi_openrouter@v3",
+                "type": "roboflow_core/kimi_openrouter@v3",
                 "name": "kimi",
                 "images": "$inputs.image",
                 "prompt": "Describe.",
@@ -258,7 +256,7 @@ def test_managed_key_uses_the_host_platform_client_and_roboflow_key() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/zai_vlm@v2",
+                "type": "roboflow_core/zai_vlm@v2",
                 "name": "glm",
                 "images": "$inputs.image",
                 "task_type": "ocr",
@@ -294,7 +292,7 @@ def test_a_failed_request_fails_the_step_without_the_key() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/meta_vlm@v3",
+                "type": "roboflow_core/meta_vlm@v3",
                 "name": "muse",
                 "images": "$inputs.image",
                 "prompt": "Describe.",
@@ -322,7 +320,7 @@ def test_an_unknown_model_label_from_an_input_sends_nothing() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/kimi_openrouter@v3",
+                "type": "roboflow_core/kimi_openrouter@v3",
                 "name": "kimi",
                 "images": "$inputs.image",
                 "prompt": "Describe.",
@@ -349,14 +347,14 @@ def test_workload_introspection_reports_the_openrouter_models() -> None:
     plan = _compile(
         [
             {
-                "type": "v2/meta_vlm@v3",
+                "type": "roboflow_core/meta_vlm@v3",
                 "name": "muse",
                 "images": "$inputs.image",
                 "model_version": "Muse Glimmer",
                 "prompt": "Describe.",
             },
             {
-                "type": "v2/zai_vlm@v2",
+                "type": "roboflow_core/zai_vlm@v2",
                 "name": "glm",
                 "images": "$inputs.image",
                 "model_version": "$inputs.model",

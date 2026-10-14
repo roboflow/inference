@@ -1,10 +1,10 @@
-"""Unit tests of ``v2/sift_comparison@v2`` against OpenCV references."""
+"""Unit tests of ``roboflow_core/sift_comparison@v2`` against OpenCV references."""
 
 import cv2
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.geometry.sift import SiftBlock
-from roboflow_workflows.v2.blocks.geometry.sift_comparison import SiftComparisonBlock
+from roboflow_workflows.v2.blocks.geometry.sift.v1 import SiftBlock
+from roboflow_workflows.v2.blocks.geometry.sift_comparison.v2 import SiftComparisonBlock
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.image import ImageData
 

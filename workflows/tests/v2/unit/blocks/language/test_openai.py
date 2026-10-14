@@ -10,10 +10,8 @@ from typing import Any, Dict
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.language.chat import ChatRequestError, encode_image
-from roboflow_workflows.v2.blocks.language.openai import (
-    OpenAIBlock,
-    OpenAICompatibleBlock,
-)
+from roboflow_workflows.v2.blocks.language.open_ai.v7 import OpenAIBlock
+from roboflow_workflows.v2.blocks.language.openai_compatible.v1 import OpenAICompatibleBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import (
@@ -643,7 +641,8 @@ def test_compatible_anonymous_or_explicit_key_never_uses_environment(monkeypatch
 
 
 def test_chat_completion_compatibility_exports_are_the_shared_helpers():
-    from roboflow_workflows.v2.blocks.language import chat_completions, openai
+    from roboflow_workflows.v2.blocks.language import chat_completions
+    from roboflow_workflows.v2.blocks.language._shared import openai as openai
 
     assert openai.chat_messages is chat_completions.chat_messages
     assert openai.chat_completion_usage is chat_completions.chat_completion_usage

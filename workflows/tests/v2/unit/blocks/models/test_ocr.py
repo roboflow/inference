@@ -12,22 +12,25 @@ from typing import Any, Dict, List, get_args
 
 import pytest
 import torch
+from inference_models.models.pp_ocrv6.pp_ocrv6_pipeline import PPOCRv6Pipeline
 from pydantic import ValidationError
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.common import MODEL_ID_OUTPUT
-from roboflow_workflows.v2.blocks.models.ocr import (
+from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import (
     EASY_OCR_MODELS,
-    PP_OCR_STAGE_REQUIRED,
     EasyOCRBlock,
-    EasyOCRLanguage,
-    OCRModelBlock,
+)
+from roboflow_workflows.v2.blocks.models.ocr_model.v1 import OCRModelBlock
+from roboflow_workflows.v2.blocks.models.pp_ocr.v1 import (
+    PP_OCR_STAGE_REQUIRED,
     PPOCRBlock,
 )
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData
+from roboflow_workflows.v2.data.kinds import STRING_KIND
 from roboflow_workflows.v2.data.predictions import OBJECT_DETECTION_PREDICTION_KIND
 from roboflow_workflows.v2.data.row_identity import row_record
+from roboflow_workflows.v2.engine.declaration import Output
 from roboflow_workflows.v2.engine.phases import PhaseFailure
 from tests.v2.support.models.fake_ocr_models import (
     FakeDocTR,
@@ -93,24 +96,37 @@ def test_doctr_reads_words_lines_and_blocks_per_image() -> None:
     assert all("class" not in row for row in bright["predictions"].bboxes_metadata)
 
 
-def test_doctr_groups_per_image_models_and_passes_no_options() -> None:
+def test_doctr_runs_one_model_per_call_and_passes_no_options() -> None:
     block, loader = _block(OCRModelBlock)
     images = _batch(_image(BRIGHT, "a"), _image(FULL, "b"), _image(BRIGHT, "c"))
 
-    results = block.run(
-        image=images, model_id=Batch(["doctr/default", "doctr/other", "doctr/default"])
-    )
+    first_results = block.run(image=images, model_id="doctr/default")
+    second_results = block.run(image=images, model_id="doctr/other")
 
     first, second = loader.models.values()
-    assert (first.batch_sizes, second.batch_sizes) == ([2], [1])
+    assert (first.batch_sizes, second.batch_sizes) == ([3], [3])
     assert first.calls == ["pre_process", "forward", "post_process"]
     assert first.received == [{}]
-    assert [result["model_id"] for result in results] == [
-        "doctr/default",
-        "doctr/other",
-        "doctr/default",
+    assert [result["model_id"] for result in first_results + second_results] == [
+        "doctr/default"
+    ] * 3 + ["doctr/other"] * 3
+    assert [result["result"] for result in first_results] == [
+        "w0 w1",
+        "w0 w1 w2",
+        "w0 w1",
     ]
-    assert [result["result"] for result in results] == ["w0 w1", "w0 w1 w2", "w0 w1"]
+
+
+def test_doctr_rejects_per_image_model_ids_before_any_load() -> None:
+    block, loader = _block(OCRModelBlock)
+
+    with pytest.raises(PhaseFailure, match="model_id is one value for every image"):
+        block.run(
+            image=_batch(_image(BRIGHT, "a"), _image(FULL, "b")),
+            model_id=Batch(["doctr/default", "doctr/other"]),
+        )
+
+    assert not loader.models
 
 
 def test_every_image_gets_fresh_row_identity() -> None:
@@ -248,7 +264,9 @@ def test_easy_ocr_language_selects_its_model(language: str) -> None:
 
 
 def test_easy_ocr_languages_are_exactly_the_mapped_models() -> None:
-    assert list(get_args(EasyOCRLanguage)) == list(EASY_OCR_MODELS)
+    languages = EasyOCRBlock.Params.model_fields["language"].annotation
+
+    assert list(get_args(languages)) == list(EASY_OCR_MODELS)
 
 
 def test_easy_ocr_rejects_unknown_languages_and_v1_quantize() -> None:
@@ -320,8 +338,11 @@ def test_pp_ocr_model_id_names_the_detector_else_the_recognizer() -> None:
     description = PPOCRBlock.outputs["model_id"].description
     assert "detection model" in description
     assert "recognition model's id when text detection is 'none'" in description
+    model_id_output = Output(
+        STRING_KIND, source="image", description="Model id that served this image."
+    )
     for block_type in (OCRModelBlock, EasyOCRBlock):
-        assert block_type.outputs["model_id"] is MODEL_ID_OUTPUT
+        assert block_type.outputs["model_id"] == model_id_output
 
 
 def test_pp_ocr_recognition_only_reads_each_image_as_one_line() -> None:
@@ -477,6 +498,86 @@ def test_pp_ocr_rejects_a_non_rgb_image_before_loading() -> None:
         block.run(image=_batch(gray))
 
     assert loader.loaded == []
+
+
+class _RefusingLoader:
+    """Records and refuses every request: no PP-OCR model may load."""
+
+    def __init__(self) -> None:
+        self.requests: List[ModelRequest] = []
+
+    def __call__(self, request: ModelRequest) -> Any:
+        self.requests.append(request)
+        raise AssertionError(f"model {request} was resolved")
+
+
+@pytest.fixture
+def pipelines(monkeypatch) -> List[Any]:
+    """Every PP-OCR pipeline the block builds; building one is refused."""
+    built: List[Any] = []
+
+    def refuse(models: Any) -> Any:
+        built.append(models)
+        raise AssertionError("a PP-OCR pipeline was built")
+
+    monkeypatch.setattr(PPOCRv6Pipeline, "with_models", refuse)
+
+    return built
+
+
+@pytest.mark.parametrize(
+    "field, values",
+    [
+        ("text_detection", ["small", "small"]),
+        ("text_recognition", ["small", "small"]),
+        ("text_detection_package_id", ["onnx", "onnx"]),
+        ("text_recognition_package_id", ["onnx", "onnx"]),
+    ],
+)
+@pytest.mark.parametrize("images", [2, 0], ids=["images", "empty-batch"])
+def test_pp_ocr_rejects_a_batch_setting_before_any_load(
+    field: str, values: List[str], images: int, pipelines: List[Any]
+) -> None:
+    loader = _RefusingLoader()
+    block = PPOCRBlock(models=ModelCache(loader))
+    image = _batch(_image(BRIGHT, "a"), _image(FULL, "b"))
+    if not images:
+        image = _batch()
+
+    with pytest.raises(ValueError, match=f"{field} is one value for every image"):
+        block.run(image=image, **{field: Batch(values)})
+
+    assert loader.requests == [] and pipelines == []
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {},
+        {"text_detection": "none"},
+        {"text_recognition": "none"},
+        {"text_detection_package_id": "onnx", "text_recognition_package_id": "trt"},
+    ],
+    ids=["both", "recognition-only", "detection-only", "packages"],
+)
+def test_pp_ocr_an_empty_batch_loads_no_model_and_builds_no_pipeline(
+    settings: Dict[str, str], pipelines: List[Any]
+) -> None:
+    loader = _RefusingLoader()
+    block = PPOCRBlock(models=ModelCache(loader))
+
+    assert block.run(image=_batch(), **settings) == []
+    assert loader.requests == [] and pipelines == []
+
+
+def test_pp_ocr_an_empty_batch_still_needs_a_stage() -> None:
+    loader = _RefusingLoader()
+    block = PPOCRBlock(models=ModelCache(loader))
+
+    with pytest.raises(ValueError, match=PP_OCR_STAGE_REQUIRED):
+        block.run(image=_batch(), text_detection="none", text_recognition="none")
+
+    assert loader.requests == []
 
 
 @pytest.mark.parametrize(

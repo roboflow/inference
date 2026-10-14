@@ -1,4 +1,4 @@
-"""Compiled image + segmentation -> ``v2/mask_edge_snap@v1`` -> outputs.
+"""Compiled image + segmentation -> ``roboflow_core/mask_edge_snap@v1`` -> outputs.
 
 The block is not in ``create_catalogue()`` yet (root registers it), so the
 workflow compiles against an explicit ``Catalogue``. Segmentations are workflow
@@ -17,8 +17,8 @@ from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
-from roboflow_workflows.v2.blocks.image import mask_edge_snap
-from roboflow_workflows.v2.blocks.image.mask_edge_snap import MaskEdgeSnapBlock
+from roboflow_workflows.v2.blocks.image.mask_edge_snap import v1 as mask_edge_snap
+from roboflow_workflows.v2.blocks.image.mask_edge_snap.v1 import MaskEdgeSnapBlock
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND

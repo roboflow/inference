@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/detections_consensus@v1`` on native predictions.
+"""Unit tests of ``roboflow_core/detections_consensus@v1`` on native predictions.
 
 Every source is one stand-in model's prediction of the 40x60 ``street`` image.
 Rows are written as ``(class_id, confidence, box)``; the default class map is
@@ -14,12 +14,9 @@ import numpy as np
 import pycocotools.mask as mask_utils
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.fusion import BLOCKS, consensus
-from roboflow_workflows.v2.blocks.fusion.consensus import (
-    BLOCK_TYPE,
-    DetectionsConsensusBlock,
-    detections_consensus,
-)
+from roboflow_workflows.v2.blocks.fusion import BLOCKS
+from roboflow_workflows.v2.blocks.fusion.detections_consensus import v1 as consensus
+from roboflow_workflows.v2.blocks.fusion.detections_consensus.v1 import BLOCK_TYPE, DetectionsConsensusBlock, detections_consensus
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import FrameMapping
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView
@@ -152,7 +149,7 @@ def row_classes(predictions) -> list:
 
 def test_block_is_exported_under_its_v2_identity_only() -> None:
     assert BLOCKS.count(DetectionsConsensusBlock) == 1
-    assert DetectionsConsensusBlock.type == BLOCK_TYPE == "v2/detections_consensus@v1"
+    assert DetectionsConsensusBlock.type == BLOCK_TYPE == "roboflow_core/detections_consensus@v1"
     assert not getattr(DetectionsConsensusBlock, "aliases", ())
 
 

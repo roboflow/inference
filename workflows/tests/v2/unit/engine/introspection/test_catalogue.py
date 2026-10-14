@@ -104,7 +104,7 @@ def test_blocks_expose_identities_namespace_and_class_owned_schema() -> None:
         == "group"
     )
     assert blocks["demo/split@v1"]["outputs"]["part"]["transform"] == "expand"
-    assert blocks["v2/continue_if"]["is_control"] is True
+    assert blocks["roboflow_core/continue_if_boolean@v1"]["is_control"] is True
     pick = blocks["demo/pick@v1"]
     assert pick["configured_outputs"] is True and pick["outputs"] == {}
     assert pick["output_fields"] == ["keys"]
@@ -142,11 +142,11 @@ def test_connections_list_kind_compatible_producers_per_consumer_field() -> None
     # then
     assert "demo/split@v1.part" in connections["demo/collect@v1"]["parts"]
     assert "demo/detect@v1.predictions" not in connections["demo/collect@v1"]["parts"]
-    conditions = connections["v2/continue_if"]["condition"]
+    conditions = connections["roboflow_core/continue_if_boolean@v1"]["condition"]
     assert "demo/positive@v1.ok" in conditions
     assert "demo/split@v1.part" not in conditions
     assert "demo/undeclared@v1.value" in conditions, "wildcard outputs fit any kind"
-    assert "next_steps" not in connections["v2/continue_if"]
+    assert "next_steps" not in connections["roboflow_core/continue_if_boolean@v1"]
     wildcard_consumer = connections["demo/undeclared@v1"]["value"]
     assert "demo/detect@v1.predictions" in wildcard_consumer
     assert "demo/positive@v1.ok" in wildcard_consumer

@@ -14,10 +14,7 @@ from roboflow_workflows.v2.blocks.geometry import (
     DetectionsStitchBlock,
     DimensionCollapseBlock,
 )
-from roboflow_workflows.v2.blocks.geometry.class_replacement import (
-    leading_class,
-    leading_classes,
-)
+from roboflow_workflows.v2.blocks.geometry.detections_classes_replacement.v1 import leading_class, leading_classes
 from roboflow_workflows.v2.blocks.geometry.frames import (
     offset_between,
     translate_prediction,
@@ -367,7 +364,7 @@ def skeletons(count, *, with_boxes):
 @pytest.mark.parametrize("count", [4, 0])
 def test_offset_refuses_keypoints_without_boxes(count):
     # Decision 018: no boxes is a model property, even for a frame without rows.
-    with pytest.raises(ContractError, match="v2/detection_offset@v1: the keypoint"):
+    with pytest.raises(ContractError, match="roboflow_core/detection_offset@v1: the keypoint"):
         offset(skeletons(count, with_boxes=False))
 
 
@@ -741,7 +738,7 @@ def test_replacement_keeps_keypoints_aligned_with_kept_rows():
 @pytest.mark.parametrize("children", [[], ["red"]])
 def test_replacement_refuses_keypoints_without_boxes(children):
     with pytest.raises(
-        ContractError, match="v2/detections_classes_replacement@v1: the keypoint"
+        ContractError, match="roboflow_core/detections_classes_replacement@v1: the keypoint"
     ):
         replace_classes(skeletons(4, with_boxes=False), children, name="unknown")
 

@@ -1,10 +1,10 @@
-"""Compiled workflows with ``v2/json_parser@v1`` and real product consumers.
+"""Compiled workflows with ``roboflow_core/json_parser@v1`` and real product consumers.
 
 These run the real compiler, session and executor. Parsed fields declare no
 kind, so a typed consumer accepts the selector at compile time and checks the
 value when the step runs::
 
-    text ─▶ v2/json_parser@v1 ─┬─ width, height ─▶ v2/resize (INTEGER params)
+    text ─▶ roboflow_core/json_parser@v1 ─┬─ width, height ─▶ roboflow_core/resize@v1 (INTEGER params)
                                └─ error_status (BOOLEAN)
 """
 
@@ -12,8 +12,8 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
-from roboflow_workflows.v2.blocks.image.blocks import ResizeBlock
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
+from roboflow_workflows.v2.blocks.image.primitives.resize.v1 import ResizeBlock
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import (
@@ -37,7 +37,7 @@ def _output(name: str, selector: str) -> Dict[str, str]:
 
 def _parser(name: str, raw_json: str, expected_fields: Any) -> Dict[str, Any]:
     step = {
-        "type": "v2/json_parser@v1",
+        "type": "roboflow_core/json_parser@v1",
         "name": name,
         "raw_json": raw_json,
         "expected_fields": expected_fields,
@@ -48,7 +48,7 @@ def _parser(name: str, raw_json: str, expected_fields: Any) -> Dict[str, Any]:
 
 def _resize(width: str, height: str) -> Dict[str, Any]:
     step = {
-        "type": "v2/resize",
+        "type": "roboflow_core/resize@v1",
         "name": "resize",
         "image": "$inputs.image",
         "width": width,

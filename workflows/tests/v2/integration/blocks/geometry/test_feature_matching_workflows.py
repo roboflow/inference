@@ -14,16 +14,12 @@ import math
 import pytest
 import torch
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.geometry.geotag import GeotagDetectionBlock
-from roboflow_workflows.v2.blocks.geometry.nearest_neighbor import (
-    DetectionsNearestNeighborBlock,
-)
-from roboflow_workflows.v2.blocks.geometry.sift import SiftBlock
-from roboflow_workflows.v2.blocks.geometry.sift_comparison import SiftComparisonBlock
-from roboflow_workflows.v2.blocks.geometry.template_matching import (
-    TemplateMatchingBlock,
-)
-from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
+from roboflow_workflows.v2.blocks.geometry.geotag_detection.v1 import GeotagDetectionBlock
+from roboflow_workflows.v2.blocks.geometry.detections_nearest_neighbor.v1 import DetectionsNearestNeighborBlock
+from roboflow_workflows.v2.blocks.geometry.sift.v1 import SiftBlock
+from roboflow_workflows.v2.blocks.geometry.sift_comparison.v2 import SiftComparisonBlock
+from roboflow_workflows.v2.blocks.geometry.template_matching.v1 import TemplateMatchingBlock
+from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import OBJECT_DETECTION_PREDICTION_KIND
@@ -101,7 +97,7 @@ def run(steps, outputs, *, inputs, images=("image",)):
 
 def template_step(image="$inputs.image"):
     return {
-        "type": "v2/template_matching@v1",
+        "type": "roboflow_core/template_matching@v1",
         "name": "match",
         "image": image,
         "template": "$inputs.template",
@@ -111,7 +107,7 @@ def template_step(image="$inputs.image"):
 
 def geotag_step(image, predictions):
     return {
-        "type": "v2/geotag_detection@v1",
+        "type": "roboflow_core/geotag_detection@v1",
         "name": "geotag",
         "image": image,
         "predictions": predictions,
@@ -131,7 +127,7 @@ def test_matches_pair_up_and_geotag_per_image_of_a_batch():
     steps = [
         template_step(),
         {
-            "type": "v2/detections_nearest_neighbor@v1",
+            "type": "roboflow_core/detections_nearest_neighbor@v1",
             "name": "pairs",
             "query_predictions": "$steps.match.predictions",
             "target_predictions": "$steps.match.predictions",
@@ -174,7 +170,7 @@ def test_matches_found_in_crops_geotag_like_full_image_matches():
     steps = [
         template_step(),
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "predictions": "$steps.match.predictions",
@@ -214,10 +210,10 @@ def test_sift_descriptors_compare_through_the_engine(seed_2, expected_match):
     # Same texture moved 24 px right (a match), or an unrelated texture.
     texture_2 = torch.roll(texture((3, 200, 200), block=8, seed=seed_2), 24, dims=2)
     steps = [
-        {"type": "v2/sift@v1", "name": "sift_1", "image": "$inputs.image"},
-        {"type": "v2/sift@v1", "name": "sift_2", "image": "$inputs.other"},
+        {"type": "roboflow_core/sift@v1", "name": "sift_1", "image": "$inputs.image"},
+        {"type": "roboflow_core/sift@v1", "name": "sift_2", "image": "$inputs.other"},
         {
-            "type": "v2/sift_comparison@v2",
+            "type": "roboflow_core/sift_comparison@v2",
             "name": "compare",
             "input_1": "$steps.sift_1.descriptors",
             "input_2": "$steps.sift_2.descriptors",

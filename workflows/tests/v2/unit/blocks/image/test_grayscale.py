@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/convert_grayscale@v1``, called directly.
+"""Unit tests of ``roboflow_core/convert_grayscale@v1``, called directly.
 
 Expected values are hand-computed from OpenCV's documented fixed-point weights,
 or come from ``cv2.cvtColor`` itself on the same colors in V1's BGR layout.
@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.image.grayscale import ConvertGrayscaleBlock
+from roboflow_workflows.v2.blocks.image.convert_grayscale.v1 import ConvertGrayscaleBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef
 
@@ -114,6 +114,6 @@ def test_channels_last_view_gives_the_same_pixels() -> None:
 
 
 def test_declares_a_pure_prunable_block() -> None:
-    assert ConvertGrayscaleBlock.type == "v2/convert_grayscale@v1"
+    assert ConvertGrayscaleBlock.type == "roboflow_core/convert_grayscale@v1"
     assert ConvertGrayscaleBlock.prunable is True
     assert ConvertGrayscaleBlock.mutates == ()

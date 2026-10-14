@@ -5,9 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 import torch
 from pydantic import Field
-from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring import (
-    ModelMonitoringInferenceAggregatorBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring_inference_aggregator.v1 import ModelMonitoringInferenceAggregatorBlock
 from roboflow_workflows.v2.data.kinds import FLOAT_KIND, STRING_KIND
 from roboflow_workflows.v2.data.predictions import OBJECT_DETECTION_PREDICTION_KIND
 from roboflow_workflows.v2.data.secrets import Secret
@@ -192,10 +190,7 @@ def test_compiled_runtime_frequency_selector_and_validation():
 def test_two_sessions_share_runner_and_time_but_keep_pending_windows_separate():
     from threading import Event
 
-    from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring import (
-        PENDING_MESSAGE,
-        SKIPPED_MESSAGE,
-    )
+    from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring_inference_aggregator.v1 import PENDING_MESSAGE, SKIPPED_MESSAGE
     from roboflow_workflows.v2.blocks.sinks.runtime import (
         BACKGROUND_MESSAGE,
         BackgroundEffects,

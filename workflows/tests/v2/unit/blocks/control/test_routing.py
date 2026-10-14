@@ -1,4 +1,4 @@
-"""``v2/switch_case@v1``, ``v2/delta_filter@v1`` and ``v2/rate_limiter@v1``.
+"""``roboflow_core/switch_case@v1``, ``roboflow_core/delta_filter@v1`` and ``roboflow_core/rate_limiter@v1``.
 
 Calls run inside a hand-built execution context whose scope answers the
 source and observation time of the call's index, as the engine's does.
@@ -14,13 +14,10 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.control.routing import (
-    ClockMismatchError,
-    DeltaFilterBlock,
-    RateLimiterBlock,
-    SourceCapacityError,
-    SwitchCaseBlock,
-)
+from roboflow_workflows.v2.blocks.control._shared.routing import ClockMismatchError, SourceCapacityError
+from roboflow_workflows.v2.blocks.control.delta_filter.v1 import DeltaFilterBlock
+from roboflow_workflows.v2.blocks.control.rate_limiter.v1 import RateLimiterBlock
+from roboflow_workflows.v2.blocks.control.switch_case.v1 import SwitchCaseBlock
 from roboflow_workflows.v2.data.batch import (
     SampleContext,
     TemporalContext,

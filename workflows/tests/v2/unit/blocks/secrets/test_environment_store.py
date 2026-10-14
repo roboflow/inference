@@ -1,4 +1,4 @@
-"""``v2/environment_secrets_store@v1``: sources, output names and the access flag.
+"""``roboflow_core/environment_secrets_store@v1``: sources, output names and the access flag.
 
 Every value here is an invented sentinel, never a real credential.
 """

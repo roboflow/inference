@@ -3,23 +3,23 @@
 These run the real compiler, session and executor. Requests go only to an
 in-process fake client; files go only to pytest's temporary directory::
 
-    name, count ─▶ v2/csv_formatter@v1 ─▶ v2/local_file_sink@v1 ─▶ file
-    count ─▶ v2/data_aggregator@v1 ─▶ count_sum, count_max
-    count ─▶ v2/data_aggregator@v1 ─▶ v2/continue_if(interval_complete)
-          ─▶ v2/csv_formatter@v1 ─▶ v2/local_file_sink@v1 ─▶ file
-    count ─▶ v2/webhook_sink@v1 ─▶ webhook_client (+ sink_effects)
+    name, count ─▶ roboflow_core/csv_formatter@v1 ─▶ roboflow_core/local_file_sink@v1 ─▶ file
+    count ─▶ roboflow_core/data_aggregator@v1 ─▶ count_sum, count_max
+    count ─▶ roboflow_core/data_aggregator@v1 ─▶ roboflow_core/continue_if_boolean@v1(interval_complete)
+          ─▶ roboflow_core/csv_formatter@v1 ─▶ roboflow_core/local_file_sink@v1 ─▶ file
+    count ─▶ roboflow_core/webhook_sink@v1 ─▶ webhook_client (+ sink_effects)
 """
 
 from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
-from roboflow_workflows.v2.blocks.analytics.data_aggregator import DataAggregatorBlock
-from roboflow_workflows.v2.blocks.control.blocks import ContinueIfBlock
-from roboflow_workflows.v2.blocks.formatters.csv import CsvFormatterBlock
-from roboflow_workflows.v2.blocks.sinks.local_file import LocalFileSinkBlock
+from roboflow_workflows.v2.blocks.analytics.data_aggregator.v1 import DataAggregatorBlock
+from roboflow_workflows.v2.blocks.control.continue_if_boolean.v1 import ContinueIfBlock
+from roboflow_workflows.v2.blocks.formatters.csv_formatter.v1 import CsvFormatterBlock
+from roboflow_workflows.v2.blocks.sinks.local_file_sink.v1 import LocalFileSinkBlock
 from roboflow_workflows.v2.blocks.sinks.runtime import BackgroundEffects
-from roboflow_workflows.v2.blocks.sinks.webhook import WebhookSinkBlock
+from roboflow_workflows.v2.blocks.sinks.webhook_sink.v1 import WebhookSinkBlock
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import ResourceError, StepExecutionError
@@ -65,12 +65,12 @@ def _compile(steps: List[Dict[str, Any]], outputs: List[Dict[str, str]], **optio
 def _csv_to_file(directory: Path, **sink: Any) -> List[Dict[str, Any]]:
     steps = [
         {
-            "type": "v2/csv_formatter@v1",
+            "type": "roboflow_core/csv_formatter@v1",
             "name": "csv",
             "columns_data": {"name": "$inputs.name", "count": "$inputs.count"},
         },
         {
-            "type": "v2/local_file_sink@v1",
+            "type": "roboflow_core/local_file_sink@v1",
             "name": "file",
             "content": "$steps.csv.csv_content",
             "output_mode": "append_log",
@@ -84,7 +84,7 @@ def _csv_to_file(directory: Path, **sink: Any) -> List[Dict[str, Any]]:
 
 def _webhook(**params: Any) -> Dict[str, Any]:
     step = {
-        "type": "v2/webhook_sink@v1",
+        "type": "roboflow_core/webhook_sink@v1",
         "name": "hook",
         "url": "http://hooks.test/count",
         "method": "POST",
@@ -160,7 +160,7 @@ def test_file_writes_need_the_host_permission(tmp_path: Path) -> None:
 
 def _aggregator(**params: Any) -> Dict[str, Any]:
     step = {
-        "type": "v2/data_aggregator@v1",
+        "type": "roboflow_core/data_aggregator@v1",
         "name": "stats",
         "data": {"count": "$inputs.count"},
         "aggregation_mode": {"count": ["sum", "max"]},
@@ -196,13 +196,13 @@ def test_gated_summary_log_gets_only_completed_intervals(tmp_path: Path) -> None
     steps = [
         _aggregator(),
         {
-            "type": "v2/continue_if",
+            "type": "roboflow_core/continue_if_boolean@v1",
             "name": "gate",
             "condition": "$steps.stats.interval_complete",
             "next_steps": ["$steps.csv"],
         },
         {
-            "type": "v2/csv_formatter@v1",
+            "type": "roboflow_core/csv_formatter@v1",
             "name": "csv",
             "columns_data": {
                 "total": "$steps.stats.count_sum",
@@ -210,7 +210,7 @@ def test_gated_summary_log_gets_only_completed_intervals(tmp_path: Path) -> None
             },
         },
         {
-            "type": "v2/local_file_sink@v1",
+            "type": "roboflow_core/local_file_sink@v1",
             "name": "file",
             "content": "$steps.csv.csv_content",
             "output_mode": "append_log",

@@ -6,9 +6,7 @@ from threading import Event
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
-from roboflow_workflows.v2.blocks.roboflow_platform.dataset_upload import (
-    DatasetUploadBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_dataset_upload.v2 import DatasetUploadBlock
 from roboflow_workflows.v2.blocks.sinks.runtime import (
     BACKGROUND_MESSAGE,
     FULL_MESSAGE,
@@ -88,7 +86,7 @@ def test_row_order_scalar_batch_values_and_snapshots():
 def test_sampling_skip_before_port_or_image_copy(monkeypatch):
     port = Port()
     monkeypatch.setattr(
-        "roboflow_workflows.v2.blocks.roboflow_platform.dataset_upload.random.random",
+        "roboflow_workflows.v2.blocks.roboflow_platform.roboflow_dataset_upload.v2.random.random",
         lambda: 0.5,
     )
     result = DatasetUploadBlock(dataset_upload_port=port, api_key="invented").run(
@@ -152,7 +150,7 @@ def test_missing_port_raises_before_sampling_or_admission(
 ):
     sampled = []
     monkeypatch.setattr(
-        "roboflow_workflows.v2.blocks.roboflow_platform.dataset_upload.random.random",
+        "roboflow_workflows.v2.blocks.roboflow_platform.roboflow_dataset_upload.v2.random.random",
         lambda: sampled.append(True) or 0.0,
     )
     with BackgroundEffects() as effects:

@@ -16,9 +16,7 @@ from dataclasses import replace
 from typing import Any, Dict, List
 
 import pytest
-from roboflow_workflows.v2.blocks.state.machines import (
-    StateMachineSetBlock,
-)
+from roboflow_workflows.v2.blocks.state.state_machine_set.v1 import StateMachineSetBlock
 from roboflow_workflows.v2.data.kinds import FLOAT_KIND, STRING_KIND
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow

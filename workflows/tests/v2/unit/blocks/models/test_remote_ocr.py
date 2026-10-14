@@ -18,10 +18,7 @@ import pytest
 import torch
 from PIL import Image
 from pydantic import Field
-from roboflow_workflows.v2.blocks.models.remote_ocr import (
-    GoogleVisionOCRBlock,
-    GoogleVisionOCRError,
-)
+from roboflow_workflows.v2.blocks.models.google_vision_ocr.v1 import GoogleVisionOCRBlock, GoogleVisionOCRError
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
 from roboflow_workflows.v2.data.image import ImageData
@@ -262,7 +259,7 @@ def test_text_only_annotation_uses_empty_locale_and_no_fabricated_boxes():
         ("api_key", None),
     ],
 )
-def test_invalid_second_row_fails_before_any_invoke(field, bad):
+def test_invalid_setting_fails_before_any_invoke(field, bad):
     transport = _Transport()
     settings = {
         "api_key": FAKE_KEY,
@@ -270,21 +267,39 @@ def test_invalid_second_row_fails_before_any_invoke(field, bad):
         "language_hints": None,
         "timeout": 1,
     }
-    settings[field] = Batch([settings[field], bad])
+    settings[field] = bad
     with pytest.raises((ValueError, TypeError)):
         _block(transport).run(image=Batch([_image("a"), _image("b")]), **settings)
     assert transport.calls == []
 
 
-def test_unavailable_secret_and_misaligned_batch_fail_before_transport():
+@pytest.mark.parametrize(
+    "field,values",
+    [
+        ("api_key", [FAKE_KEY, FAKE_KEY]),
+        ("ocr_type", ["text_detection", "ocr_text_detection"]),
+        ("language_hints", [None, ["en"]]),
+        ("timeout", [1, 2]),
+    ],
+)
+def test_per_image_settings_fail_before_transport_without_echoing_them(field, values):
     transport = _Transport()
-    for key in [Batch([FAKE_KEY]), Batch([FAKE_KEY, FAKE_KEY], indices=[(1,), (2,)])]:
-        with pytest.raises(ValueError, match="align"):
-            _block(transport).run(image=Batch([_image("a"), _image("b")]), api_key=key)
+    with pytest.raises(ValueError) as captured:
+        _block(transport).run(
+            image=Batch([_image("a"), _image("b")]),
+            **{"api_key": FAKE_KEY, field: Batch(values)},
+        )
+    assert f"{field} is one value for every image of a call" in str(captured.value)
+    _assert_redacted(_rendered(captured.value))
+    assert transport.calls == []
+
+
+def test_unavailable_secret_fails_before_transport():
+    transport = _Transport()
     with pytest.raises(SecretUnavailableError):
         _block(transport).run(
             image=Batch([_image("a"), _image("b")]),
-            api_key=Batch([FAKE_KEY, Secret.unavailable("recorded")]),
+            api_key=Secret.unavailable("recorded"),
         )
     assert transport.calls == []
 
@@ -436,10 +451,10 @@ def test_compiled_step_errors_distinguish_bad_key_from_quota():
     )
     inputs = {
         "image": [_image()],
-        "api_key": [Secret(FAKE_KEY, name="fixture")],
-        "ocr_type": ["text_detection"],
-        "language_hints": [None],
-        "timeout": [1],
+        "api_key": Secret(FAKE_KEY, name="fixture"),
+        "ocr_type": "text_detection",
+        "language_hints": None,
+        "timeout": 1,
     }
     failures = []
     try:
@@ -609,8 +624,13 @@ class _Downstream(Block):
         ]
 
 
-def _plan(*, mode="run", dynamic=False, coordinates="parent", settings=None):
-    inputs = [{"type": "WorkflowBatchInput", "name": "image", "kind": ["image"]}]
+def _plan(
+    *, mode="run", dynamic=False, coordinates="parent", settings=None, extra_inputs=()
+):
+    inputs = [
+        {"type": "WorkflowBatchInput", "name": "image", "kind": ["image"]},
+        *extra_inputs,
+    ]
     step = {
         "type": GoogleVisionOCRBlock.type,
         "name": "ocr",
@@ -624,7 +644,7 @@ def _plan(*, mode="run", dynamic=False, coordinates="parent", settings=None):
             ("language_hints", "list_of_values"),
             ("timeout", "float"),
         ]:
-            inputs.append({"type": "WorkflowBatchInput", "name": field, "kind": [kind]})
+            inputs.append({"type": "WorkflowParameter", "name": field, "kind": [kind]})
             step[field] = f"$inputs.{field}"
     step.update(settings or {})
     catalogue = Catalogue(
@@ -689,16 +709,21 @@ def test_compiled_workflow_preserves_order_wiring_and_reuses_only_host_transport
     _ImageForward.seen.clear()
     _Downstream.seen.clear()
     inputs = {"image": images}
+    later = inputs
     if dynamic:
-        inputs.update(
-            api_key=[FAKE_KEY, FAKE_KEY],
-            ocr_type=["text_detection", "ocr_text_detection"],
-            language_hints=[["en"], []],
-            timeout=[1.5, 2.5],
+        inputs = dict(
+            inputs,
+            api_key=FAKE_KEY,
+            ocr_type="text_detection",
+            language_hints=["en"],
+            timeout=1.5,
+        )
+        later = dict(
+            inputs, ocr_type="ocr_text_detection", language_hints=[], timeout=2.5
         )
     try:
         rows = session.run(inputs).rows()
-        again = session.run(inputs).rows()
+        again = session.run(later).rows()
     finally:
         session.close()
     assert [r["summary"] for r in rows] == ["first:1", ":0"]
@@ -713,9 +738,23 @@ def test_compiled_workflow_preserves_order_wiring_and_reuses_only_host_transport
     )
     if dynamic:
         assert [
-            c["json"]["requests"][0]["features"][0]["type"] for c in transport.calls[:2]
-        ] == ["TEXT_DETECTION", "DOCUMENT_TEXT_DETECTION"]
-        assert [c["timeout"] for c in transport.calls[:2]] == [1.5, 2.5]
+            c["json"]["requests"][0]["features"][0]["type"] for c in transport.calls
+        ] == ["TEXT_DETECTION"] * 2 + ["DOCUMENT_TEXT_DETECTION"] * 2
+        assert [c["timeout"] for c in transport.calls] == [1.5, 1.5, 2.5, 2.5]
+        assert [
+            c["json"]["requests"][0]["imageContext"]["languageHints"]
+            for c in transport.calls
+        ] == [["en"], ["en"], [], []]
+
+
+def test_a_per_image_setting_selector_fails_compilation():
+    with pytest.raises(Exception, match="ocr_type is passed once per call"):
+        _plan(
+            settings={"ocr_type": "$inputs.mode"},
+            extra_inputs=(
+                {"type": "WorkflowBatchInput", "name": "mode", "kind": ["string"]},
+            ),
+        )
 
 
 def test_compiled_root_coordinates_restore_crop_resize_geometry():
@@ -752,17 +791,37 @@ def test_compiled_invalid_selected_parameters_fail_before_any_invoke(field, kind
     )
     inputs = {
         "image": [_image("a"), _image("b")],
-        "api_key": [FAKE_KEY, FAKE_KEY],
-        "ocr_type": ["text_detection"] * 2,
-        "language_hints": [[], []],
-        "timeout": [1, 1],
+        "api_key": FAKE_KEY,
+        "ocr_type": "text_detection",
+        "language_hints": [],
+        "timeout": 1,
     }
-    inputs[field][1] = bad
+    inputs[field] = bad
     try:
         with pytest.raises((StepExecutionError, ValueError)):
             session.run(inputs)
     finally:
         session.close()
+    assert transport.calls == []
+
+
+@pytest.mark.parametrize(
+    "api_key",
+    [Secret.unavailable("recorded"), "", Secret("", name="blank")],
+    ids=["unavailable-secret", "empty-string", "empty-secret"],
+)
+def test_an_empty_batch_never_reads_the_api_key(api_key):
+    transport = _Transport()
+
+    assert _block(transport).run(image=Batch([]), api_key=api_key) == []
+    assert transport.calls == []
+
+
+def test_an_empty_batch_still_rejects_a_per_image_setting():
+    transport = _Transport()
+
+    with pytest.raises(ValueError, match="timeout is one value for every image"):
+        _block(transport).run(image=Batch([]), api_key=FAKE_KEY, timeout=Batch([]))
     assert transport.calls == []
 
 
@@ -837,7 +896,7 @@ def test_malformed_literal_definitions_fail_compilation(settings):
 
 MANAGED_KEY_MESSAGE = (
     "Roboflow-managed keys (rf_key:*, V1's default) are not supported by "
-    "v2/google_vision_ocr; pass your Google Cloud Vision API key, preferably "
+    "roboflow_core/google_vision_ocr@v1; pass your Google Cloud Vision API key, preferably "
     "through a workflow input of kind secret"
 )
 
@@ -896,10 +955,10 @@ def test_selected_managed_key_fails_direct_and_compiled_before_transport():
             session.run(
                 {
                     "image": [_image()],
-                    "api_key": [MANAGED_SECRET],
-                    "ocr_type": ["text_detection"],
-                    "language_hints": [None],
-                    "timeout": [1],
+                    "api_key": MANAGED_SECRET,
+                    "ocr_type": "text_detection",
+                    "language_hints": None,
+                    "timeout": 1,
                 }
             )
     finally:

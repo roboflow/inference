@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.models import action_recognition as action
+from roboflow_workflows.v2.blocks.models.roboflow_action_recognition_model import v1 as action
 from roboflow_workflows.v2.blocks.models.cache import (
     ModelCache,
     ModelRequest,

@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.image.blocks import MosaicBlock
+from roboflow_workflows.v2.blocks.image.primitives.mosaic.v1 import MosaicBlock
 from roboflow_workflows.v2.data.batch import (
     Batch,
     EntryMetadata,

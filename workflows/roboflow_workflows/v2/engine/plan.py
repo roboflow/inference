@@ -2764,7 +2764,7 @@ def _check_operators(plan: CompiledWorkflow) -> None:
 
 
 # operators.window imports this module indirectly; its class is known by type.
-_WINDOW_TYPE = "v2/window@v1"
+_WINDOW_TYPE = "roboflow_core/window@v1"
 
 
 def check_passive_history_operator(operator: PlannedOperator, *, location: str) -> None:

@@ -24,17 +24,21 @@ from inference_models.models.sam3_tracker_video.sam3_tracker_video_hf import (
 )
 from pydantic import ValidationError
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.image.dynamic_crop import DynamicCropBlock
+from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.detection import ObjectDetectionBlock
-from roboflow_workflows.v2.blocks.models.sam_video import (
-    SAM2_VIDEO_MODEL_ID,
-    SAM3_CONCEPT_MODEL_ID,
-    SAM3_VISUAL_MODEL_ID,
-    SegmentAnything2VideoBlock,
-    SegmentAnything3VideoBlock,
+from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models._shared.sam_video import (
     VideoSessionLimitError,
     VideoSourceCapacityError,
+)
+from roboflow_workflows.v2.blocks.models.segment_anything_2_video.v1 import (
+    SAM2_VIDEO_MODEL_ID,
+    SegmentAnything2VideoBlock,
+)
+from roboflow_workflows.v2.blocks.models.sam3_video.v1 import (
+    SAM3_CONCEPT_MODEL_ID,
+    SAM3_VISUAL_MODEL_ID,
+    SegmentAnything3VideoBlock,
 )
 from roboflow_workflows.v2.data.batch import (
     Batch,
@@ -1216,13 +1220,13 @@ def test_whole_batch_preflight_protects_later_members_and_idle_boundary():
     assert b_ref() is not None  # One absent pulse is allowed.
     _direct(block, _image("a", 3), **options)
     assert b_ref() is None  # Second absent pulse crosses the boundary.
-    assert set(block._sources) == {"a", "b"}
-    assert block._sources["b"].expired
+    assert set(block._tracker._sources) == {"a", "b"}
+    assert block._tracker._sources["b"].expired
     with pytest.raises(VideoSourceCapacityError):
         _direct(block, _image("c"), **options)
     assert block.release_source("b")
     _direct(block, _image("c"), **options)
-    assert len(block._sources) == 2
+    assert len(block._tracker._sources) == 2
     assert block.release_source("a") and not block.release_source("a")
     assert a_ref() is None
     assert block.release_source("c")
@@ -1242,7 +1246,7 @@ def test_invalid_batch_does_not_sweep_or_advance_and_reset_alignment_is_checked(
         _batch_direct(
             block, [_image()], reset_source=Batch([True], indices=((4,),)), **options
         )
-    assert ref() is not None and block._pulse == 1
+    assert ref() is not None and block._tracker._pulse == 1
     assert len(backend._processor.sessions) == 1
 
 
@@ -1255,7 +1259,7 @@ def test_stopped_entries_count_capacity_after_idle_and_only_cleanup_frees_it():
         _direct(block, _image(frame=1), **options)
     with pytest.raises(VideoSourceCapacityError):
         _direct(block, _image("b"), **options)
-    assert set(block._sources) == {"a"}
+    assert set(block._tracker._sources) == {"a"}
     assert block.release_source("a")
     _direct(block, _image("b"), **options)
     with pytest.raises(VideoSessionLimitError):
@@ -1263,7 +1267,7 @@ def test_stopped_entries_count_capacity_after_idle_and_only_cleanup_frees_it():
     # Empty valid invocations are pulses; no private timer runs between them.
     for _ in range(2):
         assert _batch_direct(block, [], max_idle_pulses=1, **options) == []
-    assert set(block._sources) == {"b"}
+    assert set(block._tracker._sources) == {"b"}
     with pytest.raises(VideoSessionLimitError, match="stopped"):
         _direct(block, _image("b", 2), **options)
     with pytest.raises(VideoSourceCapacityError):
@@ -1282,9 +1286,10 @@ def test_exhaustion_partway_through_batch_keeps_earlier_progress_and_skips_later
         _batch_direct(
             block, [_image("a", 1), _image("b", 2), _image("c", 1)], **options
         )
-    assert block._sources["a"].episode_frames == 2
-    assert block._sources["b"].stopped and block._sources["b"].handle is None
-    assert block._sources["c"].episode_frames == 1
+    assert block._tracker._sources["a"].episode_frames == 2
+    sources = block._tracker._sources
+    assert sources["b"].stopped and sources["b"].handle is None
+    assert block._tracker._sources["c"].episode_frames == 1
     assert [c[0] for c in backend.calls] == [
         "prompt",
         "prompt",
@@ -1338,10 +1343,10 @@ def test_stopped_batch_member_is_preflighted_before_peers_or_idle_sweep():
     # Explicitly reset a peer after idle expiry; ordinary re-entry is refused.
     _direct(block, _image("a", 3), reset_source=True, **options)
     calls = len(backend.calls)
-    pulse = block._pulse
+    pulse = block._tracker._pulse
     with pytest.raises(VideoSessionLimitError, match="stopped"):
         _batch_direct(block, [_image("a", 4), _image("b", 3)], **options)
-    assert len(backend.calls) == calls and block._pulse == pulse
+    assert len(backend.calls) == calls and block._tracker._pulse == pulse
     recovered = _batch_direct(
         block,
         [_image("b", 4), _image("b", 5)],
@@ -1386,16 +1391,17 @@ def test_idle_expiry_requires_explicit_recovery_and_retains_capacity(kind, actio
     first = _batch_direct(block, [_image("a"), _image("b")], **options)
     a_id, b_id = [_episode(result)["episode_id"] for result in first]
     _direct(block, _image("b", 1), **options)
-    assert block._sources["a"].handle is not None
+    assert block._tracker._sources["a"].handle is not None
     peer = _direct(block, _image("b", 2), **options)
-    assert block._sources["a"].handle is None and block._sources["a"].expired
+    sources = block._tracker._sources
+    assert sources["a"].handle is None and sources["a"].expired
     assert _episode(peer)["episode_id"] == b_id
-    assert len(block._sources) == 2
+    assert len(block._tracker._sources) == 2
     calls = len(backend.calls)
-    pulse = block._pulse
+    pulse = block._tracker._pulse
     with pytest.raises(RuntimeError, match="expired.*reset_source"):
         _direct(block, _image("a", 3), **options)
-    assert len(backend.calls) == calls and block._pulse == pulse
+    assert len(backend.calls) == calls and block._tracker._pulse == pulse
     with pytest.raises(VideoSourceCapacityError):
         _direct(block, _image("c"), **options)
     # Return a before b can expire; the denied capacity attempt counted as a pulse.
@@ -1426,8 +1432,8 @@ def test_idle_pulses_cannot_forget_exhaustion_stop(kind):
         _direct(block, _image(frame=1), **options)
     for _ in range(4):
         _batch_direct(block, [], **options)
-    assert len(block._sources) == 1 and block._sources["a"].stopped
-    assert block._sources["a"].handle is None
+    assert len(block._tracker._sources) == 1 and block._tracker._sources["a"].stopped
+    assert block._tracker._sources["a"].handle is None
     with pytest.raises(VideoSessionLimitError, match="stopped"):
         _direct(block, _image(frame=2), **options)
     with pytest.raises(VideoSourceCapacityError):
@@ -1487,7 +1493,7 @@ def test_workflow_host_cleanup_releases_expired_slot_and_preserves_peer_episode(
         for b in session.instances.values()
         if isinstance(b, SegmentAnything2VideoBlock)
     )
-    assert block._sources["a"].expired
+    assert block._tracker._sources["a"].expired
     assert block.release_source("a")
     later = session.run({"image": [_image("a", 3), _image("b", 3)]}).rows()
     assert _episode(later[0])["episode_id"] != _episode(first[0])["episode_id"]

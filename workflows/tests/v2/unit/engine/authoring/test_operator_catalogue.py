@@ -175,7 +175,7 @@ def test_merge_keeps_one_registration_and_catalogues_stay_immutable() -> None:
 
     merged = Catalogue.merge(first, second, Catalogue(operators=[Align]))
 
-    assert merged.operator_types == ("acme/pair_up@v1", "v2/window@v1", "v2/align@v1")
+    assert merged.operator_types == ("acme/pair_up@v1", "roboflow_core/window@v1", "roboflow_core/align@v1")
     assert first.operator_types == ("acme/pair_up@v1",)
     assert merged.with_blocks([Spread]).operator_types == merged.operator_types
     with pytest.raises(CatalogueError, match="already registered"):
@@ -272,7 +272,7 @@ def test_catalogue_descriptions_list_operators_with_roles_and_parameters() -> No
     described = catalogue.describe()
     assert [item["type"] for item in described["operators"]] == [
         "acme/pair_up@v1",
-        "v2/window@v1",
+        "roboflow_core/window@v1",
     ]
     assert described["operators"][0]["namespace"] == "acme"
     assert described["operators"][0]["input_roles"] == ["input"]

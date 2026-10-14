@@ -172,7 +172,7 @@ def scene_steps() -> List[Dict[str, Any]]:
             "classes": [1],
         },
         {
-            "type": "v2/distance_measurement@v1",
+            "type": "roboflow_core/distance_measurement@v1",
             "name": "distance",
             "predictions": "$steps.detect.predictions",
             "object_1_class_name": "card",
@@ -184,20 +184,20 @@ def scene_steps() -> List[Dict[str, Any]]:
             "reference_height": "$inputs.card_height",
         },
         {
-            "type": "v2/size_measurement@v1",
+            "type": "roboflow_core/size_measurement@v1",
             "name": "size",
             "object_predictions": "$steps.objects.predictions",
             "reference_predictions": "$steps.reference.predictions",
             "reference_dimensions": "$inputs.card_size",
         },
         {
-            "type": "v2/mask_area_measurement@v1",
+            "type": "roboflow_core/mask_area_measurement@v1",
             "name": "area",
             "predictions": "$steps.detect.segmentation",
             "pixels_per_unit": "$inputs.pixels_per_cm",
         },
         {
-            "type": "v2/pixel_color_count@v1",
+            "type": "roboflow_core/pixel_color_count@v1",
             "name": "color",
             "image": "$inputs.image",
             "target_color": "$inputs.color",
@@ -319,7 +319,7 @@ def test_uint8_masks_of_value_255_measure_like_boolean_masks() -> None:
     for segmenter in steps[:3]:
         segmenter["mask_value"] = 255
     dense_area = {
-        "type": "v2/mask_area_measurement@v1",
+        "type": "roboflow_core/mask_area_measurement@v1",
         "name": "dense_area",
         "predictions": "$steps.detect.predictions",
     }
@@ -414,7 +414,7 @@ def test_undemanded_measurements_are_pruned() -> None:
 CROP_STEPS = [
     {"type": "test/painted_segmenter@v1", "name": "detect", "image": "$inputs.image"},
     {
-        "type": "v2/dynamic_crop@v1",
+        "type": "roboflow_core/dynamic_crop@v1",
         "name": "crop",
         "image": "$inputs.image",
         "predictions": "$steps.detect.predictions",
@@ -425,13 +425,13 @@ CROP_STEPS = [
         "image": "$steps.crop.crops",
     },
     {
-        "type": "v2/mask_area_measurement@v1",
+        "type": "roboflow_core/mask_area_measurement@v1",
         "name": "area",
         "predictions": "$steps.inner.predictions",
         "pixels_per_unit": 10.0,
     },
     {
-        "type": "v2/pixel_color_count@v1",
+        "type": "roboflow_core/pixel_color_count@v1",
         "name": "color",
         "image": "$steps.crop.crops",
         "target_color": "#FF0302",
@@ -472,7 +472,7 @@ def test_areas_on_crops_equal_areas_in_the_full_image() -> None:
 
 RESIZED_STEPS = [
     {
-        "type": "v2/image_preprocessing@v1",
+        "type": "roboflow_core/image_preprocessing@v1",
         "name": "half",
         "image": "$inputs.image",
         "task_type": "resize",
@@ -491,12 +491,12 @@ RESIZED_STEPS = [
         "classes": [0],
     },
     {
-        "type": "v2/mask_area_measurement@v1",
+        "type": "roboflow_core/mask_area_measurement@v1",
         "name": "area",
         "predictions": "$steps.small.predictions",
     },
     {
-        "type": "v2/size_measurement@v1",
+        "type": "roboflow_core/size_measurement@v1",
         "name": "size",
         "object_predictions": "$steps.small.predictions",
         "reference_predictions": "$steps.reference.predictions",

@@ -975,21 +975,21 @@ class TestEngineFlow:
             ],
             "steps": [
                 {
-                    "type": "v2/crop",
+                    "type": "roboflow_core/crop@v1",
                     "name": "crop",
                     "image": "$inputs.images",
                     "regions": [[2, 3, 30, 20], [10, 0, 40, 40]],
                 },
                 {
-                    "type": "v2/resize",
+                    "type": "roboflow_core/resize@v1",
                     "name": "resize",
                     "image": "$steps.crop.crops",
                     "width": 9,
                     "height": 5,
                 },
-                {"type": "v2/invert", "name": "invert", "image": "$steps.resize.image"},
+                {"type": "roboflow_core/invert@v1", "name": "invert", "image": "$steps.resize.image"},
                 {
-                    "type": "v2/mosaic",
+                    "type": "roboflow_core/mosaic@v1",
                     "name": "mosaic",
                     "images": "$steps.invert.image",
                     "tile_size": 4,

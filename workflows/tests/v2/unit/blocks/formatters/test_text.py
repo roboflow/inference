@@ -1,12 +1,8 @@
-"""``v2/string_template@v1`` on plain values."""
+"""``roboflow_core/string_template@v1`` on plain values."""
 
 import pytest
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.formatters.text import (
-    MAX_RENDERED_TEMPLATE_LENGTH,
-    StringTemplateBlock,
-    render_template,
-)
+from roboflow_workflows.v2.blocks.formatters.string_template.v1 import MAX_RENDERED_TEMPLATE_LENGTH, StringTemplateBlock, render_template
 
 JOIN = [{"type": "SequenceJoin", "separator": ", "}]
 

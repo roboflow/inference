@@ -1,6 +1,6 @@
-"""``v2/image_copy@v1`` in a compiled workflow, with CUDA images.
+"""``roboflow_core/image_copy@v1`` in a compiled workflow, with CUDA images.
 
-The real compiler, session and executor run one ``v2/image_copy@v1`` step in
+The real compiler, session and executor run one ``roboflow_core/image_copy@v1`` step in
 both block execution modes, with ``device="same"`` and ``device="cpu"``. The
 metadata and ownership cases also run with CPU images, so they are checked on
 machines without CUDA; the stream case needs CUDA.
@@ -19,7 +19,7 @@ from datetime import datetime
 import pytest
 import torch
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
-from roboflow_workflows.v2.blocks.image.copy import ImageCopyBlock
+from roboflow_workflows.v2.blocks.image.image_copy.v1 import ImageCopyBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND

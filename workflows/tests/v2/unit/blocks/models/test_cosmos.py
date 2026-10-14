@@ -13,10 +13,7 @@ from roboflow_workflows.v2.blocks.models.cache import (
     ModelRequest,
     ModelRequestConflict,
 )
-from roboflow_workflows.v2.blocks.models.cosmos import (
-    DEFAULT_MODEL_ID,
-    Cosmos3EdgeBlock,
-)
+from roboflow_workflows.v2.blocks.models.cosmos3_edge.v1 import DEFAULT_MODEL_ID, Cosmos3EdgeBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
@@ -214,8 +211,10 @@ def test_empty_batch_does_no_model_work():
         {"prompt": 7},
         {"prompt": Batch(["ok", 9])},
         {"prompt": Batch(["too-short"])},
-        {"model_id": Batch(["ok", ""])},
-        {"model_package_id": Batch([None, 4])},
+        {"model_id": ""},
+        {"model_id": Batch(["ok", "ok"])},
+        {"model_package_id": 4},
+        {"model_package_id": Batch([None, None])},
         {"max_new_tokens": 0},
         {"max_new_tokens": True},
         {"max_new_tokens": 1.2},
@@ -234,9 +233,7 @@ def _rows(values, rows):
     return Batch(values, indices=[(row,) for row in rows])
 
 
-@pytest.mark.parametrize(
-    "field", ["prompt", "system_prompt", "model_id", "model_package_id"]
-)
+@pytest.mark.parametrize("field", ["prompt"])
 @pytest.mark.parametrize(
     "image_rows,value_rows",
     [((0, 1), (1, 0)), ((1, 3), (2, 4))],
@@ -251,12 +248,7 @@ def test_misaligned_per_image_values_fail_before_loading_or_invoking(
         loads.append(request)
         return model
 
-    values = {
-        "prompt": ["Is it wet?", "Is it dry?"],
-        "system_prompt": ["Be brief.", None],
-        "model_id": ["m", "m"],
-        "model_package_id": [None, None],
-    }
+    values = {"prompt": ["Is it wet?", "Is it dry?"]}
     with pytest.raises(ValueError, match=f"{field} rows .* do not match image rows"):
         Cosmos3EdgeBlock(models=ModelCache(load)).run(
             image=_rows(_images()[:2], image_rows),
@@ -266,32 +258,47 @@ def test_misaligned_per_image_values_fail_before_loading_or_invoking(
 
 
 def test_aligned_sparse_per_image_values_follow_their_images_and_scalars_broadcast():
-    a, b = _Fake(), _Fake()
+    a = _Fake()
     images = _images()
-    rows = Cosmos3EdgeBlock(models={"a": a, "b": b}).run(
+    rows = Cosmos3EdgeBlock(models={"a": a}).run(
         image=_rows(images, (1, 3, 4)),
-        model_id=_rows(["a", "b", "a"], (1, 3, 4)),
-        prompt="Is it wet?",
-        system_prompt=_rows(["Be brief.", None, "Explain."], (1, 3, 4)),
+        model_id="a",
+        prompt=_rows(["Is it wet?", None, "Is it hot?"], (1, 3, 4)),
+        system_prompt="Be brief.",
         max_new_tokens=5,
     )
-    assert [row["model_id"] for row in rows] == ["a", "b", "a"]
+    assert [row["model_id"] for row in rows] == ["a", "a", "a"]
     assert [call["text"] for call in a.calls] == [
         "Is it wet?<system_prompt>Be brief.",
-        "Is it wet?<system_prompt>Explain.",
+        "Describe what's in this image.<system_prompt>Be brief.",
+        "Is it hot?<system_prompt>Be brief.",
     ]
-    assert [call["text"] for call in b.calls] == ["Is it wet?"]
-    sent = [call["image"] for call in a.calls + b.calls]
-    expected = [images[0], images[2], images[1]]
-    assert all(tensor is image.tensor_image for tensor, image in zip(sent, expected))
-    assert [call["max_new_tokens"] for call in a.calls + b.calls] == [5, 5, 5]
+    sent = [call["image"] for call in a.calls]
+    assert all(tensor is image.tensor_image for tensor, image in zip(sent, images))
+    assert [call["max_new_tokens"] for call in a.calls] == [5, 5, 5]
 
 
-def test_all_models_resolve_before_first_call():
+@pytest.mark.parametrize("field", ["model_id", "model_package_id"])
+def test_per_image_model_selection_fails_before_loading_or_invoking(field):
+    model, loads = _Fake(), []
+
+    def load(request):
+        loads.append(request)
+        return model
+
+    with pytest.raises(ValueError, match=f"{field} is one value for every image"):
+        Cosmos3EdgeBlock(models=ModelCache(load)).run(
+            image=Batch(_images()[:2]),
+            **{"model_id": "m", field: Batch(["m", "m"])},
+        )
+    assert loads == [] and model.calls == []
+
+
+def test_a_missing_model_fails_before_any_call():
     model = _Fake()
     block = Cosmos3EdgeBlock(models={"a": model})
     with pytest.raises(LookupError):
-        block.run(image=Batch(_images()[:2]), model_id=Batch(["a", "missing"]))
+        block.run(image=Batch(_images()[:2]), model_id="missing")
     assert model.calls == []
 
 
@@ -330,8 +337,8 @@ def test_compiled_source_model_downstream_selectors_and_reuse(mode):
     plan = _plan(
         mode=mode,
         inputs=(
-            {"type": "WorkflowBatchInput", "name": "model", "kind": ["string"]},
-            {"type": "WorkflowBatchInput", "name": "package", "kind": ["string"]},
+            {"type": "WorkflowParameter", "name": "model", "kind": ["string"]},
+            {"type": "WorkflowParameter", "name": "package", "kind": ["string"]},
             {"type": "WorkflowBatchInput", "name": "question", "kind": ["string"]},
             {"type": "WorkflowParameter", "name": "tokens", "kind": ["integer"]},
         ),
@@ -345,29 +352,42 @@ def test_compiled_source_model_downstream_selectors_and_reuse(mode):
     images = _images()
     arguments = {
         "image": images,
-        "model": ["a", "b", "a"],
-        "package": ["p", None, "p"],
+        "model": "a",
+        "package": "p",
         "question": ["first", "second", "third"],
         "tokens": 12,
     }
     rows = session.run(arguments).rows()
+    other = session.run({**arguments, "model": "b", "package": None}).rows()
     again = session.run(arguments).rows()
     assert loaded == [ModelRequest("a", "p"), ModelRequest("b")]
-    assert [row["model_id"] for row in rows] == ["a", "b", "a"]
+    assert [row["model_id"] for row in rows + other] == ["a"] * 3 + ["b"] * 3
     assert [row["consumed"] for row in rows] == [
         "answer:first",
         "answer:second",
         "answer:third",
     ]
-    assert len({row["inference_id"] for row in rows + again}) == 6
+    assert len({row["inference_id"] for row in rows + other + again}) == 9
     calls = models[ModelRequest("a", "p")].calls
-    assert [call["text"] for call in calls] == ["first", "third"] * 2
-    assert calls[0]["image"] is images[0].tensor_image
-    assert calls[1]["image"] is images[2].tensor_image
+    assert [call["text"] for call in calls] == ["first", "second", "third"] * 2
+    assert [call["image"] for call in calls[:3]] == [
+        image.tensor_image for image in images
+    ]
+    assert len(models[ModelRequest("b")].calls) == 3
     assert all(
         call["input_color_format"] == "rgb" and call["max_new_tokens"] == 12
         for call in calls
     )
+
+
+def test_a_per_image_model_selector_fails_compilation():
+    with pytest.raises(Exception, match="model_id is passed once per call"):
+        _plan(
+            inputs=(
+                {"type": "WorkflowBatchInput", "name": "model", "kind": ["string"]},
+            ),
+            model_id="$inputs.model",
+        )
 
 
 @pytest.mark.parametrize(
@@ -432,19 +452,31 @@ def test_no_system_instruction_preserves_backend_fine_tune_default(system):
     assert "<system_prompt>" not in model.calls[0]["text"]
 
 
-def test_system_prompt_is_appended_per_image_with_v1_sentinel():
+def test_one_system_prompt_is_appended_to_every_image_with_v1_sentinel():
     model = _Fake()
     Cosmos3EdgeBlock(models={"m": model}).run(
         image=Batch(_images()),
         model_id="m",
         prompt=Batch(["question", None, ""]),
-        system_prompt=Batch(["inspect", None, "brief"]),
+        system_prompt="inspect",
     )
     assert [call["text"] for call in model.calls] == [
         "question<system_prompt>inspect",
-        "Describe what's in this image.",
-        "Describe what's in this image.<system_prompt>brief",
+        "Describe what's in this image.<system_prompt>inspect",
+        "Describe what's in this image.<system_prompt>inspect",
     ]
+
+
+def test_a_per_image_system_prompt_fails_before_loading():
+    loads = []
+    block = Cosmos3EdgeBlock(models=ModelCache(lambda request: loads.append(request)))
+    with pytest.raises(ValueError, match="system_prompt is one value for every image"):
+        block.run(
+            image=Batch(_images()[:2]),
+            model_id="m",
+            system_prompt=Batch(["inspect", "brief"]),
+        )
+    assert loads == []
 
 
 @pytest.mark.parametrize(
@@ -466,9 +498,7 @@ def test_bad_system_or_reserved_marker_fails_before_loading(invalid):
     assert loaded == []
 
 
-def test_wrong_later_model_method_runs_nothing():
-    model = _Fake()
-
+def test_wrong_model_method_runs_nothing():
     class Wrong:
         def prompt(self, images, question):
             raise AssertionError("Must not be invoked")
@@ -476,10 +506,9 @@ def test_wrong_later_model_method_runs_nothing():
     with pytest.raises(
         ValueError, match=r"model 'b' \(backend Wrong\) does not accept"
     ):
-        Cosmos3EdgeBlock(models={"a": model, "b": Wrong()}).run(
-            image=Batch(_images()[:2]), model_id=Batch(["a", "b"])
+        Cosmos3EdgeBlock(models={"b": Wrong()}).run(
+            image=Batch(_images()[:2]), model_id="b"
         )
-    assert model.calls == []
 
 
 class _NoTokenLimit:
@@ -497,7 +526,7 @@ def test_backend_without_token_limit_names_model_and_fix_before_any_call():
     with pytest.raises(ValueError) as caught:
         block.run(image=Batch(_images()[:1]), model_id="m", max_new_tokens=5)
     assert str(caught.value) == (
-        "v2/cosmos3_edge@v1: model 'm' (backend _NoTokenLimit) does not accept "
+        "roboflow_core/cosmos3_edge@v1: model 'm' (backend _NoTokenLimit) does not accept "
         "prompt(images, prompt, input_color_format, max_new_tokens). Remove "
         "max_new_tokens or set it to null for this model. Checked before any "
         "model runs."
@@ -515,14 +544,7 @@ def test_backend_without_token_limit_names_model_and_fix_before_any_call():
             "prompt contains '<system_prompt>', which Cosmos reads as the start of "
             "the system prompt; remove it from the text",
         ),
-        (
-            "system_prompt",
-            [None, "a<system_prompt>b"],
-            "system_prompt contains '<system_prompt>', which Cosmos reads as the "
-            "start of the system prompt; remove it from the text",
-        ),
-        ("system_prompt", [None, 4], "system_prompt must be text or None, got 4"),
-        ("model_id", ["m", ""], "model_id must be a non-empty string, got ''"),
+        ("prompt", ["ok", 4], "prompt must be text or None, got 4"),
     ],
 )
 def test_per_image_errors_name_the_logical_index_before_loading(field, values, error):
@@ -533,7 +555,38 @@ def test_per_image_errors_name_the_logical_index_before_loading(field, values, e
             image=_rows(_images()[:2], (1, 3)),
             **{"model_id": "m", field: _rows(values, (1, 3))},
         )
-    assert str(caught.value) == f"v2/cosmos3_edge@v1: image at index [3]: {error}"
+    assert str(caught.value) == f"roboflow_core/cosmos3_edge@v1: image at index [3]: {error}"
+    assert loads == []
+
+
+@pytest.mark.parametrize(
+    "system,error",
+    [
+        (
+            "a<system_prompt>b",
+            "system_prompt contains '<system_prompt>', which Cosmos reads as the "
+            "start of the system prompt; remove it from the text",
+        ),
+        (4, "system_prompt must be text or None, got 4"),
+    ],
+)
+def test_a_bad_system_prompt_names_the_block_before_loading(system, error):
+    loads = []
+    block = Cosmos3EdgeBlock(models=ModelCache(lambda request: loads.append(request)))
+    with pytest.raises(ValueError) as caught:
+        block.run(image=Batch(_images()[:2]), model_id="m", system_prompt=system)
+    assert str(caught.value) == f"roboflow_core/cosmos3_edge@v1: {error}"
+    assert loads == []
+
+
+def test_an_empty_model_id_names_the_block_before_loading():
+    loads = []
+    block = Cosmos3EdgeBlock(models=ModelCache(lambda request: loads.append(request)))
+    with pytest.raises(ValueError) as caught:
+        block.run(image=Batch(_images()[:2]), model_id="")
+    assert str(caught.value) == (
+        "roboflow_core/cosmos3_edge@v1: model_id must be a non-empty string, got ''"
+    )
     assert loads == []
 
 
@@ -558,20 +611,31 @@ def test_compiled_reserved_marker_error_names_the_row_and_loads_nothing():
 def test_compiled_dynamic_system_prompt_composition():
     model = _Fake()
     plan = _plan(
-        inputs=({"type": "WorkflowBatchInput", "name": "system", "kind": ["string"]},),
+        inputs=({"type": "WorkflowParameter", "name": "system", "kind": ["string"]},),
         model_id="m",
         prompt="question",
         system_prompt="$inputs.system",
     )
-    rows = (
-        plan.create_session({"models": {"m": model}})
-        .run({"image": _images()[:2], "system": [None, "brief"]})
-        .rows()
-    )
-    assert [row["output"] for row in rows] == [
+    session = plan.create_session({"models": {"m": model}})
+    plain = session.run({"image": _images()[:2], "system": None}).rows()
+    brief = session.run({"image": _images()[:2], "system": "brief"}).rows()
+    assert [row["output"] for row in plain + brief] == [
+        "answer:question",
         "answer:question",
         "answer:question<system_prompt>brief",
+        "answer:question<system_prompt>brief",
     ]
+
+
+def test_a_per_image_system_prompt_selector_fails_compilation():
+    with pytest.raises(Exception, match="system_prompt is passed once per call"):
+        _plan(
+            inputs=(
+                {"type": "WorkflowBatchInput", "name": "system", "kind": ["string"]},
+            ),
+            model_id="m",
+            system_prompt="$inputs.system",
+        )
 
 
 def test_source_backend_parser_preserves_trained_default():
@@ -640,7 +704,7 @@ def test_grayscale_rejected_before_loading():
             image=_rows([_images()[0], grayscale], (0, 4)), model_id="m"
         )
     assert str(caught.value) == (
-        "v2/cosmos3_edge@v1: image at index [4]: a local vision model needs a "
+        "roboflow_core/cosmos3_edge@v1: image at index [4]: a local vision model needs a "
         "3-channel RGB image, got 1 channel(s)"
     )
     assert loads == []

@@ -9,11 +9,7 @@ import pytest
 import supervision as sv
 import torch
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.fusion.difference import (
-    DetectionsDifferenceBlock,
-    _greedy_match,
-    _pairwise_costs,
-)
+from roboflow_workflows.v2.blocks.fusion.detections_difference.v1 import DetectionsDifferenceBlock, _greedy_match, _pairwise_costs
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import row_record, with_row_identity

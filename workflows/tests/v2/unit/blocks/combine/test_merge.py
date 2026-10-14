@@ -1,4 +1,4 @@
-"""``v2/detections_merge@v1`` against the V1 numpy block and analytic values."""
+"""``roboflow_core/detections_merge@v1`` against the V1 numpy block and analytic values."""
 
 import numpy as np
 import pytest

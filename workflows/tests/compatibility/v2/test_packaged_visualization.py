@@ -8,6 +8,9 @@ the end are skipped without a GPU.
 A fake detector block emits fixed native ``Detections`` per image id, so no
 model is loaded.
 """
+import roboflow_workflows.v2.blocks.visualization.native.simple_label_visualization_in_place.v1 as _v2_family_0
+import roboflow_workflows.v2.blocks.visualization.native.detection_visualization.v1 as _v2_family_1
+import roboflow_workflows.v2.blocks.visualization.native.detection_drawing.v1 as _v2_family_2
 
 import subprocess
 import sys
@@ -23,7 +26,7 @@ from roboflow_workflows.core_steps.visualizations.bounding_box.v1_tensor import 
     gpu_draw_boxes,
 )
 from roboflow_workflows.v2.blocks import visualization
-from roboflow_workflows.v2.blocks.visualization import blocks as painter_blocks
+from roboflow_workflows.v2.blocks.visualization._shared import blocks as painter_blocks
 from roboflow_workflows.v2.blocks.visualization import streams
 from roboflow_workflows.v2.blocks.visualization.drawing import (
     PALETTE,
@@ -256,9 +259,9 @@ def _reference(
 # --- pixels through compiled workflows ---------------------------------------
 
 PAINTER_TYPES = {
-    "boxes": "v2/box_visualization@v1",
-    "labels": "v2/label_visualization@v1",
-    "both": "v2/detection_visualization@v1",
+    "boxes": "roboflow_core/simple_box_visualization@v1",
+    "labels": "roboflow_core/simple_label_visualization@v1",
+    "both": "roboflow_core/detection_visualization@v1",
 }
 
 
@@ -291,7 +294,7 @@ def test_routes_with_shared_preparation_and_in_place_labels_match_fused() -> Non
         _definition(
             [
                 {
-                    "type": "v2/detection_drawing@v1",
+                    "type": "roboflow_core/detection_drawing@v1",
                     "name": "drawing",
                     "predictions": "$steps.detector.predictions",
                 },
@@ -301,7 +304,7 @@ def test_routes_with_shared_preparation_and_in_place_labels_match_fused() -> Non
                     predictions="$steps.drawing.drawing",
                 ),
                 _painter_step(
-                    "v2/label_visualization_in_place@v1",
+                    "roboflow_core/simple_label_visualization_in_place@v1",
                     name="labels",
                     image="$steps.boxes.image",
                     predictions="$steps.drawing.drawing",
@@ -331,7 +334,7 @@ def test_pipelined_runs_paint_every_batch_like_serial_runs() -> None:
     definition = _definition(
         [
             {
-                "type": "v2/detection_drawing@v1",
+                "type": "roboflow_core/detection_drawing@v1",
                 "name": "drawing",
                 "predictions": "$steps.detector.predictions",
             },
@@ -341,7 +344,7 @@ def test_pipelined_runs_paint_every_batch_like_serial_runs() -> None:
                 predictions="$steps.drawing.drawing",
             ),
             _painter_step(
-                "v2/label_visualization_in_place@v1",
+                "roboflow_core/simple_label_visualization_in_place@v1",
                 name="labels",
                 image="$steps.boxes.image",
                 predictions="$steps.drawing.drawing",
@@ -375,7 +378,10 @@ def test_painters_given_prepared_drawings_make_no_transfer(monkeypatch) -> None:
         transferred.append(len(predictions))
         return original(predictions)
 
+    # Both lookup sites: the painters prepare through ``checked_drawings`` in
+    # the shared module, the prep block imports ``prepare_drawings`` directly.
     monkeypatch.setattr(painter_blocks, "prepare_drawings", recording)
+    monkeypatch.setattr(_v2_family_2, "prepare_drawings", recording)
     images = [_image(image_id="a"), _image(image_id="b"), _image(image_id="c")]
     detections = {key: _scene_detections() for key in "abc"}
 
@@ -383,7 +389,7 @@ def test_painters_given_prepared_drawings_make_no_transfer(monkeypatch) -> None:
         _definition(
             [
                 {
-                    "type": "v2/detection_drawing@v1",
+                    "type": "roboflow_core/detection_drawing@v1",
                     "name": "drawing",
                     "predictions": "$steps.detector.predictions",
                 },
@@ -411,14 +417,23 @@ def test_painters_given_prepared_drawings_make_no_transfer(monkeypatch) -> None:
 
 
 def test_one_call_per_batch_and_results_stay_aligned(monkeypatch) -> None:
+    # The painter enters one stream scope and paints the whole batch with
+    # one kernels call inside it.
     calls: List[int] = []
-    original = painter_blocks._Painter._paint_copies
+    scopes: List[torch.device] = []
+    original_paint = TensorKernels.paint
+    original_work = streams.ReadyScope.work
 
-    def counting(self, image, predictions, **kwargs):
-        calls.append(len(image))
-        return original(self, image, predictions, **kwargs)
+    def counting(self, scenes, drawings, **kwargs):
+        calls.append(len(scenes))
+        return original_paint(self, scenes, drawings, **kwargs)
 
-    monkeypatch.setattr(painter_blocks._Painter, "_paint_copies", counting)
+    def scoping(self, device):
+        scopes.append(device)
+        return original_work(self, device)
+
+    monkeypatch.setattr(TensorKernels, "paint", counting)
+    monkeypatch.setattr(streams.ReadyScope, "work", scoping)
     sizes = [(40, 60), (90, 50), (64, 64)]
     images = [
         _image(image_id=f"i{index}", height=height, width=width, seed=index)
@@ -437,6 +452,7 @@ def test_one_call_per_batch_and_results_stay_aligned(monkeypatch) -> None:
     )
 
     assert calls == [3]
+    assert len(scopes) == 1
     for image, output in zip(images, annotated):
         expected = _reference(image.tensor_image, detections[image.image_id], "both")
         assert output.image_id == image.image_id
@@ -530,7 +546,7 @@ def test_prepared_drawing_is_exact_read_only_and_reads_strided_columns() -> None
         image_metadata={"class_names": ["person"]},
     )
 
-    first, second = painter_blocks.DetectionDrawingBlock().run(
+    first, second = _v2_family_2.DetectionDrawingBlock().run(
         predictions=[many, single]
     )
 
@@ -549,7 +565,7 @@ def test_in_place_painter_changes_its_input_and_refuses_strided_images() -> None
     image = _image(image_id="a")
     pixels = image.tensor_image
     expected = _reference_labels(pixels, _scene_detections())
-    painter = painter_blocks.InPlaceLabelVisualizationBlock()
+    painter = _v2_family_0.InPlaceLabelVisualizationBlock()
 
     (result,) = painter.run(image=[image], predictions=[_scene_detections()])
 
@@ -565,7 +581,7 @@ def test_in_place_painter_declares_its_mutation_to_the_compiler() -> None:
     steps = [
         _painter_step(PAINTER_TYPES["boxes"], name="boxes"),
         _painter_step(
-            "v2/label_visualization_in_place@v1",
+            "roboflow_core/simple_label_visualization_in_place@v1",
             name="labels",
             image="$steps.boxes.image",
         ),
@@ -575,7 +591,7 @@ def test_in_place_painter_declares_its_mutation_to_the_compiler() -> None:
         ),
     ]
 
-    assert painter_blocks.InPlaceLabelVisualizationBlock.mutates == ("image",)
+    assert _v2_family_0.InPlaceLabelVisualizationBlock.mutates == ("image",)
     with pytest.raises(Exception, match="mutated in place"):
         compile_workflow(
             _definition(steps, "$steps.labels.image"),
@@ -588,7 +604,7 @@ def test_in_place_painter_declares_its_mutation_to_the_compiler() -> None:
 
 
 @pytest.mark.parametrize(
-    "painter_type", [*PAINTER_TYPES.values(), "v2/label_visualization_in_place@v1"]
+    "painter_type", [*PAINTER_TYPES.values(), "roboflow_core/simple_label_visualization_in_place@v1"]
 )
 @pytest.mark.parametrize("backend", ["tensor", "triton"])
 def test_obsolete_backend_field_fails_with_a_useful_message(
@@ -639,7 +655,7 @@ def test_negative_class_id_fails_before_in_place_painting() -> None:
     )
 
     with pytest.raises(ValueError, match="negative class id"):
-        painter_blocks.InPlaceLabelVisualizationBlock().run(
+        _v2_family_0.InPlaceLabelVisualizationBlock().run(
             image=images, predictions=drawings
         )
 
@@ -648,7 +664,7 @@ def test_negative_class_id_fails_before_in_place_painting() -> None:
 
 
 def test_misaligned_batches_and_mixed_inputs_are_rejected() -> None:
-    painter = painter_blocks.DetectionVisualizationBlock()
+    painter = _v2_family_1.DetectionVisualizationBlock()
     gray = ImageData.from_tensor(
         torch.zeros((1, 8, 8), dtype=torch.uint8), image_id="g"
     )
@@ -805,7 +821,7 @@ def test_cuda_painters_match_cpu_pixels() -> None:
         for det in detections
     ]
 
-    results = painter_blocks.DetectionVisualizationBlock().run(
+    results = _v2_family_1.DetectionVisualizationBlock().run(
         image=cuda_images, predictions=cuda_detections
     )
 
@@ -829,9 +845,9 @@ def test_cuda_painter_follows_pending_image_transform(mode: str) -> None:
             },
         ],
         "steps": [
-            {"type": "v2/invert", "name": "invert", "image": "$inputs.image"},
+            {"type": "roboflow_core/invert@v1", "name": "invert", "image": "$inputs.image"},
             {
-                "type": "v2/detection_visualization@v1",
+                "type": "roboflow_core/detection_visualization@v1",
                 "name": "paint",
                 "image": "$steps.invert.image",
                 "predictions": "$inputs.predictions",

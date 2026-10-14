@@ -20,13 +20,9 @@ from typing import Any
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.models.segment_anything import (
-    SAM2_DEFAULT_MODEL_ID,
-    SAM3_DEFAULT_MODEL_ID,
-    SegmentAnything2Block,
-    SegmentAnything3Block,
-    _mask_boxes,
-)
+from roboflow_workflows.v2.blocks.models._shared.segment_anything import _mask_boxes
+from roboflow_workflows.v2.blocks.models.segment_anything.v1 import SAM2_DEFAULT_MODEL_ID, SegmentAnything2Block
+from roboflow_workflows.v2.blocks.models.sam3.v3 import SAM3_DEFAULT_MODEL_ID, SegmentAnything3Block
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import ImageData

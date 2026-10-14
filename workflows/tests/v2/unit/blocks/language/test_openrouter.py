@@ -9,11 +9,7 @@ from typing import Any, Dict
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.language.chat import ChatRequestError
-from roboflow_workflows.v2.blocks.language.openrouter import (
-    OpenRouterBlock,
-    OpenRouterProxyError,
-    proxy_error_handlers,
-)
+from roboflow_workflows.v2.blocks.language.openrouter.v3 import OpenRouterBlock, OpenRouterProxyError, proxy_error_handlers
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import OBJECT_DETECTION_PREDICTION_KIND

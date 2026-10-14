@@ -1,4 +1,4 @@
-"""``v2/text_display@v1`` against the latest V1 block and its template rules.
+"""``roboflow_core/text_display@v1`` against the latest V1 block and its template rules.
 
 The V1 oracle (``support.run_v1``) gets exactly the validated V2 values, so
 every placement, alignment, background and clipping case must be pixel-equal.
@@ -12,9 +12,7 @@ from roboflow_workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
 )
 from roboflow_workflows.v2.blocks.query import QueryDefinitionError
-from roboflow_workflows.v2.blocks.visualization.annotations.text_display import (
-    TextDisplayBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.text_display.v1 import TextDisplayBlock
 from roboflow_workflows.v2.engine.declaration import spec_of
 from roboflow_workflows.v2.engine.errors import ParamsValidationError
 

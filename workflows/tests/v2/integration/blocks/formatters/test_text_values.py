@@ -4,9 +4,9 @@ Fake detector (``tests/v2/support/models``); not real inference. Its row count
 follows mean brightness: 0 -> 0 rows, 64 -> 1, 128 -> 2, 255 -> 4; classes
 cycle person, car, dog. A fixed wall clock makes time outputs exact::
 
-    image ─▶ v2/object_detection@v1 ─▶ v2/property_definition@v1 (classes)
-                                          ├─▶ v2/string_template@v1   per image
-                                          └─▶ v2/csv_formatter@v1     one CSV
+    image ─▶ roboflow_core/roboflow_object_detection_model@v3 ─▶ roboflow_core/property_definition@v1 (classes)
+                                          ├─▶ roboflow_core/string_template@v1   per image
+                                          └─▶ roboflow_core/csv_formatter@v1     one CSV
 """
 
 import csv
@@ -16,15 +16,13 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.control.conditions import ContinueIfQueryBlock
+from roboflow_workflows.v2.blocks.control.continue_if.v1 import ContinueIfQueryBlock
 from roboflow_workflows.v2.blocks.formatters import BLOCKS as FORMATTER_BLOCKS
-from roboflow_workflows.v2.blocks.formatters.csv import CsvFormatterBlock
-from roboflow_workflows.v2.blocks.formatters.json import JsonParserBlock
-from roboflow_workflows.v2.blocks.formatters.text import StringTemplateBlock
-from roboflow_workflows.v2.blocks.formatters.values import (
-    CurrentTimeBlock,
-    FirstNonEmptyOrDefaultBlock,
-)
+from roboflow_workflows.v2.blocks.formatters.csv_formatter.v1 import CsvFormatterBlock
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock
+from roboflow_workflows.v2.blocks.formatters.string_template.v1 import StringTemplateBlock
+from roboflow_workflows.v2.blocks.formatters.current_time.v1 import CurrentTimeBlock
+from roboflow_workflows.v2.blocks.formatters.first_non_empty_or_default.v1 import FirstNonEmptyOrDefaultBlock
 from roboflow_workflows.v2.blocks.image import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models import BLOCKS as MODEL_BLOCKS
 from roboflow_workflows.v2.data.image import ImageData
@@ -107,14 +105,14 @@ def _parse(document: str) -> List[List[str]]:
 
 DETECT_STEPS = [
     {
-        "type": "v2/object_detection@v1",
+        "type": "roboflow_core/roboflow_object_detection_model@v3",
         "name": "detector",
         "image": "$inputs.image",
         "model_id": "od",
         "confidence": 0.0,
     },
     {
-        "type": "v2/property_definition@v1",
+        "type": "roboflow_core/property_definition@v1",
         "name": "classes",
         "data": "$steps.detector.predictions",
         "operations": CLASS_NAMES,
@@ -129,7 +127,7 @@ def _report_workflow() -> Dict[str, Any]:
         "steps": [
             *DETECT_STEPS,
             {
-                "type": "v2/string_template@v1",
+                "type": "roboflow_core/string_template@v1",
                 "name": "summary",
                 "template": "{image} at {site}: {count} objects [{classes}]",
                 "data": {
@@ -141,7 +139,7 @@ def _report_workflow() -> Dict[str, Any]:
                 "data_operations": {"count": LENGTH, "classes": JOIN},
             },
             {
-                "type": "v2/csv_formatter@v1",
+                "type": "roboflow_core/csv_formatter@v1",
                 "name": "report",
                 "columns_data": {
                     "image": "$inputs.name",
@@ -214,7 +212,7 @@ def test_a_parameter_only_csv_is_one_document_per_run() -> None:
         "inputs": [SITE_INPUT],
         "steps": [
             {
-                "type": "v2/csv_formatter@v1",
+                "type": "roboflow_core/csv_formatter@v1",
                 "name": "report",
                 "columns_data": {"site": "$inputs.site", "note": '=1+1, "x"'},
             }
@@ -256,26 +254,26 @@ def _gated_workflow() -> Dict[str, Any]:
         "steps": [
             *DETECT_STEPS,
             {
-                "type": "v2/continue_if@v1",
+                "type": "roboflow_core/continue_if@v1",
                 "name": "busy",
                 "condition_statement": at_least_two,
                 "evaluation_parameters": {"classes": "$steps.classes.output"},
                 "next_steps": ["$steps.alert", "$steps.busy_log"],
             },
             {
-                "type": "v2/string_template@v1",
+                "type": "roboflow_core/string_template@v1",
                 "name": "alert",
                 "template": "ALERT {image}",
                 "data": {"image": "$inputs.name"},
             },
             {
-                "type": "v2/first_non_empty_or_default@v1",
+                "type": "roboflow_core/first_non_empty_or_default@v1",
                 "name": "status",
                 "data": ["$steps.alert.output"],
                 "default": "quiet",
             },
             {
-                "type": "v2/csv_formatter@v1",
+                "type": "roboflow_core/csv_formatter@v1",
                 "name": "busy_log",
                 "columns_data": {"image": "$inputs.name"},
             },
@@ -330,13 +328,13 @@ def test_template_renders_present_none_but_skips_an_unavailable_row(mode: str) -
         "inputs": [{"type": "WorkflowBatchInput", "name": "text", "kind": ["string"]}],
         "steps": [
             {
-                "type": "v2/json_parser@v1",
+                "type": "roboflow_core/json_parser@v1",
                 "name": "record",
                 "raw_json": "$inputs.text",
                 "expected_fields": ["a", "b"],
             },
             {
-                "type": "v2/continue_if@v1",
+                "type": "roboflow_core/continue_if@v1",
                 "name": "valid",
                 "condition_statement": {
                     "type": "StatementGroup",
@@ -356,13 +354,13 @@ def test_template_renders_present_none_but_skips_an_unavailable_row(mode: str) -
                 "next_steps": ["$steps.selected"],
             },
             {
-                "type": "v2/string_template@v1",
+                "type": "roboflow_core/string_template@v1",
                 "name": "selected",
                 "template": "{a}",
                 "data": {"a": "$steps.record.a"},
             },
             {
-                "type": "v2/string_template@v1",
+                "type": "roboflow_core/string_template@v1",
                 "name": "message",
                 "template": "{a}|{b}",
                 "data": {"a": "$steps.selected.output", "b": "$steps.record.b"},
@@ -400,20 +398,20 @@ def test_none_cells_keep_their_rows_while_gated_records_add_none(mode: str) -> N
         "inputs": [{"type": "WorkflowBatchInput", "name": "text", "kind": ["string"]}],
         "steps": [
             {
-                "type": "v2/json_parser@v1",
+                "type": "roboflow_core/json_parser@v1",
                 "name": "record",
                 "raw_json": "$inputs.text",
                 "expected_fields": ["name", "v", "n", "keep"],
             },
             {
-                "type": "v2/continue_if@v1",
+                "type": "roboflow_core/continue_if@v1",
                 "name": "gate",
                 "condition_statement": keep_is_true,
                 "evaluation_parameters": {"keep": "$steps.record.keep"},
                 "next_steps": ["$steps.log"],
             },
             {
-                "type": "v2/csv_formatter@v1",
+                "type": "roboflow_core/csv_formatter@v1",
                 "name": "log",
                 "columns_data": {
                     "name": "$steps.record.name",
@@ -452,26 +450,26 @@ def test_crops_of_ragged_detections_give_one_row_per_crop() -> None:
         "steps": [
             DETECT_STEPS[0],
             {
-                "type": "v2/dynamic_crop@v1",
+                "type": "roboflow_core/dynamic_crop@v1",
                 "name": "crop",
                 "image": "$inputs.image",
                 "predictions": "$steps.detector.predictions",
             },
             {
-                "type": "v2/property_definition@v1",
+                "type": "roboflow_core/property_definition@v1",
                 "name": "crop_class",
                 "data": "$steps.crop.predictions",
                 "operations": CLASS_NAMES,
             },
             {
-                "type": "v2/string_template@v1",
+                "type": "roboflow_core/string_template@v1",
                 "name": "label",
                 "template": "{image}/{label}",
                 "data": {"image": "$inputs.name", "label": "$steps.crop_class.output"},
                 "data_operations": {"label": JOIN},
             },
             {
-                "type": "v2/csv_formatter@v1",
+                "type": "roboflow_core/csv_formatter@v1",
                 "name": "crops",
                 "columns_data": {
                     "image": "$inputs.name",
@@ -504,9 +502,9 @@ def _clock_workflow() -> Dict[str, Any]:
         "version": "2.0",
         "inputs": [{"type": "WorkflowParameter", "name": "tz", "default_value": "UTC"}],
         "steps": [
-            {"type": "v2/current_time@v1", "name": "now", "timezone": "$inputs.tz"},
+            {"type": "roboflow_core/current_time@v1", "name": "now", "timezone": "$inputs.tz"},
             {
-                "type": "v2/string_template@v1",
+                "type": "roboflow_core/string_template@v1",
                 "name": "stamp",
                 "template": "{date} {time} ({iso})",
                 "data": {
@@ -550,7 +548,7 @@ def test_a_selected_template_is_checked_against_data_when_it_arrives() -> None:
         ],
         "steps": [
             {
-                "type": "v2/string_template@v1",
+                "type": "roboflow_core/string_template@v1",
                 "name": "text",
                 "template": "$inputs.template",
                 "data": {"site": "$inputs.site"},
@@ -569,23 +567,23 @@ def test_a_selected_template_is_checked_against_data_when_it_arrives() -> None:
     ("step", "message"),
     [
         (
-            {"type": "v2/string_template@v1", "template": "{missing}"},
+            {"type": "roboflow_core/string_template@v1", "template": "{missing}"},
             r"uses \['missing'\]",
         ),
         (
-            {"type": "v2/csv_formatter@v1", "columns_data": {"timestamp": 1}},
+            {"type": "roboflow_core/csv_formatter@v1", "columns_data": {"timestamp": 1}},
             "reserved column name",
         ),
         (
             {
-                "type": "v2/csv_formatter@v1",
+                "type": "roboflow_core/csv_formatter@v1",
                 "columns_data": {"a": 1},
                 "columns_operations": {"b": LENGTH},
             },
             "columns_operations names `b`",
         ),
-        ({"type": "v2/current_time@v1", "timezone": "Mars/Base"}, "timezone"),
-        ({"type": "v2/first_non_empty_or_default@v1", "data": []}, "at least 1"),
+        ({"type": "roboflow_core/current_time@v1", "timezone": "Mars/Base"}, "timezone"),
+        ({"type": "roboflow_core/first_non_empty_or_default@v1", "data": []}, "at least 1"),
     ],
 )
 def test_invalid_definitions_fail_workflow_compilation(

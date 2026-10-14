@@ -46,21 +46,11 @@ from roboflow_workflows.v2.blocks.visualization.annotations.blend import (
     blend,
     paint_instances,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.circle import (
-    CircleVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.corner import (
-    CornerVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.dot import (
-    DotVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.ellipse import (
-    EllipseVisualizationBlock,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.halo import (
-    HaloVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.circle_visualization.v1 import CircleVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.corner_visualization.v1 import CornerVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.dot_visualization.v1 import DotVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.ellipse_visualization.v1 import EllipseVisualizationBlock
+from roboflow_workflows.v2.blocks.visualization.annotations.halo_visualization.v2 import HaloVisualizationBlock
 from roboflow_workflows.v2.blocks.visualization.annotations.raster import (
     box_blur,
     grow_mask,
@@ -82,9 +72,7 @@ from roboflow_workflows.v2.blocks.visualization.annotations.text import (
     paint_labels,
     vertex_labels,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.triangle import (
-    TriangleVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.triangle_visualization.v1 import TriangleVisualizationBlock
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from tests.v2.unit.blocks.visualization.annotations.support import (

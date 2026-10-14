@@ -11,15 +11,7 @@ import pytest
 import torch
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
-from roboflow_workflows.v2.blocks.industrial.onvif import (
-    OnvifCameraPort,
-    OnvifController,
-    OnvifError,
-    OnvifTarget,
-    OnvifTrackingBlock,
-    TrackingOptions,
-    _LocalFailure,
-)
+from roboflow_workflows.v2.blocks.industrial.onvif_sink.v1 import OnvifCameraPort, OnvifController, OnvifError, OnvifTarget, OnvifTrackingBlock, TrackingOptions, _LocalFailure
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import FrameMapping
 from roboflow_workflows.v2.data.masks import SegmentationView

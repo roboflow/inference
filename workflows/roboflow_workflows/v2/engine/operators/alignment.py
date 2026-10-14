@@ -1,4 +1,4 @@
-"""``v2/align@v1``: pair each leader sample with the nearest follower samples.
+"""``roboflow_core/align@v1``: pair each leader sample with the nearest follower samples.
 
 Alignment is a declared correspondence, never inferred from equal clocks or
 arrival order. Every input promises strictly increasing timestamps on the
@@ -59,7 +59,7 @@ BATCH_PORT = "samples"
 
 
 class AlignParams(OperatorParams):
-    """Parameters of ``v2/align@v1``."""
+    """Parameters of ``roboflow_core/align@v1``."""
 
     clock: str = Field(
         description="Clock id every compared timestamp must be on.",
@@ -132,7 +132,7 @@ class Align(Operator):
     position (``batch``).
     """
 
-    type = "v2/align@v1"
+    type = "roboflow_core/align@v1"
     Params = AlignParams
     input_roles = ("input",)
 

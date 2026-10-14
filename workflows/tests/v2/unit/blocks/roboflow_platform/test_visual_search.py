@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/visual_search@v1`` and ``v2/visual_search_classifier@v1``.
+"""Unit tests of ``roboflow_core/visual_search@v1`` and ``roboflow_core/visual_search_classifier@v1``.
 
 Fake ports prove wiring and V1 output rules only; the host adapter and its
 HTTP requests are tested in the inference package. Every credential is
@@ -14,12 +14,9 @@ import pytest
 import torch
 from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
-from roboflow_workflows.v2.blocks.roboflow_platform.visual_search import (
-    CLASSIFIER_FIELDS,
-    VisualSearchBlock,
-    VisualSearchClassifierBlock,
-    parse_visual_search_classification,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform._shared.visual_search import CLASSIFIER_FIELDS, parse_visual_search_classification
+from roboflow_workflows.v2.blocks.roboflow_platform.visual_search.v1 import VisualSearchBlock
+from roboflow_workflows.v2.blocks.roboflow_platform.visual_search_classifier.v1 import VisualSearchClassifierBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.row_identity import RowRef, classification_parent
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError

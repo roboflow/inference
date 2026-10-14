@@ -1,4 +1,4 @@
-"""``v2/identify_changes@v1`` and ``v2/identify_outliers@v1`` in compiled workflows.
+"""``roboflow_core/identify_changes@v1`` and ``roboflow_core/identify_outliers@v1`` in compiled workflows.
 
 Two synthetic cameras send 4-dim embeddings; each changes scene once
 (camera A at call 9, camera B at call 6)::

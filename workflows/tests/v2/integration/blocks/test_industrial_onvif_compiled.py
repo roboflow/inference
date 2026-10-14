@@ -3,10 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from roboflow_workflows.v2.blocks.industrial.onvif import (
-    OnvifController,
-    OnvifTrackingBlock,
-)
+from roboflow_workflows.v2.blocks.industrial.onvif_sink.v1 import OnvifController, OnvifTrackingBlock
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import StepExecutionError

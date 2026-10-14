@@ -108,7 +108,7 @@ def _producing(*, resize, coordinates_system, names=("semantic", "rows")):
     if resize:
         steps.append(
             {
-                "type": "v2/resize",
+                "type": "roboflow_core/resize@v1",
                 "name": "resize",
                 "image": source,
                 "width": 10,

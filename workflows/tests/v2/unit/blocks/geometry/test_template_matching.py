@@ -1,10 +1,8 @@
-"""Unit tests of ``v2/template_matching@v1`` on pasted synthetic templates."""
+"""Unit tests of ``roboflow_core/template_matching@v1`` on pasted synthetic templates."""
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.geometry.template_matching import (
-    TemplateMatchingBlock,
-)
+from roboflow_workflows.v2.blocks.geometry.template_matching.v1 import TemplateMatchingBlock
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData

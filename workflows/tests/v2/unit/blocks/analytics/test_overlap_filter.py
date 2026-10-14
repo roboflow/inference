@@ -2,7 +2,7 @@
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.analytics.overlap_filter import OverlapFilterBlock
+from roboflow_workflows.v2.blocks.analytics.overlap.v1 import OverlapFilterBlock
 from roboflow_workflows.v2.data.masks import MaskGridGeometry, SegmentationView
 from roboflow_workflows.v2.data.row_identity import row_record, with_row_identity
 

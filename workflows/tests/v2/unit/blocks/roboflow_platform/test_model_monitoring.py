@@ -7,14 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
-from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring import (
-    DISABLED_MESSAGE,
-    FAILURE_MESSAGE,
-    SKIPPED_MESSAGE,
-    SUCCESS_MESSAGE,
-    ModelMonitoringInferenceAggregatorBlock,
-    format_predictions_for_model_monitoring,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring_inference_aggregator.v1 import DISABLED_MESSAGE, FAILURE_MESSAGE, SKIPPED_MESSAGE, SUCCESS_MESSAGE, ModelMonitoringInferenceAggregatorBlock, format_predictions_for_model_monitoring
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 
@@ -520,9 +513,7 @@ def test_namespace_budget_rejects_whole_invocation_without_eviction():
 def test_background_collects_while_workspace_is_pending_and_dates_completion():
     from threading import Event
 
-    from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring import (
-        PENDING_MESSAGE,
-    )
+    from roboflow_workflows.v2.blocks.roboflow_platform.model_monitoring_inference_aggregator.v1 import PENDING_MESSAGE
     from roboflow_workflows.v2.blocks.sinks.runtime import (
         BACKGROUND_MESSAGE,
         BackgroundEffects,

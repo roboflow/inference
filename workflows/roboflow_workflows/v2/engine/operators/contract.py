@@ -8,7 +8,7 @@ source, one class declares everything and the catalogue only collects it::
     class Align(Operator):
         \"\"\"Pair each leader sample with the nearest follower samples.\"\"\"
 
-        type = "v2/align@v1"
+        type = "roboflow_core/align@v1"
         input_roles = ("input",)
 
         class Params(OperatorParams):
@@ -456,7 +456,7 @@ class Operator:
     their own ``type`` are abstract bases and cannot be registered.
 
     Class attributes:
-        type: Canonical identity, e.g. ``"v2/window@v1"``.
+        type: Canonical identity, e.g. ``"roboflow_core/window@v1"``.
         aliases: Additional accepted identities.
         Params: Nested ``OperatorParams`` model of literal parameters.
         input_roles: Roles of the named inputs the operator accepts.

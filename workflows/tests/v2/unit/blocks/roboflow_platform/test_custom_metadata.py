@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/roboflow_custom_metadata@v1`` against fake ports.
+"""Unit tests of ``roboflow_core/roboflow_custom_metadata@v1`` against fake ports.
 
 Fakes prove wiring and V1 outcome rules only; the host adapter and its HTTP
 requests are tested in the inference package. Every credential is invented.
@@ -10,10 +10,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.platform import PlatformUnavailableError
-from roboflow_workflows.v2.blocks.roboflow_platform.custom_metadata import (
-    NO_INFERENCE_ID_MESSAGE,
-    RoboflowCustomMetadataBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_custom_metadata.v1 import NO_INFERENCE_ID_MESSAGE, RoboflowCustomMetadataBlock
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 from roboflow_workflows.v2.engine.declaration import spec_of
@@ -308,7 +305,7 @@ def test_params_follow_v1_shape_and_reject_loose_values() -> None:
     assert params.fire_and_forget is True
     assert params.inference_id is None
     assert spec.identities == (
-        "v2/roboflow_custom_metadata@v1",
+        "roboflow_core/roboflow_custom_metadata@v1",
         "RoboflowCustomMetadata",
     )
     with pytest.raises(ParamsValidationError):

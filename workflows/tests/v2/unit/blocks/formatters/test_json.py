@@ -1,12 +1,8 @@
-"""``v2/json_parser@v1`` on plain strings: V1 parsing and configuration rules."""
+"""``roboflow_core/json_parser@v1`` on plain strings: V1 parsing and configuration rules."""
 
 import pytest
 from pydantic import ValidationError
-from roboflow_workflows.v2.blocks.formatters.json import (
-    JsonParserBlock,
-    output_json_keys,
-    parse_json_fields,
-)
+from roboflow_workflows.v2.blocks.formatters.json_parser.v1 import JsonParserBlock, output_json_keys, parse_json_fields
 from roboflow_workflows.v2.data.kinds import BOOLEAN_KIND, WILDCARD_KIND
 
 

@@ -1,4 +1,4 @@
-"""``v2/window@v1`` history options, driven directly without a runtime.
+"""``roboflow_core/window@v1`` history options, driven directly without a runtime.
 
 Pulses come from a sparse set of stationary cameras: a camera absent from a
 pulse has no member there. Payloads are short strings such as ``"c1@3"``

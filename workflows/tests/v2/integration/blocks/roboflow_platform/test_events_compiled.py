@@ -2,11 +2,9 @@
 
 import torch
 from roboflow_workflows.v2.blocks import create_catalogue
-from roboflow_workflows.v2.blocks.roboflow_platform.vision_events import (
-    EventBundle,
-    RoboflowVisionEventsBlock,
-    VisionEventBundleBlock,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform._shared.vision_events import EventBundle
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_vision_events.v1 import RoboflowVisionEventsBlock
+from roboflow_workflows.v2.blocks.roboflow_platform.vision_event_bundle.v1 import VisionEventBundleBlock
 from roboflow_workflows.v2.blocks.sinks.runtime import BackgroundEffects
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.compilation import compile_workflow

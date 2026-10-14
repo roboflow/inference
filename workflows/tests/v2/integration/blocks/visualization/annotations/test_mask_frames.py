@@ -83,7 +83,7 @@ DRAWINGS = {
     ),
 }
 INNER_MODELS = {
-    "dense": "v2/instance_segmentation@v1",
+    "dense": "roboflow_core/roboflow_instance_segmentation_model@v4",
     "compact": "test/synthetic_compact_segmentation@v1",
 }
 
@@ -91,13 +91,13 @@ INNER_MODELS = {
 def definition(inner_type: str) -> Dict[str, Any]:
     steps = [
         {
-            "type": "v2/instance_segmentation@v1",
+            "type": "roboflow_core/roboflow_instance_segmentation_model@v4",
             "name": "seg",
             "image": "$inputs.image",
             "model_id": "shapes-seg",
         },
         {
-            "type": "v2/dynamic_crop@v1",
+            "type": "roboflow_core/dynamic_crop@v1",
             "name": "crop",
             "image": "$inputs.image",
             "predictions": "$steps.seg.predictions",

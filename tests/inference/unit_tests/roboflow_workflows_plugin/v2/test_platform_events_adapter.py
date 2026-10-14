@@ -26,11 +26,9 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.roboflow_platform.ports import PlatformRequestError
-from roboflow_workflows.v2.blocks.roboflow_platform.vision_events import (
-    RoboflowVisionEventsBlock,
-    VisionEventBundleBlock,
-    VisionEventRequest,
-)
+from roboflow_workflows.v2.blocks.roboflow_platform.roboflow_vision_events.v1 import RoboflowVisionEventsBlock
+from roboflow_workflows.v2.blocks.roboflow_platform.vision_event_bundle.v1 import VisionEventBundleBlock
+from roboflow_workflows.v2.blocks.roboflow_platform._shared.vision_events import VisionEventRequest
 from roboflow_workflows.v2.blocks.sinks.runtime import BackgroundEffects
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.secrets import Secret

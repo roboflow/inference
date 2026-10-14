@@ -26,10 +26,8 @@ from roboflow_workflows.v2.blocks.query.detections import (
     row_class_name,
 )
 from roboflow_workflows.v2.blocks.query.errors import OperationFailure
-from roboflow_workflows.v2.blocks.transforms.per_class_confidence import (
-    keep_confident_rows,
-)
-from roboflow_workflows.v2.blocks.visualization.annotations.label import label_texts
+from roboflow_workflows.v2.blocks.transforms.per_class_confidence_filter.v1 import keep_confident_rows
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import label_texts
 from roboflow_workflows.v2.blocks.visualization.annotations.rows import read_rows
 from roboflow_workflows.v2.blocks.visualization.drawing import prepare_drawings
 

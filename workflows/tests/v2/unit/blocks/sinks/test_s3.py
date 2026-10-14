@@ -1,4 +1,4 @@
-"""Unit tests of ``v2/s3_sink@v1``.
+"""Unit tests of ``roboflow_core/s3_sink@v1``.
 
 Uploads go to a real boto3 S3 client wrapped in ``botocore.stub.Stubber``:
 the stubber answers before any request is signed or sent, so no endpoint is
@@ -12,10 +12,7 @@ import boto3
 import pytest
 from botocore.exceptions import EndpointConnectionError
 from botocore.stub import Stubber
-from roboflow_workflows.v2.blocks.sinks.s3 import (
-    MISSING_CREDENTIALS_MESSAGE,
-    S3SinkBlock,
-)
+from roboflow_workflows.v2.blocks.sinks.s3_sink.v1 import MISSING_CREDENTIALS_MESSAGE, S3SinkBlock
 from roboflow_workflows.v2.data.secrets import Secret, SecretUnavailableError
 
 KEY_ID = "AKIATESTKEYID000"

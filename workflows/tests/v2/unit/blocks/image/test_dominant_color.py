@@ -1,8 +1,8 @@
-"""Unit tests of ``v2/dominant_color@v1`` on generated color images."""
+"""Unit tests of ``roboflow_core/dominant_color@v1`` on generated color images."""
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.image.dominant_color import DominantColorBlock
+from roboflow_workflows.v2.blocks.image.dominant_color.v1 import DominantColorBlock
 from roboflow_workflows.v2.data.image import ImageData
 
 RED, BLUE = (255, 0, 0), (0, 0, 255)

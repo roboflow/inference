@@ -1,4 +1,4 @@
-"""``v2/frame_delay@v1`` called directly, with a hand-built call context.
+"""``roboflow_core/frame_delay@v1`` called directly, with a hand-built call context.
 
 The oracle is latest V1 ``roboflow_core/frame_delay@v1``: any data, literal
 or selected offset, ``default_value``, history sized by the
@@ -23,11 +23,7 @@ import torch
 from pydantic import ValidationError
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.v2.blocks.temporal import FrameDelayBlock
-from roboflow_workflows.v2.blocks.temporal.frame_delay import (
-    MAX_OFFSET,
-    MAX_TRACKED_SOURCES,
-    FrameHistoryCapacityError,
-)
+from roboflow_workflows.v2.blocks.temporal.frame_delay.v1 import MAX_OFFSET, MAX_TRACKED_SOURCES, FrameHistoryCapacityError
 from roboflow_workflows.v2.data.batch import SampleContext
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.engine.context import (
@@ -145,7 +141,7 @@ def _params(**overrides: Any) -> FrameDelayBlock.Params:
 def test_declaration_matches_v1_outputs_and_declares_retention():
     spec = FrameDelayBlock.__block_spec__
 
-    assert spec.type == "v2/frame_delay@v1"
+    assert spec.type == "roboflow_core/frame_delay@v1"
     assert spec.prunable is False
     assert set(FrameDelayBlock.outputs) == {
         "output",

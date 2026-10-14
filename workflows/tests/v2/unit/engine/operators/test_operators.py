@@ -118,10 +118,10 @@ def test_builtin_specs_are_class_owned() -> None:
     align = spec_of_operator(Align)
     window = spec_of_operator(Window)
 
-    assert (align.type, align.input_roles) == ("v2/align@v1", ("input",))
-    assert (window.type, window.input_roles) == ("v2/window@v1", ("collect", "hold"))
+    assert (align.type, align.input_roles) == ("roboflow_core/align@v1", ("input",))
+    assert (window.type, window.input_roles) == ("roboflow_core/window@v1", ("collect", "hold"))
     assert align.describe()["params_schema"]["required"] == ["clock"]
-    assert align.identities == ("v2/align@v1",)
+    assert align.identities == ("roboflow_core/align@v1",)
 
 
 def test_params_are_literals_and_ignore_declaration_keys() -> None:
@@ -129,7 +129,7 @@ def test_params_are_literals_and_ignore_declaration_keys() -> None:
 
     params = spec.validate_params(
         {
-            "type": "v2/window@v1",
+            "type": "roboflow_core/window@v1",
             "name": "w",
             "collect": {"x": "$sources.a.x"},
             "size": 2,

@@ -1,4 +1,4 @@
-"""``v2/dot_visualization@v1``: pixels equal V1 ``dot_visualization@v1``.
+"""``roboflow_core/dot_visualization@v1``: pixels equal V1 ``dot_visualization@v1``.
 
 The oracle is the latest V1 block (``sv.DotAnnotator``) run on the same rows;
 V1 test modules are not imported. ``CENTER_OF_MASS`` reads masks at
@@ -11,9 +11,7 @@ import numpy as np
 import pytest
 import torch
 from roboflow_workflows.core_steps.visualizations.dot.v1 import DotVisualizationBlockV1
-from roboflow_workflows.v2.blocks.visualization.annotations.dot import (
-    DotVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.annotations.dot_visualization.v1 import DotVisualizationBlock
 from roboflow_workflows.v2.blocks.visualization.annotations.params import (
     POSITIONS_WITH_MASS,
 )

@@ -5,10 +5,10 @@ stands in for CLIP behind the ``models`` resource; the engine, compiler and
 the other blocks are real. Nothing is downloaded and this is not real
 inference. The tests check what a workflow builder relies on:
 
-* CLIP image embeddings feed ``v2/identify_changes@v1``, which flags the frame
+* CLIP image embeddings feed ``roboflow_core/identify_changes@v1``, which flags the frame
   where the scene changes;
-* an image and a text embedding meet in ``v2/cosine_similarity@v1``;
-* ``v2/clip_comparison@v1`` labels each image, with labels from an input;
+* an image and a text embedding meet in ``roboflow_core/cosine_similarity@v1``;
+* ``roboflow_core/clip_comparison@v2`` labels each image, with labels from an input;
 * models load lazily once per request, fixed texts run the text encoder once,
   and a gated image is skipped.
 """
@@ -17,18 +17,17 @@ from typing import Any, Dict, List
 
 import pytest
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.clip_comparison import ClipComparisonBlock
-from roboflow_workflows.v2.blocks.models.embeddings import (
-    ClipEmbeddingBlock,
-    PerceptionEncoderEmbeddingBlock,
-)
+from roboflow_workflows.v2.blocks.models.clip_comparison.v2 import ClipComparisonBlock
+from roboflow_workflows.v2.blocks.models.clip.v1 import ClipEmbeddingBlock
+from roboflow_workflows.v2.blocks.models.perception_encoder.v1 import PerceptionEncoderEmbeddingBlock
 from roboflow_workflows.v2.blocks.sampling import IdentifyChangesBlock
-from roboflow_workflows.v2.blocks.transforms.similarity import CosineSimilarityBlock
+from roboflow_workflows.v2.blocks.transforms.cosine_similarity.v1 import CosineSimilarityBlock
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.predictions import NATIVE_KINDS
 from roboflow_workflows.v2.engine.catalogue import Catalogue
 from roboflow_workflows.v2.engine.compilation import compile_workflow
 from roboflow_workflows.v2.engine.errors import (
+    LineageError,
     ParamsValidationError,
     StepExecutionError,
 )
@@ -100,9 +99,9 @@ def test_clip_embeddings_let_identify_changes_flag_the_scene_change(mode: str) -
         "version": "2.0",
         "inputs": [IMAGES],
         "steps": [
-            {"type": "v2/clip@v1", "name": "clip", "data": "$inputs.image"},
+            {"type": "roboflow_core/clip@v1", "name": "clip", "data": "$inputs.image"},
             {
-                "type": "v2/identify_changes@v1",
+                "type": "roboflow_core/identify_changes@v1",
                 "name": "changes",
                 "embedding": "$steps.clip.embedding",
                 "threshold_percentile": 0.02,
@@ -133,10 +132,10 @@ def _image_to_text_definition() -> Dict[str, Any]:
         "version": "2.0",
         "inputs": [IMAGES],
         "steps": [
-            {"type": "v2/clip@v1", "name": "image_embedding", "data": "$inputs.image"},
-            {"type": "v2/clip@v1", "name": "text_embedding", "data": "red"},
+            {"type": "roboflow_core/clip@v1", "name": "image_embedding", "data": "$inputs.image"},
+            {"type": "roboflow_core/clip@v1", "name": "text_embedding", "data": "red"},
             {
-                "type": "v2/cosine_similarity@v1",
+                "type": "roboflow_core/cosine_similarity@v1",
                 "name": "similarity",
                 "embedding_1": "$steps.image_embedding.embedding",
                 "embedding_2": "$steps.text_embedding.embedding",
@@ -192,7 +191,7 @@ def _comparison_definition(**step: Any) -> Dict[str, Any]:
                 "next_steps": ["$steps.compare"],
             },
             {
-                "type": "v2/clip_comparison@v1",
+                "type": "roboflow_core/clip_comparison@v2",
                 "name": "compare",
                 "images": "$inputs.image",
                 "classes": "$inputs.classes",
@@ -272,18 +271,42 @@ def test_comparison_rejects_invalid_selected_labels_when_it_runs(
     assert model.image_calls == [] and model.text_calls == []
 
 
-def test_comparison_rejects_an_empty_per_image_label_list_when_it_runs() -> None:
-    model = FakeEmbeddingModel()
+@pytest.mark.parametrize("name", ["classes", "package"])
+def test_comparison_rejects_per_image_labels_or_package_at_compile_time(
+    name: str,
+) -> None:
     definition = _comparison_definition()
-    definition["inputs"][1] = {"type": "WorkflowBatchInput", "name": "classes"}
-    session = _session(definition, {"clip/ViT-B-16": model})
-    images = [_image(1, 2, 3, "a"), _image(4, 5, 6, "b")]
+    position = {"classes": 1, "package": 2}[name]
+    definition["inputs"][position] = {"type": "WorkflowBatchInput", "name": name}
+    field = {"classes": "classes", "package": "model_package_id"}[name]
 
-    with pytest.raises(
-        StepExecutionError, match=r"index \[1\].*classes is invalid.*at least 1 item"
-    ):
-        session.run({"image": images, "classes": [["red"], []], "keep": [True, True]})
-    assert model.image_calls == []
+    with pytest.raises(LineageError, match=f"compare {field} is passed once per call"):
+        compile_workflow(definition, catalogue=CATALOGUE)
+
+
+@pytest.mark.parametrize(
+    "block_type", ["roboflow_core/clip@v1", "roboflow_core/perception_encoder@v1"]
+)
+@pytest.mark.parametrize("field", ["model_id", "model_package_id"])
+def test_embedding_rejects_a_per_image_model_selector_at_compile_time(
+    block_type: str, field: str
+) -> None:
+    definition = {
+        "version": "2.0",
+        "inputs": [IMAGES, {"type": "WorkflowBatchInput", "name": "value"}],
+        "steps": [
+            {
+                "type": block_type,
+                "name": "embed",
+                "data": "$inputs.image",
+                field: "$inputs.value",
+            }
+        ],
+        "outputs": _outputs(embedding="$steps.embed.embedding"),
+    }
+
+    with pytest.raises(LineageError, match=f"embed {field} is passed once per call"):
+        compile_workflow(definition, catalogue=CATALOGUE)
 
 
 def test_comparison_rejects_a_literal_empty_label_list_at_compile_time() -> None:

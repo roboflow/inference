@@ -1,4 +1,4 @@
-"""A host-supplied implementation of the real ``v2/box_visualization@v1`` block.
+"""A host-supplied implementation of the real ``roboflow_core/simple_box_visualization@v1`` block.
 
 The contributed implementation paints each box's four border bands with
 NumPy slicing, one box at a time on the host: an independent route to the band
@@ -20,9 +20,7 @@ import pytest
 import torch
 from pydantic import Field
 from roboflow_workflows.v2.blocks import visualization
-from roboflow_workflows.v2.blocks.visualization.blocks import (
-    BoxVisualizationBlock,
-)
+from roboflow_workflows.v2.blocks.visualization.native.simple_box_visualization.v1 import BoxVisualizationBlock
 from roboflow_workflows.v2.blocks.visualization.drawing import (
     BOX_THICKNESS,
     PALETTE,
@@ -234,7 +232,7 @@ def definition(*, prepared: bool = False) -> dict:
     if prepared:
         steps.append(
             {
-                "type": "v2/detection_drawing@v1",
+                "type": "roboflow_core/detection_drawing@v1",
                 "name": "drawing",
                 "predictions": "$steps.detector.predictions",
             }

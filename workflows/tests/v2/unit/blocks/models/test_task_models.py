@@ -2,8 +2,8 @@
 
 The fakes (``tests/v2/support/models``) make outputs a fixed function of each
 image's size and brightness, so every expectation below is exact. They test
-the blocks' grouping, options, metadata, row identity and output shapes, not
-real inference. Compiled workflows are in
+the blocks' one-model-per-call phases, options, metadata, row identity and
+output shapes, not real inference. Compiled workflows are in
 ``integration/blocks/models/test_task_model_workflows.py``.
 """
 
@@ -11,25 +11,22 @@ from typing import Any, Dict, List
 
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.models.cache import ModelRequest
-from roboflow_workflows.v2.blocks.models.classification import (
-    ClassificationBlock,
-    MultiLabelClassificationBlock,
-)
+from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
+from roboflow_workflows.v2.blocks.models.depth_estimation.v1 import DepthEstimationBlock
+from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import EasyOCRBlock
+from roboflow_workflows.v2.blocks.models.ocr_model.v1 import OCRModelBlock
+from roboflow_workflows.v2.blocks.models.roboflow_classification_model.v3 import ClassificationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_multi_label_classification_model.v3 import MultiLabelClassificationBlock
 from roboflow_workflows.v2.blocks.models.common import (
     ModelOption,
     checked_confidence,
     confidence_option,
     post_process_options,
 )
-from roboflow_workflows.v2.blocks.models.detection import ObjectDetectionBlock
-from roboflow_workflows.v2.blocks.models.instance_segmentation import (
-    InstanceSegmentationBlock,
-)
-from roboflow_workflows.v2.blocks.models.keypoints import KeypointDetectionBlock
-from roboflow_workflows.v2.blocks.models.semantic_segmentation import (
-    SemanticSegmentationBlock,
-)
+from roboflow_workflows.v2.blocks.models.roboflow_object_detection_model.v3 import ObjectDetectionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_instance_segmentation_model.v4 import InstanceSegmentationBlock
+from roboflow_workflows.v2.blocks.models.roboflow_keypoint_detection_model.v3 import KeypointDetectionBlock
+from roboflow_workflows.v2.blocks.models.roboflow_semantic_segmentation_model.v2 import SemanticSegmentationBlock
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import frame_of
 from roboflow_workflows.v2.data.image import ImageData
@@ -395,67 +392,171 @@ def test_a_misspelled_class_gets_a_suggestion_and_the_way_to_keep_all() -> None:
     assert "omit class_filter (or set it to null)" in message
 
 
-def test_per_image_class_filters_share_one_forward_per_model() -> None:
-    first, second = NmsDetector(), NmsDetector()
-    block = ObjectDetectionBlock(models={"od-1": first, "od-2": second})
+def test_one_class_filter_applies_to_every_image_in_one_forward() -> None:
+    model = NmsDetector()
+    block = ObjectDetectionBlock(models={"od": model})
     images = Batch([_image(BRIGHT, str(row)) for row in range(4)])
 
     results = block.run(
-        image=images,
-        model_id=Batch(["od-1", "od-2", "od-1", "od-1"]),
-        confidence=0.0,
-        class_filter=Batch([["person"], ["car"], None, ["dog", "car"]]),
+        image=images, model_id="od", confidence=0.0, class_filter=["dog", "car"]
     )
 
-    # Three filters on od-1 do not split its rows: one pre_process, one forward.
-    assert first.calls == ["pre_process", "forward", "post_process"]
-    assert first.batch_sizes == [3]
-    assert second.calls == ["pre_process", "forward", "post_process"]
+    assert model.calls == ["pre_process", "forward", "post_process"]
+    assert model.batch_sizes == [4]
     class_ids = [result["predictions"].class_id.tolist() for result in results]
-    assert class_ids == [[0], [1], [0, 1, 2], [1, 2]]
-    assert [row_record(p).rows for p in _predictions(results)] == [1, 1, 3, 2]
+    assert class_ids == [[1, 2]] * 4
+    assert [frame_of(p).image_id for p in _predictions(results)] == list("0123")
 
 
-def test_one_unknown_per_image_class_fails_before_any_model_call() -> None:
-    first, second = NmsDetector(), NmsDetector()
-    block = ObjectDetectionBlock(models={"od-1": first, "od-2": second})
-
-    with pytest.raises(PhaseFailure, match=r"names \['cat'\], which model 'od-2'"):
-        block.run(
-            image=Batch([_image(BRIGHT, "a"), _image(BRIGHT, "b")]),
-            model_id=Batch(["od-1", "od-2"]),
-            class_filter=Batch([["person"], ["cat"]]),
-        )
-
-    assert first.calls == second.calls == []
-
-
-def test_a_per_image_empty_class_filter_is_rejected_before_any_model_call() -> None:
+@pytest.mark.parametrize(
+    "per_image",
+    [
+        {"model_id": Batch(["od", "od"])},
+        {"model_package_id": Batch([None, None])},
+        {"class_filter": Batch([["person"], ["car"]])},
+    ],
+    ids=["model_id", "model_package_id", "class_filter"],
+)
+def test_a_per_image_batch_of_configuration_fails_before_any_model_call(
+    per_image,
+) -> None:
     model = NmsDetector()
     block = ObjectDetectionBlock(models={"od": model})
+    (name,) = per_image
 
-    with pytest.raises(PhaseFailure, match="omit class_filter or set it to null"):
+    with pytest.raises(
+        PhaseFailure, match=f"{name} is one value for every image of a call"
+    ):
         block.run(
             image=Batch([_image(BRIGHT, "a"), _image(BRIGHT, "b")]),
-            model_id="od",
-            class_filter=Batch([["person"], []]),
+            **{"model_id": "od", **per_image},
         )
 
     assert model.calls == []
 
 
-def test_an_iou_threshold_with_mixed_nms_and_nms_free_models_runs_nothing() -> None:
-    nms, nms_free = NmsDetector(), NmsFreeDetector()
-    block = ObjectDetectionBlock(models={"yolo": nms, "rfdetr": nms_free})
+def test_the_model_and_filter_may_change_between_calls() -> None:
+    first, second = NmsDetector(), NmsDetector()
+    block = ObjectDetectionBlock(models={"od-1": first, "od-2": second})
+    images = Batch([_image(BRIGHT, "a"), _image(MID, "b")])
 
-    with pytest.raises(PhaseFailure, match="model 'rfdetr'.*'iou_threshold'"):
-        block.run(
-            image=Batch([_image(BRIGHT, "a"), _image(BRIGHT, "b")]),
-            model_id=Batch(["yolo", "rfdetr"]),
-            iou_threshold=0.5,
-        )
+    before = block.run(
+        image=images, model_id="od-1", confidence=0.0, class_filter=["person"]
+    )
+    after = block.run(image=images, model_id="od-2", confidence=0.0)
 
-    assert nms.calls == nms_free.calls == []
+    assert first.batch_sizes == second.batch_sizes == [2]
+    assert [result["model_id"] for result in before + after] == ["od-1"] * 2 + [
+        "od-2"
+    ] * 2
+    assert [len(p) for p in _predictions(before)] == [1, 1]
+    assert [len(p) for p in _predictions(after)] == [3, 2]
+
+
+# Block, run() selection, and network_input arguments after the image.
+PHASED_BLOCKS = {
+    "object_detection": (
+        ObjectDetectionBlock,
+        {"model_id": "m"},
+        ("m", None, "best", None, None, None, None),
+    ),
+    "instance_segmentation": (
+        InstanceSegmentationBlock,
+        {"model_id": "m"},
+        ("m", None, "best", None, None, None, None),
+    ),
+    "keypoints": (
+        KeypointDetectionBlock,
+        {"model_id": "m"},
+        ("m", None, "default", None, None, None, None, None),
+    ),
+    "semantic_segmentation": (
+        SemanticSegmentationBlock,
+        {"model_id": "m"},
+        ("m", None, "best"),
+    ),
+    "classification": (ClassificationBlock, {"model_id": "m"}, ("m", None)),
+    "multi_label": (
+        MultiLabelClassificationBlock,
+        {"model_id": "m"},
+        ("m", None, "best"),
+    ),
+    "doctr": (OCRModelBlock, {"model_id": "m"}, ("m", None)),
+    "easy_ocr": (EasyOCRBlock, {"language": "English"}, ("English", None)),
+    "depth": (DepthEstimationBlock, {"model_id": "m"}, ("m", None)),
+}
+
+
+@pytest.mark.parametrize("name", PHASED_BLOCKS)
+def test_an_empty_batch_loads_no_model_and_runs_no_phase_work(name) -> None:
+    block_type, selection, phase_arguments = PHASED_BLOCKS[name]
+    loaded = []
+    block = block_type(models=ModelCache(lambda request: loaded.append(request)))
+    empty = Batch([])
+
+    with block_call(block):
+        results = block.run(image=empty, **selection)
+        # The same phases called one by one, as a pipelined run does.
+        network_input = block.network_input(empty, *phase_arguments)
+        raw_output = block.raw_output(network_input)
+        phased = block.result(raw_output, network_input, empty)
+
+    assert results == phased == []
+    assert network_input is None
+    assert loaded == []
+
+
+def test_overlapping_phased_calls_keep_their_own_model_and_options() -> None:
+    first, second = NmsDetector(), NmsDetector()
+    block = ObjectDetectionBlock(models={"od-1": first, "od-2": second})
+    early = Batch([_image(BRIGHT, "early")])
+    late = Batch([_image(BRIGHT, "late-0"), _image(MID, "late-1")])
+
+    # Both calls are in flight before either finishes; nothing is on the block.
+    early_input = block.network_input(
+        early, "od-1", None, 0.0, None, None, None, ["dog"]
+    )
+    late_input = block.network_input(late, "od-2", None, 0.0, None, 1, None, None)
+    late_raw = block.raw_output(late_input)
+    early_raw = block.raw_output(early_input)
+    late_results = block.result(late_raw, late_input, late)
+    early_results = block.result(early_raw, early_input, early)
+
+    assert (early_input.model, late_input.model) == (first, second)
+    assert [r["model_id"] for r in early_results] == ["od-1"]
+    assert [r["model_id"] for r in late_results] == ["od-2", "od-2"]
+    assert early_results[0]["predictions"].class_id.tolist() == [2]
+    assert [len(p) for p in _predictions(late_results)] == [1, 1]
+    assert second.received[0]["max_detections"] == 1
+    assert first.received[0]["max_detections"] == 300
+    assert [frame_of(p).image_id for p in _predictions(late_results)] == [
+        "late-0",
+        "late-1",
+    ]
+
+
+def test_overlapping_classifier_calls_keep_their_own_model_without_metadata() -> None:
+    first, second = Classifier(), Classifier()
+    block = ClassificationBlock(models={"cls-1": first, "cls-2": second})
+    early = Batch([_image(BRIGHT, "early")])
+    late = Batch([_image(DARK, "late-0"), _image(MID, "late-1")])
+
+    early_input = block.network_input(early, "cls-1", None)
+    late_input = block.network_input(late, "cls-2", None)
+    late_results = block.result(block.raw_output(late_input), late_input, late)
+    early_results = block.result(block.raw_output(early_input), early_input, early)
+
+    # Classifiers' pre_process returns no metadata; none is invented.
+    assert early_input.metadata is None and late_input.metadata is None
+    assert (first.batch_sizes, second.batch_sizes) == ([1], [2])
+    assert [r["model_id"] for r in early_results + late_results] == [
+        "cls-1",
+        "cls-2",
+        "cls-2",
+    ]
+    assert [
+        frame_of(r["predictions"]).image_id for r in early_results + late_results
+    ] == ["early", "late-0", "late-1"]
 
 
 def test_an_explicit_value_for_an_ignored_keyword_runs_nothing() -> None:
@@ -789,3 +890,105 @@ def test_semantic_result_is_a_class_grid_without_rows() -> None:
             2: "car",
         }
         assert frame_of(prediction).image_id == image_id
+
+
+# --- configuration is checked before any model loads (r2: C1, C3) --------------
+
+
+class _RefusingLoader:
+    """A loader that records and refuses every request: nothing may load."""
+
+    def __init__(self):
+        self.requests: List[ModelRequest] = []
+
+    def __call__(self, request: ModelRequest) -> Any:
+        self.requests.append(request)
+        raise AssertionError(f"model {request} was resolved")
+
+
+def _refusing(block_type: type) -> tuple:
+    loader = _RefusingLoader()
+    block = block_type(models=ModelCache(loader))
+
+    return block, loader
+
+
+@pytest.mark.parametrize(
+    "block_type, field, values",
+    [
+        (ObjectDetectionBlock, "confidence", [0.5, 0.5]),
+        (ObjectDetectionBlock, "iou_threshold", [0.5, 0.5]),
+        (ObjectDetectionBlock, "max_detections", [10, 10]),
+        (ObjectDetectionBlock, "class_agnostic_nms", [True, True]),
+        (InstanceSegmentationBlock, "iou_threshold", [0.5, 0.5]),
+        (KeypointDetectionBlock, "keypoint_confidence", [0.2, 0.2]),
+        (SemanticSegmentationBlock, "confidence", [0.5, 0.5]),
+        (MultiLabelClassificationBlock, "confidence", [0.5, 0.5]),
+    ],
+)
+def test_a_batch_of_equal_option_values_fails_before_any_load(
+    block_type, field, values
+) -> None:
+    block, loader = _refusing(block_type)
+
+    with pytest.raises(PhaseFailure, match=f"{field} is one value for every image"):
+        block.run(
+            image=Batch([_image(BRIGHT, "a"), _image(MID, "b")]),
+            model_id="m",
+            **{field: Batch(values)},
+        )
+
+    assert loader.requests == []
+
+
+def test_a_batch_language_fails_before_any_load() -> None:
+    block, loader = _refusing(EasyOCRBlock)
+
+    with pytest.raises(PhaseFailure, match="language is one value for every image"):
+        block.run(
+            image=Batch([_image(BRIGHT, "a"), _image(MID, "b")]),
+            language=Batch(["English", "English"]),
+        )
+
+    assert loader.requests == []
+
+
+MALFORMED_CLASS_FILTERS = {
+    "batch": (Batch([["person"], ["person"]]), "class_filter is one value"),
+    "string": ("person", "class_filter must be a list of class names"),
+    "number": ([1], "class_filter holds class names, got 1"),
+    "none-item": (["person", None], "class_filter holds class names, got None"),
+    "empty": ([], "omit class_filter or set it to null"),
+}
+
+
+@pytest.mark.parametrize("name", MALFORMED_CLASS_FILTERS)
+@pytest.mark.parametrize(
+    "block_type",
+    [ObjectDetectionBlock, InstanceSegmentationBlock, KeypointDetectionBlock],
+)
+@pytest.mark.parametrize("images", [2, 0], ids=["images", "empty-batch"])
+def test_a_malformed_class_filter_fails_before_any_load(
+    block_type, name, images
+) -> None:
+    class_filter, message = MALFORMED_CLASS_FILTERS[name]
+    block, loader = _refusing(block_type)
+    image = Batch([_image(BRIGHT, "a"), _image(MID, "b")][:images])
+
+    with pytest.raises(PhaseFailure, match=message):
+        block.run(image=image, model_id="m", class_filter=class_filter)
+
+    assert loader.requests == []
+
+
+def test_an_unknown_class_name_is_still_checked_against_the_loaded_model() -> None:
+    model = NmsDetector()
+    block = ObjectDetectionBlock(models={"od": model})
+
+    with pytest.raises(PhaseFailure, match=r"class_filter names \['cat'\]"):
+        block.run(
+            image=Batch([_image(BRIGHT, "a")]), model_id="od", class_filter=["cat"]
+        )
+
+    assert model.calls == []
+

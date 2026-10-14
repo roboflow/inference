@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from roboflow_workflows.v2.blocks.codes.generator import QRCodeGeneratorBlock, qr_color
+from roboflow_workflows.v2.blocks.codes.qr_code_generator.v1 import QRCodeGeneratorBlock, qr_color
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 
