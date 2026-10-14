@@ -75,4 +75,5 @@ async def parse_open_vocabulary_object_detection_input(
     merged.pop("classes", None)
     merged.update(extra_params)
     merged["classes"] = classes
+    common.extra["classes"] = classes
     return {"images": images, "params": merged}
