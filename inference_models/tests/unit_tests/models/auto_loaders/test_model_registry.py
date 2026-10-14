@@ -292,9 +292,13 @@ def test_model_implementation_exists_for_rfdetr_coreml_packages_with_model_featu
     "task_type, backend",
     [
         ("object-detection", BackendType.ONNX),
+        ("object-detection", BackendType.TRT),
         ("instance-segmentation", BackendType.ONNX),
+        ("instance-segmentation", BackendType.TRT),
         ("semantic-segmentation", BackendType.ONNX),
         ("semantic-segmentation", BackendType.TRT),
+        ("keypoint-detection", BackendType.ONNX),
+        ("keypoint-detection", BackendType.TRT),
     ],
 )
 def test_model_implementation_exists_for_rfdetr_nas_packages(
