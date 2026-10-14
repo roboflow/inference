@@ -289,16 +289,22 @@ def test_model_implementation_exists_for_rfdetr_coreml_packages_with_model_featu
 
 
 @pytest.mark.parametrize(
-    "task_type", ["object-detection", "instance-segmentation", "semantic-segmentation"]
+    "task_type, backend",
+    [
+        ("object-detection", BackendType.ONNX),
+        ("instance-segmentation", BackendType.ONNX),
+        ("semantic-segmentation", BackendType.ONNX),
+        ("semantic-segmentation", BackendType.TRT),
+    ],
 )
-def test_model_implementation_exists_for_rfdetr_nas_onnx_packages(
-    task_type: str,
+def test_model_implementation_exists_for_rfdetr_nas_packages(
+    task_type: str, backend: BackendType
 ) -> None:
     # when
     result = model_implementation_exists(
         model_architecture="rfdetr",
         task_type=task_type,
-        backend=BackendType.ONNX,
+        backend=backend,
         model_features={
             "resolution",
             "patch_size",

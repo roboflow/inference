@@ -461,9 +461,19 @@ REGISTERED_MODELS: Dict[
             "num_select",
         },
     ),
-    ("rfdetr", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_trt",
-        class_name="RFDetrForSemanticSegmentationTRT",
+    ("rfdetr", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_trt",
+            class_name="RFDetrForSemanticSegmentationTRT",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
     ),
     ("rfdetr", KEYPOINT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
