@@ -7,6 +7,7 @@ from typing import List, Optional
 
 import numpy as np
 import orjson
+import pytest
 import torch
 
 from inference_server.serializers import serialize_json
@@ -105,6 +106,34 @@ class TestSerializeDetections:
 
         assert obj["image_metadata"] is None
         assert obj["bboxes_metadata"] is None
+
+    def test_strided_column_views(self):
+        result = np.array(
+            [[1.0, 2.0, 3.0, 4.0, 0.9, 0.0], [5.0, 6.0, 7.0, 8.0, 0.8, 1.0]],
+            dtype=np.float32,
+        )
+        det = FakeDetections(
+            xyxy=result[:, :4],
+            class_id=result[:, 5].astype(np.int64),
+            confidence=result[:, 4],
+        )
+        raw = serialize_json(det)
+        obj = orjson.loads(raw)
+
+        assert obj["xyxy"] == [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
+        assert obj["confidence"] == pytest.approx([0.9, 0.8])
+
+    def test_strided_tensor_views(self):
+        result = torch.tensor([[1.0, 2.0, 3.0, 4.0, 0.5], [5.0, 6.0, 7.0, 8.0, 0.25]])
+        det = FakeDetections(
+            xyxy=result[:, :4],
+            class_id=torch.tensor([0, 1]),
+            confidence=result[:, 4],
+        )
+        raw = serialize_json(det)
+        obj = orjson.loads(raw)
+
+        assert obj["confidence"] == [0.5, 0.25]
 
 
 class TestSerializeList:

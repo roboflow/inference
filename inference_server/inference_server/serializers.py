@@ -54,12 +54,12 @@ def _convert(obj: Any) -> Any:
 
     # Tensor → numpy
     if isinstance(obj, torch.Tensor):
-        return obj.detach().cpu().numpy()
+        obj = obj.detach().cpu().numpy()
 
     if isinstance(obj, np.ndarray):
         if obj.ndim == 0:
             return obj.item()
-        return obj
+        return np.ascontiguousarray(obj)
 
     # List / tuple of results
     if isinstance(obj, (list, tuple)):
