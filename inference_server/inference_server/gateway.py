@@ -52,7 +52,10 @@ _LOAD_DEFAULT_TIMEOUT_S = 30.0
 _NOT_ACCEPTING_MARKER = "not accepting requests"
 
 _MAX_REMEMBERED_LOAD_FAILURES = 256
-_URL = re.compile(r"""([a-zA-Z][a-zA-Z0-9+.-]*)://([^\s"<>]*)""")
+# Anchored at the start of a scheme-character run so matching stays linear.
+_URL = re.compile(
+    r"""(?<![a-zA-Z0-9+.-])([0-9+.-]*)([a-zA-Z][a-zA-Z0-9+.-]*)://([^\s"<>]*)"""
+)
 _AUTHORIZATION_VALUE = re.compile(
     r"""((?<![A-Za-z0-9])authorization[ \t]*(?:=|:|%3D)[ \t]*)(?!["'])[^\r\n]+""",
     re.IGNORECASE,
@@ -98,14 +101,14 @@ def _model_route_lost(exc: Exception) -> bool:
 
 
 def _redact_url(match: re.Match) -> str:
-    scheme, rest = match.group(1), match.group(2)
+    prefix, scheme, rest = match.group(1), match.group(2), match.group(3)
     authority = re.split(r"[/?#]", rest, maxsplit=1)[0]
     if rest in (authority, authority + "/"):
         return match.group(0)
 
     host = re.sub(r":\d*$", "", authority.rpartition("@")[2])
 
-    redacted_url = f"{scheme}://{host}/***"
+    redacted_url = f"{prefix}{scheme}://{host}/***"
 
     return redacted_url
 

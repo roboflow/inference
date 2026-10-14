@@ -1,11 +1,13 @@
 import logging
+import random
+import re
 import sys
 import time
 from datetime import datetime, timezone
 
 import pytest
 
-from inference_server import configuration, logging_config
+from inference_server import configuration, gateway, logging_config
 from inference_server.ops import memory_logs
 
 RECORD_KEYS = ["timestamp", "level", "logger", "message", "module", "line"]
@@ -371,3 +373,64 @@ def test_since_compares_instants_in_a_repeated_clock_hour(ops_client, monkeypatc
 
     assert [log["message"][-6:] for log in body["logs"]] == ["second"]
     assert all(list(log) == RECORD_KEYS for log in body["logs"])
+
+
+_UNANCHORED_URL = re.compile(r"""([a-zA-Z][a-zA-Z0-9+.-]*)://([^\s"<>]*)""")
+_URL_SAMPLES = [
+    "https://api.roboflow.com/?api_key=SECRET&nocache=true",
+    "GET http://h/x?api_key=SECRET HTTP/1.1",
+    "1abc://h/p?api_key=x",
+    "xhttps://h/a and ftp://u:p@h:21/f",
+    "+.-1a://h/x",
+    "123://h/x https://h",
+    '"https://h/x?k=1" <a href="http://h/y?token=t">',
+    "url=https://gw/proxy?url=https%3A%2F%2Fapi%2F%3Fapi_key%3DSECRET",
+    "https://a/x?next=http://b/y?api_key=SECRET",
+    "{'url': 'https://h/p?api_key=SECRET'}",
+    "a-b.c+d://x/y a://b://c",
+    "://h/x a1://h 9://h",
+]
+
+
+def _random_samples():
+    rng = random.Random(1234)
+    alphabet = "ab1+.-:/ \"'<>?=&@#%xY9"
+    return [
+        "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 48)))
+        for _ in range(5000)
+    ]
+
+
+@pytest.mark.parametrize("text", _URL_SAMPLES + _random_samples())
+def test_url_pattern_matches_the_unanchored_spans(text):
+    unanchored = [(m.start(1), m.end()) for m in _UNANCHORED_URL.finditer(text)]
+    anchored = [(m.start(2), m.end()) for m in gateway._URL.finditer(text)]
+
+    assert anchored == unanchored
+
+
+@pytest.mark.parametrize("text", _URL_SAMPLES)
+def test_url_redaction_keeps_text_before_the_scheme(text):
+    def _unanchored_redaction(match):
+        rest = match.group(2)
+        authority = re.split(r"[/?#]", rest, maxsplit=1)[0]
+        if rest in (authority, authority + "/"):
+            return match.group(0)
+        host = re.sub(r":\d*$", "", authority.rpartition("@")[2])
+        return f"{match.group(1)}://{host}/***"
+
+    expected = _UNANCHORED_URL.sub(_unanchored_redaction, text)
+
+    assert gateway._URL.sub(gateway._redact_url, text) == expected
+
+
+@pytest.mark.parametrize("filler", ["a", "a1", "a-", "1a"])
+def test_long_scheme_like_run_is_sanitized_in_linear_time(filler):
+    message = "Invalid X-Request-ID: " + filler * (65536 // len(filler))
+
+    started = time.perf_counter()
+    sanitized = memory_logs._sanitize(message)
+    elapsed = time.perf_counter() - started
+
+    assert sanitized == message
+    assert elapsed < 0.5
