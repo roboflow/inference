@@ -486,7 +486,12 @@ def test_countinference_false_with_a_valid_secret_is_not_billable(
     for category in ("request", "workflows"):
         row = _only_row_of(usage_collector, category)
         assert row["billable"] is False
-        assert row["roboflow_internal_secret"] == SECRET
+    assert (
+        _only_row_of(usage_collector, "request")["roboflow_internal_secret"] == SECRET
+    )
+    assert (
+        _only_row_of(usage_collector, "workflows")["roboflow_internal_secret"] is None
+    )
 
 
 def test_countinference_false_without_a_secret_stays_billable(
@@ -804,7 +809,7 @@ def test_block_rows_inherit_the_preview_source_and_billing_of_the_run():
     assert block["is_preview"] is True
     assert block["billable"] is False
     assert block["roboflow_service_name"] == "app-1"
-    assert block["roboflow_internal_secret"] == SECRET
+    assert block["roboflow_internal_secret"] is None
     assert block["resource_details"]["is_preview"] is True
     assert block["resource_details"]["source"] == "app"
     assert block["resource_details"]["source_info"] == "app-1"

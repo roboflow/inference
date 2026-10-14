@@ -507,7 +507,7 @@ def _record(
         "error_type": error_details.get("error_type"),
         "error_status_code": error_details.get("error_status_code"),
         "roboflow_service_name": scope.source_info,
-        "roboflow_internal_secret": scope.service_secret,
+        "roboflow_internal_secret": None,
         "megapixel_buckets": megapixel_buckets,
     }
     with _request_context(scope):

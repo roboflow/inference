@@ -572,7 +572,8 @@ def test_catch_all_with_a_valid_secret_is_served_and_not_billable(
         assert row["billable"] is False
         assert row["error_type"] is None
         assert row["roboflow_service_name"] == "svc"
-        assert row["roboflow_internal_secret"] == SECRET
+    assert _request_row(usage_collector)["roboflow_internal_secret"] == SECRET
+    assert _model_row(usage_collector)["roboflow_internal_secret"] is None
 
 
 def test_catch_all_countinference_true_with_a_secret_stays_billable(
