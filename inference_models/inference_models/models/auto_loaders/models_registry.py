@@ -447,9 +447,19 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_pytorch",
         class_name="RFDetrForSemanticSegmentationTorch",
     ),
-    ("rfdetr", SEMANTIC_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
-        module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_onnx",
-        class_name="RFDetrForSemanticSegmentationOnnx",
+    ("rfdetr", SEMANTIC_SEGMENTATION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_onnx",
+            class_name="RFDetrForSemanticSegmentationOnnx",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
     ),
     ("rfdetr", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_semantic_segmentation_trt",

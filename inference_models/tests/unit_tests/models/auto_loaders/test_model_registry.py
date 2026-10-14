@@ -286,3 +286,28 @@ def test_model_implementation_exists_for_rfdetr_coreml_packages_with_model_featu
 
     # then
     assert result is True
+
+
+@pytest.mark.parametrize(
+    "task_type", ["object-detection", "instance-segmentation", "semantic-segmentation"]
+)
+def test_model_implementation_exists_for_rfdetr_nas_onnx_packages(
+    task_type: str,
+) -> None:
+    # when
+    result = model_implementation_exists(
+        model_architecture="rfdetr",
+        task_type=task_type,
+        backend=BackendType.ONNX,
+        model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    )
+
+    # then
+    assert result is True
