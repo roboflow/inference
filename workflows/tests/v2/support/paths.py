@@ -7,4 +7,3 @@ from pathlib import Path
 
 WORKFLOWS_ROOT = Path(__file__).resolve().parents[3]
 CHECKOUT_ROOT = WORKFLOWS_ROOT.parent
-DEVELOPMENT_EXAMPLES = CHECKOUT_ROOT / "development" / "workflows-2.0"
