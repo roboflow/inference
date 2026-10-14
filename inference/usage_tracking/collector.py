@@ -994,6 +994,11 @@ class UsageCollector:
         # Only the explicit legacy parameter can override service identity;
         # inherited source_info identifies the caller's feature.
         roboflow_service_name = func_kwargs.get("source_info")
+        request = func_kwargs.get("request")
+        query_params = getattr(request, "query_params", {})
+        if query_params.get("source_info_origin") == "context":
+            roboflow_service_name = None
+
         roboflow_internal_secret = func_kwargs.get("service_secret")
 
         return {
