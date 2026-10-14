@@ -642,6 +642,26 @@ class TestUsageCollectorWiring:
         assert app_mod.app.state.usage_collector is None
 
     @pytest.mark.asyncio
+    async def test_lifespan_stops_the_collector_when_its_flush_fails(
+        self, usage_env, monkeypatch
+    ):
+        app_mod = usage_env
+        spy = _UsageCollectorSpy()
+
+        def _failing_flush():
+            spy.order.append("flush")
+            raise RuntimeError("delivery down")
+
+        spy.flush = _failing_flush
+        monkeypatch.setattr(app_mod, "_start_usage_collector", lambda: spy)
+
+        async with app_mod._lifespan(app_mod.app):
+            pass
+
+        assert spy.order == ["flush", "stop"]
+        assert app_mod.app.state.usage_collector is None
+
+    @pytest.mark.asyncio
     async def test_lifespan_without_a_collector_leaves_state_empty(
         self, usage_env, monkeypatch
     ):

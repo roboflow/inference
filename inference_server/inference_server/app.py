@@ -68,6 +68,7 @@ from inference_server.telemetry import (  # noqa: E402
     shutdown_telemetry,
 )
 from inference_server.usage.collector import UsageCollector  # noqa: E402
+from inference_server.usage.delivery import guarded  # noqa: E402
 
 setup_memory_logging()
 
@@ -338,7 +339,7 @@ async def _lifespan(app: FastAPI):
         usage_collector = getattr(app.state, "usage_collector", None)
         app.state.usage_collector = None
         if usage_collector is not None:
-            await asyncio.to_thread(usage_collector.flush)
+            await asyncio.to_thread(guarded, usage_collector.flush)
             await asyncio.to_thread(usage_collector.stop)
         if stream_manager_watch is not None:
             stream_manager_watch.cancel()
@@ -424,6 +425,17 @@ _CONTROL_PLANE_ROUTES = frozenset(
 _V2_PREFIX = "/v2/"
 
 
+def _route_path(scope) -> str:
+    path = scope.get("path", "")
+    root_path = scope.get("root_path", "")
+    if root_path and path == root_path:
+        return ""
+    if root_path and path.startswith(root_path + "/"):
+        return path[len(root_path) :]
+
+    return path
+
+
 class _AuthMiddleware:
     """ASGI middleware for auth — does NOT buffer the request body.
 
@@ -447,7 +459,7 @@ class _AuthMiddleware:
 
         # rstrip alone turns "/" into "" which is not in the skip set —
         # the root path was always 401 despite being skip-listed.
-        path = scope.get("path", "").rstrip("/") or "/"
+        path = _route_path(scope).rstrip("/") or "/"
         if path in _AUTH_SKIP_PATHS:
             await self.app(scope, receive, send)
             return
