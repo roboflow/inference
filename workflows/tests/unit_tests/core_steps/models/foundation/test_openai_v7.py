@@ -8,15 +8,18 @@ each of the three per-model detection prompt styles.
 
 import json
 from typing import List, Optional
-from unittest.mock import patch
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 from roboflow_workflows.core_steps.models.foundation.openai.v7 import (
     INSTANCE_SEGMENTATION_DEFAULT_MODEL,
     STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT,
     BlockManifest,
     OpenAIBlockV7,
+    _execute_direct_openai_request,
+    _execute_proxied_openai_request,
     detection_upload_dimensions,
     encode_image_for_task,
     get_detection_box_format,
@@ -49,6 +52,7 @@ from tests.unit_tests.core_steps._vlm_prediction_readers import (
     detection_masks,
     is_detection_prediction,
 )
+from tests.unit_tests.prototypes.platform_client_double import RecordingPlatformClient
 
 EXECUTE_REQUESTS_SEAM = (
     "roboflow_workflows.core_steps.models.foundation.openai.v7"
@@ -656,3 +660,113 @@ def test_run_reports_error_status_for_unparsable_segmentation_output() -> None:
     # then
     assert result["error_status"] is True
     assert result["predictions"] is None
+
+
+@pytest.mark.parametrize("service_tier", ["ultrafast", "flex", "$inputs.service_tier"])
+def test_manifest_accepts_service_tier(service_tier: str) -> None:
+    raw_manifest = {
+        "type": "roboflow_core/open_ai@v7",
+        "name": "open_ai",
+        "images": "$inputs.image",
+        "task_type": "object-detection",
+        "classes": ["cat"],
+        "service_tier": service_tier,
+    }
+
+    assert BlockManifest.model_validate(raw_manifest).service_tier == service_tier
+
+
+def test_manifest_rejects_unknown_service_tier() -> None:
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "object-detection",
+                "classes": ["cat"],
+                "service_tier": "turbo",
+            }
+        )
+
+
+@pytest.mark.parametrize("service_tier", ["ultrafast", None])
+def test_proxied_request_names_the_service_tier_only_when_set(
+    service_tier: Optional[str],
+) -> None:
+    platform_client = RecordingPlatformClient(
+        post_response={
+            "status": "completed",
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "[]"}]}
+            ],
+        }
+    )
+
+    _execute_proxied_openai_request(
+        roboflow_api_key="rf_api_key",
+        platform_client=platform_client,
+        openai_api_key="rf_key:account",
+        instructions=None,
+        input_content=[{"role": "user", "content": []}],
+        model_version="gpt-6-astra",
+        reasoning_effort=None,
+        max_tokens=None,
+        temperature=None,
+        service_tier=service_tier,
+    )
+
+    payload = platform_client.posts[0]["payload"]
+    assert payload.get("service_tier") == service_tier
+    assert ("service_tier" in payload) == (service_tier is not None)
+
+
+@pytest.mark.parametrize("service_tier", ["flex", None])
+@patch("roboflow_workflows.core_steps.models.foundation.openai.v7._get_openai_client")
+def test_direct_request_names_the_service_tier_only_when_set(
+    mock_get_client: Mock, service_tier: Optional[str]
+) -> None:
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status = "completed"
+    mock_response.output_text = "[]"
+    mock_client.responses.create.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    _execute_direct_openai_request(
+        openai_api_key="sk-test",
+        instructions=None,
+        input_content=[{"role": "user", "content": []}],
+        model_version="gpt-6-astra",
+        reasoning_effort=None,
+        max_tokens=None,
+        temperature=None,
+        service_tier=service_tier,
+    )
+
+    call_kwargs = mock_client.responses.create.call_args[1]
+    assert call_kwargs.get("service_tier") == service_tier
+    assert ("service_tier" in call_kwargs) == (service_tier is not None)
+
+
+def test_run_hands_the_service_tier_to_every_request() -> None:
+    block = OpenAIBlockV7(api_key="rf-key")
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(STRUCTURED_ABSOLUTE_OUTPUT, 11, 3)]
+        block.run(
+            images=Batch(content=[_build_image(width=128, height=64)], indices=[(0,)]),
+            task_type="object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat"],
+            model_version="gpt-6-astra",
+            reasoning_effort=None,
+            image_detail="auto",
+            max_tokens=None,
+            temperature=None,
+            max_concurrent_requests=None,
+            api_key="rf_key:account",
+            service_tier="ultrafast",
+        )
+
+    assert mock_execute.call_args[1]["service_tier"] == "ultrafast"
