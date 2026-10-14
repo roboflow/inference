@@ -8,6 +8,7 @@ import pytest
 import torch
 from pycocotools import mask as mask_utils
 from roboflow_workflows.v2.blocks import create_catalogue
+from roboflow_workflows.v2.data import rle as rle_module
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import ImageData
 from roboflow_workflows.v2.data.masks import (
@@ -407,7 +408,7 @@ def test_strided_grid_and_dense_inputs_give_contiguous_control_results() -> None
     assert torch.equal(selected.binary().predictions.mask, masks[[2, 0, 2]])
 
 
-def test_unsupported_grid_geometries_fail_instead_of_naming_another_frame() -> None:
+def test_origin_crop_and_non_square_geometry_use_current_native_rules() -> None:
     partial_crop_at_origin = _pre_processing(
         original_hw=(HEIGHT, WIDTH),
         resized_hw=(6, 7),
@@ -422,12 +423,15 @@ def test_unsupported_grid_geometries_fail_instead_of_naming_another_frame() -> N
         padding_ltrb=(0, 0, 0, 0),
     )._replace(nonsquare_intermediate_size=ImageDimensions(8, 10))
 
-    with pytest.raises(ContractError, match="crop-sized masks"):
-        MaskGridGeometry.from_pre_processing(
-            partial_crop_at_origin, grid_size_hw=(4, 4)
-        )
-    with pytest.raises(ContractError, match="nonsquare_intermediate_size"):
-        MaskGridGeometry.from_pre_processing(non_square, grid_size_hw=(4, 4))
+    origin = MaskGridGeometry.from_pre_processing(
+        partial_crop_at_origin, grid_size_hw=(4, 4)
+    )
+    non_square_geometry = MaskGridGeometry.from_pre_processing(
+        non_square, grid_size_hw=(4, 4)
+    )
+    assert origin.static_crop_xywh == (0, 0, 7, 6)
+    assert origin.original_size_hw == (HEIGHT, WIDTH)
+    assert non_square_geometry.inference_size_hw == (8, 10)
 
 
 def test_clamped_low_resolution_logits_do_not_reproduce_unclamped_masks() -> None:
@@ -621,7 +625,8 @@ def test_frame_of_another_size_or_missing_frame_is_an_error(kind) -> None:
 
 
 def _counting(monkeypatch, name, *, fail_first=False, delay=None):
-    original = getattr(providers, name)
+    module = rle_module if name == "decode_rle_tensor" else providers
+    original = getattr(module, name)
     calls = []
 
     def wrapped(*args, **kwargs):
@@ -632,7 +637,7 @@ def _counting(monkeypatch, name, *, fail_first=False, delay=None):
             raise RuntimeError("transient failure")
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(providers, name, wrapped)
+    monkeypatch.setattr(module, name, wrapped)
 
     return calls
 
@@ -640,7 +645,7 @@ def _counting(monkeypatch, name, *, fail_first=False, delay=None):
 @pytest.mark.parametrize(
     "kind,function,fidelity",
     [
-        ("rle", "coco_rle_masks_to_torch_mask", "reference"),
+        ("rle", "decode_rle_tensor", "reference"),
         ("grid", "nearest_full_res", "approximate"),
     ],
 )
@@ -672,7 +677,7 @@ def test_concurrent_requests_share_one_computation(
 @pytest.mark.parametrize(
     "kind,function,fidelity",
     [
-        ("rle", "coco_rle_masks_to_torch_mask", "reference"),
+        ("rle", "decode_rle_tensor", "reference"),
         ("grid", "nearest_full_res", "approximate"),
     ],
 )

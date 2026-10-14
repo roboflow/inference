@@ -11,8 +11,9 @@ answers with the representation's own reference result, or refuses::
 
     provider.binary(fidelity="reference")    the reference result, never a preview
     provider.binary(fidelity="approximate")  grid: nearest_full_res, labelled
-                                             approximate; dense/RLE: their
-                                             reference, labelled reference
+                                             approximate; full-size dense/RLE:
+                                             reference; reduced binary rasters:
+                                             nearest-exact expansion, approximate
 
 Every ``BinaryMasks`` names the ``MaskRecipe`` it equals or approximates: the
 native producer, score domain and dtype, threshold and comparison, geometry
@@ -61,19 +62,25 @@ from typing import Any, Literal, Optional, Sequence, Tuple, Union
 import torch
 from roboflow_workflows.v2.data.errors import ContractError
 from roboflow_workflows.v2.data.frames import FrameRef, frame_of
-from roboflow_workflows.v2.data.masks.grid import MaskGridGeometry, SegmentationView
+from roboflow_workflows.v2.data.masks.grid import (
+    MaskGridGeometry,
+    SegmentationView,
+    binary_mask_sizes,
+    binary_predictions_in_image,
+)
 from roboflow_workflows.v2.data.masks.operations import nearest_full_res
 from roboflow_workflows.v2.data.masks.stream_order import StreamOrderedOnce
 from roboflow_workflows.v2.data.prediction_ops import RowSelection, take_rows
 from roboflow_workflows.v2.data.predictions import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
-from roboflow_workflows.v2.data.rle import check_rle_masks
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.common.rle_utils import coco_rle_masks_to_torch_mask
+from inference_models.models.base.types import (
+    InstanceSegmentationGrid,
+    InstancesRLEMasks,
+)
 
 Fidelity = Literal["reference", "approximate"]
 FIDELITIES: Tuple[str, ...] = ("reference", "approximate")
@@ -390,6 +397,9 @@ class GridMaskProvider(_MaskProvider):
             class_id=detections.class_id,
             confidence=detections.confidence,
             mask=nearest_full_res(self._view),
+            mask_size=self._view.geometry.original_size_hw,
+            image_size=self._view.geometry.original_size_hw,
+            mask_frame_size=self._view.geometry.original_size_hw,
             image_metadata=detections.image_metadata,
             bboxes_metadata=detections.bboxes_metadata,
         )
@@ -420,6 +430,11 @@ class DenseMaskProvider(_MaskProvider):
             )
 
         self._predictions = predictions
+        self._view = SegmentationView.from_predictions(predictions)
+        self._approximation = StreamOrderedOnce()
+        encoded, frame, _ = binary_mask_sizes(predictions)
+        if encoded != frame:
+            self.capabilities = frozenset({BINARY, APPROXIMATE_BINARY})
         self._recipe = MaskRecipe(
             reference=DENSE_REFERENCE,
             score_domain="binary",
@@ -427,7 +442,7 @@ class DenseMaskProvider(_MaskProvider):
             threshold=None,
             comparison="mask value is nonzero",
             operation_order=("supplied by the producer",),
-            geometry=RasterGeometry(size_hw=tuple(predictions.mask.shape[1:])),
+            geometry=RasterGeometry(size_hw=binary_mask_sizes(predictions)[2]),
         )
 
     def __repr__(self) -> str:
@@ -442,9 +457,9 @@ class DenseMaskProvider(_MaskProvider):
         return self._predictions
 
     @property
-    def detections(self) -> InstanceDetections:
-        """Row-aligned detections: the supplied predictions."""
-        return self._predictions
+    def detections(self) -> Detections:
+        """Row-aligned boxes in image coordinates; no mask materialization."""
+        return self._view.detections
 
     @property
     def recipe(self) -> MaskRecipe:
@@ -471,19 +486,32 @@ class DenseMaskProvider(_MaskProvider):
             ContractError: On a malformed selection; see ``RowSelection.of``.
         """
         selection = RowSelection.of(len(self), mask=mask, indices=indices)
-        provider = DenseMaskProvider(take_rows(self._predictions, selection))
+        provider = DenseMaskProvider(take_rows(self._view.binary_source, selection))
 
         return provider
 
     def _reference(self) -> BinaryMasks:
         masks = BinaryMasks(
-            predictions=self._predictions,
+            predictions=self._view.full_res(),
             fidelity="reference",
             recipe=self._recipe,
             method="supplied dense masks",
         )
 
         return masks
+
+    def _approximate(self) -> BinaryMasks:
+        predictions = self._approximation.get(
+            lambda: binary_predictions_in_image(
+                self._view.binary_source, approximate=True
+            )
+        )
+        return BinaryMasks(
+            predictions=predictions,
+            fidelity="approximate",
+            recipe=self._recipe,
+            method="binary raster nearest-exact expansion",
+        )
 
 
 class RLEMaskProvider(_MaskProvider):
@@ -510,7 +538,11 @@ class RLEMaskProvider(_MaskProvider):
 
         rle = predictions.mask
         self._predictions = predictions
-        self._decoded = StreamOrderedOnce()
+        self._view = SegmentationView.from_predictions(predictions)
+        self._approximation = StreamOrderedOnce()
+        encoded, frame, _ = binary_mask_sizes(predictions)
+        if encoded != frame:
+            self.capabilities = frozenset({BINARY, APPROXIMATE_BINARY})
         self._recipe = MaskRecipe(
             reference=RLE_REFERENCE,
             score_domain="coco_rle",
@@ -518,18 +550,18 @@ class RLEMaskProvider(_MaskProvider):
             threshold=None,
             comparison="decoded run value is 1",
             operation_order=(
-                "validate compressed counts against image_size",
+                "validate compressed counts against encoded mask_size",
                 "pycocotools decode on the CPU to (H, W, N) uint8",
                 "transpose to (N, H, W) bool",
                 "copy to the boxes' device when it is not the CPU",
             ),
-            geometry=RasterGeometry(size_hw=tuple(rle.image_size)),
+            geometry=RasterGeometry(size_hw=binary_mask_sizes(predictions)[2]),
         )
 
     def __repr__(self) -> str:
         return (
             f"RLEMaskProvider(rows={len(self)}, size_hw={self._recipe.output_size_hw}, "
-            f"decoded={self._decoded.is_set})"
+            f"decoded={self.is_decoded})"
         )
 
     @property
@@ -538,9 +570,9 @@ class RLEMaskProvider(_MaskProvider):
         return self._predictions
 
     @property
-    def detections(self) -> InstanceDetections:
-        """Row-aligned detections: the native predictions."""
-        return self._predictions
+    def detections(self) -> Detections:
+        """Row-aligned boxes in image coordinates; no RLE decode."""
+        return self._view.detections
 
     @property
     def recipe(self) -> MaskRecipe:
@@ -550,7 +582,7 @@ class RLEMaskProvider(_MaskProvider):
     @property
     def is_decoded(self) -> bool:
         """``True`` when ``binary()`` has a cached result."""
-        return self._decoded.is_set
+        return self._view.is_full_res_materialized() or self._approximation.is_set
 
     def select(
         self,
@@ -571,13 +603,13 @@ class RLEMaskProvider(_MaskProvider):
             ContractError: On a malformed selection; see ``RowSelection.of``.
         """
         selection = RowSelection.of(len(self), mask=mask, indices=indices)
-        provider = RLEMaskProvider(take_rows(self._predictions, selection))
+        provider = RLEMaskProvider(take_rows(self._view.binary_source, selection))
 
         return provider
 
     def _reference(self) -> BinaryMasks:
         masks = BinaryMasks(
-            predictions=self._decoded.get(self._decode),
+            predictions=self._view.full_res(),
             fidelity="reference",
             recipe=self._recipe,
             method="native COCO RLE decode",
@@ -585,22 +617,18 @@ class RLEMaskProvider(_MaskProvider):
 
         return masks
 
-    def _decode(self) -> InstanceDetections:
-        predictions = self._predictions
-        rle = predictions.mask
-        check_rle_masks(rle)
-
-        mask = coco_rle_masks_to_torch_mask(rle, device=predictions.xyxy.device)
-        decoded = InstanceDetections(
-            xyxy=predictions.xyxy,
-            class_id=predictions.class_id,
-            confidence=predictions.confidence,
-            mask=mask,
-            image_metadata=predictions.image_metadata,
-            bboxes_metadata=predictions.bboxes_metadata,
+    def _approximate(self) -> BinaryMasks:
+        predictions = self._approximation.get(
+            lambda: binary_predictions_in_image(
+                self._view.binary_source, approximate=True
+            )
         )
-
-        return decoded
+        return BinaryMasks(
+            predictions=predictions,
+            fidelity="approximate",
+            recipe=self._recipe,
+            method="decode binary raster, nearest-exact expansion",
+        )
 
 
 MaskProvider = Union[GridMaskProvider, DenseMaskProvider, RLEMaskProvider]
@@ -621,13 +649,15 @@ def mask_provider_of(payload: Any) -> MaskProvider:
     """
     if isinstance(payload, SegmentationView):
         if payload.is_dense_fallback:
-            provider = DenseMaskProvider(payload.full_res())
+            provider = mask_provider_of(payload.binary_source)
             return provider
 
         provider = GridMaskProvider(payload)
         return provider
 
     if isinstance(payload, InstanceDetections):
+        if isinstance(payload.mask, InstanceSegmentationGrid):
+            return GridMaskProvider(SegmentationView.from_predictions(payload))
         if isinstance(payload.mask, InstancesRLEMasks):
             provider = RLEMaskProvider(payload)
             return provider
@@ -648,7 +678,9 @@ def _grid_recipe(view: SegmentationView) -> MaskRecipe:
     crop_x, crop_y = geometry.static_crop_xywh[:2]
     paste = (
         f"paste into the {geometry.original_size_hw} image at ({crop_x}, {crop_y})"
-        if crop_x > 0 or crop_y > 0
+        if crop_x > 0
+        or crop_y > 0
+        or geometry.crop_size_hw != geometry.original_size_hw
         else "no paste: the crop starts at (0, 0) and covers the image"
     )
     recipe = MaskRecipe(

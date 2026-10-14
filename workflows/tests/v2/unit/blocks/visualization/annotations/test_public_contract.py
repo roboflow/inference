@@ -356,22 +356,6 @@ def test_accurate_and_coarse_are_equal_for_dense_masks(block_class: type) -> Non
     assert np.array_equal(pixels_of(accurate), pixels_of(coarse))
 
 
-@pytest.mark.parametrize("block_class", MASK_READERS)
-def test_mask_quality_description_states_cost_and_current_no_op(
-    block_class: type,
-) -> None:
-    # given
-    field = spec_of(block_class).params_model.model_fields["mask_quality"]
-
-    # then
-    assert "one full-image mask per detection, at either quality" in field.description
-    assert "blocky" in field.description
-    assert "roboflow_core/roboflow_instance_segmentation_model@v4 currently returns full-resolution" in (
-        field.description
-    )
-    assert "same result" in field.description
-
-
 @pytest.mark.parametrize("value", [True, False])
 @pytest.mark.parametrize(
     "block_class", COPY_IMAGE_REJECTERS, ids=lambda block: block.type

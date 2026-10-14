@@ -1,30 +1,16 @@
-"""Batched instance segmentation with host-owned ``inference_models`` models.
+"""Instance segmentation with separate execution and mask-fidelity controls.
 
-Model selection, phases and NMS options follow the object-detection block
-(see ``common``): one model and one set of options for every image of a
-call. Each image's result is built around one ``SegmentationView``; both
-mask outputs describe its rows::
+The default ``fast`` implementation asks capable models for native score grids.
+It postpones dense masks until ``predictions`` or an accurate consumer needs them.
+The ``accurate`` implementation requests the model's existing dense result.
+Both return the same two outputs: a view for downstream blocks and dense
+predictions for serialization. Models without grid support use dense masks in
+either implementation; post-processing failures are never retried silently.
 
-    _segmentations(network_input, raw_output)   one SegmentationView per image
-        class filter (view.select), frame metadata, row identity
-        segmentation  the view                 when a reader wants it
-        predictions   view.full_res()          when a reader wants it
-
-``segmentation`` is what blocks should wire: box and class consumers read
-its boxes without any full-resolution mask, and mask consumers ask its mask
-provider for the fidelity they need. ``predictions`` is the serializable,
-V1-shaped ``InstanceDetections``; building it may cost one full-image mask
-per instance, so the block builds it only when a reader wants it. Both share
-one row record, so selections keep them aligned.
-
-The contract does not require dense model output. This reference
-implementation asks ``post_process`` for dense masks
-(``mask_format="dense"``) and wraps them as a dense-fallback view: the masks
-already exist, so leaving out ``predictions`` saves nothing here. A producer
-with low-resolution mask grids overrides ``_segmentations`` and then computes
-full-resolution masks only for ``predictions`` or an explicit consumer
-request. A model whose ``post_process`` cannot return dense masks fails the
-step.
+Consumer parameters such as ``mask_quality="accurate"`` or ``"coarse"`` are
+independent of this compile-time choice. A fast grid still contains the scores
+needed for accurate interpolation. Coarse consumers may threshold its native
+cells before resizing. Dense output cannot recover those unthresholded scores.
 """
 
 import uuid
@@ -32,7 +18,14 @@ from dataclasses import replace
 from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Union
 
 import torch
-from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr, field_validator
+from pydantic import (
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    field_validator,
+)
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.blocks.models.common import (
     DEFAULT_IOU_THRESHOLD,
@@ -40,9 +33,9 @@ from roboflow_workflows.v2.blocks.models.common import (
     EMPTY_CLASS_FILTER_MESSAGE,
     ModelInput,
     ModelOption,
+    checked_class_filter,
     checked_confidence,
     checked_count,
-    checked_class_filter,
     class_filter_ids,
     kept_class_ids,
     model_request,
@@ -76,14 +69,217 @@ from roboflow_workflows.v2.engine.declaration import (
     Output,
     Ref,
 )
+from roboflow_workflows.v2.engine.implementations import Implementation
 from roboflow_workflows.v2.engine.phases import phase
 
+from inference_models.models.base.types import InstanceSegmentationGrid
 
 PREDICTION_TYPE = "instance-segmentation"
 
 CONFIDENCE_MODES = ("best", "default")
 
-MASK_FORMAT = "dense"
+BLOCK_TYPE = "roboflow_core/roboflow_instance_segmentation_model@v4"
+
+
+class CompactMasks(Implementation):
+    """Keep native mask scores until a consumer requests a raster."""
+
+    name = "fast"
+    quality = ("fast",)
+
+    def __init__(self, *, models: Union[Mapping[Any, Any], ModelCache]):
+        self._models = models_cache(models, block=BLOCK_TYPE)
+
+    @phase
+    def network_input(
+        self,
+        image: Batch,
+        model_id: str,
+        model_package_id: Optional[str],
+        confidence: Union[float, str],
+        iou_threshold: Optional[float],
+        max_detections: Optional[int],
+        class_agnostic_nms: Optional[bool],
+        class_filter: Optional[List[str]],
+    ) -> Optional[ModelInput]:
+        """Check options, resolve the call's model and preprocess all images."""
+        tensors = rgb_tensors(image, block=BLOCK_TYPE)
+        confidence = checked_confidence(
+            confidence, modes=CONFIDENCE_MODES, block=BLOCK_TYPE
+        )
+        step_options = scalar_options(
+            nms_options(
+                confidence=confidence,
+                iou_threshold=iou_threshold,
+                max_detections=max_detections,
+                class_agnostic_nms=class_agnostic_nms,
+            ),
+            block=BLOCK_TYPE,
+        )
+        names = checked_class_filter(class_filter, block=BLOCK_TYPE)
+        request = model_request(model_id, model_package_id, block=BLOCK_TYPE)
+        # An empty batch loads no model and runs nothing.
+        if not tensors:
+            return None
+
+        model = self._models.get(request)
+        mask_format = self._mask_format(model)
+        step_options += (
+            ModelOption(
+                "mask_format",
+                "mask_format",
+                mask_format if mask_format == "grid" else None,
+                "dense",
+            ),
+        )
+        options = post_process_options(
+            model.post_process, step_options, block=BLOCK_TYPE, request=request
+        )
+        class_ids = class_filter_ids(
+            names, model.class_names, block=BLOCK_TYPE, request=request
+        )
+
+        batch, metadata = model.pre_process(tensors, input_color_format="rgb")
+        model_input = ModelInput(
+            request=request,
+            model=model,
+            batch=batch,
+            metadata=metadata,
+            options=options,
+            class_ids=class_ids,
+        )
+
+        return model_input
+
+    @phase
+    def raw_output(self, network_input: Optional[ModelInput]) -> Any:
+        """Run the network once on all images (``forward``)."""
+        if network_input is None:
+            return None
+
+        raw_output = network_input.model.forward(network_input.batch)
+
+        return raw_output
+
+    @phase
+    def result(
+        self, raw_output: Any, network_input: Optional[ModelInput], image: Batch
+    ) -> List[Dict[str, Any]]:
+        """Decode instances; one result per image, in batch order.
+
+        Asks ``wants`` for both mask outputs and leaves out the ones nobody
+        reads.
+        """
+        if network_input is None:
+            return []
+
+        wants_segmentation = self.wants("segmentation")
+        wants_predictions = self.wants("predictions")
+        views = self._segmentations(network_input, raw_output)
+        checked_count(
+            views,
+            image_count=len(image),
+            request=network_input.request,
+            block=BLOCK_TYPE,
+        )
+
+        kept_ids = kept_class_ids(
+            network_input.class_ids, like=views[0].detections.class_id
+        )
+        results = []
+        for view, member in zip(views, image):
+            view = _keep_view_classes(view, kept_ids=kept_ids)
+            image_metadata = prediction_metadata(
+                view.detections.image_metadata,
+                member,
+                class_names=network_input.model.class_names,
+                prediction_type=PREDICTION_TYPE,
+            )
+            inference_id = uuid.uuid4().hex
+            view = _identified_view(
+                view, image_metadata=image_metadata, namespace=inference_id
+            )
+            result = {
+                "model_id": network_input.request.model_id,
+                "inference_id": inference_id,
+            }
+            if wants_segmentation:
+                result["segmentation"] = view
+            if wants_predictions:
+                result["predictions"] = view.full_res()
+            results.append(result)
+
+        return results
+
+    def _mask_format(self, model: Any) -> str:
+        """Prefer scores when this model advertises compact output support."""
+        formats = getattr(model, "supported_mask_formats", ())
+        mask_format = "grid" if "grid" in formats else "dense"
+
+        return mask_format
+
+    def _segmentations(
+        self, network_input: ModelInput, raw_output: Any
+    ) -> List[SegmentationView]:
+        """Wrap the model's selected mask representation without upscaling."""
+        batch = network_input.model.post_process(
+            raw_output, network_input.metadata, **network_input.options
+        )
+        mask_format = network_input.options.get("mask_format", "dense")
+        views = []
+        for predictions in batch:
+            _require_mask_format(
+                predictions, mask_format=mask_format, request=network_input.request
+            )
+            views.append(SegmentationView.from_predictions(predictions))
+
+        return views
+
+    def run(
+        self,
+        *,
+        image: Batch,
+        model_id: str,
+        confidence: Union[float, str] = "best",
+        model_package_id: Optional[str] = None,
+        class_filter: Optional[List[str]] = None,
+        iou_threshold: Optional[float] = None,
+        max_detections: Optional[int] = None,
+        class_agnostic_nms: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
+        """Segment every image of the batch with the same three phases.
+
+        Inside an engine call, an output no reader wants is left out.
+
+        Returns:
+            One ``{"predictions", "segmentation", "model_id", "inference_id"}``
+            per image, in batch order.
+        """
+        network_input = self.network_input(
+            image,
+            model_id,
+            model_package_id,
+            confidence,
+            iou_threshold,
+            max_detections,
+            class_agnostic_nms,
+            class_filter,
+        )
+        raw_output = self.raw_output(network_input)
+        results = self.result(raw_output, network_input, image)
+
+        return results
+
+
+class DenseMasks(CompactMasks):
+    """Use the model's eager dense post-processing as the reference strategy."""
+
+    name = "accurate"
+    quality = ("accurate",)
+
+    def _mask_format(self, model: Any) -> str:
+        return "dense"
+
 
 class InstanceSegmentationBlock(Block):
     """Segment object instances in a batch of images with host-owned models.
@@ -96,7 +292,9 @@ class InstanceSegmentationBlock(Block):
     adds the image's frame record, ``class_names`` and ``prediction_type``.
     """
 
-    type = "roboflow_core/roboflow_instance_segmentation_model@v4"
+    type = BLOCK_TYPE
+    implementations = (CompactMasks, DenseMasks)
+
     outputs = {
         "predictions": Output(
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -142,18 +340,18 @@ class InstanceSegmentationBlock(Block):
             ),
             examples=["rfdetr-nano", "yolov8n-640", "$inputs.model_id"],
         )
-        model_package_id: Optional[StrictStr] | Ref(
-            STRING_KIND, allow_none=True
-        ) = Field(
-            default=None,
-            description=(
-                "Exact model package to load, one for every image of the step; "
-                "None lets the loader choose. A selector may choose it per run, "
-                "not per image. A model supplied without a package id rejects a "
-                "package. List a model's package ids with "
-                'inference_models.AutoModel.describe_model("<model_id>").'
-            ),
-            examples=[None, "$inputs.model_package_id"],
+        model_package_id: Optional[StrictStr] | Ref(STRING_KIND, allow_none=True) = (
+            Field(
+                default=None,
+                description=(
+                    "Exact model package to load, one for every image of the step; "
+                    "None lets the loader choose. A selector may choose it per run, "
+                    "not per image. A model supplied without a package id rejects a "
+                    "package. List a model's package ids with "
+                    'inference_models.AutoModel.describe_model("<model_id>").'
+                ),
+                examples=[None, "$inputs.model_package_id"],
+            )
         )
         class_filter: Optional[List[StrictStr]] | Ref(
             LIST_OF_VALUES_KIND, allow_none=True
@@ -231,9 +429,6 @@ class InstanceSegmentationBlock(Block):
 
             return value
 
-    def __init__(self, *, models: Union[Mapping[Any, Any], ModelCache]):
-        self._models = models_cache(models, block=self.type)
-
     @classmethod
     def discover_dependent_resources(
         cls, params: BlockParams
@@ -253,182 +448,22 @@ class InstanceSegmentationBlock(Block):
 
         return resources
 
-    @phase
-    def network_input(
-        self,
-        image: Batch,
-        model_id: str,
-        model_package_id: Optional[str],
-        confidence: Union[float, str],
-        iou_threshold: Optional[float],
-        max_detections: Optional[int],
-        class_agnostic_nms: Optional[bool],
-        class_filter: Optional[List[str]],
-    ) -> Optional[ModelInput]:
-        """Check options, resolve the call's model and preprocess all images."""
-        tensors = rgb_tensors(image, block=self.type)
-        confidence = checked_confidence(
-            confidence, modes=CONFIDENCE_MODES, block=self.type
-        )
-        step_options = scalar_options(
-            nms_options(
-                confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-                class_agnostic_nms=class_agnostic_nms,
-            )
-            + (ModelOption("mask_format", "mask_format", None, MASK_FORMAT),),
-            block=self.type,
-        )
-        names = checked_class_filter(class_filter, block=self.type)
-        request = model_request(model_id, model_package_id, block=self.type)
-        # An empty batch loads no model and runs nothing.
-        if not tensors:
-            return None
 
-        model = self._models.get(request)
-        options = post_process_options(
-            model.post_process, step_options, block=self.type, request=request
-        )
-        class_ids = class_filter_ids(
-            names, model.class_names, block=self.type, request=request
-        )
-
-        batch, metadata = model.pre_process(tensors, input_color_format="rgb")
-        model_input = ModelInput(
-            request=request,
-            model=model,
-            batch=batch,
-            metadata=metadata,
-            options=options,
-            class_ids=class_ids,
-        )
-
-        return model_input
-
-    @phase
-    def raw_output(self, network_input: Optional[ModelInput]) -> Any:
-        """Run the network once on all images (``forward``)."""
-        if network_input is None:
-            return None
-
-        raw_output = network_input.model.forward(network_input.batch)
-
-        return raw_output
-
-    @phase
-    def result(
-        self, raw_output: Any, network_input: Optional[ModelInput], image: Batch
-    ) -> List[Dict[str, Any]]:
-        """Decode instances; one result per image, in batch order.
-
-        Asks ``wants`` for both mask outputs and leaves out the ones nobody
-        reads.
-        """
-        if network_input is None:
-            return []
-
-        wants_segmentation = self.wants("segmentation")
-        wants_predictions = self.wants("predictions")
-        views = self._segmentations(network_input, raw_output)
-        checked_count(
-            views,
-            image_count=len(image),
-            request=network_input.request,
-            block=self.type,
-        )
-
-        kept_ids = kept_class_ids(
-            network_input.class_ids, like=views[0].detections.class_id
-        )
-        results = []
-        for view, member in zip(views, image):
-            view = _keep_view_classes(view, kept_ids=kept_ids)
-            image_metadata = prediction_metadata(
-                view.detections.image_metadata,
-                member,
-                class_names=network_input.model.class_names,
-                prediction_type=PREDICTION_TYPE,
-            )
-            inference_id = uuid.uuid4().hex
-            view = _identified_view(
-                view, image_metadata=image_metadata, namespace=inference_id
-            )
-            result = {
-                "model_id": network_input.request.model_id,
-                "inference_id": inference_id,
-            }
-            if wants_segmentation:
-                result["segmentation"] = view
-            if wants_predictions:
-                result["predictions"] = view.full_res()
-            results.append(result)
-
-        return results
-
-    def _segmentations(
-        self, network_input: ModelInput, raw_output: Any
-    ) -> List[SegmentationView]:
-        """One view per image of the call, before filtering and identity.
-
-        The reference decodes dense masks with ``post_process`` and wraps
-        each image's ``InstanceDetections`` as a dense-fallback view. A
-        producer with low-resolution grids overrides this and returns grid
-        views (``SegmentationView.from_selected_rows``).
-        """
-        batch = network_input.model.post_process(
-            raw_output, network_input.metadata, **network_input.options
-        )
-        views = []
-        for predictions in batch:
-            _require_dense(predictions, request=network_input.request, block=self.type)
-            views.append(SegmentationView.from_dense(predictions))
-
-        return views
-
-    def run(
-        self,
-        *,
-        image: Batch,
-        model_id: str,
-        confidence: Union[float, str] = "best",
-        model_package_id: Optional[str] = None,
-        class_filter: Optional[List[str]] = None,
-        iou_threshold: Optional[float] = None,
-        max_detections: Optional[int] = None,
-        class_agnostic_nms: Optional[bool] = None,
-    ) -> List[Dict[str, Any]]:
-        """Segment every image of the batch with the same three phases.
-
-        Inside an engine call, an output no reader wants is left out.
-
-        Returns:
-            One ``{"predictions", "segmentation", "model_id", "inference_id"}``
-            per image, in batch order.
-        """
-        network_input = self.network_input(
-            image,
-            model_id,
-            model_package_id,
-            confidence,
-            iou_threshold,
-            max_detections,
-            class_agnostic_nms,
-            class_filter,
-        )
-        raw_output = self.raw_output(network_input)
-        results = self.result(raw_output, network_input, image)
-
-        return results
-
-def _require_dense(predictions: Any, *, request: ModelRequest, block: str) -> None:
+def _require_mask_format(
+    predictions: Any, *, mask_format: str, request: ModelRequest
+) -> None:
     mask = predictions.mask
-    if not isinstance(mask, torch.Tensor) or mask.ndim != 3:
+    valid = (
+        isinstance(mask, InstanceSegmentationGrid)
+        if mask_format == "grid"
+        else isinstance(mask, torch.Tensor) and mask.ndim == 3
+    )
+    if not valid:
         raise ValueError(
-            f"{block}: model {str(request)!r} returned "
-            f"{type(mask).__name__} masks; this block needs dense (N, H, W) "
-            f"masks (post_process mask_format={MASK_FORMAT!r})"
+            f"{BLOCK_TYPE}: model {str(request)!r} returned "
+            f"{type(mask).__name__} masks after requesting mask_format={mask_format!r}"
         )
+
 
 def _keep_view_classes(
     view: SegmentationView, *, kept_ids: Optional[torch.Tensor]
@@ -441,6 +476,7 @@ def _keep_view_classes(
 
     return selected
 
+
 def _identified_view(
     view: SegmentationView, *, image_metadata: Dict[str, Any], namespace: str
 ) -> SegmentationView:
@@ -449,22 +485,8 @@ def _identified_view(
     The row namespace is the image's ``inference_id``. Masks are not copied
     and nothing is upscaled.
     """
-    if view.is_dense_fallback:
-        # full_res() of a dense fallback is its wrapped predictions: no cost.
-        predictions = replace(view.full_res(), image_metadata=image_metadata)
-        predictions = with_row_identity(predictions, namespace=namespace)
-        dense_view = SegmentationView.from_dense(predictions)
-        return dense_view
-
-    # Grid views come only from a ``_segmentations`` override.
     detections = replace(view.detections, image_metadata=image_metadata)
-    grid_view = SegmentationView(
-        detections=with_row_identity(detections, namespace=namespace),
-        scores=view.scores,
-        score_type=view.score_type,
-        threshold=view.threshold,
-        geometry=view.geometry,
-        take_ownership=True,
-    )
+    identified = with_row_identity(detections, namespace=namespace)
+    identified_view = view.with_image_metadata(identified.image_metadata)
 
-    return grid_view
+    return identified_view

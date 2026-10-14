@@ -21,6 +21,7 @@ image are clipped by OpenCV, as in V1.
 """
 
 from typing import Any, Dict, List, Literal
+
 import cv2
 import numpy as np
 from pydantic import Field, StrictInt, model_validator
@@ -64,8 +65,8 @@ from roboflow_workflows.v2.data.kinds import (
 )
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 
-
 OUTLINE_COLOR = (0, 0, 0)
+
 
 class TriangleVisualizationBlock(Block):
     """Draw a filled triangle on an anchor of each detection onto a copy of the image.
@@ -180,9 +181,10 @@ class TriangleVisualizationBlock(Block):
                 "view is upscaled with the model's own interpolation). coarse: a mask "
                 "view's grid cells are thresholded, then expanded, so edges can be "
                 "blocky and small parts can be lost; it skips the accurate upscaling "
-                "only. roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "only. The model block's fast implementation retains compact scores "
+                "when supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -308,11 +310,13 @@ class TriangleVisualizationBlock(Block):
 
         return result
 
+
 def _checked_height(value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"height must be an integer, got {value!r}")
 
     return value
+
 
 _CHECKS = {
     "position": lambda value: checked_choice(

@@ -15,6 +15,7 @@ RLE masks are decoded on the host, as their provider does.
 """
 
 from typing import Any, Dict, List, Literal
+
 from pydantic import Field, StrictInt, model_validator
 from roboflow_workflows.v2.blocks.visualization.annotations.base import (
     annotated,
@@ -140,9 +141,10 @@ class MaskVisualizationBlock(Block):
                 "interpolation). coarse: a mask view's grid cells are thresholded, "
                 "then expanded, so edges can be blocky and small parts can be lost; it "
                 "skips the accurate upscaling only. "
-                "roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "The model block's fast implementation retains compact scores when "
+                "supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -221,6 +223,7 @@ class MaskVisualizationBlock(Block):
         result = annotated(image, blend(canvas, colored, opacity=opacity))
 
         return result
+
 
 _CHECKS = {
     "opacity": checked_opacity,

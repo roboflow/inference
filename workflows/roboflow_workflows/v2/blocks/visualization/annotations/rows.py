@@ -207,13 +207,9 @@ def boxes_of(predictions: Any, *, block: str) -> Detections:
         )
 
     if isinstance(boxes, InstanceDetections):
-        boxes = Detections(
-            xyxy=boxes.xyxy,
-            class_id=boxes.class_id,
-            confidence=boxes.confidence,
-            image_metadata=boxes.image_metadata,
-            bboxes_metadata=boxes.bboxes_metadata,
-        )
+        from roboflow_workflows.v2.data.masks.grid import image_detections_of
+
+        boxes = image_detections_of(boxes)
 
     return boxes
 

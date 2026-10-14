@@ -23,6 +23,7 @@ build one full-image mask per row at ``mask_quality``.
 """
 
 from typing import Any, Dict, Literal
+
 import torch
 from pydantic import Field, model_validator
 from roboflow_workflows.v2.blocks.visualization.annotations.base import (
@@ -126,9 +127,10 @@ class BackgroundColorVisualizationBlock(Block):
                 "view is upscaled with the model's own interpolation). coarse: a mask "
                 "view's grid cells are thresholded, then expanded, so edges can be "
                 "blocky and small parts can be lost; it skips the accurate upscaling "
-                "only. roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "only. The model block's fast implementation retains compact scores "
+                "when supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -203,6 +205,7 @@ class BackgroundColorVisualizationBlock(Block):
             kept[y1:y2, x1:x2] = True
 
         return kept
+
 
 _CHECKS = {
     "color": lambda value: parse_color(value, field="color"),

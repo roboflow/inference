@@ -14,6 +14,7 @@ V2 accepts only instance masks, so that mistake is a compile error.
 """
 
 from typing import Any, Dict, List, Literal, Optional
+
 import cv2
 import numpy as np
 import torch
@@ -55,8 +56,8 @@ from roboflow_workflows.v2.data.kinds import (
 )
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 
-
 MIN_POLYGON_POINTS = 3
+
 
 class PolygonVisualizationBlock(Block):
     """Outline each instance mask on a copy of the image.
@@ -141,9 +142,10 @@ class PolygonVisualizationBlock(Block):
                 "interpolation). coarse: a mask view's grid cells are thresholded, "
                 "then expanded, so edges can be blocky and small parts can be lost; it "
                 "skips the accurate upscaling only. "
-                "roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "The model block's fast implementation retains compact scores when "
+                "supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -233,6 +235,7 @@ class PolygonVisualizationBlock(Block):
 
         return result
 
+
 def mask_polygons(masks: torch.Tensor) -> List[List[np.ndarray]]:
     """Trace the contours of each mask as ``sv.mask_to_polygons`` does.
 
@@ -290,6 +293,7 @@ def mask_polygons(masks: torch.Tensor) -> List[List[np.ndarray]]:
         )
 
     return polygons
+
 
 _CHECKS = {
     "thickness": lambda value: checked_int(value, name="thickness", minimum=1),

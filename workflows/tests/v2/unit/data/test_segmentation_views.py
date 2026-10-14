@@ -194,9 +194,7 @@ def test_cropped_stretch_maps_cells_into_the_crop() -> None:
     assert mapping.frame_size_hw == (60, 80)
 
 
-def test_partial_static_crop_at_the_origin_is_rejected() -> None:
-    # The reference helper only places a crop on the full-image canvas at a
-    # nonzero offset; at (0, 0) it would return crop-sized "full-res" masks.
+def test_partial_static_crop_at_the_origin_is_pasted() -> None:
     metadata = _metadata(
         original_hw=(60, 80),
         resized_hw=(30, 50),
@@ -215,10 +213,18 @@ def test_partial_static_crop_at_the_origin_is_rejected() -> None:
         inference_size=metadata.inference_size,
         static_crop_offset=metadata.static_crop_offset,
     )
-    assert tuple(helper_mask.shape) == (1, 30, 50)
-
-    with pytest.raises(ContractError, match=r"at \(0, 0\) is smaller"):
-        MaskGridGeometry.from_pre_processing(metadata, grid_size_hw=(4, 6))
+    assert tuple(helper_mask.shape) == (1, 60, 80)
+    geometry = MaskGridGeometry.from_pre_processing(metadata, grid_size_hw=(4, 6))
+    view = SegmentationView(
+        detections=_detections(1),
+        scores=torch.ones((1, 4, 6)),
+        score_type="logits",
+        threshold=0.0,
+        geometry=geometry,
+    )
+    assert torch.equal(view.full_res().mask, helper_mask)
+    assert not helper_mask[:, 30:].any()
+    assert not helper_mask[:, :, 50:].any()
 
 
 @pytest.mark.parametrize(

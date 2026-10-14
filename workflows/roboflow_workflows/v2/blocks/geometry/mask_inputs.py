@@ -25,7 +25,13 @@ from roboflow_workflows.v2.data.masks import (
     INSTANCE_SEGMENTATION_VIEW_KIND,
     SegmentationView,
 )
+from roboflow_workflows.v2.data.masks.grid import (
+    image_detections_of,
+    image_predictions_of,
+)
 from roboflow_workflows.v2.data.masks.providers import mask_provider_of
+
+from inference_models.models.base.instance_segmentation import InstanceDetections
 
 __all__ = [
     "INSTANCE_SEGMENTATION_VIEW_KIND",
@@ -44,6 +50,8 @@ def boxes_of_view(payload: Any) -> Any:
         ``view.detections`` for a view, without masks and without
         materializing any; ``payload`` itself otherwise.
     """
+    if isinstance(payload, InstanceDetections):
+        return image_detections_of(payload)
     if not isinstance(payload, SegmentationView):
         return payload
 
@@ -62,6 +70,8 @@ def instance_predictions_of(payload: Any) -> Any:
         ``InstanceDetections`` with dense reference masks for a view;
         ``payload`` itself otherwise.
     """
+    if isinstance(payload, InstanceDetections):
+        return image_predictions_of(payload)
     if not isinstance(payload, SegmentationView):
         return payload
 

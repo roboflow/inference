@@ -14,6 +14,9 @@ from inference_models.configuration import (
 )
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.models.common.roboflow.instance_segmentation_grid import (
+    build_instance_segmentation_grid,
+)
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
@@ -805,3 +808,113 @@ def post_process_keypoint_detection_results(
         )
 
     return all_key_points, detections
+
+
+def post_process_instance_segmentation_results_to_grid(
+    bboxes: torch.Tensor,
+    logits: torch.Tensor,
+    masks: torch.Tensor,
+    pre_processing_meta: List[PreProcessingMetadata],
+    threshold: Union[float, torch.Tensor],
+    num_classes: int,
+    classes_re_mapping: Optional[ClassesReMapping],
+    max_detections: Optional[int] = None,
+) -> List[InstanceDetections]:
+    """Select RF-DETR detections while retaining native mask logits.
+
+    Args:
+        bboxes: Batch of normalized center-size query boxes.
+        logits: Batch of class logits for each query.
+        masks: Batch of native query mask logits.
+        pre_processing_meta: Per-image preprocessing geometry.
+        threshold: Scalar or per-class detection confidence threshold.
+        num_classes: Number of named classes, excluding no-object logits.
+        classes_re_mapping: Optional filtering and remapping of class IDs.
+        max_detections: Maximum retained detections after sorting by confidence.
+
+    Returns:
+        Detections in original-image coordinates with compact score-grid masks.
+    """
+    logits_sigmoid = torch.nn.functional.sigmoid(logits)
+    results = []
+    device = bboxes.device
+    if isinstance(threshold, torch.Tensor):
+        threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
+    for image_bboxes, image_logits, image_masks, image_meta in zip(
+        bboxes, logits_sigmoid, masks, pre_processing_meta
+    ):
+        confidence, top_classes, image_bboxes, query_indices = select_topk_predictions(
+            logits_sigmoid=image_logits,
+            bboxes_cxcywh=image_bboxes,
+        )
+        image_masks = image_masks[query_indices]
+        if classes_re_mapping is not None:
+            remapping_mask = torch.isin(
+                top_classes, classes_re_mapping.remaining_class_ids
+            )
+            top_classes = classes_re_mapping.class_mapping[top_classes[remapping_mask]]
+            confidence = confidence[remapping_mask]
+            image_bboxes = image_bboxes[remapping_mask]
+            image_masks = image_masks[remapping_mask]
+        else:
+            # drop DETR no-object rows
+            named = top_classes < num_classes
+            confidence = confidence[named]
+            top_classes = top_classes[named]
+            image_bboxes = image_bboxes[named]
+            image_masks = image_masks[named]
+        confidence_mask = confidence > (
+            threshold[top_classes.long()]
+            if isinstance(threshold, torch.Tensor)
+            else threshold
+        )
+        confidence = confidence[confidence_mask]
+        top_classes = top_classes[confidence_mask]
+        selected_boxes = image_bboxes[confidence_mask]
+        selected_masks = image_masks[confidence_mask]
+        confidence, sorted_indices = torch.sort(confidence, descending=True)
+        top_classes = top_classes[sorted_indices]
+        selected_boxes = selected_boxes[sorted_indices]
+        selected_masks = selected_masks[sorted_indices]
+        if max_detections is not None:
+            # Apply the same sorted cap before constructing the score carrier.
+            confidence = confidence[:max_detections]
+            top_classes = top_classes[:max_detections]
+            selected_boxes = selected_boxes[:max_detections]
+            selected_masks = selected_masks[:max_detections]
+        cxcy = selected_boxes[:, :2]
+        wh = selected_boxes[:, 2:]
+        xy_min = cxcy - 0.5 * wh
+        xy_max = cxcy + 0.5 * wh
+        selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
+        denorm_size = (
+            image_meta.nonsquare_intermediate_size or image_meta.inference_size
+        )
+        denorm_size_whwh = torch.tensor(
+            [
+                denorm_size.width,
+                denorm_size.height,
+                denorm_size.width,
+                denorm_size.height,
+            ],
+            device=device,
+        )
+        selected_boxes_xyxy = selected_boxes_xyxy_pct * denorm_size_whwh
+        xyxy, grid = build_instance_segmentation_grid(
+            image_bboxes=selected_boxes_xyxy,
+            masks=selected_masks,
+            metadata=image_meta,
+            score_type="logits",
+        )
+        image_size = tuple(image_meta.original_size)
+        detections = InstanceDetections(
+            xyxy=xyxy,
+            confidence=confidence,
+            class_id=top_classes.int(),
+            mask=grid,
+            mask_size=image_size,
+            image_size=image_size,
+            mask_frame_size=image_size,
+        )
+        results.append(detections)
+    return results

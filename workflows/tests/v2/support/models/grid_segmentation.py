@@ -1,11 +1,8 @@
 """A grid-backed instance-segmentation producer double, for contract tests.
 
-The reference ``InstanceSegmentationBlock`` starts from dense masks, so its
-view is a dense fallback and leaving out ``predictions`` saves nothing. This
-double overrides the producer hook ``_segmentations`` to return low-resolution
-grid views (``SegmentationView.from_selected_rows``), the shape a compact
-producer would return. It proves what the block contract allows: a reader that
-needs only boxes gets the view without any full-resolution mask being built.
+This double overrides the compact implementation's producer hook to supply
+known low-resolution grid views, so tests can count demand and materialization.
+Real compact backend integration is exercised separately.
 
 It is NOT a compact model backend and says nothing about the speed of one:
 the fake's grid is half the image size and box-shaped::
@@ -22,6 +19,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 from roboflow_workflows.v2.blocks.models.common import ModelInput
 from roboflow_workflows.v2.blocks.models.roboflow_platform.instance_segmentation_model.v4 import (
+    CompactMasks,
     InstanceSegmentationBlock,
 )
 from roboflow_workflows.v2.data.masks.grid import MaskGridGeometry, SegmentationView
@@ -65,7 +63,7 @@ class GridInstanceModel(InstanceModel):
         return decoded
 
 
-class GridInstanceSegmentationBlock(InstanceSegmentationBlock):
+class GridInstanceSegmentationBlock(CompactMasks, InstanceSegmentationBlock):
     """The real block with a grid producer; records what it was asked.
 
     ``asked`` holds every ``wants`` answer of the last call, also copied to
@@ -74,6 +72,7 @@ class GridInstanceSegmentationBlock(InstanceSegmentationBlock):
     """
 
     type = "test/grid_instance_segmentation@v1"
+    implementations = ()  # This fixture supplies its own producer.
 
     def __init__(self, *, models: Any):
         super().__init__(models=models)
@@ -110,8 +109,7 @@ class GridInstanceSegmentationBlock(InstanceSegmentationBlock):
 
 
 def _grid_options(options: Dict[str, Any]) -> Dict[str, Any]:
-    # The block binds mask_format="dense" for the reference producer; a grid
-    # producer does not decode masks in post-processing.
+    # This fixture uses its separate grid producer instead of post_process.
     grid_options = {
         key: value for key, value in options.items() if key != "mask_format"
     }

@@ -36,6 +36,7 @@ is materialized once.
 """
 
 from typing import Any, Dict, List, Literal
+
 import cv2
 import numpy as np
 import torch
@@ -81,10 +82,10 @@ from roboflow_workflows.v2.data.kinds import (
 )
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 
-
 _GRAY_WEIGHTS_RGB = (9798, 19235, 3735)
 
 _GRAY_SHIFT = 15
+
 
 class HaloVisualizationBlock(Block):
     """Draw a soft glow, in each object's color, around its mask on a copy of the image.
@@ -180,9 +181,10 @@ class HaloVisualizationBlock(Block):
                 "interpolation). coarse: a mask view's grid cells are thresholded, "
                 "then expanded, so edges can be blocky and small parts can be lost; it "
                 "skips the accurate upscaling only. "
-                "roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "The model block's fast implementation retains compact scores when "
+                "supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -275,6 +277,7 @@ class HaloVisualizationBlock(Block):
 
         return result
 
+
 def with_halo(
     canvas: torch.Tensor,
     masks: torch.Tensor,
@@ -309,6 +312,7 @@ def with_halo(
 
     return halo
 
+
 def _cv2_blur(rgb: torch.Tensor, kernel_size: int) -> torch.Tensor:
     # (3, H, W) uint8 on any device -> blurred copy there. cv2.blur on V1's
     # contiguous BGR (H, W, 3) array: its rounding at row ends depends on
@@ -320,6 +324,7 @@ def _cv2_blur(rgb: torch.Tensor, kernel_size: int) -> torch.Tensor:
 
     return result
 
+
 def _gray(rgb: torch.Tensor) -> torch.Tensor:
     # (3, H, W) uint8 -> (H, W) int32, as cv2.cvtColor(COLOR_BGR2GRAY) on BGR.
     red, green, blue = rgb.to(torch.int32).unbind(0)
@@ -328,6 +333,7 @@ def _gray(rgb: torch.Tensor) -> torch.Tensor:
     gray = (weighted + (1 << (_GRAY_SHIFT - 1))) >> _GRAY_SHIFT
 
     return gray
+
 
 _CHECKS = {
     "color_axis": lambda value: checked_choice(

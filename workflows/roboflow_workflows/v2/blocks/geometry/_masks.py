@@ -94,7 +94,7 @@ def polygon_masks(mask: Any, *, polygons: List[Optional[np.ndarray]]) -> Any:
 def _polygon_rle_masks(
     mask: InstancesRLEMasks, *, polygons: List[Optional[np.ndarray]]
 ) -> InstancesRLEMasks:
-    height, width = mask.image_size
+    height, width = mask.mask_size or mask.image_size
     encoded = []
     for row, polygon in enumerate(polygons):
         if polygon is None:
@@ -105,7 +105,9 @@ def _polygon_rle_masks(
         canvas[y0 : y0 + window.shape[0], x0 : x0 + window.shape[1]] = window
         encoded.append(mask_utils.encode(np.asfortranarray(canvas))["counts"])
 
-    converted = InstancesRLEMasks(image_size=mask.image_size, masks=encoded)
+    converted = InstancesRLEMasks(
+        image_size=mask.image_size, mask_size=mask.mask_size, masks=encoded
+    )
 
     return converted
 

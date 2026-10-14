@@ -28,6 +28,7 @@ from roboflow_workflows.v2.blocks.image.dynamic_crop.v1 import DynamicCropBlock
 from roboflow_workflows.v2.blocks.models.cache import ModelRequest
 from roboflow_workflows.v2.blocks.models.common import ModelInput
 from roboflow_workflows.v2.blocks.models.roboflow_platform.instance_segmentation_model.v4 import (
+    CompactMasks,
     InstanceSegmentationBlock,
 )
 from roboflow_workflows.v2.blocks.visualization import annotations
@@ -326,7 +327,7 @@ class SceneLoader:
         return model
 
 
-class SyntheticCompactSegmentationBlock(InstanceSegmentationBlock):
+class SyntheticCompactSegmentationBlock(CompactMasks, InstanceSegmentationBlock):
     """The instance segmentation block returning a synthetic stride-4 grid view.
 
     Only ``_segmentations`` changes: each dense mask becomes a logit grid,
@@ -335,6 +336,7 @@ class SyntheticCompactSegmentationBlock(InstanceSegmentationBlock):
     """
 
     type = "test/synthetic_compact_segmentation@v1"
+    implementations = ()  # This fixture supplies its own producer.
 
     def _segmentations(
         self, network_input: ModelInput, raw_output: Any
@@ -380,7 +382,11 @@ def compact_view(predictions: InstanceDetections) -> SegmentationView:
 
 def annotation_catalogue() -> Catalogue:
     """The V2 catalogue plus model, crop, relabel and the ten annotation blocks."""
-    extra = [block for block in models.BLOCKS if block.type != "roboflow_core/roboflow_object_detection_model@v3"]
+    extra = [
+        block
+        for block in models.BLOCKS
+        if block.type != "roboflow_core/roboflow_object_detection_model@v3"
+    ]
     catalogue = create_catalogue().with_blocks(
         [
             *extra,

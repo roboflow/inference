@@ -1,65 +1,16 @@
-"""Low-resolution instance-segmentation view: a distinct payload and kind.
+"""Lazy, row-aligned instance masks in image coordinates.
 
-An instance-segmentation model predicts mask scores on a small grid (YOLOv8 and
-RF-DETR: 1/4 of the network input per axis). The existing dense payload,
-``InstanceDetections`` with a bool ``(N, H, W)`` mask, is produced by one
-expensive step: bilinear upscale of every selected row to the image size, then
-a threshold. A ``SegmentationView`` keeps the grid and postpones that step::
+``from_predictions`` accepts the native score-grid carrier and dense/RLE
+fallbacks. Score grids retain unthresholded values: accurate materialization
+unpads, resizes, thresholds, then pastes. Reduced binary rasters retain their
+encoded size and cannot reconstruct that accurate result; providers offer an
+explicit coarse expansion. Selection and metadata updates never materialize.
 
-    model grid scores (N, mh, mw), padded like the network input
-        │  low_res() / low_res_binary()   cheap; the grid in the image's place
-        │  masks.operations               approximate area, zone, overlay
-        └─ full_res()                     EXPENSIVE, cached once per view:
-                                          inference_models'
-                                          align_instance_segmentation_results,
-                                          the call the model's dense
-                                          post_process makes -> InstanceDetections
-
-``full_res()`` returns the existing dense contract, so any consumer of
-``instance_segmentation_prediction`` can use it. Direct grid use is a semantic
-approximation (threshold before instead of after interpolation); the ops module
-labels every such result.
-
-Contracts:
-
-=================  ==========================================================
-rows               Row ``i`` of the scores belongs to row ``i`` of
-                   ``detections`` (boxes in image pixels, class, confidence).
-scores             ``logits`` (threshold usually 0.0), ``probabilities``
-                   (usually 0.5) or ``binary`` (dense fallback). A cell or
-                   pixel is foreground when ``score > threshold``.
-geometry           ``MaskGridGeometry`` reproduces the reference helper,
-                   including its rounded grid padding and static crop.
-storage            The constructor copies the scores unless
-                   ``take_ownership=True`` declares that nobody writes them
-                   afterwards. Storage may then be borrowed and shared:
-                   ``from_selected_rows`` passes its fresh gather,
-                   ``with_threshold`` shares the parent view's scores, and
-                   ``from_dense`` wraps the caller's dense mask. Sharing is
-                   safe only because every holder treats it as immutable.
-read-only          Attributes cannot be reassigned. Tensors are read-only by
-                   contract; writes are not intercepted. To change masks,
-                   build a new view (``select``, ``with_threshold``).
-cache              ``full_res()`` computes at most once per view, also under
-                   concurrent callers; a failure publishes nothing. The
-                   threshold, geometry and rows are fixed per view, so the
-                   cache needs no key. The cache lives as long as the view:
-                   a retained view retains ``N x H x W`` bools.
-CUDA streams       Build a view on the stream that produced its inputs, or on
-                   one ordered after it. The view records a CUDA event there.
-                   Every accessor (``detections``, ``scores``, ``low_res``,
-                   ``full_res`` ...) makes the caller's current stream wait
-                   for that event and marks the tensors as used by it, when
-                   it is another stream. ``full_res()`` records a second
-                   event after the upscale; later callers on other streams
-                   wait for it. Results are ordered for the stream current
-                   at the call. CPU views skip all of this. The mechanism
-                   lives in ``stream_order``, shared with the providers.
-dense fallback     ``from_dense`` wraps existing dense predictions when the
-                   model offers no low-resolution stage. ``full_res()`` then
-                   returns them unchanged and no upscale is saved. Its binary
-                   threshold is fixed; ``select`` keeps the fallback.
-=================  ==========================================================
+Views borrow producer-owned immutable snapshots. Direct construction copies
+scores unless ownership is explicitly transferred. Full-image reconstruction
+is cached once per view; failures retry. CUDA readiness and cache publication
+order each caller's current stream and retain tensor storage without a host
+synchronization. Other resolution factors compute on the caller's stream.
 """
 
 import threading
@@ -81,9 +32,15 @@ from roboflow_workflows.v2.data.row_identity import checked_row_record
 from inference_models.entities import ImageDimensions
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import (
+    InstanceSegmentationGrid,
+    InstancesRLEMasks,
+)
 from inference_models.models.common.roboflow.model_packages import StaticCropOffset
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
+    resolve_mask_output_size,
+    resolve_mask_target_size,
 )
 
 ScoreType = Literal["logits", "probabilities", "binary"]
@@ -120,10 +77,7 @@ class MaskGridGeometry:
 
     Raises:
         ContractError: On non-positive sizes or scales, a crop that does not
-            match ``crop_size_hw`` or leaves the image, and a partial crop at
-            ``(0, 0)``: the reference helper places a crop on the full-image
-            canvas only at a nonzero offset, so its dense mask would be
-            crop-sized, not image-sized.
+            match ``crop_size_hw`` or leaves the image.
     """
 
     grid_size_hw: SizeHW
@@ -164,12 +118,6 @@ class MaskGridGeometry:
                 f"static crop {self.static_crop_xywh} leaves the "
                 f"{image_w} x {image_h} image"
             )
-        if (crop_x, crop_y) == (0, 0) and (crop_h, crop_w) != (image_h, image_w):
-            raise ContractError(
-                f"static crop {self.static_crop_xywh} at (0, 0) is smaller than "
-                f"the {image_w} x {image_h} image; the reference helper returns "
-                "crop-sized masks there, not full-image masks. Use a dense view."
-            )
 
     @classmethod
     def from_pre_processing(
@@ -184,23 +132,17 @@ class MaskGridGeometry:
         Returns:
             The geometry.
 
-        Raises:
-            ContractError: When the metadata uses a non-square intermediate
-                size; the reference helper is called with a different
-                ``inference_size`` then, which this geometry does not model.
+        Non-square intermediate dimensions take precedence over network size,
+        matching the native post-processing helper.
         """
-        if getattr(metadata, "nonsquare_intermediate_size", None) is not None:
-            raise ContractError(
-                "nonsquare_intermediate_size pre-processing is not supported by "
-                "MaskGridGeometry; use a dense view"
-            )
+        inference_size = metadata.nonsquare_intermediate_size or metadata.inference_size
 
         crop = metadata.static_crop_offset
         geometry = cls(
             grid_size_hw=tuple(grid_size_hw),
             inference_size_hw=(
-                metadata.inference_size.height,
-                metadata.inference_size.width,
+                inference_size.height,
+                inference_size.width,
             ),
             padding_ltrb=(
                 metadata.pad_left,
@@ -398,6 +340,7 @@ class SegmentationView:
         "_dense_source",
         "_ready",
         "_full_res",
+        "_decoded",
         "_lock",
         "_materializations",
     )
@@ -422,8 +365,9 @@ class SegmentationView:
         if not take_ownership:
             scores = scores.clone(memory_format=torch.contiguous_format)
 
-        # compute_full_res() holds the same lock, so the cached and the
-        # uncached upscale never run at the same time.
+        self._initialize(detections, scores, score_type, threshold, geometry)
+
+    def _initialize(self, detections, scores, score_type, threshold, geometry):
         lock = threading.Lock()
         fields = {
             "_detections": detections,
@@ -432,8 +376,9 @@ class SegmentationView:
             "_threshold": float(threshold),
             "_geometry": geometry,
             "_dense_source": None,
-            "_ready": StreamReadiness.record(scores.device),
+            "_ready": StreamReadiness.record(detections.xyxy.device),
             "_full_res": StreamOrderedOnce(lock),
+            "_decoded": StreamOrderedOnce(),
             "_lock": lock,
             "_materializations": 0,
         }
@@ -495,54 +440,81 @@ class SegmentationView:
         return view
 
     @classmethod
-    def from_dense(cls, predictions: InstanceDetections) -> "SegmentationView":
-        """Wrap dense predictions when no low-resolution stage is available.
+    def from_predictions(cls, predictions: InstanceDetections) -> "SegmentationView":
+        """Adapt a native grid, dense raster or RLE without materializing masks.
 
-        The grid is the image itself. The view borrows ``predictions`` and
-        its mask without copying; both stay read-only. ``full_res()``
-        returns ``predictions`` unchanged and counts no materialization;
-        nothing is saved. The binary threshold is fixed at ``0.0``.
-
-        Args:
-            predictions: ``InstanceDetections`` with a dense ``(N, H, W)`` mask.
-
-        Returns:
-            The view.
-
-        Raises:
-            ContractError: On an RLE or non-binary mask.
+        Grid boxes already use image coordinates. Binary carriers store boxes
+        in their encoded raster coordinates; the view scales those boxes to the
+        image frame while retaining the original mask and its size metadata.
+        Reduced binary data cannot reconstruct an accurate full-image mask.
         """
+        from roboflow_workflows.v2.data.predictions import (
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        )
+
+        INSTANCE_SEGMENTATION_PREDICTION_KIND.check(predictions)
         mask = predictions.mask
-        if not isinstance(mask, torch.Tensor) or mask.ndim != 3:
-            raise ContractError(
-                "from_dense needs a dense (N, H, W) mask, got " f"{type(mask).__name__}"
+        if isinstance(mask, InstanceSegmentationGrid):
+            image_h, image_w = predictions.image_size
+            x, y, width, height = mask.image_crop_xywh
+            geometry = MaskGridGeometry(
+                grid_size_hw=tuple(mask.scores.shape[1:]),
+                inference_size_hw=tuple(mask.scores.shape[1:]),
+                padding_ltrb=mask.grid_padding_ltrb,
+                scale_xy=(1.0, 1.0),
+                crop_size_hw=(height, width),
+                original_size_hw=(image_h, image_w),
+                static_crop_xywh=(x, y, width, height),
+            )
+            return cls(
+                detections=image_detections_of(predictions),
+                scores=mask.scores,
+                score_type=mask.score_type,
+                threshold=mask.threshold,
+                geometry=geometry,
+                take_ownership=True,
             )
 
-        detections = Detections(
-            xyxy=predictions.xyxy,
-            class_id=predictions.class_id,
-            confidence=predictions.confidence,
-            image_metadata=predictions.image_metadata,
-            bboxes_metadata=predictions.bboxes_metadata,
+        encoded, frame, image = binary_mask_sizes(predictions)
+        geometry = MaskGridGeometry(
+            grid_size_hw=encoded,
+            inference_size_hw=encoded,
+            padding_ltrb=(0, 0, 0, 0),
+            scale_xy=(1.0, 1.0),
+            crop_size_hw=frame,
+            original_size_hw=image,
+            static_crop_xywh=(0, 0, frame[1], frame[0]),
         )
-        view = cls(
-            detections=detections,
-            scores=mask,
-            score_type="binary",
-            threshold=0.0,
-            geometry=MaskGridGeometry.identity(tuple(mask.shape[1:])),
-            take_ownership=True,
+        view = cls.__new__(cls)
+        view._initialize(
+            image_detections_of(predictions),
+            mask if isinstance(mask, torch.Tensor) else None,
+            "binary",
+            0.0,
+            geometry,
         )
         object.__setattr__(view, "_dense_source", predictions)
-
         return view
 
+    @classmethod
+    def from_dense(cls, predictions: InstanceDetections) -> "SegmentationView":
+        """Wrap a dense binary carrier, preserving its encoded and image sizes."""
+        if not isinstance(predictions.mask, torch.Tensor):
+            raise ContractError("from_dense needs a dense (N, H, W) mask")
+        return cls.from_predictions(predictions)
+
+    @property
+    def binary_source(self) -> Optional[InstanceDetections]:
+        """Original dense/RLE carrier, or None for a score grid. Read-only."""
+        self._order_inputs()
+        return self._dense_source
+
     def __len__(self) -> int:
-        return int(self._scores.shape[0])
+        return int(self._detections.xyxy.shape[0])
 
     def __repr__(self) -> str:
         return (
-            f"SegmentationView(rows={len(self)}, grid={tuple(self._scores.shape[1:])}, "
+            f"SegmentationView(rows={len(self)}, grid={self._geometry.grid_size_hw}, "
             f"score_type={self._score_type!r}, threshold={self._threshold}, "
             f"dense_fallback={self.is_dense_fallback})"
         )
@@ -565,6 +537,9 @@ class SegmentationView:
         """
         self._order_inputs()
 
+        if self._scores is None:
+            return self._decoded.get(self._decode_source).mask
+
         return self._scores
 
     @property
@@ -575,7 +550,7 @@ class SegmentationView:
     @property
     def score_dtype(self) -> torch.dtype:
         """Dtype of the stored scores; reads no values and orders no stream."""
-        return self._scores.dtype
+        return self._scores.dtype if self._scores is not None else torch.bool
 
     @property
     def threshold(self) -> float:
@@ -589,7 +564,7 @@ class SegmentationView:
 
     @property
     def is_dense_fallback(self) -> bool:
-        """``True`` when the view wraps dense masks; no upscale can be saved."""
+        """``True`` when the view wraps binary dense/RLE data without scores."""
         return self._dense_source is not None
 
     @property
@@ -627,7 +602,11 @@ class SegmentationView:
 
     def is_full_res_materialized(self) -> bool:
         """``True`` when ``full_res()`` has a cached result."""
-        materialized = self._full_res.is_set or self.is_dense_fallback
+        materialized = self._full_res.is_set or (
+            self._dense_source is not None
+            and isinstance(self._dense_source.mask, torch.Tensor)
+            and self._geometry.grid_size_hw == self._geometry.original_size_hw
+        )
 
         return materialized
 
@@ -644,11 +623,12 @@ class SegmentationView:
         Returns:
             ``InstanceDetections`` with a bool ``(N, H, W)`` mask in original
             image pixels, equal to the model's dense post-processing of the
-            same raw output. A dense fallback returns its wrapped predictions.
+            same prepared scores. Boxes are clipped and rounded in image pixels.
+            Reduced binary fallbacks raise because scores were discarded.
         """
         if self._dense_source is not None:
             self._order_inputs()
-            return self._dense_source
+            return self._full_res.get(self._binary_full_res)
 
         predictions = self._full_res.get(self._materialize)
 
@@ -667,55 +647,144 @@ class SegmentationView:
         """
         if self._dense_source is not None:
             self._order_inputs()
-            return self._dense_source
+            return self._full_res.get(self._binary_full_res)
 
         with self._lock:
             predictions = self._materialize()
 
         return predictions
 
-    def _materialize(self) -> InstanceDetections:
-        """One reference upscale on the current stream; the caller holds ``_lock``."""
-        self._order_inputs()
-        rows = int(self._scores.shape[0])
-        if rows == 0:
-            # Given the host boxes below, the helper would return this empty
-            # mask on the CPU instead of the scores' device.
-            height, width = self._geometry.original_size_hw
-            mask = torch.empty(
-                (0, height, width), dtype=torch.bool, device=self._scores.device
+    def materialize(
+        self, *, masks_resolution_factor: float = 1.0
+    ) -> InstanceDetections:
+        """Resize scores before thresholding at the requested native factor.
+
+        Factor 1 uses image pixels and the shared full-resolution cache. Factor
+        0 uses the unpadded score-grid size; intermediate factors follow the
+        model library's interpolation and crop-placement rules. Lower factors
+        need not be smaller when the source image is smaller than the grid.
+        Binary fallbacks support factor 1 only, when it is reconstructable.
+        """
+        if not 0.0 <= masks_resolution_factor <= 1.0:
+            raise ContractError("masks_resolution_factor must be finite and in [0, 1]")
+        if masks_resolution_factor == 1.0:
+            return self.full_res()
+        if self._score_type == "binary":
+            raise ContractError("resolution factors require unthresholded scores")
+        with self._lock:
+            return self._materialize(masks_resolution_factor)
+
+    def to_rle(self, *, masks_resolution_factor: float = 1.0) -> InstanceDetections:
+        """Materialize masks, then encode COCO RLE at an explicit host boundary.
+
+        Encoding reads mask runs on the CPU and therefore synchronizes a CUDA
+        source. Raster, image and frame sizes, rows and metadata are preserved.
+        """
+        from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+
+        dense = self.materialize(masks_resolution_factor=masks_resolution_factor)
+        masks = InstancesRLEMasks(
+            image_size=dense.image_size or tuple(dense.mask.shape[1:]),
+            mask_size=dense.mask_size,
+            masks=[torch_mask_to_coco_rle(mask)["counts"] for mask in dense.mask],
+        )
+        return replace(dense, mask=masks)
+
+    def _decode_source(self) -> InstanceDetections:
+        from roboflow_workflows.v2.data.rle import decode_rle_tensor
+
+        source = self._dense_source
+        mask = decode_rle_tensor(source.mask, device=source.xyxy.device)
+        return replace(source, mask=mask)
+
+    def _binary_full_res(self) -> InstanceDetections:
+        source = self._dense_source
+        encoded, frame, _ = binary_mask_sizes(source)
+        if encoded != frame:
+            raise ContractError(
+                "reduced binary masks cannot reconstruct accurate full-image masks; "
+                "request coarse fidelity or retain an unthresholded score grid"
             )
-        else:
-            # The view's boxes are already final; the helper's box output is
-            # discarded, and no box value reaches its mask. The helper puts
-            # its box constants on the boxes' device, so host zeros avoid
-            # host-to-device copies, each of which waits for the stream. The
-            # explicit device ignores a non-CPU default device.
-            throwaway_boxes = torch.zeros((rows, 4), dtype=torch.float32, device="cpu")
+        if isinstance(source.mask, InstancesRLEMasks):
+            source = self._decoded.get(self._decode_source)
+        return binary_predictions_in_image(source)
+
+    def _materialize(self, masks_resolution_factor: float = 1.0) -> InstanceDetections:
+        """One score reconstruction on the current stream; caller holds the lock."""
+        self._order_inputs()
+        geometry = self._geometry
+        arguments = geometry.reference_arguments()
+        rows = len(self)
+        throwaway_boxes = torch.zeros((rows, 4), dtype=torch.float32, device="cpu")
+        if rows:
             _, mask = align_instance_segmentation_results(
                 image_bboxes=throwaway_boxes,
                 masks=self._scores,
                 binarization_threshold=self._threshold,
-                **self._geometry.reference_arguments(),
+                masks_resolution_factor=masks_resolution_factor,
+                **arguments,
             )
+        else:
+            size = resolve_mask_output_size(
+                *geometry.grid_size_hw,
+                **{
+                    key: arguments[key]
+                    for key in (
+                        "padding",
+                        "inference_size",
+                        "original_size",
+                        "size_after_pre_processing",
+                        "static_crop_offset",
+                    )
+                },
+                masks_resolution_factor=masks_resolution_factor,
+            )
+            mask = torch.empty((0, *size), dtype=torch.bool, device=self._scores.device)
+        target_h, target_w = resolve_mask_target_size(
+            *geometry.unpadded_size_hw,
+            size_after_pre_processing=arguments["size_after_pre_processing"],
+            masks_resolution_factor=masks_resolution_factor,
+        )
+        x, y, crop_w, crop_h = geometry.static_crop_xywh
+        scale = self._detections.xyxy.new_tensor(
+            [target_w / crop_w, target_h / crop_h] * 2, dtype=torch.float32
+        )
+        origin = scale.new_tensor([x, y] * 2)
+        offset = scale.new_tensor(
+            [round(x * target_w / crop_w), round(y * target_h / crop_h)] * 2
+        )
+        boxes = (self._detections.xyxy.float() - origin) * scale + offset
+        boxes[:, 0::2].clamp_(0, mask.shape[2])
+        boxes[:, 1::2].clamp_(0, mask.shape[1])
+        if masks_resolution_factor == 1.0:
+            boxes = boxes.round().int()
         object.__setattr__(self, "_materializations", self._materializations + 1)
-
         detections = self._detections
-        predictions = InstanceDetections(
-            xyxy=detections.xyxy,
+        return InstanceDetections(
+            xyxy=boxes,
             class_id=detections.class_id,
             confidence=detections.confidence,
             mask=mask,
             image_metadata=detections.image_metadata,
             bboxes_metadata=detections.bboxes_metadata,
+            mask_size=tuple(mask.shape[1:]),
+            image_size=geometry.original_size_hw,
+            mask_frame_size=geometry.original_size_hw,
         )
-
-        return predictions
 
     def _order_inputs(self) -> None:
         """Order the current CUDA stream after the view's construction."""
         order_current_stream(
-            self._ready, [self._scores, *_detection_tensors(self._detections)]
+            self._ready,
+            [
+                tensor
+                for tensor in (
+                    self._scores,
+                    self._dense_source.xyxy if self._dense_source is not None else None,
+                    *_detection_tensors(self._detections),
+                )
+                if tensor is not None
+            ],
         )
 
     def select(self, rows: Union[torch.Tensor, RowSelection]) -> "SegmentationView":
@@ -748,16 +817,16 @@ class SegmentationView:
             selection = rows
         else:
             selection = _row_selection(rows, count=len(self))
-        scores = self.scores
+        self._order_inputs()
 
         if self._dense_source is not None:
             selected_predictions = take_rows(self._dense_source, selection)
-            return SegmentationView.from_dense(selected_predictions)
+            return SegmentationView.from_predictions(selected_predictions)
 
         selected_detections = take_rows(self._detections, selection)
         view = SegmentationView(
             detections=selected_detections,
-            scores=selection.take(scores),
+            scores=selection.take(self.scores),
             score_type=self._score_type,
             threshold=self._threshold,
             geometry=self._geometry,
@@ -805,7 +874,7 @@ class SegmentationView:
         self._order_inputs()
         if self._dense_source is not None:
             predictions = replace(self._dense_source, bboxes_metadata=copied_rows)
-            view = SegmentationView.from_dense(predictions)
+            view = SegmentationView.from_predictions(predictions)
         else:
             detections = replace(self._detections, bboxes_metadata=copied_rows)
             view = SegmentationView(
@@ -818,6 +887,22 @@ class SegmentationView:
             )
 
         return view
+
+    def with_image_metadata(self, image_metadata: Optional[dict]) -> "SegmentationView":
+        """Replace image/row-identity metadata without copying or decoding masks."""
+        self._order_inputs()
+        if self._dense_source is not None:
+            return SegmentationView.from_predictions(
+                replace(self._dense_source, image_metadata=image_metadata)
+            )
+        return SegmentationView(
+            detections=replace(self._detections, image_metadata=image_metadata),
+            scores=self._scores,
+            score_type=self._score_type,
+            threshold=self._threshold,
+            geometry=self._geometry,
+            take_ownership=True,
+        )
 
     def with_threshold(self, threshold: float) -> "SegmentationView":
         """New view with another threshold; borrows the read-only scores.
@@ -864,14 +949,116 @@ class SegmentationView:
             "original_size_hw": list(self._geometry.original_size_hw),
             "score_type": self._score_type,
             "threshold": self._threshold,
-            "score_dtype": str(scores.dtype),
-            "score_bytes": scores.numel() * scores.element_size(),
-            "device": str(scores.device),
+            "score_dtype": str(self.score_dtype),
+            "score_bytes": (
+                scores.numel() * scores.element_size() if scores is not None else None
+            ),
+            "device": str(self._detections.xyxy.device),
             "dense_fallback": self.is_dense_fallback,
             "materializations": self._materializations,
         }
 
         return summary
+
+
+def binary_mask_sizes(predictions: InstanceDetections) -> Tuple[SizeHW, SizeHW, SizeHW]:
+    """Encoded raster, represented image extent, and original image sizes."""
+    mask = predictions.mask
+    native = (
+        tuple(mask.mask_size or mask.image_size)
+        if isinstance(mask, InstancesRLEMasks)
+        else tuple(mask.shape[1:])
+    )
+    encoded = tuple(predictions.mask_size or native)
+    image = tuple(
+        predictions.image_size
+        or (mask.image_size if isinstance(mask, InstancesRLEMasks) else native)
+    )
+    frame = tuple(predictions.mask_frame_size or image)
+    if encoded != native or any(
+        len(size) != 2 or min(size) <= 0 for size in (encoded, frame, image)
+    ):
+        raise ContractError("mask_size must match the positive encoded raster size")
+    if any(extent > total for extent, total in zip(frame, image)):
+        raise ContractError("mask_frame_size must fit inside image_size")
+    return encoded, frame, image
+
+
+def image_detections_of(predictions: InstanceDetections) -> Detections:
+    """Read image-coordinate boxes without materializing any masks."""
+    boxes = predictions.xyxy
+    if predictions.mask is not None and not isinstance(
+        predictions.mask, InstanceSegmentationGrid
+    ):
+        encoded, frame, _ = binary_mask_sizes(predictions)
+        if encoded != frame:
+            boxes = boxes.float() * boxes.new_tensor(
+                [frame[1] / encoded[1], frame[0] / encoded[0]] * 2,
+                dtype=torch.float32,
+            )
+    return Detections(
+        xyxy=boxes,
+        class_id=predictions.class_id,
+        confidence=predictions.confidence,
+        image_metadata=predictions.image_metadata,
+        bboxes_metadata=predictions.bboxes_metadata,
+    )
+
+
+def image_predictions_of(predictions: InstanceDetections) -> InstanceDetections:
+    """Normalize masks and boxes to image pixels, preserving full-size RLE."""
+    if predictions.mask is None:
+        return predictions
+    if isinstance(predictions.mask, InstanceSegmentationGrid):
+        return SegmentationView.from_predictions(predictions).full_res()
+    encoded, frame, image = binary_mask_sizes(predictions)
+    if encoded == frame == image:
+        return predictions
+    return binary_predictions_in_image(predictions)
+
+
+def binary_predictions_in_image(
+    predictions: InstanceDetections, *, approximate: bool = False
+) -> InstanceDetections:
+    """Place binary pixels in image coordinates; reduced rasters need coarse consent.
+
+    Resizing binary pixels cannot recover the scores discarded by thresholding.
+    Exact placement is possible when the encoded raster equals its frame extent.
+    """
+    encoded, frame, image = binary_mask_sizes(predictions)
+    if encoded != frame and not approximate:
+        raise ContractError(
+            "reduced binary masks cannot reconstruct accurate full-image masks; "
+            "request coarse fidelity or retain an unthresholded score grid"
+        )
+    mask = predictions.mask
+    if isinstance(mask, InstancesRLEMasks):
+        from roboflow_workflows.v2.data.rle import decode_rle_tensor
+
+        mask = decode_rle_tensor(mask, device=predictions.xyxy.device)
+    if encoded == frame == image and mask is predictions.mask:
+        return predictions
+    if encoded != frame:
+        if len(mask):
+            mask = torch.nn.functional.interpolate(
+                mask[:, None].float(),
+                size=frame,
+                mode="nearest-exact",
+            )[:, 0].bool()
+        else:
+            mask = torch.empty((0, *frame), dtype=torch.bool, device=mask.device)
+    if frame != image:
+        canvas = torch.zeros((len(mask), *image), dtype=mask.dtype, device=mask.device)
+        canvas[:, : frame[0], : frame[1]] = mask
+        mask = canvas
+    return replace(
+        predictions,
+        xyxy=image_detections_of(predictions).xyxy,
+        mask=mask,
+        mask_size=image,
+        mask_frame_size=image,
+        image_size=image,
+    )
 
 
 def _check_view_parts(

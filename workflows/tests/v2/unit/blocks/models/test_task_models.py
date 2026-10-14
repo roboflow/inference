@@ -12,29 +12,30 @@ from typing import Any, Dict, List
 import pytest
 import torch
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.depth_estimation.v1 import DepthEstimationBlock
-from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import EasyOCRBlock
-from roboflow_workflows.v2.blocks.models.ocr_model.v1 import OCRModelBlock
-from roboflow_workflows.v2.blocks.models.roboflow_platform.classification_model.v3 import (
-    ClassificationBlock,
-)
-from roboflow_workflows.v2.blocks.models.roboflow_platform.multi_label_classification_model.v3 import (
-    MultiLabelClassificationBlock,
-)
 from roboflow_workflows.v2.blocks.models.common import (
     ModelOption,
     checked_confidence,
     confidence_option,
     post_process_options,
 )
-from roboflow_workflows.v2.blocks.models.roboflow_platform.object_detection_model.v3 import (
-    ObjectDetectionBlock,
+from roboflow_workflows.v2.blocks.models.depth_estimation.v1 import DepthEstimationBlock
+from roboflow_workflows.v2.blocks.models.easy_ocr.v1 import EasyOCRBlock
+from roboflow_workflows.v2.blocks.models.ocr_model.v1 import OCRModelBlock
+from roboflow_workflows.v2.blocks.models.roboflow_platform.classification_model.v3 import (
+    ClassificationBlock,
 )
 from roboflow_workflows.v2.blocks.models.roboflow_platform.instance_segmentation_model.v4 import (
+    CompactMasks,
     InstanceSegmentationBlock,
 )
 from roboflow_workflows.v2.blocks.models.roboflow_platform.keypoint_detection_model.v3 import (
     KeypointDetectionBlock,
+)
+from roboflow_workflows.v2.blocks.models.roboflow_platform.multi_label_classification_model.v3 import (
+    MultiLabelClassificationBlock,
+)
+from roboflow_workflows.v2.blocks.models.roboflow_platform.object_detection_model.v3 import (
+    ObjectDetectionBlock,
 )
 from roboflow_workflows.v2.blocks.models.roboflow_platform.semantic_segmentation_model.v2 import (
     SemanticSegmentationBlock,
@@ -105,7 +106,8 @@ def _predictions(results: List[Dict[str, Any]]) -> List[Any]:
 
 def _segment(block: Any, *, wanted=None, **params: Any) -> List[Dict[str, Any]]:
     # The block asks wants() for its mask outputs: run it as one engine call.
-    with block_call(block, wanted=wanted):
+    contract = InstanceSegmentationBlock if type(block) is CompactMasks else block
+    with block_call(contract, wanted=wanted):
         results = block.run(**params)
 
     return results
@@ -377,7 +379,7 @@ def test_object_detection_defaults_to_the_best_confidence_mode() -> None:
         image=Batch([_image(BRIGHT, "a")]), model_id="od"
     )
     (segmented,) = _segment(
-        InstanceSegmentationBlock(models={"seg": segmenter}),
+        CompactMasks(models={"seg": segmenter}),
         image=Batch([_image(BRIGHT, "a")]),
         model_id="seg",
     )
@@ -473,7 +475,7 @@ PHASED_BLOCKS = {
         ("m", None, "best", None, None, None, None),
     ),
     "instance_segmentation": (
-        InstanceSegmentationBlock,
+        CompactMasks,
         {"model_id": "m"},
         ("m", None, "best", None, None, None, None),
     ),
@@ -506,7 +508,8 @@ def test_an_empty_batch_loads_no_model_and_runs_no_phase_work(name) -> None:
     block = block_type(models=ModelCache(lambda request: loaded.append(request)))
     empty = Batch([])
 
-    with block_call(block):
+    contract = InstanceSegmentationBlock if type(block) is CompactMasks else block
+    with block_call(contract):
         results = block.run(image=empty, **selection)
         # The same phases called one by one, as a pipelined run does.
         network_input = block.network_input(empty, *phase_arguments)
@@ -727,7 +730,7 @@ def test_a_numeric_threshold_for_a_forward_thresholded_model_runs_nothing(
 
 def test_instance_masks_are_requested_dense_and_viewed_without_a_copy() -> None:
     model = InstanceModel()
-    block = InstanceSegmentationBlock(models={"seg": model})
+    block = CompactMasks(models={"seg": model})
 
     results = _segment(block, image=_ragged_batch(), model_id="seg", confidence=0.0)
 
@@ -746,7 +749,7 @@ def test_instance_masks_are_requested_dense_and_viewed_without_a_copy() -> None:
 
 
 def test_instance_class_filter_keeps_masks_aligned_with_boxes() -> None:
-    block = InstanceSegmentationBlock(models={"seg": InstanceModel()})
+    block = CompactMasks(models={"seg": InstanceModel()})
 
     (result,) = _segment(
         block,
@@ -769,7 +772,7 @@ def test_instance_class_filter_keeps_masks_aligned_with_boxes() -> None:
 @pytest.mark.parametrize(
     "block_class, model_class",
     [
-        (InstanceSegmentationBlock, InstanceModel),
+        (CompactMasks, InstanceModel),
         (GridInstanceSegmentationBlock, GridInstanceModel),
     ],
 )
@@ -801,16 +804,18 @@ def test_filtered_instance_outputs_carry_merged_metadata_and_fresh_identity(
 
 
 def test_a_model_returning_rle_masks_fails_the_step() -> None:
-    block = InstanceSegmentationBlock(models={"seg": InstanceModel(rle_only=True)})
+    block = CompactMasks(models={"seg": InstanceModel(rle_only=True)})
 
     with pytest.raises(PhaseFailure, match="dense"):
         _segment(block, image=Batch([_image(BRIGHT, "a")]), model_id="seg")
 
 
 def test_the_reference_leaves_out_predictions_nobody_wants() -> None:
-    block = InstanceSegmentationBlock(models={"seg": InstanceModel()})
+    block = CompactMasks(models={"seg": InstanceModel()})
 
-    with block_call(block, wanted=("segmentation", "model_id")) as call:
+    with block_call(
+        InstanceSegmentationBlock, wanted=("segmentation", "model_id")
+    ) as call:
         (result,) = block.run(
             image=Batch([_image(BRIGHT, "a")]), model_id="seg", confidence=0.0
         )
@@ -932,7 +937,7 @@ def _refusing(block_type: type) -> tuple:
         (ObjectDetectionBlock, "iou_threshold", [0.5, 0.5]),
         (ObjectDetectionBlock, "max_detections", [10, 10]),
         (ObjectDetectionBlock, "class_agnostic_nms", [True, True]),
-        (InstanceSegmentationBlock, "iou_threshold", [0.5, 0.5]),
+        (CompactMasks, "iou_threshold", [0.5, 0.5]),
         (KeypointDetectionBlock, "keypoint_confidence", [0.2, 0.2]),
         (SemanticSegmentationBlock, "confidence", [0.5, 0.5]),
         (MultiLabelClassificationBlock, "confidence", [0.5, 0.5]),
@@ -977,7 +982,7 @@ MALFORMED_CLASS_FILTERS = {
 @pytest.mark.parametrize("name", MALFORMED_CLASS_FILTERS)
 @pytest.mark.parametrize(
     "block_type",
-    [ObjectDetectionBlock, InstanceSegmentationBlock, KeypointDetectionBlock],
+    [ObjectDetectionBlock, CompactMasks, KeypointDetectionBlock],
 )
 @pytest.mark.parametrize("images", [2, 0], ids=["images", "empty-batch"])
 def test_a_malformed_class_filter_fails_before_any_load(
@@ -1003,4 +1008,3 @@ def test_an_unknown_class_name_is_still_checked_against_the_loaded_model() -> No
         )
 
     assert model.calls == []
-

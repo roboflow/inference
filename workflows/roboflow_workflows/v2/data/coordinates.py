@@ -333,6 +333,10 @@ def _frame_image_metadata(
 def _detections_to_root(
     detections: TensorNativeDetections, *, placement: Optional[RootPlacement]
 ) -> TensorNativeDetections:
+    if isinstance(detections, InstanceDetections):
+        from roboflow_workflows.v2.data.masks.grid import image_predictions_of
+
+        detections = image_predictions_of(detections)
     mask = getattr(detections, "mask", None)
     _check_row_counts(detections, mask=mask)
     if placement is None:
@@ -360,6 +364,10 @@ def _map_detections(
     image_metadata: Optional[dict],
 ) -> TensorNativeDetections:
     """Map boxes, row metadata and masks with ``mapping``; masks get its canvas."""
+    if isinstance(detections, InstanceDetections):
+        from roboflow_workflows.v2.data.masks.grid import image_predictions_of
+
+        detections = image_predictions_of(detections)
     xyxy = _map_points(detections.xyxy.reshape(-1, 2), root=mapping).reshape(-1, 4)
     bboxes_metadata = _map_bboxes_metadata(detections.bboxes_metadata, root=mapping)
     if isinstance(detections, InstanceDetections):
@@ -368,6 +376,9 @@ def _map_detections(
             class_id=detections.class_id,
             confidence=detections.confidence,
             mask=_masks_to_root(detections.mask, root=mapping),
+            mask_size=mapping.frame_size_hw,
+            image_size=mapping.frame_size_hw,
+            mask_frame_size=mapping.frame_size_hw,
             image_metadata=image_metadata,
             bboxes_metadata=bboxes_metadata,
         )
@@ -906,7 +917,7 @@ def _mask_canvas_hw(
     if mask is None:
         return None
     if isinstance(mask, InstancesRLEMasks):
-        return int(mask.image_size[0]), int(mask.image_size[1])
+        return int(mask.mask_size[0]), int(mask.mask_size[1])
     if not isinstance(mask, torch.Tensor) or mask.ndim != 3:
         raise ValueError(
             "Instance masks must be InstancesRLEMasks or an (N, H, W) torch.Tensor, "

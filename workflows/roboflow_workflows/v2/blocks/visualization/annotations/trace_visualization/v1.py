@@ -39,6 +39,7 @@ relies on, so the block is never pruned.
 
 from collections import deque
 from typing import Any, Deque, Dict, List, Literal, Optional, Tuple
+
 import cv2
 import numpy as np
 from pydantic import Field, StrictInt, model_validator
@@ -89,10 +90,10 @@ from roboflow_workflows.v2.data.kinds import (
 )
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 
-
 DEFAULT_MAX_SOURCES = 256
 
 PENDING_TRACK_ID = -1
+
 
 class _Trail:
     """Anchors of one source's last calls, oldest first."""
@@ -127,6 +128,7 @@ class _Trail:
         anchors = np.concatenate([points for _, _, points in self.frames])
 
         return tracker_ids, anchors
+
 
 class TraceVisualizationBlock(Block):
     """Draw the recent path of each tracked detection onto a copy of the image.
@@ -239,9 +241,10 @@ class TraceVisualizationBlock(Block):
                 "interpolation). coarse: a mask view's grid cells are thresholded, "
                 "then expanded, so edges can be blocky and small parts can be lost; it "
                 "skips the accurate upscaling only. "
-                "roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "The model block's fast implementation retains compact scores when "
+                "supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -411,6 +414,7 @@ class TraceVisualizationBlock(Block):
 
         return anchors
 
+
 def add_path(strokes: Strokes, path: np.ndarray, *, color: Any, thickness: int) -> None:
     """Add one open polyline through integer points, as ``cv2.polylines`` draws it.
 
@@ -425,6 +429,7 @@ def add_path(strokes: Strokes, path: np.ndarray, *, color: Any, thickness: int) 
         color=color,
         scan=bounds_scan(path, reach=stroke_reach(thickness)),
     )
+
 
 _CHECKS = {
     "position": lambda value: checked_choice(

@@ -223,7 +223,10 @@ def test_materialization_leaves_source_and_row_record_unchanged() -> None:
     assert torch.equal(detections.class_id, class_id)
     assert torch.equal(detections.confidence, confidence)
     assert torch.equal(view.scores, scores)
-    assert dense.xyxy is detections.xyxy
+    expected_boxes = xyxy.clone()
+    expected_boxes[:, 0::2].clamp_(0, view.geometry.original_size_hw[1])
+    expected_boxes[:, 1::2].clamp_(0, view.geometry.original_size_hw[0])
+    assert torch.equal(dense.xyxy, expected_boxes.round().int())
     assert dense.image_metadata is image_metadata
     assert dense.bboxes_metadata is detections.bboxes_metadata
     assert row_record(detections) == record_before

@@ -15,6 +15,7 @@ before the native decoder is called. The decoder is replaced by a sentinel in
 those tests, so a regression cannot reach native code.
 """
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -65,7 +66,7 @@ def native_decode_forbidden(monkeypatch):
         raise AssertionError("malformed counts reached the native RLE decoder")
 
     monkeypatch.setattr(rle, "coco_rle_masks_to_numpy_mask", forbidden)
-    monkeypatch.setattr(providers, "coco_rle_masks_to_torch_mask", forbidden)
+    monkeypatch.setattr(rle, "coco_rle_masks_to_torch_mask", forbidden)
 
 
 def predictions(counts, *, box=(0, 0, 8, 8)):
@@ -212,7 +213,10 @@ def test_only_the_shared_helper_and_provider_call_the_native_decoders():
     callers = sorted(
         str(path.relative_to(V2_SOURCE))
         for path in V2_SOURCE.rglob("*.py")
-        if "coco_rle_masks_to_" in path.read_text()
+        if any(
+            isinstance(node, ast.Name) and node.id.startswith("coco_rle_masks_to_")
+            for node in ast.walk(ast.parse(path.read_text()))
+        )
     )
 
-    assert callers == ["data/masks/providers.py", "data/rle.py"]
+    assert callers == ["data/rle.py"]

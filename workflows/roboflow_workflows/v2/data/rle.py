@@ -13,16 +13,20 @@ helper. ``decode_rle_masks`` validates and decodes on the host into one
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
+import torch
 from roboflow_workflows.v2.data.errors import ContractError
 
 from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
+from inference_models.models.common.rle_utils import (
+    coco_rle_masks_to_numpy_mask,
+    coco_rle_masks_to_torch_mask,
+)
 
 
 def check_rle_masks(
     masks: InstancesRLEMasks, *, rows: Optional[Sequence[int]] = None
 ) -> None:
-    """Check the compressed counts of the given rows against ``image_size``.
+    """Check the compressed counts of the given rows against the encoded ``mask_size``.
 
     Args:
         masks: Native compressed masks.
@@ -32,7 +36,8 @@ def check_rle_masks(
         ContractError: When a row's counts are not compressed COCO counts
             covering exactly ``H * W`` pixels. The message names the row.
     """
-    size_hw = (int(masks.image_size[0]), int(masks.image_size[1]))
+    size = masks.mask_size or masks.image_size
+    size_hw = (int(size[0]), int(size[1]))
     checked_rows = range(len(masks.masks)) if rows is None else rows
     for row in checked_rows:
         check_rle_counts(masks.masks[row], size_hw=size_hw, row=row)
@@ -56,11 +61,27 @@ def decode_rle_masks(
     check_rle_masks(masks, rows=rows)
     if rows is not None:
         masks = InstancesRLEMasks(
-            image_size=masks.image_size, masks=[masks.masks[row] for row in rows]
+            image_size=masks.image_size,
+            mask_size=masks.mask_size,
+            masks=[masks.masks[row] for row in rows],
         )
+    if not masks.masks:
+        return np.empty((0, *(masks.mask_size or masks.image_size)), dtype=bool)
     decoded = coco_rle_masks_to_numpy_mask(masks)
 
     return decoded
+
+
+def decode_rle_tensor(
+    masks: InstancesRLEMasks, *, device: torch.device
+) -> torch.Tensor:
+    """Validate encoded raster counts before decoding on the requested device."""
+    check_rle_masks(masks)
+    if not masks.masks:
+        return torch.empty(
+            (0, *(masks.mask_size or masks.image_size)), dtype=torch.bool, device=device
+        )
+    return coco_rle_masks_to_torch_mask(masks, device=device)
 
 
 def check_rle_counts(

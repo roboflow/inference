@@ -197,7 +197,7 @@ def native_decode_forbidden(monkeypatch):
         raise AssertionError("malformed counts reached the native RLE decoder")
 
     monkeypatch.setattr(rle, "coco_rle_masks_to_numpy_mask", forbidden)
-    monkeypatch.setattr(providers, "coco_rle_masks_to_torch_mask", forbidden)
+    monkeypatch.setattr(rle, "coco_rle_masks_to_torch_mask", forbidden)
 
 
 def assert_rejected(raised, *, row, case, location="$steps.consume"):

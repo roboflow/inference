@@ -37,6 +37,7 @@ mask per row at ``mask_quality``.
 """
 
 from typing import Any, Dict, List, Literal, Optional, Tuple
+
 import torch
 from pydantic import Field, StrictInt, model_validator
 from roboflow_workflows.v2.blocks.visualization.annotations.anchors import (
@@ -72,8 +73,8 @@ from roboflow_workflows.v2.data.kinds import INTEGER_KIND, STRING_KIND
 from roboflow_workflows.v2.data.predictions import TENSOR_KIND
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 
-
 MODES = ("static", "dynamic")
+
 
 class IconVisualizationBlock(Block):
     """Paste an icon at a fixed point or on every detection, on a copy.
@@ -190,9 +191,10 @@ class IconVisualizationBlock(Block):
                 "view is upscaled with the model's own interpolation). coarse: a mask "
                 "view's grid cells are thresholded, then expanded, so edges can be "
                 "blocky and small parts can be lost; it skips the accurate upscaling "
-                "only. roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "only. The model block's fast implementation retains compact scores "
+                "when supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -320,6 +322,7 @@ class IconVisualizationBlock(Block):
 
         return anchors
 
+
 def _static_anchor(
     image: ImageData, *, x_position: int, y_position: int, width: int, height: int
 ) -> Tuple[int, int]:
@@ -329,6 +332,7 @@ def _static_anchor(
     anchor = (left + width // 2, top + height // 2)
 
     return anchor
+
 
 def _alpha_of(
     icon_alpha: Any, *, icon: ImageData, device: torch.device
@@ -358,6 +362,7 @@ def _alpha_of(
     alpha = (alpha * 255).round().to(torch.uint8).unsqueeze(0)
 
     return alpha
+
 
 def _letterboxed(
     icon: ImageData,
@@ -403,6 +408,7 @@ def _letterboxed(
 
     return resized, resized_alpha, offset
 
+
 def _paste(
     canvas: torch.Tensor,
     pixels: torch.Tensor,
@@ -429,12 +435,14 @@ def _paste(
     blended = (below * (255 - weight) + pixels[window].to(torch.int32) * weight) // 255
     canvas[:, top:bottom, left:right] = blended.to(torch.uint8)
 
+
 def _checked_integer(value: Any, *, name: str) -> int:
     """Return ``value`` after checking it is an integer (negative allowed)."""
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{name} must be an integer, got {value!r}")
 
     return value
+
 
 _NO_PREDICTIONS = (
     "mode 'dynamic' places one icon per detection and needs predictions; "

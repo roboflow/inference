@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
+
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
@@ -77,7 +78,11 @@ from roboflow_workflows.v2.blocks.visualization.annotations.colors import (
     RGB,
     parse_color,
 )
-from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import TEXT_OPTIONS, TEXT_SIZE_MODES, label_texts
+from roboflow_workflows.v2.blocks.visualization.annotations.label_visualization.v2 import (
+    TEXT_OPTIONS,
+    TEXT_SIZE_MODES,
+    label_texts,
+)
 from roboflow_workflows.v2.blocks.visualization.annotations.params import (
     POSITIONS_WITH_MASS,
     check_literals,
@@ -107,7 +112,6 @@ from roboflow_workflows.v2.data.kinds import (
 )
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 
-
 Rect = Tuple[int, int, int, int]
 
 LegacyFontId = Literal[get_font_family_identifiers()]
@@ -121,6 +125,7 @@ _FONT_SIZE_LIMITS = (8, 128)
 _THREAD_FONTS = threading.local()
 
 _THREAD_FONT_LIMIT = 32
+
 
 class RichLabelVisualizationBlock(Block):
     """Draw an anti-aliased TrueType label at each detection onto a copy of the image.
@@ -274,9 +279,10 @@ class RichLabelVisualizationBlock(Block):
                 "interpolation). coarse: a mask view's grid cells are thresholded, "
                 "then expanded, so edges can be blocky and small parts can be lost; it "
                 "skips the accurate upscaling only. "
-                "roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "The model block's fast implementation retains compact scores when "
+                "supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -422,6 +428,7 @@ class RichLabelVisualizationBlock(Block):
 
         return result
 
+
 @dataclass(frozen=True)
 class RichLabel:
     """One label: a background and text lines, in frame pixels.
@@ -435,6 +442,7 @@ class RichLabel:
     background: Rect
     background_rgb: RGB
     lines: Tuple[Tuple[str, int, int], ...]
+
 
 def font_path(font_family: str) -> Path:
     """Return the local file of an approved font, without downloading it.
@@ -457,6 +465,7 @@ def font_path(font_family: str) -> Path:
     path = _local_font(identifier)
 
     return path
+
 
 def rich_labels(
     texts: Sequence[str],
@@ -521,6 +530,7 @@ def rich_labels(
 
     return labels
 
+
 def paint_rich_labels(
     scene: torch.Tensor,
     labels: Sequence[RichLabel],
@@ -559,6 +569,7 @@ def paint_rich_labels(
     drawn = np.ascontiguousarray(np.asarray(patch).transpose(2, 0, 1))
     scene[:, y0:y1, x0:x1] = torch.from_numpy(drawn).to(scene.device)
 
+
 def _enclosing_region(
     labels: Sequence[RichLabel],
     *,
@@ -589,6 +600,7 @@ def _enclosing_region(
 
     return x0, y0, x1, y1
 
+
 def _wrapped(text: Any, max_line_length: Optional[int]) -> List[str]:
     # sv.annotators.utils.wrap_text.
     if not text:
@@ -611,6 +623,7 @@ def _wrapped(text: Any, max_line_length: Optional[int]) -> List[str]:
 
     return lines or [""]
 
+
 def _effective_size(size: int, *, mode: str, size_hw: Sequence[int]) -> int:
     # V1 compute_adaptive_rich_font_size.
     if mode != "Automatic":
@@ -621,6 +634,7 @@ def _effective_size(size: int, *, mode: str, size_hw: Sequence[int]) -> int:
     clamped = max(_FONT_SIZE_LIMITS[0], min(_FONT_SIZE_LIMITS[1], effective))
 
     return clamped
+
 
 @lru_cache(maxsize=None)
 def _local_font(identifier: str) -> Path:
@@ -642,6 +656,7 @@ def _local_font(identifier: str) -> Path:
         "V2 workflows do not download fonts."
     )
 
+
 def _loaded_font(path: Path, *, size: int) -> ImageFont.FreeTypeFont:
     loaded = getattr(_THREAD_FONTS, "fonts", None)
     if loaded is None or len(loaded) >= _THREAD_FONT_LIMIT:
@@ -654,6 +669,7 @@ def _loaded_font(path: Path, *, size: int) -> ImageFont.FreeTypeFont:
 
     return font
 
+
 def _checked_line_length(value: Any) -> Optional[int]:
     if value is None:
         return None
@@ -661,6 +677,7 @@ def _checked_line_length(value: Any) -> Optional[int]:
     length = checked_int(value, name="max_line_length", minimum=1)
 
     return length
+
 
 _CHECKS = {
     "text_position": lambda value: checked_choice(

@@ -16,6 +16,7 @@ growth kernel per call.
 """
 
 from typing import Any, Dict, Literal
+
 import numpy as np
 import torch
 from pydantic import Field, StrictInt, model_validator
@@ -112,9 +113,10 @@ class BlurVisualizationBlock(Block):
                 "model's own interpolation). coarse: a mask view's grid cells are "
                 "thresholded, then expanded, so edges can be blocky and small parts "
                 "can be lost; it skips the accurate upscaling only. "
-                "roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "The model block's fast implementation retains compact scores when "
+                "supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -174,6 +176,7 @@ class BlurVisualizationBlock(Block):
 
         return result
 
+
 def _blur_boxes(
     canvas: torch.Tensor, xyxy: np.ndarray, kernel_size: int, padding: int
 ) -> None:
@@ -183,6 +186,7 @@ def _blur_boxes(
         if x2 <= x1 or y2 <= y1:
             continue
         canvas[:, y1:y2, x1:x2] = box_blur(canvas[:, y1:y2, x1:x2], kernel_size)
+
 
 def _blur_masks(
     canvas: torch.Tensor,
@@ -218,6 +222,7 @@ def _blur_masks(
         canvas[:, region_y1:region_y2, region_x1:region_x2] = torch.where(
             inside, blurred, region
         )
+
 
 _CHECKS = {
     "kernel_size": lambda value: checked_int(value, name="kernel_size", minimum=1),

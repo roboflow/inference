@@ -46,6 +46,7 @@ drawing, on host metadata only::
            else None                        the caller raises its own error
 """
 
+from dataclasses import replace
 from numbers import Integral
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
@@ -62,7 +63,10 @@ from roboflow_workflows.v2.data.row_identity import ROW_RECORD_KEY
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
+from inference_models.models.base.types import (
+    InstanceSegmentationGrid,
+    InstancesRLEMasks,
+)
 
 Selection = Union[torch.Tensor, np.ndarray, Sequence]
 # Keys written by producers; values match the V1 execution engine constants.
@@ -569,11 +573,15 @@ def _take_boxes(
     mask = detections.mask
     if isinstance(mask, InstancesRLEMasks):
         selected_mask = InstancesRLEMasks(
-            image_size=mask.image_size, masks=selection.take_list(mask.masks)
+            image_size=mask.image_size,
+            mask_size=mask.mask_size,
+            masks=selection.take_list(mask.masks),
         )
+    elif isinstance(mask, InstanceSegmentationGrid):
+        selected_mask = replace(mask, scores=selection.take(mask.scores))
     else:
         selected_mask = selection.take(mask)
-    selected = InstanceDetections(**fields, mask=selected_mask)
+    selected = replace(detections, **fields, mask=selected_mask)
 
     return selected
 

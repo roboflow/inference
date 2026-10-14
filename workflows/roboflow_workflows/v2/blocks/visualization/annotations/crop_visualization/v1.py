@@ -22,6 +22,7 @@ a crop or copies pixels from the opposite edge.
 """
 
 from typing import Any, Dict, List, Literal, NamedTuple, Optional, Tuple
+
 import cv2
 import torch
 from pydantic import Field, StrictInt, model_validator
@@ -39,8 +40,8 @@ from roboflow_workflows.v2.blocks.visualization.annotations.colors import (
     PALETTE_NAMES,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.params import (
-    Number,
     POSITIONS_WITH_MASS,
+    Number,
     check_literals,
     check_palette_literals,
     checked_choice,
@@ -87,7 +88,9 @@ class _Crop(NamedTuple):
     size_hw: Tuple[int, int]
     tables: LinearTables
 
+
 Placement = Tuple[_Crop, int, int]
+
 
 class CropVisualizationBlock(Block):
     """Paste a magnified copy of each detection next to it, with a border.
@@ -190,9 +193,10 @@ class CropVisualizationBlock(Block):
                 "interpolation). coarse: a mask view's grid cells are thresholded, "
                 "then expanded, so edges can be blocky and small parts can be lost; it "
                 "skips the accurate upscaling only. "
-                "roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "The model block's fast implementation retains compact scores when "
+                "supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -262,8 +266,7 @@ class CropVisualizationBlock(Block):
         boxes = placed_in(
             boxes_of(predictions, block=self.type), image, block=self.type
         )
-        rows = read_rows(boxes)
-        if len(rows) == 0:
+        if len(boxes) == 0:
             result = annotated(image, canvas)
             return result
 
@@ -274,8 +277,11 @@ class CropVisualizationBlock(Block):
                     "these predictions have none"
                 )
             dense = dense_masks_of(predictions, quality=mask_quality, block=self.type)
-            anchors = mass_centres(placed_in(dense, image, block=self.type).mask)
-        else:
+            boxes = placed_in(dense, image, block=self.type)
+            anchors = mass_centres(boxes.mask)
+
+        rows = read_rows(boxes)
+        if position != CENTER_OF_MASS:
             anchors = box_anchors(rows.xyxy, position).astype(int)
         colors = row_colors(
             rows.class_id,
@@ -326,6 +332,7 @@ class CropVisualizationBlock(Block):
 
         return result
 
+
 def _crop_of(
     image_hw: Tuple[int, int], corners: List[int], *, scale_factor: float
 ) -> Optional[_Crop]:
@@ -352,6 +359,7 @@ def _crop_of(
 
     return crop
 
+
 def _crop_corners(
     anchor: Tuple[int, int], *, width: int, height: int, position: str
 ) -> Tuple[Tuple[int, int], Tuple[int, int]]:
@@ -376,6 +384,7 @@ def _crop_corners(
 
     return (x, y), (x + width, y + height)
 
+
 def _overlay(canvas: torch.Tensor, overlay: torch.Tensor, *, x: int, y: int) -> None:
     # sv overlay_image: paste with clipping at the frame edges.
     frame_height, frame_width = int(canvas.shape[1]), int(canvas.shape[2])
@@ -388,6 +397,7 @@ def _overlay(canvas: torch.Tensor, overlay: torch.Tensor, *, x: int, y: int) -> 
     canvas[:, top:bottom, left:right] = overlay[
         :, top - y : bottom - y, left - x : right - x
     ]
+
 
 _CHECKS = {
     "position": lambda value: checked_choice(

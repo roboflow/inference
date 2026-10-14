@@ -23,6 +23,7 @@ batch may lack it on some rows. Masks are read only for ``Area`` and
 """
 
 from typing import Any, Dict, List, Literal, Optional
+
 import numpy as np
 from pydantic import Field, StrictInt, model_validator
 from roboflow_workflows.v2.blocks.visualization.annotations.anchors import (
@@ -40,8 +41,8 @@ from roboflow_workflows.v2.blocks.visualization.annotations.colors import (
     parse_color,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.params import (
-    Number,
     POSITIONS_WITH_MASS,
+    Number,
     check_literals,
     check_palette_literals,
     checked_choice,
@@ -53,8 +54,8 @@ from roboflow_workflows.v2.blocks.visualization.annotations.params import (
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.rows import (
     BOX_KINDS,
-    DrawRows,
     MASK_QUALITIES,
+    DrawRows,
     boxes_of,
     dense_masks_of,
     has_masks,
@@ -77,7 +78,6 @@ from roboflow_workflows.v2.data.kinds import (
 from roboflow_workflows.v2.data.prediction_ops import CLASS_NAMES_KEY, row_class_name
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 
-
 TEXT_OPTIONS = (
     "Class",
     "Confidence",
@@ -98,6 +98,7 @@ _REFERENCE_MIN_DIMENSION_PX = 1080
 _REFERENCE_TEXT_SCALE = 0.7
 
 _TEXT_SCALE_LIMITS = (0.3, 5.0)
+
 
 class LabelVisualizationBlock(Block):
     """Draw a text label at each detection onto a copy of the image.
@@ -243,9 +244,10 @@ class LabelVisualizationBlock(Block):
                 "interpolation). coarse: a mask view's grid cells are thresholded, "
                 "then expanded, so edges can be blocky and small parts can be lost; it "
                 "skips the accurate upscaling only. "
-                "roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "The model block's fast implementation retains compact scores when "
+                "supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -383,6 +385,7 @@ class LabelVisualizationBlock(Block):
 
         return result
 
+
 def label_texts(
     rows: DrawRows, text: str, *, masks: Optional[Any], block: str
 ) -> List[str]:
@@ -464,9 +467,11 @@ def label_texts(
 
     return texts
 
+
 def _confidences(rows: DrawRows) -> np.ndarray:
     # V1 formatted float32 confidences; float32 -> float64 is exact.
     return rows.confidence.astype(np.float32)
+
 
 def _has_any_name(rows: DrawRows) -> bool:
     has_name = CLASS_NAMES_KEY in rows.image_metadata or any(
@@ -475,6 +480,7 @@ def _has_any_name(rows: DrawRows) -> bool:
 
     return has_name
 
+
 def _optional_numbers(metadata: List[dict], *, key: str, prefix: str) -> List[str]:
     texts = [
         f"{prefix}: {row[key]:.2f}" if row.get(key) is not None else f"{prefix}: N/A"
@@ -482,6 +488,7 @@ def _optional_numbers(metadata: List[dict], *, key: str, prefix: str) -> List[st
     ]
 
     return texts
+
 
 def _effective_scale(scale: float, *, mode: str, size_hw: Any) -> float:
     # V1 compute_adaptive_label_text_scale.
@@ -493,6 +500,7 @@ def _effective_scale(scale: float, *, mode: str, size_hw: Any) -> float:
     clamped = max(_TEXT_SCALE_LIMITS[0], min(_TEXT_SCALE_LIMITS[1], effective))
 
     return clamped
+
 
 _CHECKS = {
     "text_position": lambda value: checked_choice(

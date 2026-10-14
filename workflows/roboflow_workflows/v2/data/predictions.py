@@ -91,7 +91,10 @@ from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
 )
-from inference_models.models.base.types import InstancesRLEMasks
+from inference_models.models.base.types import (
+    InstanceSegmentationGrid,
+    InstancesRLEMasks,
+)
 
 KeyPointPrediction = Tuple[KeyPoints, Optional[Detections]]
 
@@ -274,6 +277,22 @@ def _validate_instance_detections(payload: Any, *, require_rle: bool) -> bool:
             "InstanceDetections.mask must be InstancesRLEMasks for this kind, got "
             f"{type(payload.mask).__name__}"
         )
+    if isinstance(payload.mask, InstanceSegmentationGrid):
+        _check_tensor(
+            payload.mask.scores,
+            name="InstanceSegmentationGrid.scores",
+            shape=(rows, None, None),
+            dtype="floating",
+            device=payload.xyxy.device,
+        )
+        if not payload.image_size or not (
+            tuple(payload.mask_size)
+            == tuple(payload.image_size)
+            == tuple(payload.mask_frame_size)
+        ):
+            raise ContractError("grid sizes must describe the original logical image")
+        return True
+
     _check_tensor(
         payload.mask,
         name="InstanceDetections.mask",
@@ -524,6 +543,14 @@ def _serialize(payload: Any, *, validate: Callable[[Any], bool]) -> dict:
     Checking the family first lets a kind union pick the matching kind.
     """
     validate(payload)
+    if isinstance(payload, InstanceDetections) and isinstance(
+        payload.mask, InstanceSegmentationGrid
+    ):
+        raise ContractError(
+            "InstanceSegmentationGrid is an in-process carrier; use "
+            "SegmentationView.from_predictions(payload).materialize() or "
+            ".to_rle() before wire serialization"
+        )
     envelope = encode_native(payload)
 
     return envelope
@@ -716,7 +743,7 @@ INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
     name="instance_segmentation_prediction",
     description=(
         "inference_models.InstanceDetections with a dense bool/uint8 (N, H, W) "
-        "mask or InstancesRLEMasks."
+        "mask, InstancesRLEMasks, or an in-process InstanceSegmentationGrid. Materialize grids before wire serialization."
     ),
     convert_output=convert_prediction_output,
     **_codec_hooks(

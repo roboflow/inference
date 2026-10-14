@@ -29,6 +29,7 @@ Differences from V1:
 """
 
 from typing import Any, Dict, Literal
+
 import torch
 from pydantic import Field, model_validator
 from roboflow_workflows.v2.blocks.visualization.annotations.base import (
@@ -60,12 +61,12 @@ from roboflow_workflows.v2.data.image_kinds import IMAGE_KIND
 from roboflow_workflows.v2.data.kinds import FLOAT_KIND, STRING_KIND
 from roboflow_workflows.v2.engine.declaration import Block, BlockParams, Output, Ref
 
-
 _PREDICTIONS_DESCRIPTION = (
     "Detections, instance segmentation (dense, RLE or view) or keypoint "
     "predictions with boxes, of this image or of another frame of the same "
     "workflow input. Instance masks are compared when present, boxes otherwise."
 )
+
 
 class ModelComparisonVisualizationBlock(Block):
     """Color where only one of two models predicted something.
@@ -148,9 +149,10 @@ class ModelComparisonVisualizationBlock(Block):
                 "interpolation). coarse: a mask view's grid cells are thresholded, "
                 "then expanded, so edges can be blocky and small parts can be lost; it "
                 "skips the accurate upscaling only. "
-                "roboflow_core/roboflow_instance_segmentation_model@v4 currently "
-                "returns full-resolution masks, so both give the same result for it; "
-                "they differ only for producers of compact mask views."
+                "The model block's fast implementation retains compact scores when "
+                "supported, so accurate and coarse can differ. Its accurate "
+                "implementation and dense-only models already supply binary masks; "
+                "both settings then use those same masks."
             ),
             examples=["accurate", "coarse", "$inputs.mask_quality"],
         )
@@ -262,11 +264,13 @@ class ModelComparisonVisualizationBlock(Block):
 
         return coverage
 
+
 def _broadcast_color(canvas: torch.Tensor, rgb: RGB) -> torch.Tensor:
     # (3, 1, 1) on the canvas's device: broadcasts over a (3, H, W) image.
     color = torch.tensor(rgb, dtype=torch.uint8, device=canvas.device).view(3, 1, 1)
 
     return color
+
 
 _CHECKS = {
     "color_a": lambda value: parse_color(value, field="color_a"),
