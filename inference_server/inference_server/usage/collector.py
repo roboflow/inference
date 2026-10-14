@@ -348,6 +348,13 @@ class UsageCollector:
             error_status_code = resource_details.get(ERROR_STATUS_CODE_KEY)
             if error_status_code is not None:
                 usage_key = f"{usage_key}:error_status_code={error_status_code}"
+        source_tags = [
+            (resource_details or {}).get("source"),
+            (resource_details or {}).get("source_info"),
+        ]
+        if any(tag is not None for tag in source_tags):
+            source_tags_hash = sha256_hash(json.dumps(source_tags), length=64)
+            usage_key = f"{usage_key}:source_tags={source_tags_hash}"
         if stream_session_id:
             usage_key = f"{usage_key}:{stream_session_id}"
         return usage_key
@@ -559,7 +566,13 @@ class UsageCollector:
         if not source_duration:
             source_duration = frames / fps if fps else 0
         if not resource_id:
-            resource_id = self._calculate_resource_hash(details)
+            resource_id = self._calculate_resource_hash(
+                {
+                    key: value
+                    for key, value in details.items()
+                    if key not in {"source", "source_info"}
+                }
+            )
         if not exec_session_id:
             exec_session_id = execution_id.get()
 

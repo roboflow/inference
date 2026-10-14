@@ -14,6 +14,7 @@ import pytest
 from inference_sdk.config import execution_id
 from inference_server import configuration
 from inference_server.usage import collector as collector_module
+from inference_server.usage import queues
 from inference_server.usage.collector import UsageCollector
 from inference_server.usage.payload_helpers import sha256_hash
 from inference_server.usage.queues import RedisQueue, SQLiteQueue
@@ -33,6 +34,7 @@ def usage_key(
     error_type: Optional[str] = None,
     error_status_code: Optional[int] = None,
     stream_session_id: Optional[str] = None,
+    source_tags: Optional[list] = None,
 ) -> str:
     key = f"{category}:{resource_id}:billable={str(billable).lower()}:outcome={outcome}"
     if preview:
@@ -41,6 +43,8 @@ def usage_key(
         key = f"{key}:error_type={error_type or 'unknown'}"
         if error_status_code is not None:
             key = f"{key}:error_status_code={error_status_code}"
+    if source_tags:
+        key = f"{key}:source_tags={sha256_hash(json.dumps(source_tags), length=64)}"
     if stream_session_id:
         key = f"{key}:{stream_session_id}"
     return key
@@ -232,6 +236,27 @@ def test_full_usage_queue_preserves_batches_across_repeated_saturation(
                     assert row["execution_duration"] == 2 * frames
                     actual[identity] = actual.get(identity, 0) + frames
         assert actual == expected
+
+
+def test_saturated_memory_queue_keeps_delivering(collector):
+    collector._delivery.queue = queues.MemoryQueue(maxsize=1)
+    api_key_hash = collector._delivery.register_api_key("fake-key")
+    for index in range(3):
+        row = {
+            "resource_id": "test-model",
+            "api_key_hash": api_key_hash,
+            "exec_session_id": f"session-{index}",
+            "processed_frames": 1,
+        }
+        collector._delivery.enqueue({api_key_hash: {"model:test-model": row}})
+
+    with mock.patch(POST) as post_mock:
+        post_mock.return_value.status_code = 200
+        collector.flush()
+
+    sent = [row for call in post_mock.call_args_list for row in call.kwargs["json"]]
+    assert sum(row["processed_frames"] for row in sent) == 3
+    assert collector._delivery.queue.empty()
 
 
 def test_system_info_with_dedicated_deployment_id(collector):
@@ -435,7 +460,8 @@ def test_record_usage_preserves_billable_and_details(collector):
         resource_id=resource_id,
     )
 
-    recorded = collector._usage[api_key][usage_key("model", resource_id)]
+    key = usage_key("model", resource_id, source_tags=["workflow-execution", None])
+    recorded = collector._usage[api_key][key]
     parsed = json.loads(recorded["resource_details"])
     assert parsed.get("billable") is True
     assert parsed.get("source") == "workflow-execution"
@@ -948,14 +974,42 @@ def test_record_usage_merges_model_rows_of_one_model_by_summing_the_counters(
 
 
 def test_record_usage_without_lists_keeps_the_later_details_as_legacy(collector):
-    record(collector, resource_details={"source_info": "first", "only_first": 1})
-    record(collector, resource_details={"source_info": "second"})
+    record(collector, resource_details={"source_info": "same", "only_first": 1})
+    record(collector, resource_details={"source_info": "same"})
 
-    row = collector._usage["fake-key"][usage_key("request", "workspace/model")]
-    assert json.loads(row["resource_details"]) == {
-        "source_info": "second",
+    rows = collector._usage["fake-key"]
+    assert len(rows) == 1
+    assert json.loads(next(iter(rows.values()))["resource_details"]) == {
+        "source_info": "same",
         "billable": True,
     }
+
+
+def test_record_usage_keeps_a_row_per_source_tags_as_legacy(collector):
+    record(collector, resource_details={"source_info": "first"})
+    record(collector, resource_details={"source_info": "second"})
+    record(collector, resource_details={"source": "first"})
+    record(collector, resource_details={})
+
+    rows = collector._usage["fake-key"]
+    tags = [json.loads(row["resource_details"]) for row in rows.values()]
+    assert len(rows) == 4
+    assert {"source_info": "first", "billable": True} in tags
+    assert {"source_info": "second", "billable": True} in tags
+    assert {"source": "first", "billable": True} in tags
+    assert usage_key("request", "workspace/model") in rows
+    assert usage_key("request", "workspace/model", source_tags=[None, "first"]) in rows
+
+
+def test_empty_resource_id_ignores_source_tags_but_keeps_rows_apart(collector):
+    record(collector, resource_id="", resource_details={"source": "a"})
+    record(collector, resource_id="", resource_details={"source_info": "b"})
+
+    rows = list(collector._usage["fake-key"].values())
+    assert len(rows) == 2
+    assert rows[0]["resource_id"] == rows[1]["resource_id"]
+    assert json.loads(rows[0]["resource_details"])["source"] == "a"
+    assert json.loads(rows[1]["resource_details"])["source_info"] == "b"
 
 
 def test_row_bound_flushes_the_window_early_and_loses_nothing(collector, monkeypatch):
