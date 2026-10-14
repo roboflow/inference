@@ -28,7 +28,6 @@ from inference_models.models.base.async_handoff import (
 )
 from inference_models.utils import model_blob_cache
 from inference_server import pingback, telemetry
-from inference_server.framework.input_parsers.image_limits import too_many_images
 from inference_server.gateway import _load_failure
 from inference_server.legacy.action_recognition import (
     ACTION_RECOGNITION_ACTION,
@@ -42,7 +41,6 @@ from inference_server.legacy.bridge import (
 )
 from inference_server.legacy.common import (
     ImagePayload,
-    _error_from_response,
     as_image_list,
     decode_inline_image,
     image_dims,
@@ -1051,9 +1049,6 @@ class GatewayModelsProvider:
     def _payloads(
         self, images: List[Any], route: Route, api_key: Optional[str]
     ) -> List[ImagePayload]:
-        limit_error = too_many_images(len(images))
-        if limit_error is not None:
-            raise _error_from_response(limit_error)
         payloads: List[ImagePayload] = []
         with self._bridge.image_load_usage(route, api_key, len(images)):
             for image in images:

@@ -107,6 +107,22 @@ def test_run_object_detection_returns_legacy_dicts():
     assert bridge.calls[0][2]["confidence"] == 0.5 and bridge.calls[0][3][0] is img
 
 
+def test_a_step_batch_above_the_http_image_cap_is_not_refused(monkeypatch):
+    monkeypatch.setattr("inference_server.configuration.MAX_IMAGES_PER_REQUEST", 2)
+    bridge = _od_bridge()
+    provider = GatewayModelsProvider(bridge, api_key="req-key")
+    provider.add_model("ds/1", "k")
+    crops = [
+        {"type": "numpy_object", "value": np.zeros((4, 6, 3), dtype=np.uint8)}
+        for _ in range(3)
+    ]
+
+    out = provider.run_object_detection("ds/1", crops, api_key="k", confidence=0.5)
+
+    assert len(out) == 3
+    assert len(bridge.calls[0][3]) == 3
+
+
 def test_add_model_records_the_request_under_the_model_id():
     bridge = _od_bridge()
     provider = GatewayModelsProvider(bridge, "req-key", "/workflows/run")
