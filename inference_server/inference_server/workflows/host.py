@@ -664,11 +664,9 @@ def _translate_platform_api_errors(
     except requests.exceptions.Timeout as error:
         raise RoboflowAPITimeoutError(
             "Timeout when attempting to connect to Roboflow API."
-        ) from error
+        ) from None
     except (requests.exceptions.ConnectionError, ConnectionError) as error:
-        raise RoboflowAPIConnectionError(
-            "Could not connect to Roboflow API."
-        ) from error
+        raise RoboflowAPIConnectionError("Could not connect to Roboflow API.") from None
     except requests.exceptions.HTTPError as error:
         status_code = error.response.status_code
         handlers = {**_PLATFORM_API_ERRORS, **(http_error_overrides or {})}
@@ -774,7 +772,7 @@ class ServerRoboflowPlatformClient:
     ) -> dict:
         _refuse_when_offline(operation="make API requests")
         url_params: List[Tuple[str, str]] = []
-        if api_key:
+        if api_key and api_key != "local":
             url_params.append(("api_key", api_key))
         if params:
             url_params.extend(params)
@@ -1403,7 +1401,7 @@ def _fetch_workflow_response(
             503, "Internal error. Could not connect to Roboflow API."
         ) from ConnectionError("OFFLINE_MODE is enabled - cannot make API requests.")
     params: List[Tuple[str, str]] = []
-    if api_key:
+    if api_key and api_key != "local":
         params.append(("api_key", api_key))
     if workflow_version_id is not None:
         params.append(("workflow_version", workflow_version_id))

@@ -3,6 +3,7 @@ and reach the Roboflow API through the server's platform client."""
 
 import inspect
 import json
+import traceback
 from typing import List
 from unittest import mock
 
@@ -174,6 +175,31 @@ def test_model_monitoring_posts_to_the_configured_api() -> None:
     assert post.call_args.kwargs["headers"] == host.PLATFORM_CLIENT.build_api_headers()
 
 
+def test_generic_post_does_not_forward_the_local_api_key() -> None:
+    with mock.patch.object(
+        host.requests, "post", return_value=_response(payload={})
+    ) as post:
+        host.PLATFORM_CLIENT.post("apiproxy/gemini", api_key="local")
+
+    assert "api_key" not in post.call_args.kwargs["url"]
+
+
+def test_workflow_fetch_does_not_forward_the_local_api_key() -> None:
+    with mock.patch.object(
+        host.requests,
+        "get",
+        return_value=_response(payload={"workflow": {"config": "{}"}}),
+    ) as get:
+        host._fetch_workflow_response(
+            api_key="local",
+            workspace_id="ws",
+            workflow_id="wf",
+            workflow_version_id=None,
+        )
+
+    assert get.call_args.kwargs["url"] == f"{API_URL}/ws/workflows/wf"
+
+
 def test_get_workspace_goes_through_headers_and_url_wrapping() -> None:
     client = _RecordingPlatformClient()
 
@@ -287,6 +313,34 @@ def test_transport_errors_map_onto_the_shared_error_classes(
             _RecordingPlatformClient().batch_update_image_metadata_at_roboflow(
                 api_key="my-key", workspace_id="ws", updates=[]
             )
+
+
+@pytest.mark.parametrize(
+    "transport_error",
+    [
+        requests.exceptions.Timeout(
+            "Read timed out. (url: /ws/images?api_key=leaked-key-value)"
+        ),
+        requests.exceptions.ConnectionError(
+            "Max retries exceeded with url: /ws/images?api_key=leaked-key-value"
+        ),
+    ],
+)
+def test_transport_errors_do_not_carry_the_key_into_the_traceback(
+    transport_error,
+) -> None:
+    with mock.patch.object(host.requests, "post", side_effect=transport_error):
+        with pytest.raises(RoboflowAPIRequestError) as error:
+            _RecordingPlatformClient().batch_update_image_metadata_at_roboflow(
+                api_key="my-key", workspace_id="ws", updates=[]
+            )
+
+    formatted = "".join(
+        traceback.format_exception(
+            type(error.value), error.value, error.value.__traceback__
+        )
+    )
+    assert "leaked-key-value" not in formatted
 
 
 def test_register_image_sends_the_legacy_multipart_upload() -> None:
