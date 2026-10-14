@@ -38,10 +38,6 @@ on:
         type: boolean
         description: "Push images after build (otherwise build-only)"
         default: false
-      swap:
-        type: boolean
-        description: "Publish under the legacy image names: roboflow/roboflow-inference-server-<target>:<version>[-<postfix>]"
-        default: false
 
 env:
   IMAGE: roboflow/inference-server-experimental
@@ -127,7 +123,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           pull: true
           push: ${{ inputs.push }}
-          tags: ${{ inputs.swap && format('roboflow/roboflow-inference-server-{0}:', matrix.name) || format('{0}:{1}-', env.IMAGE, matrix.name) }}${{ needs.setup.outputs.server_version }}${{ inputs.tag_suffix != '' && format('-{0}', inputs.tag_suffix) || '' }}
+          tags: ${{ env.IMAGE }}:${{ matrix.name }}-${{ needs.setup.outputs.server_version }}${{ inputs.tag_suffix != '' && format('-{0}', inputs.tag_suffix) || '' }}
           labels: |
             org.opencontainers.image.version=${{ needs.setup.outputs.server_version }}
             org.opencontainers.image.revision=${{ github.sha }}

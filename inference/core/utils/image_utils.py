@@ -418,16 +418,6 @@ def load_image_from_url(
     Returns:
         Image.Image: The loaded PIL image.
     """
-    data = fetch_image_bytes_from_url(value=value)
-    return load_image_from_encoded_bytes(value=data, cv_imread_flags=cv_imread_flags)
-
-
-def fetch_image_bytes_from_url(value: str) -> bytes:
-    """Fetches raw (still-encoded) image bytes from a URL.
-
-    Applies the same URL-input guards as ``load_image_from_url`` but returns
-    the response body without decoding pixels.
-    """
     if OFFLINE_MODE:
         message = "Cannot load an image from URL while OFFLINE_MODE is enabled."
         raise InputImageLoadError(
@@ -449,7 +439,9 @@ def fetch_image_bytes_from_url(value: str) -> bytes:
             message=f"Could not load image from url: {value}. Details: {error}",
             public_message="Data pointed by URL could not be decoded into image.",
         )
-    return image_bytes
+    return load_image_from_encoded_bytes(
+        value=image_bytes, cv_imread_flags=cv_imread_flags
+    )
 
 
 def _validate_url_destination(value: str) -> str:

@@ -453,31 +453,6 @@ ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG = str2bool(
 CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS = float(
     os.getenv("CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS", "300")
 )
-# Route legacy model requests to the new ModelManagerProcess via
-# ModelManagerAdapter, default is False
-LEGACY_MMP_ADAPTER_ENABLED = str2bool(os.getenv("LEGACY_MMP_ADAPTER_ENABLED", False))
-
-# Blocking budgets for the MMP adapter bridge; legacy clients expect the
-# request to block until the model is loaded, default is 600
-LEGACY_MMP_LOAD_WAIT_S = float(os.getenv("LEGACY_MMP_LOAD_WAIT_S", "600"))
-
-# Inference wait budget for the MMP adapter bridge, default is 300
-LEGACY_MMP_INFER_TIMEOUT_S = float(os.getenv("LEGACY_MMP_INFER_TIMEOUT_S", "300"))
-
-# Transport behind the adapter: `mmp` talks ZMQ/SHM to a separate
-# ModelManagerProcess; `bundled` runs an in-process ModelManager with
-# subprocess model workers (no MMP process), default is mmp.
-# Bundled deltas vs mmp: no idle eviction or VRAM-admission orchestration
-# (explicit unloads only), and owlv2/instant heads load as plain models
-# (no shared-base worker reuse).
-LEGACY_MMP_ADAPTER_MODE = os.getenv("LEGACY_MMP_ADAPTER_MODE", "mmp")
-
-# Model backend for bundled mode: `subprocess` isolates each model in a
-# worker process; `direct` runs models in the main process (snapshottable,
-# no crash isolation), default is subprocess
-LEGACY_MMP_ADAPTER_BUNDLED_BACKEND = os.getenv(
-    "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND", "subprocess"
-)
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)

@@ -198,7 +198,6 @@ from inference.core.env import (
     HTTP_API_THREADPOOL_WORKERS,
     INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
     LAMBDA,
-    LEGACY_MMP_ADAPTER_ENABLED,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
     MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
@@ -3191,14 +3190,12 @@ class HttpInterface(BaseInterface):
         ):
             """Readiness endpoint for Kubernetes readiness probe."""
             with state.lock:
-                if not state.is_ready:
+                if state.is_ready:
+                    return {"status": "ready"}
+                else:
                     return JSONResponse(
                         content={"status": "not ready"}, status_code=503
                     )
-            mmp_ready = getattr(self.model_manager, "mmp_ready", None)
-            if mmp_ready is not None and not mmp_ready():
-                return JSONResponse(content={"status": "not ready"}, status_code=503)
-            return {"status": "ready"}
 
         @app.get("/healthz", status_code=200)
         def healthz():
@@ -3583,11 +3580,6 @@ class HttpInterface(BaseInterface):
                     Returns:
                         ObjectDetectionInferenceResponse: The object detection response.
                     """
-                    if LEGACY_MMP_ADAPTER_ENABLED:
-                        raise HTTPException(
-                            status_code=404,
-                            detail="YOLO-World is not supported by this inference server configuration.",
-                        )
                     logger.debug(f"Reached /yolo_world/infer. Loading model")
                     yolo_world_model_id = load_yolo_world_model(
                         inference_request,
@@ -4676,7 +4668,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         OCRInferenceResponse: The response containing the retrieved text.
                     """
-                    if not USE_INFERENCE_MODELS or LEGACY_MMP_ADAPTER_ENABLED:
+                    if not USE_INFERENCE_MODELS:
                         raise HTTPException(
                             status_code=404,
                             detail="PP-OCR is not supported by this inference server configuration.",

@@ -70,9 +70,8 @@ def bool_env(val):
 
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_PP_OCR_TEST", False))
-    or os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true"
-    or bool_env(os.getenv("LEGACY_MMP_ADAPTER_ENABLED", False)),
-    reason="Skipping PP-OCR test (requires USE_INFERENCE_MODELS=true and no MMP adapter)",
+    or os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true",
+    reason="Skipping PP-OCR test (requires USE_INFERENCE_MODELS=true)",
 )
 @pytest.mark.parametrize("test", TESTS, ids=lambda t: t["description"])
 def test_pp_ocr(test, auth_mode, clean_loaded_models_fixture):

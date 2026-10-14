@@ -175,15 +175,13 @@ def test_dockerfile_sets_the_script_environment_defaults(dockerfile_name):
     assert "NUM_WORKERS=1" in environment
 
 
-def test_workflow_has_swap_input_defaulting_to_false():
+def test_workflow_cannot_publish_under_legacy_image_names():
     workflow = yaml.safe_load(_WORKFLOW_PATH.read_text())
     triggers = workflow["on"] if "on" in workflow else workflow[True]
 
-    swap = triggers["workflow_dispatch"]["inputs"]["swap"]
+    inputs = triggers["workflow_dispatch"]["inputs"]
 
-    assert swap["type"] == "boolean"
-    assert swap["default"] is False
-    assert "legacy image names" in swap["description"]
+    assert "swap" not in inputs
 
 
 @pytest.mark.parametrize("dockerfile_name", sorted(_DOCKERFILE_ENTRY_MODULES))
