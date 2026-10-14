@@ -41,6 +41,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.vllm_proxy.adapter_manager import (
+    INFERENCE_CONFIG_FILE,
     AdapterManager,
     get_adapter_manager,
 )
@@ -150,6 +151,7 @@ class QwenVLLMProxyBase:
         metadata: ModelMetadata,
         api_key: Optional[str] = None,
         weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+        allow_untrusted_packages: bool = False,
         **kwargs,
     ) -> "QwenVLLMProxyBase":
         """Resolves and registers `model_id` with the vLLM sidecar.
@@ -164,6 +166,8 @@ class QwenVLLMProxyBase:
             api_key: Roboflow API key, kept for the request-path self-heal.
             weights_provider_extra_headers: Extra weights-provider headers,
                 kept for the request-path self-heal.
+            allow_untrusted_packages: Whether HF packages from an untrusted
+                source may be served, kept for the request-path self-heal.
             **kwargs: Loader init kwargs irrelevant to the proxy (ignored).
 
         Returns:
@@ -176,6 +180,7 @@ class QwenVLLMProxyBase:
             metadata=metadata,
             api_key=api_key,
             weights_provider_extra_headers=weights_provider_extra_headers,
+            allow_untrusted_packages=allow_untrusted_packages,
         )
         return cls(
             model_id=model_id,
@@ -183,6 +188,7 @@ class QwenVLLMProxyBase:
             adapter_manager=adapter_manager,
             api_key=api_key,
             weights_provider_extra_headers=weights_provider_extra_headers,
+            allow_untrusted_packages=allow_untrusted_packages,
         )
 
     def __init__(
@@ -192,10 +198,12 @@ class QwenVLLMProxyBase:
         adapter_manager: AdapterManager,
         api_key: Optional[str] = None,
         weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+        allow_untrusted_packages: bool = False,
     ):
         self.model_id = model_id
         self.api_key = api_key
         self._weights_provider_extra_headers = weights_provider_extra_headers
+        self._allow_untrusted_packages = allow_untrusted_packages
         self._adapter_manager = adapter_manager
         self._served_name = served_name
         self._client = adapter_manager.client
@@ -209,7 +217,7 @@ class QwenVLLMProxyBase:
         registration = self._adapter_manager.get_registration(self._served_name)
         if registration is None:
             return None
-        inference_config_path = Path(registration.source_dir) / "inference_config.json"
+        inference_config_path = Path(registration.source_dir) / INFERENCE_CONFIG_FILE
         if not inference_config_path.exists():
             return None
         return parse_inference_config(
@@ -353,6 +361,7 @@ class QwenVLLMProxyBase:
                 self.model_id,
                 api_key=self.api_key,
                 weights_provider_extra_headers=self._weights_provider_extra_headers,
+                allow_untrusted_packages=self._allow_untrusted_packages,
             )
             response = self._chat_completion(
                 messages=messages,

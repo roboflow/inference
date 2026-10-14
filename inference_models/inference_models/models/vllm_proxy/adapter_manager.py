@@ -37,6 +37,7 @@ concurrently.
 """
 
 import hashlib
+import os
 import re
 import threading
 from dataclasses import dataclass
@@ -46,7 +47,9 @@ from typing import Dict, List, Optional
 from filelock import FileLock
 
 from inference_models import configuration
+from inference_models.errors import CorruptedModelPackageError
 from inference_models.logger import LOGGER
+from inference_models.models.auto_loaders.core import _validate_package_artifact_handle
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.models.vllm_proxy.adapter_patch import (
     ADAPTER_CONFIG_FILE,
@@ -73,6 +76,7 @@ ADAPTERS_CACHE_SUBDIR = "vllm-adapters"
 ADAPTER_CACHE_LOCK_FILE = ".registration.lock"
 ADAPTER_CACHE_LOCK_TIMEOUT_SECONDS = 120
 BASE_PACKAGE_DIR_PREFIX = "base/"
+INFERENCE_CONFIG_FILE = "inference_config.json"
 SUPPORTED_MODEL_ARCHITECTURES = ("qwen3_5", "qwen3vl")
 PATCHED_ADAPTER_REQUIRED_FILES = (
     ADAPTER_CONFIG_FILE,
@@ -164,6 +168,7 @@ class AdapterManager:
         metadata: Optional[ModelMetadata] = None,
         api_key: Optional[str] = None,
         weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+        allow_untrusted_packages: bool = False,
     ) -> str:
         """Resolves `model_id` to the name it is served under in vLLM.
 
@@ -190,13 +195,19 @@ class AdapterManager:
             api_key: Roboflow API key used for the metadata fetch.
             weights_provider_extra_headers: Extra headers for the metadata
                 fetch.
+            allow_untrusted_packages: Whether HF packages from an untrusted
+                source may be selected.
 
         Returns:
             The served model name (base name or adapter slug).
 
         Raises:
             NotServableOnVLLMError: If the model's architecture is not
-                supported by the vLLM proxy, or no HF package is exposed.
+                supported by the vLLM proxy, or no HF package is exposed
+                (trusted, unless `allow_untrusted_packages`).
+            CorruptedModelPackageError: If an adapter artefact's file handle
+                is not a safe relative path, or its cache destination is
+                reached through a symlink.
             AdapterNotServableError: If the adapter's declared base does not
                 match the served base, or it cannot be patched into a
                 vLLM-servable form.
@@ -242,12 +253,20 @@ class AdapterManager:
                 metadata.model_variant,
                 served_base_variant,
             )
-        package = self._select_model_package(model_id=model_id, metadata=metadata)
+        package = self._select_model_package(
+            model_id=model_id,
+            metadata=metadata,
+            allow_untrusted_packages=allow_untrusted_packages,
+        )
         adapter_files = [
             artefact
             for artefact in package.package_artefacts
             if not artefact.file_handle.startswith(BASE_PACKAGE_DIR_PREFIX)
         ]
+        for artefact in adapter_files:
+            _validate_package_artifact_handle(
+                value=artefact.file_handle, kind="adapter file handle"
+            )
         if not any(
             artefact.file_handle == ADAPTER_CONFIG_FILE for artefact in adapter_files
         ):
@@ -313,7 +332,10 @@ class AdapterManager:
             return self._registered.get(served_name)
 
     def _select_model_package(
-        self, model_id: str, metadata: ModelMetadata
+        self,
+        model_id: str,
+        metadata: ModelMetadata,
+        allow_untrusted_packages: bool,
     ) -> ModelPackageMetadata:
         hf_packages = [
             package
@@ -325,7 +347,17 @@ class AdapterManager:
                 f"Model {model_id} exposes no HF model package - the vLLM "
                 "proxy requires HF (PEFT adapter) packages."
             )
-        return hf_packages[0]
+        if allow_untrusted_packages:
+            return hf_packages[0]
+        trusted_packages = [
+            package for package in hf_packages if package.trusted_source
+        ]
+        if not trusted_packages:
+            raise NotServableOnVLLMError(
+                f"Model {model_id} exposes HF model packages only from an "
+                "untrusted source - the vLLM proxy serves trusted packages only."
+            )
+        return trusted_packages[0]
 
     @staticmethod
     def _compute_content_digest(adapter_files: List[FileDownloadSpecs]) -> str:
@@ -359,7 +391,19 @@ class AdapterManager:
         source_dir = adapter_cache_dir / "src"
         patched_dir = adapter_cache_dir / "patched"
         adapter_cache_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_cache_paths_contained(
+            paths=[adapter_cache_dir / ADAPTER_CACHE_LOCK_FILE]
+        )
         with self._adapter_cache_lock(adapter_cache_dir):
+            _ensure_cache_paths_contained(
+                paths=[source_dir / artefact.file_handle for artefact in adapter_files]
+                + [
+                    source_dir / ADAPTER_CONFIG_FILE,
+                    source_dir / ADAPTER_WEIGHTS_FILE,
+                    source_dir / INFERENCE_CONFIG_FILE,
+                ]
+                + _patched_adapter_paths(patched_dir=patched_dir)
+            )
             if not self._patched_adapter_ready(patched_dir):
                 dora_policy = configuration.VLLM_DORA_POLICY
                 if dora_policy == "svd":
@@ -421,7 +465,14 @@ class AdapterManager:
         patched_dir = Path(registration.patched_dir)
         adapter_cache_dir = patched_dir.parent
         adapter_cache_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_cache_paths_contained(
+            paths=[adapter_cache_dir / ADAPTER_CACHE_LOCK_FILE]
+        )
         with self._adapter_cache_lock(adapter_cache_dir):
+            _ensure_cache_paths_contained(
+                paths=[Path(registration.source_dir) / INFERENCE_CONFIG_FILE]
+                + _patched_adapter_paths(patched_dir=patched_dir)
+            )
             if not self._patched_adapter_ready(patched_dir):
                 return False
             self._load_adapter_into_vllm(
@@ -485,6 +536,23 @@ class AdapterManager:
 
 _ADAPTER_MANAGER: Optional[AdapterManager] = None
 _ADAPTER_MANAGER_LOCK = threading.Lock()
+
+
+def _patched_adapter_paths(patched_dir: Path) -> List[Path]:
+    return [patched_dir / file_name for file_name in PATCHED_ADAPTER_REQUIRED_FILES]
+
+
+def _ensure_cache_paths_contained(paths: List[Path]) -> None:
+    cache_root = Path(configuration.INFERENCE_HOME) / ADAPTERS_CACHE_SUBDIR
+    resolved_root = Path(os.path.realpath(cache_root))
+    for path in paths:
+        expected = resolved_root / path.relative_to(cache_root)
+        if Path(os.path.realpath(path)) != expected:
+            raise CorruptedModelPackageError(
+                message=f"Adapter cache path {path} resolves outside its cache "
+                "directory.",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
 
 
 def get_adapter_manager() -> AdapterManager:

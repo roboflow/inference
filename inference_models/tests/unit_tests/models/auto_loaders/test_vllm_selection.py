@@ -20,6 +20,7 @@ from inference_models.models.vllm_proxy import qwen3_5_vllm as qwen3_5_vllm_modu
 from inference_models.models.vllm_proxy import qwen3_8_vllm as qwen3_8_vllm_module
 from inference_models.models.vllm_proxy import qwen3vl_vllm as qwen3vl_vllm_module
 from inference_models.models.vllm_proxy.adapter_manager import AdapterManager
+from inference_models.models.vllm_proxy.errors import NotServableOnVLLMError
 from inference_models.models.vllm_proxy.qwen3_5_vllm import Qwen35VLLMProxy
 from inference_models.models.vllm_proxy.qwen3_8_vllm import Qwen38VLLMProxy
 from inference_models.models.vllm_proxy.qwen3vl_vllm import Qwen3VLVLLMProxy
@@ -41,6 +42,7 @@ def build_metadata(
     task_type: str = VLM_TASK,
     model_variant: str = "qwen3_5-0.8b",
     with_adapter_files: bool = True,
+    trusted_source: bool = True,
 ) -> ModelMetadata:
     artefacts: List[FileDownloadSpecs] = [
         FileDownloadSpecs(
@@ -72,6 +74,7 @@ def build_metadata(
                 package_id="pkg1",
                 backend=BackendType.HF,
                 package_artefacts=artefacts,
+                trusted_source=trusted_source,
             )
         ],
         task_type=task_type,
@@ -168,6 +171,34 @@ def test_flag_on_returns_proxy_without_negotiation_or_package_download(
     assert adapter_downloads == [["adapter_config.json", "adapter_model.safetensors"]]
     adapter_manager.client.load_lora_adapter.assert_called_once()
     assert adapter_manager.get_registration(result._served_name) is not None
+
+
+@pytest.mark.parametrize("allow_untrusted_packages", [False, True])
+def test_flag_on_applies_allow_untrusted_packages_to_proxy_package_selection(
+    vllm_pool,
+    adapter_downloads,
+    adapter_manager: AdapterManager,
+    allow_untrusted_packages: bool,
+) -> None:
+    metadata = build_metadata(trusted_source=False)
+
+    with mock.patch.object(core, "get_model_from_provider", return_value=metadata):
+        if allow_untrusted_packages:
+            result = core.AutoModel.from_pretrained(
+                "ws/proj/1",
+                api_key="tenant-key",
+                allow_vllm_proxy=True,
+                allow_untrusted_packages=True,
+            )
+            assert isinstance(result, Qwen35VLLMProxy)
+            assert result._allow_untrusted_packages is True
+            adapter_manager.client.load_lora_adapter.assert_called_once()
+        else:
+            with pytest.raises(NotServableOnVLLMError):
+                core.AutoModel.from_pretrained(
+                    "ws/proj/1", api_key="tenant-key", allow_vllm_proxy=True
+                )
+            assert adapter_downloads == []
 
 
 def test_flag_on_forwards_metadata_credentials_and_init_kwargs_to_proxy(

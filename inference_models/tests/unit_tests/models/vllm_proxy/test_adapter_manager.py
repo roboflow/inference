@@ -7,8 +7,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from inference_models import configuration
+from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.models.vllm_proxy import adapter_manager as adapter_manager_module
+from inference_models.models.vllm_proxy import qwen3_5_vllm as qwen3_5_vllm_module
+from inference_models.models.vllm_proxy import qwen_vllm_base as qwen_vllm_base_module
 from inference_models.models.vllm_proxy.adapter_manager import (
     AdapterManager,
     normalize_base_variant,
@@ -19,6 +22,7 @@ from inference_models.models.vllm_proxy.errors import (
     VLLMConnectionError,
     VLLMHTTPError,
 )
+from inference_models.models.vllm_proxy.qwen3_5_vllm import Qwen35VLLMProxy
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     ModelMetadata,
@@ -38,6 +42,7 @@ def build_metadata(
     backend: BackendType = BackendType.HF,
     with_adapter_files: bool = True,
     adapter_md5_prefix: str = "aa",
+    trusted_source: bool = True,
 ) -> ModelMetadata:
     artefacts: List[FileDownloadSpecs] = [
         FileDownloadSpecs(
@@ -70,6 +75,7 @@ def build_metadata(
         package_id=package_id,
         backend=backend,
         package_artefacts=artefacts,
+        trusted_source=trusted_source,
     )
     return ModelMetadata(
         model_id=model_id,
@@ -144,6 +150,23 @@ def _install_download_with_config(
         adapter_manager_module, "download_files_to_directory", _fake_download
     )
     return calls
+
+
+def _slug_dir(model_cache_dir: str, metadata: ModelMetadata) -> Path:
+    package = metadata.model_packages[0]
+    adapter_files = [
+        artefact
+        for artefact in package.package_artefacts
+        if not artefact.file_handle.startswith("base/")
+    ]
+    slug = AdapterManager._build_slug(
+        model_id=metadata.model_id,
+        package_id=package.package_id,
+        content_digest=AdapterManager._compute_content_digest(
+            adapter_files=adapter_files
+        ),
+    )
+    return Path(model_cache_dir) / "vllm-adapters" / slug
 
 
 def _install_logger_mock(monkeypatch) -> MagicMock:
@@ -593,6 +616,270 @@ class TestResolveAndRegister:
         manager = AdapterManager(client=client)
 
         with pytest.raises(NotServableOnVLLMError):
+            manager.resolve_and_register(model_id, metadata=metadata)
+        download.assert_not_called()
+        client.load_lora_adapter.assert_not_called()
+
+    def test_untrusted_hf_package_is_rejected_before_download(
+        self, monkeypatch
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id, trusted_source=False)
+        download = MagicMock()
+        monkeypatch.setattr(
+            adapter_manager_module, "download_files_to_directory", download
+        )
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        with pytest.raises(NotServableOnVLLMError):
+            manager.resolve_and_register(model_id, metadata=metadata)
+        download.assert_not_called()
+        client.load_lora_adapter.assert_not_called()
+
+    def test_trusted_hf_package_is_selected_over_untrusted_one(
+        self, monkeypatch, fake_download, model_cache_dir
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        untrusted = build_metadata(
+            model_id=model_id, package_id="untrusted", trusted_source=False
+        )
+        trusted = build_metadata(model_id=model_id, package_id="trusted")
+        untrusted.model_packages.extend(trusted.model_packages)
+        manager = AdapterManager(client=MagicMock())
+
+        served_name = manager.resolve_and_register(model_id, metadata=untrusted)
+
+        assert served_name.startswith("some-workspace-some-project-1-trusted-")
+
+    def test_untrusted_hf_package_is_registered_when_untrusted_packages_allowed(
+        self, monkeypatch, fake_download, model_cache_dir
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id, trusted_source=False)
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        served_name = manager.resolve_and_register(
+            model_id, metadata=metadata, allow_untrusted_packages=True
+        )
+
+        assert served_name.startswith("some-workspace-some-project-1-pkg1-")
+        client.load_lora_adapter.assert_called_once()
+
+    @pytest.mark.parametrize("allow_untrusted_packages", [False, True])
+    def test_package_without_trusted_source_metadata_follows_untrusted_policy(
+        self,
+        monkeypatch,
+        fake_download,
+        model_cache_dir,
+        allow_untrusted_packages: bool,
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id)
+        package = metadata.model_packages[0]
+        metadata.model_packages[0] = ModelPackageMetadata(
+            package_id=package.package_id,
+            backend=package.backend,
+            package_artefacts=package.package_artefacts,
+        )
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        if allow_untrusted_packages:
+            manager.resolve_and_register(
+                model_id, metadata=metadata, allow_untrusted_packages=True
+            )
+            client.load_lora_adapter.assert_called_once()
+        else:
+            with pytest.raises(NotServableOnVLLMError):
+                manager.resolve_and_register(model_id, metadata=metadata)
+            assert fake_download == []
+
+    @pytest.mark.parametrize(
+        "planted_file", ["src/adapter_config.json", "patched/adapter_config.json"]
+    )
+    def test_symlinked_cache_file_is_rejected_before_download_or_reuse(
+        self, monkeypatch, fake_download, model_cache_dir, tmp_path, planted_file
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id)
+        slug_dir = _slug_dir(model_cache_dir=model_cache_dir, metadata=metadata)
+        outside = tmp_path / "outside.json"
+        outside.write_text("{}")
+        planted = slug_dir / planted_file
+        planted.parent.mkdir(parents=True)
+        planted.symlink_to(outside)
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        with pytest.raises(CorruptedModelPackageError):
+            manager.resolve_and_register(model_id, metadata=metadata)
+        assert fake_download == []
+        client.load_lora_adapter.assert_not_called()
+        assert outside.read_text() == "{}"
+
+    def test_symlinked_slug_directory_is_rejected_before_taking_its_lock(
+        self, monkeypatch, fake_download, model_cache_dir, tmp_path
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id)
+        slug_dir = _slug_dir(model_cache_dir=model_cache_dir, metadata=metadata)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        slug_dir.parent.mkdir(parents=True)
+        slug_dir.symlink_to(outside, target_is_directory=True)
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        with pytest.raises(CorruptedModelPackageError):
+            manager.resolve_and_register(model_id, metadata=metadata)
+        assert fake_download == []
+        client.load_lora_adapter.assert_not_called()
+        assert list(outside.iterdir()) == []
+
+    def test_cached_registration_with_symlinked_slug_directory_is_rejected(
+        self, monkeypatch, fake_download, model_cache_dir, tmp_path
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id)
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+        served_name = manager.resolve_and_register(model_id, metadata=metadata)
+        slug_dir = Path(model_cache_dir) / "vllm-adapters" / served_name
+        outside = tmp_path / "outside"
+        slug_dir.rename(outside)
+        (outside / ".registration.lock").unlink()
+        slug_dir.symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(CorruptedModelPackageError):
+            manager.resolve_and_register(model_id, metadata=metadata)
+        assert not (outside / ".registration.lock").exists()
+        assert client.load_lora_adapter.call_count == 1
+
+    def test_undeclared_cached_weights_symlink_is_rejected_before_download(
+        self, monkeypatch, fake_download, model_cache_dir, tmp_path
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id)
+        package = metadata.model_packages[0]
+        package.package_artefacts[:] = [
+            artefact
+            for artefact in package.package_artefacts
+            if artefact.file_handle != "adapter_model.safetensors"
+        ]
+        slug_dir = _slug_dir(model_cache_dir=model_cache_dir, metadata=metadata)
+        outside = tmp_path / "outside.safetensors"
+        outside.write_bytes(b"outside")
+        (slug_dir / "src").mkdir(parents=True)
+        (slug_dir / "src" / "adapter_model.safetensors").symlink_to(outside)
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        with pytest.raises(CorruptedModelPackageError):
+            manager.resolve_and_register(model_id, metadata=metadata)
+        assert fake_download == []
+        client.load_lora_adapter.assert_not_called()
+        assert outside.read_bytes() == b"outside"
+
+    @pytest.mark.parametrize("cached_registration", [False, True])
+    def test_undeclared_inference_config_symlink_is_rejected_before_it_is_read(
+        self,
+        monkeypatch,
+        fake_download,
+        model_cache_dir,
+        tmp_path,
+        cached_registration: bool,
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id)
+        slug_dir = _slug_dir(model_cache_dir=model_cache_dir, metadata=metadata)
+        outside = tmp_path / "outside.json"
+        outside.write_text("{}")
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+        monkeypatch.setattr(qwen3_5_vllm_module, "get_adapter_manager", lambda: manager)
+        parse_inference_config = MagicMock()
+        monkeypatch.setattr(
+            qwen_vllm_base_module, "parse_inference_config", parse_inference_config
+        )
+        if cached_registration:
+            manager.resolve_and_register(model_id, metadata=metadata)
+        else:
+            (slug_dir / "src").mkdir(parents=True)
+        (slug_dir / "src" / "inference_config.json").symlink_to(outside)
+
+        with pytest.raises(CorruptedModelPackageError):
+            Qwen35VLLMProxy.from_model_metadata(model_id=model_id, metadata=metadata)
+        parse_inference_config.assert_not_called()
+        assert client.load_lora_adapter.call_count == int(cached_registration)
+
+    def test_symlinked_cache_parent_directory_is_rejected_before_download(
+        self, monkeypatch, fake_download, model_cache_dir, tmp_path
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id)
+        metadata.model_packages[0].package_artefacts.append(
+            FileDownloadSpecs(
+                download_url="https://weights.example/nested/extra.json",
+                file_handle="nested/extra.json",
+                md5_hash="cc01",
+            )
+        )
+        slug_dir = _slug_dir(model_cache_dir=model_cache_dir, metadata=metadata)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (slug_dir / "src").mkdir(parents=True)
+        (slug_dir / "src" / "nested").symlink_to(outside, target_is_directory=True)
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        with pytest.raises(CorruptedModelPackageError):
+            manager.resolve_and_register(model_id, metadata=metadata)
+        assert fake_download == []
+        client.load_lora_adapter.assert_not_called()
+        assert list(outside.iterdir()) == []
+
+    @pytest.mark.parametrize(
+        "file_handle",
+        [
+            "../escape.safetensors",
+            "nested/../../escape.safetensors",
+            "/absolute/escape.safetensors",
+            "nested//escape.safetensors",
+            "nested/",
+            "./adapter.safetensors",
+            "nested\\escape.safetensors",
+            "escape\0.safetensors",
+            "C:/escape.safetensors",
+            "D:escape.safetensors",
+            "CON",
+            "nested/aux.json",
+            "adapter_config.json:stream",
+            "trailing.",
+            "trailing ",
+        ],
+    )
+    def test_unsafe_adapter_file_handle_is_rejected_before_download(
+        self, monkeypatch, model_cache_dir, file_handle: str
+    ) -> None:
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id)
+        metadata.model_packages[0].package_artefacts.append(
+            FileDownloadSpecs(
+                download_url="https://weights.example/escape",
+                file_handle=file_handle,
+                md5_hash="bb01",
+            )
+        )
+        download = MagicMock()
+        monkeypatch.setattr(
+            adapter_manager_module, "download_files_to_directory", download
+        )
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        with pytest.raises(CorruptedModelPackageError):
             manager.resolve_and_register(model_id, metadata=metadata)
         download.assert_not_called()
         client.load_lora_adapter.assert_not_called()

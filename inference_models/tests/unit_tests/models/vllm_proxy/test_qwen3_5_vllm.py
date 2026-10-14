@@ -276,6 +276,7 @@ class TestSelfHealOnUnknownLora:
         assert heal_call["api_key"] == "some-key"
         assert heal_call["weights_provider_extra_headers"] == {"X-Extra": "1"}
         assert heal_call.get("metadata") is None
+        assert heal_call["allow_untrusted_packages"] is False
         assert fake_manager.client.chat_completion.call_count == 2
         logger_mock.warning.assert_called_once()
 
@@ -451,6 +452,26 @@ class TestInit:
         assert fake_manager.resolve_calls[0]["api_key"] == "secret-key"
         assert model.default_system_prompt == "You are a helpful assistant."
         assert model._inference_config is None
+
+    def test_allow_untrusted_packages_is_forwarded_on_load_and_self_heal(
+        self, fake_manager: _FakeAdapterManager
+    ) -> None:
+        model = Qwen35VLLMProxy.from_model_metadata(
+            model_id="ws/proj/1",
+            metadata=build_metadata(model_id="ws/proj/1"),
+            api_key="secret-key",
+            allow_untrusted_packages=True,
+        )
+        fake_manager.client.chat_completion.side_effect = [
+            _unknown_model_error(),
+            _single_choice("a cat"),
+        ]
+
+        model.prompt(np.zeros((64, 64, 3), dtype=np.uint8))
+
+        assert [
+            call["allow_untrusted_packages"] for call in fake_manager.resolve_calls
+        ] == [True, True]
 
     def test_proxy_class_does_not_inherit_from_hf_class(self) -> None:
         assert all("HF" not in base.__name__ for base in Qwen35VLLMProxy.__mro__)

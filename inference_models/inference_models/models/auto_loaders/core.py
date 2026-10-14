@@ -1932,6 +1932,7 @@ class AutoModel:
                         metadata=prefetched_model_metadata,
                         api_key=api_key,
                         weights_provider_extra_headers=weights_provider_extra_headers,
+                        allow_untrusted_packages=allow_untrusted_packages,
                         **model_init_kwargs,
                     )
             dependency_models_params = dependency_models_params or {}
