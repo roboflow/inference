@@ -139,6 +139,8 @@ def test_run_decodes_named_0_1000_detections(mock_or):
         **_base_run_kwargs(task_type="object-detection", classes=["cat"])
     )
 
+    assert mock_or.call_args.kwargs["model"] == "meta/muse-wonder"
+    assert mock_or.call_args.kwargs["reasoning"] == {"effort": "low"}
     predictions = result[0]["predictions"]
     assert is_detection_prediction(predictions)
     assert detection_boxes(predictions) == EXPECTED_XYXY

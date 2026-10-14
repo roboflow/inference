@@ -1,6 +1,6 @@
 import pytest
 
-from inference_sdk.config import outbound_service_secret
+from inference_sdk.config import outbound_service_secret, usage_source_tags
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
     DEFAULT_IMAGE_EXTENSIONS,
@@ -82,6 +82,60 @@ def test_source_attributes() -> None:
         "A": "source-test",
         "B": "source-info-test",
     }
+
+
+@pytest.mark.parametrize(
+    "serializer",
+    [
+        "to_object_detection_parameters",
+        "to_classification_parameters",
+        "to_keypoints_detection_parameters",
+        "to_instance_segmentation_parameters",
+        "to_legacy_call_parameters",
+    ],
+)
+def test_source_context_overrides_block_defaults_at_send_time(serializer) -> None:
+    """Use request attribution even when a client was configured earlier.
+
+    Args:
+        serializer (str): Configuration serializer for the outgoing model call.
+    """
+    configuration = InferenceConfiguration(
+        source="workflow-execution", source_info="block-default"
+    )
+    token = usage_source_tags.set({"source": "app", "source_info": "workflowEvals"})
+    try:
+        parameters = getattr(configuration, serializer)()
+    finally:
+        usage_source_tags.reset(token)
+
+    assert parameters["source"] == "app"
+    assert parameters["source_info"] == "workflowEvals"
+    if serializer == "to_legacy_call_parameters":
+        assert parameters["source_info_origin"] == "context"
+    else:
+        assert "source_info_origin" not in parameters
+
+    direct_parameters = getattr(configuration, serializer)()
+    assert direct_parameters["source_info"] == "block-default"
+    assert "source_info_origin" not in direct_parameters
+
+
+def test_source_context_does_not_change_billing_suppression() -> None:
+    """Forward attribution alongside an authenticated billing opt-out."""
+    source_token = usage_source_tags.set({"source_info": "labelAssist"})
+    secret_token = outbound_service_secret.set("ctx-secret")
+    try:
+        parameters = InferenceConfiguration(
+            count_inference=True
+        ).to_legacy_call_parameters()
+    finally:
+        outbound_service_secret.reset(secret_token)
+        usage_source_tags.reset(source_token)
+
+    assert parameters["source_info"] == "labelAssist"
+    assert parameters["service_secret"] == "ctx-secret"
+    assert parameters["countinference"] is False
 
 
 def test_to_api_call_parameters_for_api_v0() -> None:
