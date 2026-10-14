@@ -9,7 +9,10 @@ Decoders:
 from __future__ import annotations
 
 import functools
+import io
+import math
 import re
+import struct
 import threading
 import zlib
 from typing import Any, Callable, Iterator
@@ -18,6 +21,12 @@ import imagecodecs
 import numpy as np
 
 from inference_model_manager import configuration as cfg
+
+# Widest sample layout an image may decode to: 16-bit RGBA.
+_MAX_DECODED_BYTES_PER_PIXEL = 8
+_NPY_MAGIC = b"\x93NUMPY"
+# Magic, version, length field and the largest header numpy reads.
+_NPY_HEADER_BYTES = 12 + 10_000
 
 
 def max_decoded_pixels() -> int:
@@ -28,10 +37,14 @@ def max_decoded_pixels() -> int:
 def header_pixels(data: bytes | memoryview) -> int:
     """Pixel count read from the container header, or 0 when unknown.
 
-    JPEG and PNG carry their dimensions in a fixed header, so a bomb in those
-    formats is rejected without allocating anything. Other formats fall back to
-    the post-decode backstop.
+    JPEG, PNG, GIF, TIFF, BMP, WebP, JPEG 2000, AVIF and NPY declare their
+    dimensions before their pixel data, so a bomb in those formats is rejected
+    without allocating anything. For a GIF this is its largest image. Other
+    formats fall back to the post-decode backstop.
     """
+    gif_areas = _gif_image_areas(data)
+    if gif_areas:
+        return max(gif_areas)
     if len(data) >= 24 and data[:8] == b"\x89PNG\r\n\x1a\n":
         if bytes(data[12:16]) != b"IHDR":
             return 0
@@ -40,7 +53,108 @@ def header_pixels(data: bytes | memoryview) -> int:
         return width * height
     if len(data) >= 4 and data[:3] == b"\xff\xd8\xff":
         return _jpeg_header_pixels(data)
+    container_pixels = _container_header_pixels(data)
+
+    return container_pixels
+
+
+def _container_header_pixels(data: bytes | memoryview) -> int:
+    """Declared pixel count of a TIFF, BMP, WebP, JPEG 2000, AVIF or NPY image."""
+    codec = _select_codec(data)
+    if codec == "tiff":
+        dims = _tiff_ifd0(data, (_TIFF_WIDTH_TAG, _TIFF_HEIGHT_TAG))
+        return dims.get(_TIFF_WIDTH_TAG, 0) * dims.get(_TIFF_HEIGHT_TAG, 0)
+    if codec == "bmp":
+        return _bmp_pixels(data)
+    if codec == "webp":
+        return _webp_pixels(data)
+    if codec == "jpeg2k":
+        return _jpeg2k_pixels(data)
+    if codec == "avif":
+        return _avif_pixels(data)
+    layout = _npy_layout(data)
+    if layout is not None:
+        return _shape_pixels(layout[0])
     return 0
+
+
+def _header_bytes(data: bytes | memoryview) -> int:
+    """Bytes the decoder allocates by the header: GIF frames, NPY arrays and
+    TIFF samples; 0 when unknown."""
+    gif_areas = _gif_image_areas(data)
+    if gif_areas:
+        return sum(gif_areas[1:])
+    layout = _npy_layout(data)
+    if layout is not None:
+        shape, itemsize = layout
+        return math.prod(shape) * itemsize
+    if bytes(data[:4]) in _TIFF_MAGICS:
+        tags = _tiff_ifd0(
+            data,
+            (
+                _TIFF_WIDTH_TAG,
+                _TIFF_HEIGHT_TAG,
+                _TIFF_SAMPLES_PER_PIXEL_TAG,
+                _TIFF_BITS_PER_SAMPLE_TAG,
+            ),
+        )
+        pixels = tags.get(_TIFF_WIDTH_TAG, 0) * tags.get(_TIFF_HEIGHT_TAG, 0)
+        sample_bytes = -(-tags.get(_TIFF_BITS_PER_SAMPLE_TAG, 1) // 8)
+        return pixels * tags.get(_TIFF_SAMPLES_PER_PIXEL_TAG, 1) * sample_bytes
+    return 0
+
+
+def _bmp_pixels(data: bytes | memoryview) -> int:
+    if len(data) < 26:
+        return 0
+    if int.from_bytes(data[14:18], "little") == 12:
+        width = int.from_bytes(data[18:20], "little")
+        height = int.from_bytes(data[20:22], "little")
+        return width * height
+    width = int.from_bytes(data[18:22], "little", signed=True)
+    height = int.from_bytes(data[22:26], "little", signed=True)
+    return abs(width) * abs(height)
+
+
+def _webp_pixels(data: bytes | memoryview) -> int:
+    """Canvas size from the VP8X chunk, or frame size from VP8 / VP8L."""
+    chunk = bytes(data[12:16])
+    if chunk == b"VP8L" and len(data) >= 25:
+        bits = int.from_bytes(data[21:25], "little")
+        return ((bits & 0x3FFF) + 1) * (((bits >> 14) & 0x3FFF) + 1)
+    if len(data) < 30:
+        return 0
+    if chunk == b"VP8 ":
+        width = int.from_bytes(data[26:28], "little") & 0x3FFF
+        height = int.from_bytes(data[28:30], "little") & 0x3FFF
+        return width * height
+    if chunk == b"VP8X":
+        width = int.from_bytes(data[24:27], "little") + 1
+        height = int.from_bytes(data[27:30], "little") + 1
+        return width * height
+    return 0
+
+
+def _npy_layout(data: bytes | memoryview) -> tuple[tuple[int, ...], int] | None:
+    """(shape, item size) from an NPY header, None for other data.
+
+    Only the header is parsed (a literal, never a pickle), so the array is
+    measured before ``imagecodecs.imread`` allocates it.
+    """
+    if bytes(data[:6]) != _NPY_MAGIC:
+        return None
+
+    stream = io.BytesIO(bytes(data[:_NPY_HEADER_BYTES]))
+    try:
+        version = np.lib.format.read_magic(stream)
+        if version == (1, 0):
+            shape, _, dtype = np.lib.format.read_array_header_1_0(stream)
+        else:
+            shape, _, dtype = np.lib.format.read_array_header_2_0(stream)
+    except Exception as error:
+        raise ValueError("NPY header is malformed") from error
+
+    return tuple(int(d) for d in shape), dtype.itemsize
 
 
 def _jpeg_header_pixels(data: bytes | memoryview) -> int:
@@ -72,6 +186,46 @@ def _jpeg_header_pixels(data: bytes | memoryview) -> int:
             return 0
         offset += 2 + segment_length
     return 0
+
+
+def _gif_image_areas(data: bytes | memoryview) -> list[int]:
+    """Areas of a GIF's logical screen and of every frame, [] for other formats.
+
+    The decoder allocates every frame before it returns one, so the frames
+    are walked block by block; a truncated stream yields what was read.
+    """
+    if len(data) < 13 or bytes(data[:3]) != b"GIF":
+        return []
+
+    width = int.from_bytes(data[6:8], "little")
+    height = int.from_bytes(data[8:10], "little")
+    areas = [width * height]
+    size = len(data)
+    offset = 13 + _gif_color_table_size(data[10])
+    while offset < size:
+        block = data[offset]
+        if block == 0x2C:
+            if offset + 10 > size:
+                break
+            width = int.from_bytes(data[offset + 5 : offset + 7], "little")
+            height = int.from_bytes(data[offset + 7 : offset + 9], "little")
+            areas.append(width * height)
+            offset += 11 + _gif_color_table_size(data[offset + 9])
+        elif block == 0x21:
+            offset += 2
+        else:
+            break
+        while offset < size:
+            length = data[offset]
+            offset += 1 + length
+            if not length:
+                break
+
+    return areas
+
+
+def _gif_color_table_size(flags: int) -> int:
+    return 3 << ((flags & 0x07) + 1) if flags & 0x80 else 0
 
 
 def jpeg_is_truncated(data: bytes | memoryview) -> bool:
@@ -410,11 +564,30 @@ def apply_exif_orientation(image: np.ndarray, orientation: int) -> np.ndarray:
     return image
 
 
+def _millions(value: int) -> str:
+    """``value`` in millions to one decimal, whole millions past float range."""
+    try:
+        text = f"{value / 1e6:.1f}"
+    except OverflowError:
+        text = str(value // 1_000_000)
+
+    return text
+
+
 def _reject_oversized(pixels: int, limit: int, stage: str) -> None:
     if limit and pixels > limit:
         raise ValueError(
-            f"image is {pixels / 1e6:.1f} megapixels ({stage}), over the "
+            f"image is {_millions(pixels)} megapixels ({stage}), over the "
             f"{limit / 1e6:.0f} megapixel decode limit"
+        )
+
+
+def _reject_overweight(size: int, limit: int, stage: str) -> None:
+    ceiling = limit * _MAX_DECODED_BYTES_PER_PIXEL
+    if limit and size > ceiling:
+        raise ValueError(
+            f"image decodes to {_millions(size)} MB ({stage}), over the "
+            f"{ceiling / 1e6:.0f} MB decode limit"
         )
 
 
@@ -423,26 +596,38 @@ def _guard_encoded(data: bytes | memoryview) -> int:
     limit = max_decoded_pixels()
     if limit:
         _reject_oversized(header_pixels(data), limit, "header")
+        _reject_overweight(_header_bytes(data), limit, "header")
     return limit
 
 
 def decoded_pixels(image: Any) -> int:
     """Pixel count of a decoded image, 0 when it has no readable shape.
 
-    The two largest dimensions are the spatial ones whether the decoder emits
-    HWC ndarrays or CHW device tensors.
+    The smallest of three or more dimensions is the channel one, whether the
+    decoder emits HWC ndarrays, CHW device tensors or a stack of frames.
     """
     shape = getattr(image, "shape", None)
-    if shape is None or len(shape) < 2:
+    if shape is None:
         return 0
-    dims = sorted((int(d) for d in shape), reverse=True)
-    return dims[0] * dims[1]
+    pixels = _shape_pixels(tuple(int(d) for d in shape))
+
+    return pixels
+
+
+def _shape_pixels(shape: tuple[int, ...]) -> int:
+    if len(shape) < 2:
+        return 0
+    pixels = math.prod(shape)
+    if len(shape) > 2:
+        pixels //= max(1, min(shape))
+    return pixels
 
 
 def _guard_decoded(image: Any, limit: int) -> None:
     """Backstop for formats whose header we cannot read cheaply."""
     if limit:
         _reject_oversized(decoded_pixels(image), limit, "decoded")
+        _reject_overweight(int(getattr(image, "nbytes", 0)), limit, "decoded")
 
 
 def guard_decoder(decode: Callable[[bytes], Any]) -> Callable[[bytes], Any]:
@@ -479,7 +664,7 @@ def _guarded(decode: Callable[[bytes], Any]) -> Callable[[bytes], Any]:
     return _decode
 
 
-def _select_codec(head: bytes) -> str | None:
+def _select_codec(data: bytes | memoryview) -> str | None:
     """Map header magic bytes to an imagecodecs codec name, or None if unknown.
 
     Dispatch explicitly instead of imagecodecs.imread(): imread() probes every
@@ -488,6 +673,7 @@ def _select_codec(head: bytes) -> str | None:
     the real codec succeeds. Explicit dispatch never touches the EXR codec.
     Unrecognised headers return None and fall back to imread() probing.
     """
+    head = bytes(data[:12])
     if head[:3] == b"\xff\xd8\xff":
         return "jpeg"
     if head[:8] == b"\x89PNG\r\n\x1a\n":
@@ -504,9 +690,84 @@ def _select_codec(head: bytes) -> str | None:
         head[:4] == b"\x00\x00\x00\x0c" and head[4:8] == b"jP  "
     ):
         return "jpeg2k"
-    if head[4:8] == b"ftyp" and head[8:12] in (b"avif", b"avis"):
+    if _ftyp_names_avif(data):
         return "avif"
     return None
+
+
+def _ftyp_names_avif(data: bytes | memoryview) -> bool:
+    """Whether the ftyp box names AVIF as its major or a compatible brand;
+    libavif decodes either, whatever the major brand is.
+
+    Raises:
+        ValueError: When the ftyp box lists more than ``_BMFF_MAX_BOXES``
+            compatible brands.
+    """
+    span = _ftyp_span(data)
+    if span is None:
+        return False
+    start, end = span
+    if bytes(data[start : start + 4]) in _AVIF_BRANDS:
+        return True
+
+    brand_count = max(end - start - 8, 0) // 4
+    if brand_count > _BMFF_MAX_BOXES:
+        raise ValueError(
+            f"ISO-BMFF ftyp box lists more than {_BMFF_MAX_BOXES} compatible brands"
+        )
+    compatible = bytes(data[start + 8 : start + 8 + brand_count * 4])
+    return any(
+        compatible[offset : offset + 4] in _AVIF_BRANDS
+        for offset in range(0, len(compatible), 4)
+    )
+
+
+def _ftyp_span(data: bytes | memoryview) -> tuple[int, int] | None:
+    """(payload start, payload end) of the ftyp box, None for other data.
+
+    libavif accepts any top-level boxes ahead of ftyp, whatever their type,
+    so the leading boxes are walked, up to ``_BMFF_MAX_BOXES``. Box headers
+    may be compact or extended (size field 1, 64-bit size); an ftyp box cut
+    short is read as far as ``data`` goes. A chain that ends without ftyp is
+    not ISO-BMFF.
+
+    Raises:
+        ValueError: When the walk passes ``_BMFF_MAX_BOXES`` boxes.
+    """
+    size_of_data = len(data)
+    offset = 0
+    for _ in _bmff_box_budget():
+        if offset + 8 > size_of_data:
+            return None
+        size, kind = _BOX_HEADER.unpack_from(data, offset)
+        header = 8
+        if size == 1:
+            if offset + 16 > size_of_data:
+                return None
+            (size,) = _BOX_LARGESIZE.unpack_from(data, offset + 8)
+            header = 16
+        elif size == 0:
+            size = size_of_data - offset
+        if kind == b"ftyp":
+            return offset + header, min(offset + size, size_of_data)
+        if size < header or offset + size > size_of_data:
+            return None
+        offset += size
+
+
+def _bmff_box_budget() -> Iterator[int]:
+    """Count the steps of a box walk; past ``_BMFF_MAX_BOXES`` the input is
+    refused, never treated as unknown, so it cannot reach the imread probe."""
+    yield from range(_BMFF_MAX_BOXES)
+    raise ValueError(f"ISO-BMFF data has more than {_BMFF_MAX_BOXES} boxes in a row")
+
+
+# Far above any real image; bounds every box walk to a few milliseconds.
+_BMFF_MAX_BOXES = 4096
+_BOX_HEADER = struct.Struct(">I4s")
+_BOX_LARGESIZE = struct.Struct(">Q")
+_AVIF_BRANDS = (b"avif", b"avis")
+_MULTI_FRAME_CODECS = frozenset(("gif", "webp", "avif"))
 
 
 def _to_rgb_hwc(img: np.ndarray) -> np.ndarray:
@@ -587,9 +848,15 @@ def _opencv_reads_tiff_scanlines(tiff: bytes | memoryview) -> bool:
 
 def _boxes(data: bytes, start: int, end: int) -> Iterator[tuple[bytes, int, int]]:
     """Yield (type, payload start, payload end) of the JP2 / ISO-BMFF boxes in
-    ``data[start:end]``, stopping at the first malformed box."""
+    ``data[start:end]``, stopping at the first malformed box.
+
+    Raises:
+        ValueError: When more than ``_BMFF_MAX_BOXES`` boxes are walked.
+    """
     offset = start
-    while offset + 8 <= end:
+    for _ in _bmff_box_budget():
+        if offset + 8 > end:
+            return
         size = int.from_bytes(data[offset : offset + 4], "big")
         header = 8
         if size == 1:
@@ -613,15 +880,32 @@ def _child_box(data: bytes, start: int, end: int, kind: bytes) -> tuple[int, int
     return 0, 0
 
 
+def _jpeg2k_siz(data: bytes | memoryview) -> int | None:
+    """Offset of the SIZ marker of a codestream or JP2 file, None if absent."""
+    codestream = 0
+    if bytes(data[:4]) != b"\xff\x4f\xff\x51":
+        codestream, _ = _child_box(data, 0, len(data), b"jp2c")
+    if bytes(data[codestream : codestream + 4]) != b"\xff\x4f\xff\x51":
+        return None
+    return codestream + 2
+
+
+def _jpeg2k_pixels(data: bytes | memoryview) -> int:
+    """Image area from the SIZ segment, 0 when unreadable."""
+    siz = _jpeg2k_siz(data)
+    if siz is None or siz + 22 > len(data):
+        return 0
+    width = int.from_bytes(data[siz + 6 : siz + 10], "big")
+    height = int.from_bytes(data[siz + 10 : siz + 14], "big")
+    x_offset = int.from_bytes(data[siz + 14 : siz + 18], "big")
+    y_offset = int.from_bytes(data[siz + 18 : siz + 22], "big")
+    return max(0, width - x_offset) * max(0, height - y_offset)
+
+
 def _jpeg2k_precision(data: bytes) -> int:
     """Highest component precision in the SIZ segment, 16 when unreadable."""
-    codestream = 0
-    if data[:4] != b"\xff\x4f\xff\x51":
-        codestream, _ = _child_box(data, 0, len(data), b"jp2c")
-    if data[codestream : codestream + 4] != b"\xff\x4f\xff\x51":
-        return 16
-    siz = codestream + 2
-    if siz + 40 > len(data):
+    siz = _jpeg2k_siz(data)
+    if siz is None or siz + 40 > len(data):
         return 16
     components = int.from_bytes(data[siz + 38 : siz + 40], "big")
     sizes = data[siz + 40 : siz + 40 + 3 * components : 3]
@@ -632,12 +916,31 @@ def _jpeg2k_precision(data: bytes) -> int:
     return precision
 
 
-def _avif_depth(data: bytes) -> int:
-    """Bit depth from the av1C property in meta/iprp/ipco, 16 when unreadable."""
+def _avif_properties(data: bytes | memoryview) -> tuple[int, int]:
+    """(payload start, payload end) of meta/iprp/ipco, (0, 0) if absent."""
     meta_start, meta_end = _child_box(data, 0, len(data), b"meta")
     # meta is a FullBox: 4 bytes of version and flags precede its children.
     start, end = _child_box(data, meta_start + 4, meta_end, b"iprp")
-    start, end = _child_box(data, start, end, b"ipco")
+    properties = _child_box(data, start, end, b"ipco")
+
+    return properties
+
+
+def _avif_pixels(data: bytes | memoryview) -> int:
+    """Largest image spatial extent (ispe) among the item properties."""
+    start, end = _avif_properties(data)
+    areas = [
+        int.from_bytes(data[box + 4 : box + 8], "big")
+        * int.from_bytes(data[box + 8 : box + 12], "big")
+        for kind, box, box_end in _boxes(data, start, end)
+        if kind == b"ispe" and box_end - box >= 12
+    ]
+    return max(areas, default=0)
+
+
+def _avif_depth(data: bytes) -> int:
+    """Bit depth from the av1C property in meta/iprp/ipco, 16 when unreadable."""
+    start, end = _avif_properties(data)
     start, end = _child_box(data, start, end, b"av1C")
     if end - start < 3:
         return 16
@@ -725,20 +1028,63 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     raw = bytes(data)
     codec = _select_codec(raw)
     if codec is None:
-        decoded = imagecodecs.imread(raw)
+        if raw[:2] == b"PK":
+            raise ValueError("ZIP archives (NPZ) are not a supported image format")
+        decoded = _native_decode(imagecodecs.imread, raw)
         _guard_decoded(decoded, max_decoded_pixels())
-        return _to_rgb_hwc(_to_uint8(decoded, codec, raw))
+        return _converted_rgb_hwc(decoded, codec, raw)
     orientation = exif_orientation(raw)
     # Some imagecodecs versions use libtiff's RGBA reader, which flips by the tag.
     if codec == "tiff" and orientation != 1:
         raw = _with_orientation_1(raw)
-    decoded = getattr(imagecodecs, f"{codec}_decode")(raw)
+    decode = getattr(imagecodecs, f"{codec}_decode")
+    # cv2.imdecode returns the first frame of an animation.
+    if codec in _MULTI_FRAME_CODECS:
+        decoded = _native_decode(decode, raw, index=0)
+    else:
+        decoded = _native_decode(decode, raw)
     _guard_decoded(decoded, max_decoded_pixels())
-    image = _to_rgb_hwc(_to_uint8(decoded, codec, raw))
+    image = _converted_rgb_hwc(decoded, codec, raw)
     # cv2.imdecode (the previous server) honours EXIF for JPEG, PNG and TIFF, so
     # a rotated phone photo must reach the model upright. exif_orientation
     # returns 1 for the formats OpenCV leaves as is.
     return apply_exif_orientation(image, orientation)
+
+
+def _native_decode(decode: Callable[..., np.ndarray], *args, **kwargs) -> np.ndarray:
+    """Run an imagecodecs decoder; malformed data becomes an input ValueError.
+
+    The codecs report bad data as RuntimeError subclasses (and libtiff paths
+    as IndexError), which would otherwise surface as server errors.
+    """
+    try:
+        decoded = decode(*args, **kwargs)
+    except (RuntimeError, IndexError) as error:
+        raise ValueError("image data could not be decoded") from error
+
+    return decoded
+
+
+def _converted_rgb_hwc(
+    decoded: np.ndarray, codec: str | None, raw: bytes
+) -> np.ndarray:
+    """Reduce ``decoded`` to uint8 and normalise it to (H, W, 3).
+
+    Samples ``_to_uint8`` leaves wide (float, 32-bit) are tripled by the
+    channel expansion, so that result is bounded before it is allocated.
+    """
+    if decoded.ndim < 2:
+        raise ValueError("decoded image has fewer than two dimensions")
+
+    reduced = _to_uint8(decoded, codec, raw)
+    _reject_overweight(
+        decoded_pixels(reduced) * 3 * reduced.itemsize,
+        max_decoded_pixels(),
+        "converted",
+    )
+    image = _to_rgb_hwc(reduced)
+
+    return image
 
 
 DECODER_FACTORIES: dict[str, Callable[[str], Callable[[bytes], Any]]] = {}

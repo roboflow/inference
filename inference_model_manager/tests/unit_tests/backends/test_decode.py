@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import struct
 import tempfile
+import time
 from contextlib import contextmanager
 
 import numpy as np
@@ -65,6 +67,12 @@ def png_bytes() -> bytes:
 def webp_bytes() -> bytes:
     imagecodecs = pytest.importorskip("imagecodecs")
     return bytes(imagecodecs.webp_encode(_make_rgb_array()))
+
+
+@pytest.fixture(scope="module")
+def qoi_bytes() -> bytes:
+    imagecodecs = pytest.importorskip("imagecodecs")
+    return bytes(imagecodecs.qoi_encode(_make_rgb_array()))
 
 
 @pytest.fixture(scope="module")
@@ -929,7 +937,7 @@ class TestDeepReductionMemory:
         monkeypatch.setattr(
             decode_mod.imagecodecs,
             "webp_decode",
-            lambda data: np.zeros((64, 64, 3), dtype=np.uint16),
+            lambda data, index=None: np.zeros((64, 64, 3), dtype=np.uint16),
         )
         monkeypatch.setattr(decode_mod, "_to_uint8", _explode)
 
@@ -953,10 +961,10 @@ class TestDecodedPixelGate:
 
         assert header_pixels(png_bytes) == 8 * 8
 
-    def test_header_pixels_unknown_format_is_zero(self, webp_bytes):
+    def test_header_pixels_unknown_format_is_zero(self, qoi_bytes):
         from inference_model_manager.backends.decode import header_pixels
 
-        assert header_pixels(webp_bytes) == 0
+        assert header_pixels(qoi_bytes) == 0
         assert header_pixels(b"") == 0
         assert header_pixels(b"not an image at all") == 0
 
@@ -1006,14 +1014,14 @@ class TestDecodedPixelGate:
             decode(jpeg_bytes)
 
     def test_backstop_rejects_after_decode_when_header_is_unreadable(
-        self, monkeypatch, webp_bytes
+        self, monkeypatch, qoi_bytes
     ):
         import inference_model_manager.backends.decode as decode_mod
 
         monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.00001)
         decode = decode_mod.make_decoder("imagecodecs")
         with pytest.raises(ValueError, match="decoded"):
-            decode(webp_bytes)
+            decode(qoi_bytes)
 
     def test_normal_image_passes_the_gate(self, jpeg_bytes, png_bytes, webp_bytes):
         from inference_model_manager.backends.decode import make_decoder
@@ -1036,6 +1044,510 @@ class TestDecodedPixelGate:
         assert decoded_pixels(np.zeros((3, 16, 32), dtype=np.uint8)) == 16 * 32
         assert decoded_pixels(np.zeros((16, 32), dtype=np.uint8)) == 16 * 32
         assert decoded_pixels(b"not an array") == 0
+
+    def test_decoded_pixels_counts_every_frame(self):
+        from inference_model_manager.backends.decode import decoded_pixels
+
+        assert decoded_pixels(np.zeros((4, 16, 32, 3), dtype=np.uint8)) == 4 * 16 * 32
+
+
+def _animation(fmt: str) -> bytes:
+    import io
+
+    from PIL import Image
+
+    frames = [Image.new("RGB", (40, 30), (60 * i, 0, 0)) for i in range(4)]
+    buffer = io.BytesIO()
+    frames[0].save(
+        buffer, format=fmt, save_all=True, append_images=frames[1:], duration=100
+    )
+
+    return buffer.getvalue()
+
+
+def _gif(frames: int, height: int = 30, width: int = 40) -> bytes:
+    imagecodecs = pytest.importorskip("imagecodecs")
+
+    return bytes(imagecodecs.gif_encode(np.zeros((frames, height, width), np.uint8)))
+
+
+def _explode(*args, **kwargs):
+    raise AssertionError("must not run past the gate")
+
+
+class TestMultiFrameGate:
+    @pytest.mark.parametrize("fmt", ["GIF", "WEBP", "AVIF"])
+    def test_animation_decodes_to_its_first_frame(self, fmt):
+        image = make_decoder("imagecodecs")(_animation(fmt))
+
+        assert image.shape == (30, 40, 3)
+        assert image.max() < 30
+
+    def test_header_pixels_reads_the_largest_gif_image(self):
+        from inference_model_manager.backends.decode import header_pixels
+
+        assert header_pixels(_gif(5)) == 30 * 40
+
+    def test_gif_frames_are_bounded_together_before_decoding(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.002)
+        monkeypatch.setattr(decode_mod, "_decode_ic", _explode)
+        decode = decode_mod.make_decoder("imagecodecs")
+
+        with pytest.raises(ValueError, match="header"):
+            decode(_gif(20))
+
+    def test_gif_within_the_budget_decodes(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.002)
+        decode = decode_mod.make_decoder("imagecodecs")
+
+        assert decode(_gif(5)).shape == (30, 40, 3)
+
+    def test_truncated_gif_reports_what_it_could_read(self):
+        from inference_model_manager.backends.decode import header_pixels
+
+        data = _gif(3)
+
+        assert header_pixels(data[:13]) == 30 * 40
+        assert header_pixels(data[:40]) == 30 * 40
+
+    @pytest.mark.parametrize("version", [b"000", b"89b", b"\x00\x00\x00"])
+    def test_any_gif_version_the_codec_accepts_is_bounded(self, monkeypatch, version):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.002)
+        monkeypatch.setattr(decode_mod, "_decode_ic", _explode)
+        decode = decode_mod.make_decoder("imagecodecs")
+
+        with pytest.raises(ValueError, match="header"):
+            decode(b"GIF" + version + _gif(20)[6:])
+
+
+def _pil_encoded(fmt: str, **options) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (40, 30)).save(buffer, format=fmt, **options)
+
+    return buffer.getvalue()
+
+
+def _encoded(name: str) -> bytes:
+    imagecodecs = pytest.importorskip("imagecodecs")
+    image = np.zeros((30, 40, 3), np.uint8)
+    encoders = {
+        "tiff": lambda: imagecodecs.tiff_encode(image),
+        "bmp": lambda: imagecodecs.bmp_encode(image),
+        "webp-lossless": lambda: imagecodecs.webp_encode(image, lossless=True),
+        "webp-lossy": lambda: _pil_encoded("WEBP", quality=80),
+        "webp-extended": lambda: _animation("WEBP"),
+        "jp2": lambda: imagecodecs.jpeg2k_encode(image),
+        "j2k": lambda: _pil_encoded("JPEG2000", no_jp2=True),
+        "avif": lambda: imagecodecs.avif_encode(image),
+        "npy": lambda: _npy(image),
+    }
+
+    return bytes(encoders[name]())
+
+
+def _with_extended_ftyp(data: bytes, brand: bytes) -> bytes:
+    """``data`` with its ftyp box rewritten to a 16-byte header (size field 1,
+    64-bit size), major brand mif1 and ``brand`` among the compatible ones;
+    the box keeps its length so every absolute offset in the file still holds."""
+    size = int.from_bytes(data[:4], "big")
+    compatible = brand + b"mif1" * ((size - 28) // 4)
+    box = (
+        (1).to_bytes(4, "big")
+        + b"ftyp"
+        + size.to_bytes(8, "big")
+        + b"mif1"
+        + bytes(4)
+        + compatible
+    )
+    assert len(box) == size
+
+    return box + data[size:]
+
+
+def _with_leading_box(data: bytes, kind: bytes = b"wide") -> bytes:
+    """``data`` with an empty ``kind`` box ahead of an ftyp box shortened by
+    its last two compatible brands, so every absolute offset still holds."""
+    size = int.from_bytes(data[:4], "big")
+    ftyp = (size - 8).to_bytes(4, "big") + data[4 : size - 8]
+
+    return (8).to_bytes(4, "big") + kind + ftyp + data[size:]
+
+
+def _with_wide_boxes(data: bytes, boxes: int) -> bytes:
+    """A still AVIF behind ``boxes`` empty ``wide`` boxes, its iloc extent
+    offsets (version 0/1, no base offset) moved by the inserted length."""
+    from inference_model_manager.backends.decode import _child_box
+
+    shift = 8 * boxes
+    patched = bytearray(data)
+    meta_start, meta_end = _child_box(data, 0, len(data), b"meta")
+    start, _ = _child_box(data, meta_start + 4, meta_end, b"iloc")
+    version = data[start]
+    offset_size, length_size = data[start + 4] >> 4, data[start + 4] & 0x0F
+    assert data[start + 5] >> 4 == 0
+    index_size = data[start + 5] & 0x0F if version == 1 else 0
+    position = start + 8
+    for _ in range(int.from_bytes(data[start + 6 : start + 8], "big")):
+        position += 2 + (2 if version == 1 else 0) + 2
+        extents = int.from_bytes(data[position : position + 2], "big")
+        position += 2
+        for _ in range(extents):
+            position += index_size
+            value = int.from_bytes(data[position : position + offset_size], "big")
+            patched[position : position + offset_size] = (value + shift).to_bytes(
+                offset_size, "big"
+            )
+            position += offset_size + length_size
+
+    return b"\x00\x00\x00\x08wide" * boxes + bytes(patched)
+
+
+def _npy(array: np.ndarray) -> bytes:
+    import io
+
+    buffer = io.BytesIO()
+    np.save(buffer, array, allow_pickle=False)
+
+    return buffer.getvalue()
+
+
+_HEADER_FORMATS = [
+    "tiff",
+    "bmp",
+    "webp-lossless",
+    "webp-lossy",
+    "webp-extended",
+    "jp2",
+    "j2k",
+    "avif",
+    "npy",
+]
+
+
+class TestContainerHeaderGate:
+    @pytest.mark.parametrize("name", _HEADER_FORMATS)
+    def test_header_pixels_reads_the_declared_size(self, name):
+        from inference_model_manager.backends.decode import header_pixels
+
+        assert header_pixels(_encoded(name)) == 30 * 40
+
+    @pytest.mark.parametrize("name", _HEADER_FORMATS)
+    def test_oversized_image_is_refused_before_decoding(self, monkeypatch, name):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(decode_mod, "_decode_ic", _explode)
+        decode = decode_mod.make_decoder("imagecodecs")
+
+        with pytest.raises(ValueError, match="header"):
+            decode(_encoded(name))
+
+    @pytest.mark.parametrize("name", _HEADER_FORMATS)
+    def test_image_within_the_limit_decodes(self, monkeypatch, name):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.0012)
+        decode = decode_mod.make_decoder("imagecodecs")
+
+        assert decode(_encoded(name)).shape == (30, 40, 3)
+
+    def test_wide_npy_is_refused_by_its_declared_bytes(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+        data = _npy(np.zeros((30, 30, 4), np.float64))
+
+        with pytest.raises(ValueError, match="MB decode limit"):
+            decode_mod.make_decoder("imagecodecs")(data)
+
+    def test_forged_tiff_header_is_refused_before_decoding(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.imagecodecs, "tiff_decode", _explode)
+        header = _tiff_header({0x0100: (4, [60000]), 0x0101: (4, [60000])})
+
+        with pytest.raises(ValueError, match="header"):
+            decode_mod.make_decoder("imagecodecs")(header)
+
+    def test_avif_recognised_by_a_compatible_brand(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        data = _encoded("avif")
+        data = data[:8] + b"mif1" + data[12:]
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+
+        assert decode_mod._select_codec(data) == "avif"
+        assert decode_mod.header_pixels(data) == 30 * 40
+        with pytest.raises(ValueError, match="header"):
+            decode_mod.make_decoder("imagecodecs")(data)
+
+    def test_ftyp_with_too_many_compatible_brands_is_refused_quickly(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        brands = b"xavifxxx" * (8 * 1024 * 1024)
+        payload = b"mif1" + b"\x00\x00\x00\x00" + brands
+        data = struct.pack(">I", 8 + len(payload)) + b"ftyp" + payload
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+
+        started = time.perf_counter()
+        with pytest.raises(ValueError, match="compatible brands"):
+            decode_mod.make_decoder("imagecodecs")(data)
+
+        assert time.perf_counter() - started < 0.2
+
+    def test_unaligned_avif_text_is_not_a_compatible_brand(self):
+        import inference_model_manager.backends.decode as decode_mod
+
+        payload = b"mif1" + b"\x00\x00\x00\x00" + b"xavifxxx"
+        data = struct.pack(">I", 8 + len(payload)) + b"ftyp" + payload
+
+        assert decode_mod._ftyp_names_avif(data) is False
+
+    def test_avif_sequence_brand_decodes_its_first_frame(self):
+        data = _animation("AVIF")
+        data = data[:8] + b"mif1" + data[12:]
+
+        assert make_decoder("imagecodecs")(data).shape == (30, 40, 3)
+
+    def test_avif_with_an_extended_ftyp_header_is_refused_from_its_header(
+        self, monkeypatch
+    ):
+        import inference_model_manager.backends.decode as decode_mod
+
+        data = _with_extended_ftyp(_encoded("avif"), b"avif")
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+
+        assert decode_mod._select_codec(data) == "avif"
+        with pytest.raises(ValueError, match="header"):
+            decode_mod.make_decoder("imagecodecs")(data)
+
+    def test_avif_sequence_with_an_extended_ftyp_header_decodes_its_first_frame(
+        self,
+    ):
+        data = _with_extended_ftyp(_animation("AVIF"), b"avis")
+
+        assert make_decoder("imagecodecs")(data).shape == (30, 40, 3)
+
+    def test_avif_after_a_leading_box_is_refused_from_its_header(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        data = _with_leading_box(_encoded("avif"))
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+
+        assert decode_mod._select_codec(data) == "avif"
+        assert decode_mod.header_pixels(data) == 30 * 40
+        with pytest.raises(ValueError, match="header"):
+            decode_mod.make_decoder("imagecodecs")(data)
+
+    def test_avif_sequence_after_a_leading_box_decodes_its_first_frame(self):
+        data = _with_leading_box(_animation("AVIF"))
+
+        assert make_decoder("imagecodecs")(data).shape == (30, 40, 3)
+
+    def test_avif_after_a_non_printable_box_is_refused_from_its_header(
+        self, monkeypatch
+    ):
+        import inference_model_manager.backends.decode as decode_mod
+
+        data = _with_leading_box(_encoded("avif"), b"\x00" * 4)
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+
+        assert decode_mod._select_codec(data) == "avif"
+        with pytest.raises(ValueError, match="header"):
+            decode_mod.make_decoder("imagecodecs")(data)
+
+    def test_avif_sequence_after_a_non_printable_box_decodes_its_first_frame(self):
+        data = _with_leading_box(_animation("AVIF"), b"\x00" * 4)
+
+        assert make_decoder("imagecodecs")(data).shape == (30, 40, 3)
+
+    @pytest.mark.parametrize("boxes", [17, 30])
+    def test_avif_after_many_leading_boxes_decodes(self, boxes):
+        data = _with_wide_boxes(_encoded("avif"), boxes)
+
+        assert make_decoder("imagecodecs")(data).shape == (30, 40, 3)
+
+    def test_long_box_chain_without_a_file_type_box_is_refused_quickly(
+        self, monkeypatch
+    ):
+        import time
+
+        import inference_model_manager.backends.decode as decode_mod
+
+        data = b"\x00\x00\x00\x08wide" * (100 * 1024 * 1024 // 8)
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+        decode = decode_mod.make_decoder("imagecodecs")
+
+        started = time.perf_counter()
+        with pytest.raises(ValueError, match="boxes"):
+            decode(data)
+
+        assert time.perf_counter() - started < 0.2
+
+    def test_long_box_chain_after_the_file_type_box_is_refused_quickly(
+        self, monkeypatch
+    ):
+        import time
+
+        import inference_model_manager.backends.decode as decode_mod
+
+        avif = _encoded("avif")
+        size = int.from_bytes(avif[:4], "big")
+        chain = b"\x00\x00\x00\x08wide" * (64 * 1024 * 1024 // 8)
+        data = avif[:size] + chain + avif[size:]
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+        decode = decode_mod.make_decoder("imagecodecs")
+
+        started = time.perf_counter()
+        with pytest.raises(ValueError, match="boxes"):
+            decode(data)
+
+        assert time.perf_counter() - started < 0.2
+
+    @pytest.mark.parametrize("boxes", [17, 30])
+    def test_avif_after_many_leading_boxes_is_size_gated(self, monkeypatch, boxes):
+        import inference_model_manager.backends.decode as decode_mod
+
+        data = _with_wide_boxes(_encoded("avif"), boxes)
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+
+        with pytest.raises(ValueError, match="header"):
+            decode_mod.make_decoder("imagecodecs")(data)
+
+    @pytest.mark.parametrize("shape", [(), (7,)], ids=["scalar", "one-dimensional"])
+    def test_npy_without_two_dimensions_is_an_input_error(self, shape):
+        data = _npy(np.zeros(shape, np.uint8))
+
+        with pytest.raises(ValueError, match="two dimensions"):
+            make_decoder("imagecodecs")(data)
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            b"\x93NUMPY\x01\x00\x01\x00{",
+            b"\x93NUMPY\x01\x00\x10\x00{'descr': <f8}   \n",
+        ],
+        ids=["truncated", "not-a-literal"],
+    )
+    def test_malformed_npy_header_is_an_input_error(self, monkeypatch, data):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+
+        with pytest.raises(ValueError, match="NPY header"):
+            decode_mod.make_decoder("imagecodecs")(data)
+
+    def test_npy_with_a_huge_dimension_is_refused_from_its_header(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        header = "{'descr': '<f8', 'fortran_order': False, 'shape': (%s, 1), }" % (
+            "9" * 400
+        )
+        header = header.ljust(64 * (len(header) // 64 + 1) - 1) + "\n"
+        data = b"\x93NUMPY\x01\x00" + len(header).to_bytes(2, "little")
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+
+        with pytest.raises(ValueError, match="megapixel decode limit"):
+            decode_mod.make_decoder("imagecodecs")(data + header.encode("latin1"))
+
+
+class TestMalformedInputIsAnInputError:
+    @pytest.mark.parametrize("cut", ["half", "twenty-bytes"])
+    @pytest.mark.parametrize("name", ["tiff", "bmp", "webp-lossless", "jp2", "avif"])
+    def test_truncated_image_raises_value_error(self, name, cut):
+        data = _encoded(name)
+        data = data[: len(data) // 2] if cut == "half" else data[:20]
+
+        with pytest.raises(ValueError):
+            make_decoder("imagecodecs")(data)
+
+
+class TestDecodedBytesGate:
+    def test_wide_samples_are_rejected_by_their_bytes(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(
+            decode_mod,
+            "_decode_ic",
+            lambda data: np.zeros((30, 30, 4), dtype=np.float64),
+        )
+        decode = decode_mod.make_decoder("imagecodecs")
+
+        with pytest.raises(ValueError, match="MB decode limit"):
+            decode(b"RIFF\x00\x00\x00\x00WEBPVP8 ")
+
+    def test_plugin_decoder_output_is_bounded_by_bytes(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        decode = decode_mod.guard_decoder(
+            lambda data: np.zeros((30, 30, 4), dtype=np.float64)
+        )
+
+        with pytest.raises(ValueError, match="decoded"):
+            decode(b"anything")
+
+    @pytest.mark.parametrize(
+        "prefix",
+        [b"", b"PK\x05\x06" + bytes(18), b"PK\x07\x08"],
+        ids=["local-header", "end-record", "spanned"],
+    )
+    def test_npz_archive_is_refused_before_decoding(self, monkeypatch, prefix):
+        import io
+
+        import inference_model_manager.backends.decode as decode_mod
+
+        buffer = io.BytesIO()
+        np.savez_compressed(buffer, np.zeros((30, 30)))
+        monkeypatch.setattr(decode_mod.imagecodecs, "imread", _explode)
+
+        with pytest.raises(ValueError, match="not a supported image format"):
+            decode_mod._decode_ic(prefix + buffer.getvalue())
+
+    def test_wide_samples_are_rejected_before_channel_expansion(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.001)
+        monkeypatch.setattr(
+            decode_mod.imagecodecs, "imread", lambda data: np.zeros((30, 30))
+        )
+        monkeypatch.setattr(decode_mod, "_to_rgb_hwc", _explode)
+
+        with pytest.raises(ValueError, match="MB decode limit"):
+            decode_mod._decode_ic(b"unknown container")
+
+    def test_deep_integer_image_at_the_pixel_limit_still_decodes(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        imagecodecs = pytest.importorskip("imagecodecs")
+        data = bytes(imagecodecs.png_encode(np.zeros((30, 30, 4), np.uint16)))
+        monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.0009)
+
+        assert make_decoder("imagecodecs")(data).shape == (30, 30, 3)
 
 
 def jpeg_with_sof_past(width: int, height: int, pad_segments: int = 2) -> bytes:
@@ -1154,7 +1666,7 @@ class TestPluginDecoderGate:
             with pytest.raises(ValueError, match="megapixel decode limit"):
                 decode(self._GIANT_PNG_HEADER)
 
-    def test_rejected_on_oversized_decoded_output(self, monkeypatch, webp_bytes):
+    def test_rejected_on_oversized_decoded_output(self, monkeypatch, qoi_bytes):
         import inference_model_manager.backends.decode as decode_mod
 
         monkeypatch.setattr(decode_mod.cfg, "INFERENCE_DECODE_MAX_MEGAPIXELS", 0.00001)
@@ -1163,7 +1675,7 @@ class TestPluginDecoderGate:
 
         with self._registered(lambda data: chw) as decode:
             with pytest.raises(ValueError, match="decoded"):
-                decode(webp_bytes)
+                decode(qoi_bytes)
 
     def test_normal_output_passes(self, webp_bytes):
         chw = np.zeros((3, 8, 8), dtype=np.uint8)
