@@ -16,10 +16,20 @@ on:
           - serverless-v2
 jobs:
   build:
+    name: E2E shard ${{ matrix.shard }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
     timeout-minutes: 30
+    strategy:
+      # Shards are independent; let every shard finish so one run reports all
+      # failures. tests/inference/hosted_platform_tests/sharding.py splits the
+      # collected tests round-robin into SHARD_TOTAL (= matrix size) shards.
+      # Each shard warms the services itself (unless skip_warmup), in parallel,
+      # which costs less wall time than a separate warmup job ahead of them.
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -31,9 +41,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          key: ${{ runner.os }}-pip-3.12-${{ hashFiles('requirements/**') }}
           restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+            ${{ runner.os }}-pip-3.12-
       - name: 🦾 Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -41,4 +51,4 @@ jobs:
       - name: 📝 E2E test of HOSTED INFERENCE at 😎 STAGING SERVERLESS 😎 🔥🔥🔥🔥
         if: ${{ github.event.inputs.test_target == 'serverless-v2' }}
         run:
-          SKIP_WARMUP=${{ github.event.inputs.skip_warmup }} HOSTED_PLATFORM_TESTS_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} HOSTED_PLATFORM_TESTS_PROJECT=roboflow-staging-serverless OPENAI_KEY=${{ secrets.OPEN_AI_API_KEY }} GOOGLE_API_KEY=${{ secrets.GEMINI_API_KEY }} ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} GOOGLE_VISION_API_KEY=${{ secrets.GOOGLE_VISION_API_KEY }} pytest tests/inference/hosted_platform_tests/
+          SHARD_INDEX=${{ matrix.shard }} SHARD_TOTAL=${{ strategy.job-total }} SKIP_WARMUP=${{ github.event.inputs.skip_warmup }} HOSTED_PLATFORM_TESTS_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} HOSTED_PLATFORM_TESTS_PROJECT=roboflow-staging-serverless OPENAI_KEY=${{ secrets.OPEN_AI_API_KEY }} GOOGLE_API_KEY=${{ secrets.GEMINI_API_KEY }} ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} GOOGLE_VISION_API_KEY=${{ secrets.GOOGLE_VISION_API_KEY }} pytest tests/inference/hosted_platform_tests/

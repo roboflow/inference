@@ -3,12 +3,16 @@ import os
 from dataclasses import replace
 from enum import Enum
 from functools import partial
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pytest
 
 from inference_sdk import InferenceHTTPClient
+from tests.inference.hosted_platform_tests.sharding import (
+    resolve_shard,
+    select_shard_node_ids,
+)
 
 
 def str2bool(value: Any) -> bool:
@@ -36,6 +40,26 @@ MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES = int(
 )
 SKIP_WARMUP = str2bool(os.getenv("SKIP_WARMUP", False))
 IMAGE_URL = "https://media.roboflow.com/inference/dog.jpeg"
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: List[pytest.Item]
+) -> None:
+    """Keep only this CI shard's tests when SHARD_INDEX / SHARD_TOTAL are set."""
+    shard = resolve_shard(os.environ)
+    if shard is None:
+        return None
+
+    shard_index, shard_total = shard
+    selected_node_ids = select_shard_node_ids(
+        [item.nodeid for item in items],
+        shard_index=shard_index,
+        shard_total=shard_total,
+    )
+    deselected = [item for item in items if item.nodeid not in selected_node_ids]
+    items[:] = [item for item in items if item.nodeid in selected_node_ids]
+    config.hook.pytest_deselected(items=deselected)
+
 
 # The two API-key transports every authenticated test runs under. The header
 # lane runs unconditionally: it fails against a platform deployment that does
