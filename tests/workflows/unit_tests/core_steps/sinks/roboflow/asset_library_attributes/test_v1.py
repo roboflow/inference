@@ -3,12 +3,8 @@ from typing import Any, List
 from unittest import mock
 
 import pytest
-
-from inference.core.cache import MemoryCache
-from inference.roboflow_workflows_plugin.sinks.asset_library_attributes import (
-    v1,
-)
-from inference.roboflow_workflows_plugin.sinks.asset_library_attributes.v1 import (
+from roboflow_workflows.core_steps.sinks.roboflow.asset_library_attributes import v1
+from roboflow_workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
     SKIPPED_EMPTY_UPDATE_MESSAGE,
     UPDATE_SUCCESS_MESSAGE,
     BlockManifest,
@@ -18,6 +14,8 @@ from inference.roboflow_workflows_plugin.sinks.asset_library_attributes.v1 impor
     _normalize_to_per_row,
     build_effective_updates,
 )
+
+from inference.core.cache import MemoryCache
 from inference.core.workflows.execution_engine.entities.base import Batch
 
 
@@ -26,28 +24,33 @@ def make_batch(content: List[Any]) -> Batch:
 
 
 @pytest.fixture
-def block() -> RoboflowAssetLibraryAttributesBlockV1:
+def platform_client() -> mock.MagicMock:
+    platform_client = mock.MagicMock()
+    platform_client.batch_update_image_metadata_at_roboflow.return_value = {
+        "taskId": "task-123"
+    }
+    platform_client.update_image_metadata_at_roboflow.return_value = {"status": "ok"}
+    return platform_client
+
+
+@pytest.fixture
+def block(platform_client) -> RoboflowAssetLibraryAttributesBlockV1:
     return RoboflowAssetLibraryAttributesBlockV1(
         cache=MemoryCache(),
         api_key="my_api_key",
         update_attributes_offloader=None,
+        platform_client=platform_client,
     )
 
 
 @pytest.fixture
-def mocked_v1():
-    with (
-        mock.patch.object(v1, "get_workspace_name") as workspace_mock,
-        mock.patch.object(v1, "batch_update_image_metadata_at_roboflow") as batch_mock,
-        mock.patch.object(v1, "update_image_metadata_at_roboflow") as single_mock,
-    ):
+def mocked_v1(platform_client):
+    with mock.patch.object(v1, "get_workspace_name") as workspace_mock:
         workspace_mock.return_value = "my-workspace"
-        batch_mock.return_value = {"taskId": "task-123"}
-        single_mock.return_value = {"status": "ok"}
         yield SimpleNamespace(
             workspace=workspace_mock,
-            update_batch=batch_mock,
-            update_single=single_mock,
+            update_batch=platform_client.batch_update_image_metadata_at_roboflow,
+            update_single=platform_client.update_image_metadata_at_roboflow,
         )
 
 
@@ -326,7 +329,9 @@ def test_build_effective_updates_resolves_batch_values_in_metadata_and_tags() ->
     ]
 
 
-def test_run_uses_injected_offloader_instead_of_calling_api(mocked_v1) -> None:
+def test_run_uses_injected_offloader_instead_of_calling_api(
+    mocked_v1, platform_client
+) -> None:
     offloader = mock.MagicMock(
         return_value={"error_status": False, "message": "queued"}
     )
@@ -334,6 +339,7 @@ def test_run_uses_injected_offloader_instead_of_calling_api(mocked_v1) -> None:
         cache=MemoryCache(),
         api_key="my_api_key",
         update_attributes_offloader=offloader,
+        platform_client=platform_client,
     )
 
     result = block.run(
@@ -355,3 +361,18 @@ def test_run_uses_injected_offloader_instead_of_calling_api(mocked_v1) -> None:
         {"error_status": False, "message": "queued"},
         {"error_status": False, "message": "queued"},
     ]
+
+
+def test_workspace_is_resolved_through_the_platform_client(platform_client) -> None:
+    platform_client.get_roboflow_workspace.return_value = "ws-from-api"
+    cache = MemoryCache()
+
+    first = v1.get_workspace_name(
+        api_key="my_api_key", cache=cache, platform_client=platform_client
+    )
+    second = v1.get_workspace_name(
+        api_key="my_api_key", cache=cache, platform_client=platform_client
+    )
+
+    assert first == second == "ws-from-api"
+    platform_client.get_roboflow_workspace.assert_called_once_with(api_key="my_api_key")
