@@ -319,12 +319,13 @@ def _enrich_with_air_gapped_info(
 ) -> WorkflowsBlocksDescription:
     enriched_blocks = []
     for block in result.blocks:
-        air_gapped_info = _air_gapped_info_for_block(block.manifest_class)
+        air_gapped_info = _air_gapped_info_for_block(block.manifest_class).to_dict()
+        for key in ("required_model_capabilities", "compatible_model_architectures"):
+            if key in block.block_schema:
+                air_gapped_info[key] = copy.deepcopy(block.block_schema[key])
         enriched_schema = copy.deepcopy(block.block_schema)
         enriched_schema.setdefault("json_schema_extra", {})
-        enriched_schema["json_schema_extra"][
-            "air_gapped_info"
-        ] = air_gapped_info.to_dict()
+        enriched_schema["json_schema_extra"]["air_gapped_info"] = air_gapped_info
         enriched_blocks.append(
             block.model_copy(update={"block_schema": enriched_schema})
         )

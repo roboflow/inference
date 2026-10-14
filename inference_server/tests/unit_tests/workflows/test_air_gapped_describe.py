@@ -11,6 +11,7 @@ from tests.unit_tests.legacy.conftest import FakeGateway
 CLOUD_ONLY_BLOCK = "roboflow_core/open_ai@v4"
 FOUNDATION_BLOCK = "roboflow_core/clip_comparison@v2"
 PLAIN_BLOCK = "roboflow_core/dynamic_crop@v1"
+EMBEDDING_BLOCK = "roboflow_core/embedding_model@v1"
 
 
 @pytest.fixture
@@ -71,6 +72,18 @@ def test_air_gapped_describe_reports_availability_per_block(
     assert info["available"] is False
     assert info["reason"] == "missing_cache_artifacts"
     assert info["model_id"] == "clip/RN101"
+
+
+def test_air_gapped_describe_carries_the_model_requirements_of_a_block(
+    legacy_client, cache_roots
+):
+    client = legacy_client(FakeGateway())
+
+    response = client.get("/workflows/blocks/describe?air_gapped=true")
+
+    info = _air_gapped_info(response, EMBEDDING_BLOCK)
+    assert info["required_model_capabilities"] == ["image_embeddings"]
+    assert info["compatible_model_architectures"] == ["resnet", "vit", "dinov3_probe"]
 
 
 def test_air_gapped_describe_leaves_the_response_alone_when_not_requested(
