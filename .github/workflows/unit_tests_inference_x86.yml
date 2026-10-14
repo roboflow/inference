@@ -8,12 +8,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      run_stream_benchmark_checks:
-        description: "Run stream pipeline benchmark harness tests (manual dispatch only)"
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
