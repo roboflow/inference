@@ -33,6 +33,11 @@ COPY requirements/requirements.sam.txt \
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
 RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
+
+# Keep later pip installs (including wheel builds) on the CPU variants.
+COPY requirements/requirements.torch-cpu.txt /requirements.torch-cpu.txt
+ARG PIP_CONSTRAINT=/requirements.torch-cpu.txt
+RUN pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu -r /requirements.torch-cpu.txt
 RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
@@ -69,9 +74,6 @@ RUN apt-get update && apt-get install -y lsb-release curl gpg
 RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
 RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
 RUN apt-get update && apt-get install -y redis
-
-FROM scratch
-COPY --from=base / /
 
 WORKDIR /app/
 COPY inference inference

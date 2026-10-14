@@ -16,6 +16,27 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- The nine Roboflow platform blocks are core blocks of this package again: dataset upload v1 and v2, custom metadata, model monitoring inference aggregator, vision events, vision event bundle, asset library attributes, visual search and visual search classifier. They live in `core_steps.sinks.roboflow` and `core_steps.integrations.roboflow`, so a standalone install now lists 248 blocks. Inference 1.6.1 to 1.7.2 shipped them as the `inference.roboflow_workflows_plugin` plugin; that plugin is now an empty compatibility stub.
+- `RoboflowPlatformClient` gains the operations these blocks call: `get_roboflow_workspace`, `add_custom_metadata`, `register_image_at_roboflow`, `annotate_image_at_roboflow`, `update_image_metadata_at_roboflow`, `batch_update_image_metadata_at_roboflow`, `search_project_images_at_roboflow`, `send_inference_results_to_model_monitoring`, `get_device_id`, `get_server_version` and `get_system_info`. The offline client refuses the API operations. A host can register a fallback client for these blocks with `set_platform_blocks_client_factory`, used when a block gets no client, the offline client, or a client that does not implement these operations itself.
+- Vision events sends its cloud image upload and event request only through a client that implements these operations. With the offline client it returns `error_status` with the offline refusal and sends nothing; writing to a local event store is unaffected.
+
+### Changed
+
+- `/workflows/blocks/describe` lists these blocks under their names from before the plugin, `inference.core.workflows.core_steps.{sinks,integrations}.roboflow.…`, and in their original positions within the core list, instead of `inference.roboflow_workflows_plugin.…` at the end.
+- A disable pattern on the canonical module path, such as `roboflow_workflows.core_steps.sinks`, now also disables these blocks, like any other core block. Patterns written against either historic path keep matching the same blocks.
+- OpenAI v7: optional `service_tier` (`auto`, `default`, `flex`, `priority`, `ultrafast`), sent with direct OpenAI requests and forwarded to the Roboflow proxy for `rf_key:` keys. Unset keeps OpenAI's default tier.
+
+
+## `0.2.8`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Google Gemini v6: Argon-only instance segmentation with normalized YX polygons, detached components, holes, and RLE mask output.
+
 ## `0.2.7`
 
 Bundled execution engine: `1.16.1`.
