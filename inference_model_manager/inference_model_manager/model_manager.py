@@ -95,6 +95,22 @@ def _normalized_future(future: Future, action_name: Optional[str]) -> Future:
     return normalized
 
 
+def _retrieve_exception(future: "asyncio.Future") -> None:
+    if not future.cancelled():
+        future.exception()
+
+
+def _serialize_remote_result(
+    backend: Any, action: Optional[str], result: Any, serialize: bool
+) -> Any:
+    if not serialize:
+        return result
+    _, entry = _remote_action(backend, action)
+    if entry is not None:
+        return entry.serializer(result, backend)
+    return result
+
+
 def _remote_action(backend: Any, action: Optional[str]) -> Tuple[Optional[str], Any]:
     """Resolve (action_name, registry entry) for an out-of-process backend.
 
@@ -600,12 +616,7 @@ class ModelManager:
             result = self.submit(
                 model_id, action=action, raw_input=raw_input, **kwargs
             ).result(timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S)
-            if not serialize:
-                return result
-            _, entry = _remote_action(backend, action)
-            if entry is not None:
-                return entry.serializer(result, backend)
-            return result
+            return _serialize_remote_result(backend, action, result, serialize)
 
         # Resolve action (validates it exists, raises ValueError if not)
         action_name, entry = resolve_action(backend.model, action)
@@ -697,6 +708,30 @@ class ModelManager:
         self._check_open()
         loop = asyncio.get_running_loop()
         context = contextvars.copy_context()
+        backend, _ = self._admit(model_id)
+        if hasattr(backend, "submit_request"):
+            raw_input = kwargs.pop("images", None)
+            future = await loop.run_in_executor(
+                self._executor,
+                lambda: context.run(
+                    self.submit,
+                    model_id,
+                    action=action,
+                    raw_input=raw_input,
+                    **kwargs,
+                ),
+            )
+            waiter = asyncio.wrap_future(future)
+            waiter.add_done_callback(_retrieve_exception)
+            result = await asyncio.wait_for(
+                asyncio.shield(waiter), timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S
+            )
+            return await loop.run_in_executor(
+                self._executor,
+                lambda: context.run(
+                    _serialize_remote_result, backend, action, result, serialize
+                ),
+            )
         return await loop.run_in_executor(
             self._executor,
             lambda: context.run(
@@ -1075,7 +1110,7 @@ class ModelManager:
                         {
                             "device": f"cuda:{i}",
                             "name": props.name,
-                            "total_mb": round(props.total_mem / 1024 / 1024, 1),
+                            "total_mb": round(props.total_memory / 1024 / 1024, 1),
                             "allocated_mb": round(
                                 torch.cuda.memory_allocated(i) / 1024 / 1024,
                                 1,

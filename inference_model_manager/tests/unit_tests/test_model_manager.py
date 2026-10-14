@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import gc
 import threading
 from concurrent.futures import Future
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
 
@@ -342,6 +344,35 @@ class TestModelManagerObservability:
             ):
                 assert key in entry
                 assert entry[key] is None
+
+    def test_stats_report_cuda_device_total_memory(self):
+        import torch
+
+        props = MagicMock(spec=["name", "total_memory"])
+        props.name = "Fake GPU"
+        props.total_memory = 8 * 1024 * 1024 * 1024
+        mm = ModelManager()
+
+        with patch.object(torch.cuda, "is_available", return_value=True), patch.object(
+            torch.cuda, "device_count", return_value=1
+        ), patch.object(
+            torch.cuda, "get_device_properties", return_value=props
+        ), patch.object(
+            torch.cuda, "memory_allocated", return_value=0
+        ), patch.object(
+            torch.cuda, "memory_reserved", return_value=0
+        ):
+            gpus = mm.stats()["gpus"]
+
+        assert gpus == [
+            {
+                "device": "cuda:0",
+                "name": "Fake GPU",
+                "total_mb": 8192.0,
+                "allocated_mb": 0.0,
+                "reserved_mb": 0.0,
+            }
+        ]
 
     def test_total_vram_bytes_sums_reported_models(self):
         mm = ModelManager()
@@ -2043,3 +2074,112 @@ class TestSubmitAppliesTheSameBoundaryHandling:
         assert remote.submitted[-1]["kwargs"]["mask_format"] == "rle"
         assert result == [[{"prompt_index": 0, "masks": [], "scores": [0.5]}]]
         assert type(result[0][0]["scores"][0]) is float
+
+
+class TestRemoteProcessAsyncDoesNotHoldAWorker:
+    def test_abandoned_remote_request_leaves_the_executor_free(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 1)
+        pending: Future = Future()
+
+        class _NeverAnsweringRemote(_FakeRemoteBackend):
+            def submit_request(self, action=None, raw_input=None, **kwargs):
+                return pending
+
+        backends = {
+            "slow": _NeverAnsweringRemote("slow"),
+            "model-a": FakeBackend("model-a"),
+        }
+        mm = ModelManager()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: backends[
+            model_id
+        ]
+        mm.load("slow", api_key="")
+        mm.load("model-a", api_key="")
+
+        async def _scenario() -> Any:
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(mm.process_async("slow", images="img"), 0.1)
+            return await asyncio.wait_for(mm.process_async("model-a", images="img"), 2)
+
+        try:
+            result = asyncio.run(_scenario())
+        finally:
+            pending.set_result({"prediction": "late"})
+            mm.shutdown()
+
+        assert result["data"]["model_id"] == "model-a"
+
+    def test_late_remote_failure_after_a_timeout_is_retrieved(self):
+        pending: Dict[str, Future] = {"future": Future()}
+
+        class _LateFailingRemote(_FakeRemoteBackend):
+            def submit_request(self, action=None, raw_input=None, **kwargs):
+                return pending["future"]
+
+        mm = ModelManager()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: (
+            _LateFailingRemote(model_id)
+        )
+        mm.load("slow", api_key="")
+        loop_errors: List[dict] = []
+
+        async def _scenario() -> None:
+            asyncio.get_running_loop().set_exception_handler(
+                lambda loop, context: loop_errors.append(context)
+            )
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(mm.process_async("slow", images="img"), 0.1)
+            pending.pop("future").set_exception(RuntimeError("late failure"))
+            await asyncio.sleep(0.05)
+            gc.collect()
+            await asyncio.sleep(0)
+
+        try:
+            asyncio.run(_scenario())
+        finally:
+            mm.shutdown()
+
+        assert loop_errors == []
+
+    def test_remote_process_async_serializes_in_the_caller_context(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_mod
+
+        entry = SimpleNamespace(
+            params=None,
+            validator=None,
+            serializer=lambda result, backend: {**result, "request": REQUEST_ID.get()},
+        )
+        monkeypatch.setattr(
+            mm_mod, "_remote_action", lambda backend, action: (None, entry)
+        )
+        mm = ModelManager()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: (
+            _FakeRemoteBackend(model_id)
+        )
+        mm.load("remote", api_key="")
+
+        async def _scenario() -> Any:
+            REQUEST_ID.set("req-1")
+            return await mm.process_async("remote", images="x")
+
+        try:
+            serialized = asyncio.run(_scenario())
+        finally:
+            mm.shutdown()
+
+        assert serialized == {"prediction": "remote", "request": "req-1"}
+
+    def test_remote_process_async_returns_the_raw_result_unserialized(self):
+        mm = ModelManager()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: (
+            _FakeRemoteBackend(model_id)
+        )
+        mm.load("remote", api_key="")
+        try:
+            raw = asyncio.run(mm.process_async("remote", serialize=False, images="x"))
+        finally:
+            mm.shutdown()
+
+        assert raw == {"prediction": "remote"}
