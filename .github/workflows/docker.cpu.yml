@@ -57,6 +57,8 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    env:
+      PUBLISH: ${{ github.event_name == 'release' || inputs.force_push == true }}
     outputs:
       image_tag: ${{ steps.image_tag.outputs.image_tag }}
     steps:
@@ -127,10 +129,12 @@ jobs:
             fi
           done
           echo "all_tags=${DH_TAGS},${GCP_TAGS}" >> "$GITHUB_OUTPUT"
-          echo "Single build will push to Docker Hub and Artifact Registry:"
+          echo "Publishing runs tag the tested digests in Docker Hub and Artifact Registry:"
           echo "${DH_TAGS},${GCP_TAGS}"
-      # Load a single platform for the native amd64 runner before publishing.
-      - name: Build and load CPU image
+      # Publishing runs push amd64 by digest, test that exact image, then reuse
+      # the same digest in the multi-arch tags. Other runs only load and test.
+      - name: Build and load CPU image (amd64)
+        if: ${{ env.PUBLISH != 'true' }}
         uses: depot/build-push-action@v1
         with:
           push: false
@@ -140,22 +144,75 @@ jobs:
           tags: ${{ steps.all_tags.outputs.all_tags }}
           platforms: linux/amd64
           file: ${{ env.DOCKERFILE }}
+      - name: Build and push CPU image by digest (amd64)
+        id: amd64
+        if: ${{ env.PUBLISH == 'true' }}
+        uses: depot/build-push-action@v1
+        with:
+          project: grl7ffzxd7
+          context: .
+          outputs: type=image,name=${{ env.BASE_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          platforms: linux/amd64
+          file: ${{ env.DOCKERFILE }}
       - name: Test CPU PyTorch runtime
         env:
           IMAGE_TAGS: ${{ steps.all_tags.outputs.all_tags }}
+          AMD64_DIGEST: ${{ steps.amd64.outputs.digest }}
         run: |
-          image="${IMAGE_TAGS%%,*}"
+          if [ "$PUBLISH" = "true" ]; then
+            image="${BASE_IMAGE}@${AMD64_DIGEST}"
+            docker pull --platform linux/amd64 "$image"
+          else
+            image="${IMAGE_TAGS%%,*}"
+          fi
           docker run --rm --pull=never --entrypoint /bin/sh \
             -e CPU_IMAGE_TEST=true \
             -v "${{ github.workspace }}/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
             "$image" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'
-      # Reuse Depot's project cache for amd64; arm64 is built but not runtime-tested.
-      - name: Build both platforms and optionally push (Docker Hub and GCP)
+      # arm64 is built but not runtime-tested.
+      - name: Build CPU image and optionally push by digest (arm64)
+        id: arm64
         uses: depot/build-push-action@v1
         with:
-          push: ${{ github.event_name == 'release' || inputs.force_push == true }}
           project: grl7ffzxd7
           context: .
-          tags: ${{ steps.all_tags.outputs.all_tags }}
-          platforms: linux/amd64,linux/arm64
+          outputs: type=image,name=${{ env.BASE_IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH }}
+          platforms: linux/arm64
           file: ${{ env.DOCKERFILE }}
+      - name: Publish tested amd64 and arm64 digests (Docker Hub and GCP)
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          IMAGE_TAGS: ${{ steps.all_tags.outputs.all_tags }}
+          AMD64_DIGEST: ${{ steps.amd64.outputs.digest }}
+          ARM64_DIGEST: ${{ steps.arm64.outputs.digest }}
+        run: |
+          set -o pipefail
+          amd64_manifest() {
+            jq -r '[.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "amd64")] | if length == 1 then .[0].digest else "" end'
+          }
+          tested="${BASE_IMAGE}@${AMD64_DIGEST}"
+          tested_manifest="$(docker buildx imagetools inspect --raw "$tested" | jq -r --arg self "$AMD64_DIGEST" 'if .manifests then empty else $self end')"
+          if [ -z "$tested_manifest" ]; then
+            tested_manifest="$(docker buildx imagetools inspect --raw "$tested" | amd64_manifest)"
+          fi
+          IFS=',' read -ra tags <<< "$IMAGE_TAGS"
+          tag_args=()
+          for tag in "${tags[@]}"; do
+            [ -n "$tag" ] && tag_args+=(--tag "$tag")
+          done
+          sources=("$tested" "${BASE_IMAGE}@${ARM64_DIGEST}")
+          planned="$(docker buildx imagetools create --dry-run "${tag_args[@]}" "${sources[@]}" | amd64_manifest)"
+          if [ -z "$tested_manifest" ] || [ "$planned" != "$tested_manifest" ]; then
+            echo "::error::Planned amd64 manifest '$planned' is not the tested '$tested_manifest'; nothing was published"
+            exit 1
+          fi
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+          for tag in "${tags[@]}"; do
+            [ -z "$tag" ] && continue
+            published="$(docker buildx imagetools inspect --raw "$tag" | amd64_manifest)"
+            if [ "$published" != "$tested_manifest" ]; then
+              echo "::error::$tag amd64 manifest '$published' is not the tested '$tested_manifest'"
+              exit 1
+            fi
+            echo "$tag amd64 manifest $published matches the tested image"
+          done
