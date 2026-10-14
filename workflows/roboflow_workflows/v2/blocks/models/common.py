@@ -1,8 +1,8 @@
-"""Steps every task-model block shares: model selection and options.
+"""Shared model-block algorithms: model selection, option binding and results.
 
-A step's model and options are one value for the whole image batch of a
-call; a selector may change them between calls, not between the images of
-one call. A task-model block runs one model call per phase::
+A step's model and options are one value for the whole image batch of a call;
+a selector may change them between calls, not between images. A phased
+task-model block runs::
 
     network_input   check images and options, resolve the call's model,
                     bind its options, pre_process all images  -> ModelInput
@@ -10,31 +10,19 @@ one call. A task-model block runs one model call per phase::
     result          model.post_process(raw, metadata, **options), then one
                     result per image, in batch order
 
-``ModelInput`` is built by each call and passed between its phases; the block
-instance holds only the model cache, so overlapping calls share nothing else.
-An empty batch resolves no model: ``network_input`` returns ``None`` and the
-later phases return nothing.
+Each call builds its own ``ModelInput``; the block instance holds only the
+model cache. Overlapping phased calls may share one model, so each model must
+support the calls it receives and complete its outputs before returning them.
+An empty batch resolves no model, and every argument check (``one_per_call``,
+``scalar_options``, ``checked_class_filter``) runs before the model loads.
 
-A selector that varies per image cannot bind a model id, package id, class
-filter or option: these fields are not batch-delivered, so compilation
-rejects such a binding. A direct ``run()`` caller passing a ``Batch`` gets an
-explicit error instead of the first image's value, before any model loads.
-
-Options reach a model only through its ``post_process`` keywords. An option
-the step does not set gets its V1 default, and only when the model names that
-keyword. An option the step sets for a model that does not read it fails the
-step before any model runs: an NMS-free model must not appear to honour an IoU
-threshold. A confidence mode (``"best"`` / ``"default"``) is not a set value:
-a model without a ``confidence`` keyword applies its own threshold.
-
-"Reads" means the keyword is named and used. Keywords collected by
-``**kwargs`` do not count: no current task backend reads a block option from
-``**kwargs`` or forwards it to a callee that does. ``IGNORED_KEYWORDS`` lists
-the backends that name a keyword but never use it. Both facts come from a
-source survey of the ``inference_models`` task backends; the task's
-supported-keyword matrix records it.
-
-``class_filter`` is one list (or ``None``) for every image of the call.
+Options reach a model only through its ``post_process`` keywords
+(``post_process_options``). An unset option gets its V1 default only when the
+model names that keyword; a set option the model does not read fails the step
+before any model runs. A confidence mode (``"best"`` / ``"default"``) is not a
+set value. Keywords collected by ``**kwargs`` do not count, and
+``IGNORED_KEYWORDS`` lists backends that name a keyword but never use it; both
+facts come from a source survey of the ``inference_models`` task backends.
 """
 
 import difflib
@@ -42,7 +30,6 @@ import inspect
 import uuid
 from types import MappingProxyType
 from typing import (
-    Annotated,
     Any,
     Callable,
     Dict,
@@ -56,66 +43,12 @@ from typing import (
 )
 
 import torch
-from pydantic import (
-    Field,
-    StrictBool,
-    StrictFloat,
-    StrictInt,
-    StrictStr,
-    field_validator,
-)
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.frames import FrameRef
 from roboflow_workflows.v2.data.image import ImageData
-from roboflow_workflows.v2.data.kinds import (
-    BOOLEAN_KIND,
-    FLOAT_KIND,
-    INTEGER_KIND,
-    LIST_OF_VALUES_KIND,
-    STRING_KIND,
-)
 from roboflow_workflows.v2.data.prediction_ops import select_predictions
 from roboflow_workflows.v2.data.row_identity import with_row_identity
-from roboflow_workflows.v2.engine.declaration import (
-    BlockParams,
-    DependentResource,
-    Output,
-    Ref,
-)
-
-MODELS_RESOURCE = "models"
-
-# Compatibility exports (field aliases, description and output constants,
-# ModelSelectionParams, NmsParams, model_dependency): core model blocks declare
-# their own fields; these stay until the remaining D1 cohorts stop importing them.
-# A literal id, or a selector of one id for the whole call. A selected package
-# may be None (the loader chooses); a selected model id may not.
-ModelIdField = StrictStr | Ref(STRING_KIND)
-PackageIdField = Optional[StrictStr] | Ref(STRING_KIND, allow_none=True)
-# A literal list, or a selector of one list (or None) for the whole call.
-ClassFilterParam = Optional[List[StrictStr]] | Ref(
-    LIST_OF_VALUES_KIND, allow_none=True
-)
-
-MODEL_ID_DESCRIPTION = (
-    "Model id (or local path) of the model in the 'models' resource, one for "
-    "every image of the step; a selector may choose it per run, not per image. "
-    "To serve images with different models, route them to one step per model."
-)
-PACKAGE_ID_DESCRIPTION = (
-    "Exact model package to load, one for every image of the step; None lets "
-    "the loader choose. A selector may choose it per run, not per image. A "
-    "model supplied without a package id rejects a package. List a model's "
-    "package ids with "
-    'inference_models.AutoModel.describe_model("<model_id>").'
-)
-
-CONFIDENCE_MODES_DESCRIPTION = (
-    "'best' uses the model's evaluated per-class thresholds (then its global "
-    "one, then its default); 'default' uses the model's default threshold; a "
-    "number 0..1 applies to every class."
-)
 
 EMPTY_CLASS_FILTER_MESSAGE = (
     "class_filter is an empty list, which would keep no class; omit "
@@ -136,20 +69,6 @@ IGNORED_KEYWORDS: Mapping[str, frozenset] = MappingProxyType(
 DEFAULT_IOU_THRESHOLD = 0.3
 DEFAULT_MAX_DETECTIONS = 300
 DEFAULT_CLASS_AGNOSTIC_NMS = False
-
-UnitFloat = Annotated[StrictFloat, Field(ge=0, le=1)]
-
-MODEL_ID_OUTPUT = Output(
-    STRING_KIND, source="image", description="Model id that served this image."
-)
-INFERENCE_ID_OUTPUT = Output(
-    STRING_KIND,
-    source="image",
-    description=(
-        "Fresh id of this image's result; for results with rows, also the "
-        "namespace of their row identity."
-    ),
-)
 
 
 class ModelOption(NamedTuple):
@@ -188,80 +107,6 @@ class ModelInput(NamedTuple):
     metadata: Any
     options: Mapping[str, Any]
     class_ids: Optional[Tuple[int, ...]] = None
-
-
-class ModelSelectionParams(BlockParams):
-    """``model_id`` and ``model_package_id`` of every task-model block."""
-
-    model_id: ModelIdField = Field(
-        description=MODEL_ID_DESCRIPTION,
-        examples=["rfdetr-nano", "yolov8n-640", "$inputs.model_id"],
-    )
-    model_package_id: PackageIdField = Field(
-        default=None,
-        description=PACKAGE_ID_DESCRIPTION,
-        examples=[None, "$inputs.model_package_id"],
-    )
-
-    @field_validator("model_id", "model_package_id")
-    @classmethod
-    def _reject_empty(cls, value: Optional[str]) -> Optional[str]:
-        if value == "":
-            raise ValueError("must be a non-empty string")
-
-        return value
-
-
-class NmsParams(ModelSelectionParams):
-    """Class filter and NMS options of the box-producing model blocks."""
-
-    class_filter: ClassFilterParam = Field(
-        default=None,
-        description=(
-            "Class names to keep for every image of the step; omit or null to "
-            "keep every class. Every name must be a class of the serving model. "
-            "A selector may choose the list per run, not per image. Applied "
-            "after the model's own post-processing."
-        ),
-        examples=[["person", "car"], "$inputs.class_filter"],
-    )
-    iou_threshold: Optional[StrictFloat] | Ref(FLOAT_KIND) = Field(
-        default=None,
-        ge=0,
-        le=1,
-        description=(
-            f"NMS IoU threshold, 0..1. Unset: {DEFAULT_IOU_THRESHOLD} for models "
-            "with NMS. Setting it for a model without NMS (e.g. RF-DETR) fails "
-            "the step."
-        ),
-        examples=[0.5, "$inputs.iou_threshold"],
-    )
-    max_detections: Optional[StrictInt] | Ref(INTEGER_KIND) = Field(
-        default=None,
-        ge=1,
-        description=(
-            f"Maximum detections per image. Unset: {DEFAULT_MAX_DETECTIONS} for "
-            "models that read it. Setting it for a model that does not read it "
-            "fails the step."
-        ),
-        examples=[100, "$inputs.max_detections"],
-    )
-    class_agnostic_nms: Optional[StrictBool] | Ref(BOOLEAN_KIND) = Field(
-        default=None,
-        description=(
-            "Run NMS across classes. Unset: False for models with NMS. Setting "
-            "it for a model without NMS fails the step."
-        ),
-        examples=[True, "$inputs.class_agnostic_nms"],
-    )
-
-    @field_validator("class_filter")
-    @classmethod
-    def _reject_empty_filter(cls, value: Any) -> Any:
-        if isinstance(value, list) and not value:
-            raise ValueError(EMPTY_CLASS_FILTER_MESSAGE)
-
-        return value
 
 
 def confidence_option(confidence: Union[float, str]) -> ModelOption:
@@ -329,7 +174,7 @@ def models_cache(
 
     if not isinstance(models, Mapping):
         raise TypeError(
-            f"{block} needs the '{MODELS_RESOURCE}' resource as a mapping of model "
+            f"{block} needs the 'models' resource as a mapping of model "
             f"id to loaded model, or a ModelCache, got {type(models).__name__}"
         )
 
@@ -340,8 +185,8 @@ def models_cache(
     return cache
 
 
-def one_per_call(value: Any, *, name: str, block: str) -> Any:
-    """Return ``value`` unless it is a ``Batch`` of per-image values.
+def one_per_call(value: Any, *, name: str, block: str) -> None:
+    """Refuse a ``Batch`` of per-image values for a one-per-call field.
 
     Compiled workflows never deliver a ``Batch`` to a field that is not
     batch-delivered; this names the mistake for direct ``run()`` callers
@@ -352,9 +197,6 @@ def one_per_call(value: Any, *, name: str, block: str) -> Any:
         name: Field name, for the error message.
         block: Block type, for the error message.
 
-    Returns:
-        ``value`` unchanged.
-
     Raises:
         ValueError: When ``value`` is a ``Batch``.
     """
@@ -363,8 +205,6 @@ def one_per_call(value: Any, *, name: str, block: str) -> Any:
             f"{block}: {name} is one value for every image of a call, got a "
             f"Batch of {len(value)} values; run the step once per value"
         )
-
-    return value
 
 
 def model_request(
@@ -643,33 +483,6 @@ def prediction_metadata(
     return metadata
 
 
-def model_dependency(params: Any, *, task_type: str) -> List[DependentResource]:
-    """The one ``model`` resource a task-model step needs from ``models``.
-
-    Args:
-        params: Validated step parameters with ``model_id`` and
-            ``model_package_id``.
-        task_type: The block's prediction type.
-
-    Returns:
-        One resource named by ``model_id``, a selector string when it is
-        chosen at run time, with its ``model_package_id``.
-    """
-    resources = [
-        DependentResource(
-            resource_type="model",
-            identifier=params.model_id,
-            details={
-                "resource": MODELS_RESOURCE,
-                "task_type": task_type,
-                "model_package_id": params.model_package_id,
-            },
-        )
-    ]
-
-    return resources
-
-
 def identified_result(prediction: Any, *, model_id: str) -> Dict[str, Any]:
     """One image's outputs, with fresh row identity on its prediction.
 
@@ -789,7 +602,7 @@ def _refuse_unsupplied(supplied: Mapping[Any, Any]) -> Callable[[ModelRequest], 
 
     def refuse(request: ModelRequest) -> Any:
         raise LookupError(
-            f"model {str(request)!r} is not in the '{MODELS_RESOURCE}' resource "
+            f"model {str(request)!r} is not in the 'models' resource "
             f"(available: {available}); load it and pass it in that mapping when "
             "creating the session, or pass a ModelCache that can load it"
         )

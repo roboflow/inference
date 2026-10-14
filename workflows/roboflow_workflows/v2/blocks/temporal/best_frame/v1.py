@@ -1,6 +1,9 @@
 """Choose the frame of a time window that looks most like a reference.
 
 Canonical type: ``roboflow_core/best_frame@v1``.
+
+``[N, T]`` frames with an ``[N]`` reference give ``[N]`` results; each parent
+may choose a different time position.
 """
 
 from typing import Any, Dict

@@ -54,7 +54,7 @@ from roboflow_workflows.v2.blocks.models._shared.segment_anything import (
     _unit_float,
 )
 from roboflow_workflows.v2.blocks.models.cache import ModelCache, ModelRequest
-from roboflow_workflows.v2.blocks.models.common import require_rgb
+from roboflow_workflows.v2.blocks.models.common import one_per_call, require_rgb
 from roboflow_workflows.v2.blocks.models.sam3_interactive.v1 import _labeled_points
 from roboflow_workflows.v2.data.batch import Batch
 from roboflow_workflows.v2.data.image import ImageData
@@ -235,6 +235,10 @@ class VideoTracker:
         point_list = (
             _labeled_points(points, block=self._block) if mode == "visual" else []
         )
+        # Reject an invalid model request before _start_pulse changes state.
+        one_per_call(model_id, name="model_id", block=self._block)
+        one_per_call(model_package_id, name="model_package_id", block=self._block)
+        request = ModelRequest(model_id, model_package_id)
         resets = self._member_resets(reset_source, image=image)
         identities = self._preflight(image, resets=resets, reader=reader)
         self._start_pulse(
@@ -243,7 +247,6 @@ class VideoTracker:
             max_sources=max_sources,
         )
 
-        request = ModelRequest(model_id, model_package_id)
         configuration = (request, mode, tuple(names), prompt_mode, prompt_interval)
         results = []
         for position, member in enumerate(image):

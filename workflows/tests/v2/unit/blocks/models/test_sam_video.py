@@ -1377,6 +1377,107 @@ def _idle_block(kind):
     return block_type({model_id: backend}), backend, options
 
 
+class _RecordingCache(ModelCache):
+    """Supplied models only; records every model resolution."""
+
+    def __init__(self, supplied):
+        super().__init__(supplied=supplied)
+        self.requests = []
+
+    def get(self, request):
+        self.requests.append(request)
+        return super().get(request)
+
+
+def _recorded_block(kind):
+    block, backend, options = _idle_block(kind)
+    requests = block._tracker._models.supplied_requests()
+    supplied = {request: backend for request in requests}
+    cache = _RecordingCache(supplied)
+    return type(block)(cache), backend, cache, options
+
+
+INVALID_REQUESTS = [
+    ("sam2", "model_id", "", "model_id must be a non-empty string"),
+    ("sam2", "model_id", 7, "model_id must be a non-empty string"),
+    ("sam2", "model_id", Batch([SAM2_VIDEO_MODEL_ID]), "model_id is one value for"),
+    ("sam2", "model_package_id", "", "model_package_id must be a non-empty string"),
+    ("sam2", "model_package_id", Batch(["pkg"]), "model_package_id is one value for"),
+    ("sam3_visual", "visual_model_id", "", "model_id must be a non-empty string"),
+    ("sam3_concept", "model_id", Batch([SAM3_CONCEPT_MODEL_ID]), "model_id is one"),
+    ("sam3_concept", "model_package_id", 3, "model_package_id must be a non-empty"),
+]
+
+
+@pytest.mark.parametrize("kind, field, value, match", INVALID_REQUESTS)
+def test_invalid_model_request_changes_no_state_and_loads_nothing(
+    kind, field, value, match
+):
+    block, backend, cache, seed = _recorded_block(kind)
+    options = dict(max_session_frames=10, max_idle_pulses=1, **seed)
+    first = _direct(block, _image("a"), **options)
+    session = block._tracker._sources["a"]
+    handle = session.handle
+    calls, requests = len(backend.calls), list(cache.requests)
+    # Three valid calls without source a would expire it at max_idle_pulses=1.
+    for frame in (1, 2, 3):
+        with pytest.raises(ValueError, match=match):
+            _batch_direct(block, [_image("c", frame)], **{field: value}, **options)
+    assert block._tracker._pulse == 1
+    assert set(block._tracker._sources) == {"a"}
+    assert block._tracker._sources["a"] is session
+    assert session.handle is handle and not session.expired
+    assert len(backend.calls) == calls and cache.requests == requests
+    following = _direct(block, _image("a", 1), **options)
+    assert _episode(following)["episode_id"] == _episode(first)["episode_id"]
+    assert _episode(following)["episode_frame"] == 2
+
+
+def test_invalid_model_request_on_an_empty_call_is_refused_without_a_pulse():
+    block, backend, cache, seed = _recorded_block("sam2")
+    options = dict(max_session_frames=10, max_idle_pulses=1, **seed)
+    _direct(block, _image("a"), **options)
+    calls, requests = len(backend.calls), list(cache.requests)
+    with pytest.raises(ValueError, match="model_id must be a non-empty string"):
+        _batch_direct(block, [], model_id="", **options)
+    with pytest.raises(ValueError, match="model_package_id is one value for"):
+        _batch_direct(block, [], model_package_id=Batch(["pkg"]), **options)
+    assert block._tracker._pulse == 1
+    # Valid empty calls still count as pulses: the second one expires source a.
+    assert _batch_direct(block, [], **options) == []
+    assert block._tracker._pulse == 2 and not block._tracker._sources["a"].expired
+    assert _batch_direct(block, [], **options) == []
+    assert block._tracker._pulse == 3 and block._tracker._sources["a"].expired
+    assert len(backend.calls) == calls and cache.requests == requests
+
+
+@pytest.mark.parametrize("execution", ["run", "phases"])
+def test_compiled_selected_empty_model_id_does_not_expire_other_sources(execution):
+    backend = _indexed_backend(SAM2Video)
+    plan = _plan(
+        mode=execution,
+        model_id="$inputs.model",
+        points=POINTS,
+        max_session_frames=10,
+        max_idle_pulses=1,
+    )
+    session = plan.create_session({"models": {SAM2_VIDEO_MODEL_ID: backend}})
+    (first,) = session.run(
+        {"image": [_image("a")], "model": SAM2_VIDEO_MODEL_ID}
+    ).rows()
+    ref = backend._processor.sessions[0]
+    for frame in (1, 2):
+        with pytest.raises(StepExecutionError, match="model_id must be a non-empty"):
+            session.run({"image": [_image("c", frame)], "model": ""})
+    assert ref() is not None
+    (following,) = session.run(
+        {"image": [_image("a", 1)], "model": SAM2_VIDEO_MODEL_ID}
+    ).rows()
+    assert _episode(following)["episode_id"] == _episode(first)["episode_id"]
+    assert _episode(following)["episode_frame"] == 2
+    assert len(backend._processor.sessions) == 1
+
+
 @pytest.mark.parametrize("kind", IDLE_MODES)
 @pytest.mark.parametrize("action", ["error", "restart"])
 def test_idle_expiry_requires_explicit_recovery_and_retains_capacity(kind, action):
