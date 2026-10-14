@@ -407,13 +407,17 @@ def _host_columns(columns: List[torch.Tensor], *, count: int) -> List[np.ndarray
         ]
         return empty
 
-    packed = torch.cat(
-        [
-            column.contiguous().view(torch.uint8).reshape(count, -1)
-            for column in columns
-        ],
-        dim=1,
-    )
+    byte_columns = []
+    for column in columns:
+        contiguous = column.contiguous()
+        # Singleton axes can retain arbitrary strides even when contiguous();
+        # a dtype-changing view still requires an inner stride of one.
+        if contiguous.stride(-1) != 1:
+            contiguous = contiguous.clone(memory_format=torch.contiguous_format)
+
+        byte_columns.append(contiguous.view(torch.uint8).reshape(count, -1))
+
+    packed = torch.cat(byte_columns, dim=1)
     table = packed.cpu().numpy()
 
     host, start = [], 0

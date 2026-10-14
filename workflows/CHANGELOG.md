@@ -16,6 +16,8 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- **V2 annotation singleton columns** — Normalize noncanonical singleton inner strides before packing prediction columns as bytes, preserving exact integer class IDs and allowing single-detection visualization outputs.
+
 - **V2 visualization consolidation** — Replace the five prototype detection painters with `accurate` and `fast` implementations of `roboflow_core/bounding_box_visualization@v1` and `roboflow_core/label_visualization@v2`. Accurate rendering remains the default. Fast boxes use approximate tensor outlines; fast labels cache opaque sprites and use reference rendering for other styles. Both retain canonical parameters, image metadata and copy ownership. Prototype type identifiers and the public drawing intermediate are removed; old prototype workflows must use the canonical blocks. Batch amortization, fused painting and input mutation remain separate follow-up work.
 
 - **V2 model package layout** — Move `blocks.language` to `blocks.models.vision_language_models` and group the seven `blocks.models.roboflow_*` model families under `blocks.models.roboflow_platform`, dropping the `roboflow_` prefix from each Python family package. Public `roboflow_core/...@vX` block identifiers and parameters are unchanged.
