@@ -141,7 +141,9 @@ class MemoryQueue(Queue):
             except Empty:
                 break
             known, unknown = split_payload_by_api_key_hash(payload, known_hashes)
-            if known is not None:
+            if isinstance(known, list):
+                taken.extend(known)
+            elif known is not None:
                 taken.append(known)
             if unknown is not None:
                 kept.append(unknown)

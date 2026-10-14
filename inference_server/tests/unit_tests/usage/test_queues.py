@@ -520,3 +520,13 @@ def test_memory_queue_take_returns_known_parts_and_keeps_the_rest():
     assert q.qsize() == 2
     assert q.take({"b"}) == [rows_of("b", frames=2), rows_of("b", frames=4)]
     assert q.empty() is True
+
+
+def test_memory_queue_take_flattens_a_slot_holding_a_list_of_payloads():
+    q = queues.MemoryQueue(maxsize=10)
+    q.put([rows_of("a", frames=1), {**rows_of("a", frames=2), **rows_of("b")}])
+
+    taken = q.take({"a"})
+
+    assert taken == [rows_of("a", frames=1), rows_of("a", frames=2)]
+    assert list(q.queue) == [[rows_of("b")]]
