@@ -144,6 +144,14 @@ _PREFIX_MAP: Tuple[Tuple[str, str], ...] = (
         "inference.core.workflows",
         "roboflow_workflows",
     ),
+    (
+        "inference.roboflow_workflows_plugin.integrations",
+        "roboflow_workflows.core_steps.integrations.roboflow",
+    ),
+    (
+        "inference.roboflow_workflows_plugin.sinks",
+        "roboflow_workflows.core_steps.sinks.roboflow",
+    ),
 )
 
 # Historical `ActiveLearningMiddleware` import must still yield the concrete class.
