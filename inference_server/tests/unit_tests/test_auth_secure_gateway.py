@@ -276,11 +276,18 @@ def test_serverless_lookup_is_direct_without_a_gateway(session, no_gateway):
     ]
 
 
-def test_wrapped_failure_does_not_log_or_raise_the_url_with_the_api_key(
-    monkeypatch, gateway
+@pytest.mark.parametrize(
+    "through_secure_gateway,leaked_url",
+    [
+        (True, f"{GATEWAY}/proxy?url=secret-k1"),
+        (False, f"{API_BASE}/?api_key=secret-k1&nocache=true"),
+    ],
+)
+def test_lookup_failure_does_not_log_or_raise_the_url_with_the_api_key(
+    monkeypatch, gateway, through_secure_gateway, leaked_url
 ):
     leaking = RecordingSession(
-        error=OSError(f"Connection timeout to host {GATEWAY}/proxy?url=secret-k1")
+        error=OSError(f"Connection timeout to host {leaked_url}")
     )
     monkeypatch.setattr(auth_mod, "_get_session", lambda: leaking)
     logged = []
@@ -295,11 +302,16 @@ def test_wrapped_failure_does_not_log_or_raise_the_url_with_the_api_key(
     logger.addHandler(handler)
     try:
         with pytest.raises(AuthBackendUnavailable) as raised:
-            asyncio.run(auth_mod.validate_api_key("k1", through_secure_gateway=True))
+            asyncio.run(
+                auth_mod.validate_api_key(
+                    "k1", through_secure_gateway=through_secure_gateway
+                )
+            )
     finally:
         logger.removeHandler(handler)
 
     assert "secret-k1" not in str(raised.value)
+    assert raised.value.__cause__ is None
     assert not [line for line in logged if "secret-k1" in line]
 
 
@@ -309,6 +321,12 @@ class ClosableSession:
 
     async def close(self):
         self.closed = True
+
+
+class RecordingClientSession(ClosableSession):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.kwargs = kwargs
 
 
 def test_close_session_closes_the_session_and_is_idempotent(monkeypatch):
@@ -329,6 +347,20 @@ def test_close_session_closes_the_session_and_is_idempotent(monkeypatch):
     assert closed_after_first is True
     assert reopened is not opened and reopened.closed is False
     assert auth_mod._session is reopened
+
+
+@pytest.mark.parametrize("verify_ssl", [True, False])
+def test_session_honours_proxy_environment_and_tls_switch(monkeypatch, verify_ssl):
+    monkeypatch.setattr(auth_mod, "_session", None)
+    monkeypatch.setattr(configuration, "ROBOFLOW_API_VERIFY_SSL", verify_ssl)
+    monkeypatch.setattr(auth_mod.aiohttp, "ClientSession", RecordingClientSession)
+    monkeypatch.setattr(auth_mod.aiohttp, "TCPConnector", dict)
+
+    session = auth_mod._get_session()
+
+    assert session.kwargs["trust_env"] is True
+    expected_connector = None if verify_ssl else {"ssl": False}
+    assert session.kwargs.get("connector") == expected_connector
 
 
 def test_close_session_without_a_session_is_a_no_op(monkeypatch):

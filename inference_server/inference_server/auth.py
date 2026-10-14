@@ -68,7 +68,12 @@ def _get_session() -> aiohttp.ClientSession:
     """
     global _session
     if _session is None or _session.closed:
-        _session = aiohttp.ClientSession(timeout=_REQUEST_TIMEOUT)
+        connector = None
+        if not configuration.ROBOFLOW_API_VERIFY_SSL:
+            connector = aiohttp.TCPConnector(ssl=False)
+        _session = aiohttp.ClientSession(
+            timeout=_REQUEST_TIMEOUT, trust_env=True, connector=connector
+        )
     return _session
 
 
@@ -147,9 +152,7 @@ async def validate_api_key(
 
     task = _inflight.get(key_hash)
     if task is None:
-        task = asyncio.ensure_future(
-            _validate_uncached(url, request_kwargs, key_hash, through_secure_gateway)
-        )
+        task = asyncio.ensure_future(_validate_uncached(url, request_kwargs, key_hash))
         _inflight[key_hash] = task
         task.add_done_callback(lambda _: _inflight.pop(key_hash, None))
     return await asyncio.shield(task)
@@ -159,7 +162,6 @@ async def _validate_uncached(
     url: Any,
     request_kwargs: dict[str, Any],
     key_hash: str,
-    through_secure_gateway: bool = False,
 ) -> tuple[bool, Optional[str]]:
     try:
         session = _get_session()
@@ -180,13 +182,8 @@ async def _validate_uncached(
     except AuthBackendUnavailable:
         raise
     except Exception as exc:
-        if through_secure_gateway:
-            logger.warning(
-                "Auth validation failed (network error): %s", type(exc).__name__
-            )
-            raise AuthBackendUnavailable(type(exc).__name__) from None
-        logger.warning("Auth validation failed (network error)", exc_info=True)
-        raise AuthBackendUnavailable(str(exc)) from exc
+        logger.warning("Auth validation failed (network error): %s", type(exc).__name__)
+        raise AuthBackendUnavailable(type(exc).__name__) from None
 
 
 def _store(
