@@ -19,9 +19,11 @@ from inference_server.hosted.common import (
     STATIC_PREFIXES,
     UNAUTHORIZED_MESSAGE,
     HostedRequest,
+    RequestBodyTooLarge,
     _is_v2_request,
     error_response,
     is_non_billable_internal_request,
+    payload_too_large_response,
     resolve_api_key,
     send_with_workspace_header,
     workspace_id_is_valid,
@@ -107,6 +109,8 @@ _sleep = time.sleep
 
 
 async def _skip_check(request: HostedRequest) -> bool:
+    if _is_v2_request(request):
+        return False
     if request.method not in AUTHENTICATED_METHODS:
         return True
     if request.path in SKIP_PATHS or request.path.startswith(STATIC_PREFIXES):
@@ -390,11 +394,19 @@ class ServerlessAuthMiddleware:
             return
 
         request = HostedRequest(scope, receive)
-        if await _skip_check(request):
+        try:
+            skipped = await _skip_check(request)
+            if not skipped and request.declares_oversized_body:
+                raise RequestBodyTooLarge()
+            api_key = None if skipped else await resolve_api_key(request)
+        except RequestBodyTooLarge:
+            response = payload_too_large_response(request)
+            await response(scope, request.receive, send)
+            return
+        if skipped:
             await self.app(scope, request.receive, send)
             return
 
-        api_key = await resolve_api_key(request)
         if api_key is None:
             response = error_response(401, UNAUTHORIZED_MESSAGE)
             _attach_observability_headers(response)

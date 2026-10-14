@@ -68,7 +68,7 @@ def allow_list(monkeypatch):
         ("GET", "/static/app.js", True),
         ("GET", "/_next/static/chunk.js", True),
         ("PUT", "/infer/object_detection", True),
-        ("DELETE", "/v2/models", True),
+        ("DELETE", "/v2/models", False),
         ("PATCH", "/workflows/run", True),
         ("GET", "/model/registry", False),
         ("GET", "/workflows/blocks/describe", False),
@@ -136,6 +136,18 @@ def test_workspace_outside_allow_list_is_401(client, workspace_lookup, allow_lis
     assert response.status_code == 401
     assert response.json() == UNAUTHORIZED
     assert "X-Workspace-Id" not in response.headers
+
+
+def test_v2_unload_all_checks_the_allow_list(client, workspace_lookup, allow_list):
+    workspace_lookup.answers = {"k": (True, "ws-a"), "j": (True, "ws-other")}
+
+    allowed = client.delete("/v2/models", headers={"Authorization": "Bearer k"})
+    denied = client.delete("/v2/models", headers={"Authorization": "Bearer j"})
+
+    assert allowed.status_code == 200
+    assert denied.status_code == 401
+    assert denied.json() == UNAUTHORIZED
+    assert workspace_lookup.calls == ["k", "j"]
 
 
 def test_invalid_key_is_401(client, workspace_lookup, allow_list):
@@ -223,3 +235,92 @@ def test_bearer_header_follows_switch_outside_v2_routes(
         assert response.status_code == 401
         assert response.json() == UNAUTHORIZED
         assert workspace_lookup.calls == []
+
+
+def _mounted_v2_app():
+    from inference_server.routers import v2_models
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    app.include_router(v2_models.router)
+
+    @app.api_route(
+        "/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"]
+    )
+    async def _probe(request: Request):
+        return JSONResponse({})
+
+    app.add_middleware(DedicatedAuthMiddleware)
+    return app
+
+
+@pytest.mark.parametrize("root_path", ["/static", "/_next"])
+def test_mounted_v2_unload_all_checks_the_allow_list(
+    workspace_lookup, allow_list, root_path
+):
+    workspace_lookup.answers = {"j": (True, "ws-other")}
+    client = TestClient(_mounted_v2_app(), root_path=root_path)
+
+    response = client.delete(
+        f"{root_path}/v2/models", headers={"Authorization": "Bearer j"}
+    )
+
+    assert response.status_code == 401
+    assert workspace_lookup.calls == ["j"]
+
+
+@pytest.mark.parametrize("root_path", ["/static", "/_next"])
+def test_mounted_non_v2_methods_keep_the_static_exemption(
+    workspace_lookup, allow_list, root_path
+):
+    client = TestClient(_mounted_v2_app(), root_path=root_path)
+
+    response = client.get(f"{root_path}/app.js")
+
+    assert response.status_code == 200
+    assert workspace_lookup.calls == []
+
+
+PAYLOAD_TOO_LARGE = {"message": "Request payload too large."}
+
+
+@pytest.mark.parametrize(
+    "url,headers,payload",
+    [
+        ("/infer/x", {}, {"api_key": "k", "pad": "x" * 64}),
+        ("/infer/x?api_key=k", {}, {"pad": "x" * 64}),
+        ("/infer/x", {"Authorization": "Bearer k"}, {"pad": "x" * 64}),
+    ],
+)
+def test_declared_oversized_request_is_413_before_auth(
+    client, workspace_lookup, allow_list, monkeypatch, url, headers, payload
+):
+    monkeypatch.setattr(configuration, "MAX_BODY_BYTES", 32)
+    monkeypatch.setattr(configuration, "ALLOW_API_KEY_FROM_HEADERS", True)
+    workspace_lookup.answers = {"k": (True, "ws-a")}
+
+    response = client.post(url, headers=headers, json=payload)
+
+    assert response.status_code == 413
+    assert response.json() == PAYLOAD_TOO_LARGE
+    assert workspace_lookup.calls == []
+
+
+def test_declared_oversized_v2_request_is_413_in_the_v2_envelope(
+    workspace_lookup, allow_list, monkeypatch
+):
+    monkeypatch.setattr(configuration, "MAX_BODY_BYTES", 32)
+    workspace_lookup.answers = {"k": (True, "ws-a")}
+    client = TestClient(_mounted_v2_app())
+
+    response = client.post(
+        "/v2/models/infer",
+        headers={"Authorization": "Bearer k"},
+        content=b"x" * 64,
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "error_code": "PAYLOAD_TOO_LARGE",
+        "description": "request body exceeds 32 byte limit",
+    }
+    assert workspace_lookup.calls == []

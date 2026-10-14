@@ -1,7 +1,11 @@
 import pytest
 
 from inference_server import configuration
-from inference_server.hosted.common import HostedRequest, resolve_api_key
+from inference_server.hosted.common import (
+    HostedRequest,
+    RequestBodyTooLarge,
+    resolve_api_key,
+)
 
 
 def _scope(method="POST", path="/x", query=b"", headers=None):
@@ -52,17 +56,32 @@ def test_garbage_content_length_reads_as_zero():
     assert request.content_length == 0
 
 
-@pytest.mark.asyncio
-async def test_oversized_json_body_is_still_parsed(monkeypatch):
+def test_declared_oversized_body_is_flagged_without_reading_it(monkeypatch):
     monkeypatch.setattr(configuration, "MAX_BODY_BYTES", 10)
     body = b'{"api_key": "k", "dynamic_blocks_definitions": [1]}'
+
+    def _receive():
+        raise AssertionError("body must not be read")
+
+    request = HostedRequest(_scope(headers=_json_headers(body)), _receive)
+
+    assert request.declares_oversized_body is True
+    assert request.has_json_body is False
+
+
+@pytest.mark.asyncio
+async def test_buffering_stops_once_actual_bytes_pass_the_cap(monkeypatch):
+    monkeypatch.setattr(configuration, "MAX_BODY_BYTES", 10)
     request = HostedRequest(
-        _scope(headers=_json_headers(body)),
-        _receive_of({"type": "http.request", "body": body, "more_body": False}),
+        _scope(headers=_json_headers(b"{}")),
+        _receive_of(
+            {"type": "http.request", "body": b'{"api_key":', "more_body": True},
+            {"type": "http.request", "body": b' "k"}', "more_body": False},
+        ),
     )
 
-    assert request.has_json_body is True
-    assert await resolve_api_key(request) == "k"
+    with pytest.raises(RequestBodyTooLarge):
+        await request.json()
 
 
 @pytest.mark.asyncio

@@ -125,7 +125,7 @@ def _ok_payload(**overrides):
         ("GET", "/static/app.js", {}, True),
         ("GET", "/_next/static/chunk.js", {}, True),
         ("PUT", "/infer/object_detection", {}, True),
-        ("DELETE", "/v2/models", {}, True),
+        ("DELETE", "/v2/models", {}, False),
         ("PATCH", "/workflows/run", {}, True),
         ("GET", "/workflows/blocks/describe", {}, True),
         ("POST", "/workflows/blocks/describe", {"json": {}}, True),
@@ -746,3 +746,54 @@ def test_bearer_header_follows_switch_outside_v2_routes(
         assert response.status_code == 401
         assert response.json() == UNAUTHORIZED
         assert keys == []
+
+
+@pytest.mark.parametrize("root_path", ["/static", "/_next"])
+def test_mounted_v2_unload_all_is_authorized(platform, root_path):
+    from inference_server.routers import v2_models
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    app.include_router(v2_models.router)
+
+    @app.api_route("/{full_path:path}", methods=["GET", "DELETE"])
+    async def _probe(request: Request):
+        return JSONResponse({})
+
+    app.add_middleware(ServerlessAuthMiddleware)
+    client = TestClient(app, root_path=root_path)
+
+    response = client.delete(f"{root_path}/v2/models")
+    static = client.get(f"{root_path}/app.js")
+
+    assert response.status_code == 401
+    assert response.json() == UNAUTHORIZED
+    assert static.status_code == 200
+    assert platform.calls == []
+
+
+@pytest.mark.parametrize(
+    "url,headers,payload",
+    [
+        ("/infer/x", {}, {"api_key": "k", "pad": "x" * 64}),
+        ("/infer/x?api_key=k", {}, {"pad": "x" * 64}),
+        ("/infer/x", {"Authorization": "Bearer k"}, {"pad": "x" * 64}),
+        (
+            "/infer/x?api_key=k",
+            {},
+            {"countinference": False, "service_secret": "s3cret", "pad": "x" * 64},
+        ),
+    ],
+)
+def test_declared_oversized_request_is_413_before_the_usage_check(
+    client, platform, monkeypatch, url, headers, payload
+):
+    monkeypatch.setattr(configuration, "MAX_BODY_BYTES", 32)
+    monkeypatch.setattr(configuration, "ALLOW_API_KEY_FROM_HEADERS", True)
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", "s3cret")
+    platform.answer = (200, _ok_payload())
+
+    response = client.post(url, headers=headers, json=payload)
+
+    assert response.status_code == 413
+    assert response.json() == {"message": "Request payload too large."}
+    assert platform.calls == []

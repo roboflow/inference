@@ -9,8 +9,10 @@ from inference_server.hosted.common import (
     STATIC_PREFIXES,
     UNAUTHORIZED_MESSAGE,
     HostedRequest,
+    RequestBodyTooLarge,
     _is_v2_request,
     error_response,
+    payload_too_large_response,
     resolve_api_key,
     send_with_workspace_header,
 )
@@ -47,6 +49,8 @@ def allowed_workspaces() -> Set[str]:
 
 
 def _skip_check(request: HostedRequest) -> bool:
+    if _is_v2_request(request):
+        return False
     if request.method not in AUTHENTICATED_METHODS:
         return True
 
@@ -74,7 +78,14 @@ class DedicatedAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        api_key = await resolve_api_key(request)
+        try:
+            if request.declares_oversized_body:
+                raise RequestBodyTooLarge()
+            api_key = await resolve_api_key(request)
+        except RequestBodyTooLarge:
+            response = payload_too_large_response(request)
+            await response(scope, request.receive, send)
+            return
         if api_key is None:
             response = error_response(401, UNAUTHORIZED_MESSAGE)
             await response(scope, request.receive, send)

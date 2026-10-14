@@ -177,3 +177,13 @@ def _async_return(value):
         return value
 
     return _call
+
+
+def test_declared_oversized_non_billable_request_is_413(client, secret, monkeypatch):
+    monkeypatch.setattr(configuration, "MAX_BODY_BYTES", 32)
+    payload = {"countinference": False, "service_secret": "s3cret", "pad": "x" * 64}
+
+    response = client.post("/x", json=payload)
+
+    assert response.status_code == 413
+    assert response.json() == {"message": "Request payload too large."}

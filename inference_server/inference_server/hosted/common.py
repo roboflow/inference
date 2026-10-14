@@ -7,11 +7,14 @@ from typing import Any, Dict, Optional
 from urllib.parse import parse_qsl
 
 from fastapi.responses import JSONResponse
+from starlette.responses import Response
 from starlette.routing import Match
 
 from inference_server import configuration
 from inference_server.auth import extract_bearer
+from inference_server.errors import error_response as v2_error_response
 from inference_server.hosted.assume_identity import enforce_credits_verification
+from inference_server.legacy.errors import PAYLOAD_TOO_LARGE_MESSAGE
 
 WORKSPACE_ID_HEADER = "X-Workspace-Id"
 UNAUTHORIZED_MESSAGE = "Unauthorized api_key"
@@ -19,6 +22,10 @@ AUTHENTICATED_METHODS = ("GET", "POST")
 STATIC_PREFIXES = ("/static/", "/_next/")
 
 _WORKSPACE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+
+
+class RequestBodyTooLarge(Exception):
+    pass
 
 
 def workspace_id_is_valid(workspace_id: object) -> bool:
@@ -72,8 +79,15 @@ class HostedRequest:
             return 0
 
     @property
+    def declares_oversized_body(self) -> bool:
+        return self.content_length > configuration.MAX_BODY_BYTES
+
+    @property
     def has_json_body(self) -> bool:
-        return self.content_type == "application/json" and self.content_length > 0
+        return (
+            self.content_type == "application/json"
+            and 0 < self.content_length <= configuration.MAX_BODY_BYTES
+        )
 
     @property
     def json_params(self) -> Dict[str, Any]:
@@ -97,12 +111,17 @@ class HostedRequest:
             return self._body
 
         chunks = []
+        total = 0
         while True:
             message = await self._receive()
             if message["type"] != "http.request":
                 self._disconnect = message
                 break
-            chunks.append(message.get("body", b""))
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > configuration.MAX_BODY_BYTES:
+                raise RequestBodyTooLarge()
+            chunks.append(chunk)
             if not message.get("more_body", False):
                 break
         self._body = b"".join(chunks)
@@ -174,6 +193,24 @@ def error_response(
         response.headers[WORKSPACE_ID_HEADER] = workspace_id
 
     return response
+
+
+def payload_too_large_response(request: HostedRequest) -> Response:
+    """Build the 413 answered before hosted checks read an oversized body.
+
+    Args:
+        request: Request whose body exceeds ``MAX_BODY_BYTES``.
+
+    Returns:
+        The v2 error envelope for v2 routes, the legacy body otherwise.
+    """
+    if _is_v2_request(request):
+        max_bytes = configuration.MAX_BODY_BYTES
+        return v2_error_response(
+            413, "PAYLOAD_TOO_LARGE", f"request body exceeds {max_bytes} byte limit"
+        )
+
+    return JSONResponse(status_code=413, content={"message": PAYLOAD_TOO_LARGE_MESSAGE})
 
 
 def send_with_workspace_header(send, workspace_id: Optional[str]):
@@ -293,8 +330,15 @@ class BillingIntentMiddleware:
             return
 
         request = HostedRequest(scope, receive)
-        if request.has_json_body:
-            await request.json()
+        try:
+            if request.declares_oversized_body:
+                raise RequestBodyTooLarge()
+            if request.has_json_body:
+                await request.json()
+        except RequestBodyTooLarge:
+            response = payload_too_large_response(request)
+            await response(scope, request.receive, send)
+            return
         enforce = not is_non_billable_internal_request(request)
 
         token = enforce_credits_verification.set(enforce)
