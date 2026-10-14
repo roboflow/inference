@@ -16,10 +16,6 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
-## `0.2.9`
-
-Bundled execution engine: `1.16.1`.
-
 ### Added
 
 - The nine Roboflow platform blocks are core blocks of this package again: dataset upload v1 and v2, custom metadata, model monitoring inference aggregator, vision events, vision event bundle, asset library attributes, visual search and visual search classifier. They live in `core_steps.sinks.roboflow` and `core_steps.integrations.roboflow`, so a standalone install now lists 248 blocks. Inference 1.6.1 to 1.7.2 shipped them as the `inference.roboflow_workflows_plugin` plugin; that plugin is now an empty compatibility stub.
