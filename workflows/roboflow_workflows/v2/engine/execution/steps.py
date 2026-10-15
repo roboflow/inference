@@ -15,7 +15,12 @@
               ExecutionContext with the run id and the call's indices: the
               selected implementation's run(), or for execution "phases"
               run_phases over its graph with the same arguments; a phase
-              failure names the phase in both modes
+              failure names the phase in both modes. A coalescing step
+              (PlannedStep.coalesces_invocations) makes one batched
+              run_many(invocations=...) call with every admitted row's run()
+              arguments, none when nothing is admitted; its result splits
+              per row after readiness, and InvocationBatchError(position)
+              names a failing row. Observers get one on_invocation per row
     stages    in a pipelined run each call takes the pulse's turn at the
               step's stages (pipelining.stages): one per phase when the
               implementation allows phase_overlap, else one for the whole
@@ -90,9 +95,11 @@ from roboflow_workflows.v2.engine.declaration import (
 )
 from roboflow_workflows.v2.engine.errors import (
     ContractError,
+    InvocationBatchError,
     StepExecutionError,
     StepPath,
     format_step_path,
+    _is_invocation_position,
 )
 from roboflow_workflows.v2.engine.execution.arguments import (
     Leaf,
@@ -493,11 +500,16 @@ class _Structure:
 
 @dataclass(frozen=True)
 class _Call:
-    """One block call covering one invocation, or all of a batch step."""
+    """One block call covering one invocation, or all of a batch step.
+
+    A coalesced call has ``invocations``: the ``run`` arguments of each
+    index, aligned with ``indices``; its ``arguments`` are unused.
+    """
 
     indices: Tuple[Index, ...]
     arguments: Mapping[str, Any]
     batched: bool
+    invocations: Optional[Tuple[Mapping[str, Any], ...]] = None
 
 
 def execute_steps(run: RunState, schedule: StepSchedule) -> None:
@@ -621,7 +633,9 @@ def _execute_step(run: RunState, step: PlannedStep) -> None:
         queried=queried,
     )
     observer.on_step_finished(
-        step=step.path, invocations=len(calls), skipped=len(skipped)
+        step=step.path,
+        invocations=len(admitted) if step.coalesces_invocations else len(calls),
+        skipped=len(skipped)
     )
     run.record(
         "step_finished", step=location, invocations=len(calls), skipped=len(skipped)
@@ -884,15 +898,26 @@ def _prepare_calls(
     entries: Sequence[Entry],
 ) -> List[_Call]:
     if not step.delivers_batches:
-        calls = [
-            _Call(
-                indices=(index,),
-                arguments=arguments_for(step, [leaf.value for leaf in leaves[index]]),
-                batched=False,
-            )
+        rows = [
+            arguments_for(step, [leaf.value for leaf in leaves[index]])
             for index in admitted
         ]
-        return calls
+        if not step.coalesces_invocations:
+            calls = [
+                _Call(indices=(index,), arguments=row, batched=False)
+                for index, row in zip(admitted, rows)
+            ]
+            return calls
+        if not admitted:
+            return []
+
+        coalesced_call = _Call(
+            indices=tuple(admitted),
+            arguments={},
+            batched=True,
+            invocations=tuple(rows),
+        )
+        return [coalesced_call]
 
     if not admitted:
         return []
@@ -911,11 +936,22 @@ def _prepare_calls(
 
 
 class _BlockFailure(Exception):
-    """A block call or one of its futures failed; the cause is chained."""
+    """A block call or one of its futures failed; the cause is chained.
 
-    def __init__(self, message: str, *, phase: Optional[str] = None):
+    ``position`` names the failing row of a coalesced call, already checked
+    against its invocations; ``None`` fails the whole call.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        phase: Optional[str] = None,
+        position: Optional[int] = None,
+    ):
         super().__init__(message)
         self.phase = phase
+        self.position = position
 
 
 class _StepScope:
@@ -1088,13 +1124,17 @@ def _invoke(
     """Call the block once, wait for its futures and split the result per index.
 
     Returns the results by index and the outputs the call asked ``wants`` about.
+    A coalesced call is traced once (physical), but reported to the observer
+    per row (logical), only after its whole result is ready and well-sized.
     """
     index = None if call.batched else call.indices[0]
+    details = {"run_many": True} if call.invocations is not None else {}
     run.record(
         "invocation",
         step=list(step.path),
         index=list(index) if index is not None else None,
         indices=[list(item) for item in call.indices],
+        **details,
     )
     choice = step.implementation
     context = ExecutionContext(
@@ -1117,6 +1157,8 @@ def _invoke(
             with stages.call(WHOLE_CALL):
                 result = _ready_result(run, step, call, context=context)
     except _BlockFailure as failure:
+        if failure.position is not None:
+            index = call.indices[failure.position]
         _fail(
             run,
             step,
@@ -1125,10 +1167,14 @@ def _invoke(
             cause=failure.__cause__,
             phase=failure.phase,
         )
+    asked = frozenset(context.queried_outputs)
+    if call.invocations is not None:
+        split = _split_rows(run, step, call, result=result)
+        return split, asked
+
     run.observer.on_invocation(
         step=step.path, index=index, arguments=call.arguments, result=result
     )
-    asked = frozenset(context.queried_outputs)
 
     if not call.batched:
         return {index: result}, asked
@@ -1146,6 +1192,31 @@ def _invoke(
     return split, asked
 
 
+def _split_rows(
+    run: RunState, step: PlannedStep, call: _Call, *, result: Any
+) -> Dict[Index, Any]:
+    """Check a ready ``run_many`` result, then report and return it per row."""
+    if not isinstance(result, (list, tuple)) or len(result) != len(call.indices):
+        got = type(result).__name__
+        if isinstance(result, (list, tuple)):
+            got = f"{got} of {len(result)}"
+        _fail(
+            run,
+            step,
+            f"run_many() must return a list with one result per invocation "
+            f"({len(call.indices)}), got {got}",
+            index=None,
+        )
+
+    split = dict(zip(call.indices, result))
+    for index, arguments in zip(call.indices, call.invocations):
+        run.observer.on_invocation(
+            step=step.path, index=index, arguments=arguments, result=split[index]
+        )
+
+    return split
+
+
 def _ready_result(
     run: RunState,
     step: PlannedStep,
@@ -1161,6 +1232,9 @@ def _ready_result(
         except PhaseFailure as failure:
             original = failure.__cause__
             raise _BlockFailure(str(failure), phase=failure.phase) from original
+        except InvocationBatchError as error:
+            failure, cause = _invocation_failure(call, error)
+            raise failure from cause
         except Exception as error:
             raise _BlockFailure(
                 f"block raised {type(error).__name__}: {error}"
@@ -1178,6 +1252,38 @@ def _ready_result(
     return result
 
 
+def _invocation_failure(
+    call: _Call, error: InvocationBatchError
+) -> Tuple[_BlockFailure, BaseException]:
+    """Attribute a synchronous ``InvocationBatchError`` to its row, when valid.
+
+    Returns the failure and its cause: the row's original exception for a
+    valid position of a coalesced call, else the error itself, failing the
+    whole call (from ``run``, or with a position outside the invocations).
+    """
+    if call.invocations is None:
+        failure = _BlockFailure(f"block raised {type(error).__name__}: {error}")
+        return failure, error
+
+    size = len(call.invocations)
+    position = getattr(error, "position", None)
+    if not _is_invocation_position(position, size=size):
+        failure = _BlockFailure(
+            f"run_many() raised InvocationBatchError for position {position!r}, "
+            f"which is not a position of its {size} invocation(s)"
+        )
+        return failure, error
+
+    original = error.__cause__ if error.__cause__ is not None else error
+    failure = _BlockFailure(
+        f"run_many() invocation {position} raised {type(original).__name__}: "
+        f"{original}",
+        position=position,
+    )
+
+    return failure, original
+
+
 def _call_block(
     run: RunState,
     step: PlannedStep,
@@ -1185,8 +1291,11 @@ def _call_block(
     *,
     around_phase: Optional[Callable[[str], ContextManager[None]]],
 ) -> Any:
-    """The one place where execution modes differ: ``run()`` or the phase graph."""
+    """Where execution modes differ: ``run()``, ``run_many()`` or the phase graph."""
     instance = run.session.instances[step.path]
+    if call.invocations is not None:
+        raw = instance.run_many(invocations=call.invocations)
+        return raw
     if step.execution == "run":
         raw = instance.run(**call.arguments)
         return raw

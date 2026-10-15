@@ -13,6 +13,9 @@ The V2 runtime distinguishes three failure families:
 A rejected graph update of a session raises a ``GraphUpdateError``, which is
 a ``ContractError``. Using a closed session raises ``SessionClosedError``.
 
+``InvocationBatchError`` is raised by implementations, not by the engine: a
+``run_many`` method uses it to name the invocation that failed.
+
 ``ContractError`` is defined with the shared data contracts
 (``roboflow_workflows.v2.data.errors``) and re-exported here.
 
@@ -247,6 +250,53 @@ class StepExecutionError(WorkflowExecutionError):
         self.block_type = block_type
         self.index = index
         self.phase = phase
+
+
+class InvocationBatchError(Exception):
+    """Attributes a ``run_many`` failure to one of its invocations.
+
+    An implementation raises it from the row's original exception, e.g.
+    ``raise InvocationBatchError(position) from error``. The engine fails the
+    step at that row's logical index with the original exception as the
+    cause. A position outside the call's invocations, or this error raised
+    later (from a future) or from ``run``, fails the whole call instead.
+
+    Args:
+        position: Position in the ``invocations`` sequence, from 0.
+
+    Raises:
+        ContractError: When ``position`` is not a non-negative int (a bool
+            is rejected).
+    """
+
+    def __init__(self, position: int):
+        if not _is_invocation_position(position):
+            raise ContractError(
+                f"InvocationBatchError position must be a non-negative int, got "
+                f"{position!r}"
+            )
+        super().__init__(f"run_many invocation at position {position} failed")
+        self.position = position
+
+
+def _is_invocation_position(position: Any, *, size: Optional[int] = None) -> bool:
+    """Whether ``position`` is a valid ``InvocationBatchError`` position.
+
+    Args:
+        position: Candidate position.
+        size: Number of invocations of the call; ``None`` skips the upper bound.
+
+    Returns:
+        ``True`` for a non-bool int at least 0 and, with ``size``, below it.
+    """
+    valid = (
+        isinstance(position, int)
+        and not isinstance(position, bool)
+        and position >= 0
+        and (size is None or position < size)
+    )
+
+    return valid
 
 
 class WorkflowInputError(WorkflowExecutionError):

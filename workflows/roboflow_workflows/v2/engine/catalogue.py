@@ -751,6 +751,7 @@ def _same_implementation(a: ImplementationSpec, b: ImplementationSpec) -> bool:
         and a.quality == b.quality
         and a.phases == b.phases
         and a.phase_overlap == b.phase_overlap
+        and a.run_many == b.run_many
         and len(a.resources) == len(b.resources)
         and all(map(_same_resource, a.resources, b.resources))
     )
