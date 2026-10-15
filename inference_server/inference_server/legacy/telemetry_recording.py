@@ -10,14 +10,18 @@ from inference_server import telemetry
 _STAT_ERROR_WRAPPERS = (PermissionError, LookupError, RuntimeError)
 
 
-def _recorded_error_type(error: BaseException) -> str:
+def _recorded_error(error: BaseException) -> BaseException:
     cause = error.__cause__
     if type(error) in _STAT_ERROR_WRAPPERS and isinstance(
         cause, (BaseInferenceModelsError, InvalidPipelineIdError)
     ):
-        return type(cause).__name__
+        return cause
 
-    return type(error).__name__
+    return error
+
+
+def _recorded_error_type(error: BaseException) -> str:
+    return type(_recorded_error(error)).__name__
 
 
 RECORDED_LOAD_EVENTS: contextvars.ContextVar[Optional[set[int]]] = (

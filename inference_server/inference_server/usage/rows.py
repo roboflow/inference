@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 from inference_sdk.config import apply_duration_minimum, execution_id
 from inference_server import configuration
 from inference_server.legacy.errors import InputImageLoadError, redact_text
-from inference_server.legacy.telemetry_recording import _recorded_error_type
+from inference_server.legacy.telemetry_recording import _recorded_error
 from inference_server.usage.payload_helpers import sha256_hash
 
 try:
@@ -220,13 +220,14 @@ def exception_error_details(error: BaseException, secrets: tuple) -> Dict[str, A
         ``error``, ``error_type`` and, when known, ``error_status_code``; an
         image that cannot be loaded carries no status, as on the legacy server.
     """
-    error_type = _recorded_error_type(error)
+    recorded_error = _recorded_error(error)
+    error_type = type(recorded_error).__name__
     inner_error_type = getattr(error, "inner_error_type", None)
     if isinstance(inner_error_type, str) and inner_error_type:
         error_type = inner_error_type
     message = redact_text(str(error), secrets)[:MAX_ERROR_MESSAGE_LENGTH]
     details = {"error": f"{error_type}: {message}", "error_type": error_type}
-    status_code = error_status_code(error)
+    status_code = error_status_code(recorded_error)
     if status_code is not None and not isinstance(error, InputImageLoadError):
         details["error_status_code"] = status_code
 

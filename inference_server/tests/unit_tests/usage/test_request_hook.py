@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import io
+import json
 import logging
 import time
 from types import SimpleNamespace
@@ -13,7 +14,13 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from inference_models.errors import UnauthorizedModelAccessError
+from inference_models.errors import (
+    ForbiddenModelAccessError,
+    PaymentRequiredModelAccessError,
+    RetryError,
+    UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
+)
 from inference_sdk.config import apply_duration_minimum, outbound_service_secret
 from inference_server import configuration
 from inference_server.legacy.errors import SERVICE_MISCONFIGURATION_MESSAGE
@@ -290,6 +297,70 @@ def test_registry_denial_records_the_cause_as_error_type(
     assert row["error_type"] == "UnauthorizedModelAccessError"
     assert row["resource_details"]["error"] == "UnauthorizedModelAccessError: denied"
     assert "error_status_code" not in row["resource_details"]
+
+
+def _posted_rows(usage_client, gateway, monkeypatch):
+    posts = []
+
+    def _post(url, **kwargs):
+        posts.append(kwargs["json"])
+        return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr("inference_server.usage.delivery.requests.post", _post)
+    collector = UsageCollector()
+    monkeypatch.setattr(
+        "inference_server.app._start_usage_collector", lambda: collector
+    )
+    client = usage_client(gateway)
+
+    response = client.post(
+        "/infer/object_detection",
+        json={"model_id": "ds/1", "api_key": "k", "image": _image()},
+    )
+    client.__exit__(None, None, None)
+
+    assert len(posts) == 1
+    rows = posts[0]
+
+    return response, rows
+
+
+@pytest.mark.parametrize(
+    "error,status_code",
+    [
+        (PaymentRequiredModelAccessError("no credits"), 402),
+        (ForbiddenModelAccessError("forbidden"), 403),
+        (UsagePausedModelAccessError("paused"), 423),
+    ],
+)
+def test_registry_refusal_posts_the_status_and_type_of_the_refusal(
+    usage_client, fake_stat, monkeypatch, error, status_code
+):
+    fake_stat["ds/1"] = error
+
+    response, rows = _posted_rows(usage_client, FakeGateway(), monkeypatch)
+
+    assert response.status_code == status_code
+    assert [row["category"] for row in rows] == ["request"]
+    details = json.loads(rows[0]["resource_details"])
+    assert details["error_type"] == type(error).__name__
+    assert details["error_status_code"] == status_code
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OSError("unreachable"), RetryError("retries exhausted")],
+)
+def test_wrapped_registry_failure_without_a_status_posts_no_status(
+    usage_client, fake_stat, monkeypatch, error
+):
+    fake_stat["ds/1"] = error
+
+    _, rows = _posted_rows(usage_client, FakeGateway(), monkeypatch)
+
+    assert [row["category"] for row in rows] == ["request"]
+    details = json.loads(rows[0]["resource_details"])
+    assert "error_status_code" not in details
 
 
 def test_invalid_image_records_the_legacy_error_type_without_a_status(

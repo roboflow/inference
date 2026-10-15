@@ -15,6 +15,11 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import
     record_block_duration,
 )
 
+from inference_models.errors import (
+    ForbiddenModelAccessError,
+    PaymentRequiredModelAccessError,
+    UsagePausedModelAccessError,
+)
 from inference_sdk.config import apply_duration_minimum
 from inference_server import configuration
 from inference_server.legacy.bridge import (
@@ -407,6 +412,38 @@ def test_failing_step_records_an_error_row_per_category(
     assert model["resource_id"] == "ds/1"
     assert model["error_type"] == "RuntimeError"
     assert model["resource_details"]["error"] == "RuntimeError: step broke"
+
+
+@pytest.mark.parametrize(
+    "error,status_code",
+    [
+        (PaymentRequiredModelAccessError("no credits"), 402),
+        (ForbiddenModelAccessError("forbidden"), 403),
+        (UsagePausedModelAccessError("paused"), 423),
+    ],
+)
+def test_registry_refusal_of_a_step_records_its_status_and_type(
+    usage_client, usage_collector, fake_stat, error, status_code
+):
+    gateway = _detection_gateway(fake_stat, "ds/1")
+    fake_stat["ds/1"] = error
+    client = usage_client(gateway)
+
+    response = client.post(
+        "/workflows/run",
+        json={
+            "specification": _detection_workflow("ds/1"),
+            "inputs": {"image": {"type": "base64", "value": _jpeg_b64()}},
+            "api_key": "k",
+        },
+    )
+
+    assert response.status_code == status_code, response.text
+    assert sorted(_categories(usage_collector)) == ["request", "workflows"]
+    for row in usage_collector.rows:
+        assert row["error_type"] == type(error).__name__
+        assert row["error_status_code"] == status_code
+        assert row["resource_details"]["error_status_code"] == status_code
 
 
 @pytest.mark.parametrize(
