@@ -76,6 +76,13 @@ class _FakeFormData(dict):
                 yield k, v
 
 
+@pytest.fixture(autouse=True)
+def _non_global_url_destinations_refused(monkeypatch):
+    monkeypatch.setattr(
+        "inference_server.configuration.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", False
+    )
+
+
 # ---------------------------------------------------------------------------
 # Single-image tests
 # ---------------------------------------------------------------------------

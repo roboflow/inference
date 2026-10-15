@@ -16,16 +16,26 @@ import uuid
 import warnings
 from typing import Optional
 
-from inference_models.configuration import INFERENCE_HOME as _MODELS_INFERENCE_HOME
-from inference_models.configuration import OFFLINE_MODE as _MODELS_OFFLINE_MODE
-from inference_models.configuration import SECURE_GATEWAY as _MODELS_SECURE_GATEWAY
-from inference_models.configuration import (
+from inference_server.legacy_env import apply_legacy_env
+
+apply_legacy_env()
+
+from inference_models.configuration import (  # noqa: E402
+    INFERENCE_HOME as _MODELS_INFERENCE_HOME,
+)
+from inference_models.configuration import (  # noqa: E402
+    OFFLINE_MODE as _MODELS_OFFLINE_MODE,
+)
+from inference_models.configuration import (  # noqa: E402
+    SECURE_GATEWAY as _MODELS_SECURE_GATEWAY,
+)
+from inference_models.configuration import (  # noqa: E402
     VLLM_PROXY_ENABLED as _MODELS_VLLM_PROXY_ENABLED,
 )
-from inference_models.configuration import (
+from inference_models.configuration import (  # noqa: E402
     VLLM_REQUEST_TIMEOUT_S as _MODELS_VLLM_REQUEST_TIMEOUT_S,
 )
-from inference_models.utils.environment import (
+from inference_models.utils.environment import (  # noqa: E402
     get_boolean_from_env,
     get_float_from_env,
     get_integer_from_env,

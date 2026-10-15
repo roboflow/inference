@@ -1,6 +1,8 @@
 import ast
 import logging
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,7 @@ from inference_server.legacy_env import (
 )
 
 _PKG_ROOT = Path(__file__).resolve().parents[2] / "inference_server"
-_CALL_POINTS = ("app.py", "launcher.py")
+_CALL_POINTS = ("app.py", "launcher.py", "configuration.py")
 _CONFIGURED_PACKAGES = (
     "inference_server",
     "inference_model_manager",
@@ -320,3 +322,27 @@ def test_call_point_applies_legacy_env_before_configured_imports(module_name):
         if _imports_configured_package(node):
             assert applied, f"{module_name}: import before apply_legacy_env()"
     assert applied, f"{module_name}: apply_legacy_env() never called"
+
+
+def test_importing_configuration_first_applies_legacy_env():
+    env = {name: value for name, value in os.environ.items() if name not in _ALL_NAMES}
+    env["PROJECT"] = "roboflow-staging"
+    env["MAX_ACTIVE_MODELS"] = "7"
+    script = (
+        "import os\n"
+        "from inference_server import configuration\n"
+        "from inference_models import configuration as models\n"
+        "print(configuration.API_BASE_URL, models.ROBOFLOW_API_HOST,"
+        " os.environ['INFERENCE_MAX_ACTIVE_MODELS'])"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == [
+        "https://api.roboflow.one",
+        "https://api.roboflow.one",
+        "7",
+    ]

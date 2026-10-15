@@ -502,10 +502,14 @@ def test_workspace_resolver_returns_workspace(clean_workspace_cache):
         assert host.WORKSPACE_RESOLVER.resolve_workspace("good") == "my-ws"
 
 
-def test_image_codec_refuses_pickled_numpy_and_local_files():
+def test_image_codec_refuses_pickled_numpy_and_local_files(monkeypatch):
     from roboflow_workflows.errors import WorkflowImageLoadError
 
     import inference_server.workflows.host as host
+
+    monkeypatch.setattr(
+        host.configuration, "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM", False
+    )
 
     with pytest.raises(WorkflowImageLoadError):
         host.GUARDED_IMAGE_CODEC.load_image({"type": "numpy", "value": b"x"})
