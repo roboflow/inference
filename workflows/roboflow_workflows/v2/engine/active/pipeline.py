@@ -219,6 +219,11 @@ class PipelinedDriver:
 
     # Driver interface (called by ActiveRun and its readers) -------------------
 
+    def join(self, timeout: Optional[float]) -> bool:
+        if self._dispatcher.ident is not None:
+            self._dispatcher.join(timeout)
+        return not self._dispatcher.is_alive()
+
     def start(self) -> None:
         """Start the workers and the dispatcher; stop the workers if that fails."""
         self._pool = WorkerPool(

@@ -398,6 +398,9 @@ class _Driver(Protocol):
     def start(self) -> None:
         """``ActiveRun._launch``, before any reader starts: start own threads."""
 
+    def join(self, timeout: Optional[float]) -> bool:
+        """Join the controller after logical completion; whether it exited."""
+
     def admit(
         self, slot: _SourceSlot, emission: Emission, *, observed: Timestamp
     ) -> bool:
@@ -1205,14 +1208,16 @@ class ActiveRun:
         self._abort()
 
     def wait(self, timeout: Optional[float] = None) -> bool:
-        """Wait until the run is done.
+        """Wait until the run is done and its owned threads have exited.
 
         Args:
-            timeout: Seconds to wait; forever when ``None``.
+            timeout: Total seconds for completion and thread joins; forever
+                when ``None``.
 
         Returns:
-            ``True`` when the run completed or was cancelled, ``False`` on
-            timeout.
+            ``True`` when the run completed or was cancelled and its reader
+            and driver threads exited, ``False`` on timeout. Logical ``done``
+            may already be true while those threads finish releasing locals.
 
         Raises:
             ActiveRunError: The run's failure, once it completed failed.
@@ -1221,7 +1226,23 @@ class ActiveRun:
                 wait for itself; call ``stop()`` there instead.
         """
         self._owned.reject_wait("ActiveRun.wait()")
-        if not self._done.wait(timeout):
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+
+        def remaining() -> Optional[float]:
+            return None if deadline is None else max(0.0, deadline - time.monotonic())
+
+        if not self._done.wait(remaining()):
+            return False
+        # _done is set by the driver before its frame unwinds. A reader can
+        # likewise report finished before releasing its last emission. Join
+        # outside run locks so those finalizers can finish before the caller
+        # destroys resources or exits the interpreter.
+        for reader in self._readers.values():
+            if reader.ident is not None:
+                reader.join(remaining())
+                if reader.is_alive():
+                    return False
+        if not self._driver.join(remaining()):
             return False
         if self._failure is not None:
             raise self._failure
@@ -2194,6 +2215,11 @@ class _SerialDriver:
 
     def start(self) -> None:
         self._processor.start()
+
+    def join(self, timeout: Optional[float]) -> bool:
+        if self._processor.ident is not None:
+            self._processor.join(timeout)
+        return not self._processor.is_alive()
 
     def admit(
         self, slot: _SourceSlot, emission: Emission, *, observed: Timestamp
