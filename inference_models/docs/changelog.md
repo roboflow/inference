@@ -19,6 +19,10 @@
 
 ### Fixed
 
+- SAM3 `embed_images`, `segment_with_visual_prompts` and
+  `segment_with_text_prompts` accept `input_color_format`. With `"bgr"` the
+  image channels are reversed before inference; the default keeps treating
+  inputs as RGB.
 - Histogram equalization of torch-tensor inputs returns `uint8` values like the
   numpy path instead of keeping float output. On the RF-DETR float `[0, 1]` path
   the result is rescaled, which also stops adaptive equalization from crashing

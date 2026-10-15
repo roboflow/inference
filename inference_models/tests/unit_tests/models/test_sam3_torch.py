@@ -258,3 +258,107 @@ def test_from_pretrained_rejects_malformed_sam_configuration(
             model_name_or_path=str(tmp_path),
             device=torch.device("cpu"),
         )
+
+
+def _bgr_image() -> np.ndarray:
+    image = np.zeros((4, 4, 3), dtype=np.uint8)
+    image[:, :, 0] = 255
+    return image
+
+
+def _model_for_embedding(sam3_torch_module: ModuleType):
+    model = sam3_torch_module.SAM3Torch.__new__(sam3_torch_module.SAM3Torch)
+    model._sam3_allow_client_generated_hash_ids = False
+    model._max_batch_size = 1
+    model._model = MagicMock()
+    return model
+
+
+@pytest.mark.parametrize(
+    "input_color_format, expected_red", [("bgr", 0), ("rgb", 255), (None, 255)]
+)
+def test_segment_with_text_prompts_honours_the_input_colour_order(
+    sam3_torch_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    input_color_format,
+    expected_red: int,
+) -> None:
+    model = sam3_torch_module.SAM3Torch.__new__(sam3_torch_module.SAM3Torch)
+    model._model = MagicMock()
+    model._transform = MagicMock()
+    model._device = "cpu"
+    image_datapoint = MagicMock()
+    monkeypatch.setattr(sam3_torch_module, "Sam3ImageDP", image_datapoint)
+
+    model.segment_with_text_prompts(
+        images=_bgr_image(), prompts=[], input_color_format=input_color_format
+    )
+
+    pil_image = image_datapoint.call_args.kwargs["data"]
+    assert np.asarray(pil_image)[0, 0, 0] == expected_red
+
+
+@pytest.mark.parametrize(
+    "input_color_format, expected_red", [("bgr", 0), ("rgb", 255), (None, 255)]
+)
+def test_segment_with_visual_prompts_embeds_the_image_in_its_colour_order(
+    sam3_torch_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    input_color_format,
+    expected_red: int,
+) -> None:
+    model = _model_for_embedding(sam3_torch_module)
+    processor = MagicMock()
+    monkeypatch.setattr(sam3_torch_module, "Sam3Processor", processor)
+    monkeypatch.setattr(model, "_predict_for_single_image", MagicMock())
+
+    model.segment_with_visual_prompts(
+        images=_bgr_image(),
+        use_embeddings_cache=False,
+        input_color_format=input_color_format,
+    )
+
+    chw_image = processor.return_value.set_image.call_args.args[0]
+    assert chw_image[0, 0, 0].item() == expected_red
+
+
+def test_embeddings_cache_does_not_mix_colour_orders(
+    sam3_torch_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from inference_models.models.sam3.cache import Sam3ImageEmbeddingsInMemoryCache
+
+    model = _model_for_embedding(sam3_torch_module)
+    model._device = "cpu"
+    model._sam3_image_embeddings_cache = Sam3ImageEmbeddingsInMemoryCache.init(
+        size_limit=10, send_to_cpu=False
+    )
+    processor = MagicMock()
+    monkeypatch.setattr(sam3_torch_module, "Sam3Processor", processor)
+
+    model.embed_images(images=_bgr_image(), input_color_format="rgb")
+    model.embed_images(images=_bgr_image(), input_color_format="bgr")
+
+    set_image_calls = processor.return_value.set_image.call_args_list
+    assert len(set_image_calls) == 2
+    assert set_image_calls[1].args[0][0, 0, 0].item() == 0
+
+
+def test_bgr_embedding_normalizes_the_image_once(
+    sam3_torch_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _model_for_embedding(sam3_torch_module)
+    processor = MagicMock()
+    monkeypatch.setattr(sam3_torch_module, "Sam3Processor", processor)
+    image = torch.zeros((3, 3, 5))
+    image[0] = 0.004
+
+    model.embed_images(
+        images=image, use_embeddings_cache=False, input_color_format="bgr"
+    )
+
+    chw_image = processor.return_value.set_image.call_args.args[0]
+    assert tuple(chw_image.shape) == (3, 3, 5)
+    assert chw_image[2, 0, 0].item() == 1
+    assert chw_image[0, 0, 0].item() == 0

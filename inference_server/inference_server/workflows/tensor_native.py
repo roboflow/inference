@@ -11,6 +11,7 @@ from inference_server.legacy.common import ImagePayload, decode_inline_image
 from inference_server.legacy.translation import MOONDREAM_MODEL_CLASS
 
 FLORENCE2_MODEL_CLASS = "Florence2HF"
+SAM3_MODEL_CLASS = "SAM3Torch"
 _METRIC_DEPTH_MODEL_CLASS_PREFIX = "YOLO26ForDepthEstimation"
 _SAM3_SEGMENT_ACTIONS = frozenset(
     {"segment_with_visual_prompts", "segment_with_text_prompts"}
@@ -154,6 +155,8 @@ def native_params(
         params["mask_format"] = "dense"
     if action in _SAM3_SEGMENT_ACTIONS:
         params["mask_format"] = "dense"
+    if model_class_name == SAM3_MODEL_CLASS:
+        params.setdefault("input_color_format", "rgb")
     if model_class_name == FLORENCE2_MODEL_CLASS:
         params["task"] = params.get("prompt", "").split(">")[0] + ">"
     return params

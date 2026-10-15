@@ -608,7 +608,7 @@ def test_sam3_interactive_segment_maps_to_visual_prompts():
     assert bridge.calls[0][1] == "segment_with_visual_prompts"
     assert params["point_coordinates"].tolist() == [[[1, 1]]]
     assert params["point_labels"].tolist() == [[1]]
-    assert "boxes" not in params and "input_color_format" not in params
+    assert "boxes" not in params and params["input_color_format"] == "rgb"
     assert params["mask_format"] == "dense"
     assert params["multi_mask_output"] is True and params["return_logits"] is True
     assert isinstance(out[0], SAM3Prediction)
@@ -641,7 +641,18 @@ def test_sam3_text_prompts_keep_numpy_masks():
         "prompts": [{"text": "cat"}],
         "output_prob_thresh": 0.3,
         "mask_format": "dense",
+        "input_color_format": "rgb",
     }
     assert len(out) == 1 and out[0][0]["prompt_index"] == 0
     assert isinstance(out[0][0]["masks"], np.ndarray)
     assert out[0][0]["scores"] == [0.9]
+
+
+def test_sam3_embedding_declares_rgb_images():
+    params = native_params(
+        "interactive-instance-segmentation",
+        {},
+        action="embed_images",
+        model_class_name="SAM3Torch",
+    )
+    assert params == {"input_color_format": "rgb"}

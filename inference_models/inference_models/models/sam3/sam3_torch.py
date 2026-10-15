@@ -26,6 +26,7 @@ from sam3.train.transforms.basic_for_api import (
     ToTensorAPI,
 )
 
+from inference_models import ColorFormat
 from inference_models.configuration import DEFAULT_DEVICE, SAM3_IMAGE_SIZE
 from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -199,6 +200,7 @@ class SAM3Torch:
         image_hashes: Optional[Union[str, List[str]]] = None,
         *,
         return_embeddings: bool = True,
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> List[SAM3ImageEmbeddings]:
         if not self._sam3_allow_client_generated_hash_ids and image_hashes is not None:
@@ -215,6 +217,8 @@ class SAM3Torch:
                 message="No images provided to embed_images()",
                 help_url="https://todo",
             )
+        if input_color_format == "bgr":
+            images_list = [_bgr_to_rgb(image) for image in images_list]
 
         if image_hashes is None:
             image_hashes = [compute_image_hash(img) for img in images_list]
@@ -329,6 +333,7 @@ class SAM3Torch:
         use_embeddings_cache: bool = True,
         *,
         mask_format: str = "dense",
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> List[Union[SAM3Prediction, Dict]]:
         if mask_format not in ("dense", "rle"):
@@ -350,6 +355,7 @@ class SAM3Torch:
                 images=images,
                 use_embeddings_cache=use_embeddings_cache,
                 image_hashes=image_hashes,
+                input_color_format=input_color_format,
                 **kwargs,
             )
         elif image_hashes is not None:
@@ -555,6 +561,7 @@ class SAM3Torch:
         output_prob_thresh: float = 0.5,
         max_detections: int = -1,
         mask_format: str = "dense",
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> List[Dict]:
         if mask_format not in ("dense", "rle"):
@@ -571,6 +578,8 @@ class SAM3Torch:
 
         results = []
         for image in images_list:
+            if input_color_format == "bgr":
+                image = _bgr_to_rgb(image)
             np_image = _normalize_to_hwc_uint8(image)
 
             h, w = np_image.shape[:2]
@@ -782,6 +791,13 @@ def _normalize_to_hwc_uint8(image: Union[np.ndarray, torch.Tensor]) -> np.ndarra
     if np_image.max() <= 1:
         np_image = np_image * 255
     return np_image.astype(np.uint8)
+
+
+def _bgr_to_rgb(image: ArrayOrTensor) -> ArrayOrTensor:
+    channel_axis = 0 if image.shape[0] == 3 else -1
+    if isinstance(image, torch.Tensor):
+        return image.flip(channel_axis)
+    return np.ascontiguousarray(np.flip(image, channel_axis))
 
 
 def pad_points(args: Dict) -> Dict:
