@@ -1340,3 +1340,75 @@ def test_step_image_url_of_a_model_that_does_not_resolve_records_no_model_row(
 
     assert response.status_code in (403, 404), response.text
     assert sorted(_categories(usage_collector)) == ["request", "workflows"]
+
+
+def _posted_workflow_rows(usage_client, gateway, monkeypatch, image):
+    posts = []
+
+    def _post(url, **kwargs):
+        posts.append(kwargs["json"])
+        return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr("inference_server.usage.delivery.requests.post", _post)
+    collector = UsageCollector()
+    monkeypatch.setattr(
+        "inference_server.app._start_usage_collector", lambda: collector
+    )
+    client = usage_client(gateway)
+
+    response = client.post(
+        "/workflows/run",
+        json={
+            "specification": _detection_workflow("ds/1"),
+            "inputs": {"image": image},
+            "api_key": "k",
+        },
+    )
+    client.__exit__(None, None, None)
+
+    rows = [row for post in posts for row in post]
+
+    return response, rows
+
+
+@pytest.mark.parametrize(
+    "image,fetch_answer",
+    [
+        ({"type": "base64", "value": "bm90LWFuLWltYWdl"}, None),
+        (
+            {"type": "url", "value": "https://example.com/missing.jpg"},
+            (502, "URL_FETCH_FAILED", "fetching image URL failed"),
+        ),
+        ({"type": "url", "value": "https://example.com/"}, b"<html></html>"),
+        ({"type": "url", "value": "http://example.com/image.jpg"}, None),
+        ({"type": "url", "value": "https://does-not-exist.invalid/image.jpg"}, None),
+    ],
+    ids=["bad-base64", "unreachable", "not-an-image", "non-https", "no-fqdn"],
+)
+def test_workflow_input_image_that_cannot_be_loaded_posts_only_the_request_row(
+    usage_client, fake_stat, monkeypatch, image, fetch_answer
+):
+    monkeypatch.setattr(configuration, "ALLOW_NON_HTTPS_URL_INPUT", False)
+    monkeypatch.setattr(configuration, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+    if fetch_answer is not None:
+        monkeypatch.setattr(
+            "inference_server.legacy.bridge.fetch_url_images",
+            _fetch_answering(fetch_answer),
+        )
+
+    response, rows = _posted_workflow_rows(
+        usage_client, _detection_gateway(fake_stat, "ds/1"), monkeypatch, image
+    )
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error_type"] == "RuntimeInputError"
+    assert body["context"] == "workflow_execution | runtime_input_validation"
+    (request,) = rows
+    details = json.loads(request["resource_details"])
+    assert request["category"] == "request"
+    assert request["processed_frames"] == 1
+    assert details["error_type"] == "RuntimeInputError"
+    assert details["error"].startswith("RuntimeInputError: Failed to assemble `image`.")
+    assert details["steps"] == ["roboflow_core/roboflow_object_detection_model@v2:det0"]
+    assert "error_status_code" not in details
