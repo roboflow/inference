@@ -18,6 +18,7 @@ for contributor and maintainer responsibilities.
 
 ### Execution engine
 
+- Prevent supporting metadata and workflow validation-model caches from retaining dynamically generated custom Python manifests after their compiled workflows are evicted. Static manifest caching and compiled-workflow reuse are preserved; no workflow changes are required.
 - Workflows with custom Python blocks executed locally are cached again after compilation (as before 1.6.1), fixing per-request memory growth and the throughput drop on HTTP hosts; module-level state of a local custom Python block is again shared across requests that use the same definition in one process. Modal execution and unresolved inner-workflow references still compile per request.
 - The compilation cache no longer raises `KeyError` when evicting a key that was cached twice.
 
