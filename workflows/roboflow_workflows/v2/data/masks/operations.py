@@ -191,6 +191,11 @@ def _place_on_image(view: SegmentationView, *, layer: torch.Tensor) -> torch.Ten
     """
     geometry = view.geometry
     height, width = geometry.original_size_hw
+    if layer.shape[0] == 0:
+        # Interpolation rejects zero channels; there are no cells to place.
+        empty = layer.new_zeros((0, height, width))
+        return empty
+
     crop_h, crop_w = geometry.crop_size_hw
     offset_x, offset_y = geometry.static_crop_xywh[:2]
 
