@@ -533,6 +533,59 @@ class TestActionRecognitionDispatch:
         assert entry["video_sampling"] is None
 
 
+class TestAnomalyClassificationDefaultProcess:
+    def test_two_image_anomaly_prediction_serializes_per_image(self):
+        import torch
+
+        from inference_models import ClassificationModel
+        from inference_models.models.common.anomaly_detection import (
+            AnomalyCalibration,
+            AnomalyRawPrediction,
+            post_process_anomaly_scores,
+        )
+
+        class FakeAnomalyModel(ClassificationModel):
+            _inference_count = 0
+
+            @classmethod
+            def from_pretrained(cls, model_name_or_path, **kwargs):
+                return cls()
+
+            @property
+            def class_names(self):
+                return ["normal", "anomalous"]
+
+            def pre_process(self, images, **kwargs):
+                return images
+
+            def forward(self, pre_processed_images, **kwargs):
+                return AnomalyRawPrediction(
+                    scores=torch.tensor([0.5, 3.0]),
+                    maps=torch.zeros((2, 2, 2)),
+                    original_sizes_hw=[(8, 8), (8, 8)],
+                )
+
+            def post_process(self, model_results, include_anomaly_map=False, **kwargs):
+                return post_process_anomaly_scores(
+                    model_results,
+                    calibration=AnomalyCalibration(threshold=2.0, scale=1.0),
+                    include_anomaly_map=include_anomaly_map,
+                )
+
+        mm = ModelManager()
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("anomaly/1", api_key="")
+        backends["anomaly/1"]._fake_model = FakeAnomalyModel()
+
+        out = mm.process("anomaly/1", images=["a", "b"], include_anomaly_map=True)
+
+        assert out["type"] == "roboflow-classification-compact-v1"
+        assert [item["anomaly_score"] for item in out["batch"]] == [0.5, 3.0]
+        assert [item["is_anomalous"] for item in out["batch"]] == [False, True]
+        assert all(item["anomaly_map"].shape == (2, 2) for item in out["batch"])
+
+
 class TestParamsOnlyWireMarshalling:
 
     def _process(self, returned, **kwargs):

@@ -382,3 +382,127 @@ def test_serialize_sam3_text_segmentation_accepts_a_single_image_result():
     )
 
     assert result["data"] == [{"prompt_index": 0, "masks": [], "scores": [0.25]}]
+
+
+def _anomaly(include_map: bool, *, is_anomalous: bool = True):
+    metadata = {
+        "anomaly_score": 3.5,
+        "anomaly_threshold": 2.0,
+        "is_anomalous": is_anomalous,
+    }
+    if include_map:
+        metadata["anomaly_map"] = np.asarray([[0.0, 1.5], [2.5, 3.5]], np.float32)
+
+    return SimpleNamespace(
+        confidence=np.asarray([[0.1, 0.9]]),
+        class_id=np.asarray([1]),
+        images_metadata=[metadata],
+    )
+
+
+class TestClassificationAnomalyFields:
+    @pytest.mark.parametrize(
+        "serializer", [serialize_classification_compact, serialize_classification_rich]
+    )
+    def test_anomaly_score_threshold_and_decision_are_kept(self, serializer):
+        out = serializer(_anomaly(include_map=False, is_anomalous=False), _MODEL)
+
+        assert out["anomaly_score"] == 3.5
+        assert out["anomaly_threshold"] == 2.0
+        assert out["is_anomalous"] is False
+        assert "anomaly_map" not in out
+
+    @pytest.mark.parametrize(
+        "serializer", [serialize_classification_compact, serialize_classification_rich]
+    )
+    def test_anomaly_map_is_kept_when_the_model_returned_it(self, serializer):
+        out = serializer(_anomaly(include_map=True), _MODEL)
+
+        assert np.asarray(out["anomaly_map"]).tolist() == [[0.0, 1.5], [2.5, 3.5]]
+
+    @pytest.mark.parametrize(
+        "serializer", [serialize_classification_compact, serialize_classification_rich]
+    )
+    def test_batched_anomaly_items_keep_their_own_fields(self, serializer):
+        out = serializer(
+            [_anomaly(include_map=True), _anomaly(False, is_anomalous=False)], _MODEL
+        )
+
+        assert out["batch"][0]["is_anomalous"] is True
+        assert "anomaly_map" in out["batch"][0]
+        assert out["batch"][1]["is_anomalous"] is False
+        assert "anomaly_map" not in out["batch"][1]
+
+    def test_plain_classification_has_no_anomaly_fields(self):
+        plain = SimpleNamespace(
+            confidence=np.asarray([[0.9, 0.1]]),
+            class_id=np.asarray([0]),
+            images_metadata=None,
+        )
+
+        compact = serialize_classification_compact(plain, _MODEL)
+        rich = serialize_classification_rich(plain, _MODEL)
+
+        assert set(compact) == {"type", "class_names", "confidences", "top_classes_ids"}
+        assert set(rich) == {"type", "candidates", "top"}
+
+
+def _two_image_anomaly_prediction(include_anomaly_map: bool):
+    import torch
+
+    from inference_models.models.common.anomaly_detection import (
+        AnomalyCalibration,
+        AnomalyRawPrediction,
+        post_process_anomaly_scores,
+    )
+
+    raw = AnomalyRawPrediction(
+        scores=torch.tensor([0.5, 3.0]),
+        maps=torch.tensor([[[0.0, 0.5], [0.5, 0.5]], [[1.0, 2.0], [3.0, 3.0]]]),
+        original_sizes_hw=[(8, 8), (8, 8)],
+    )
+    prediction = post_process_anomaly_scores(
+        raw,
+        calibration=AnomalyCalibration(threshold=2.0, scale=1.0),
+        include_anomaly_map=include_anomaly_map,
+    )
+
+    return prediction
+
+
+class TestClassificationCompactMultiRowAnomaly:
+    def test_each_image_keeps_its_own_anomaly_fields(self):
+        out = serialize_classification_compact(
+            _two_image_anomaly_prediction(include_anomaly_map=True), _MODEL
+        )
+
+        first, second = out["batch"]
+        assert [first["anomaly_score"], second["anomaly_score"]] == [0.5, 3.0]
+        assert [first["is_anomalous"], second["is_anomalous"]] == [False, True]
+        assert first["anomaly_threshold"] == second["anomaly_threshold"] == 2.0
+        assert np.asarray(first["anomaly_map"]).tolist() == [[0.0, 0.5], [0.5, 0.5]]
+        assert np.asarray(second["anomaly_map"]).tolist() == [[1.0, 2.0], [3.0, 3.0]]
+
+    def test_each_item_has_the_single_image_shape(self):
+        prediction = _two_image_anomaly_prediction(include_anomaly_map=False)
+
+        out = serialize_classification_compact(prediction, _MODEL)
+
+        assert "confidences" not in out
+        for index, item in enumerate(out["batch"]):
+            assert np.asarray(item["confidences"]).tolist() == (
+                np.asarray(prediction.confidence[index : index + 1]).tolist()
+            )
+            assert np.asarray(item["top_classes_ids"]).tolist() == [index]
+            assert "anomaly_map" not in item
+
+    def test_multi_row_plain_classification_stays_flat(self):
+        plain = SimpleNamespace(
+            confidence=np.asarray([[0.9, 0.1], [0.2, 0.8]]),
+            class_id=np.asarray([0, 1]),
+            images_metadata=None,
+        )
+
+        out = serialize_classification_compact(plain, _MODEL)
+
+        assert set(out) == {"type", "class_names", "confidences", "top_classes_ids"}

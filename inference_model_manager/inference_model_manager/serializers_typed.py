@@ -98,6 +98,27 @@ def serialize_detections_compact(output: Any, model: Any) -> dict:
 # Classification (single-label)
 # ---------------------------------------------------------------------------
 
+_ANOMALY_FIELDS = ("anomaly_score", "anomaly_threshold", "is_anomalous", "anomaly_map")
+
+
+def _anomaly_fields(output: Any, index: int = 0) -> dict:
+    """Anomaly detection fields from one image's metadata; empty for other models."""
+    images_metadata = getattr(output, "images_metadata", None)
+    if not images_metadata or index >= len(images_metadata):
+        return {}
+
+    image_metadata = images_metadata[index]
+    if not isinstance(image_metadata, dict) or "anomaly_score" not in image_metadata:
+        return {}
+
+    fields = {
+        key: _to_list(image_metadata[key])
+        for key in _ANOMALY_FIELDS
+        if key in image_metadata
+    }
+
+    return fields
+
 
 def serialize_classification_compact(output: Any, model: Any) -> dict:
     """ClassificationPrediction → roboflow-classification-compact-v1"""
@@ -110,15 +131,32 @@ def serialize_classification_compact(output: Any, model: Any) -> dict:
                 {
                     "confidences": _to_list(o.confidence),
                     "top_classes_ids": _to_list(o.class_id),
+                    **_anomaly_fields(o),
                 }
                 for o in output
             ],
         }
+    images_metadata = getattr(output, "images_metadata", None) or []
+    if len(images_metadata) > 1 and _anomaly_fields(output):
+        return {
+            "type": "roboflow-classification-compact-v1",
+            "class_names": _class_names(model),
+            "batch": [
+                {
+                    "confidences": _to_list(output.confidence[i : i + 1]),
+                    "top_classes_ids": _to_list(output.class_id[i : i + 1]),
+                    **_anomaly_fields(output, i),
+                }
+                for i in range(len(images_metadata))
+            ],
+        }
+
     return {
         "type": "roboflow-classification-compact-v1",
         "class_names": _class_names(model),
         "confidences": _to_list(output.confidence),
         "top_classes_ids": _to_list(output.class_id),
+        **_anomaly_fields(output),
     }
 
 
@@ -456,6 +494,7 @@ def serialize_classification_rich(output: Any, model: Any) -> dict:
                         "candidates"
                     ],
                     "top": one["top"],
+                    **_anomaly_fields(o),
                 }
                 for o in output
             ],
@@ -471,13 +510,17 @@ def serialize_classification_rich(output: Any, model: Any) -> dict:
         return {
             "type": "roboflow-classification-rich-v1",
             "batch": [
-                _classification_rich_row(confidence[i], top_ids[i], names)
+                {
+                    **_classification_rich_row(confidence[i], top_ids[i], names),
+                    **_anomaly_fields(output, i),
+                }
                 for i in range(bs)
             ],
         }
     return {
         "type": "roboflow-classification-rich-v1",
         **_classification_rich_row(confidence[0], top_ids[0], names),
+        **_anomaly_fields(output),
     }
 
 
