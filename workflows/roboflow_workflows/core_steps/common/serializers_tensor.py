@@ -4,6 +4,12 @@ from typing import Any, List, Optional, Tuple, Union
 import numpy as np
 import supervision as sv
 import torch
+from roboflow_workflows.core_steps.common.anomaly_detection import (
+    ANOMALOUS_CLASS_NAME,
+    ANOMALY_METADATA_KEYS,
+    IS_ANOMALOUS_KEY,
+    NORMAL_CLASS_NAME,
+)
 from roboflow_workflows.core_steps.common.keypoints import real_keypoints_count
 from roboflow_workflows.core_steps.common.serializers import (
     _attach_parent_metadata_to_detection_dict,
@@ -600,6 +606,14 @@ def _serialise_classification_model_style(
             key=lambda item: item["confidence"],
             reverse=True,
         )
+        # An anomaly model's verdict is decided against a threshold on the raw
+        # score (possibly overridden by the block), not by the larger confidence:
+        # the decided class leads, as the numpy anomaly block orders it.
+        if IS_ANOMALOUS_KEY in image_metadata:
+            individual_classes_predictions = _decided_anomaly_class_first(
+                individual_classes_predictions,
+                is_anomalous=bool(image_metadata[IS_ANOMALOUS_KEY]),
+            )
         result["predictions"] = individual_classes_predictions
         result["top"] = (
             individual_classes_predictions[0]["class"]
@@ -636,6 +650,12 @@ def _serialise_classification_model_style(
         result["predictions"] = predictions_dict
         result["predicted_classes"] = predicted_classes
 
+    # The numpy `AnomalyDetectionResponse` dumps its verdict right after the
+    # classification fields; the anomaly block keeps the raw map out of the dict.
+    for source_key in ANOMALY_METADATA_KEYS:
+        if source_key in image_metadata:
+            result[source_key] = image_metadata[source_key]
+
     # Append order mirrors the numpy block's in-place writes after model_dump:
     # attach_prediction_type_info, then parent_id, then root_parent_id
     # (inference_id was already emitted first, matching the dump order).
@@ -647,6 +667,15 @@ def _serialise_classification_model_style(
         if image_metadata.get(source_key) is not None:
             result[source_key] = image_metadata[source_key]
     return result
+
+
+def _decided_anomaly_class_first(
+    class_predictions: List[dict], *, is_anomalous: bool
+) -> List[dict]:
+    decided_class = ANOMALOUS_CLASS_NAME if is_anomalous else NORMAL_CLASS_NAME
+    decided = [p for p in class_predictions if p["class"] == decided_class]
+    others = [p for p in class_predictions if p["class"] != decided_class]
+    return decided + others
 
 
 def _serialise_classification_formatter_style(
