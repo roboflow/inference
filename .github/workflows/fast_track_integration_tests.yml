@@ -157,6 +157,9 @@ jobs:
     # Run when the suite is enabled and the build either succeeded or was
     # skipped on purpose (resume); never after a failed or cancelled build.
     if: ${{ !cancelled() && inputs.run_server_cpu && (needs.build-cpu.result == 'success' || (needs.build-cpu.result == 'skipped' && !inputs.build_images)) }}
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/integration_tests_inference_server_x86.yml
     with:
       # The tag the build actually pushed wins; the resolved tag is the
@@ -169,6 +172,9 @@ jobs:
     name: NVIDIA T4 regression
     needs: [resolve, build-gpu]
     if: ${{ !cancelled() && inputs.run_t4 && (needs.build-gpu.result == 'success' || (needs.build-gpu.result == 'skipped' && !inputs.build_images)) }}
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/test.nvidia_t4.yml
     with:
       image_tag: ${{ needs.build-gpu.outputs.image_tag || needs.resolve.outputs.image_tag }}

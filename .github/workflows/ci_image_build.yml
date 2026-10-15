@@ -1,0 +1,88 @@
+name: Build private CI image
+on:
+  workflow_call:
+    inputs:
+      family:
+        type: string
+        required: true
+    secrets:
+      CI_REGISTRY_PREFIX:
+        required: true
+      CI_WIF_PROVIDER:
+        required: true
+      CI_REGISTRY_WRITER:
+        required: true
+      CI_DEPOT_PROJECT:
+        required: true
+    outputs:
+      index_digest:
+        value: ${{ jobs.build.outputs.index_digest }}
+      amd64_digest:
+        value: ${{ jobs.build.outputs.amd64_digest }}
+      arm64_digest:
+        value: ${{ jobs.build.outputs.arm64_digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE_FAMILY: ${{ inputs.family }}
+      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
+      CI_IMAGE_REUSE_ENABLED: ${{ vars.CI_IMAGE_REUSE_ENABLED }}
+      DEPOT_PROJECT_ID: ${{ secrets.CI_DEPOT_PROJECT }}
+      DOCKER_BUILD_SUMMARY: false
+      DOCKER_BUILD_RECORD_UPLOAD: false
+    outputs:
+      index_digest: ${{ steps.build.outputs.index_digest }}
+      amd64_digest: ${{ steps.build.outputs.amd64_digest }}
+      arm64_digest: ${{ steps.build.outputs.arm64_digest }}
+    steps:
+      - name: Initialize isolated registry credentials directory
+        run: |
+          umask 077
+          directory="$(mktemp -d "$RUNNER_TEMP/ci-docker.XXXXXXXX")"
+          echo "DOCKER_CONFIG=$directory" >> "$GITHUB_ENV"
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate trusted source and transport configuration
+        env:
+          CI_IMAGE_ACTION: preflight
+        run: python3 .github/scripts/ci_image.py
+      - name: Set up Depot
+        uses: depot/setup-action@v1
+      - name: Set up Buildx for manifest inspection
+        uses: docker/setup-buildx-action@v4
+      - name: Authenticate registry writer
+        uses: google-github-actions/auth@v3
+        id: auth
+        with:
+          workload_identity_provider: ${{ secrets.CI_WIF_PROVIDER }}
+          service_account: ${{ secrets.CI_REGISTRY_WRITER }}
+          token_format: access_token
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Login to private registry
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          mkdir -p "$DOCKER_CONFIG"
+          printf '%s' "$ACCESS_TOKEN" | docker login "${CI_REGISTRY_PREFIX%%/*}" --username oauth2accesstoken --password-stdin > /dev/null 2>&1
+      - name: Build once and record platform digests
+        id: build
+        env:
+          CI_IMAGE_ACTION: build
+        run: python3 .github/scripts/ci_image.py
+      - name: Remove registry credentials
+        if: ${{ always() }}
+        run: rm -rf -- "$DOCKER_CONFIG"

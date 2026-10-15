@@ -29,6 +29,10 @@ on:
           - all
           - "true"
           - "false"
+      image_digest:
+        description: "Immutable amd64 digest; mutually exclusive with image_tag"
+        type: string
+        default: ""
       image_tag:
         description: "Prebuilt roboflow/roboflow-inference-server-gpu tag to test (e.g. 1.6.2-post3-rc1). Empty = build the image from this ref."
         type: string
@@ -45,9 +49,46 @@ on:
       use-inference-models:
         type: string
         default: all
+      image_digest:
+        description: "Immutable amd64 digest; mutually exclusive with image_tag"
+        type: string
+        default: ""
       image_tag:
         type: string
         default: ""
+      private_image:
+        description: "Trusted main CI transport; requires image_digest"
+        type: boolean
+        default: false
+    secrets:
+      API_KEY:
+        required: false
+      ASL_INSTANCE_SEGMENTATION_API_KEY:
+        required: false
+      ASL_POLY_INSTANCE_SEG_API_KEY:
+        required: false
+      BCCD_FAVZ3_API_KEY:
+        required: false
+      BCCD_I4NYM_API_KEY:
+        required: false
+      CATS_AND_DOGS_SMNPL_API_KEY:
+        required: false
+      COINS_XAZ9I_API_KEY:
+        required: false
+      MELEE_API_KEY:
+        required: false
+      YOLONAS_TEST_API_KEY:
+        required: false
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
+      CI_REGISTRY_PREFIX:
+        required: false
+      CI_WIF_PROVIDER:
+        required: false
+      CI_REGISTRY_READER:
+        required: false
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
@@ -61,22 +102,63 @@ concurrency:
 
 jobs:
   build:
-    if: ${{ !github.event.act }}
+    if: ${{ !github.event.act && (github.event_name != 'push' || vars.CI_IMAGE_REUSE_ENABLED != 'true' || inputs.private_image) && (!inputs.private_image || (github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch'))) }}
     runs-on: Roboflow-GPU-VM-Runner
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MODEL_MODE: ${{ matrix.use-inference-models }}
+      IMAGE_FAMILY: gpu
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+      PRIVATE_IMAGE: ${{ inputs.private_image || false }}
+      CI_IMAGE_REUSE_ENABLED: ${{ vars.CI_IMAGE_REUSE_ENABLED }}
+      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
+      INFERENCE_TEST_CONTAINER: ci-gpu-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
+      INFERENCE_TEST_BIND: 127.0.0.1::9101
     strategy:
+      fail-fast: false
       matrix:
         use-inference-models: ${{ fromJSON((inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', inputs.use-inference-models)) }}
     timeout-minutes: 120
 
     steps:
+      - name: Initialize isolated registry credentials directory
+        run: |
+          umask 077
+          directory="$(mktemp -d "$RUNNER_TEMP/ci-docker.XXXXXXXX")"
+          echo "DOCKER_CONFIG=$directory" >> "$GITHUB_ENV"
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate image inputs before authentication
+        env:
+          CI_IMAGE_ACTION: validate
+        run: python3 .github/scripts/ci_image.py
+      - name: Authenticate private registry reader
+        if: ${{ inputs.private_image }}
+        id: ci_auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.CI_WIF_PROVIDER }}
+          service_account: ${{ secrets.CI_REGISTRY_READER }}
+          token_format: access_token
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Login to private registry
+        if: ${{ inputs.private_image }}
+        env:
+          ACCESS_TOKEN: ${{ steps.ci_auth.outputs.access_token }}
+        run: |
+          mkdir -p "$DOCKER_CONFIG"
+          printf '%s' "$ACCESS_TOKEN" | docker login "${CI_REGISTRY_PREFIX%%/*}" --username oauth2accesstoken --password-stdin > /dev/null 2>&1
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-      - name: 🛎️ Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.head_ref }}
       - name: 🦾 Install dependencies
         run: |
           python3 -m venv .venv
@@ -84,17 +166,17 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements/requirements.test.integration.txt -r requirements/requirements.test.unit.txt 
       - name: 🔨 Build Test Docker - GPU
-        if: ${{ inputs.image_tag == '' }}
+        if: ${{ inputs.image_tag == '' && inputs.image_digest == '' && !inputs.private_image }}
         run: |
           docker build -t roboflow/roboflow-inference-server-gpu:test -f docker/dockerfiles/Dockerfile.onnx.gpu .
-      - name: 📥 Pull prebuilt image ${{ inputs.image_tag }}
-        if: ${{ inputs.image_tag != '' }}
+      - name: Pull and verify prebuilt amd64 image
+        if: ${{ inputs.image_tag != '' || inputs.image_digest != '' || inputs.private_image }}
         env:
-          IMAGE_TAG: ${{ inputs.image_tag }}
-        run: |
-          docker pull "roboflow/roboflow-inference-server-gpu:${IMAGE_TAG}"
-          docker tag "roboflow/roboflow-inference-server-gpu:${IMAGE_TAG}" roboflow/roboflow-inference-server-gpu:test
-          echo "Image under test: roboflow/roboflow-inference-server-gpu:${IMAGE_TAG}" >> "$GITHUB_STEP_SUMMARY"
+          CI_IMAGE_ACTION: pull
+        run: python3 .github/scripts/ci_image.py
+      - name: Remove registry credentials before executing tests
+        if: ${{ always() }}
+        run: rm -rf -- "$DOCKER_CONFIG"
 
       - name: Show NVIDIA driver - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' }}
@@ -107,7 +189,7 @@ jobs:
             -e OPENCV_REQUIRE_CUDA_BUILD=true \
             -e OPENCV_REQUIRE_CUDA_RUNTIME=true \
             -v "$PWD/docker/scripts/verify_opencv.sh:/tmp/verify_opencv:ro" \
-            roboflow/roboflow-inference-server-gpu:test \
+            "${INFERENCE_TEST_IMAGE:-roboflow/roboflow-inference-server-gpu:test}" \
             /tmp/verify_opencv
 
       - name: Verify NVIDIA GStreamer codecs - GPU
@@ -117,7 +199,7 @@ jobs:
             -e GSTREAMER_REQUIRE_NVCODEC=true \
             -e GSTREAMER_REQUIRE_NVCODEC_RUNTIME=true \
             -v "$PWD/docker/scripts/verify_gstreamer.sh:/tmp/verify_gstreamer:ro" \
-            roboflow/roboflow-inference-server-gpu:test \
+            "${INFERENCE_TEST_IMAGE:-roboflow/roboflow-inference-server-gpu:test}" \
             /tmp/verify_gstreamer
 
       - name: Verify CUDA GStreamer tensor bridge - GPU
@@ -125,19 +207,30 @@ jobs:
         run: |
           docker run --rm --gpus all --entrypoint python3 \
             -v "$PWD/docker/scripts/verify_gstreamer_cuda_tensor_runtime.py:/tmp/verify_gstreamer_cuda_tensor_runtime.py:ro" \
-            roboflow/roboflow-inference-server-gpu:test \
+            "${INFERENCE_TEST_IMAGE:-roboflow/roboflow-inference-server-gpu:test}" \
             /tmp/verify_gstreamer_cuda_tensor_runtime.py
 
       - name: 🔋 Start Test Docker without Torch Preprocessing - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'regression_without_torch' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
       - name: 🧪 Regression Tests without Torch Preprocessing - GPU
         id: regression_tests_without_torch
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'regression_without_torch' }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          asl_instance_segmentation_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+          asl_poly_instance_seg_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+          bccd_favz3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+          bccd_i4nym_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+          cats_and_dogs_smnpl_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+          coins_xaz9i_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+          melee_API_KEY: ${{ secrets.MELEE_API_KEY }}
+          yolonas_test_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+          USE_INFERENCE_MODELS="$MODEL_MODE" MINIMUM_FPS=25 FUNCTIONAL=true PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python3 -m pytest tests/inference/integration_tests/
       - name: 🧹 Cleanup Test Docker - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'regression_without_torch' }}
         run: make stop_test_docker
@@ -145,13 +238,24 @@ jobs:
       - name: 🔋 Start Test Docker with Torch Preprocessing - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_with_torch' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
       - name: 🧪 Regression Tests with Torch Preprocessing - GPU
         id: regression_tests_with_torch
         if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_with_torch' }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          asl_instance_segmentation_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+          asl_poly_instance_seg_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+          bccd_favz3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+          bccd_i4nym_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+          cats_and_dogs_smnpl_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+          coins_xaz9i_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+          melee_API_KEY: ${{ secrets.MELEE_API_KEY }}
+          yolonas_test_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+          USE_INFERENCE_MODELS="$MODEL_MODE" MINIMUM_FPS=25 FUNCTIONAL=true PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python3 -m pytest tests/inference/integration_tests/
       - name: 🧹 Cleanup Test Docker - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_with_torch' }}
         run: make stop_test_docker
@@ -159,83 +263,105 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'paligemma' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
       - name: 🧪 Regression Paligemma - GPU
         id: paligemma_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'paligemma' }}
+        env:
+          melee_API_KEY: ${{ secrets.MELEE_API_KEY }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 melee_API_KEY=${{ secrets.MELEE_API_KEY }} python3 -m pytest tests/inference/integration_tests/test_paligemma.py
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" python3 -m pytest tests/inference/integration_tests/test_paligemma.py
       - name: 🧹 Cleanup Test Docker - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'paligemma' }}
         run: make stop_test_docker
       - name: 🔋 Start Test Docker - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'florence' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
       - name: 🧪 Regression Florence - GPU
         id: florence_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'florence' }}
+        env:
+          melee_API_KEY: ${{ secrets.MELEE_API_KEY }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 melee_API_KEY=${{ secrets.MELEE_API_KEY }} python3 -m pytest tests/inference/integration_tests/test_florence.py
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" python3 -m pytest tests/inference/integration_tests/test_florence.py
       - name: 🧹 Cleanup Test Docker - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'florence' }}
         run: make stop_test_docker
       - name: 🔋 Start Test Docker - SAM2
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam2' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
       - name: 🧪 Regression Tests - SAM2
         id: sam2_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam2' }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
       - name: 🧹 Cleanup Test Docker - SAM2
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam2' }}
         run: make stop_test_docker
       - name: 🔋 Start Test Docker - SAM3
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam3' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
       - name: 🧪 Regression Tests - SAM3
         id: sam3_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam3' }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM3_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam3.py
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" SKIP_SAM3_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam3.py
       - name: 🧹 Cleanup Test Docker - SAM3
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam3' }}
         run: make stop_test_docker
 #      - name: 🔋 Start Test Docker - GPU
 #        if: ${{ inputs.test_name == '' || inputs.test_name == 'qwen25' }}
 #        run: |
-#          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+#          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
 #      - name: 🧪 Regression Tests - Qwen2.5
 #        id: qwen25_tests
 #        if: ${{ inputs.test_name == '' || inputs.test_name == 'qwen25' }}
+#        env:
+#          API_KEY: ${{ secrets.QWEN_API_KEY }}
 #        run: |
 #          source .venv/bin/activate
-#          PORT=9101 API_KEY=${{ secrets.QWEN_API_KEY }} SKIP_QWEN25_TESTS=False python3 -m pytest tests/inference/integration_tests/qwen_test.py
+#          PORT="${TEST_PORT:-9101}" SKIP_QWEN25_TESTS=False python3 -m pytest tests/inference/integration_tests/qwen_test.py
 #      - name: 🧹 Cleanup Test Docker - Qwen2.5
 #        if: ${{ inputs.test_name == '' || inputs.test_name == 'qwen25' }}
 #        run: make stop_test_docker
       - name: 🔋 Start Test Docker - MoonDream
         if: ${{ inputs.test_name == '' || inputs.test_name == 'moondream2' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
       - name: 🧪 Regression Tests - MoonDream
         id: moondream_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'moondream2' }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_MOONDREAM2_TEST=False python3 -m pytest tests/inference/integration_tests/test_moondream2.py
+          USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" SKIP_MOONDREAM2_TEST=False python3 -m pytest tests/inference/integration_tests/test_moondream2.py
       - name: 🧹 Cleanup Test Docker - MoonDream
         if: ${{ inputs.test_name == '' || inputs.test_name == 'moondream2' }}
         run: make stop_test_docker
       - name: 🚨 Show server logs on error
         run: |
-          docker logs inference-test
+          docker logs "$INFERENCE_TEST_CONTAINER"
           make stop_test_docker
         if: failure()
+      - name: Remove this job's test container and credentials
+        if: ${{ always() }}
+        run: |
+          docker rm -f "$INFERENCE_TEST_CONTAINER" > /dev/null 2>&1 || true
+          rm -rf -- "$DOCKER_CONFIG"

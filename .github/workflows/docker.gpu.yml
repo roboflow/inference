@@ -51,6 +51,7 @@ env:
 
 jobs:
   docker:
+    if: ${{ github.event_name != 'push' || vars.CI_IMAGE_REUSE_ENABLED != 'true' }}
     runs-on:
       labels: ubuntu-latest
     timeout-minutes: 120
