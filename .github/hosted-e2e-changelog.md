@@ -4,6 +4,8 @@
 
 ### Review follow-ups — October 15, 2026
 
+- Record team agreement on the shared-CI-infrastructure approach while retaining
+  private-caller configuration and live-validation rollout prerequisites.
 - Clarify that missing provider credentials may skip tests, while empty or
   invalid credentials may cause authentication failures. Unexpected skips and
   failed tests both reject acceptance.

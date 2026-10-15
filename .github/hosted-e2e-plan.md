@@ -43,6 +43,6 @@ authorized by these checks and no speedup is claimed.
   and the deployment must remain stable during acceptance.
 - Shared resources and provider limits need live load validation. File grouping
   and a serialized orchestration run do not prove independent external quotas.
-- Maintainer review of shared infrastructure is required before rollout. This
-  plan records the user-authorized implementation; no maintainer discussion or
-  approval is claimed and no messages are sent automatically.
+- The shared-CI-infrastructure approach has been agreed within the team, as
+  confirmed by a repository maintainer. Private-caller configuration, deployment
+  verification and load/isolation validation remain prerequisites for live rollout.
