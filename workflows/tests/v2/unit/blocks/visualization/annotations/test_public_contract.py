@@ -399,8 +399,8 @@ def test_palette_literals_are_checked_at_compile_by_every_palette_block(
 
 def test_palette_blocks_are_the_sixteen_colored_annotations() -> None:
     # then: guards the parametrization above against an empty or partial list
-    assert len(PALETTE_BLOCKS) == 16
-    assert len(COPY_IMAGE_REJECTERS) == 27
+    assert len(PALETTE_BLOCKS) == 17
+    assert len(COPY_IMAGE_REJECTERS) == 28
 
 
 @pytest.mark.parametrize(

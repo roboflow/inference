@@ -31,6 +31,7 @@ roboflow_core/icon_visualization@v1                   roboflow_core/icon_visuali
 roboflow_core/model_comparison_visualization@v1       roboflow_core/model_comparison_visualization@v1
 roboflow_core/rich_label_visualization@v1             roboflow_core/rich_label_visualization@v1
 roboflow_core/text_display@v1                         roboflow_core/text_display@v1
+roboflow_core/detection_visualization@v1              (new) boxes, then labels, in one step
 ====================================================  ===================================================
 
 Each block runs once per image on the image's device and returns a new
@@ -47,9 +48,10 @@ the same workflow input are mapped into the drawn image and clipped to it.
 Retained annotations are selected explicitly by this package; retired siblings
 are excluded from default discovery.
 
-``create_catalogue()`` registers each block once. Bounding boxes and labels
-provide accurate and fast implementations; their parameters, image ownership
-and output types stay the same. Accurate rendering is the default.
+``create_catalogue()`` registers each block once. Bounding boxes, labels and
+their combination provide accurate and fast implementations; their
+parameters, image ownership and output types stay the same. Accurate
+rendering is the default.
 
 """
 
@@ -76,6 +78,9 @@ from roboflow_workflows.v2.blocks.visualization.annotations.corner_visualization
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.crop_visualization.v1 import (
     CropVisualizationBlock,
+)
+from roboflow_workflows.v2.blocks.visualization.annotations.detection_visualization.v1 import (
+    DetectionVisualizationBlock,
 )
 from roboflow_workflows.v2.blocks.visualization.annotations.dot_visualization.v1 import (
     DotVisualizationBlock,
@@ -167,6 +172,7 @@ BLOCKS = (
     RichLabelVisualizationBlock,
     ModelComparisonVisualizationBlock,
     TextDisplayBlock,
+    DetectionVisualizationBlock,
 )
 
 __all__ = [
@@ -177,6 +183,7 @@ __all__ = [
     "ClassificationLabelVisualizationBlock",
     "CornerVisualizationBlock",
     "CropVisualizationBlock",
+    "DetectionVisualizationBlock",
     "DotVisualizationBlock",
     "EllipseVisualizationBlock",
     "HaloVisualizationBlock",

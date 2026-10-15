@@ -16,6 +16,8 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- **V2 combined detection visualization** — Add `roboflow_core/detection_visualization@v1` to draw boxes and labels in one step with shared palette parameters. Accurate rendering preserves the existing accurate box-then-label chain; explicit fast quality uses portable fast implementations with documented outline raster differences. Existing blocks and defaults are unchanged.
+
 - **V2 empty coarse masks** — Return an empty full-image mask raster when no instances remain, preserving device and frame metadata without interpolating zero channels.
 
 - **V2 annotation singleton columns** — Normalize noncanonical singleton inner strides before packing prediction columns as bytes, preserving exact integer class IDs and allowing single-detection visualization outputs.

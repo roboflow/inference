@@ -136,6 +136,5 @@ def test_catalogue_exposes_only_canonical_visualization_blocks():
         "simple_label_visualization",
         "simple_label_visualization_in_place",
         "detection_drawing",
-        "detection_visualization",
     ):
         assert catalogue.find(f"roboflow_core/{family}@v1") is None

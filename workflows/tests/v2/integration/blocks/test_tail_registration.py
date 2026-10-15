@@ -353,6 +353,7 @@ def test_exact_22_additions_preserve_current_registry_exports_and_schemas(route)
     added = {row["type"] for row in records}
     successor = set(
         (
+            "roboflow_core/detection_visualization@v1",
             "roboflow_core/icon_visualization@v1",
             "roboflow_core/rich_label_visualization@v1",
             "roboflow_core/model_comparison_visualization@v1",

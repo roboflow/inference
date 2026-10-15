@@ -784,6 +784,7 @@ class TestCatalogue:
             "roboflow_core/rich_label_visualization@v1",
             "roboflow_core/model_comparison_visualization@v1",
             "roboflow_core/text_display@v1",
+            "roboflow_core/detection_visualization@v1",
             "roboflow_core/asset_library_attributes@v1",
             "roboflow_core/roboflow_dataset_upload@v2",
             "roboflow_core/model_monitoring_inference_aggregator@v1",
