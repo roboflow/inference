@@ -299,7 +299,14 @@ def test_registry_denial_records_the_cause_as_error_type(
     assert "error_status_code" not in row["resource_details"]
 
 
-def _posted_rows(usage_client, gateway, monkeypatch):
+def _posted_rows(
+    usage_client,
+    gateway,
+    monkeypatch,
+    *,
+    path="/infer/object_detection",
+    body=None,
+):
     posts = []
 
     def _post(url, **kwargs):
@@ -314,8 +321,8 @@ def _posted_rows(usage_client, gateway, monkeypatch):
     client = usage_client(gateway)
 
     response = client.post(
-        "/infer/object_detection",
-        json={"model_id": "ds/1", "api_key": "k", "image": _image()},
+        path,
+        json=body or {"model_id": "ds/1", "api_key": "k", "image": _image()},
     )
     client.__exit__(None, None, None)
 
@@ -345,6 +352,38 @@ def test_registry_refusal_posts_the_status_and_type_of_the_refusal(
     details = json.loads(rows[0]["resource_details"])
     assert details["error_type"] == type(error).__name__
     assert details["error_status_code"] == status_code
+
+
+def test_vlm_model_row_posts_the_descriptor_the_legacy_server_reports(
+    usage_client, fake_stat, monkeypatch
+):
+    fake_stat["qwen3_5-0.8b"] = ("vlm", "prompt", "qwen3_5", "qwen3_5-0.8b")
+    gateway = FakeGateway(
+        predictions={("qwen3_5-0.8b", "prompt"): ["a cat"]},
+        model_info={"qwen3_5-0.8b": {"actions": {"prompt": {}}}},
+    )
+
+    response, rows = _posted_rows(
+        usage_client,
+        gateway,
+        monkeypatch,
+        path="/infer/lmm",
+        body={
+            "model_id": "qwen3_5-0.8b",
+            "image": _image(),
+            "prompt": "what is it?",
+            "api_key": "k",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    (model,) = [row for row in rows if row["category"] == "model"]
+    details = json.loads(model["resource_details"])
+    assert details == {
+        "billable": True,
+        "model_architecture": "qwen3_5-0.8b",
+        "task_type": "lmm",
+    }
 
 
 @pytest.mark.parametrize(
@@ -1027,8 +1066,8 @@ def test_lmm_path_route_records_the_path_model(
     _assert_success_row(row, resource_id="smolvlm2/x")
     model = _model_row(usage_collector)
     assert model["resource_id"] == "smolvlm2/x"
-    assert model["resource_details"]["task_type"] == "vlm"
-    assert model["resource_details"]["model_variant"] == "2.2b"
+    assert model["resource_details"]["task_type"] == "lmm"
+    assert model["resource_details"]["model_variant"] == "x"
 
 
 def test_lmm_model_id_mismatch_records_the_http_exception(
@@ -1696,7 +1735,7 @@ def _owlv2_reference(image):
             {"my-vlm/1": ("vlm", "prompt", "paligemma", "paligemma-3b")},
             "my-vlm/1",
             1,
-            ("paligemma", "paligemma-3b", "vlm"),
+            ("paligemma", "paligemma-3b", "lmm"),
         ),
         (
             "/infer/depth-estimation",

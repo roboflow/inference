@@ -325,12 +325,18 @@ _LEGACY_CORE_MODEL_DESCRIPTORS: dict[str, tuple[str, str]] = {
     "doctr": ("doctr", "ocr"),
     "easy_ocr": ("easy_ocr", "ocr"),
     "grounding_dino": ("grounding-dino", "object-detection"),
+    "moondream2": ("moondream2", "llm"),
     "owlv2": ("owlv2", "object-detection"),
     "perception_encoder": ("perception_encoder", "embedding"),
     "pp_ocr": ("pp_ocr", "ocr"),
+    "qwen3_5-0.8b": ("qwen3_5-0.8b", "lmm"),
+    "qwen3_5-2b": ("qwen3_5-2b", "lmm"),
+    "qwen3_5-4b": ("qwen3_5-4b", "lmm"),
+    "qwen3_8-27b": ("qwen3_8-27b", "lmm"),
     "sam": ("sam", "unsupervised-segmentation"),
     "sam2": ("sam2", "unsupervised-segmentation"),
     "sam3": ("sam3", "unsupervised-segmentation"),
+    "smolvlm2": ("smolvlm-2.2b-instruct", "lmm"),
     "trocr": ("trocr", "ocr"),
     "yolo_world": ("yolo-world", "object-detection"),
 }
@@ -341,6 +347,7 @@ _LEGACY_USAGE_TASK_TYPES = {
     "interactive-instance-segmentation": "unsupervised-segmentation",
     "structured-ocr": "ocr",
     "text-only-ocr": "ocr",
+    "vlm": "lmm",
 }
 
 _TASK_TYPE_BY_MRO = {

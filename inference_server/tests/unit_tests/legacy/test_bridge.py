@@ -1957,6 +1957,90 @@ _PP_OCR_STAGES = {
             {"ds/1": ("object-detection", "infer", "yolov8", "yolov8-n")},
             ("yolov8", "yolov8-n", "object-detection"),
         ),
+        (
+            "florence-2-base",
+            {"florence-pretrains/3": ("vlm", "prompt", "florence-2", "base")},
+            ("florence-2", "base", "lmm"),
+        ),
+        (
+            "image-text/229",
+            {"image-text/229": ("vlm", "prompt", "florence-2", "base-peft")},
+            ("florence-2", "base-peft", "lmm"),
+        ),
+        (
+            "image-text/226",
+            {"image-text/226": ("vlm", "prompt", "paligemma-2", "3b-pt-224-peft")},
+            ("paligemma-2", "3b-pt-224-peft", "lmm"),
+        ),
+        (
+            "image-text/214",
+            {"image-text/214": ("vlm", "prompt", "qwen25vl", "7b-peft")},
+            ("qwen25vl", "7b-peft", "lmm"),
+        ),
+        (
+            "image-text/218",
+            {"image-text/218": ("vlm", "prompt", "qwen3vl", "2b-peft")},
+            ("qwen3vl", "2b-peft", "lmm"),
+        ),
+        (
+            "image-text/223",
+            {"image-text/223": ("vlm", "prompt", "qwen3_5", "0.8b-peft")},
+            ("qwen3_5", "0.8b-peft", "lmm"),
+        ),
+        (
+            "qwen3_5-0.8b",
+            {"qwen3_5-0.8b": ("vlm", "prompt", "qwen3_5", "qwen3_5-0.8b")},
+            ("qwen3_5-0.8b", None, "lmm"),
+        ),
+        (
+            "qwen3_8-27b",
+            {"qwen3_8-27b": ("vlm", "prompt", "qwen3_8", "qwen3_8-27b")},
+            ("qwen3_8-27b", None, "lmm"),
+        ),
+        (
+            "image-text/224",
+            {"image-text/224": ("vlm", "prompt", "smolvlm-v2", "256m-peft")},
+            ("smolvlm-v2", "256m-peft", "lmm"),
+        ),
+        (
+            "smolvlm2/smolvlm-2.2b-instruct",
+            {
+                "smolvlm2/smolvlm-2.2b-instruct": (
+                    "vlm",
+                    "prompt",
+                    "smolvlm-v2",
+                    "2.2b-instruct",
+                )
+            },
+            ("smolvlm-2.2b-instruct", "smolvlm-2.2b-instruct", "lmm"),
+        ),
+        (
+            "moondream2/moondream2_2b_jul24",
+            {
+                "moondream2/moondream2_2b_jul24": (
+                    "vlm",
+                    "prompt",
+                    "moondream2",
+                    "2b-jul24",
+                )
+            },
+            ("moondream2", "moondream2_2b_jul24", "llm"),
+        ),
+        (
+            "moondream2/moondream2_2b_jul24",
+            {},
+            ("moondream2", "moondream2_2b_jul24", "llm"),
+        ),
+        (
+            "glm-ocr-ds/1",
+            {"glm-ocr-ds/1": ("vlm", "prompt", "glm-ocr", None)},
+            ("glm-ocr", None, "lmm"),
+        ),
+        (
+            "cosmos-vlm/2",
+            {"cosmos-vlm/2": ("vlm", "prompt", "cosmos3-edge", "edge-peft")},
+            ("cosmos3-edge", "edge-peft", "lmm"),
+        ),
     ],
 )
 async def test_model_row_carries_the_descriptor_the_legacy_server_reports(
