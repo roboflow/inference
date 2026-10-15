@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Review follow-ups — October 15, 2026
+
+- Clarify that missing provider credentials may skip tests, while empty or
+  invalid credentials may cause authentication failures. Unexpected skips and
+  failed tests both reject acceptance.
+- Exercise explicitly skipped cases through real pytest subprocesses, checking
+  both acceptance with an exact skip allowlist and rejection without it.
+- Document complete-workflow reruns: preparation and shard evidence must share
+  the same attempt; rerunning only failed jobs cannot reuse an earlier plan.
+
 ### Added — October 15, 2026
 
 - Opt-in private-caller acceptance workflow with four serial pytest shards,

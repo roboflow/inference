@@ -72,7 +72,10 @@ acceptance. Splitting a slow file further requires an isolation review.
    identifiers in private configuration/secrets, not public workflow inputs.
 4. Explicitly map the secrets declared by the reusable workflow. Use narrow,
    short-lived credentials where supported. Do not use `secrets: inherit`.
-   Empty provider credentials cause unexpected skips and reject acceptance.
+   Missing provider credentials can cause skips; empty or invalid credentials
+   can cause authentication failures. Unexpected skips and failed tests both
+   prevent acceptance. Tests checking `KEY is None` do not skip for an empty
+   string supplied through an environment variable.
 5. Supply the private adapter below and an explicit `allowed_skips.json` list
    of collected node IDs for deliberately disabled tests. The default allowlist
    is empty. Stale allowlist entries and unexpected skips fail acceptance.
@@ -140,6 +143,14 @@ duplicated or inconsistent results cannot pass. A successful retry remains
 visible in the private report. Aggregation is scheduled after failed shards;
 hard cancellation or runner loss may prevent artifact creation and requires a
 fresh complete run, never acceptance from partial evidence.
+
+After a failed or incomplete run, use **Re-run all jobs** or start a new complete
+workflow run. Do not use **Re-run failed jobs**: a rerun increments `run_attempt`,
+but preparation evidence from successful jobs remains under the previous
+attempt's artifact name. Restarted shards cannot find a plan for their new
+attempt, and copying the earlier artifact would still fail the context check.
+Preparation, warmup, all four shards and aggregation must belong to the same
+attempt. These checks intentionally prevent mixing evidence across attempts.
 
 Logs, case IDs, timing profiles, dependency lists, deployment metadata and
 artifacts remain in the private caller; artifacts expire after three days.

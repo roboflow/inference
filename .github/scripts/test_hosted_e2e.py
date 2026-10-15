@@ -300,6 +300,52 @@ class CommandTests(unittest.TestCase):
         self._run("shard", shard="A", expected=3)
         self._run("aggregate", expected=1)
 
+    def _exercise_explicit_skip(self, *, allowlisted: bool) -> None:
+        nodeid = "suite/test_skipped.py::test_disabled"
+        self.suite.joinpath("test_skipped.py").write_text(
+            "import pytest\n"
+            '@pytest.mark.skip(reason="Deliberately disabled")\n'
+            "def test_disabled():\n"
+            '    raise AssertionError("Skipped test body must not execute")\n'
+        )
+        self.policy.joinpath("allowed_skips.json").write_text(
+            json.dumps([nodeid] if allowlisted else [])
+        )
+
+        self._run("prepare")
+        self._run("warmup")
+        for shard in "ABCD":
+            self._run("shard", shard=shard)
+        result = self._run("aggregate", expected=0 if allowlisted else 1)
+
+        reports = [
+            json.loads(path.read_text()) for path in self.output.glob("shard-*.json")
+        ]
+        skipped_cases = [r["cases"][nodeid] for r in reports if nodeid in r["cases"]]
+        self.assertEqual(len(skipped_cases), 1)
+        self.assertEqual(
+            skipped_cases[0]["outcomes"],
+            {"setup": ["skipped"], "call": [], "teardown": ["passed"]},
+        )
+        self.assertEqual(skipped_cases[0]["durations"]["call"], [])
+        acceptance = json.loads(self.output.joinpath("acceptance.json").read_text())
+        self.assertEqual(acceptance["accepted"], allowlisted)
+        self.assertEqual(
+            acceptance["unexpected_skips"], [] if allowlisted else [nodeid]
+        )
+        self.assertEqual(acceptance["failures"], [])
+        self.assertEqual(acceptance["issues"], [])
+        self.assertEqual(result.stdout, "accepted\n" if allowlisted else "failed\n")
+        self.assertEqual(self.root.joinpath("warmups.txt").read_text(), "1")
+
+    def test_allowlisted_explicit_skip_is_recorded_and_accepted(self):
+        """Retain an allowed setup skip in real pytest subprocess evidence."""
+        self._exercise_explicit_skip(allowlisted=True)
+
+    def test_unexpected_explicit_skip_is_recorded_and_rejected(self):
+        """Reject an actual pytest skip absent from the prepared allowlist."""
+        self._exercise_explicit_skip(allowlisted=False)
+
     def test_adapter_output_is_not_echoed_and_public_runs_are_rejected(self):
         """Keep verifier exceptions and credentialed execution private."""
         self.policy.joinpath("verify_deployment.py").write_text(
