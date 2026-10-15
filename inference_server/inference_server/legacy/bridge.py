@@ -34,7 +34,12 @@ from inference_server.framework.model_stat import (
     stat_model_details_while_checking_auth,
 )
 from inference_server.gateway import ModelManagerGateway, ReloadAfterEvictionError
-from inference_server.legacy.common import ImagePayload, fetch_url_images
+from inference_server.legacy.common import (
+    ImagePayload,
+    _url_fetch_error,
+    _url_input_refused_error,
+    fetch_url_images,
+)
 from inference_server.legacy.entities import ResolvedModel
 from inference_server.legacy.errors import (
     MODEL_ACCESS_ERROR_MESSAGES,
@@ -44,7 +49,6 @@ from inference_server.legacy.errors import (
     REGISTRY_UNREACHABLE_MESSAGE,
     SERVICE_MISCONFIGURATION_MESSAGE,
     UNAUTHORIZED_MESSAGE,
-    ImageFetchError,
     InputImageLoadError,
     LegacyHTTPError,
     ModelNotReadyError,
@@ -878,12 +882,10 @@ class LegacyModelBridge:
 
     async def fetch_image(self, url: str) -> bytes:
         if LEGACY_OFFLINE_MODE or not ALLOW_URL_INPUT:
-            raise LegacyHTTPError(
-                400, "Loading images from URLs is not allowed on this server."
-            )
+            raise _url_input_refused_error()
         images, error = await fetch_url_images([url])
         if error is not None:
-            raise ImageFetchError(error.status_code, "Could not fetch image from URL.")
+            raise _url_fetch_error(error)
         return images[0]
 
     async def unload(self, model_id: str) -> None:

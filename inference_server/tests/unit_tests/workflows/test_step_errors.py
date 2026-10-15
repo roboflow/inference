@@ -757,15 +757,15 @@ def test_bad_base64_image_in_a_step_stays_client_caused_400(
     assert [call for call in gateway.calls if call[0] == "infer"] == []
 
 
-def test_failed_image_fetch_in_a_step_stays_client_caused_with_its_status(
+def test_failed_image_fetch_in_a_step_is_a_client_caused_image_load_error(
     legacy_client, fake_stat, monkeypatch
 ):
-    from fastapi import Response
+    from inference_server.errors import error_response
 
     fake_stat["ds/1"] = ("object-detection", "infer")
 
     async def _fetch(urls):
-        return None, Response(status_code=502)
+        return None, error_response(502, "URL_FETCH_FAILED", "fetching failed")
 
     monkeypatch.setattr("inference_server.legacy.bridge.fetch_url_images", _fetch)
 
@@ -784,10 +784,13 @@ def test_failed_image_fetch_in_a_step_stays_client_caused_with_its_status(
     response = _run(legacy_client(gateway))
 
     body = response.json()
-    assert response.status_code == 502
-    assert body["message"] == "Could not fetch image from URL."
+    assert response.status_code == 400
+    assert body["message"] == (
+        "Could not load input image. Cause: "
+        "Data pointed by URL could not be decoded into image."
+    )
     assert body["error_type"] == "ClientCausedStepExecutionError"
-    assert body["inner_error_type"] == "ImageFetchError"
+    assert body["inner_error_type"] == "InputImageLoadError"
 
 
 def test_malformed_pipeline_model_id_in_a_step_answers_400(legacy_client, fake_stat):

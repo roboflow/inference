@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import io
+import json
 import logging
 import threading
 import time
@@ -22,12 +23,14 @@ from inference_models.errors import (
 )
 from inference_sdk.config import apply_duration_minimum
 from inference_server import configuration
+from inference_server.errors import error_response
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
     LoopBridge,
     SyncLegacyBridge,
 )
 from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.usage.collector import UsageCollector
 from inference_server.usage.observer import UsageExecutionObserver
 from inference_server.usage.rows import (
     USAGE_SCOPE,
@@ -36,6 +39,7 @@ from inference_server.usage.rows import (
     steps_resource_id,
     workflow_steps,
 )
+from inference_server.workflows import router as workflows_router
 from inference_server.workflows.models_provider import GatewayModelsProvider
 from tests.unit_tests.legacy.conftest import FakeGateway
 from tests.unit_tests.usage.conftest import FakeUsageCollector
@@ -1194,3 +1198,145 @@ def test_provider_image_that_cannot_be_loaded_records_the_model_row(
         row["error_status_code"],
     ) == ("model", "ds/1", 2, "InvalidNumpyInput", None)
     assert row["resource_details"]["task_type"] == "object-detection"
+
+
+URL_IMAGES = [
+    {"type": "url", "value": "https://example.com/a.jpg"},
+    {"type": "url", "value": "https://example.com/b.jpg"},
+]
+
+
+def _fetch_answering(answer):
+    async def _fetch(urls):
+        if isinstance(answer, bytes):
+            return [answer] * len(urls), None
+        return None, error_response(*answer)
+
+    return _fetch
+
+
+def _run_with_url_images(client, monkeypatch, fetch_answer):
+    monkeypatch.setattr(
+        "inference_server.legacy.bridge.fetch_url_images",
+        _fetch_answering(fetch_answer),
+    )
+
+    class _Provider(GatewayModelsProvider):
+        def run_object_detection(self, model_id, images, api_key=None, **kwargs):
+            return super().run_object_detection(
+                model_id=model_id, images=URL_IMAGES, api_key=api_key, **kwargs
+            )
+
+    monkeypatch.setattr(workflows_router, "GatewayModelsProvider", _Provider)
+    response = client.post(
+        "/workflows/run",
+        json={
+            "specification": _detection_workflow("ds/1"),
+            "inputs": {"image": {"type": "base64", "value": _jpeg_b64()}},
+            "api_key": "k",
+        },
+    )
+
+    return response
+
+
+@pytest.mark.parametrize(
+    "fetch_answer,error_type",
+    [
+        ((502, "URL_FETCH_FAILED", "fetching image URL failed"), "InputImageLoadError"),
+        (
+            (502, "URL_FETCH_FAILED", "fetching image URL returned status 404"),
+            "InputImageLoadError",
+        ),
+        ((504, "URL_FETCH_TIMEOUT", "timed out"), "InputImageLoadError"),
+        ((403, "URL_DESTINATION_FORBIDDEN", "dest"), "InputImageLoadError"),
+        ((400, "URL_REFUSED", "Provided image URL is invalid"), "InputImageLoadError"),
+        (
+            (403, "URL_INPUT_DISABLED", "disabled"),
+            "InvalidImageTypeDeclared",
+        ),
+        (b"<html></html>", "InputImageLoadError"),
+    ],
+    ids=[
+        "unreachable",
+        "http-404",
+        "timeout",
+        "forbidden-destination",
+        "refused",
+        "url-input-disabled",
+        "not-an-image",
+    ],
+)
+def test_step_image_url_that_cannot_be_fetched_records_one_model_row(
+    usage_client, usage_collector, fake_stat, monkeypatch, fetch_answer, error_type
+):
+    client = usage_client(_detection_gateway(fake_stat, "ds/1"))
+
+    response = _run_with_url_images(client, monkeypatch, fetch_answer)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["inner_error_type"] == error_type
+    assert _categories(usage_collector) == ["model", "workflows", "request"]
+    model = _only_row_of(usage_collector, "model")
+    assert (
+        model["resource_id"],
+        model["api_key"],
+        model["frames"],
+        model["error_type"],
+        model["error_status_code"],
+    ) == ("ds/1", "k", 2, error_type, None)
+    assert model["resource_details"]["task_type"] == "object-detection"
+    assert model["resource_details"]["error"].startswith(f"{error_type}: ")
+    assert "error_status_code" not in model["resource_details"]
+
+
+def test_step_image_url_failure_posts_the_model_row_without_a_status(
+    usage_client, fake_stat, monkeypatch
+):
+    posts = []
+
+    def _post(url, **kwargs):
+        posts.append(kwargs["json"])
+        return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr("inference_server.usage.delivery.requests.post", _post)
+    collector = UsageCollector()
+    monkeypatch.setattr(
+        "inference_server.app._start_usage_collector", lambda: collector
+    )
+    client = usage_client(_detection_gateway(fake_stat, "ds/1"))
+
+    _run_with_url_images(
+        client, monkeypatch, (502, "URL_FETCH_FAILED", "fetching image URL failed")
+    )
+    client.__exit__(None, None, None)
+
+    rows = [row for post in posts for row in post]
+    (model,) = [row for row in rows if row["category"] == "model"]
+    details = json.loads(model["resource_details"])
+    assert model["resource_id"] == "ds/1"
+    assert model["processed_frames"] == 2
+    assert details["error_type"] == "InputImageLoadError"
+    assert "error_status_code" not in details
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [ForbiddenModelAccessError("forbidden"), None],
+    ids=["unauthorised", "unknown"],
+)
+def test_step_image_url_of_a_model_that_does_not_resolve_records_no_model_row(
+    usage_client, usage_collector, fake_stat, monkeypatch, refusal
+):
+    gateway = _detection_gateway(fake_stat, "ds/1")
+    fake_stat.pop("ds/1")
+    if refusal is not None:
+        fake_stat["ds/1"] = refusal
+    client = usage_client(gateway)
+
+    response = _run_with_url_images(
+        client, monkeypatch, (502, "URL_FETCH_FAILED", "fetching image URL failed")
+    )
+
+    assert response.status_code in (403, 404), response.text
+    assert sorted(_categories(usage_collector)) == ["request", "workflows"]

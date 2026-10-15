@@ -10,7 +10,7 @@ from PIL import Image
 
 from inference_server.framework.input_parsers.url_fetch import fetch_images_from_urls
 from inference_server.legacy.bridge import LegacyModelBridge
-from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.legacy.errors import InputImageLoadError
 from tests.unit_tests.legacy.conftest import FakeGateway
 from tests.unit_tests.test_v2_infer_input import _FakeResp
 
@@ -805,29 +805,30 @@ def test_refused_url_after_a_fetched_one_answers_after_the_fetch(
 
 
 @pytest.mark.parametrize(
-    "url,settings,status",
+    "url,settings,message",
     [
-        (HTTP_URL, {}, 400),
-        ("https://192.168.1.5/a.jpg", {}, 400),
-        ("https://localhost/a.jpg", {}, 400),
-        ("https://myhost/a.jpg", {}, 400),
-        ("https://[", {}, 400),
-        (A, {"blocked": frozenset({"example.com"})}, 403),
-        (A, {"allowed": frozenset({"images.example.com"})}, 403),
+        (HTTP_URL, {}, URL_NON_HTTPS),
+        ("https://192.168.1.5/a.jpg", {}, URL_WITHOUT_FQDN),
+        ("https://localhost/a.jpg", {}, URL_WITHOUT_FQDN),
+        ("https://myhost/a.jpg", {}, URL_WITHOUT_FQDN),
+        ("https://[", {}, URL_INVALID),
+        (A, {"blocked": frozenset({"example.com"})}, URL_BLACKLIST),
+        (A, {"allowed": frozenset({"images.example.com"})}, URL_WHITELIST),
     ],
 )
 @pytest.mark.asyncio
 async def test_workflow_image_fetch_refuses_like_the_route(
-    monkeypatch, url, settings, status
+    monkeypatch, url, settings, message
 ):
     session = _Session()
     _configure(monkeypatch, session=session, **settings, **OPEN)
 
-    with pytest.raises(LegacyHTTPError) as error:
+    with pytest.raises(InputImageLoadError) as error:
         await LegacyModelBridge(FakeGateway()).fetch_image(url)
 
-    assert error.value.status_code == status
-    assert error.value.message == "Could not fetch image from URL."
+    assert type(error.value) is InputImageLoadError
+    assert error.value.status_code == 400
+    assert error.value.message == f"{PREFIX}{message}"
     assert session.requested == []
 
 
@@ -854,7 +855,7 @@ async def test_workflow_image_fetch_fetches_what_the_route_fetches(
 
 @pytest.mark.parametrize(
     "switches,requested,status",
-    [({}, [A, BLOCKED_URL], None), (VALIDATING, [A], 403)],
+    [({}, [A, BLOCKED_URL], None), (VALIDATING, [A], 400)],
     ids=["default", "validating"],
 )
 @pytest.mark.asyncio
@@ -874,9 +875,10 @@ async def test_workflow_image_fetch_follows_redirects_like_the_route(
     if status is None:
         assert await bridge.fetch_image(A) == _jpeg()
     else:
-        with pytest.raises(LegacyHTTPError) as error:
+        with pytest.raises(InputImageLoadError) as error:
             await bridge.fetch_image(A)
         assert error.value.status_code == status
+        assert error.value.message == f"{PREFIX}{URL_BLACKLIST}"
     assert session.requested == requested
 
 
