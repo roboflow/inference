@@ -79,7 +79,15 @@ acceptance. Splitting a slow file further requires an isolation review.
 5. Supply the private adapter below and an explicit `allowed_skips.json` list
    of collected node IDs for deliberately disabled tests. The default allowlist
    is empty. Stale allowlist entries and unexpected skips fail acceptance.
-6. Place the selected environment's timing profile and skip allowlist in
+   Collection-time skips (for example, module-level `pytest.skip` or
+   `pytest.importorskip`) require a separate `allowed_collection_skips.json`
+   list of exact collector node IDs, such as
+   `["tests/inference/hosted_platform_tests/test_example.py"]`. This list also
+   defaults to empty. Preparation records collector skips in `collection.json`
+   and rejects unexpected skips or stale entries before creating the plan.
+   Approved collector skips are frozen in the plan and must match during
+   warmup, every shard and aggregation; they do not represent executed cases.
+6. Place the selected environment's timing profile and skip allowlists in
    `.github/hosted-e2e/` at the private caller's pinned commit. The adapter must
    use the standard library or the already installed test dependencies.
 
@@ -143,6 +151,10 @@ duplicated or inconsistent results cannot pass. A successful retry remains
 visible in the private report. Aggregation is scheduled after failed shards;
 hard cancellation or runner loss may prevent artifact creation and requires a
 fresh complete run, never acceptance from partial evidence.
+
+A skip allowlist cannot turn an unresolved test failure into acceptance. A
+failed call followed by a skipped retry is rejected even when the case is
+allowlisted. Successful retries and clean, explicitly allowed skips remain valid.
 
 After a failed or incomplete run, use **Re-run all jobs** or start a new complete
 workflow run. Do not use **Re-run failed jobs**: a rerun increments `run_attempt`,

@@ -122,6 +122,7 @@ class AccountingTests(unittest.TestCase):
                 "completed": True,
                 "exit_code": 0,
                 "collection_errors": 0,
+                "collection_skips": [],
                 "cases": {
                     n: {
                         "outcomes": {p: ["passed"] for p in runner._PHASES},
@@ -162,6 +163,8 @@ class AccountingTests(unittest.TestCase):
             ("context", {"run_key": "1:2"}),
             ("plan_hash", "changed"),
             ("collection_errors", 1),
+            ("collection_skips", ["suite/test_unexpected.py"]),
+            ("collection_skips", None),
             ("cases", {}),
         ]:
             with self.subTest(field=key):
@@ -345,6 +348,150 @@ class CommandTests(unittest.TestCase):
     def test_unexpected_explicit_skip_is_recorded_and_rejected(self):
         """Reject an actual pytest skip absent from the prepared allowlist."""
         self._exercise_explicit_skip(allowlisted=False)
+
+    def _exercise_collection_skip(self, *, statement: str, allowlisted: bool) -> None:
+        module = "suite/test_collection_skip.py"
+        self.suite.joinpath("test_collection_skip.py").write_text(
+            f"import pytest\n{statement}\ndef test_hidden(): assert True\n"
+        )
+        self.policy.joinpath("allowed_collection_skips.json").write_text(
+            json.dumps([module] if allowlisted else [])
+        )
+        self._run("prepare", expected=0 if allowlisted else 1)
+        collection = json.loads(self.output.joinpath("collection.json").read_text())
+        self.assertEqual(collection["collection_skips"], [module])
+        if not allowlisted:
+            self.assertFalse(self.output.joinpath("plan.json").exists())
+            self._run("aggregate", expected=1)
+            self.assertFalse(self.output.joinpath("acceptance.json").exists())
+            return
+
+        self._run("warmup")
+        for shard in "ABCD":
+            self._run("shard", shard=shard)
+        self._run("aggregate")
+
+        plan = json.loads(self.output.joinpath("plan.json").read_text())
+        self.assertEqual(plan["collection_skips"], [module])
+        self.assertFalse(any(node.startswith(module) for node in plan["manifest"]))
+        for name in ["warmup", *[f"shard-{shard}" for shard in "ABCD"]]:
+            report = json.loads(self.output.joinpath(f"{name}.json").read_text())
+            self.assertEqual(report["collection_skips"], [module])
+        acceptance = json.loads(self.output.joinpath("acceptance.json").read_text())
+        self.assertTrue(acceptance["accepted"])
+        self.assertEqual(self.root.joinpath("warmups.txt").read_text(), "1")
+
+    def test_unexpected_module_level_skip_is_rejected(self):
+        """Reject a module that disappears before its tests are collected."""
+        self._exercise_collection_skip(
+            statement='pytest.skip("Provider unavailable", allow_module_level=True)',
+            allowlisted=False,
+        )
+
+    def test_allowlisted_module_level_skip_is_recorded(self):
+        """Retain explicit authorization for a module skip in all evidence."""
+        self._exercise_collection_skip(
+            statement='pytest.skip("Provider unavailable", allow_module_level=True)',
+            allowlisted=True,
+        )
+
+    def test_unexpected_importorskip_is_rejected(self):
+        """Reject missing optional dependencies without collection authorization."""
+        self._exercise_collection_skip(
+            statement='pytest.importorskip("hosted_e2e_nonexistent_test_provider")',
+            allowlisted=False,
+        )
+
+    def test_allowlisted_importorskip_is_recorded(self):
+        """Allow an explicitly declared missing optional dependency."""
+        self._exercise_collection_skip(
+            statement='pytest.importorskip("hosted_e2e_nonexistent_test_provider")',
+            allowlisted=True,
+        )
+
+    def test_collection_skip_drift_fails_warmup_and_shards(self):
+        """Reject newly skipped collectors even when collected cases stay equal."""
+        self._run("prepare")
+        self._run("warmup")
+        self.suite.joinpath("test_new_skip.py").write_text(
+            'import pytest\npytest.skip("New skip", allow_module_level=True)\n'
+        )
+        self._run("warmup", expected=1)
+        for shard in "ABCD":
+            self._run("shard", shard=shard, expected=3)
+        self._run("aggregate", expected=1)
+        acceptance = json.loads(self.output.joinpath("acceptance.json").read_text())
+        self.assertFalse(acceptance["accepted"])
+        for shard in "ABCD":
+            self.assertIn(f"invalid-shard-{shard}", acceptance["issues"])
+
+    def test_stale_or_malformed_collection_skip_allowlist_is_rejected(self):
+        """Fail preparation when collection authorization is stale or invalid."""
+        for allowlist in [["suite/test_absent.py"], "suite/test_absent.py", [None]]:
+            with self.subTest(allowlist=allowlist):
+                self.policy.joinpath("allowed_collection_skips.json").write_text(
+                    json.dumps(allowlist)
+                )
+                self._run("prepare", expected=1)
+                self.assertFalse(self.output.joinpath("plan.json").exists())
+
+    def test_disappearing_collection_skip_invalidates_the_plan(self):
+        """Reject a removed collection skip without relying on manifest drift."""
+        self._exercise_collection_skip(
+            statement='pytest.skip("Provider unavailable", allow_module_level=True)',
+            allowlisted=True,
+        )
+        self.suite.joinpath("test_collection_skip.py").write_text("# No tests\n")
+        self._run("warmup", expected=1)
+        self._run("shard", shard="A", expected=3)
+        self._run("aggregate", expected=1)
+
+    def _exercise_call_skip(self, *, fail_first: bool) -> None:
+        nodeid = "suite/test_call_skip.py::test_skip"
+        self.suite.joinpath("test_call_skip.py").write_text(
+            "import pytest\ncounter=0\n"
+            "@pytest.mark.flaky(retries=1, delay=0)\n"
+            "def test_skip():\n"
+            "    global counter\n    counter+=1\n"
+            f"    if {fail_first!r} and counter == 1:\n"
+            '        raise AssertionError("Initial attempt failed")\n'
+            '    pytest.skip("Provider unavailable")\n'
+        )
+        self.policy.joinpath("allowed_skips.json").write_text(json.dumps([nodeid]))
+        self._run("prepare")
+        self._run("warmup")
+        for shard in "ABCD":
+            self._run("shard", shard=shard)
+        self._run("aggregate", expected=1 if fail_first else 0)
+
+        reports = [
+            json.loads(path.read_text()) for path in self.output.glob("shard-*.json")
+        ]
+        cases = [
+            report["cases"][nodeid] for report in reports if nodeid in report["cases"]
+        ]
+        self.assertEqual(len(cases), 1)
+        self.assertEqual(
+            cases[0]["outcomes"]["call"],
+            ["failed", "skipped"] if fail_first else ["skipped"],
+        )
+        for phase in ["setup", "teardown"]:
+            self.assertEqual(
+                cases[0]["outcomes"][phase], ["passed"] * (2 if fail_first else 1)
+            )
+        acceptance = json.loads(self.output.joinpath("acceptance.json").read_text())
+        self.assertEqual(acceptance["accepted"], not fail_first)
+        self.assertEqual(acceptance["failures"], [nodeid] if fail_first else [])
+        self.assertEqual(acceptance["unexpected_skips"], [])
+        self.assertEqual(acceptance["issues"], [])
+
+    def test_allowlisted_skipped_retry_cannot_hide_call_failure(self):
+        """Reject a failed call followed by an allowed skip without a pass."""
+        self._exercise_call_skip(fail_first=True)
+
+    def test_clean_allowlisted_call_skip_is_accepted(self):
+        """Preserve deliberate call skips that have no preceding failure."""
+        self._exercise_call_skip(fail_first=False)
 
     def test_adapter_output_is_not_echoed_and_public_runs_are_rejected(self):
         """Keep verifier exceptions and credentialed execution private."""

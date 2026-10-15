@@ -4,6 +4,12 @@
 
 ### Review follow-ups — October 15, 2026
 
+- Reject unauthorized collection-time skips, including module-level skips and
+  missing optional dependencies. Record collector IDs in private evidence,
+  require an exact separate allowlist, and reject skip drift after preparation.
+- Reject allowlisted skipped retries following an unresolved call failure.
+  Preserve successful retries and clean deliberate skips, with subprocess
+  regression coverage for both review findings.
 - Record team agreement on the shared-CI-infrastructure approach while retaining
   private-caller configuration and live-validation rollout prerequisites.
 - Clarify that missing provider credentials may skip tests, while empty or

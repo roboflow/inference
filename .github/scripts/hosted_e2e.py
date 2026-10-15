@@ -51,14 +51,26 @@ def _require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
+def _validate_collection_skips(value) -> None:
+    _require(
+        isinstance(value, list)
+        and all(isinstance(nodeid, str) and nodeid for nodeid in value)
+        and len(value) == len(set(value)),
+        "invalid collection skips",
+    )
+
+
 def _make_plan(
     nodeids: list[str],
     *,
     context: dict,
     allowed_skips: list[str],
+    collection_skips: list[str] | None = None,
     durations: dict[str, float] | None = None,
     file_timings: dict[str, float] | None = None,
 ) -> dict:
+    collection_skips = [] if collection_skips is None else collection_skips
+    _validate_collection_skips(collection_skips)
     _require(isinstance(allowed_skips, list), "invalid skip allowlist")
     _require(durations is None or isinstance(durations, dict), "invalid durations")
     _require(
@@ -109,6 +121,7 @@ def _make_plan(
         "manifest": sorted(nodeids),
         "assignments": {s: sorted(ids) for s, ids in assignments.items()},
         "allowed_skips": sorted(set(allowed_skips)),
+        "collection_skips": sorted(collection_skips),
         "timings_hash": _digest({"cases": timings, "files": file_timings}),
         "estimated_seconds": loads,
         "weight_basis": {
@@ -135,6 +148,7 @@ def _validate_plan(plan: dict) -> None:
     _require(len(assigned) == len(set(assigned)), "overlapping assignments")
     _require(set(assigned) == set(manifest), "incomplete assignments")
     _require(set(plan["allowed_skips"]) <= set(manifest), "invalid skip allowlist")
+    _validate_collection_skips(plan["collection_skips"])
 
 
 def _verify_identity(policy: Path) -> dict:
@@ -188,6 +202,7 @@ class _Recorder:
         self.manifest: list[str] = []
         self.cases: dict[str, dict] = {}
         self.collection_errors = 0
+        self.collection_skips: list[str] = []
         self.fixtures: dict[str, dict] = {}
 
     @pytest.hookimpl(trylast=True)
@@ -204,6 +219,10 @@ class _Recorder:
             return
 
         _require(self.manifest == self.plan["manifest"], "collection differs from plan")
+        _require(
+            sorted(self.collection_skips) == self.plan["collection_skips"],
+            "collection skips differ from plan",
+        )
         if self.warmup:
             _require(bool(items), "warmup requires a collected suite")
             # A function in the same module inherits the hosted suite's session
@@ -221,12 +240,14 @@ class _Recorder:
         config.hook.pytest_deselected(items=removed)
 
     def pytest_collectreport(self, report) -> None:
-        """Count collection failures without copying exception text.
+        """Record collection failures and skipped IDs without exception text.
 
         Args:
             report: Pytest collection report.
         """
         self.collection_errors += int(report.failed)
+        if report.skipped:
+            self.collection_skips.append(report.nodeid)
 
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_runtest_setup(self, item):
@@ -363,8 +384,26 @@ def _file_timings(profile: dict, *, nodeids: list[str], target: str) -> dict:
 def _prepare(*, suite: Path, policy: Path, output: Path) -> None:
     context = _context(policy)
     recorder = _Recorder()
-    _require(_pytest(suite, recorder=recorder, collect=True) == 0, "collection failed")
+    code = _pytest(suite, recorder=recorder, collect=True)
+    _write(
+        output / "collection.json",
+        {
+            "manifest": recorder.manifest,
+            "collection_errors": recorder.collection_errors,
+            "collection_skips": sorted(recorder.collection_skips),
+        },
+    )
+    _require(code == 0, "collection failed")
     _require(recorder.collection_errors == 0, "collection failed")
+    collection_skip_path = policy / "allowed_collection_skips.json"
+    allowed_collection_skips = (
+        _read(collection_skip_path) if collection_skip_path.exists() else []
+    )
+    _validate_collection_skips(allowed_collection_skips)
+    _require(
+        sorted(recorder.collection_skips) == sorted(allowed_collection_skips),
+        "unexpected collection skips or stale collection skip allowlist",
+    )
     skip_path = policy / "allowed_skips.json"
     timings_path = policy / "durations.json"
     profile_path = policy / "timing_profile.json"
@@ -372,6 +411,7 @@ def _prepare(*, suite: Path, policy: Path, output: Path) -> None:
         recorder.manifest,
         context=context,
         allowed_skips=_read(skip_path) if skip_path.exists() else [],
+        collection_skips=recorder.collection_skips,
         durations=_read(timings_path) if timings_path.exists() else None,
         file_timings=(
             _file_timings(
@@ -412,7 +452,13 @@ def _warmup(*, suite: Path, policy: Path, output: Path) -> None:
         "ready": True,
     }
     _write(output / "readiness.json", readiness)
-    _write(output / "warmup.json", {"cases": recorder.cases})
+    _write(
+        output / "warmup.json",
+        {
+            "cases": recorder.cases,
+            "collection_skips": sorted(recorder.collection_skips),
+        },
+    )
 
 
 def _run_shard(*, suite: Path, policy: Path, output: Path, shard: str) -> int:
@@ -426,6 +472,7 @@ def _run_shard(*, suite: Path, policy: Path, output: Path, shard: str) -> int:
         "completed": False,
         "exit_code": 1,
         "collection_errors": 0,
+        "collection_skips": [],
         "cases": {},
     }
     try:
@@ -445,7 +492,9 @@ def _run_shard(*, suite: Path, policy: Path, output: Path, shard: str) -> int:
         recorder = _Recorder(plan=plan, shard=shard)
         code = _pytest(suite, recorder=recorder)
         report.update(
-            cases=recorder.cases, collection_errors=recorder.collection_errors
+            cases=recorder.cases,
+            collection_errors=recorder.collection_errors,
+            collection_skips=sorted(recorder.collection_skips),
         )
         # An explicitly empty assignment is valid only after collection matches.
         if (
@@ -492,6 +541,7 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
             or type(report.get("exit_code")) is not int
             or report["exit_code"] != 0
             or report.get("collection_errors") != 0
+            or report.get("collection_skips") != plan["collection_skips"]
         ):
             issues.append(f"invalid-shard-{shard}")
         cases = report.get("cases", {})
@@ -539,6 +589,10 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
             )
             if skipped and nodeid not in plan["allowed_skips"]:
                 unexpected_skips.append(nodeid)
+            last_completed_call = next(
+                (outcome for outcome in reversed(calls) if outcome != "skipped"), None
+            )
+            unresolved_call_failure = last_completed_call == "failed"
             bad_fixture = (
                 not outcomes["setup"]
                 or not outcomes["teardown"]
@@ -550,7 +604,11 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
                     and not (outcomes["setup"] == ["skipped"] and not calls)
                 )
             )
-            if bad_fixture or (not skipped and (not calls or calls[-1] != "passed")):
+            if (
+                bad_fixture
+                or unresolved_call_failure
+                or (not skipped and (not calls or calls[-1] != "passed"))
+            ):
                 failures.append(nodeid)
     if seen != set(_SHARDS):
         issues.append("missing-shards")

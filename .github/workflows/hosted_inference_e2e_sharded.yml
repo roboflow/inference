@@ -147,6 +147,7 @@ jobs:
         with:
           name: hosted-plan-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            inference/evidence/collection.json
             inference/evidence/plan.json
             inference/evidence/readiness.json
             inference/evidence/warmup.json
