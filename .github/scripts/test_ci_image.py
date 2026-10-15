@@ -278,6 +278,25 @@ class ImageTransportTests(unittest.TestCase):
 class WorkflowContractTests(unittest.TestCase):
     """Check the security boundary, coverage and completion gate as a whole."""
 
+    def test_external_actions_are_pinned_to_commit_shas(self):
+        """Prevent mutable action references in the image-reuse workflow surface."""
+        for name in (
+            "ci_image_build.yml",
+            "ci_image_reuse.yml",
+            "docker.cpu.yml",
+            "docker.gpu.yml",
+            "fast_track_integration_tests.yml",
+            "integration_tests_inference_server_x86.yml",
+            "test.nvidia_t4.yml",
+        ):
+            workflow = self._workflow(name)
+            for job in workflow["jobs"].values():
+                for step in job.get("steps", []):
+                    action = step.get("uses", "")
+                    if action and not action.startswith("./"):
+                        with self.subTest(workflow=name, action=action):
+                            self.assertRegex(action, r"^[^@]+@[0-9a-f]{40}$")
+
     def _workflow(self, name):
         result = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
         return result

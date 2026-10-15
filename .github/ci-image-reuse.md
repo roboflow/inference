@@ -1,5 +1,48 @@
 # CPU/GPU CI image reuse
 
+## Implementation plan
+
+**Author:** [PR #3200 author](https://github.com/roboflow/inference/pull/3200)
+
+**Related PR:** [#3200](https://github.com/roboflow/inference/pull/3200)
+
+This plan follows the [contribution template](implementation-plan-template.md).
+The PR remains a draft. Shared-infrastructure maintainer agreement is still
+pending; this document does not claim that discussion or approval has occurred.
+
+### 1. What problem are we solving?
+
+Maintainers need both server test modes to validate the images produced for a
+main commit without rebuilding identical source in every consumer. Today, a
+single main push starts independent CPU/GPU producers plus two CPU and two T4
+consumer legs, each of which builds its own image. Passing tests therefore do
+not identify the separate producer artifacts, and consumers repeat build work.
+
+### 2. How will the behaviour change?
+
+Before, the same main push fans out to independent builds:
+
+```mermaid
+flowchart LR
+    M[Main commit] --> P[Independent CPU and GPU producers]
+    M --> C[CPU true and false modes each rebuild]
+    M --> G[T4 true and false modes each rebuild]
+    C --> T[Tests run against consumer-built images]
+    G --> T
+```
+
+After activation, the same main push connects producers and consumers:
+
+```mermaid
+flowchart LR
+    M[Main commit] --> C[Build CPU amd64 and arm64 once]
+    M --> G[Build GPU amd64 once]
+    C --> CT[CPU true and false consume the same amd64 digest]
+    G --> GT[T4 true and false consume the same amd64 digest]
+    CT --> Q[Require both complete test matrices]
+    GT --> Q
+```
+
 `ci_image_reuse.yml` coordinates the standard server image builds and tests for
 one main commit. CPU builds amd64 and arm64 in one producer invocation; GPU
 builds amd64 once. The existing CPU and T4 workflows each run both
@@ -13,6 +56,41 @@ then run by local image ID. Failed pulls never trigger a replacement build.
 Test containers have job-specific names and dynamically allocated loopback
 ports. The CPU PyTorch runtime check is retained in the consumer. CPU arm64 is
 built but is **not runtime-qualified** by these x86 tests.
+
+The existing reusable test workflows retain their suites and manual inputs,
+which keeps the change compatible with fast-track callers. Offline contract
+tests and workflow linting verify the wiring; the live trial described below
+must verify transport and timing before activation.
+
+### 3. Uncertainties and decisions needing input
+
+| Question | Investigation | Recommendation | Input needed |
+| --- | --- | --- | --- |
+| Which approved private transport and identities should be used? | Existing producer configuration does not establish a private CI boundary; the new path accepts only external secret parameters. | Use an approved private namespace and separate scoped OIDC reader/writer identities. | Infrastructure maintainers must designate the configuration owner and verify access and retention before activation. No credential values belong in this plan. |
+| Are runners and builder caches sufficiently isolated? | Unique container names and loopback ports prevent accidental naming/port collisions; they cannot isolate jobs sharing a Docker daemon. | Use isolated ephemeral runners and a trusted builder/cache boundary. | Runner and builder owners must confirm isolation before activation. |
+| Which required-check names should protect main? | The orchestrator adds caller prefixes to reusable job names and introduces an aggregate image-test check. | Review protection expectations while retaining all independent required suites. | Repository maintainers must approve the required-check mapping before activation. |
+| Does reuse improve end-to-end duration? | Offline tests verify routing and failure handling, not transfer costs or GPU queueing. | Measure the complete candidate path and GPU occupancy in a full-coverage trial. | An authorized trial is required; no numerical performance claim is made. |
+| What qualifies CPU arm64 for release? | Existing server consumers execute on amd64 only. | Retain the arm64 build and report it separately from tested amd64 images. | Release maintainers must define runtime coverage before treating a multi-platform image as release-qualified; this does not block preparing the reuse path. |
+
+These decisions block activation, not preparation of the disabled implementation.
+The contributor must obtain the shared-infrastructure discussion required by
+[AGENTS.md](../AGENTS.md#internal-contributions-roboflow-team-only) before integration.
+
+## Change record — Unreleased
+
+- Add opt-in CPU/GPU producer-to-consumer reuse by immutable digest, preserving
+  both model modes and the existing server test scope.
+- Validate artifact identity, isolate test container names and host ports, and
+  require complete producer/test results before the aggregate check passes.
+- Parameterize credentials, restrict the new transport to trusted main runs,
+  and pin external actions in the affected workflows to verified commit SHAs.
+
+This is a CI infrastructure change. It changes no runtime package, execution
+engine behavior, package dependency or release version. The package-specific
+`Unreleased` requirements in [AGENTS.md](../AGENTS.md#versioning) and the
+[engine rule](../.cursor/rules/execution-engine-version-changelog.mdc) therefore
+do not require entries in package changelogs or version bumps for this PR.
+This section records the CI change without assigning it to a package release.
 
 ## Configuration and activation
 
