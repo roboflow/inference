@@ -92,3 +92,73 @@ async def test_interface_of_a_pipeline_id_with_a_denied_stage_is_401():
             CommonRequestParams(model_id="pp_ocr/small-medium", api_key="key-1")
         )
     assert response is not None and response.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "task_type, action, mro_names",
+    [
+        ("object-detection", "infer", ["ObjectDetectionModel"]),
+        (
+            "object-detection",
+            "infer",
+            ["RFDetrForObjectDetectionONNX", "ObjectDetectionModel"],
+        ),
+        (
+            "object-detection",
+            "infer",
+            ["YOLOv10ForObjectDetectionOnnx", "ObjectDetectionModel"],
+        ),
+        ("object-detection", "infer", ["RoboflowInstantHF", "ObjectDetectionModel"]),
+        ("instance-segmentation", "infer", ["InstanceSegmentationModel"]),
+        (
+            "instance-segmentation",
+            "infer",
+            ["YOLO26ForInstanceSegmentationOnnx", "InstanceSegmentationModel"],
+        ),
+        (
+            "instance-segmentation",
+            "infer",
+            ["RFDetrForInstanceSegmentationONNX", "InstanceSegmentationModel"],
+        ),
+        (
+            "instance-segmentation",
+            "infer",
+            ["YOLOv5ForInstanceSegmentationOnnx", "InstanceSegmentationModel"],
+        ),
+        ("keypoint-detection", "infer", ["KeyPointsDetectionModel"]),
+        (
+            "keypoint-detection",
+            "infer",
+            ["RFDetrForKeyPointsONNX", "KeyPointsDetectionModel"],
+        ),
+        ("multi-label-classification", "infer", ["MultiLabelClassificationModel"]),
+        ("semantic-segmentation", "infer", ["SemanticSegmentationModel"]),
+        (
+            "open-vocabulary-object-detection",
+            "infer",
+            ["OWLv2HF", "OpenVocabularyObjectDetectionModel"],
+        ),
+        (
+            "open-vocabulary-object-detection",
+            "infer_with_reference_examples",
+            ["OWLv2HF", "OpenVocabularyObjectDetectionModel"],
+        ),
+    ],
+)
+async def test_confidence_type_is_the_same_before_and_after_load(
+    task_type, action, mro_names
+):
+    from inference_model_manager.dispatch import discover_actions_by_mro
+
+    with patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        return_value=MagicMock(task_type=task_type),
+    ):
+        response = await _interface_from_registry(
+            CommonRequestParams(model_id="acme/1", api_key="key-1")
+        )
+    before_load = json.loads(response.body)["actions"][action]["params"]
+    after_load = discover_actions_by_mro(mro_names)[action]["params"]
+
+    assert before_load["confidence"]["type"] == after_load["confidence"]["type"]

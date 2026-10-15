@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from inference_model_manager.registry_defaults import _P_IMAGES, _P_TEXTS, _p
+from inference_model_manager.registry_defaults import (
+    _K_PREPROC,
+    _P_IMAGE_EMBEDDINGS,
+    _P_IMAGES,
+    _P_TEXTS,
+    _p,
+)
 from inference_server.framework.entities import ModelInterfaceDescription
 
 
 def get_embed_images_interface() -> ModelInterfaceDescription:
     return ModelInterfaceDescription(
         task="embedding",
-        params=_p(_P_IMAGES),
+        params=_p(_P_IMAGES, _P_IMAGE_EMBEDDINGS, _K_PREPROC),
         output_schema={"type": "roboflow-embeddings-compact-v1"},
     )
 

@@ -67,7 +67,18 @@ _NON_MODEL_PARAMS: frozenset[str] = frozenset(
     }
 )
 
-_COERCIBLE_QUERY_TYPES: frozenset[str] = frozenset({"str", "int", "float", "bool"})
+_COERCIBLE_QUERY_TYPES: frozenset[str] = frozenset(
+    {"str", "int", "float", "bool", "list", "list[str]", "confidence"}
+)
+
+_CONFIDENCE_MODES: tuple[str, ...] = ("best", "default")
+
+_JSON_TYPES: dict[str, type | tuple[type, ...]] = {
+    "str": str,
+    "int": int,
+    "float": (int, float),
+    "bool": bool,
+}
 
 
 def _bearer_token(request: Request) -> str:
@@ -76,9 +87,13 @@ def _bearer_token(request: Request) -> str:
 
 def decode_common_request_params(request: Request) -> CommonRequestParams:
     qp = request.query_params
-    extra: dict[str, str] = {
-        k: v for k, v in qp.items() if k not in _RESERVED_QUERY_KEYS
-    }
+    extra: dict[str, Any] = {}
+    for key in qp.keys():
+        if key in _RESERVED_QUERY_KEYS:
+            continue
+        values = qp.getlist(key)
+        extra[key] = values[0] if len(values) == 1 else values
+
     response_style = qp.get("response_style") or qp.get("style") or "compact"
     return CommonRequestParams(
         model_id=qp.get("model_id", ""),
@@ -112,21 +127,58 @@ def _validate_action_params(params_spec: dict, params: dict) -> Response | None:
             continue
         if type_name not in _COERCIBLE_QUERY_TYPES:
             continue
-        value = params[name]
-        if isinstance(value, str):
-            try:
-                params[name] = _coerce_param(value, type_name)
-            except ValueError as exc:
-                logger.warning("Invalid param: %s", exc)
-                return error_response(
-                    400,
-                    "INVALID_PARAM",
-                    f"param {name!r}",
-                )
+        try:
+            params[name] = _coerce_param(params[name], type_name)
+        except ValueError as exc:
+            logger.warning("Invalid param: %s", exc)
+            expected = (
+                "a number, 'best' or 'default'"
+                if type_name == "confidence"
+                else type_name
+            )
+            return error_response(
+                400,
+                "INVALID_PARAM",
+                f"param {name!r} must be {expected}",
+            )
     return None
 
 
-def _coerce_param(raw: str, type_name: str) -> Any:
+def _coerce_param(value: Any, type_name: str) -> Any:
+    if value is None:
+        return value
+    if type_name == "confidence":
+        if isinstance(value, str) and value in _CONFIDENCE_MODES:
+            return value
+        type_name = "float"
+    if type_name in ("list", "list[str]"):
+        items = [value] if isinstance(value, str) else value
+        if not isinstance(items, list):
+            raise ValueError(f"expected {type_name}, got {type(value).__name__}")
+        if type_name == "list[str]" and not all(isinstance(i, str) for i in items):
+            raise ValueError("expected a list of strings")
+
+        return items
+    if isinstance(value, str):
+        parsed = _parse_text_param(value, type_name)
+
+        return parsed
+    if not isinstance(value, _JSON_TYPES[type_name]) or (
+        isinstance(value, bool) and type_name != "bool"
+    ):
+        raise ValueError(f"expected {type_name}, got {type(value).__name__}")
+    if type_name == "float":
+        try:
+            converted = float(value)
+        except OverflowError as exc:
+            raise ValueError("value is out of float range") from exc
+
+        return converted
+
+    return value
+
+
+def _parse_text_param(raw: str, type_name: str) -> Any:
     if type_name == "str":
         return raw
     if type_name == "int":

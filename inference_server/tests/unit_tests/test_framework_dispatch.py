@@ -1045,3 +1045,504 @@ async def test_truncated_jpeg_is_an_input_error(fake_handler_entry, cut):
         )
 
     assert r.status_code == 200
+
+
+def test_decode_keeps_repeated_query_keys_as_a_list():
+    req = _request(query=b"model_id=acme/1&texts=a&texts=b&confidence=0.5")
+
+    common = decode_common_request_params(req)
+
+    assert common.extra == {"texts": ["a", "b"], "confidence": "0.5"}
+
+
+async def _parser_merging_query_params(request, common):
+    return {"images": [b"x"], "params": dict(common.extra)}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        (b"model_id=m&texts=a&texts=b", ["a", "b"]),
+        (b"model_id=m&texts=person", ["person"]),
+    ],
+)
+async def test_list_params_from_the_query_reach_the_handler_as_lists(
+    fake_handler_entry, query, expected
+):
+    fake_handler_entry["interface"].params["texts"] = {
+        "type": "list[str]",
+        "required": True,
+    }
+    fake_handler_entry["parser"].side_effect = _parser_merging_query_params
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=query), _mock_proxy())
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["texts"] == expected
+
+
+@pytest.mark.asyncio
+async def test_untyped_list_param_from_a_single_query_value_is_wrapped(
+    fake_handler_entry,
+):
+    fake_handler_entry["interface"].params["prompts"] = {
+        "type": "list",
+        "required": True,
+    }
+    fake_handler_entry["parser"].side_effect = _parser_merging_query_params
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m&prompts=person"), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["prompts"] == ["person"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("false", False), ("FALSE", False), ("0", False), ("True", True), ("1", True)],
+)
+async def test_bool_query_strings_are_parsed_case_insensitively(
+    fake_handler_entry, raw, expected
+):
+    fake_handler_entry["interface"].params["nms"] = {
+        "type": "bool",
+        "required": False,
+    }
+    fake_handler_entry["parser"].side_effect = _parser_merging_query_params
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m&nms=" + raw.encode()), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["nms"] is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "type_name, value",
+    [
+        ("float", [1]),
+        ("float", True),
+        ("int", 1.5),
+        ("int", "abc"),
+        ("bool", "maybe"),
+        ("bool", 1),
+        ("str", 3),
+        ("list", {"x": 1}),
+        ("list[str]", [1, 2]),
+        ("float", ["0.1", "0.2"]),
+    ],
+)
+async def test_wrongly_typed_params_return_400_naming_the_param(
+    fake_handler_entry, type_name, value
+):
+    fake_handler_entry["interface"].params["p"] = {
+        "type": type_name,
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"p": value},
+    }
+    proxy = _mock_proxy()
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+
+    assert r.status_code == 400
+    body = json.loads(r.body)
+    assert body["error_code"] == "INVALID_PARAM"
+    assert "'p'" in body["description"]
+    assert type_name in body["description"]
+    fake_handler_entry["handler"].assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_correctly_typed_json_values_pass_through_unchanged(fake_handler_entry):
+    for name, type_name in [
+        ("conf", "float"),
+        ("top_k", "int"),
+        ("nms", "bool"),
+        ("classes", "list[str]"),
+        ("boxes", "list"),
+        ("label", "str"),
+        ("unset", "float"),
+    ]:
+        fake_handler_entry["interface"].params[name] = {
+            "type": type_name,
+            "required": False,
+        }
+    values = {
+        "conf": 1,
+        "top_k": 3,
+        "nms": False,
+        "classes": ["a"],
+        "boxes": [[1, 2, 3, 4]],
+        "label": "x",
+        "unset": None,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": dict(values),
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed == values
+
+
+@pytest.fixture
+def object_detection_entry():
+    from inference_server.handlers.object_detection.description import _DESCRIPTION
+
+    desc = ModelHandlerDescription(
+        input_parser=_DESCRIPTION.input_parser,
+        handler=_DESCRIPTION.handler,
+        output_serializer=MagicMock(
+            return_value=Response(status_code=200, content=b"ok")
+        ),
+        interface_provider=_DESCRIPTION.interface_provider,
+    )
+    _HANDLERS[("fake-od", "infer")] = desc
+    try:
+        yield desc
+    finally:
+        del _HANDLERS[("fake-od", "infer")]
+
+
+class _PreprocModel:
+    def __init__(self):
+        self.calls: list = []
+
+    def predict(self, **kwargs):
+        self.calls.append(kwargs)
+        return MagicMock()
+
+
+class _PreprocBackend(_DirectBackend):
+    def __init__(self):
+        self.model = _PreprocModel()
+
+
+async def _dispatch_object_detection_query(
+    query: bytes,
+    *,
+    content_type: bytes = b"image/jpeg",
+    body: bytes = _JPEG,
+) -> tuple:
+    from inference_model_manager.dispatch import _get_registry
+    from inference_model_manager.model_manager import ModelManager
+    from inference_model_manager.registry_defaults import _ACTION_CONFIGS
+
+    _get_registry().register(
+        _PreprocModel,
+        "infer",
+        method="predict",
+        default=True,
+        params=_ACTION_CONFIGS["ObjectDetectionModel"][0][3],
+        validator=lambda kwargs: kwargs,
+        serializer=lambda out, model: out,
+        response_type="test-v1",
+    )
+    backend = _PreprocBackend()
+    manager = ModelManager()
+    manager._backends["acme/1"] = backend
+    request = _request(
+        query=b"model_id=acme/1&" + query,
+        headers=[
+            (b"authorization", b"Bearer k1"),
+            (b"content-type", content_type),
+        ],
+        body=body,
+    )
+    try:
+        with _stat_returns(("fake-od", "infer")):
+            response = await handle_model_inference_request(
+                request, ModelManagerGateway(manager)
+            )
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+    return response, backend.model.calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw, expected", [("false", False), ("true", True)])
+async def test_preprocessing_flag_from_the_query_reaches_the_model_as_parsed(
+    object_detection_entry, raw, expected
+):
+    response, calls = await _dispatch_object_detection_query(
+        b"disable_preproc_grayscale=" + raw.encode()
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+    overrides = calls[0]["pre_processing_overrides"]
+    assert overrides.disable_grayscale is expected
+    assert overrides.disable_contrast_enhancement is False
+
+
+@pytest.mark.asyncio
+async def test_numeric_query_params_reach_the_model_as_numbers(
+    object_detection_entry,
+):
+    response, calls = await _dispatch_object_detection_query(
+        b"confidence=0.25&max_detections=7&class_agnostic_nms=false"
+    )
+
+    assert response.status_code == 200
+    assert calls[0]["confidence"] == 0.25
+    assert calls[0]["max_detections"] == 7
+    assert calls[0]["class_agnostic_nms"] is False
+
+
+@pytest.mark.asyncio
+async def test_non_numeric_query_param_is_a_400_before_the_model_runs(
+    object_detection_entry,
+):
+    response, calls = await _dispatch_object_detection_query(b"max_detections=lots")
+
+    assert response.status_code == 400
+    assert b"max_detections" in response.body
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "handler_key, manager_class, manager_action",
+    [
+        (("object-detection", "infer"), "ObjectDetectionModel", "infer"),
+        (("classification", "infer"), "ClassificationModel", "infer"),
+        (
+            ("multi-label-classification", "infer"),
+            "MultiLabelClassificationModel",
+            "infer",
+        ),
+        (("semantic-segmentation", "infer"), "SemanticSegmentationModel", "infer"),
+        (("instance-segmentation", "infer"), "InstanceSegmentationModel", "infer"),
+        (("keypoint-detection", "infer"), "KeyPointsDetectionModel", "infer"),
+        (("embedding", "embed_images"), "ImageEmbeddingModel", "embed_images"),
+        (("vlm", "detect"), "MoonDream2HF", "detect"),
+        (("vlm", "detect"), "Florence2HF", "detect"),
+    ],
+)
+def test_server_interface_declares_the_types_of_the_manager_params(
+    handler_key, manager_class, manager_action
+):
+    from inference_model_manager.dispatch import discover_actions_by_mro
+
+    manager_params = discover_actions_by_mro([manager_class])[manager_action]["params"]
+    server_params = _HANDLERS[handler_key].interface_provider().params
+
+    missing = {
+        name: spec["type"]
+        for name, spec in manager_params.items()
+        if server_params.get(name, {}).get("type") != spec["type"]
+    }
+    assert missing == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("best", "best"),
+        ("default", "default"),
+        ("0.4", 0.4),
+        (0.4, 0.4),
+        (1, 1.0),
+        (0, 0.0),
+    ],
+)
+async def test_confidence_params_accept_numbers_and_named_modes(
+    fake_handler_entry, value, expected
+):
+    fake_handler_entry["interface"].params["confidence"] = {
+        "type": "confidence",
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"confidence": value},
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["confidence"] == expected
+    assert type(passed["confidence"]) is type(expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["high", "", True, [0.5], "BEST"])
+async def test_confidence_params_reject_other_values(fake_handler_entry, value):
+    fake_handler_entry["interface"].params["confidence"] = {
+        "type": "confidence",
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"confidence": value},
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 400
+    assert "confidence" in json.loads(r.body)["description"]
+
+
+@pytest.mark.asyncio
+async def test_json_integer_for_a_float_param_reaches_the_handler_as_float(
+    fake_handler_entry,
+):
+    fake_handler_entry["interface"].params["iou_threshold"] = {
+        "type": "float",
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"iou_threshold": 1},
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert type(passed["iou_threshold"]) is float
+
+
+@pytest.mark.parametrize(
+    "handler_key",
+    [
+        ("object-detection", "infer"),
+        ("instance-segmentation", "infer"),
+        ("keypoint-detection", "infer"),
+        ("multi-label-classification", "infer"),
+        ("semantic-segmentation", "infer"),
+    ],
+)
+def test_handlers_of_models_with_named_confidence_modes_declare_them(handler_key):
+    params = _HANDLERS[handler_key].interface_provider().params
+
+    assert params["confidence"]["type"] == "confidence"
+
+
+@pytest.mark.parametrize(
+    "handler_key",
+    [
+        ("open-vocabulary-object-detection", "infer"),
+        ("open-vocabulary-object-detection", "infer_with_reference_examples"),
+    ],
+)
+def test_float_only_confidence_stays_float(handler_key):
+    params = _HANDLERS[handler_key].interface_provider().params
+
+    assert params["confidence"]["type"] == "float"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query, body, content_type, threshold",
+    [
+        (b"confidence=best", _JPEG, b"image/jpeg", 0.3),
+        (b"confidence=0.7", _JPEG, b"image/jpeg", 0.7),
+        (
+            b"",
+            json.dumps(
+                {
+                    "inputs": {
+                        "image": {
+                            "type": "base64",
+                            "value": base64.b64encode(_JPEG).decode(),
+                        },
+                        "confidence": 1,
+                    }
+                }
+            ).encode(),
+            b"application/json",
+            1.0,
+        ),
+        (
+            b"",
+            json.dumps(
+                {
+                    "inputs": {
+                        "image": {
+                            "type": "base64",
+                            "value": base64.b64encode(_JPEG).decode(),
+                        },
+                        "confidence": 0,
+                    }
+                }
+            ).encode(),
+            b"application/json",
+            0.0,
+        ),
+    ],
+)
+async def test_requested_confidence_is_the_threshold_the_model_applies(
+    object_detection_entry, query, body, content_type, threshold
+):
+    from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    response, calls = await _dispatch_object_detection_query(
+        query, content_type=content_type, body=body
+    )
+
+    assert response.status_code == 200
+    confidence_filter = ConfidenceFilter(
+        confidence=calls[0]["confidence"],
+        recommended_parameters=RecommendedParameters(confidence=0.3),
+        default_confidence=0.5,
+    )
+    assert confidence_filter.get_threshold(["a"]) == threshold
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("type_name", ["float", "confidence"])
+async def test_json_integer_too_large_for_a_float_is_a_400(
+    fake_handler_entry, type_name
+):
+    fake_handler_entry["interface"].params["p"] = {
+        "type": type_name,
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"p": 10**400},
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 400
+    assert json.loads(r.body)["error_code"] == "INVALID_PARAM"

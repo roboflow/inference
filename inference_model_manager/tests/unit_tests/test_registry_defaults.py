@@ -466,7 +466,7 @@ def test_per_family_detector_contracts():
     for key in ("SemanticSegmentationModel", "MultiLabelClassificationModel"):
         p = params_of(key)
         assert set(p) == {"images", "confidence", *PREPROC_FLAGS}, key
-        assert p["confidence"] == {"type": "float", "required": False}, key
+        assert p["confidence"] == {"type": "confidence", "required": False}, key
 
 
 def test_per_family_contracts_have_no_default_keys():

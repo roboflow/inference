@@ -112,9 +112,12 @@ _K_PREPROC = {
     flag: {"type": "bool", "required": False} for flag in PRE_PROCESSING_OVERRIDE_FIELDS
 }
 
+_P_CONFIDENCE = {"confidence": {"type": "confidence", "required": False}}
+_P_FLOAT_CONFIDENCE = {"confidence": {"type": "float", "required": False}}
+
 # Common kwargs for object detection models
 _K_OD = {
-    "confidence": {"type": "float", "required": False},
+    **_P_CONFIDENCE,
     "iou_threshold": {"type": "float", "required": False},
     "max_detections": {"type": "int", "required": False},
     "class_agnostic_nms": {"type": "bool", "required": False},
@@ -202,7 +205,7 @@ _E_OD_CONF_ONLY = [
         "infer",
         "infer",
         True,
-        _p(_P_IMAGES, {"confidence": {"type": "float", "required": False}}, _K_PREPROC),
+        _p(_P_IMAGES, _P_CONFIDENCE, _K_PREPROC),
         "validate_images_required",
         "serialize_detections_compact",
         "roboflow-object-detection-compact-v1",
@@ -216,7 +219,7 @@ _E_OD_CONF_MAXDET = [
         _p(
             _P_IMAGES,
             {
-                "confidence": {"type": "float", "required": False},
+                **_P_CONFIDENCE,
                 "max_detections": {"type": "int", "required": False},
             },
             _K_PREPROC,
@@ -244,7 +247,7 @@ _E_ISEG_NO_SMOOTHING = [
         True,
         _p(
             _P_IMAGES,
-            {"confidence": {"type": "float", "required": False}},
+            _P_CONFIDENCE,
             _P_MASK_FORMAT,
             _K_PREPROC,
         ),
@@ -261,7 +264,7 @@ _E_ISEG_CONF_MAXDET = [
         _p(
             _P_IMAGES,
             {
-                "confidence": {"type": "float", "required": False},
+                **_P_CONFIDENCE,
                 "max_detections": {"type": "int", "required": False},
             },
             _P_MASK_FORMAT,
@@ -280,7 +283,7 @@ _E_ISEG_NMS_NO_SMOOTHING = [
         _p(
             _P_IMAGES,
             {
-                "confidence": {"type": "float", "required": False},
+                **_P_CONFIDENCE,
                 "iou_threshold": {"type": "float", "required": False},
                 "max_detections": {"type": "int", "required": False},
                 "class_agnostic_nms": {"type": "bool", "required": False},
@@ -301,7 +304,7 @@ _E_KP_CONF_THRESH = [
         _p(
             _P_IMAGES,
             {
-                "confidence": {"type": "float", "required": False},
+                **_P_CONFIDENCE,
                 "key_points_threshold": {"type": "float", "required": False},
             },
             _K_PREPROC,
@@ -337,7 +340,7 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "infer",
             "infer",
             True,
-            _p(_P_IMAGES_CLASSES, _K_OD),
+            _p(_P_IMAGES_CLASSES, _K_OD, _P_FLOAT_CONFIDENCE),
             "validate_images_and_classes",
             "serialize_detections_compact",
             "roboflow-object-detection-compact-v1",
@@ -371,7 +374,7 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             _p(
                 _P_IMAGES,
                 {
-                    "confidence": {"type": "float", "required": False},
+                    **_P_CONFIDENCE,
                     "iou_threshold": {"type": "float", "required": False},
                     "max_detections": {"type": "int", "required": False},
                 },
@@ -424,7 +427,7 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             True,
             _p(
                 _P_IMAGES,
-                {"confidence": {"type": "float", "required": False}},
+                _P_CONFIDENCE,
                 _K_PREPROC,
             ),
             "validate_images_required",
@@ -464,7 +467,7 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             True,
             _p(
                 _P_IMAGES,
-                {"confidence": {"type": "float", "required": False}},
+                _P_CONFIDENCE,
                 _K_PREPROC,
             ),
             "validate_images_required",

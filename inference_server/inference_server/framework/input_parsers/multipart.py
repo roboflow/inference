@@ -21,11 +21,13 @@ async def extract_multipart(
     Recognized fields:
       - `image` (file part, repeated for batch) — collected into images list
       - `inputs` (string, JSON object) — merged into extra_params
-      - any other string field — added to extra_params
+      - any other string field — added to extra_params; a repeated field
+        becomes a list of its values
     """
     form = await request.form()
     images: list[bytes] = []
     extra_params: dict = {}
+    text_values: dict[str, list[str]] = {}
     for key, value in form.multi_items():
         if key == "image":
             # Checked before the read so an over-long part list is refused
@@ -40,7 +42,9 @@ async def extract_multipart(
             except json.JSONDecodeError:
                 logger.warning("multipart: invalid JSON in 'inputs' form field")
         elif isinstance(value, str):
-            extra_params[key] = value
+            repeated = text_values.setdefault(key, [])
+            repeated.append(value)
+            extra_params[key] = repeated[0] if len(repeated) == 1 else list(repeated)
     # Zero image parts is legal at this layer: params-only requests carry
     # inputs without a payload. Each handler-family parser enforces its own
     # image requirement.

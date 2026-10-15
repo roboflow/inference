@@ -56,6 +56,15 @@ curl -X POST "http://localhost:9001/v2/models/infer?model_id=yolov8n-640" \
   --data-binary @image.jpg
 ```
 
+Model parameters can also be passed as query parameters or multipart text
+fields; they are converted to the type `GET /v2/models/interface` declares.
+Booleans accept `true`/`false`/`1`/`0`/`yes`/`no` (any case); list parameters take one
+value per repeated key (`?classes=cat&classes=dog`), and a single value becomes
+a one-element list. Nested lists and objects need a JSON body. Where a model
+accepts `confidence=best` or `confidence=default`, those pass through; any other
+confidence must be a number. A value that does
+not match its declared type is answered with 400 `INVALID_PARAM`.
+
 ## Extension points
 
 `inference-server` and `inference-model-manager` resolve additional

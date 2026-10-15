@@ -4,6 +4,7 @@ from inference_model_manager.registry_defaults import (
     _P_IMAGES,
     _P_IMAGES_CLASSES_GEN,
     _P_IMAGES_PROMPT,
+    _P_MAX_NEW_TOKENS,
     _p,
 )
 from inference_server.framework.entities import ModelInterfaceDescription
@@ -42,7 +43,14 @@ def get_vlm_detections_prompt_interface() -> ModelInterfaceDescription:
 def get_vlm_detections_image_only_interface() -> ModelInterfaceDescription:
     return ModelInterfaceDescription(
         task="vlm",
-        params=_p(_P_IMAGES),
+        params=_p(
+            _P_IMAGES,
+            {
+                "labels_mode": {"type": "str", "required": False},
+                "classes": {"type": "list[str]", "required": False},
+            },
+            _P_MAX_NEW_TOKENS,
+        ),
         output_schema={
             "type": "roboflow-object-detection-compact-v1",
         },

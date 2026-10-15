@@ -1262,3 +1262,23 @@ async def test_multipart_allows_images_up_to_cap():
         imgs, params, err = await extract_images_and_params(req)
     assert err is None
     assert len(imgs) == 3
+
+
+@pytest.mark.asyncio
+async def test_multipart_repeated_text_fields_are_collected_into_a_list():
+    from inference_server.framework.input_parsers import extract_images_and_params
+
+    form = _FakeFormData(
+        {
+            "image": _FakeUploadFile(_JPEG),
+            "classes": ["cat", "dog"],
+            "confidence": "0.5",
+        }
+    )
+    req = _FakeRequest(content_type="multipart/form-data", form_data=form)
+
+    imgs, params, err = await extract_images_and_params(req)
+
+    assert err is None
+    assert params["classes"] == ["cat", "dog"]
+    assert params["confidence"] == "0.5"
