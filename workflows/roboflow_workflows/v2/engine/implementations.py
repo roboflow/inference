@@ -42,6 +42,14 @@ A host may add implementations to an existing block without changing its
 class (``contributions`` and ``Catalogue.with_contributions``). Each added
 ``ImplementationSpec`` carries an ``ImplementationOrigin``; the block's own
 implementations have none.
+
+Coalesced calls: an implementation may also define
+``run_many(self, *, invocations)``. ``invocations`` is an ordered sequence of
+the exact keyword mappings the engine would pass to ``run(**kwargs)``, one per
+admitted logical invocation; the result is a list with one ``run`` result per
+mapping. ``run`` stays required. Whether the engine uses the hook for a step
+is ``PlannedStep.coalesces_invocations``; the contract and its digest do not
+change.
 """
 
 import inspect
@@ -71,6 +79,7 @@ __all__ = [
     "PHASE_OVERLAP_ATTRIBUTE",
     "QUALITY_ATTRIBUTE",
     "RESERVED_PHASE_NAMES",
+    "RUN_MANY_METHOD",
     "Implementation",
     "ImplementationOrigin",
     "ImplementationSpec",
@@ -107,12 +116,16 @@ PHASE_OVERLAP_ATTRIBUTE = "phase_overlap"
 QUALITY_ATTRIBUTE = "quality"
 """Class attribute listing the quality labels an implementation serves."""
 
+RUN_MANY_METHOD = "run_many"
+"""Optional method running several invocations in one call (see ``Implementation``)."""
+
 RESERVED_PHASE_NAMES: Tuple[str, ...] = CONTRACT_ATTRIBUTES + (
     "name",
     "requires",
     PHASE_OVERLAP_ATTRIBUTE,
     QUALITY_ATTRIBUTE,
     "run",
+    RUN_MANY_METHOD,
     "wants",
     "reset_state",
     "execution_context",
@@ -158,6 +171,24 @@ class Implementation(ExecutionContextReader):
     Resources are the keyword parameters of ``__init__``, resolved only for
     the selected implementation. ``run`` takes the block's ``Params`` fields
     and returns what the block's ``run`` would. Phases follow ``@phase``.
+
+    An implementation may also define ``run_many(self, *, invocations)``, a
+    plain (not async, not generator) method. ``invocations`` is an ordered
+    sequence of complete ``run`` keyword mappings; it returns a list or
+    tuple with one ``run`` result per mapping, in order; futures inside are
+    allowed. To attribute a failure to one mapping, raise
+    ``errors.InvocationBatchError(position) from error``. The engine calls it
+    only for steps where ``PlannedStep.coalesces_invocations`` holds, and
+    never retries ``run`` after it started; ``run`` remains required.
+    The hook must preserve the ordered scalar results and keep submitted work
+    and its resources alive through readiness, including on failure. Future
+    resolution stops at the first failure; the engine does not drain other
+    submitted futures.
+
+    The call context is batched, even for one row: use ``source_id_at(index)``
+    rather than ``source_id``. A ``wants`` query applies to all returned rows.
+    Logical observer callbacks run only after whole-call readiness; they are
+    observations, not hooks between row executions.
 
     An implementation may define the classmethods
     ``discover_dependent_resources``, ``discover_work_operations`` and
@@ -230,6 +261,9 @@ class ImplementationSpec:
             implementation; ``None`` for the block's own implementations.
             Part of equality, so a plan comparison sees a provider or version
             change even when the class is the same.
+        run_many: Whether the class declares a validated ``run_many``
+            method. ``False`` for an ordinary block's ``default`` and for a
+            hand-built spec unless set.
     """
 
     name: str
@@ -240,6 +274,7 @@ class ImplementationSpec:
     phase_overlap: bool = True
     quality: FrozenSet[str] = frozenset()
     origin: Optional[ImplementationOrigin] = None
+    run_many: bool = False
 
     def serves(self, label: str) -> bool:
         """Whether this implementation declares the quality ``label``."""
@@ -265,6 +300,8 @@ class ImplementationSpec:
             description["quality"] = sorted(self.quality)
         if self.resettable:
             description["resettable"] = True
+        if self.run_many:
+            description["run_many"] = True
         if self.origin is not None:
             description["origin"] = self.origin.describe()
 
@@ -423,9 +460,37 @@ def _read_implementation(
         phases=read_phase_graph(implementation, external=fields, fail=fail_here),
         phase_overlap=read_phase_overlap(implementation, fail=fail_here),
         quality=read_quality_labels(implementation, fail=fail_here),
+        run_many=_read_run_many(implementation, fail=fail_here),
     )
 
     return spec
+
+
+def _read_run_many(owner: type, *, fail: Callable[[str], Exception]) -> bool:
+    """Whether ``owner`` declares a valid ``run_many(self, *, invocations)``."""
+    method = inspect.getattr_static(owner, RUN_MANY_METHOD, None)
+    if method is None:
+        return False
+
+    if not inspect.isfunction(method):
+        raise fail(
+            f"{RUN_MANY_METHOD} must be a plain instance method, got "
+            f"{type(method).__name__}"
+        )
+    if (
+        inspect.iscoroutinefunction(method)
+        or inspect.isgeneratorfunction(method)
+        or inspect.isasyncgenfunction(method)
+    ):
+        raise fail(
+            f"{RUN_MANY_METHOD}() must return its results, not a coroutine or "
+            "generator; return Futures inside the result list for asynchronous work"
+        )
+    check_keyword_signature(
+        method, name=RUN_MANY_METHOD, fields=("invocations",), fail=fail
+    )
+
+    return True
 
 
 def check_keyword_signature(

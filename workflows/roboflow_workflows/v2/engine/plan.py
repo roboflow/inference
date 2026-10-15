@@ -44,6 +44,20 @@ returns a list of results in invocation order. Otherwise ``run`` is called per
 invocation and returns one result. A CSV-shaped step whose ``if_varying``
 leaves are all constant therefore returns a single mapping.
 
+Coalesced invocations: a scalar step whose ``coalesces_invocations`` holds
+(the selected implementation declares ``run_many`` and the block is eligible,
+see the property) keeps every binding, parameter and per-invocation
+validation, but its admitted invocations of one run go to one
+``run_many(invocations=...)`` call with each invocation's complete ``run``
+keyword mapping. No admitted invocation means no call. The call is batched
+like a batch-delivering call: one ``ExecutionContext`` with every index,
+one pipelined whole-call stage, one physical ``invocation`` trace event, and
+``wants`` answers shared by every row. It returns one result per invocation;
+observers then receive one ``on_invocation`` per row, with its own arguments
+and index, only after the whole result is ready. A failure fails the step at
+the row ``errors.InvocationBatchError`` names, else for the whole call; no
+row is retried with ``run``.
+
 Readiness: futures in block results are resolved before dependent steps and
 before a ``RunResult`` is returned (the accepted ready-boundary design). V1
 additionally lets callers defer output future resolution
@@ -805,6 +819,39 @@ class PlannedStep:
         """Whether this step is called once with ``Batch`` leaves (module doc)."""
         return any(binding.delivers_batch for binding in self.bindings)
 
+    @property
+    def coalesces_invocations(self) -> bool:
+        """Whether one ``run_many`` call takes the admitted invocations of a run.
+
+        True only when the selected implementation declares ``run_many``, the
+        step executes in ``run`` mode with scalar delivery, the block does not
+        accept batches (including conditional batches), and it is ``prunable``,
+        not a control,
+        mutates nothing, declares no events or retained inputs/outputs, and
+        the selected implementation requests no ``managed_state``. Bindings,
+        parameters and digests are the same either way (module doc).
+        """
+        spec = self.spec
+        selected = self.selected
+        coalesces = (
+            selected.run_many
+            and self.execution == "run"
+            and not spec.accepts_batches
+            and not self.delivers_batches
+            and spec.prunable
+            and not spec.is_control
+            and not spec.mutates
+            and not spec.events
+            and not spec.retains_inputs
+            and not spec.retains_outputs
+            and not any(
+                resource.name == MANAGED_STATE_RESOURCE
+                for resource in selected.resources
+            )
+        )
+
+        return coalesces
+
     def bindings_for(self, field_name: str) -> Tuple[Binding, ...]:
         """Return every binding of one parameter, in position order.
 
@@ -872,6 +919,8 @@ class PlannedStep:
             ),
             "execution": self.execution,
         }
+        if self.coalesces_invocations:
+            description["coalesces_invocations"] = True
 
         return description
 
@@ -3434,7 +3483,15 @@ class ExecutionObserver:
         arguments: Mapping[str, Any],
         result: Any,
     ) -> None:
-        """A block call returned; ``index`` is ``None`` for a batch-delivering call."""
+        """A block call returned; ``index`` is ``None`` for a batch-delivering call.
+
+        A coalesced ``run_many`` call reports each row: its index, its own
+        ``run`` arguments and its result, after the whole call is ready.
+        ``on_step_finished`` retains the logical row count. Invocation traces
+        and pipeline stages count the single physical call. Call/readiness
+        failures emit no row callbacks; an observer exception cannot undo
+        callbacks already delivered. Output-field validation follows callbacks.
+        """
 
     def on_invocation_skipped(
         self, *, step: StepPath, index: Index, reason: SkipReason

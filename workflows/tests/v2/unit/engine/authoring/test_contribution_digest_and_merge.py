@@ -332,6 +332,17 @@ def serial(supplied: type) -> ImplementationContribution:
     return declared
 
 
+def coalesced(supplied: type) -> ImplementationContribution:
+    def run_many(self: Any, *, invocations: Any) -> list:
+        return [{"value": 1} for _ in invocations]
+
+    supplied.run_many = run_many
+
+    declared = contribution(supplied)
+
+    return declared
+
+
 def other_default(supplied: type) -> ImplementationContribution:
     def __init__(self: Any, *, cache: Annotated[Any, MARKER] = NoEquality()):
         self.cache = cache
@@ -366,6 +377,7 @@ CHANGES = {
     "quality": ([labelled], DECLARED),
     "phases": ([phased], DECLARED),
     "phase_overlap": ([serial], DECLARED),
+    "run_many": ([coalesced], DECLARED),
     "resources": ([other_default, other_annotation], DECLARED),
 }
 CASES = [
