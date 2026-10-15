@@ -290,6 +290,33 @@ def test_empty_selection_keeps_shapes_and_decodes_nothing(kind, monkeypatch) -> 
     assert masks.bboxes_metadata == []
 
 
+@pytest.mark.parametrize("pre_processing", [ODD_CROP, CENTRE_CROP])
+def test_empty_grid_approximation_preserves_frame_without_interpolation(
+    pre_processing, monkeypatch
+) -> None:
+    provider = _grid(pre_processing, metadata=_frame_metadata()).select(
+        mask=[False, False, False]
+    )
+
+    def no_interpolation(*args, **kwargs):
+        raise AssertionError("empty masks have no pixels to interpolate")
+
+    monkeypatch.setattr(torch.nn.functional, "interpolate", no_interpolation)
+    binary = provider.binary(fidelity="approximate")
+    predictions = binary.predictions
+
+    assert binary.fidelity == "approximate"
+    assert tuple(predictions.mask.shape) == (0, HEIGHT, WIDTH)
+    assert predictions.mask.dtype == torch.bool
+    assert predictions.mask.device == provider.view.scores.device
+    assert predictions.mask_size == predictions.mask_frame_size == (HEIGHT, WIDTH)
+    assert predictions.image_size == (HEIGHT, WIDTH)
+    assert predictions.image_metadata == provider.view.detections.image_metadata
+    assert predictions.bboxes_metadata == []
+    assert tuple(predictions.xyxy.shape) == (0, 4)
+    assert provider.binary(fidelity="approximate").predictions is predictions
+
+
 def test_selected_row_metadata_is_copied_not_shared() -> None:
     provider = DenseMaskProvider(_dense())
 
