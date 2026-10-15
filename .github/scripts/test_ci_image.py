@@ -278,6 +278,66 @@ class ImageTransportTests(unittest.TestCase):
 class WorkflowContractTests(unittest.TestCase):
     """Check the security boundary, coverage and completion gate as a whole."""
 
+    def test_credential_cleanup_preserves_buildx_post_job_state(self):
+        """Execute cleanup steps: credentials vanish but builder records survive."""
+        for name in (
+            "ci_image_build.yml",
+            "integration_tests_inference_server_x86.yml",
+            "test.nvidia_t4.yml",
+        ):
+            workflow = self._workflow(name)
+            steps = workflow["jobs"]["build"]["steps"]
+            cleanup_steps = [
+                step for step in steps if step.get("name", "").startswith("Remove")
+            ]
+            self.assertTrue(cleanup_steps)
+            for step in cleanup_steps:
+                with self.subTest(workflow=name, step=step["name"]):
+                    with TemporaryDirectory() as directory:
+                        root = Path(directory)
+                        config = root / "docker-config"
+                        state = config / "buildx/instances/test-builder"
+                        state.parent.mkdir(parents=True)
+                        state.write_text("builder cleanup requires this record")
+                        credentials = config / "config.json"
+                        credentials.write_text('{"auths":{"example":"test-only"}}')
+                        binary = root / "bin"
+                        binary.mkdir()
+                        docker = binary / "docker"
+                        docker.write_text("#!/bin/sh\nexit 0\n")
+                        docker.chmod(0o755)
+                        result = subprocess.run(
+                            ["bash", "-e", "-c", step["run"]],
+                            env={
+                                **os.environ,
+                                "PATH": f"{binary}:{os.environ['PATH']}",
+                                "DOCKER_CONFIG": str(config),
+                                "INFERENCE_TEST_CONTAINER": "test-container",
+                            },
+                            capture_output=True,
+                        )
+                        self.assertEqual(result.returncode, 0)
+                        self.assertFalse(credentials.exists())
+                        self.assertTrue(state.exists())
+                        self.assertEqual(
+                            state.read_text(), "builder cleanup requires this record"
+                        )
+
+    def test_ci_runs_the_image_reuse_regression_suite(self):
+        """Keep these checks in PR CI when other script suites are split out."""
+        workflow = self._workflow("validate.github-actions.yml")
+        commands = [
+            step.get("run", "")
+            for job in workflow["jobs"].values()
+            for step in job.get("steps", [])
+        ]
+        self.assertTrue(
+            any(
+                "unittest discover -s .github/scripts -p 'test_ci_image.py'" in command
+                for command in commands
+            )
+        )
+
     def test_external_actions_are_pinned_to_commit_shas(self):
         """Prevent mutable action references in the image-reuse workflow surface."""
         for name in (

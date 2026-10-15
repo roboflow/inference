@@ -162,9 +162,10 @@ jobs:
         env:
           CI_IMAGE_ACTION: pull
         run: python3 .github/scripts/ci_image.py
+      # Action post hooks still need the builder records under DOCKER_CONFIG.
       - name: Remove registry credentials before executing tests
         if: ${{ always() }}
-        run: rm -rf -- "$DOCKER_CONFIG"
+        run: rm -f -- "$DOCKER_CONFIG/config.json"
 
       - name: Verify CPU PyTorch runtime from the producer image
         if: ${{ inputs.private_image }}
@@ -195,4 +196,4 @@ jobs:
         if: ${{ always() }}
         run: |
           docker rm -f "$INFERENCE_TEST_CONTAINER" > /dev/null 2>&1 || true
-          rm -rf -- "$DOCKER_CONFIG"
+          rm -f -- "$DOCKER_CONFIG/config.json"

@@ -83,6 +83,7 @@ jobs:
         env:
           CI_IMAGE_ACTION: build
         run: python3 .github/scripts/ci_image.py
+      # Keep Buildx state until setup-buildx completes its post-job cleanup.
       - name: Remove registry credentials
         if: ${{ always() }}
-        run: rm -rf -- "$DOCKER_CONFIG"
+        run: rm -f -- "$DOCKER_CONFIG/config.json"

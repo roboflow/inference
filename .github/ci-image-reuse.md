@@ -7,8 +7,9 @@
 **Related PR:** [#3200](https://github.com/roboflow/inference/pull/3200)
 
 This plan follows the [contribution template](implementation-plan-template.md).
-The PR remains a draft. Shared-infrastructure maintainer agreement is still
-pending; this document does not claim that discussion or approval has occurred.
+The team has agreed to the approach, as confirmed by the PR author. Private
+discussion details are intentionally omitted. Infrastructure configuration and
+live validation remain required before activation.
 
 ### 1. What problem are we solving?
 
@@ -73,10 +74,21 @@ must verify transport and timing before activation.
 | What qualifies CPU arm64 for release? | Existing server consumers execute on amd64 only. | Retain the arm64 build and report it separately from tested amd64 images. | Release maintainers must define runtime coverage before treating a multi-platform image as release-qualified; this does not block preparing the reuse path. |
 
 These decisions block activation, not preparation of the disabled implementation.
-The contributor must obtain the shared-infrastructure discussion required by
-[AGENTS.md](../AGENTS.md#internal-contributions-roboflow-team-only) before integration.
+The team discussion required by
+[AGENTS.md](../AGENTS.md#internal-contributions-roboflow-team-only) has been
+confirmed by the PR author; code review and the activation prerequisites still
+apply.
 
 ## Change record — Unreleased
+
+### Review fixes
+
+- Preserve Buildx state until its post-job cleanup by removing only Docker
+  credentials, preventing orphaned builder containers on persistent runners.
+- Keep image-reuse tests explicitly scheduled in the GitHub Actions validation
+  workflow after incorporating the hosted-E2E changes from main.
+
+### Added
 
 - Add opt-in CPU/GPU producer-to-consumer reuse by immutable digest, preserving
   both model modes and the existing server test scope.
@@ -137,7 +149,10 @@ Authentication uses short-lived OIDC-derived access tokens, passed to Docker
 through stdin. Reader jobs receive only reader configuration and the existing
 test secret parameters; producer jobs receive no test or Docker Hub secrets.
 Generated authentication files are disabled. Docker credentials are placed in
-an isolated temporary directory and removed before tests and on job cleanup.
+an isolated temporary directory. Cleanup removes only `config.json` before
+tests and on job completion, preserving Buildx builder records for the action's
+post-job cleanup. The remaining temporary directory is left to runner cleanup;
+it is not removed by a normal step before action post hooks run.
 Existing test credentials are passed through step environment parameters rather
 than interpolated into shell code.
 
