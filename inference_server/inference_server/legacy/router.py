@@ -292,7 +292,7 @@ async def info() -> ServerVersionInfo:
 
 @router.get("/healthz", status_code=200)
 async def healthz() -> Response:
-    is_healthy, error = check_cuda_health()
+    is_healthy, error = await asyncio.to_thread(check_cuda_health)
     if is_healthy:
         return JSONResponse(content={"status": "healthy"})
     logger.error("CUDA health check failed: %s", error)
@@ -343,7 +343,8 @@ async def _models_descriptions(bridge: LegacyModelBridge) -> ModelsDescriptions:
                 )
             )
 
-    models_descriptions = ModelsDescriptions.from_models_descriptions(
+    models_descriptions = await asyncio.to_thread(
+        ModelsDescriptions.from_models_descriptions,
         descriptions,
         model_vram_bytes=[route.vram_bytes for route in routes],
     )

@@ -90,6 +90,55 @@ def test_healthz_and_readiness(legacy_client):
     assert c.get("/readiness").json() == {"status": "ready"}
 
 
+def _record_loop_presence(calls, result):
+    def probe(*_args, **_kwargs):
+        try:
+            asyncio.get_running_loop()
+            calls.append(True)
+        except RuntimeError:
+            calls.append(False)
+        return result
+
+    return probe
+
+
+def test_healthz_runs_the_cuda_check_off_the_event_loop(legacy_client, monkeypatch):
+    from inference_server.legacy import router
+
+    on_loop = []
+    monkeypatch.setattr(
+        router, "check_cuda_health", _record_loop_presence(on_loop, (True, None))
+    )
+
+    response = legacy_client(FakeGateway()).get("/healthz")
+
+    assert response.json() == {"status": "healthy"}
+    assert on_loop == [False]
+
+
+def test_registry_reads_gpu_memory_off_the_event_loop(
+    legacy_client, fake_stat, monkeypatch
+):
+    from inference_server.legacy import entities
+
+    on_loop = []
+    monkeypatch.setattr(
+        entities,
+        "_get_gpu_memory_stats",
+        _record_loop_presence(on_loop, (None, None, None, None)),
+    )
+    gw = FakeGateway(
+        model_info={"other/2": {"model_mro_names": ["ClassificationModel"]}}
+    )
+    client = legacy_client(gw)
+    asyncio.run(gw.load("other/2"))
+
+    response = client.get("/model/registry")
+
+    assert response.status_code == 200
+    assert on_loop == [False]
+
+
 def _wait_for_status(client, path, status_code):
     import time
 
