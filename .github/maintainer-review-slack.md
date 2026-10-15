@@ -119,7 +119,7 @@ Maintainers must already have access to that channel; a mention does not grant a
 1. On an open non-draft same-repository test PR, have an author with write access post
    `/maintainer-review Testing the maintainer handoff; no review needed.`
 2. Verify the configured channel receives one message mentioning the intended
-   maintainers, and the PR gets a link to that thread.
+   maintainers, and the PR gets one handoff comment without a Slack link.
 3. Rerun the same notifier run and post two fresh escalation comments: none
    should duplicate the request. A fork PR or requester without write access
    must produce no Slack message.
