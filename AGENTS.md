@@ -133,7 +133,7 @@ do not need access to Roboflow's Slack or Slab; follow the general guidelines ab
   with a finding, explain why in a PR comment beginning
   `/maintainer-review <reason>` to escalate. The handoff requires an open,
   non-draft, same-repository PR; escalation also requires repository write access
-  or higher. Coordinate in the linked Slack thread and record final approval in
+  or higher. Coordinate in the Slack thread and record final approval in
   GitHub. See [handoff behavior](.github/maintainer-review-slack.md) for details.
 
 ## Workflows Package (roboflow-workflows)

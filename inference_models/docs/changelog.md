@@ -35,6 +35,11 @@
 - GLM-OCR table recognition sent the formula-recognition prompt.
 - `get_onnxruntime_info()` reports a missing runtime instead of raising when the
   `onnxruntime` module is present but incomplete.
+- RF-DETR NAS TensorRT packages for object detection and instance segmentation
+  load on TensorRT again. These packages now declare their subnet as model
+  features (`resolution`, `patch_size`, `num_windows`, `dec_layers`,
+  `num_queries`, `num_select`), which the TensorRT registry entries did not
+  accept. Previously negotiation rejected them and fell back to ONNX.
 
 ### Added
 
@@ -69,7 +74,6 @@
 - TensorRT models fall back to `tensorrt_lean` when `tensorrt` is not installed.
 - Boolean environment variables also accept `1/0`, `t/f`, `yes/no`, `y/n`, `on/off` and
   surrounding whitespace. An empty value is still rejected.
-
 
 ## `0.39.3`
 

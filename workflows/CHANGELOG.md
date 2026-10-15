@@ -16,6 +16,12 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- Prevent supporting metadata and workflow validation-model caches from retaining dynamically generated custom Python manifests after their compiled workflows are evicted. Static manifest caching and compiled-workflow reuse are preserved; no workflow changes are required.
+- Workflows with custom Python blocks executed locally are cached again after compilation (as before 1.6.1), fixing per-request memory growth and the throughput drop on HTTP hosts; module-level state of a local custom Python block is again shared across requests that use the same definition in one process. Modal execution and unresolved inner-workflow references still compile per request.
+- The compilation cache no longer raises `KeyError` when evicting a key that was cached twice.
+
 ### Added
 
 - The nine Roboflow platform blocks are core blocks of this package again: dataset upload v1 and v2, custom metadata, model monitoring inference aggregator, vision events, vision event bundle, asset library attributes, visual search and visual search classifier. They live in `core_steps.sinks.roboflow` and `core_steps.integrations.roboflow`, so a standalone install now lists 248 blocks. Inference 1.6.1 to 1.7.2 shipped them as the `inference.roboflow_workflows_plugin` plugin; that plugin is now an empty compatibility stub.

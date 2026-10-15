@@ -42,6 +42,7 @@ def test_inference_models_registry_pairs_are_registered_in_outer_lookup() -> Non
         ("semantic-segmentation", "deep-lab-v3-plus"),
         ("semantic-segmentation", "rfdetr"),
         ("semantic-segmentation", "rfdetr-sem-nano"),
+        ("semantic-segmentation", "rfdetr-nas-sem"),
     }
 
     missing_pairs = expected_pairs.difference(ROBOFLOW_MODEL_TYPES)
