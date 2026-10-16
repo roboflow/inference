@@ -21,8 +21,10 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UsagePausedModelAccessError,
 )
+from inference_models.weights_providers.roboflow import RoboflowModelMetadata
 from inference_sdk.config import apply_duration_minimum, outbound_service_secret
 from inference_server import configuration
+from inference_server.framework import model_stat
 from inference_server.legacy.errors import SERVICE_MISCONFIGURATION_MESSAGE
 from inference_server.usage import request_hook
 from inference_server.usage.collector import UsageCollector
@@ -384,6 +386,50 @@ def test_vlm_model_row_posts_the_descriptor_the_legacy_server_reports(
         "model_architecture": "qwen3_5-0.8b",
         "task_type": "lmm",
     }
+
+
+def test_rfdetr_nas_model_row_posts_the_registry_latency_the_platform_prices(
+    usage_client, monkeypatch
+):
+    meta = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "ds/1",
+            "modelArchitecture": "rfdetr",
+            "modelVariant": "rfdetr-nas",
+            "taskType": "object-detection",
+            "modelPackages": [],
+            "modelLatencyMs": 3.5,
+        }
+    )
+    monkeypatch.setattr(model_stat, "get_one_page_of_model_metadata", lambda **_: meta)
+    gateway = FakeGateway(
+        predictions={("ds/1", "infer"): _det()},
+        model_info={
+            "ds/1": {
+                "class_names": ["cat"],
+                "actions": {"infer": {}},
+                "input_height": 640,
+                "input_width": 640,
+            }
+        },
+    )
+
+    response, rows = _posted_rows(usage_client, gateway, monkeypatch)
+
+    assert response.status_code == 200, response.text
+    (model,) = [row for row in rows if row["category"] == "model"]
+    details = json.loads(model["resource_details"])
+    assert details == {
+        "billable": True,
+        "model_architecture": "rfdetr",
+        "model_variant": "rfdetr-nas",
+        "task_type": "object-detection",
+        "model_latency_ms": 3.5,
+        "model_input_height": 640,
+        "model_input_width": 640,
+    }
+    assert type(details["model_latency_ms"]) is float
 
 
 @pytest.mark.parametrize(
