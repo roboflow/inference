@@ -1,6 +1,6 @@
 [project]
 name = "streamvision"
-version = "0.1.2rc2"
+version = "0.1.2rc3"
 description = "Video sources, InferencePipeline and the stream manager for Roboflow Inference"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -22,7 +22,7 @@ webrtc = [
   "requests>=2.33.0,<3.0.0",
 ]
 workflows = [
-  "roboflow-workflows>=0.2.10rc2",
+  "roboflow-workflows>=0.2.11rc1",
   "torch>=2.0.1,<3.0.0",
 ]
 nvdec = [
