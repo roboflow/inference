@@ -164,6 +164,7 @@ class InferenceConfiguration:
     class_filter: Optional[List[str]] = None
     fix_batch_size: Optional[bool] = None
     include_anomaly_map: Optional[bool] = None
+    anomaly_threshold: Optional[float] = None
     visualize_predictions: bool = False
     visualize_labels: Optional[bool] = None
     output_visualisation_format: VisualisationResponseFormat = (
@@ -366,6 +367,7 @@ class InferenceConfiguration:
         """
         parameters_specs = [
             ("include_anomaly_map", "include_anomaly_map"),
+            ("anomaly_threshold", "anomaly_threshold"),
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
@@ -415,8 +417,9 @@ class InferenceConfiguration:
             ("source", "source"),
             ("source_info", "source_info"),
             ("response_mask_format", "response_mask_format"),
-            # The legacy route reads it as a query parameter (see `legacy_infer_from_request`).
+            # The legacy route reads these as query parameters (see `legacy_infer_from_request`).
             ("include_anomaly_map", "include_anomaly_map"),
+            ("anomaly_threshold", "anomaly_threshold"),
         ]
         parameters = get_non_empty_attributes(
             source_object=self,

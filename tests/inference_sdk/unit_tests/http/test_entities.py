@@ -361,6 +361,41 @@ def test_include_anomaly_map_reaches_both_api_versions(client_mode, requested):
 
 
 @pytest.mark.parametrize("client_mode", [HTTPClientMode.V0, HTTPClientMode.V1])
+@pytest.mark.parametrize("threshold", [None, 0.0, 1.25])
+def test_anomaly_threshold_reaches_both_api_versions(client_mode, threshold):
+    # given - the caller threshold is sent as a body field on v1 and a query
+    # parameter on the legacy route; 0.0 is a valid threshold, not "unset"
+    configuration = InferenceConfiguration(anomaly_threshold=threshold)
+
+    # when
+    parameters = configuration.to_api_call_parameters(
+        client_mode=client_mode, task_type=CLASSIFICATION_TASK
+    )
+
+    # then
+    if threshold is None:
+        assert "anomaly_threshold" not in parameters
+    else:
+        assert parameters["anomaly_threshold"] == threshold
+
+
+@pytest.mark.parametrize(
+    "task_type", [OBJECT_DETECTION_TASK, INSTANCE_SEGMENTATION_TASK]
+)
+def test_anomaly_threshold_is_not_sent_to_other_v1_task_routes(task_type):
+    # given
+    configuration = InferenceConfiguration(anomaly_threshold=1.25)
+
+    # when
+    parameters = configuration.to_api_call_parameters(
+        client_mode=HTTPClientMode.V1, task_type=task_type
+    )
+
+    # then
+    assert "anomaly_threshold" not in parameters
+
+
+@pytest.mark.parametrize("client_mode", [HTTPClientMode.V0, HTTPClientMode.V1])
 @pytest.mark.parametrize("opt_in", [None, False, True])
 def test_mask_resolution_opt_in_is_serialized_only_when_selected(client_mode, opt_in):
     configuration = InferenceConfiguration(allow_reduced_mask_resolution=opt_in)
