@@ -19,6 +19,7 @@ from typing import Any, Callable, Iterator
 
 import imagecodecs
 import numpy as np
+from packaging.version import InvalidVersion, Version
 
 from inference_model_manager import configuration as cfg
 
@@ -692,6 +693,8 @@ def _select_codec(data: bytes | memoryview) -> str | None:
         return "jpeg2k"
     if _ftyp_names_avif(data):
         return "avif"
+    if head[:4] == b"qoif":
+        return "qoi"
     return None
 
 
@@ -768,6 +771,21 @@ _BOX_HEADER = struct.Struct(">I4s")
 _BOX_LARGESIZE = struct.Struct(">Q")
 _AVIF_BRANDS = (b"avif", b"avis")
 _MULTI_FRAME_CODECS = frozenset(("gif", "webp", "avif"))
+
+
+def _avif_frame_index_safe(version: str) -> bool:
+    """Whether this imagecodecs decodes one frame of an animated AVIF safely.
+
+    Releases before 2026.5.10 corrupt the heap and abort the process when
+    ``avif_decode`` is given a frame index for an AVIF sequence.
+    """
+    try:
+        return Version(version) >= Version("2026.5.10")
+    except InvalidVersion:
+        return False
+
+
+_AVIF_FRAME_INDEX_SAFE = _avif_frame_index_safe(imagecodecs.__version__)
 
 
 def _to_rgb_hwc(img: np.ndarray) -> np.ndarray:
@@ -1037,6 +1055,8 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     # Some imagecodecs versions use libtiff's RGBA reader, which flips by the tag.
     if codec == "tiff" and orientation != 1:
         raw = _with_orientation_1(raw)
+    if codec == "avif" and not _AVIF_FRAME_INDEX_SAFE:
+        return _decode_avif_with_opencv(raw)
     decode = getattr(imagecodecs, f"{codec}_decode")
     # cv2.imdecode returns the first frame of an animation.
     if codec in _MULTI_FRAME_CODECS:
@@ -1049,6 +1069,24 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     # a rotated phone photo must reach the model upright. exif_orientation
     # returns 1 for the formats OpenCV leaves as is.
     return apply_exif_orientation(image, orientation)
+
+
+def _decode_avif_with_opencv(raw: bytes) -> np.ndarray:
+    """Decode the first AVIF frame with cv2.imdecode.
+
+    Used where imagecodecs cannot decode a single frame of an AVIF sequence.
+    EXIF orientation is ignored, as on the imagecodecs path.
+    """
+    import cv2
+
+    decoded = cv2.imdecode(
+        np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION
+    )
+    if decoded is None:
+        raise ValueError("image data could not be decoded")
+    _guard_decoded(decoded, max_decoded_pixels())
+
+    return decoded[:, :, ::-1]
 
 
 def _native_decode(decode: Callable[..., np.ndarray], *args, **kwargs) -> np.ndarray:

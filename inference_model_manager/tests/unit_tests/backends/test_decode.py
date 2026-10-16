@@ -1083,6 +1083,88 @@ class TestMultiFrameGate:
         assert image.shape == (30, 40, 3)
         assert image.max() < 30
 
+    def test_avif_skips_the_frame_index_on_imagecodecs_that_corrupt_it(
+        self, monkeypatch
+    ):
+        import inference_model_manager.backends.decode as decode_mod
+
+        cv2 = pytest.importorskip("cv2")
+        data = _animation("AVIF")
+        if cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) is None:
+            pytest.skip("cv2 has no AVIF decoder")
+        monkeypatch.setattr(decode_mod, "_AVIF_FRAME_INDEX_SAFE", False)
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+
+        image = decode_mod.make_decoder("imagecodecs")(data)
+
+        assert image.shape == (30, 40, 3)
+        assert image.max() < 30
+
+    def test_avif_fallback_matches_cv2_and_ignores_orientation(self, monkeypatch):
+        import io
+
+        from PIL import Image
+
+        import inference_model_manager.backends.decode as decode_mod
+
+        cv2 = pytest.importorskip("cv2")
+        buffer = io.BytesIO()
+        Image.new("RGB", (40, 30), (200, 0, 0)).save(buffer, format="AVIF")
+        data = buffer.getvalue()
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        if expected is None:
+            pytest.skip("cv2 has no AVIF decoder")
+        flags = []
+        real_imdecode = cv2.imdecode
+
+        def _recording_imdecode(buf, flag):
+            flags.append(flag)
+            return real_imdecode(buf, flag)
+
+        monkeypatch.setattr(decode_mod, "_AVIF_FRAME_INDEX_SAFE", False)
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setattr(cv2, "imdecode", _recording_imdecode)
+
+        image = decode_mod.make_decoder("imagecodecs")(data)
+
+        np.testing.assert_array_equal(image, expected)
+        assert flags == [cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION]
+
+    def test_avif_fallback_without_an_opencv_avif_decoder_is_an_input_error(
+        self, monkeypatch
+    ):
+        import inference_model_manager.backends.decode as decode_mod
+
+        cv2 = pytest.importorskip("cv2")
+        monkeypatch.setattr(decode_mod, "_AVIF_FRAME_INDEX_SAFE", False)
+        monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setattr(cv2, "imdecode", lambda *args: None)
+
+        with pytest.raises(ValueError, match="could not be decoded"):
+            decode_mod.make_decoder("imagecodecs")(_animation("AVIF"))
+
+    @pytest.mark.parametrize(
+        "version, safe",
+        [
+            ("2025.3.30", False),
+            ("2026.3.6", False),
+            ("2026.5.10.dev0", False),
+            ("2026.5.10rc1", False),
+            ("not-a-version", False),
+            ("2026.5.10", True),
+            ("2026.5.10.post1", True),
+            ("2026.10.10", True),
+        ],
+    )
+    def test_avif_frame_index_is_trusted_from_imagecodecs_2026_5_10(
+        self, version, safe
+    ):
+        from inference_model_manager.backends.decode import (
+            _avif_frame_index_safe,
+        )
+
+        assert _avif_frame_index_safe(version) is safe
+
     def test_header_pixels_reads_the_largest_gif_image(self):
         from inference_model_manager.backends.decode import header_pixels
 
@@ -1141,7 +1223,7 @@ def _encoded(name: str) -> bytes:
     imagecodecs = pytest.importorskip("imagecodecs")
     image = np.zeros((30, 40, 3), np.uint8)
     encoders = {
-        "tiff": lambda: imagecodecs.tiff_encode(image),
+        "tiff": lambda: _pil_encoded("TIFF"),
         "bmp": lambda: imagecodecs.bmp_encode(image),
         "webp-lossless": lambda: imagecodecs.webp_encode(image, lossless=True),
         "webp-lossy": lambda: _pil_encoded("WEBP", quality=80),

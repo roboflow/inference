@@ -9,6 +9,7 @@ dependencies = [
   "numpy",
   "imagecodecs",
   "filelock",
+  "packaging",
 ]
 
 [project.optional-dependencies]
