@@ -2867,11 +2867,15 @@ async def test_ocr_image_async_hen_faulty_response_returned(
             f"{api_url}/doctr/ocr",
             payload={"message": "Cannot load DocTR model."},
             status=500,
+            repeat=True,
         )
 
         # when
-        with pytest.raises(HTTPCallErrorError):
+        with pytest.raises(HTTPCallErrorError) as error:
             _ = await http_client.ocr_image_async(inference_input="/some/image.jpg")
+
+        assert error.value.status_code == 500
+        assert sum(len(calls) for calls in m.requests.values()) == 3
 
 
 @mock.patch.object(client, "load_static_inference_input")
@@ -3133,12 +3137,16 @@ async def test_get_clip_image_embeddings_when_faulty_response_returned(
                 "message": "Cannot load Clip model.",
             },
             status=500,
+            repeat=True,
         )
 
-        with pytest.raises(HTTPCallErrorError):
+        with pytest.raises(HTTPCallErrorError) as error:
             _ = await http_client.get_clip_image_embeddings_async(
                 inference_input="/some/image.jpg"
             )
+
+        assert error.value.status_code == 500
+        assert sum(len(calls) for calls in m.requests.values()) == 3
 
 
 def test_get_clip_text_embeddings_when_single_text_given(

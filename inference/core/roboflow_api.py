@@ -56,6 +56,7 @@ from inference.core.env import (
     OFFLINE_MODE,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
+    ROBOFLOW_API_MODEL_PROXY_REQUEST_TIMEOUT,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
@@ -185,8 +186,14 @@ NOT_FOUND_ERROR_MESSAGE = (
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
 API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
-_API_PROXY_RATE_LIMIT_MAX_RETRIES = 4
-_API_PROXY_RATE_LIMIT_MAX_SECONDS = 60.0
+_API_PROXY_MAX_RETRIES = 4
+_API_PROXY_RETRY_WINDOW_SECONDS = 60.0
+# Model generation can be retried without replaying workflow side effects.
+# Other proxies include email and Twilio, where a 5xx may follow delivery.
+_MODEL_PROXY_ENDPOINTS = frozenset({"openai", "openai/v2", "gemini"})
+_MODEL_PROXY_RETRYABLE_STATUS_CODES = frozenset({500, 502, 503, 504})
+_MODEL_PROXY_MAX_RETRIES = 1
+_MODEL_PROXY_RETRY_WINDOW_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -2134,9 +2141,16 @@ def post_to_roboflow_api(
         The decoded JSON response.
 
     Notes:
-        API proxy 429 responses receive at most four retries within a 60-second
-        retry window. Retry-After is honored; cooldowns beyond the remaining
-        window fail immediately. Other POST failures are not replayed.
+        API proxy 429 responses receive at most four retries within 60 seconds
+        of the initial request. Selected model proxies additionally receive one
+        retry for a 5xx response or read timeout, with a separate 60-second
+        window starting at the failure. Retry-After is honored; cooldowns beyond
+        the remaining window fail immediately. Model calls use
+        ROBOFLOW_API_MODEL_PROXY_REQUEST_TIMEOUT (150 seconds by default) so a
+        proxy with a 120-second upstream deadline can return its error first.
+        Other POST failures are not replayed. A provider may have processed a
+        generation before returning a 5xx or timing out; retrying can incur
+        another provider charge.
     """
 
     if OFFLINE_MODE:
@@ -2165,23 +2179,60 @@ def post_to_roboflow_api(
             endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
             for prefix in API_PROXY_ENDPOINT_PREFIXES
         )
-        retry_deadline = time.monotonic() + _API_PROXY_RATE_LIMIT_MAX_SECONDS
-        for attempt in range(_API_PROXY_RATE_LIMIT_MAX_RETRIES + 1):
-            response = requests.post(
-                url=wrapped_url,
-                json=payload,
-                headers=headers,
-                timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
-                verify=ROBOFLOW_API_VERIFY_SSL,
-            )
-            if (
-                not is_api_proxy
-                or response.status_code != 429
-                or attempt == _API_PROXY_RATE_LIMIT_MAX_RETRIES
+        is_model_proxy = any(
+            endpoint_path == f"{prefix}/{model_endpoint}"
+            for prefix in API_PROXY_ENDPOINT_PREFIXES
+            for model_endpoint in _MODEL_PROXY_ENDPOINTS
+        )
+        rate_limit_deadline = time.monotonic() + _API_PROXY_RETRY_WINDOW_SECONDS
+        rate_limit_retries = 0
+        model_retries = 0
+        request_timeout = (
+            ROBOFLOW_API_MODEL_PROXY_REQUEST_TIMEOUT
+            if is_model_proxy
+            else ROBOFLOW_API_REQUEST_TIMEOUT
+        )
+        for _ in range(_API_PROXY_MAX_RETRIES + _MODEL_PROXY_MAX_RETRIES + 1):
+            try:
+                response = requests.post(
+                    url=wrapped_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=request_timeout,
+                    verify=ROBOFLOW_API_VERIFY_SSL,
+                )
+            except requests.exceptions.ReadTimeout:
+                if not is_model_proxy or model_retries == _MODEL_PROXY_MAX_RETRIES:
+                    raise
+
+                retry_deadline = time.monotonic() + _MODEL_PROXY_RETRY_WINDOW_SECONDS
+                time.sleep(random.uniform(1.0, 2.0))
+                if time.monotonic() >= retry_deadline:
+                    raise
+
+                model_retries += 1
+                continue
+
+            is_rate_limit = is_api_proxy and response.status_code == 429
+            if is_rate_limit:
+                if rate_limit_retries == _API_PROXY_MAX_RETRIES:
+                    break
+
+                retry_deadline = rate_limit_deadline
+                retry = rate_limit_retries
+            elif (
+                is_model_proxy
+                and response.status_code in _MODEL_PROXY_RETRYABLE_STATUS_CODES
             ):
+                if model_retries == _MODEL_PROXY_MAX_RETRIES:
+                    break
+
+                retry_deadline = time.monotonic() + _MODEL_PROXY_RETRY_WINDOW_SECONDS
+                retry = model_retries
+            else:
                 break
 
-            delay = _api_proxy_retry_delay(response, retry=attempt)
+            delay = _api_proxy_retry_delay(response, retry=retry)
             if delay >= retry_deadline - time.monotonic():
                 break
 
@@ -2189,6 +2240,11 @@ def post_to_roboflow_api(
             time.sleep(delay)
             if time.monotonic() >= retry_deadline:
                 break
+
+            if is_rate_limit:
+                rate_limit_retries += 1
+            else:
+                model_retries += 1
 
         api_key_safe_raise_for_status(response=response)
         result = response.json()

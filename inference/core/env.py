@@ -1391,6 +1391,13 @@ ROBOFLOW_API_REQUEST_TIMEOUT = os.getenv("ROBOFLOW_API_REQUEST_TIMEOUT", "120")
 if ROBOFLOW_API_REQUEST_TIMEOUT:
     ROBOFLOW_API_REQUEST_TIMEOUT = int(ROBOFLOW_API_REQUEST_TIMEOUT)
 
+ROBOFLOW_API_MODEL_PROXY_REQUEST_TIMEOUT = int(
+    os.getenv(
+        "ROBOFLOW_API_MODEL_PROXY_REQUEST_TIMEOUT",
+        str(max(150, ROBOFLOW_API_REQUEST_TIMEOUT or 0)),
+    )
+)
+
 
 # Control SSL certificate verification for requests to the Roboflow API
 # Default is True (verify SSL). Set ROBOFLOW_API_VERIFY_SSL=false to disable in local dev.

@@ -93,8 +93,10 @@ def test_make_request_when_connection_error_occurs_and_recovers(
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
 def test_make_request_when_retryable_error_occurs_and_does_not_recover(
     requests_mock: Mocker,
+    status: int,
 ) -> None:
     # given
     request_data = RequestData(
@@ -109,9 +111,9 @@ def test_make_request_when_retryable_error_occurs_and_does_not_recover(
     requests_mock.post(
         url="https://some.com",
         response_list=[
-            {"status_code": 503},
-            {"status_code": 503},
-            {"status_code": 503, "json": {"message": "third"}},
+            {"status_code": status},
+            {"status_code": status},
+            {"status_code": status, "json": {"message": "third"}},
         ],
     )
 
@@ -119,7 +121,7 @@ def test_make_request_when_retryable_error_occurs_and_does_not_recover(
     result = make_request(request_data=request_data, request_method=RequestMethod.POST)
 
     # then
-    assert result.status_code == 503, "Expected to return last error code"
+    assert result.status_code == status, "Expected to return last error code"
     assert result.json() == {
         "message": "third"
     }, "Expected to return last error payload"
@@ -129,8 +131,10 @@ def test_make_request_when_retryable_error_occurs_and_does_not_recover(
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
 def test_make_request_when_retryable_error_occurs_and_recovers(
     requests_mock: Mocker,
+    status: int,
 ) -> None:
     # given
     request_data = RequestData(
@@ -145,7 +149,7 @@ def test_make_request_when_retryable_error_occurs_and_recovers(
     requests_mock.post(
         url="https://some.com",
         response_list=[
-            {"status_code": 503},
+            {"status_code": status},
             {"json": {"message": "ok"}},
         ],
     )
@@ -179,7 +183,7 @@ def test_make_request_when_error_response_should_not_be_retried(
     requests_mock.post(
         url="https://some.com",
         response_list=[
-            {"status_code": 500},
+            {"status_code": 400},
             {"json": {"message": "ok"}},
         ],
     )
@@ -189,7 +193,7 @@ def test_make_request_when_error_response_should_not_be_retried(
 
     # then
     assert (
-        result.status_code == 500
+        result.status_code == 400
     ), "Expected to return first status code, as error is not retryable"
     assert len(requests_mock.request_history) == 1, "Only single request should be made"
     assert requests_mock.last_request.json() == {
@@ -568,9 +572,10 @@ async def test_make_request_async_when_connection_error_occurs_and_does_recover(
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_make_request_async_when_retryable_error_occurs_and_does_not_recover() -> (
-    None
-):
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
+async def test_make_request_async_when_retryable_error_occurs_and_does_not_recover(
+    status: int,
+) -> None:
     # given
     request_data = RequestData(
         url="https://some.com",
@@ -584,9 +589,9 @@ async def test_make_request_async_when_retryable_error_occurs_and_does_not_recov
 
     with aioresponses() as m:
         async with aiohttp.ClientSession() as session:
-            m.get("https://some.com", status=503)
-            m.get("https://some.com", status=503)
-            m.get("https://some.com", status=503)
+            m.get("https://some.com", status=status)
+            m.get("https://some.com", status=status)
+            m.get("https://some.com", status=status)
 
             # when
             with pytest.raises(ClientResponseError):
@@ -599,9 +604,10 @@ async def test_make_request_async_when_retryable_error_occurs_and_does_not_recov
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_make_request_async_when_retryable_error_occurs_and_does_recover() -> (
-    None
-):
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
+async def test_make_request_async_when_retryable_error_occurs_and_does_recover(
+    status: int,
+) -> None:
     # given
     request_data = RequestData(
         url="https://some.com",
@@ -615,7 +621,7 @@ async def test_make_request_async_when_retryable_error_occurs_and_does_recover()
 
     with aioresponses() as m:
         async with aiohttp.ClientSession() as session:
-            m.get("https://some.com", status=503)
+            m.get("https://some.com", status=status)
             m.get("https://some.com", status=200, payload={"status": "ok"})
 
             # when
@@ -647,7 +653,7 @@ async def test_make_request_async_when_non_retryable_error_occurs() -> None:
 
     with aioresponses() as m:
         async with aiohttp.ClientSession() as session:
-            m.get("https://some.com", status=500)
+            m.get("https://some.com", status=400)
 
             # when
             with pytest.raises(ClientResponseError):
@@ -763,12 +769,16 @@ async def test_make_parallel_requests_async_when_some_request_fails() -> None:
         m.get("https://some.com", status=500)
         m.get("https://some.com", status=200, payload={"status": "ok"})
 
+        m.get("https://some.com", status=500, repeat=True)
+
         # when
-        with pytest.raises(ClientResponseError):
+        with pytest.raises(ClientResponseError) as error:
             _ = await make_parallel_requests_async(
                 requests_data=[request_data] * 4,
                 request_method=RequestMethod.GET,
             )
+
+    assert error.value.status == 500
 
 
 @pytest.mark.asyncio
@@ -818,13 +828,17 @@ async def test_execute_requests_packages_async_when_some_request_fails() -> None
         m.get("https://some.com", status=500)
         m.get("https://some.com", status=200, payload={"status": "ok"})
 
+        m.get("https://some.com", status=500, repeat=True)
+
         # when
-        with pytest.raises(ClientResponseError):
+        with pytest.raises(ClientResponseError) as error:
             _ = await execute_requests_packages_async(
                 requests_data=[request_data] * 4,
                 request_method=RequestMethod.GET,
                 max_concurrent_requests=2,
             )
+
+    assert error.value.status == 500
 
 
 @pytest.mark.asyncio
@@ -855,3 +869,50 @@ async def test_execute_requests_packages_async_when_all_requests_succeed() -> No
     assert (
         result == [{"status": "ok"}] * 3
     ), "All requests are expected to return predefined result"
+
+
+@pytest.mark.parametrize("status", [500, 502])
+@pytest.mark.parametrize("enable_retries", [False, True])
+def test_workflow_post_does_not_gain_model_server_error_retries(
+    requests_mock: Mocker, status: int, enable_retries: bool
+) -> None:
+    requests_mock.post("https://some.com/workflows/run", status_code=status)
+    with pytest.raises(HTTPError):
+        executors.send_post_request(
+            url="https://some.com/workflows/run",
+            payload={},
+            headers={},
+            enable_retries=enable_retries,
+        )
+
+    assert requests_mock.call_count == 1
+
+
+def test_model_package_retries_only_failed_request(requests_mock: Mocker) -> None:
+    successful = requests_mock.post("https://some.com/model-a", json={"result": "a"})
+    recovering = requests_mock.post(
+        "https://some.com/sam3/concept_segment",
+        [{"status_code": 500}, {"status_code": 502}, {"json": {"result": "b"}}],
+    )
+    requests_data = [
+        RequestData(
+            url=url,
+            request_elements=1,
+            headers=None,
+            data=None,
+            parameters=None,
+            payload={"image": "test"},
+            image_scaling_factors=[None],
+        )
+        for url in ["https://some.com/model-a", "https://some.com/sam3/concept_segment"]
+    ]
+
+    result = execute_requests_packages(
+        requests_data=requests_data,
+        request_method=RequestMethod.POST,
+        max_concurrent_requests=1,
+    )
+
+    assert [r.json() for r in result] == [{"result": "a"}, {"result": "b"}]
+    assert successful.call_count == 1
+    assert recovering.call_count == 3
