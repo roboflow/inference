@@ -159,10 +159,7 @@ def test_predefined_route_records_a_request_row_and_a_workflows_row(
     assert "is_preview" not in row
     assert row["error_type"] is None
     assert row["execution_duration"] > 0
-    assert row["resource_details"] == {
-        "steps": [],
-        "workspace_id": "ws",
-    }
+    assert row["resource_details"] == {"steps": []}
     workflow = _only_row_of(usage_collector, "workflows")
     assert workflow == {
         "api_key": "k",
@@ -353,7 +350,7 @@ def test_local_model_steps_record_a_model_row_each_attributed_to_the_workflow_ke
         }
     workflow = _only_row_of(usage_collector, "workflows")
     assert workflow["resource_details"]["source_info"] == "app-1"
-    assert "source" not in workflow["resource_details"]
+    assert workflow["resource_details"]["source"] == "app"
     assert workflow["roboflow_service_name"] == "app-1"
 
 

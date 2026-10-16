@@ -422,6 +422,8 @@ def record_workflow_usage(
         if not workflow_id:
             resource_id = steps_resource_id(steps)
     details["is_preview"] = is_preview
+    if scope.source is not None:
+        details["source"] = scope.source
     if not _is_positive_fps(fps):
         fps = 0.0
     _record(

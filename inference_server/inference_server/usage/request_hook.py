@@ -54,7 +54,7 @@ def report_request_usage(fn: Any) -> Any:
     except the catch-all route, which reads its image from the body. A
     workflow run handler (``workflow_request`` argument) is attributed to the
     workflow: the path's or the body's ``workflow_id``, ``None`` when the body
-    has none; its row also carries the workflow steps and the workspace. While
+    has none; its row also carries the workflow steps. While
     the handler runs, the request's usage scope is bound so nested rows inherit
     its key, billing intent and source tags; a request that opted out of
     billing with a valid service secret forwards the opt-out to the remote
@@ -239,8 +239,6 @@ def _row(
         details["device_id"] = configuration.DEVICE_ID
     if specification is not None:
         details["steps"] = workflow_steps(specification)
-    if workflow and kwargs.get("workspace_name"):
-        details["workspace_id"] = kwargs["workspace_name"]
     if scope.source is not None:
         details["source"] = scope.source
     model_id = getattr(subject, "model_id", None)
