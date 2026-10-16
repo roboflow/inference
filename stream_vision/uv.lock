@@ -1457,7 +1457,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.39.5rc1"
+version = "0.39.5rc2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -1512,9 +1512,9 @@ dependencies = [
     { name = "transformers" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/14/1f/5740fb6941611ea8bf9eb7d424298df8caf2d1356d4867dcbce8a01dad3b/inference_models-0.39.5rc1.tar.gz", hash = "sha256:a4ea1ee7b141c6b1db22a00135a86b3004f321ab587069d7b35fd1a36576e0c1", size = 1992587, upload-time = "2026-10-16T15:12:06.397Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/da/09ed4dd852d65d29fad0adeb12dbc09fbd26f86a7ac1409ce4ef067916a4/inference_models-0.39.5rc2.tar.gz", hash = "sha256:899b847da8a4fe272019c9385360363ac2aab4a422bff39408f1758564bdb378", size = 1993074, upload-time = "2026-10-16T16:23:25.869Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/25/33/96e9f6aeec0d092e4cde071eb19b805c706dcbd3d8da7b15b91b10693f94/inference_models-0.39.5rc1-py3-none-any.whl", hash = "sha256:6d878d7126971870e70c7afd0c7dc1fcd6d1dd93a5ea87094aae3201bf7f8005", size = 2251640, upload-time = "2026-10-16T15:12:04.337Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/e2/67d8c78b63cce0fe32cda62463957dffe897cbe32b63c7bcd1ffc736805e/inference_models-0.39.5rc2-py3-none-any.whl", hash = "sha256:3aa1e5121b2ebbbe0714b1953a2668a9a8d6a217b52d740e3d78886a73c00519", size = 2251626, upload-time = "2026-10-16T16:23:23.875Z" },
 ]
 
 [[package]]
@@ -4064,7 +4064,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.10rc2"
+version = "0.2.11rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anthropic" },
@@ -4109,9 +4109,9 @@ dependencies = [
     { name = "zxing-cpp", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "zxing-cpp", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3f/d2/384359b8b270a7988ef32198e433174f8f15c165373da4c46fd924c627da/roboflow_workflows-0.2.10rc2.tar.gz", hash = "sha256:465b4b747e92f9409050498fe984de1058d923c6a4f2ff5e4c0033972c380077", size = 5393891, upload-time = "2026-10-16T15:17:17.024Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/ca/e2ab0cc152e0c647dd652e8625cb170321d880d2d8350943237846964eeb/roboflow_workflows-0.2.11rc1.tar.gz", hash = "sha256:7bf1623674276be8a32d827df626cdfbe167fbf9708cb09cbbad08224c89d541", size = 5394104, upload-time = "2026-10-16T16:24:47.114Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/58/ce07142c52f19aee4a5fc8b0b0b6197f49c3d32c927a87d98d5fe996286d/roboflow_workflows-0.2.10rc2-py3-none-any.whl", hash = "sha256:5723728040acbd1e0e45704dc1ddcb00cebf9252f6ff49c8c1446ab349f2c0a3", size = 6486045, upload-time = "2026-10-16T15:17:15.059Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/21/31e248dbc4b4d4e84f6f51c96a67389961a668fe9358c49a6296b063915d/roboflow_workflows-0.2.11rc1-py3-none-any.whl", hash = "sha256:c1cc79a923aa37caad7b52a2b86ea2e1457af4ca764e9859cca74a18edb8e34b", size = 6486041, upload-time = "2026-10-16T16:24:45.346Z" },
 ]
 
 [[package]]
@@ -4567,7 +4567,7 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.2.0" },
     { name = "requests", marker = "extra == 'webrtc'", specifier = ">=2.33.0,<3.0.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
-    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.10rc2" },
+    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.11rc1" },
     { name = "supervision", specifier = ">=0.30.6,<0.31.0" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2.0.0" },
     { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.0.1,<3.0.0" },
