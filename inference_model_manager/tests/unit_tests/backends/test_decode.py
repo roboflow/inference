@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import os
 import struct
+import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -1088,60 +1090,55 @@ class TestMultiFrameGate:
     ):
         import inference_model_manager.backends.decode as decode_mod
 
-        cv2 = pytest.importorskip("cv2")
-        data = _animation("AVIF")
-        if cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) is None:
-            pytest.skip("cv2 has no AVIF decoder")
         monkeypatch.setattr(decode_mod, "_AVIF_FRAME_INDEX_SAFE", False)
         monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
+        monkeypatch.setitem(sys.modules, "cv2", None)
 
-        image = decode_mod.make_decoder("imagecodecs")(data)
+        image = decode_mod.make_decoder("imagecodecs")(_animation("AVIF"))
 
         assert image.shape == (30, 40, 3)
         assert image.max() < 30
 
-    def test_avif_fallback_matches_cv2_and_ignores_orientation(self, monkeypatch):
-        import io
-
+    def test_avif_fallback_matches_imagecodecs_and_ignores_orientation(
+        self, monkeypatch
+    ):
         from PIL import Image
 
         import inference_model_manager.backends.decode as decode_mod
 
-        cv2 = pytest.importorskip("cv2")
+        if not decode_mod._AVIF_FRAME_INDEX_SAFE:
+            pytest.skip("this imagecodecs cannot decode AVIF for the reference")
+        pixels = np.zeros((30, 40, 3), np.uint8)
+        pixels[..., 0] = np.arange(40, dtype=np.uint8) * 6
+        pixels[..., 1] = np.arange(30, dtype=np.uint8)[:, None] * 8
+        exif = Image.Exif()
+        exif[0x0112] = 6
         buffer = io.BytesIO()
-        Image.new("RGB", (40, 30), (200, 0, 0)).save(buffer, format="AVIF")
+        Image.fromarray(pixels).save(buffer, format="AVIF", exif=exif, quality=100)
         data = buffer.getvalue()
-        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-        if expected is None:
-            pytest.skip("cv2 has no AVIF decoder")
-        flags = []
-        real_imdecode = cv2.imdecode
-
-        def _recording_imdecode(buf, flag):
-            flags.append(flag)
-            return real_imdecode(buf, flag)
-
+        expected = decode_mod.make_decoder("imagecodecs")(data)
         monkeypatch.setattr(decode_mod, "_AVIF_FRAME_INDEX_SAFE", False)
         monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
-        monkeypatch.setattr(cv2, "imdecode", _recording_imdecode)
+        monkeypatch.setitem(sys.modules, "cv2", None)
 
         image = decode_mod.make_decoder("imagecodecs")(data)
 
+        assert image.shape == (30, 40, 3)
         np.testing.assert_array_equal(image, expected)
-        assert flags == [cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION]
 
-    def test_avif_fallback_without_an_opencv_avif_decoder_is_an_input_error(
-        self, monkeypatch
-    ):
+    def test_corrupt_avif_on_the_fallback_is_an_input_error(self, monkeypatch):
+        from PIL import Image
+
         import inference_model_manager.backends.decode as decode_mod
 
-        cv2 = pytest.importorskip("cv2")
+        buffer = io.BytesIO()
+        Image.new("RGB", (40, 30), (200, 0, 0)).save(buffer, format="AVIF")
+        truncated = buffer.getvalue()[:-8]
         monkeypatch.setattr(decode_mod, "_AVIF_FRAME_INDEX_SAFE", False)
         monkeypatch.setattr(decode_mod.imagecodecs, "avif_decode", _explode)
-        monkeypatch.setattr(cv2, "imdecode", lambda *args: None)
 
         with pytest.raises(ValueError, match="could not be decoded"):
-            decode_mod.make_decoder("imagecodecs")(_animation("AVIF"))
+            decode_mod.make_decoder("imagecodecs")(truncated)
 
     @pytest.mark.parametrize(
         "version, safe",

@@ -1056,7 +1056,7 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     if codec == "tiff" and orientation != 1:
         raw = _with_orientation_1(raw)
     if codec == "avif" and not _AVIF_FRAME_INDEX_SAFE:
-        return _decode_avif_with_opencv(raw)
+        return _decode_avif_with_pillow(raw)
     decode = getattr(imagecodecs, f"{codec}_decode")
     # cv2.imdecode returns the first frame of an animation.
     if codec in _MULTI_FRAME_CODECS:
@@ -1071,22 +1071,24 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     return apply_exif_orientation(image, orientation)
 
 
-def _decode_avif_with_opencv(raw: bytes) -> np.ndarray:
-    """Decode the first AVIF frame with cv2.imdecode.
+def _decode_avif_with_pillow(raw: bytes) -> np.ndarray:
+    """Decode the first AVIF frame with Pillow.
 
     Used where imagecodecs cannot decode a single frame of an AVIF sequence.
-    EXIF orientation is ignored, as on the imagecodecs path.
+    OpenCV is not used: the 4.x wheels the workflows packages pin have no
+    AVIF codec. EXIF orientation is ignored, as on the imagecodecs path.
     """
-    import cv2
+    from PIL.AvifImagePlugin import AvifImageFile
 
-    decoded = cv2.imdecode(
-        np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION
-    )
-    if decoded is None:
-        raise ValueError("image data could not be decoded")
+    # Not Image.open: its AVIF probe refuses boxes ahead of ftyp, which libavif reads.
+    try:
+        with AvifImageFile(io.BytesIO(raw)) as image:
+            decoded = np.asarray(image.convert("RGB"))
+    except (OSError, RuntimeError, SyntaxError, ValueError) as error:
+        raise ValueError("image data could not be decoded") from error
     _guard_decoded(decoded, max_decoded_pixels())
 
-    return decoded[:, :, ::-1]
+    return decoded
 
 
 def _native_decode(decode: Callable[..., np.ndarray], *args, **kwargs) -> np.ndarray:
