@@ -1,69 +1,45 @@
 """Tensor-native sibling of `roboflow_core/anomaly_detection_model@v1`.
 
-Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits native
-``inference_models.ClassificationPrediction`` objects under
-``TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND`` instead of the legacy
-classification response dict. ``images_metadata[0]`` carries the anomaly
-verdict (``anomaly_score``, ``anomaly_threshold``, ``is_anomalous``) next to
-the usual producer contract, and ``serialise_native_classification`` writes
-those keys into the flag-off dict shape.
+Under ENABLE_TENSOR_DATA_REPRESENTATION the block feeds the images already
+materialised on the ``WorkflowImageData`` (GPU tensors when every image has
+one, else numpy) to ``ModelsProvider.run_tensor_native_inference`` and reads the
+model's native ``inference_models.AnomalyDetectionPrediction``: one batched
+verdict with ``anomaly_scores``, the ``anomaly_threshold`` in effect,
+``is_anomalous`` and, when requested, ``anomaly_maps``.
 
-- LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns ONE batched
-  ``ClassificationPrediction`` whose ``images_metadata[i]`` holds the per-image
-  verdict and, when requested, the raw ``anomaly_map`` ndarray. The block fans
-  it out into single-row predictions and moves the map to its own output.
-- REMOTE: the ``AnomalyDetectionResponse`` dicts are rebuilt into native
-  predictions; the map arrives decoded by ``inference_sdk`` or as the wire
-  payload.
+The outputs are the same plain kinds as the numpy block (floats, a boolean, a
+``numpy_array`` map), so nothing here needs a tensor-native kind or serialiser.
+Remote execution is identical to the numpy block: the server's
+``AnomalyDetectionResponse`` dicts are read as they come.
 """
 
 import uuid
-from time import perf_counter
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
-import torch
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.anomaly_detection import (
-    ANOMALOUS_CLASS_NAME,
     ANOMALY_MAP_KEY,
-    ANOMALY_METADATA_KEYS,
     ANOMALY_SCORE_KEY,
     ANOMALY_THRESHOLD_KEY,
     IS_ANOMALOUS_KEY,
-    NORMAL_CLASS_NAME,
-    apply_threshold_override,
     coerce_anomaly_map,
     require_anomaly_response,
-    validate_threshold_override,
 )
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.environment import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from roboflow_workflows.execution_engine.constants import (
-    CLASS_NAMES_KEY,
-    CLASSIFICATION_STYLE_KEY,
-    CLASSIFICATION_STYLE_MODEL,
-    IMAGE_DIMENSIONS_KEY,
-    INFERENCE_ID_KEY,
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-    ROOT_PARENT_ID_KEY,
-)
+from roboflow_workflows.execution_engine.constants import INFERENCE_ID_KEY
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
-)
-from roboflow_workflows.execution_engine.entities.tensor_native_types import (
-    TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
 )
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -92,24 +68,21 @@ from roboflow_workflows.prototypes.block import (
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 
-from inference_models.models.base.classification import ClassificationPrediction
+from inference_models.models.base.anomaly_detection import AnomalyDetectionPrediction
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-
-PREDICTION_TYPE = "classification"
 
 LONG_DESCRIPTION = """
 Run an anomaly detection model (PatchCore or FoundAD) trained on an anomaly
 detection project hosted on Roboflow.
 
 An anomaly model learns what *normal* looks like from normal images only and
-scores a new image by how far it departs from that. The block reports:
+scores a new image by how far it departs from that. There is no class
+confidence: the model speaks a raw score, a threshold and a verdict. The block
+reports:
 
-- `predictions`: the classification-style response, with `top` being `normal`
-  or `anomalous` and the two class confidences. The anomalous confidence is a
-  sigmoid centred on the threshold saved with the model, so 0.5 marks the
-  decision boundary.
 - `anomaly_score`: the raw image score (unbounded, larger means more anomalous).
-- `anomaly_threshold`: the decision boundary in effect for this image.
+  Its scale depends on the trained model; it is not a probability.
+- `anomaly_threshold`: the decision threshold in effect for this image.
 - `is_anomalous`: `anomaly_score >= anomaly_threshold`.
 - `anomaly_map`: the local anomaly evidence as a float32 `(height, width)`
   array at the network's input resolution (square), in the same units as
@@ -118,10 +91,12 @@ scores a new image by how far it departs from that. The block reports:
   Heatmap Visualization** block to draw it. Set `include_anomaly_map` to
   `False` to skip the map when only the verdict is needed.
 
-`anomaly_threshold` lets you tune the operating point without retraining:
-lower it to catch more defects at the cost of more false alarms, raise it to
-do the opposite. The override re-decides `is_anomalous` and `top`; the class
-confidences stay relative to the saved threshold.
+The threshold saved with the model was fitted on validation images during
+training. `anomaly_threshold` lets you tune the operating point without
+retraining: lower it to catch more defects at the cost of more false alarms,
+raise it to do the opposite. The value is sent to the inference server, which
+decides `is_anomalous` against it and reports it back as `anomaly_threshold`.
+Leave it empty to use the saved threshold.
 
 You will need to set your Roboflow API key in your Inference environment to use
 this block. To learn more about setting your Roboflow API key, [refer to the
@@ -165,7 +140,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     anomaly_threshold: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
         default=None,
-        description="Decision threshold on the raw anomaly score, replacing the one saved with the model. Lower it to flag more images as anomalous. Leave empty to use the saved threshold.",
+        description="Decision threshold on the raw anomaly score, replacing the one saved with the model. The server decides `is_anomalous` against it. Lower it to flag more images as anomalous. Leave empty to use the saved threshold.",
         examples=[1.25, "$inputs.anomaly_threshold"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
@@ -205,10 +180,6 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name="predictions",
-                kind=[TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND],
-            ),
             OutputDefinition(name=ANOMALY_SCORE_KEY, kind=[FLOAT_KIND]),
             OutputDefinition(name=ANOMALY_THRESHOLD_KEY, kind=[FLOAT_KIND]),
             OutputDefinition(name=IS_ANOMALOUS_KEY, kind=[BOOLEAN_KIND]),
@@ -261,13 +232,12 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
-        threshold_override = validate_threshold_override(anomaly_threshold)
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,
                 model_id=model_id,
                 include_anomaly_map=include_anomaly_map,
-                anomaly_threshold=threshold_override,
+                anomaly_threshold=anomaly_threshold,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             )
@@ -276,7 +246,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
                 images=images,
                 model_id=model_id,
                 include_anomaly_map=include_anomaly_map,
-                anomaly_threshold=threshold_override,
+                anomaly_threshold=anomaly_threshold,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             )
@@ -303,58 +273,51 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
             model_inputs = [image.numpy_image for image in images]
             image_color_format = "bgr"
         self._model_manager.add_model(model_id=model_id, api_key=self._api_key)
-        inference_start = perf_counter()
-        batched_prediction: ClassificationPrediction = (
-            self._model_manager.run_tensor_native_inference(
-                model_id=model_id,
-                images=model_inputs,
-                input_color_format=image_color_format,
-                include_anomaly_map=include_anomaly_map,
-                disable_active_learning=disable_active_learning,
-                active_learning_target_dataset=active_learning_target_dataset,
-            )
+        prediction = self._model_manager.run_tensor_native_inference(
+            model_id=model_id,
+            images=model_inputs,
+            input_color_format=image_color_format,
+            include_anomaly_map=include_anomaly_map,
+            anomaly_threshold=anomaly_threshold,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
         )
-        inference_time = perf_counter() - inference_start
-        class_names = _class_names_map(self._model_manager.get_class_names(model_id))
-        model_metadata = batched_prediction.images_metadata or []
-        if len(model_metadata) != len(images):
+        if not isinstance(prediction, AnomalyDetectionPrediction):
             raise ValueError(
-                f"Model {model_id!r} did not return an anomaly detection prediction: "
-                f"expected per-image metadata for {len(images)} images, got "
-                f"{len(model_metadata)}. The Anomaly Detection Model block needs a "
-                f"PatchCore or FoundAD model."
+                f"Model {model_id!r} did not return an anomaly detection prediction "
+                f"(got {type(prediction).__name__}). The Anomaly Detection Model "
+                f"block needs a PatchCore or FoundAD model trained on an anomaly "
+                f"detection project; use the Single-Label Classification Model "
+                f"block for other classifiers."
             )
+        if len(prediction) != len(images):
+            raise ValueError(
+                f"Model {model_id!r} returned {len(prediction)} verdict(s) for "
+                f"{len(images)} image(s)."
+            )
+        if include_anomaly_map and prediction.anomaly_maps is None:
+            raise ValueError(
+                f"Model {model_id!r} returned no anomaly maps although "
+                f"`include_anomaly_map` was requested."
+            )
+        scores = prediction.anomaly_scores.detach().cpu().tolist()
+        verdicts = prediction.is_anomalous.detach().cpu().tolist()
+        anomaly_maps = prediction.anomaly_maps
+        if anomaly_maps is not None:
+            anomaly_maps = anomaly_maps.detach().cpu().numpy().astype(np.float32)
         results: List[dict] = []
-        for index, (image, image_model_metadata) in enumerate(
-            zip(images, model_metadata)
-        ):
-            require_anomaly_response(image_model_metadata, model_id=model_id)
-            verdict = {key: image_model_metadata[key] for key in ANOMALY_METADATA_KEYS}
-            verdict = apply_threshold_override(verdict, anomaly_threshold)
-            anomaly_map = coerce_anomaly_map(image_model_metadata.get(ANOMALY_MAP_KEY))
-            inference_id = str(uuid.uuid4())
-            image_metadata = _build_image_metadata(
-                image=image,
-                class_names=class_names,
-                inference_id=inference_id,
-                verdict=verdict,
-                inference_time=inference_time,
-            )
-            prediction = ClassificationPrediction(
-                class_id=_decided_class_id(verdict).to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
-                confidence=batched_prediction.confidence[index : index + 1].to(
-                    WORKFLOWS_IMAGE_TENSOR_DEVICE
-                ),
-                images_metadata=[image_metadata],
-            )
+        for index in range(len(images)):
             results.append(
-                _result(
-                    prediction=prediction,
-                    verdict=verdict,
-                    anomaly_map=anomaly_map,
-                    inference_id=inference_id,
-                    model_id=model_id,
-                )
+                {
+                    ANOMALY_SCORE_KEY: float(scores[index]),
+                    ANOMALY_THRESHOLD_KEY: float(prediction.anomaly_threshold),
+                    IS_ANOMALOUS_KEY: bool(verdicts[index]),
+                    ANOMALY_MAP_KEY: (
+                        anomaly_maps[index] if anomaly_maps is not None else None
+                    ),
+                    INFERENCE_ID_KEY: str(uuid.uuid4()),
+                    "model_id": model_id,
+                }
             )
         return results
 
@@ -381,6 +344,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
         client_config = InferenceConfiguration(
             api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             include_anomaly_map=include_anomaly_map,
+            anomaly_threshold=anomaly_threshold,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
@@ -395,120 +359,24 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
         )
         if not isinstance(responses, list):
             responses = [responses]
-        results: List[dict] = []
-        for image, response in zip(images, responses):
-            require_anomaly_response(response, model_id=model_id)
-            anomaly_map = coerce_anomaly_map(response.pop(ANOMALY_MAP_KEY, None))
-            response = apply_threshold_override(response, anomaly_threshold)
-            verdict = {key: response[key] for key in ANOMALY_METADATA_KEYS}
-            inference_id = response.get(INFERENCE_ID_KEY) or str(uuid.uuid4())
-            prediction = _native_prediction_from_response(
-                image=image,
-                response=response,
-                verdict=verdict,
-                inference_id=inference_id,
+        if len(responses) != len(images):
+            raise ValueError(
+                f"Model {model_id!r} returned {len(responses)} response(s) for "
+                f"{len(images)} image(s)."
+            )
+        results: List[Dict[str, Any]] = []
+        for response in responses:
+            require_anomaly_response(
+                response, model_id=model_id, include_anomaly_map=include_anomaly_map
             )
             results.append(
-                _result(
-                    prediction=prediction,
-                    verdict=verdict,
-                    anomaly_map=anomaly_map,
-                    inference_id=inference_id,
-                    model_id=model_id,
-                )
+                {
+                    ANOMALY_SCORE_KEY: float(response[ANOMALY_SCORE_KEY]),
+                    ANOMALY_THRESHOLD_KEY: float(response[ANOMALY_THRESHOLD_KEY]),
+                    IS_ANOMALOUS_KEY: bool(response[IS_ANOMALOUS_KEY]),
+                    ANOMALY_MAP_KEY: coerce_anomaly_map(response.get(ANOMALY_MAP_KEY)),
+                    INFERENCE_ID_KEY: response.get(INFERENCE_ID_KEY),
+                    "model_id": model_id,
+                }
             )
         return results
-
-
-def _class_names_map(class_names: List[str]) -> Dict[int, str]:
-    return {index: name for index, name in enumerate(class_names)}
-
-
-def _decided_class_id(verdict: Dict[str, Any]) -> torch.Tensor:
-    # The two-class convention of the anomaly models: 0 is normal, 1 is anomalous.
-    class_id = 1 if bool(verdict[IS_ANOMALOUS_KEY]) else 0
-    return torch.tensor([class_id], dtype=torch.long)
-
-
-def _result(
-    prediction: ClassificationPrediction,
-    verdict: Dict[str, Any],
-    anomaly_map: Optional[np.ndarray],
-    inference_id: str,
-    model_id: str,
-) -> dict:
-    return {
-        "predictions": prediction,
-        ANOMALY_SCORE_KEY: float(verdict[ANOMALY_SCORE_KEY]),
-        ANOMALY_THRESHOLD_KEY: float(verdict[ANOMALY_THRESHOLD_KEY]),
-        IS_ANOMALOUS_KEY: bool(verdict[IS_ANOMALOUS_KEY]),
-        ANOMALY_MAP_KEY: anomaly_map,
-        INFERENCE_ID_KEY: inference_id,
-        "model_id": model_id,
-    }
-
-
-def _build_image_metadata(
-    image: WorkflowImageData,
-    class_names: Dict[int, str],
-    inference_id: str,
-    verdict: Dict[str, Any],
-    inference_time: Optional[float] = None,
-) -> dict:
-    height, width = image._read_shape_without_materialization()
-    metadata = {
-        CLASS_NAMES_KEY: class_names,
-        CLASSIFICATION_STYLE_KEY: CLASSIFICATION_STYLE_MODEL,
-        PREDICTION_TYPE_KEY: PREDICTION_TYPE,
-        IMAGE_DIMENSIONS_KEY: [height, width],
-        INFERENCE_ID_KEY: inference_id,
-        PARENT_ID_KEY: image.parent_metadata.parent_id,
-        ROOT_PARENT_ID_KEY: image.workflow_root_ancestor_metadata.parent_id,
-        # No classification confidence cutoff: an anomaly response always reports
-        # both classes, whatever their confidence.
-        ANOMALY_SCORE_KEY: float(verdict[ANOMALY_SCORE_KEY]),
-        ANOMALY_THRESHOLD_KEY: float(verdict[ANOMALY_THRESHOLD_KEY]),
-        IS_ANOMALOUS_KEY: bool(verdict[IS_ANOMALOUS_KEY]),
-    }
-    if inference_time is not None:
-        metadata["time"] = inference_time
-    return metadata
-
-
-def _native_prediction_from_response(
-    image: WorkflowImageData,
-    response: dict,
-    verdict: Dict[str, Any],
-    inference_id: str,
-) -> ClassificationPrediction:
-    """Rebuild a native single-row ``ClassificationPrediction`` from an
-    ``AnomalyDetectionResponse`` dict. Both classes are always present in the
-    response, so the dense confidence vector is complete."""
-    class_names: Dict[int, str] = {}
-    confidence_by_id: Dict[int, float] = {}
-    for entry in response.get("predictions", []) or []:
-        class_id = int(entry["class_id"])
-        class_names[class_id] = str(entry.get("class", class_id))
-        confidence_by_id[class_id] = float(entry.get("confidence", 0.0))
-    num_classes = (max(class_names.keys()) + 1) if class_names else 2
-    for class_id, default_name in enumerate((NORMAL_CLASS_NAME, ANOMALOUS_CLASS_NAME)):
-        class_names.setdefault(class_id, default_name)
-    for class_id in range(num_classes):
-        class_names.setdefault(class_id, str(class_id))
-    confidence_vector = [confidence_by_id.get(i, 0.0) for i in range(num_classes)]
-    image_metadata = _build_image_metadata(
-        image=image,
-        class_names=class_names,
-        inference_id=inference_id,
-        verdict=verdict,
-        inference_time=response.get("time"),
-    )
-    return ClassificationPrediction(
-        class_id=_decided_class_id(verdict).to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
-        confidence=torch.tensor(
-            [confidence_vector],
-            dtype=torch.float32,
-            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
-        ),
-        images_metadata=[image_metadata],
-    )

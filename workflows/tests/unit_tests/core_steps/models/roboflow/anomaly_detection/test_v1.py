@@ -33,24 +33,14 @@ def _map_payload(values: np.ndarray = MAP) -> dict:
 def _response(
     *, score: float = 3.0, threshold: float = 2.0, anomaly_map: Any = None
 ) -> Dict[str, Any]:
-    is_anomalous = score >= threshold
-    anomalous_confidence = 0.75 if is_anomalous else 0.25
-    classes = [
-        {"class": "anomalous", "class_id": 1, "confidence": anomalous_confidence},
-        {"class": "normal", "class_id": 0, "confidence": 1 - anomalous_confidence},
-    ]
-    if not is_anomalous:
-        classes.reverse()
+    """An `AnomalyDetectionResponse` dump: score, threshold and verdict only."""
     response = {
         "inference_id": "iid-1",
         "time": 0.01,
         "image": {"width": 4, "height": 3},
-        "predictions": classes,
-        "top": classes[0]["class"],
-        "confidence": classes[0]["confidence"],
         "anomaly_score": score,
         "anomaly_threshold": threshold,
-        "is_anomalous": is_anomalous,
+        "is_anomalous": score >= threshold,
     }
     if anomaly_map is not None:
         response["anomaly_map"] = anomaly_map
@@ -94,7 +84,7 @@ def _run(
     kwargs.update(overrides)
     return block.run(
         images=Batch.init(content=images, indices=[(i,) for i in range(len(images))]),
-        **kwargs
+        **kwargs,
     )
 
 
@@ -189,10 +179,14 @@ def test_manifest_validation_when_field_has_invalid_type(
         BlockManifest.model_validate(data)
 
 
+def test_manifest_has_no_confidence_input() -> None:
+    assert "confidence" not in BlockManifest.model_fields
+
+
 def test_manifest_outputs_are_declared_in_contract_order() -> None:
     names = [output.name for output in BlockManifest.describe_outputs()]
+    # No classification-style `predictions`: score, threshold and verdict only.
     assert names == [
-        "predictions",
         "anomaly_score",
         "anomaly_threshold",
         "is_anomalous",
@@ -213,23 +207,22 @@ def test_run_locally_forwards_the_map_flag_and_decodes_the_payload() -> None:
     # then
     provider.add_model.assert_called_once_with(model_id="ws/anomaly/1", api_key="key")
     assert provider.calls[0]["include_anomaly_map"] is True
+    assert provider.calls[0]["anomaly_threshold"] is None
     assert provider.calls[0]["images"] == [
         {"type": "numpy_object", "value": provider.calls[0]["images"][0]["value"]}
     ]
-    assert len(result) == 1
-    assert result[0]["anomaly_score"] == 3.0
-    assert result[0]["anomaly_threshold"] == 2.0
-    assert result[0]["is_anomalous"] is True
-    assert result[0]["inference_id"] == "iid-1"
-    assert result[0]["model_id"] == "ws/anomaly/1"
+    assert result == [
+        {
+            "anomaly_score": 3.0,
+            "anomaly_threshold": 2.0,
+            "is_anomalous": True,
+            "anomaly_map": result[0]["anomaly_map"],
+            "inference_id": "iid-1",
+            "model_id": "ws/anomaly/1",
+        }
+    ]
     np.testing.assert_array_equal(result[0]["anomaly_map"], MAP)
     assert result[0]["anomaly_map"].dtype == np.float32
-    predictions = result[0]["predictions"]
-    assert "anomaly_map" not in predictions
-    assert predictions["top"] == "anomalous"
-    assert predictions["prediction_type"] == "classification"
-    assert predictions["parent_id"] == "img"
-    assert predictions["root_parent_id"] == "img"
 
 
 def test_run_locally_without_map_outputs_none() -> None:
@@ -245,21 +238,28 @@ def test_run_locally_without_map_outputs_none() -> None:
     assert result[0]["anomaly_map"] is None
 
 
-def test_run_locally_applies_the_threshold_override() -> None:
-    # given: the model says normal (1.5 < 2.0)
-    provider = _StubProvider([_response(score=1.5, threshold=2.0)])
+def test_run_locally_fails_when_the_requested_map_is_missing() -> None:
+    # given: the server ignored include_anomaly_map
+    block = _block(_StubProvider([_response()]), StepExecutionMode.LOCAL)
+
+    # when / then
+    with pytest.raises(ValueError, match="anomaly_map"):
+        _run(block, [_image()], include_anomaly_map=True)
+
+
+def test_run_locally_sends_the_threshold_and_reports_the_server_verdict() -> None:
+    # given: the server decided against the caller's threshold of 1.0
+    provider = _StubProvider([_response(score=1.5, threshold=1.0)])
     block = _block(provider, StepExecutionMode.LOCAL)
 
     # when
-    result = _run(block, [_image()], anomaly_threshold=1.0)
+    result = _run(block, [_image()], include_anomaly_map=False, anomaly_threshold=1.0)
 
-    # then
+    # then: the block forwards the override and never re-decides locally
+    assert provider.calls[0]["anomaly_threshold"] == 1.0
     assert result[0]["is_anomalous"] is True
     assert result[0]["anomaly_threshold"] == 1.0
     assert result[0]["anomaly_score"] == 1.5
-    assert result[0]["predictions"]["top"] == "anomalous"
-    assert result[0]["predictions"]["anomaly_threshold"] == 1.0
-    assert result[0]["predictions"]["is_anomalous"] is True
 
 
 def test_run_rejects_a_plain_classifier_response() -> None:
@@ -276,24 +276,27 @@ def test_run_rejects_a_plain_classifier_response() -> None:
         _run(block, [_image()])
 
 
-@pytest.mark.parametrize("invalid", [float("nan"), "0.5"])
-def test_run_rejects_an_invalid_threshold_override(invalid: Any) -> None:
-    block = _block(_StubProvider([_response()]), StepExecutionMode.LOCAL)
-    with pytest.raises(ValueError):
-        _run(block, [_image()], anomaly_threshold=invalid)
-
-
 def test_run_locally_handles_a_batch_in_order() -> None:
     # given
     provider = _StubProvider([_response(score=5.0), _response(score=0.5)])
     block = _block(provider, StepExecutionMode.LOCAL)
 
     # when
-    result = _run(block, [_image("a"), _image("b")])
+    result = _run(block, [_image("a"), _image("b")], include_anomaly_map=False)
 
     # then
     assert [r["is_anomalous"] for r in result] == [True, False]
-    assert [r["predictions"]["parent_id"] for r in result] == ["a", "b"]
+    assert [r["anomaly_score"] for r in result] == [5.0, 0.5]
+
+
+def test_run_locally_rejects_a_response_count_mismatch() -> None:
+    # given
+    provider = _StubProvider([_response()])
+    block = _block(provider, StepExecutionMode.LOCAL)
+
+    # when / then
+    with pytest.raises(ValueError, match="1 response"):
+        _run(block, [_image("a"), _image("b")], include_anomaly_map=False)
 
 
 @pytest.mark.parametrize(
@@ -306,7 +309,9 @@ def test_run_remotely_configures_the_client_and_accepts_both_map_forms(
     block = _block(MagicMock(), StepExecutionMode.REMOTE)
     with patch.object(v1, "InferenceHTTPClient") as client_cls:
         client = client_cls.return_value
-        client.infer.return_value = [_response(anomaly_map=served_map)]
+        client.infer.return_value = [
+            _response(score=3.0, threshold=2.5, anomaly_map=served_map)
+        ]
 
         # when
         result = _run(block, [_image()], anomaly_threshold=2.5)
@@ -314,6 +319,7 @@ def test_run_remotely_configures_the_client_and_accepts_both_map_forms(
     # then
     configuration = client.configure.call_args.kwargs["inference_configuration"]
     assert configuration.include_anomaly_map is True
+    assert configuration.anomaly_threshold == 2.5
     assert configuration.disable_active_learning is True
     assert configuration.source == "workflow-execution"
     client.infer.assert_called_once()
@@ -321,7 +327,7 @@ def test_run_remotely_configures_the_client_and_accepts_both_map_forms(
     np.testing.assert_array_equal(result[0]["anomaly_map"], MAP)
     assert result[0]["anomaly_threshold"] == 2.5
     assert result[0]["is_anomalous"] is True
-    assert "anomaly_map" not in result[0]["predictions"]
+    assert result[0]["inference_id"] == "iid-1"
 
 
 def test_run_remotely_wraps_a_single_response() -> None:
@@ -340,3 +346,4 @@ def test_run_remotely_wraps_a_single_response() -> None:
         "inference_configuration"
     ]
     assert configuration.include_anomaly_map is False
+    assert configuration.anomaly_threshold is None
