@@ -1,6 +1,21 @@
-# Hosted platform E2E changelog
+# CI infrastructure changelog
 
 ## Unreleased
+
+### Depot saved-image trial — October 16, 2026
+
+- Add an opt-in fast-track path that saves CPU and GPU images in Depot once
+  and tests their exact digests in both model modes. Share the existing server
+  test stages with the legacy workflows and use `fail-fast: true`.
+- Require same-repository manual execution, an explicitly approved branch and
+  commit, and separate protected builder/reader environments. Supply credentials
+  and private resource configuration only through secret references; remove pull
+  credentials before tests and withhold raw build/test output from public logs.
+- Keep the existing default path and release publishing unchanged. The trial
+  remains disabled unless configured; Depot permissions, retention, runner
+  isolation and a live build/pull/test run still require verification.
+- Add offline regression coverage for authorization, image identity, credential
+  cleanup, output suppression, complete test coverage and legacy-path exclusion.
 
 ### Repository activation — October 16, 2026
 
@@ -91,9 +106,10 @@ performance or a runtime guarantee. Staging uses its own profile.
 
 Detailed timing profiles, raw logs, case evidence, credentials and deployment
 metadata remain private. This changelog contains only the aggregate scheduling
-rationale and public test-suite examples. Live execution requires the private
-caller, deployment-verification adapter, maintainer review and load/isolation
-validation. Existing manual workflows remain unchanged pending migration.
+rationale and public test-suite examples. Private deployment-acceptance execution
+requires the private caller and deployment-verification adapter. The repository
+manual workflows are now connected to sharding; live rollout still requires
+maintainer review and load/isolation validation.
 
 See [PR #3211](https://github.com/roboflow/inference/pull/3211) for the repository
 activation approach, validation and rollout requirements. Timing profiles are
