@@ -504,6 +504,13 @@ class RFDetrForObjectDetectionTRT(
                 for stage, selection in self._model_selections.items()
             },
         }
+        last_execution = self._last_execution_metadata()
+        if last_execution:
+            metadata["last_execution"] = last_execution
+        return metadata
+
+    def _last_execution_metadata(self) -> Dict[str, Any]:
+        """Copy only this caller thread's last completed stage selections."""
         last_execution = {}
         for stage in (
             "preprocessor",
@@ -519,10 +526,7 @@ class RFDetrForObjectDetectionTRT(
             )
             if selection is not None:
                 last_execution[stage] = selection.to_dict()
-        if last_execution:
-            metadata["last_execution"] = last_execution
-
-        return metadata
+        return last_execution
 
     def infer(
         self,
@@ -545,7 +549,8 @@ class RFDetrForObjectDetectionTRT(
             **kwargs,
         )
         model_results = self.forward(pre_processed_images, **kwargs)
-        return self.post_process(model_results, pre_processing_meta, **kwargs)
+        detections = self.post_process(model_results, pre_processing_meta, **kwargs)
+        return detections
 
     def pre_process(
         self,
