@@ -64,6 +64,8 @@ jobs:
           uv pip install --system --require-hashes --requirements "$RUNNER_TEMP/handoff-requirements.txt"
       - name: Test maintainer review handoff
         run: python -m unittest discover -s .github/scripts -p 'test_maintainer_review*.py'
+      - name: Test CI image reuse without network or credentials
+        run: python -m unittest discover -s .github/scripts -p 'test_ci_image.py'
       - name: Test hosted E2E accounting without network or credentials
         run: |
           uv pip install --system 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8'

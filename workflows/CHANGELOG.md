@@ -16,6 +16,8 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.9`
+
 ### Execution engine
 
 - Prevent supporting metadata and workflow validation-model caches from retaining dynamically generated custom Python manifests after their compiled workflows are evicted. Static manifest caching and compiled-workflow reuse are preserved; no workflow changes are required.

@@ -1,0 +1,123 @@
+name: Main CPU and GPU image reuse
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+# This switch replaces the four independent main paths together. Keep disabled
+# until private transport, OIDC policy and isolated runners have been reviewed.
+jobs:
+  cpu-image:
+    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/ci_image_build.yml
+    with:
+      family: cpu
+    secrets:
+      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
+      CI_WIF_PROVIDER: ${{ secrets.CI_WIF_PROVIDER }}
+      CI_REGISTRY_WRITER: ${{ secrets.CI_REGISTRY_WRITER }}
+      CI_DEPOT_PROJECT: ${{ secrets.CI_DEPOT_PROJECT }}
+  gpu-image:
+    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/ci_image_build.yml
+    with:
+      family: gpu
+    secrets:
+      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
+      CI_WIF_PROVIDER: ${{ secrets.CI_WIF_PROVIDER }}
+      CI_REGISTRY_WRITER: ${{ secrets.CI_REGISTRY_WRITER }}
+      CI_DEPOT_PROJECT: ${{ secrets.CI_DEPOT_PROJECT }}
+  cpu-tests:
+    needs: cpu-image
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/integration_tests_inference_server_x86.yml
+    with:
+      private_image: true
+      image_digest: ${{ needs.cpu-image.outputs.amd64_digest }}
+      use-inference-models: all
+    secrets:
+      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
+      CI_WIF_PROVIDER: ${{ secrets.CI_WIF_PROVIDER }}
+      CI_REGISTRY_READER: ${{ secrets.CI_REGISTRY_READER }}
+      API_KEY: ${{ secrets.API_KEY }}
+      ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+      ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+      BCCD_FAVZ3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+      BCCD_I4NYM_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+      CATS_AND_DOGS_SMNPL_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+      COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+      MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
+      YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
+  gpu-tests:
+    needs: gpu-image
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/test.nvidia_t4.yml
+    with:
+      private_image: true
+      image_digest: ${{ needs.gpu-image.outputs.amd64_digest }}
+      use-inference-models: all
+      test_name: ""
+    secrets:
+      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
+      CI_WIF_PROVIDER: ${{ secrets.CI_WIF_PROVIDER }}
+      CI_REGISTRY_READER: ${{ secrets.CI_REGISTRY_READER }}
+      API_KEY: ${{ secrets.API_KEY }}
+      ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+      ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+      BCCD_FAVZ3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+      BCCD_I4NYM_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+      CATS_AND_DOGS_SMNPL_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+      COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+      MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
+      YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
+  image-tests-complete:
+    name: CPU and GPU image tests complete
+    needs: [cpu-image, gpu-image, cpu-tests, gpu-tests]
+    if: ${{ always() && vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require both producers and all test modes
+        env:
+          CPU_BUILD: ${{ needs.cpu-image.result }}
+          GPU_BUILD: ${{ needs.gpu-image.result }}
+          CPU_TESTS: ${{ needs.cpu-tests.result }}
+          GPU_TESTS: ${{ needs.gpu-tests.result }}
+          CPU_DIGEST: ${{ needs.cpu-image.outputs.amd64_digest }}
+          CPU_ARM64_DIGEST: ${{ needs.cpu-image.outputs.arm64_digest }}
+          GPU_DIGEST: ${{ needs.gpu-image.outputs.amd64_digest }}
+        run: |
+          for result in "$CPU_BUILD" "$GPU_BUILD" "$CPU_TESTS" "$GPU_TESTS"; do
+            if [ "$result" != success ]; then
+              echo '::error::Image testing incomplete: a required build or test failed, skipped or was cancelled'
+              exit 1
+            fi
+          done
+          for digest in "$CPU_DIGEST" "$CPU_ARM64_DIGEST" "$GPU_DIGEST"; do
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo '::error::Missing producer identity'
+              exit 1
+            fi
+          done
+          {
+            echo 'CPU amd64 and GPU amd64 passed the existing server suites in both model modes.'
+            echo 'CPU arm64 was built, but was not runtime-qualified.'
+            echo 'Other required checks remain independent. This result does not authorize RC publication or deployment.'
+          } >> "$GITHUB_STEP_SUMMARY"
