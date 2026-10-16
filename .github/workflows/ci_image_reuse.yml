@@ -15,7 +15,7 @@ concurrency:
 # until private transport, OIDC policy and isolated runners have been reviewed.
 jobs:
   cpu-image:
-    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' }}
+    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     permissions:
       contents: read
       id-token: write
@@ -28,7 +28,7 @@ jobs:
       CI_REGISTRY_WRITER: ${{ secrets.CI_REGISTRY_WRITER }}
       CI_DEPOT_PROJECT: ${{ secrets.CI_DEPOT_PROJECT }}
   gpu-image:
-    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' }}
+    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     permissions:
       contents: read
       id-token: write
@@ -90,7 +90,7 @@ jobs:
   image-tests-complete:
     name: CPU and GPU image tests complete
     needs: [cpu-image, gpu-image, cpu-tests, gpu-tests]
-    if: ${{ always() && vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' }}
+    if: ${{ always() && vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

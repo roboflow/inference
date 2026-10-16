@@ -1,10 +1,12 @@
 """Offline checks for immutable image transport and main workflow wiring."""
 
+import ast
 import contextlib
 import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -132,8 +134,9 @@ class ImageTransportTests(unittest.TestCase):
             with self.subTest(key=key, value=value), patch.dict(
                 os.environ, {key: value}
             ), patch.object(IMAGE, "_run") as run:
-                with self.assertRaises(ValueError):
-                    IMAGE._preflight()
+                for validate in (IMAGE._preflight, IMAGE._validate):
+                    with self.assertRaises(ValueError):
+                        validate()
                 run.assert_not_called()
 
     def test_wrong_checkout_fails(self):
@@ -361,6 +364,162 @@ class WorkflowContractTests(unittest.TestCase):
         result = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
         return result
 
+    def _job_is_allowed(self, name, job, **overrides):
+        # Evaluate the boolean/comparison-only subset used by these job guards.
+        context = {
+            "github.repository": "roboflow/inference",
+            "github.ref": "refs/heads/main",
+            "github.event_name": "push",
+            "github.event.act": False,
+            "vars.CI_IMAGE_REUSE_ENABLED": "false",
+            "inputs.private_image": False,
+        }
+        context.update(overrides)
+        expression = self._workflow(name)["jobs"][job]["if"][3:-2].strip()
+        expression = re.sub(
+            r"\b(?:github|vars|inputs)\.[\w.]+",
+            lambda match: repr(context[match.group()]),
+            expression,
+        )
+        expression = expression.replace("&&", " and ").replace("||", " or ")
+        expression = re.sub(r"!(?!=)", " not ", expression).strip()
+        allowed = self._evaluate_condition(
+            ast.parse(f"({expression})", mode="eval").body
+        )
+        return allowed
+
+    def _evaluate_condition(self, node):
+        # Deliberately reject calls, attribute access and untested syntax.
+        if isinstance(node, ast.Constant):
+            return node.value
+
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
+            values = [self._evaluate_condition(value) for value in node.values]
+            result = all(values) if isinstance(node.op, ast.And) else any(values)
+            return result
+
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            result = not self._evaluate_condition(node.operand)
+            return result
+
+        if isinstance(node, ast.Compare) and len(node.ops) == 1:
+            left = self._evaluate_condition(node.left)
+            right = self._evaluate_condition(node.comparators[0])
+            if isinstance(node.ops[0], ast.Eq):
+                return left == right
+            if isinstance(node.ops[0], ast.NotEq):
+                return left != right
+
+        raise AssertionError(f"Unsupported job-guard syntax: {type(node).__name__}")
+
+    def test_image_jobs_reject_external_callers_and_pr_events(self):
+        """Foreign callers cannot bypass the job guard by choosing legacy inputs."""
+        jobs = [
+            ("docker.cpu.yml", "docker"),
+            ("docker.gpu.yml", "docker"),
+            ("test.nvidia_t4.yml", "build"),
+            ("integration_tests_inference_server_x86.yml", "build"),
+            ("ci_image_build.yml", "build"),
+            ("ci_image_reuse.yml", "cpu-image"),
+            ("ci_image_reuse.yml", "gpu-image"),
+        ]
+        for name, job in jobs:
+            for private in (False, True):
+                for flag in ("false", "true"):
+                    for event in ("push", "workflow_dispatch", "pull_request_target"):
+                        with self.subTest(
+                            name=name, private=private, flag=flag, event=event
+                        ):
+                            self.assertFalse(
+                                self._job_is_allowed(
+                                    name,
+                                    job,
+                                    **{
+                                        "github.repository": "external/inference",
+                                        "github.event_name": event,
+                                        "inputs.private_image": private,
+                                        "vars.CI_IMAGE_REUSE_ENABLED": flag,
+                                    },
+                                )
+                            )
+            for event in ("pull_request", "pull_request_target"):
+                with self.subTest(name=name, event=event):
+                    self.assertFalse(
+                        self._job_is_allowed(
+                            name,
+                            job,
+                            **{
+                                "github.event_name": event,
+                                "inputs.private_image": True,
+                                "vars.CI_IMAGE_REUSE_ENABLED": "true",
+                            },
+                        )
+                    )
+
+    def test_expected_image_entry_points_remain_available(self):
+        """Preserve legacy/manual runs and trusted main reuse without PR access."""
+        for name in (
+            "test.nvidia_t4.yml",
+            "integration_tests_inference_server_x86.yml",
+        ):
+            for event, ref in (
+                ("push", "refs/heads/main"),
+                ("workflow_dispatch", "refs/heads/fast-track/example"),
+            ):
+                self.assertTrue(
+                    self._job_is_allowed(
+                        name,
+                        "build",
+                        **{
+                            "github.event_name": event,
+                            "github.ref": ref,
+                        },
+                    )
+                )
+            self.assertTrue(
+                self._job_is_allowed(
+                    name,
+                    "build",
+                    **{
+                        "inputs.private_image": True,
+                        "vars.CI_IMAGE_REUSE_ENABLED": "true",
+                    },
+                )
+            )
+            self.assertFalse(
+                self._job_is_allowed(
+                    name,
+                    "build",
+                    **{
+                        "inputs.private_image": True,
+                        "github.ref": "refs/heads/feature",
+                    },
+                )
+            )
+            self.assertIs(
+                self._workflow(name)["jobs"]["build"]["strategy"]["fail-fast"], True
+            )
+        for name in ("docker.cpu.yml", "docker.gpu.yml"):
+            for event in ("push", "workflow_dispatch", "release"):
+                self.assertTrue(
+                    self._job_is_allowed(name, "docker", **{"github.event_name": event})
+                )
+        for repository, expected in (
+            ("roboflow/inference", True),
+            ("external/inference", False),
+        ):
+            self.assertEqual(
+                self._job_is_allowed(
+                    "fast_track_integration_tests.yml",
+                    "resolve",
+                    **{
+                        "github.repository": repository,
+                        "github.event_name": "workflow_dispatch",
+                    },
+                ),
+                expected,
+            )
+
     def test_main_uses_all_modes_and_full_gpu_suite(self):
         """The orchestrator must not substitute the reduced fast-track preset."""
         main = self._workflow("ci_image_reuse.yml")
@@ -387,7 +546,7 @@ class WorkflowContractTests(unittest.TestCase):
             }
             <= ids
         )
-        self.assertFalse(gpu["strategy"]["fail-fast"])
+        self.assertTrue(gpu["strategy"]["fail-fast"])
 
     def test_rollout_switch_disables_old_build_paths_together(self):
         """All four independent main jobs share the same rollout switch."""

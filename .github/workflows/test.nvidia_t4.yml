@@ -102,7 +102,13 @@ concurrency:
 
 jobs:
   build:
-    if: ${{ !github.event.act && (github.event_name != 'push' || vars.CI_IMAGE_REUSE_ENABLED != 'true' || inputs.private_image) && (!inputs.private_image || (github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch'))) }}
+    # The repository context identifies the caller of a reusable workflow.
+    if: >-
+      ${{ github.repository == 'roboflow/inference'
+          && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+          && !github.event.act
+          && (github.event_name != 'push' || vars.CI_IMAGE_REUSE_ENABLED != 'true' || inputs.private_image)
+          && (!inputs.private_image || github.ref == 'refs/heads/main') }}
     runs-on: Roboflow-GPU-VM-Runner
     permissions:
       contents: read
@@ -118,7 +124,7 @@ jobs:
       INFERENCE_TEST_CONTAINER: ci-gpu-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       INFERENCE_TEST_BIND: 127.0.0.1::9101
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         use-inference-models: ${{ fromJSON((inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', inputs.use-inference-models)) }}
     timeout-minutes: 120

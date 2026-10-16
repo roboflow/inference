@@ -73,7 +73,9 @@ must verify transport and timing before activation.
 | Does reuse improve end-to-end duration? | Offline tests verify routing and failure handling, not transfer costs or GPU queueing. | Measure the complete candidate path and GPU occupancy in a full-coverage trial. | An authorized trial is required; no numerical performance claim is made. |
 | What qualifies CPU arm64 for release? | Existing server consumers execute on amd64 only. | Retain the arm64 build and report it separately from tested amd64 images. | Release maintainers must define runtime coverage before treating a multi-platform image as release-qualified; this does not block preparing the reuse path. |
 
-These decisions block activation, not preparation of the disabled implementation.
+OIDC trust verification is required before configuring the OIDC secrets. The
+remaining infrastructure decisions block activation, not preparation of the
+disabled implementation.
 The team discussion required by
 [AGENTS.md](../AGENTS.md#internal-contributions-roboflow-team-only) has been
 confirmed by the PR author; code review and the activation prerequisites still
@@ -87,6 +89,12 @@ apply.
   credentials, preventing orphaned builder containers on persistent runners.
 - Keep image-reuse tests explicitly scheduled in the GitHub Actions validation
   workflow after incorporating the hosted-E2E changes from main.
+- Restore `fail-fast: true` for both consumer matrices, including private-image
+  runs. A failed mode cancels its sibling; the aggregate gate still fails.
+- Reject external repository callers and unsupported events before allocating
+  runners in the CPU/GPU build and test entry points.
+- Require verified OIDC provider and identity restrictions before configuring
+  the OIDC secrets; disclose job-wide token permissions even with reuse off.
 
 ### Added
 
@@ -109,8 +117,88 @@ This section records the CI change without assigning it to a package release.
 The implementation is disabled until the repository variable
 `CI_IMAGE_REUSE_ENABLED` is exactly `true`. With it unset or false, the existing
 main producer and consumer jobs continue. With it true, those four independent
-main jobs skip and the orchestrator owns their builds and tests. Release and
-manual/fast-track entry points retain their existing behavior.
+main jobs skip and the orchestrator owns their builds and tests. Same-repository
+release and manual/fast-track entry points remain available.
+
+The flag does **not** disable every change in this PR. The CPU and T4 `build`
+jobs and their `server-cpu` / `t4` fast-track callers grant `id-token: write`
+even with reuse off. Every step in those jobs can request an OIDC token,
+including dependencies and tests. Skipping the authentication step or deleting
+Docker credentials does not revoke that ability. Cloud-side trust must reject
+tokens outside the approved private-image path. Repository/event guards,
+action pins, credential cleanup and isolated container names/ports also apply
+with the flag off. Both consumer matrices retain `fail-fast: true`.
+
+### Required before configuring OIDC secrets
+
+Before populating `CI_WIF_PROVIDER`, `CI_REGISTRY_READER` or
+`CI_REGISTRY_WRITER`, the infrastructure owner must enforce and verify the
+provider condition and service-account bindings below. Apply restrictions
+before granting access, not merely before enabling image reuse. These resource
+names are not a security boundary even when stored as GitHub secrets.
+
+The provider must accept only the expected GitHub issuer/audience and trusted
+repository identity, main ref, push/manual event and orchestrator. The following
+CEL template uses public workflow paths; substitute the numeric repository and
+owner IDs through the private infrastructure configuration, never credentials:
+
+```cel
+assertion.repository == 'roboflow/inference'
+&& assertion.repository_id == '<EXPECTED_REPOSITORY_ID>'
+&& assertion.repository_owner_id == '<EXPECTED_OWNER_ID>'
+&& assertion.ref == 'refs/heads/main'
+&& assertion.event_name in ['push', 'workflow_dispatch']
+&& assertion.workflow_ref == 'roboflow/inference/.github/workflows/ci_image_reuse.yml@refs/heads/main'
+&& has(assertion.job_workflow_ref)
+&& assertion.job_workflow_ref in [
+  'roboflow/inference/.github/workflows/ci_image_build.yml@refs/heads/main',
+  'roboflow/inference/.github/workflows/integration_tests_inference_server_x86.yml@refs/heads/main',
+  'roboflow/inference/.github/workflows/test.nvidia_t4.yml@refs/heads/main'
+]
+```
+
+Map `attribute.job_workflow_ref` from `assertion.job_workflow_ref` and restrict
+the `roles/iam.workloadIdentityUser` bindings separately:
+
+- Writer identity: only the exact `ci_image_build.yml@refs/heads/main` workflow
+  above may impersonate it; grant write access only to the approved CI registry.
+- Reader identity: only the two exact consumer workflow references above may
+  impersonate it; grant read-only access only to that registry.
+
+The provider's three-workflow allowlist alone does **not** separate writer and
+reader access. Do not grant either identity to the entire pool or to a broad
+repository-only principal set. Review all alternative/inherited access paths;
+no writer access to release registries is permitted.
+
+For reusable jobs, repository/ref/event and `workflow_ref` describe the caller;
+`job_workflow_ref` identifies the called workflow. Thus a foreign repository
+calling this public reusable workflow must still fail the repository check.
+Direct consumer dispatches, fast-track calls and unrelated main workflows also
+fail the orchestrator condition. Numeric identity checks protect against name
+reuse. See [GitHub OIDC claims](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-with-reusable-workflows)
+and [Google deployment federation guidance](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines).
+
+Before configuring the secrets, validate allowed producer/reader identities and
+denial for external repositories, forks, PR/PR-target events, non-main refs,
+wrong callers, missing/wrong reusable-workflow claims and consumer-to-writer
+impersonation. Keep policy inspection and validation evidence private; report
+only pass/fail in public. Repository tests cannot verify deployed cloud IAM.
+
+### Workflow execution boundary
+
+CPU/GPU build and consumer jobs require `github.repository` to be
+`roboflow/inference`, including non-private calls. Consumer jobs accept only
+push and manual-dispatch events; legacy producers additionally accept release
+events. The fast-track entry point requires a same-repository manual dispatch.
+These job guards run before runner allocation and reject cross-repository
+reusable calls, fork pushes and PR/PR-target callers. The private producer and
+Python transport additionally require main and the enabled rollout flag.
+
+This protects the affected image workflows; it does not disable ordinary public
+PR checks elsewhere in the repository. A fork owner can edit their own copy of
+the YAML, so cloud IAM must independently enforce the signed token claims.
+
+### Configuration and activation after trust verification
 
 Configure these GitHub **secret parameters** outside the repository. Never put
 their actual values in source, issues, public summaries or examples:
@@ -130,9 +218,8 @@ credentials, `latest`, version tags and RC tags are not used by this path.
 
 Before activation, the infrastructure owner must confirm private access at both
 repository and inherited policy levels, retention long enough for failed-job
-retries, and OIDC restrictions to the expected repository identity, main ref,
-event types and workflow identities. The writer must not be able to publish to
-release repositories. Restrict the builder/cache trust boundary likewise. Use
+retries, and that the previously verified OIDC restrictions remain in force.
+Restrict the builder/cache trust boundary likewise. Use
 isolated ephemeral runners; unique container names do not provide isolation
 from another job with access to the same Docker daemon. Configure no credentials
 or private assets for untrusted PR jobs.
@@ -176,7 +263,10 @@ not a substitute for keeping secrets out of application logs.
 The aggregate `CPU and GPU image tests complete` check requires both producers,
 both complete test matrices and all required platform digest outputs. Failure,
 missing output, skipped work or cancellation prevents it from passing. Matrix
-fail-fast is disabled so one model mode does not cancel the other mode's work.
+fail-fast is explicitly enabled for both consumers on every path. A failed model
+mode cancels its queued/running sibling to limit wasted compute. Cancellation
+cannot pass the aggregate gate; a successful run still requires both modes.
+Full diagnostics from both failing modes are not guaranteed in a single run.
 
 Use **Re-run failed jobs** to retain successful producer outputs and retest the
 same images. Re-running every job creates a new producer attempt and may produce

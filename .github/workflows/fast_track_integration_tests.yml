@@ -86,6 +86,7 @@ concurrency:
 jobs:
   resolve:
     name: Resolve image tag
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -156,7 +157,7 @@ jobs:
     needs: [resolve, build-cpu]
     # Run when the suite is enabled and the build either succeeded or was
     # skipped on purpose (resume); never after a failed or cancelled build.
-    if: ${{ !cancelled() && inputs.run_server_cpu && (needs.build-cpu.result == 'success' || (needs.build-cpu.result == 'skipped' && !inputs.build_images)) }}
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && !cancelled() && inputs.run_server_cpu && (needs.build-cpu.result == 'success' || (needs.build-cpu.result == 'skipped' && !inputs.build_images)) }}
     permissions:
       contents: read
       id-token: write
@@ -171,7 +172,7 @@ jobs:
   t4:
     name: NVIDIA T4 regression
     needs: [resolve, build-gpu]
-    if: ${{ !cancelled() && inputs.run_t4 && (needs.build-gpu.result == 'success' || (needs.build-gpu.result == 'skipped' && !inputs.build_images)) }}
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && !cancelled() && inputs.run_t4 && (needs.build-gpu.result == 'success' || (needs.build-gpu.result == 'skipped' && !inputs.build_images)) }}
     permissions:
       contents: read
       id-token: write
@@ -195,7 +196,7 @@ jobs:
   summary:
     name: Summary
     needs: [resolve, build-cpu, build-gpu, server-cpu, t4, models-gpu]
-    if: ${{ always() }}
+    if: ${{ always() && github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
