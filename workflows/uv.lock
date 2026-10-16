@@ -4149,7 +4149,7 @@ requires-dist = [
     { name = "filelock", specifier = ">=3.20.3,<=4.0.0" },
     { name = "httpx", specifier = "~=0.28.1" },
     { name = "inference-models", specifier = ">=0.37.1" },
-    { name = "inference-sdk", specifier = ">=1.7.0" },
+    { name = "inference-sdk", specifier = ">=1.7.2" },
     { name = "matplotlib" },
     { name = "msgpack" },
     { name = "networkx", specifier = ">=3.0.0,<4.0.0" },
