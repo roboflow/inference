@@ -331,7 +331,7 @@ Return predictions
 4. **Write tests**
 5. **Document**
 
-See [Adding Models](adding-models.md) for details.
+See [Adding Models](adding-model.md) for details.
 
 ### Adding a New Backend
 
@@ -355,8 +355,8 @@ WEIGHTS_PROVIDERS["my-provider"] = my_provider
 
 ## Next Steps
 
-- [Multi-Backend System](backends.md) - Backend implementation details
-- [Dependency Management](dependencies.md) - Managing extras and conflicts
-- [Adding Models](adding-models.md) - Step-by-step guide
-- [Testing](testing.md) - Testing strategies
+- [Multi-Backend System](dependencies-and-backends.md) - Backend implementation details
+- [Dependency Management](dependencies-and-backends.md) - Managing extras and conflicts
+- [Adding Models](adding-model.md) - Step-by-step guide
+- [Testing](writing-tests.md) - Testing strategies
 
