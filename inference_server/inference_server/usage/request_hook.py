@@ -6,8 +6,6 @@ handler, so the model calls and workflow runs made inside it record their own
 """
 
 import functools
-import hashlib
-import json
 import logging
 import time
 from contextlib import contextmanager
@@ -39,7 +37,6 @@ logger = logging.getLogger(__name__)
 
 REQUEST_CATEGORY = "request"
 EXTERNAL_SOURCE = "external"
-SPECIFICATION_RESOURCE_ID_PREFIX = "sha:"
 RESPONSE_ERROR_TYPE = "HTTPResponseError"
 BODY_FIELDS = ("api_key", "model_id", "source", "source_info")
 WORKFLOW_REQUEST_ARGUMENT = "workflow_request"
@@ -56,12 +53,12 @@ def report_request_usage(fn: Any) -> Any:
     request body (``api_key``, ``model_id``, ``source``, ``source_info``),
     except the catch-all route, which reads its image from the body. A
     workflow run handler (``workflow_request`` argument) is attributed to the
-    workflow: the path's or the body's ``workflow_id``, else the hash of the
-    specification; its row also carries the workflow steps, the preview flag
-    and the workspace. While the handler runs, the request's usage scope is
-    bound so nested rows inherit its key, billing intent and source tags; a
-    request that opted out of billing with a valid service secret forwards
-    the opt-out to the remote steps it runs.
+    workflow: the path's or the body's ``workflow_id``, ``None`` when the body
+    has none; its row also carries the workflow steps and the workspace. While
+    the handler runs, the request's usage scope is bound so nested rows inherit
+    its key, billing intent and source tags; a request that opted out of
+    billing with a valid service secret forwards the opt-out to the remote
+    steps it runs.
 
     Args:
         fn: Route handler called with the request as ``request``.
@@ -242,10 +239,8 @@ def _row(
         details["device_id"] = configuration.DEVICE_ID
     if specification is not None:
         details["steps"] = workflow_steps(specification)
-    if workflow:
-        details["is_preview"] = _is_preview(subject)
-        if kwargs.get("workspace_name"):
-            details["workspace_id"] = kwargs["workspace_name"]
+    if workflow and kwargs.get("workspace_name"):
+        details["workspace_id"] = kwargs["workspace_name"]
     if scope.source is not None:
         details["source"] = scope.source
     model_id = getattr(subject, "model_id", None)
@@ -258,7 +253,7 @@ def _row(
     row = {
         "api_key": scope.api_key or "",
         "category": REQUEST_CATEGORY,
-        "resource_id": _resource_id(kwargs, subject, specification),
+        "resource_id": _resource_id(kwargs, subject),
         "resource_details": details,
         "frames": 1,
         "execution_duration": execution_duration(duration),
@@ -268,8 +263,6 @@ def _row(
         "roboflow_service_name": scope.source_info,
         "roboflow_internal_secret": scope.service_secret,
     }
-    if workflow:
-        row["is_preview"] = details["is_preview"]
 
     return row
 
@@ -283,17 +276,6 @@ def _workflow_specification(request: Request, subject: Any) -> Optional[dict]:
         return specification
 
     return None
-
-
-def _is_preview(subject: Any) -> bool:
-    return getattr(subject, "is_preview", False) is True
-
-
-def _specification_resource_id(specification: dict) -> str:
-    canonical = json.dumps(specification, sort_keys=True, separators=(",", ":"))
-    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-    return f"{SPECIFICATION_RESOURCE_ID_PREFIX}{digest}"
 
 
 def _non_billable_intent(countinference: Any, service_secret: Any) -> bool:
@@ -320,16 +302,12 @@ def _source_tag(query: Any, subject: Any, key: str) -> Optional[str]:
     return tag
 
 
-def _resource_id(
-    kwargs: Dict[str, Any], subject: Any, specification: Optional[dict]
-) -> str:
+def _resource_id(kwargs: Dict[str, Any], subject: Any) -> str:
     if WORKFLOW_REQUEST_ARGUMENT in kwargs:
-        workflow_id = kwargs.get("workflow_id") or getattr(subject, "workflow_id", None)
-        if workflow_id:
-            return str(workflow_id)
-        if specification is not None:
-            return _specification_resource_id(specification)
-        return UNKNOWN_RESOURCE_ID
+        workflow_id = kwargs.get("workflow_id") or getattr(
+            subject, "workflow_id", UNKNOWN_RESOURCE_ID
+        )
+        return str(workflow_id) or UNKNOWN_RESOURCE_ID
     model_id = getattr(subject, "model_id", None)
     if model_id is not None:
         return str(model_id)

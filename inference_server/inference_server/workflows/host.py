@@ -527,6 +527,12 @@ _IMAGE_LOADING_CONTEXT = "workflow_execution | image_loading"
 _NUMPY_INPUT_REFUSAL = (
     "NumPy image type is not supported in this configuration of `inference`."
 )
+_URL_OFFLINE_REFUSAL = "Cannot load an image from URL while OFFLINE_MODE is enabled."
+_URL_INPUT_REFUSAL = (
+    "Providing images via URL is not supported in this configuration of `inference`."
+)
+_URL_DESTINATION_REFUSAL = "URL points to a network destination that is not allowed."
+_URL_NOT_IMAGE_ERROR = "Could not decode bytes as image."
 _STEP_EXECUTION_CONTEXT = "workflow_execution | step_execution"
 _MODEL_ACCESS_ERROR_MESSAGES = {
     402: "Not enough credits to execute step {step_name}. Verify your workspace billing page.",
@@ -1268,13 +1274,12 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
     ) -> np.ndarray:
         if configuration.LEGACY_OFFLINE_MODE:
             raise WorkflowImageLoadError(
-                public_message="Loading images from a URL is not available while "
-                "OFFLINE_MODE is enabled.",
+                public_message=_URL_OFFLINE_REFUSAL,
                 context=_IMAGE_LOADING_CONTEXT,
             )
         if not configuration.ALLOW_URL_INPUT:
             raise WorkflowImageLoadError(
-                public_message="Loading images from a URL is disabled on this server.",
+                public_message=_URL_INPUT_REFUSAL,
                 context=_IMAGE_LOADING_CONTEXT,
             )
         if self._loop_bridge is None:
@@ -1285,10 +1290,20 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
         )
         if error is not None or not images:
             raise WorkflowImageLoadError(
-                public_message="Could not fetch image from the given URL.",
+                public_message=_url_image_load_failure(value, error),
                 context=_IMAGE_LOADING_CONTEXT,
             )
-        return decode_encoded_image_bytes(images[0], cv_imread_flags=cv_imread_flags)
+        try:
+            decoded = decode_encoded_image_bytes(
+                images[0], cv_imread_flags=cv_imread_flags
+            )
+        except WorkflowImageLoadError as decode_error:
+            raise WorkflowImageLoadError(
+                public_message=_URL_NOT_IMAGE_ERROR,
+                context=decode_error.context,
+            ) from decode_error
+
+        return decoded
 
     def decode_string(
         self,
@@ -1322,6 +1337,32 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
                 context=_IMAGE_LOADING_CONTEXT,
             )
         return image
+
+
+def _url_image_load_failure(url: str, error: Any) -> str:
+    try:
+        body = json.loads(error.body)
+    except Exception:
+        body = {}
+    error_code = body.get("error_code")
+    if error_code == "URL_REFUSED":
+        return body["description"]
+    if error_code == "URL_INPUT_DISABLED":
+        if configuration.OFFLINE_MODE:
+            return _URL_OFFLINE_REFUSAL
+        return _URL_INPUT_REFUSAL
+    if error_code == "URL_DESTINATION_FORBIDDEN":
+        return _URL_DESTINATION_REFUSAL
+    details = body.get("description", "")
+    status = getattr(error, "upstream_status", None)
+    if status is not None and 400 <= status < 600:
+        kind = "Client" if status < 500 else "Server"
+        details = (
+            f"{status} {kind} Error: {error.upstream_reason} "
+            f"for url: {_redact_api_key(error.failed_url)}"
+        )
+
+    return f"Could not load image from url: {_redact_api_key(url)}. Details: {details}"
 
 
 PLATFORM_CLIENT = ServerRoboflowPlatformClient()

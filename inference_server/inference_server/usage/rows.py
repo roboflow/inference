@@ -36,6 +36,7 @@ WORKFLOW_API_KEY_PARAMETER = "workflows_core.api_key"
 MAX_ERROR_MESSAGE_LENGTH = 512
 SERVERLESS_MINIMUM_DURATION_S = 0.1
 BLOCK_DURATION_SOURCE_WALL_CLOCK = "decorator_wall_clock"
+WORKFLOW_EXECUTION_SOURCE = "workflow-execution"
 BLOCK_EXECUTION_MODE_BY_DURATION_SOURCE = {
     "local_runtime": "local",
     "remote_runtime": "modal",
@@ -90,6 +91,9 @@ USAGE_SCOPE: contextvars.ContextVar[Optional[UsageScope]] = contextvars.ContextV
 WORKFLOW_PREVIEW: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "usage_workflow_preview", default=False
 )
+MODEL_CALL_SOURCE: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "usage_model_call_source", default=None
+)
 
 
 @contextmanager
@@ -107,6 +111,24 @@ def bound_scope(scope: Optional[UsageScope]) -> Iterator[None]:
         yield
     finally:
         USAGE_SCOPE.reset(token)
+
+
+@contextmanager
+def bound_model_call_source(source: Optional[str]) -> Iterator[None]:
+    """Bind the source of the model calls made inside.
+
+    Args:
+        source: Source the model calls carry; their rows fall back to it when
+            the request has no source of its own.
+
+    Yields:
+        Nothing; the previous source is restored on exit.
+    """
+    token = MODEL_CALL_SOURCE.set(source)
+    try:
+        yield
+    finally:
+        MODEL_CALL_SOURCE.reset(token)
 
 
 @contextmanager
@@ -351,8 +373,9 @@ def record_model_usage(
             duration=floored,
         )
     resource_details = {**_common_details(), **details}
-    if scope.source is not None:
-        resource_details["source"] = scope.source
+    source = scope.source or MODEL_CALL_SOURCE.get()
+    if source is not None:
+        resource_details["source"] = source
     _record(
         scope,
         category=MODEL_CATEGORY,

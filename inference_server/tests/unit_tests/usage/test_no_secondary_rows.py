@@ -190,6 +190,7 @@ def test_two_model_steps_give_a_model_row_each_plus_the_workflow_rows(
                 "task_type": "object-detection",
                 "model_input_height": 640,
                 "model_input_width": 640,
+                "source": "workflow-execution",
             },
             "frames": 3,
             "execution_duration": model["execution_duration"],

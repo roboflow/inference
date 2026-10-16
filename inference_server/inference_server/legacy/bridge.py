@@ -77,7 +77,9 @@ from inference_server.routing import (
 from inference_server.usage.rows import (
     MEGAPIXEL_BUCKET_UNKNOWN,
     USAGE_SCOPE,
+    WORKFLOW_EXECUTION_SOURCE,
     add_megapixel_bucket,
+    bound_model_call_source,
     bound_scope,
     execution_duration,
     megapixel_bucket,
@@ -1271,7 +1273,7 @@ def _record_model_invocation(
     if scope is None:
         return
 
-    model_id = resolve_roboflow_model_alias(requested_model_id_for(route.registry_id))
+    model_id = requested_model_id_for(route.registry_id)
     present = [image for image in images if image is not None]
     frames = max(1, len(present))
     model_duration = execution_duration(
@@ -1283,7 +1285,7 @@ def _record_model_invocation(
         api_key=api_key,
         frames=frames,
         duration=model_duration,
-        details=_usage_details(route, model_id),
+        details=_usage_details(route, resolve_roboflow_model_alias(model_id)),
         megapixel_buckets=_megapixel_buckets(
             route, images, frames, model_duration, model_durations
         ),
@@ -1302,7 +1304,7 @@ def _record_image_load_failure(
     if scope is None:
         return
 
-    model_id = resolve_roboflow_model_alias(requested_model_id_for(route.registry_id))
+    model_id = requested_model_id_for(route.registry_id)
     frames = max(1, images)
     floored = execution_duration(duration)
     buckets: dict[str, dict[str, Any]] = {}
@@ -1318,7 +1320,7 @@ def _record_image_load_failure(
         api_key=api_key,
         frames=frames,
         duration=floored,
-        details=_usage_details(route, model_id),
+        details=_usage_details(route, resolve_roboflow_model_alias(model_id)),
         megapixel_buckets=buckets,
         error=error,
     )
@@ -1528,14 +1530,20 @@ class SyncLegacyBridge:
 
     @contextmanager
     def usage_call(self, route, api_key, *, images=None) -> Iterator[None]:
-        with bound_scope(self._usage_scope):
+        with self._bound_usage():
             with usage_call(route, api_key, images=images):
                 yield
 
     @contextmanager
     def image_load_usage(self, route, api_key, images) -> Iterator[None]:
-        with bound_scope(self._usage_scope):
+        with self._bound_usage():
             with image_load_usage(route, api_key, images):
+                yield
+
+    @contextmanager
+    def _bound_usage(self) -> Iterator[None]:
+        with bound_scope(self._usage_scope):
+            with bound_model_call_source(WORKFLOW_EXECUTION_SOURCE):
                 yield
 
     def __contains__(self, model_id) -> bool:
@@ -1549,7 +1557,7 @@ class SyncLegacyBridge:
     async def _with_scope(self, coro, call) -> Any:
         token = _USAGE_CALL.set(call)
         try:
-            with bound_scope(self._usage_scope):
+            with self._bound_usage():
                 return await coro
         finally:
             _USAGE_CALL.reset(token)

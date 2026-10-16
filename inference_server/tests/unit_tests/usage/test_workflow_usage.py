@@ -29,7 +29,7 @@ from inference_server.legacy.bridge import (
     LoopBridge,
     SyncLegacyBridge,
 )
-from inference_server.legacy.errors import LegacyHTTPError
+from inference_server.legacy.errors import LegacyHTTPError, redact_text
 from inference_server.usage.collector import UsageCollector
 from inference_server.usage.observer import UsageExecutionObserver
 from inference_server.usage.rows import (
@@ -52,9 +52,6 @@ PASSTHROUGH_WF = {
     "steps": [],
     "outputs": [{"type": "JsonField", "name": "y", "selector": "$inputs.x"}],
 }
-PASSTHROUGH_WF_SHA = (
-    "sha:efb29512bd5060e5ca82ef117fcc99bf71d2a82b4a3d298c9ecdec0771377545"
-)
 EMPTY_STEPS_HASH = "07562"
 
 PREDEFINED_PATHS = ["/ws/workflows/wf", "/infer/workflows/ws/wf"]
@@ -159,12 +156,11 @@ def test_predefined_route_records_a_request_row_and_a_workflows_row(
     assert row["resource_id"] == "wf"
     assert row["frames"] == 1
     assert row["billable"] is True
-    assert row["is_preview"] is False
+    assert "is_preview" not in row
     assert row["error_type"] is None
     assert row["execution_duration"] > 0
     assert row["resource_details"] == {
         "steps": [],
-        "is_preview": False,
         "workspace_id": "ws",
     }
     workflow = _only_row_of(usage_collector, "workflows")
@@ -211,7 +207,7 @@ def test_specification_route_records_a_request_row_and_a_workflows_row(
     assert row["resource_id"] == "body-wf"
     assert row["frames"] == 1
     assert row["billable"] is True
-    assert row["resource_details"] == {"steps": [], "is_preview": False}
+    assert row["resource_details"] == {"steps": []}
     workflow = _only_row_of(usage_collector, "workflows")
     assert workflow["resource_id"] == "body-wf"
     assert workflow["api_key"] == "k"
@@ -243,9 +239,7 @@ def test_resource_id_fallbacks_hash_the_specification_and_the_step_list(
     )
 
     assert response.status_code == 200, response.text
-    assert _only_row_of(usage_collector, "request")["resource_id"] == (
-        PASSTHROUGH_WF_SHA
-    )
+    assert _only_row_of(usage_collector, "request")["resource_id"] == "None"
     workflow = _only_row_of(usage_collector, "workflows")
     assert workflow["resource_id"] == EMPTY_STEPS_HASH
     assert workflow["resource_id"] == steps_resource_id([])
@@ -363,6 +357,43 @@ def test_local_model_steps_record_a_model_row_each_attributed_to_the_workflow_ke
     assert workflow["roboflow_service_name"] == "app-1"
 
 
+def test_model_steps_of_an_untagged_request_record_the_workflow_execution_source(
+    usage_client, usage_collector, fake_stat
+):
+    client = usage_client(_detection_gateway(fake_stat, "ds/1"))
+
+    response = client.post(
+        "/workflows/run",
+        json={
+            "specification": _detection_workflow("ds/1"),
+            "inputs": {"image": {"type": "base64", "value": _jpeg_b64()}},
+            "api_key": "k",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    model = _only_row_of(usage_collector, "model")
+    assert model["resource_details"]["source"] == "workflow-execution"
+    for category in ("request", "workflows"):
+        assert (
+            "source" not in _only_row_of(usage_collector, category)["resource_details"]
+        )
+
+
+def test_image_load_failure_of_a_model_step_records_the_workflow_execution_source(
+    usage_client, usage_collector, fake_stat, monkeypatch
+):
+    client = usage_client(_detection_gateway(fake_stat, "ds/1"))
+
+    _run_with_url_images(
+        client, monkeypatch, (502, "URL_FETCH_FAILED", "fetching image URL failed")
+    )
+
+    model = _only_row_of(usage_collector, "model")
+    assert model["error_type"] == "InputImageLoadError"
+    assert model["resource_details"]["source"] == "workflow-execution"
+
+
 @pytest.mark.parametrize("is_preview", [True, False])
 def test_preview_flag_is_recorded(usage_client, usage_collector, is_preview):
     client = usage_client(FakeGateway())
@@ -378,11 +409,14 @@ def test_preview_flag_is_recorded(usage_client, usage_collector, is_preview):
     )
 
     assert response.status_code == 200, response.text
-    for category in ("request", "workflows"):
-        row = _only_row_of(usage_collector, category)
-        assert row["is_preview"] is is_preview
-        assert row["resource_details"]["is_preview"] is is_preview
-        assert row["billable"] is True
+    workflow = _only_row_of(usage_collector, "workflows")
+    assert workflow["is_preview"] is is_preview
+    assert workflow["resource_details"]["is_preview"] is is_preview
+    assert workflow["billable"] is True
+    request = _only_row_of(usage_collector, "request")
+    assert "is_preview" not in request
+    assert "is_preview" not in request["resource_details"]
+    assert request["billable"] is True
 
 
 def test_failing_step_records_an_error_row_per_category(
@@ -1210,7 +1244,9 @@ def _fetch_answering(answer):
     async def _fetch(urls):
         if isinstance(answer, bytes):
             return [answer] * len(urls), None
-        return None, error_response(*answer)
+        if isinstance(answer, tuple):
+            return None, error_response(*answer)
+        return None, answer
 
     return _fetch
 
@@ -1371,22 +1407,90 @@ def _posted_workflow_rows(usage_client, gateway, monkeypatch, image):
     return response, rows
 
 
+_INPUT_IMAGE_ERROR_PREFIX = (
+    "Failed to assemble `image`. Could not successfully use any deserializer for "
+    "declared kinds. Details: \nKind: `image` - Error: Detected runtime parameter "
+    "`image` defined as `WorkflowImage` that is invalid. Failed on input "
+    "validation. Details: "
+)
+
+
+def _upstream_status_failure(url, status, reason):
+    failure = error_response(
+        502, "URL_FETCH_FAILED", f"fetching image URL returned status {status}"
+    )
+    failure.failed_url = url
+    failure.upstream_status = status
+    failure.upstream_reason = reason
+
+    return failure
+
+
 @pytest.mark.parametrize(
-    "image,fetch_answer",
+    "image,fetch_answer,legacy_reason",
     [
-        ({"type": "base64", "value": "bm90LWFuLWltYWdl"}, None),
+        (
+            {"type": "base64", "value": "bm90LWFuLWltYWdl"},
+            None,
+            "NumPy image type is not supported in this configuration of `inference`.",
+        ),
         (
             {"type": "url", "value": "https://example.com/missing.jpg"},
             (502, "URL_FETCH_FAILED", "fetching image URL failed"),
+            "Could not load image from url: https://example.com/missing.jpg. "
+            "Details: fetching image URL failed",
         ),
-        ({"type": "url", "value": "https://example.com/"}, b"<html></html>"),
-        ({"type": "url", "value": "http://example.com/image.jpg"}, None),
-        ({"type": "url", "value": "https://does-not-exist.invalid/image.jpg"}, None),
+        (
+            {
+                "type": "url",
+                "value": "https://example.com/missing.jpg?api_key=abcdefgh12",
+            },
+            _upstream_status_failure(
+                "https://example.com/missing.jpg?api_key=abcdefgh12", 404, "Not Found"
+            ),
+            "Could not load image from url: "
+            "https://example.com/missing.jpg?api_key=ab***12. Details: 404 Client "
+            "Error: Not Found for url: https://example.com/missing.jpg?api_key=ab***12",
+        ),
+        (
+            {"type": "url", "value": "https://example.com/broken.jpg"},
+            _upstream_status_failure(
+                "https://example.com/broken.jpg", 503, "Service Unavailable"
+            ),
+            "Could not load image from url: https://example.com/broken.jpg. Details: "
+            "503 Server Error: Service Unavailable for url: "
+            "https://example.com/broken.jpg",
+        ),
+        (
+            {"type": "url", "value": "https://example.com/"},
+            b"<html></html>",
+            "Could not decode bytes as image.",
+        ),
+        (
+            {"type": "url", "value": "http://example.com/image.jpg"},
+            None,
+            "Providing images via non https:// URL is not supported in this "
+            "configuration of `inference`.",
+        ),
+        (
+            {"type": "url", "value": "https://does-not-exist.invalid/image.jpg"},
+            None,
+            "Providing images via URL without FQDN is not supported in this "
+            "configuration of `inference`.",
+        ),
     ],
-    ids=["bad-base64", "unreachable", "not-an-image", "non-https", "no-fqdn"],
+    ids=[
+        "bad-base64",
+        "unreachable",
+        "client-error",
+        "server-error",
+        "not-an-image",
+        "non-https",
+        "no-fqdn",
+    ],
 )
 def test_workflow_input_image_that_cannot_be_loaded_posts_only_the_request_row(
-    usage_client, fake_stat, monkeypatch, image, fetch_answer
+    usage_client, fake_stat, monkeypatch, image, fetch_answer, legacy_reason
 ):
     monkeypatch.setattr(configuration, "ALLOW_NON_HTTPS_URL_INPUT", False)
     monkeypatch.setattr(configuration, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
@@ -1404,11 +1508,14 @@ def test_workflow_input_image_that_cannot_be_loaded_posts_only_the_request_row(
     body = response.json()
     assert body["error_type"] == "RuntimeInputError"
     assert body["context"] == "workflow_execution | runtime_input_validation"
+    assert body["message"] == f"{_INPUT_IMAGE_ERROR_PREFIX}{legacy_reason}"
     (request,) = rows
     details = json.loads(request["resource_details"])
     assert request["category"] == "request"
     assert request["processed_frames"] == 1
     assert details["error_type"] == "RuntimeInputError"
-    assert details["error"].startswith("RuntimeInputError: Failed to assemble `image`.")
+    assert details["error"] == redact_text(
+        f"RuntimeInputError: {_INPUT_IMAGE_ERROR_PREFIX}{legacy_reason}"
+    )
     assert details["steps"] == ["roboflow_core/roboflow_object_detection_model@v2:det0"]
     assert "error_status_code" not in details

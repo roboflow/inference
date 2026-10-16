@@ -343,28 +343,40 @@ async def test_image_codec_fetches_url_from_plain_worker_thread(monkeypatch):
     assert image.shape == (3, 4, 3)
 
 
+_NON_HTTPS_REFUSAL = (
+    "Providing images via non https:// URL is not supported in this configuration "
+    "of `inference`."
+)
+_WITHOUT_FQDN_REFUSAL = (
+    "Providing images via URL without FQDN is not supported in this configuration "
+    "of `inference`."
+)
+
+
 @pytest.mark.parametrize(
-    "url,switch,fetched",
+    "url,switch,fetched,refusal",
     [
-        ("http://example.com/1.jpg", None, []),
-        ("https://192.168.1.5/1.jpg", None, []),
-        ("https://myhost/1.jpg", None, []),
+        ("http://example.com/1.jpg", None, [], _NON_HTTPS_REFUSAL),
+        ("https://192.168.1.5/1.jpg", None, [], _WITHOUT_FQDN_REFUSAL),
+        ("https://myhost/1.jpg", None, [], _WITHOUT_FQDN_REFUSAL),
         (
             "http://example.com/1.jpg",
             "ALLOW_NON_HTTPS_URL_INPUT",
             [["http://example.com/1.jpg"]],
+            None,
         ),
         (
             "https://192.168.1.5/1.jpg",
             "ALLOW_URL_INPUT_WITHOUT_FQDN",
             [["https://192.168.1.5/1.jpg"]],
+            None,
         ),
-        ("https://example.com/1.jpg", None, [["https://example.com/1.jpg"]]),
+        ("https://example.com/1.jpg", None, [["https://example.com/1.jpg"]], None),
     ],
 )
 @pytest.mark.asyncio
 async def test_image_codec_applies_the_url_rules_of_the_legacy_routes(
-    monkeypatch, url, switch, fetched
+    monkeypatch, url, switch, fetched, refusal
 ):
     import asyncio
     import io
@@ -402,7 +414,35 @@ async def test_image_codec_applies_the_url_rules_of_the_legacy_routes(
     if fetched:
         assert outcome == (3, 4, 3)
     else:
-        assert outcome == "Could not fetch image from the given URL."
+        assert outcome == refusal
+
+
+@pytest.mark.parametrize(
+    "offline,allowed,refusal",
+    [
+        (True, True, "Cannot load an image from URL while OFFLINE_MODE is enabled."),
+        (
+            False,
+            False,
+            "Providing images via URL is not supported in this configuration of "
+            "`inference`.",
+        ),
+    ],
+)
+def test_image_codec_refuses_url_input_with_the_legacy_text(
+    monkeypatch, offline, allowed, refusal
+):
+    from roboflow_workflows.errors import WorkflowImageLoadError
+
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr("inference_server.configuration.LEGACY_OFFLINE_MODE", offline)
+    monkeypatch.setattr("inference_server.configuration.ALLOW_URL_INPUT", allowed)
+
+    with pytest.raises(WorkflowImageLoadError) as error:
+        host.GUARDED_IMAGE_CODEC.fetch_url("https://example.com/1.jpg")
+
+    assert error.value.public_message == refusal
 
 
 def test_bind_image_codec_installs_the_object_from_init_parameters():

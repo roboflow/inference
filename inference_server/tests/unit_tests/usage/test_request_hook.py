@@ -954,7 +954,7 @@ def test_perception_encoder_keeps_the_requested_model_id(usage_client, usage_col
     assert model["resource_details"]["model_variant"] == "PE-Core-L14-336"
 
 
-def test_aliased_model_id_is_resolved_on_the_model_row(
+def test_aliased_model_id_is_kept_as_requested_on_the_model_row(
     usage_client, usage_collector, fake_stat
 ):
     fake_stat["coco/3"] = OBJECT_DETECTION
@@ -972,7 +972,7 @@ def test_aliased_model_id_is_resolved_on_the_model_row(
     assert response.status_code == 200, response.text
     row = _request_row(usage_collector)
     assert row["resource_id"] == "yolov8n-640"
-    assert _model_row(usage_collector)["resource_id"] == "coco/3"
+    assert _model_row(usage_collector)["resource_id"] == "yolov8n-640"
 
 
 def test_doctr_records_a_structured_ocr_invocation(usage_client, usage_collector):
@@ -1691,6 +1691,14 @@ def _owlv2_reference(image):
             {"ds/1": OBJECT_DETECTION},
             "ds/1",
             2,
+            ("yolov8", "yolov8-n", "object-detection"),
+        ),
+        (
+            "/infer/object_detection",
+            {"model_id": "yolov8n-640", "image": _UNDECODABLE},
+            {"coco/3": OBJECT_DETECTION},
+            "yolov8n-640",
+            1,
             ("yolov8", "yolov8-n", "object-detection"),
         ),
         (

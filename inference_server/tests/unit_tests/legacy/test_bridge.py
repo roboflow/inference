@@ -1780,7 +1780,7 @@ async def test_infer_records_one_model_row_on_the_scope_collector(
         {
             "api_key": "k",
             "category": "model",
-            "resource_id": "coco/3",
+            "resource_id": "yolov8n-640",
             "resource_details": {
                 "model_architecture": "yolov8",
                 "model_variant": "yolov8-n",
@@ -2055,6 +2055,7 @@ async def test_model_row_carries_the_descriptor_the_legacy_server_reports(
         await bridge.infer(route, "k", route.action, [ImagePayload(b"a", 1, 1)], {})
 
     (row,) = collector.rows
+    assert row["resource_id"] == model_id
     details = row["resource_details"]
     assert (
         details["model_architecture"],

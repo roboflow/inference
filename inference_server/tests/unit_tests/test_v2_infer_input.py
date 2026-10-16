@@ -265,6 +265,7 @@ class _FakeContent:
 class _FakeResp:
     def __init__(self, chunks: list[bytes], content_length=None, status=200, headers=None):
         self.status = status
+        self.reason = None
         self.content_length = content_length
         self.content = _FakeContent(chunks)
         self.headers = headers or {}
@@ -339,6 +340,28 @@ async def test_fetch_image_from_url_chunked_over_cap_413():
         data, err = await fetch_image_from_url("https://example.com/img.jpg")
     assert data is None
     assert err.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_status_failure_carries_the_upstream_answer():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    resp = _FakeResp([], status=404)
+    resp.reason = "Not Found"
+    with _patch_public_dns(), patch(
+        "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
+        return_value=_FakeSession(resp),
+    ):
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+    assert data is None
+    assert (
+        err.status_code,
+        err.failed_url,
+        err.upstream_status,
+        err.upstream_reason,
+    ) == (502, "https://example.com/img.jpg", 404, "Not Found")
 
 
 @pytest.mark.asyncio

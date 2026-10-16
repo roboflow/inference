@@ -283,11 +283,15 @@ async def fetch_image_from_url(
                                 return None, redirect_error
                         continue
                     if resp.status != 200:
-                        return None, error_response(
+                        status_error = error_response(
                             502,
                             "URL_FETCH_FAILED",
                             f"fetching image URL returned status {resp.status}",
                         )
+                        status_error.failed_url = current
+                        status_error.upstream_status = resp.status
+                        status_error.upstream_reason = resp.reason
+                        return None, status_error
                     content_length = resp.content_length or 0
                     if content_length > URL_FETCH_MAX_BYTES:
                         return None, error_response(
