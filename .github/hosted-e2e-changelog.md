@@ -95,4 +95,7 @@ rationale and public test-suite examples. Live execution requires the private
 caller, deployment-verification adapter, maintainer review and load/isolation
 validation. Existing manual workflows remain unchanged pending migration.
 
-See the [implementation and integration guide](hosted-e2e.md).
+See [PR #3211](https://github.com/roboflow/inference/pull/3211) for the repository
+activation approach, validation and rollout requirements. Timing profiles are
+optional; without them, the four shards use case-count balancing. Rerun the
+complete workflow after a failure because evidence is bound to its run attempt.
