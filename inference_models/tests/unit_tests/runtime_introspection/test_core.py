@@ -998,6 +998,20 @@ def test_get_onnxruntime_info_when_onnxruntime_not_available() -> None:
     assert result is None
 
 
+def test_get_onnxruntime_info_when_onnxruntime_is_incomplete_raises() -> None:
+    # given
+    get_onnxruntime_info.cache_clear()
+    try:
+        with mock.patch("builtins.__import__") as import_mock:
+            import_mock.return_value = ModuleType("onnxruntime")
+
+            # when
+            with pytest.raises(AttributeError):
+                get_onnxruntime_info()
+    finally:
+        get_onnxruntime_info.cache_clear()
+
+
 def test_get_onnxruntime_info_when_onnxruntime_available() -> None:
     # given
     get_onnxruntime_info.cache_clear()
