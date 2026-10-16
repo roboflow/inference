@@ -193,7 +193,7 @@ jobs:
             -v "$PWD/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
             "$INFERENCE_TEST_IMAGE" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'
       - name: 🔨 Build Test Docker - inference_server
-        if: ${{ env.SERVER_IMAGE == 'new' }}
+        if: ${{ env.SERVER_IMAGE == 'new' && inputs.image_digest == '' && !inputs.private_image }}
         run: |
           docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.cpu .
       - name: 🔋 Start Test Docker

@@ -197,7 +197,7 @@ jobs:
         if: ${{ always() && inputs.private_image && steps.ci_docker_config.outcome == 'success' }}
         run: rm -f -- "$DOCKER_CONFIG/config.json"
       - name: 🔨 Build Test Docker - inference_server GPU
-        if: ${{ env.SERVER_IMAGE == 'new' }}
+        if: ${{ env.SERVER_IMAGE == 'new' && inputs.image_digest == '' && !inputs.private_image }}
         run: |
           docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.gpu .
 
