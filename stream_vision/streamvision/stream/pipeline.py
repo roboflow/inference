@@ -74,7 +74,11 @@ from streamvision.stream.environment import (
 )
 from streamvision.stream.exceptions import CannotInitialiseModelError
 from streamvision.stream.session import mint_stream_session_id, stream_session_id
-from streamvision.stream.utils import on_pipeline_end, prepare_video_sources
+from streamvision.stream.utils import (
+    VideoSourceOptions,
+    on_pipeline_end,
+    prepare_video_sources,
+)
 from streamvision.stream.watchdog import NullPipelineWatchdog, PipelineWatchDog
 
 logger = logging.getLogger(__name__)
@@ -163,6 +167,7 @@ class InferencePipeline:
         exec_session_id: Optional[str] = None,
         workflows_dependencies_pre_init: Optional[List[str]] = None,
         profiler: Optional[WorkflowsProfiler] = None,
+        video_source_options: Optional[VideoSourceOptions] = None,
     ) -> "InferencePipeline":
         """Create a pipeline running an already-resolved workflow against video.
 
@@ -196,6 +201,8 @@ class InferencePipeline:
             source_buffer_consumption_strategy: Decoding buffer consumption
                 strategy.
             video_source_properties: cv2 capture properties of the sources.
+            video_source_options: Producer-specific settings; a single dict
+                applies to all sources, a list aligns with `video_reference`.
             disable_sinks: Whether to disable sink writes and outbound
                 notifications/uploads.
             workflows_thread_pool_workers: Workers of the pool the workflow
@@ -305,6 +312,7 @@ class InferencePipeline:
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
+            video_source_options=video_source_options,
             batch_collection_timeout=batch_collection_timeout,
             video_processing_mode=video_processing_mode,
             max_staleness=max_staleness,
@@ -336,6 +344,7 @@ class InferencePipeline:
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
         exec_session_id: Optional[str] = None,
         allow_tensor_frames: bool = False,
+        video_source_options: Optional[VideoSourceOptions] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -387,6 +396,10 @@ class InferencePipeline:
                 as list of configs. Then the list must be of length of `video_reference` and may also contain None
                 values to denote that specific source should remain not configured.
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
+            video_source_options (Optional[VideoSourceOptions]): Optional
+                producer-specific settings. A single dictionary applies to all video
+                sources; a list must align with `video_reference` and may contain None
+                for sources that need no special configuration.
             batch_collection_timeout (Optional[float]): Parameter of multiplex_videos(...) dictating how long process
                 to grab frames from multiple sources can wait for batch to be filled before yielding already collected
                 frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
@@ -470,6 +483,7 @@ class InferencePipeline:
         video_sources = cls._prepare_video_sources(
             video_reference=video_reference,
             video_source_properties=video_source_properties,
+            video_source_options=video_source_options,
             status_update_handlers=status_update_handlers,
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,

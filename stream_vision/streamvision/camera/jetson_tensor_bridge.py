@@ -40,7 +40,7 @@ class _BridgeStats(ctypes.Structure):
         ("last_nvbuf_memory_type", ctypes.c_int32),
         ("last_egl_frame_type", ctypes.c_int32),
         ("last_egl_color_format", ctypes.c_int32),
-        # ABI v5: per-phase streaming-thread conversion timing (total + max
+        # ABI v5: per-phase conversion timing (total + max
         # ns per phase) and the count of distinct decoder dmabuf fds. Field
         # order and widths mirror RfBridgeStats in jetson_tensor_bridge.cu.
         ("egl_map_ns", ctypes.c_uint64),
@@ -78,11 +78,13 @@ def jetson_tensor_bridge_available() -> Tuple[bool, str]:
         version = library.rf_jetson_tensor_bridge_version()
     except Exception as error:  # noqa: BLE001 - runtime capability probe
         return False, f"Jetson tensor bridge is unavailable: {error!r}"
+    # v8 = consumer-thread conversion (the ABI is unchanged from v7).
     # v7 = per-fd EGL registration cache; RfBridgeStats gained
     # egl_cache_hits/egl_cache_misses (struct layout change) on top of v6's
     # lossless_handoff create() parameter, so older .so versions must be
-    # refused (and a v7 .so is refused by older wrappers symmetrically).
-    if version != b"7":
+    # refused. Requiring v8 also prevents pairing this wrapper with the
+    # JP6.2-deadlocking streaming-callback implementation.
+    if version != b"8":
         return False, f"Unsupported Jetson tensor bridge version: {version!r}"
     return True, "ok"
 
