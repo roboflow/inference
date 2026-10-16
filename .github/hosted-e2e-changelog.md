@@ -1,6 +1,58 @@
-# Hosted platform E2E changelog
+# CI infrastructure changelog
 
 ## Unreleased
+
+### Depot saved-image trial — October 16, 2026
+
+- Add an opt-in fast-track path that saves CPU and GPU images in Depot once
+  and tests their exact digests in both model modes. Share the existing server
+  test stages with the legacy workflows and use `fail-fast: true`.
+- Require same-repository manual execution, an explicitly approved branch and
+  commit, and separate protected builder/reader environments. Supply credentials
+  and private resource configuration only through secret references; remove pull
+  credentials before tests and withhold raw build/test output from public logs.
+- Keep the existing default path and release publishing unchanged. The trial
+  remains disabled unless configured; Depot permissions, retention, runner
+  isolation and a live build/pull/test run still require verification.
+- Add offline regression coverage for authorization, image identity, credential
+  cleanup, output suppression, complete test coverage and legacy-path exclusion.
+
+### Review follow-ups — October 16, 2026
+
+- Record a redacted one-line summary of each failing case's final attempt in
+  shard evidence and `acceptance.json`, and print those summaries in the visible
+  log when a shard or aggregation stage fails. Credential values are replaced
+  before recording; full tracebacks stay only in the encrypted stage log.
+- Keep manual dispatch available from any same-repository branch or tag, as
+  before sharding; drop the default-branch/fast-track restriction and the
+  umbrella-PR lookup. The guard only confirms a manual same-repository dispatch
+  and pins one commit across jobs. It is accident prevention, not a credential
+  boundary: secrets are repository-level and reachable by anyone with write
+  access. Enforcement through GitHub Environments (deployment-branch rules or
+  required reviewers) is a separate follow-up needing repository admin changes.
+
+### Repository activation — October 16, 2026
+
+- Connect the existing staging and production manual entrypoints to preparation,
+  shared warmup, four parallel shard jobs, and unconditional result aggregation.
+- Require a manual same-repository dispatch, use one dispatch SHA in every job
+  and serialize both target workflows. Any branch or tag may run, as before.
+- Preserve the operator's skip-warmup option and explicitly allow only the five
+  cases already disabled in the reviewed suite. Reject empty provider credentials.
+- Capture detailed test output and transfer authenticated encrypted evidence
+  between jobs. Keep visible output to fixed statuses and aggregate counts;
+  reuse existing hosted credentials with run-specific, domain-separated key
+  derivation. Detailed timing profiles can be supplied through repository secrets.
+- Preserve the private deployment-acceptance workflow. The repository manual
+  path makes no deployment-image identity claim, matching the previous workflow.
+- Add subprocess integration tests for isolated job directories, encrypted
+  transfers, four-shard coverage, retries, skip handling, secret-bearing failures,
+  tampering, incorrect contexts and absent evidence. Test the operator-facing
+  entrypoints so a disconnected runner cannot pass integration validation.
+- Live rollout remains pending until a reviewed staging run
+  verifies preparation, shards A–D and aggregation. Offline tests alone do not
+  demonstrate activation or a performance improvement.
+
 
 ### Review follow-ups — October 15, 2026
 
@@ -66,8 +118,12 @@ performance or a runtime guarantee. Staging uses its own profile.
 
 Detailed timing profiles, raw logs, case evidence, credentials and deployment
 metadata remain private. This changelog contains only the aggregate scheduling
-rationale and public test-suite examples. Live execution requires the private
-caller, deployment-verification adapter, maintainer review and load/isolation
-validation. Existing manual workflows remain unchanged pending migration.
+rationale and public test-suite examples. Private deployment-acceptance execution
+requires the private caller and deployment-verification adapter. The repository
+manual workflows are now connected to sharding; live rollout still requires
+maintainer review and load/isolation validation.
 
-See the [implementation and integration guide](hosted-e2e.md).
+See [PR #3211](https://github.com/roboflow/inference/pull/3211) for the repository
+activation approach, validation and rollout requirements. Timing profiles are
+optional; without them, the four shards use case-count balancing. Rerun the
+complete workflow after a failure because evidence is bound to its run attempt.
