@@ -25,7 +25,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 # Both manual entrypoints share this group. Never overlap staging/production runs.
 concurrency:
@@ -35,7 +34,6 @@ concurrency:
 env:
   HOSTED_E2E_MODE: repository
   HOSTED_E2E_RUN_KEY: ${{ github.run_id }}:${{ github.run_attempt }}
-  HOSTED_E2E_DEFAULT_REF: refs/heads/${{ github.event.repository.default_branch }}
   HOSTED_E2E_TEST_SHA: ${{ github.sha }}
   HOSTED_E2E_RUNNER_SHA: ${{ github.sha }}
   HOSTED_E2E_POLICY_SHA: ${{ github.sha }}
@@ -47,7 +45,9 @@ env:
 
 jobs:
   guard:
-    name: Verify trusted manual execution
+    # Accident prevention only: any same-repository branch or tag may run, and
+    # the secrets are repository-level. Pins one dispatched SHA for every job.
+    name: Verify manual same-repository dispatch
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -58,10 +58,8 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Verify main or the approved release fast-track PR
+      - name: Verify the dispatched ref, commit and target
         id: authorize
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/hosted_e2e_gate.py
 
   prepare:

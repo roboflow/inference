@@ -17,14 +17,26 @@
 - Add offline regression coverage for authorization, image identity, credential
   cleanup, output suppression, complete test coverage and legacy-path exclusion.
 
+### Review follow-ups — October 16, 2026
+
+- Record a redacted one-line summary of each failing case's final attempt in
+  shard evidence and `acceptance.json`, and print those summaries in the visible
+  log when a shard or aggregation stage fails. Credential values are replaced
+  before recording; full tracebacks stay only in the encrypted stage log.
+- Keep manual dispatch available from any same-repository branch or tag, as
+  before sharding; drop the default-branch/fast-track restriction and the
+  umbrella-PR lookup. The guard only confirms a manual same-repository dispatch
+  and pins one commit across jobs. It is accident prevention, not a credential
+  boundary: secrets are repository-level and reachable by anyone with write
+  access. Enforcement through GitHub Environments (deployment-branch rules or
+  required reviewers) is a separate follow-up needing repository admin changes.
+
 ### Repository activation — October 16, 2026
 
 - Connect the existing staging and production manual entrypoints to preparation,
   shared warmup, four parallel shard jobs, and unconditional result aggregation.
-- Restrict credentialed execution to manual runs on the default branch or
-  approved release fast-tracks. Check the umbrella PR's exact head SHA, approval
-  label and release ancestry before accessing hosted secrets. Use one dispatch
-  SHA in every job and serialize both target workflows.
+- Require a manual same-repository dispatch, use one dispatch SHA in every job
+  and serialize both target workflows. Any branch or tag may run, as before.
 - Preserve the operator's skip-warmup option and explicitly allow only the five
   cases already disabled in the reviewed suite. Reject empty provider credentials.
 - Capture detailed test output and transfer authenticated encrypted evidence
@@ -37,7 +49,7 @@
   transfers, four-shard coverage, retries, skip handling, secret-bearing failures,
   tampering, incorrect contexts and absent evidence. Test the operator-facing
   entrypoints so a disconnected runner cannot pass integration validation.
-- Live rollout remains pending until a reviewed main/fast-track staging run
+- Live rollout remains pending until a reviewed staging run
   verifies preparation, shards A–D and aggregation. Offline tests alone do not
   demonstrate activation or a performance improvement.
 

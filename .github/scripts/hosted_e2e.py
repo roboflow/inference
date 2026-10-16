@@ -51,6 +51,31 @@ def _require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
+def _redact(text: str) -> str:
+    # Credential values never enter recorded evidence; stage.log keeps raw output.
+    for name, value in os.environ.items():
+        if len(value) >= 8 and re.search(
+            r"KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|PROFILE", name
+        ):
+            text = text.replace(value, "[redacted]")
+    return text
+
+
+def _summarize_failure(longrepr) -> str:
+    crash = getattr(longrepr, "reprcrash", None)
+    if crash is not None:
+        text = str(crash.message)
+    elif isinstance(longrepr, tuple) and len(longrepr) == 3:
+        text = str(longrepr[2])
+    else:
+        text = str(longrepr)
+    lines = _redact(text).strip().splitlines()
+    summary = lines[0].strip() if lines else "failed"
+    if len(summary) > 200:
+        summary = summary[:200] + "…"
+    return summary
+
+
 def _validate_collection_skips(value) -> None:
     _require(
         isinstance(value, list)
@@ -204,6 +229,7 @@ class _Recorder:
         self.collection_errors = 0
         self.collection_skips: list[str] = []
         self.fixtures: dict[str, dict] = {}
+        self.failures: dict[str, dict[str, str]] = {}
 
     @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(self, session, config, items) -> None:
@@ -248,6 +274,16 @@ class _Recorder:
         self.collection_errors += int(report.failed)
         if report.skipped:
             self.collection_skips.append(report.nodeid)
+
+    def pytest_runtest_logreport(self, report) -> None:
+        """Keep a redacted one-line summary of the final failing attempt.
+
+        Args:
+            report: Pytest test report; pytest-retry logs only the last attempt.
+        """
+        if report.failed:
+            summary = _summarize_failure(report.longrepr)
+            self.failures.setdefault(report.nodeid, {})[report.when] = summary
 
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_runtest_setup(self, item):
@@ -309,6 +345,7 @@ class _Recorder:
                 "outcomes": {p: list(stats["outcomes"][p]) for p in _PHASES},
                 "durations": {p: list(stats["durations"][p])[1:] for p in _PHASES},
                 "elapsed_seconds": perf_counter() - started,
+                "failures": self.failures.get(item.nodeid, {}),
             }
             for phase, records in self.fixtures[item.nodeid].items():
                 self.cases[item.nodeid]["outcomes"][phase] = [r[0] for r in records]
@@ -336,18 +373,15 @@ def _pytest(suite: Path, *, recorder: _Recorder, collect: bool = False) -> int:
 
 
 def _repository_identity() -> dict:
+    # Any same-repository branch or tag may run, as before sharding. The guard
+    # output pins one dispatched commit across jobs; it is not a credential gate.
     ref = os.environ.get("GITHUB_REF", "")
-    approved_ref = os.environ.get("HOSTED_E2E_APPROVED_REF", "")
-    allowed_ref = ref == os.environ.get("HOSTED_E2E_DEFAULT_REF") or bool(
-        re.fullmatch(r"refs/heads/fast-track/post-v\d+\.\d+\.\d+-pt[1-9]\d*", ref)
-    )
     _require(
         os.environ.get("GITHUB_REPOSITORY") == "roboflow/inference"
         and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-        and allowed_ref
-        and ref == approved_ref
+        and ref.startswith(("refs/heads/", "refs/tags/"))
+        and ref == os.environ.get("HOSTED_E2E_APPROVED_REF")
         and os.environ.get("HOSTED_E2E_APPROVED_SHA") == os.environ.get("GITHUB_SHA")
-        and str(os.environ.get("HOSTED_E2E_DEFAULT_REF", "")).startswith("refs/heads/")
         and os.environ.get("GITHUB_SHA") == os.environ["HOSTED_E2E_TEST_SHA"]
         and os.environ["HOSTED_E2E_TEST_SHA"] == os.environ["HOSTED_E2E_RUNNER_SHA"],
         "trusted manual repository execution required",
@@ -559,6 +593,7 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
     _validate_plan(plan)
     issues = []
     failures = []
+    failure_summaries = {}
     retried = []
     unexpected_skips = []
     seen = set()
@@ -624,6 +659,15 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
                 ),
                 "invalid timings",
             )
+            summaries = case.get("failures", {})
+            _require(
+                isinstance(summaries, dict)
+                and all(
+                    phase in _PHASES and isinstance(text, str) and text
+                    for phase, text in summaries.items()
+                ),
+                "invalid failure summaries",
+            )
             calls = outcomes["call"]
             if len(calls) > 1:
                 retried.append(nodeid)
@@ -653,6 +697,8 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
                 or (not skipped and (not calls or calls[-1] != "passed"))
             ):
                 failures.append(nodeid)
+                if summaries:
+                    failure_summaries[nodeid] = summaries
     if seen != set(_SHARDS):
         issues.append("missing-shards")
     accepted = not (issues or failures or unexpected_skips)
@@ -660,6 +706,9 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
         "accepted": accepted,
         "issues": issues,
         "failures": sorted(failures),
+        "failure_summaries": {
+            n: failure_summaries[n] for n in sorted(failure_summaries)
+        },
         "unexpected_skips": sorted(unexpected_skips),
         "retried": sorted(retried),
     }

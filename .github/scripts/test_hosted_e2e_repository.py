@@ -29,7 +29,6 @@ class RepositoryRunTests(unittest.TestCase):
             "GITHUB_REPOSITORY": "roboflow/inference",
             "GITHUB_EVENT_NAME": "workflow_dispatch",
             "GITHUB_REF": "refs/heads/main",
-            "HOSTED_E2E_DEFAULT_REF": "refs/heads/main",
             "GITHUB_SHA": "a" * 40,
             "HOSTED_E2E_APPROVED_REF": "refs/heads/main",
             "HOSTED_E2E_APPROVED_SHA": "a" * 40,
@@ -133,11 +132,11 @@ class RepositoryRunTests(unittest.TestCase):
         self.assertEqual(plan["context"]["identity"]["verification"], "not-performed")
         self.assertIn("5 cases across 4 shards", self.results[-1].stdout)
 
-    def test_approved_fast_track_runs_the_same_four_shard_pipeline(self):
-        """Accept the exact ref and SHA authorized by the release PR gate."""
+    def test_any_branch_runs_the_same_four_shard_pipeline(self):
+        """Keep feature-branch manual runs available, as before sharding."""
         self.env.update(
-            GITHUB_REF="refs/heads/fast-track/post-v1.8.0-pt1",
-            HOSTED_E2E_APPROVED_REF="refs/heads/fast-track/post-v1.8.0-pt1",
+            GITHUB_REF="refs/heads/feat/anything",
+            HOSTED_E2E_APPROVED_REF="refs/heads/feat/anything",
         )
         self._complete()
 
@@ -162,6 +161,15 @@ class RepositoryRunTests(unittest.TestCase):
             (self.root / "aggregate/evidence/acceptance.json").read_text()
         )
         self.assertFalse(result["accepted"])
+        # Operators see a redacted first line per failing case in the visible log.
+        self.assertEqual(
+            result["failure_summaries"]["suite/test_a.py::test_failure"],
+            {"call": "RuntimeError: [redacted]"},
+        )
+        visible = "".join(r.stdout for r in self.results)
+        self.assertIn(
+            "  suite/test_a.py::test_failure [call]: RuntimeError: [redacted]", visible
+        )
 
     def test_wrong_key_attempt_target_and_tampering_fail_closed(self):
         """Bind evidence to its secret, revision, target, run and attempt."""
@@ -196,11 +204,16 @@ class RepositoryRunTests(unittest.TestCase):
         self._run("aggregate", "aggregate", expected=1)
 
     def test_caller_guard_rejects_untrusted_context_before_tests(self):
-        """A fork, PR, non-default branch or mismatched target cannot run tests."""
+        """A fork, PR, unpinned ref, non-branch ref or bad target cannot run."""
         for changes in [
             {"GITHUB_REPOSITORY": "someone/inference"},
             {"GITHUB_EVENT_NAME": "pull_request"},
+            # Guard output must match the dispatched ref; any branch is otherwise fine.
             {"GITHUB_REF": "refs/heads/feature"},
+            {
+                "GITHUB_REF": "refs/pull/1/merge",
+                "HOSTED_E2E_APPROVED_REF": "refs/pull/1/merge",
+            },
             {"HOSTED_E2E_RUNNER_SHA": "b" * 40},
             {"HOSTED_E2E_TARGET": "other"},
             {"HOSTED_PLATFORM_TESTS_PROJECT": "roboflow-platform-serverless"},

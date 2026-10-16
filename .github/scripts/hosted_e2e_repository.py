@@ -190,6 +190,24 @@ def _run(stage: str, *, suite: Path, policy: Path, output: Path, shard: str) -> 
     return code
 
 
+def _failure_summaries(output: Path, *, stage: str, shard: str) -> dict:
+    # Only redacted one-line summaries; full tracebacks stay in encrypted stage.log.
+    path = output / (f"shard-{shard}.json" if stage == "shard" else "acceptance.json")
+    if stage not in {"shard", "aggregate"} or not path.exists():
+        return {}
+
+    record = runner._read(path)
+    if stage == "aggregate":
+        summaries = record.get("failure_summaries", {})
+    else:
+        summaries = {
+            nodeid: case["failures"]
+            for nodeid, case in record.get("cases", {}).items()
+            if case.get("failures")
+        }
+    return summaries
+
+
 @click.command()
 @click.argument(
     "stage", type=click.Choice(["prepare", "warmup", "shard", "aggregate", "restore"])
@@ -249,6 +267,11 @@ def main(stage, suite, policy, output, source, shard, execute_hidden):
             code = _run(stage, suite=suite, policy=policy, output=output, shard=shard)
         if not execute_hidden:
             click.echo(f"Hosted E2E {stage}: {'passed' if code == 0 else 'failed'}")
+            if code != 0:
+                summaries = _failure_summaries(output, stage=stage, shard=shard)
+                for nodeid, phases in sorted(summaries.items()):
+                    for phase, summary in sorted(phases.items()):
+                        click.echo(f"  {nodeid} [{phase}]: {summary}")
             if stage == "aggregate" and code == 0:
                 plan = runner._read(output / "plan.json")
                 result = runner._read(output / "acceptance.json")
