@@ -30,8 +30,13 @@ _install_lock = threading.Lock()
 
 
 WEBEXEC_MODAL_APP_NAME = os.environ.get("WEBEXEC_MODAL_APP_NAME", "webexec")
-WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
-WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
+# Placement knobs; an empty value omits the kwarg so Modal may pick. Pinning a
+# single cloud region (previously aws/us-east-1) left Modal unable to
+# reschedule preempted executors when that region ran out of capacity, so the
+# default is the broad "us" region on any cloud. EU deploys pass gcp/eu for
+# data residency.
+WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD") or None
+WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us") or None
 WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
 
 # Hard cap on how long one websocket connection is served before this side
@@ -444,8 +449,6 @@ _executor_decorator_kwargs = {
     "timeout": 700,
     "enable_memory_snapshot": True,  # Enable memory snapshotting for faster cold starts
     "scaledown_window": 60,
-    "cloud": WEBEXEC_MODAL_CLOUD,
-    "region": WEBEXEC_MODAL_REGION,
     "buffer_containers": 1,
     "env": {
         "WEBEXEC_WS_MAX_CONNECTION_SECONDS": str(WEBEXEC_WS_MAX_CONNECTION_SECONDS),
@@ -453,6 +456,10 @@ _executor_decorator_kwargs = {
         "WEBEXEC_WS_MAX_REQUEST_BYTES": str(WEBEXEC_WS_MAX_REQUEST_BYTES),
     },
 }
+if WEBEXEC_MODAL_CLOUD:
+    _executor_decorator_kwargs["cloud"] = WEBEXEC_MODAL_CLOUD
+if WEBEXEC_MODAL_REGION:
+    _executor_decorator_kwargs["region"] = WEBEXEC_MODAL_REGION
 if WEBEXEC_MODAL_ROUTING_REGION:
     _executor_decorator_kwargs["routing_region"] = WEBEXEC_MODAL_ROUTING_REGION
 
