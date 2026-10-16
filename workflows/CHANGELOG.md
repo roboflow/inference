@@ -16,6 +16,14 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.10`
+
+Bundled execution engine: `1.16.1`.
+
+### Fixed
+
+- Dataset upload v1 (`roboflow_core/roboflow_dataset_upload@v1`) compiles again. Its `images` field listed `image` as the first validation alias, so the JSON schema named the property `image` while the manifest attribute is `images`; compilation raised `BlockInterfaceError` and `/describe_interface` raised `AttributeError`. The alias order is now `images`, `image`: both keys still validate, and the block schema lists `images`, as dataset upload v2 does.
+
 ## `0.2.9`
 
 ### Execution engine
