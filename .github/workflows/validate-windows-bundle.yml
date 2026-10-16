@@ -6,7 +6,7 @@ permissions:
 on:
   workflow_dispatch:
   push:
-    branches: [main, ColePBryan/flex-windows-nms]
+    branches: [main]
     paths:
       - 'app_bundles/windows/**'
       - '.github/workflows/*windows*.yml'
