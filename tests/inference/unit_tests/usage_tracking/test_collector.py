@@ -14,6 +14,11 @@ import numpy as np
 import pytest
 
 from inference.core.env import LAMBDA
+from inference.core.exceptions import (
+    RoboflowAPIForbiddenError,
+    RoboflowAPINotAuthorizedError,
+)
+from inference.core.roboflow_api import assume_identity_authorised_workspace_db_id
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
@@ -1999,6 +2004,75 @@ def test_returned_http_error_response_records_error_outcome(
     assert details["error"] == "HTTPResponseError422: response returned status 422"
     assert details["error_type"] == "HTTPResponseError"
     assert details["error_status_code"] == 422
+
+
+def test_request_refused_for_its_credential_records_no_usage(
+    usage_collector_with_mocked_threads,
+):
+    """Regression: a request whose API key the platform answered 401 for was
+    recorded as error usage under that key, and the usage endpoint refuses
+    rows under that same key, so the row could never be delivered.
+    """
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="request")
+    def direct(api_key="revoked-key"):
+        raise RoboflowAPINotAuthorizedError("Unauthorized access to roboflow API")
+
+    @usage_collector(category="request")
+    def wrapped_in_workflow_step(api_key="revoked-key"):
+        raise ClientCausedStepExecutionError(
+            block_id="model",
+            status_code=401,
+            public_message="model step failed",
+            context="workflow_execution | step_execution",
+            inner_error=RoboflowAPINotAuthorizedError("Unauthorized"),
+        )
+
+    @usage_collector(category="request")
+    async def direct_async(api_key="revoked-key"):
+        raise RoboflowAPINotAuthorizedError("Unauthorized access to roboflow API")
+
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        direct()
+    with pytest.raises(ClientCausedStepExecutionError):
+        wrapped_in_workflow_step()
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        asyncio.run(direct_async())
+
+    assert not usage_collector._usage.get("revoked-key")
+
+
+def test_errors_that_do_not_refuse_the_credential_are_still_recorded(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="request")
+    def forbidden(api_key="valid-key"):
+        raise RoboflowAPIForbiddenError("missing scope")
+
+    @usage_collector(category="request")
+    def refused_under_assume_identity(api_key="valid-key"):
+        raise RoboflowAPINotAuthorizedError("service token mismatch")
+
+    with pytest.raises(RoboflowAPIForbiddenError):
+        forbidden()
+    token = assume_identity_authorised_workspace_db_id.set("workspace-db-id")
+    try:
+        with pytest.raises(RoboflowAPINotAuthorizedError):
+            refused_under_assume_identity()
+    finally:
+        assume_identity_authorised_workspace_db_id.reset(token)
+
+    recorded_error_types = {
+        json.loads(row["resource_details"])["error_type"]
+        for row in usage_collector._usage["valid-key"].values()
+    }
+    assert recorded_error_types == {
+        "RoboflowAPIForbiddenError",
+        "RoboflowAPINotAuthorizedError",
+    }
 
 
 def test_wrapped_remote_http_errors_are_partitioned_by_status_code(
