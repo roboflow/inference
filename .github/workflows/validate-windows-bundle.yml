@@ -1,0 +1,111 @@
+name: Validate Windows bundles (no publication)
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, ColePBryan/flex-windows-nms]
+    paths:
+      - 'app_bundles/windows/**'
+      - '.github/workflows/*windows*.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app_bundles/windows/**'
+      - '.github/workflows/*windows*.yml'
+
+concurrency:
+  group: windows-validation-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  packaging-unit:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest click pyinstaller pillow
+      - run: python -m pytest -q -c app_bundles/windows/tests/pytest.ini app_bundles/windows/tests
+
+  frozen:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [cpu, gpu]
+    env:
+      BUILD_VERSION: '0.0.0-validation'
+      DISABLE_VERSION_CHECK: 'True'
+      API_LOGGING_ENABLED: 'False'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install CUDA compiler for GPU package dependencies (no GPU claimed)
+        if: matrix.flavor == 'gpu'
+        shell: pwsh
+        run: ./app_bundles/windows/install_cuda.ps1
+      - name: Build production local wheels
+        shell: bash
+        run: make create_wheels
+      - name: Install and validate final production dependencies
+        env:
+          FLAVOR: ${{ matrix.flavor }}
+        shell: pwsh
+        run: |
+          python -m pip install click
+          python app_bundles/windows/install_dependencies.py --flavor $env:FLAVOR
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install -r app_bundles/windows/requirements.txt pyinstaller-hooks-contrib
+      - name: Local anomaly and SDK image-output compatibility fixtures
+        env:
+          OFFLINE_MODE: 'True'
+          HF_HUB_OFFLINE: '1'
+        shell: pwsh
+        run: |
+          python -m pip install pytest aioresponses
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q -c inference_models/pytest.ini inference_models/tests/unit_tests/models/test_patchcore_torch.py inference_models/tests/unit_tests/models/test_foundad_torch.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q tests/inference_sdk/unit_tests/http/test_entities.py -k include_anomaly_map
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify final freezer environment
+        env:
+          FLAVOR: ${{ matrix.flavor }}
+        shell: pwsh
+        run: |
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python app_bundles/windows/packaging_checks.py --flavor $env:FLAVOR
+      - name: Set up Inno Setup compiler
+        shell: pwsh
+        run: ./app_bundles/windows/install_inno.ps1
+      - name: Build unsigned production installer
+        working-directory: app_bundles/windows
+        run: python build.py
+      - name: Validate frozen production directory
+        env:
+          FLAVOR: ${{ matrix.flavor }}
+        run: python app_bundles/windows/smoke_test.py --flavor $env:FLAVOR --exe app_bundles/windows/dist/inference/inference.exe
+      - name: Silent install and validate installed executable
+        env:
+          FLAVOR: ${{ matrix.flavor }}
+        shell: pwsh
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP "inference-installed"
+          $installer = Resolve-Path "app_bundles/windows/installer/inference-$env:BUILD_VERSION-installer.exe"
+          try {
+            $installation = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$destination`"") -Wait -PassThru
+            if ($installation.ExitCode -ne 0) { throw "Installer failed: $($installation.ExitCode)" }
+            python app_bundles/windows/smoke_test.py --flavor $env:FLAVOR --exe "$destination/inference.exe"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            Remove-Item -Recurse -Force $destination -ErrorAction SilentlyContinue
+          }

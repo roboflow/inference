@@ -1,5 +1,8 @@
 name: Build Windows Installer (GPU)
 
+permissions:
+  contents: read
+
 on:
   release:
     types: [published]
@@ -12,6 +15,7 @@ on:
 jobs:
   build_windows:
     runs-on: Windows-2022
+    timeout-minutes: 120
     permissions:
       contents: write
     steps:
@@ -28,54 +32,7 @@ jobs:
         id: cuda-toolkit
         shell: pwsh
         run: |
-          $version = "12.8.1"
-          $short   = "12.8"
-          $url     = "https://developer.download.nvidia.com/compute/cuda/$version/network_installers/cuda_${version}_windows_network.exe"
-
-          Write-Host "Downloading CUDA $version network installer..."
-          Invoke-WebRequest -Uri $url -OutFile cuda_installer.exe -UseBasicParsing
-
-          Write-Host "Installing sub-packages..."
-          $proc = Start-Process -FilePath .\cuda_installer.exe -ArgumentList @(
-            "-s",
-            "nvcc_$short",
-            "cudart_$short",
-            "cublas_$short",
-            "cublas_dev_$short",
-            "curand_$short",
-            "curand_dev_$short",
-            "cuda_profiler_api_$short",
-            "visual_studio_integration_$short"
-          ) -Wait -NoNewWindow -PassThru
-      
-          if ($proc.ExitCode -ne 0) {
-            Write-Error "CUDA installer failed with exit code $($proc.ExitCode)"
-            exit $proc.ExitCode
-          }
-
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$short"
-          Write-Host "CUDA installed at: $cudaPath"
-          
-          Write-Host "Contents of CUDA path:"
-          Get-ChildItem $cudaPath -ErrorAction SilentlyContinue
-          Write-Host "Contents of include dir:"
-          Get-ChildItem "$cudaPath\include" -ErrorAction SilentlyContinue | Select-Object -First 10
-          
-          if (Test-Path "$cudaPath\include\cuda.h") {
-            Write-Host "cuda.h found"
-          } else {
-            Write-Host "ERROR: cuda.h NOT found"
-            exit 1
-          }
-
-          # Replicate the outputs that Jimver/cuda-toolkit provides so downstream
-          # steps using steps.cuda-toolkit.outputs.CUDA_PATH require no changes.
-          "CUDA_PATH=$cudaPath" | Out-File -Append $env:GITHUB_OUTPUT
-          "CUDA_PATH=$cudaPath" | Out-File -Append $env:GITHUB_ENV
-          "CUDA_HOME=$cudaPath" | Out-File -Append $env:GITHUB_ENV
-          "INCLUDE=$cudaPath\include;$env:INCLUDE"     | Out-File -Append $env:GITHUB_ENV
-          "LIB=$cudaPath\lib\x64;$env:LIB"             | Out-File -Append $env:GITHUB_ENV
-          "$cudaPath\bin"                              | Out-File -Append $env:GITHUB_PATH
+          ./app_bundles/windows/install_cuda.ps1
 
       - name: Determine Version
         id: determine_version
@@ -120,22 +77,7 @@ jobs:
       - name: Install Inno Setup
         shell: pwsh
         run: |
-          # Inno Setup ships preinstalled on windows-2022 runner images; install via
-          # Chocolatey only if missing (jrsoftware.org no longer serves direct downloads).
-          $innoPath = "C:\Program Files (x86)\Inno Setup 6"
-          if (-not (Test-Path (Join-Path $innoPath "ISCC.exe"))) {
-            echo "Inno Setup not found, installing via Chocolatey..."
-            choco install innosetup -y --no-progress
-            if ($LASTEXITCODE -ne 0) { Write-Error "Failed to install Inno Setup via Chocolatey"; exit 1 }
-          }
-          if (-not (Test-Path (Join-Path $innoPath "ISCC.exe"))) {
-            Write-Error "ISCC.exe not found at $innoPath after installation."
-            exit 1
-          }
-          echo "Adding Inno Setup directory to PATH: $innoPath"
-          Add-Content -Path $env:GITHUB_PATH -Value $innoPath
-          echo "Inno Setup available and added to PATH."
-
+          ./app_bundles/windows/install_inno.ps1
 
       - name: Install DigiCert Client tools
         id: install_digicert_tools # Renamed for clarity
@@ -262,12 +204,8 @@ jobs:
       - name: Install inference_gpu and dependencies from local wheels
         shell: bash # Using bash for wildcard expansion in pip install
         run: |
-          pip install -U --index-url https://download.pytorch.org/whl/cu128 torch torchvision 
-          WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
-          echo "Found GPU wheel: $WHEEL_FILE"
-          pip install --find-links=./dist/ dist/roboflow_workflows-*.whl dist/streamvision-*.whl dist/inference_sdk-*.whl "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,grounding-dino]"
-          echo "--- Installed inference_gpu details ---"
-          pip show inference-gpu
+          python -m pip install click
+          python app_bundles/windows/install_dependencies.py --flavor gpu
           
 
       - name: Install PyInstaller and other build dependencies
@@ -285,9 +223,16 @@ jobs:
         working-directory: ./app_bundles/windows
         env:
           BUILD_VERSION: ${{ steps.determine_version.outputs.installer_version_out }} # Use output from new Determine Version step
-        run: python build.py
+        run: |
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python packaging_checks.py --flavor gpu
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python build.py
 
-
+      - name: Validate frozen Windows application
+        shell: pwsh
+        run: python app_bundles/windows/smoke_test.py --flavor gpu --exe app_bundles/windows/dist/inference/inference.exe
       - name: Sign Windows Installer with DigiCert
         shell: cmd
         env:
