@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'darwin'",
@@ -1515,7 +1515,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.39.0"
+version = "0.39.5rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -1529,6 +1529,7 @@ dependencies = [
     { name = "filelock" },
     { name = "fonttools", version = "4.65.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "fonttools", version = "4.66.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "fsspec" },
     { name = "gitpython" },
     { name = "hydra-core" },
     { name = "idna" },
@@ -1555,6 +1556,7 @@ dependencies = [
     { name = "rf-sam-2" },
     { name = "rf-segment-anything" },
     { name = "rich" },
+    { name = "safetensors" },
     { name = "scikit-image" },
     { name = "segmentation-models-pytorch" },
     { name = "sentencepiece" },
@@ -1568,9 +1570,9 @@ dependencies = [
     { name = "transformers" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d7/aa/ca168100bede268177f09e296f16a8b2ef2e5b6815c095b64794c7c6c54a/inference_models-0.39.0.tar.gz", hash = "sha256:c817665f0b4b17bc99bcd5440c136e3c049ec609a6820ab911dc608d2e41ecef", size = 1914373, upload-time = "2026-09-25T17:50:32.529Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/14/1f/5740fb6941611ea8bf9eb7d424298df8caf2d1356d4867dcbce8a01dad3b/inference_models-0.39.5rc1.tar.gz", hash = "sha256:a4ea1ee7b141c6b1db22a00135a86b3004f321ab587069d7b35fd1a36576e0c1", size = 1992587, upload-time = "2026-10-16T15:12:06.397Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/52/50d7386c1b8932d22f5177f46a67363fe0d61d4a0bb4cfe014e8fcf129b2/inference_models-0.39.0-py3-none-any.whl", hash = "sha256:b992c6488e2121862891b03d4db7f08f3a87ab7c857587921c1c1a2667a7f767", size = 2153355, upload-time = "2026-09-25T17:50:30.554Z" },
+    { url = "https://files.pythonhosted.org/packages/25/33/96e9f6aeec0d092e4cde071eb19b805c706dcbd3d8da7b15b91b10693f94/inference_models-0.39.5rc1-py3-none-any.whl", hash = "sha256:6d878d7126971870e70c7afd0c7dc1fcd6d1dd93a5ea87094aae3201bf7f8005", size = 2251640, upload-time = "2026-10-16T15:12:04.337Z" },
 ]
 
 [[package]]
@@ -4148,7 +4150,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'enterprise'", specifier = ">=0.134,<0.142" },
     { name = "filelock", specifier = ">=3.20.3,<=4.0.0" },
     { name = "httpx", specifier = "~=0.28.1" },
-    { name = "inference-models", specifier = ">=0.37.1" },
+    { name = "inference-models", specifier = ">=0.39.5rc1" },
     { name = "inference-sdk", specifier = ">=1.7.0" },
     { name = "matplotlib" },
     { name = "msgpack" },
