@@ -17,7 +17,7 @@ $proc = Start-Process -FilePath .\cuda_installer.exe -ArgumentList @(
   "cuda_profiler_api_$short",
   "visual_studio_integration_$short"
 ) -Wait -NoNewWindow -PassThru
-      
+
 if ($proc.ExitCode -ne 0) {
   Write-Error "CUDA installer failed with exit code $($proc.ExitCode)"
   exit $proc.ExitCode
