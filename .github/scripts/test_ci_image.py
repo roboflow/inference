@@ -70,7 +70,7 @@ class ImageTransportTests(unittest.TestCase):
     def _run(self, args, **kwargs):
         self.calls.append(args)
         if args[:2] == ["git", "rev-parse"]:
-            return SHA
+            return os.environ["GITHUB_SHA"]
         if args[:3] == ["docker", "image", "inspect"]:
             return json.dumps([self.info])
 
@@ -106,6 +106,7 @@ class ImageTransportTests(unittest.TestCase):
             {"MODEL_MODE": "unexpected"},
             {"IMAGE_TAG": "release", "IMAGE_DIGEST": DIGEST},
             {"IMAGE_DIGEST": ""},
+            {"IMAGE_DIGEST": "", "IMAGE_TAG": "release"},
             {
                 "IMAGE_DIGEST": "",
                 "PRIVATE_IMAGE": "false",
@@ -229,43 +230,94 @@ class ImageTransportTests(unittest.TestCase):
                 IMAGE._manifest_digests({"manifests": entries}, family="cpu")
 
     def test_build_once_from_tracked_source_and_extract_children(self):
-        """One multi-platform producer builds from an archive outside credential paths."""
-        manifests = {
-            "manifests": [
-                {
-                    "digest": DIGEST,
-                    "platform": {"os": "linux", "architecture": "amd64"},
-                },
-                {
-                    "digest": ARM_DIGEST,
-                    "platform": {"os": "linux", "architecture": "arm64"},
-                },
-            ]
+        """Verify CPU/GPU platforms, revision identity and every digest output."""
+        amd = {"digest": DIGEST, "platform": {"os": "linux", "architecture": "amd64"}}
+        arm = {
+            "digest": ARM_DIGEST,
+            "platform": {"os": "linux", "architecture": "arm64"},
         }
+        cases = [
+            ("cpu", {"manifests": [amd, arm]}, DIGEST),
+            ("gpu", {"manifests": [amd]}, DIGEST),
+            ("gpu", {"schemaVersion": 2, "config": {"digest": IMAGE_ID}}, IMAGE_ID),
+        ]
+        for family, manifest, amd64_digest in cases:
+            with self.subTest(family=family, indexed="manifests" in manifest):
+                self.calls.clear()
+                (self.root / "output").unlink(missing_ok=True)
+                os.environ["IMAGE_FAMILY"] = family
 
-        def producer(args, **kwargs):
-            if args[:2] == ["depot", "build"]:
-                Path(args[args.index("--metadata-file") + 1]).write_text(
-                    json.dumps({"containerimage.digest": IMAGE_ID})
+                def producer(args, **kwargs):
+                    if args[:2] == ["depot", "build"]:
+                        Path(args[args.index("--metadata-file") + 1]).write_text(
+                            json.dumps({"containerimage.digest": IMAGE_ID})
+                        )
+                    if args[:4] == ["docker", "buildx", "imagetools", "inspect"]:
+                        self.calls.append(args)
+                        return json.dumps(manifest)
+
+                    return self._run(args, **kwargs)
+
+                with patch.object(IMAGE, "_run", side_effect=producer):
+                    IMAGE._build()
+                builds = [args for args in self.calls if args[:2] == ["depot", "build"]]
+                self.assertEqual(len(builds), 1)
+                command = builds[0]
+                self.assertEqual(
+                    command[command.index("--platform") + 1],
+                    "linux/amd64,linux/arm64" if family == "cpu" else "linux/amd64",
                 )
-            if args[:4] == ["docker", "buildx", "imagetools", "inspect"]:
-                self.calls.append(args)
-                return json.dumps(manifests)
+                self.assertEqual(
+                    command[command.index("--label") + 1],
+                    f"org.opencontainers.image.revision={SHA}",
+                )
+                self.assertEqual(
+                    command[command.index("--tag") + 1],
+                    f"{PREFIX}/inference-ci-{family}:ci-{SHA}-123-1",
+                )
+                self.assertTrue(
+                    command[command.index("--file") + 1].endswith(
+                        f"/docker/dockerfiles/Dockerfile.onnx.{family}"
+                    )
+                )
+                self.assertNotEqual(command[-1], ".")
+                self.assertTrue(
+                    any(args[:2] == ["git", "archive"] for args in self.calls)
+                )
+                outputs = dict(
+                    line.split("=", 1)
+                    for line in (self.root / "output").read_text().splitlines()
+                )
+                expected = {"index_digest": IMAGE_ID, "amd64_digest": amd64_digest}
+                if family == "cpu":
+                    expected["arm64_digest"] = ARM_DIGEST
+                self.assertEqual(outputs, expected)
 
-            return self._run(args, **kwargs)
-
-        with patch.object(IMAGE, "_run", side_effect=producer):
-            IMAGE._build()
-        builds = [args for args in self.calls if args[:2] == ["depot", "build"]]
-        self.assertEqual(len(builds), 1)
-        self.assertIn("linux/amd64,linux/arm64", builds[0])
-        self.assertNotEqual(builds[0][-1], ".")
-        self.assertIn(f"{PREFIX}/inference-ci-cpu:ci-{SHA}-123-1", builds[0])
-        self.assertTrue(any(args[:2] == ["git", "archive"] for args in self.calls))
-        output = (self.root / "output").read_text()
-        self.assertIn(f"amd64_digest={DIGEST}", output)
-        self.assertIn(f"arm64_digest={ARM_DIGEST}", output)
-        self.assertNotIn(PREFIX, output)
+    def test_invalid_producer_identity_never_builds(self):
+        """Reject invalid run metadata, source identities and missing builder config."""
+        for values in [
+            {"GITHUB_RUN_ID": ""},
+            {"GITHUB_RUN_ID": "123/other"},
+            {"GITHUB_RUN_ATTEMPT": "-1"},
+            {"DEPOT_PROJECT_ID": ""},
+            {"GITHUB_SHA": "d" * 39},
+            {"GITHUB_SHA": "d" * 41},
+            {"GITHUB_SHA": "D" * 40},
+            {"GITHUB_SHA": "z" * 40},
+        ]:
+            with self.subTest(values=values), patch.dict(
+                os.environ, values
+            ), patch.object(IMAGE, "_run", side_effect=self._run):
+                self.calls.clear()
+                with self.assertRaises(ValueError):
+                    IMAGE._build()
+                self.assertFalse(
+                    any(
+                        command[0] != "git" or command[1] != "rev-parse"
+                        for command in self.calls
+                    )
+                )
+                self.assertFalse((self.root / "output").exists())
 
     def test_dynamic_port_is_loopback_only(self):
         """Do not expose test servers on a public runner interface."""
@@ -281,6 +333,56 @@ class ImageTransportTests(unittest.TestCase):
 class WorkflowContractTests(unittest.TestCase):
     """Check the security boundary, coverage and completion gate as a whole."""
 
+    def test_legacy_docker_configuration_survives_private_only_steps(self):
+        """Do not replace or erase runner credentials on legacy or failed-init paths."""
+        for name in (
+            "integration_tests_inference_server_x86.yml",
+            "test.nvidia_t4.yml",
+        ):
+            steps = self._workflow(name)["jobs"]["build"]["steps"]
+            config_steps = [
+                step
+                for step in steps
+                if "DOCKER_CONFIG" in step.get("run", "")
+                and "docker login" not in step.get("run", "")
+            ]
+            self.assertEqual(len(config_steps), 3)
+            for private, outcome in ((False, "skipped"), (True, "failure")):
+                with self.subTest(
+                    name=name, private=private, outcome=outcome
+                ), TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    config = root / "runner-docker"
+                    config.mkdir()
+                    credentials = config / "config.json"
+                    credentials.write_text("runner-owned credentials")
+                    context = {
+                        "inputs.private_image": private,
+                        "steps.ci_docker_config.outcome": outcome,
+                    }
+                    for step in config_steps:
+                        if step.get("id") == "ci_docker_config" and private:
+                            # Simulate mktemp failing before GITHUB_ENV is written.
+                            continue
+                        if self._condition_is_true(
+                            step.get("if", "${{ True }}"), context=context
+                        ):
+                            subprocess.run(
+                                ["bash", "-e", "-c", step["run"]],
+                                env={
+                                    **os.environ,
+                                    "DOCKER_CONFIG": str(config),
+                                    "RUNNER_TEMP": directory,
+                                    "GITHUB_ENV": str(root / "env"),
+                                },
+                                check=True,
+                                capture_output=True,
+                            )
+                    self.assertEqual(
+                        credentials.read_text(), "runner-owned credentials"
+                    )
+                    self.assertFalse((root / "env").exists())
+
     def test_credential_cleanup_preserves_buildx_post_job_state(self):
         """Execute cleanup steps: credentials vanish but builder records survive."""
         for name in (
@@ -291,7 +393,9 @@ class WorkflowContractTests(unittest.TestCase):
             workflow = self._workflow(name)
             steps = workflow["jobs"]["build"]["steps"]
             cleanup_steps = [
-                step for step in steps if step.get("name", "").startswith("Remove")
+                step
+                for step in steps
+                if 'rm -f -- "$DOCKER_CONFIG/config.json"' in step.get("run", "")
             ]
             self.assertTrue(cleanup_steps)
             for step in cleanup_steps:
@@ -375,9 +479,14 @@ class WorkflowContractTests(unittest.TestCase):
             "inputs.private_image": False,
         }
         context.update(overrides)
-        expression = self._workflow(name)["jobs"][job]["if"][3:-2].strip()
+        condition = self._workflow(name)["jobs"][job]["if"]
+        allowed = self._condition_is_true(condition, context=context)
+        return allowed
+
+    def _condition_is_true(self, condition, *, context):
+        expression = condition[3:-2].strip().replace("always()", "True")
         expression = re.sub(
-            r"\b(?:github|vars|inputs)\.[\w.]+",
+            r"\b(?:github|vars|inputs|steps)\.[\w.]+",
             lambda match: repr(context[match.group()]),
             expression,
         )

@@ -46,12 +46,13 @@ jobs:
       arm64_digest: ${{ steps.build.outputs.arm64_digest }}
     steps:
       - name: Initialize isolated registry credentials directory
+        id: ci_docker_config
         run: |
           umask 077
           directory="$(mktemp -d "$RUNNER_TEMP/ci-docker.XXXXXXXX")"
           echo "DOCKER_CONFIG=$directory" >> "$GITHUB_ENV"
       - name: Checkout candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -85,5 +86,5 @@ jobs:
         run: python3 .github/scripts/ci_image.py
       # Keep Buildx state until setup-buildx completes its post-job cleanup.
       - name: Remove registry credentials
-        if: ${{ always() }}
+        if: ${{ always() && steps.ci_docker_config.outcome == 'success' }}
         run: rm -f -- "$DOCKER_CONFIG/config.json"

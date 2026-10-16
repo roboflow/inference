@@ -71,7 +71,7 @@ jobs:
           echo "::error::custom_tag is required when this workflow is called; an empty tag would overwrite the released :VERSION image"
           exit 1
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       - name: Determine Image Tags

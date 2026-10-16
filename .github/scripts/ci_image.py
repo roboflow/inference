@@ -4,6 +4,8 @@ Never print subprocess output: registry errors and build logs can contain privat
 locations. GitHub outputs contain only digests; detailed metadata stays private.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -12,8 +14,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 
-def _run(args: list[str], *, input_text: str | None = None) -> str:
-    result = subprocess.run(args, input=input_text, capture_output=True, text=True)
+def _run(args: list[str]) -> str:
+    result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode:
         raise ValueError("CI image operation failed; private output withheld")
 
@@ -82,6 +84,7 @@ def _validate() -> None:
 
     if digest:
         _digest(digest)
+
     if private:
         _trusted()
         _repository()
@@ -124,6 +127,7 @@ def _build() -> None:
     attempt = os.environ["GITHUB_RUN_ATTEMPT"]
     if not run_id.isdigit() or not attempt.isdigit():
         raise ValueError("Invalid producer identity")
+
     if not os.environ.get("DEPOT_PROJECT_ID"):
         raise ValueError("Configure the private builder project")
 

@@ -131,12 +131,14 @@ jobs:
 
     steps:
       - name: Initialize isolated registry credentials directory
+        if: ${{ inputs.private_image }}
+        id: ci_docker_config
         run: |
           umask 077
           directory="$(mktemp -d "$RUNNER_TEMP/ci-docker.XXXXXXXX")"
           echo "DOCKER_CONFIG=$directory" >> "$GITHUB_ENV"
       - name: Checkout candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -182,7 +184,7 @@ jobs:
         run: python3 .github/scripts/ci_image.py
       # Action post hooks still need the builder records under DOCKER_CONFIG.
       - name: Remove registry credentials before executing tests
-        if: ${{ always() }}
+        if: ${{ always() && inputs.private_image && steps.ci_docker_config.outcome == 'success' }}
         run: rm -f -- "$DOCKER_CONFIG/config.json"
 
       - name: Show NVIDIA driver - GPU
@@ -367,8 +369,10 @@ jobs:
           docker logs "$INFERENCE_TEST_CONTAINER"
           make stop_test_docker
         if: failure()
-      - name: Remove this job's test container and credentials
+      - name: Remove this job's test container
         if: ${{ always() }}
         run: |
           docker rm -f "$INFERENCE_TEST_CONTAINER" > /dev/null 2>&1 || true
-          rm -f -- "$DOCKER_CONFIG/config.json"
+      - name: Remove private registry credentials
+        if: ${{ always() && inputs.private_image && steps.ci_docker_config.outcome == 'success' }}
+        run: rm -f -- "$DOCKER_CONFIG/config.json"

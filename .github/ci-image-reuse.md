@@ -95,6 +95,11 @@ apply.
   runners in the CPU/GPU build and test entry points.
 - Require verified OIDC provider and identity restrictions before configuring
   the OIDC secrets; disclose job-wide token permissions even with reuse off.
+- Defer helper annotations for Python 3.9 import compatibility, and preserve
+  the runner's Docker configuration on legacy consumer paths. Only private
+  consumers initialize and clean temporary registry credentials.
+- Cover CPU and GPU producer manifests, source labels, platform selection,
+  complete digest outputs and invalid producer identities with offline tests.
 
 ### Added
 
@@ -126,8 +131,11 @@ even with reuse off. Every step in those jobs can request an OIDC token,
 including dependencies and tests. Skipping the authentication step or deleting
 Docker credentials does not revoke that ability. Cloud-side trust must reject
 tokens outside the approved private-image path. Repository/event guards,
-action pins, credential cleanup and isolated container names/ports also apply
-with the flag off. Both consumer matrices retain `fail-fast: true`.
+action pins and isolated container names/ports also apply with the flag off.
+Legacy consumers preserve the runner's Docker configuration, including Docker
+Hub authentication and CLI plugins. Private credential cleanup applies only
+after successful private configuration initialization. Both consumer matrices
+retain `fail-fast: true`.
 
 ### Required before configuring OIDC secrets
 
@@ -224,6 +232,22 @@ isolated ephemeral runners; unique container names do not provide isolation
 from another job with access to the same Docker daemon. Configure no credentials
 or private assets for untrusted PR jobs.
 
+The current T4 runner's lifecycle has not been verified. Private image layers
+remain in the daemon after container cleanup. Before enabling reuse, the runner
+owner must verify destruction of the VM/daemon and image storage after each
+job. A persistent shared daemon is not an approved private-image execution
+boundary. Deleting a local image ID cannot establish that isolation and can
+race another matrix leg using the same image.
+
+Registry access tokens currently use the authentication action's
+[default one-hour lifetime](https://github.com/google-github-actions/auth#inputs-generating-oauth-20-access-tokens),
+while producer jobs allow up to two hours. Before activation,
+measure cold-cache build, push and manifest inspection from authentication to
+completion and require them to fit within the token lifetime with margin. If
+they do not, keep reuse disabled until an approved token-refresh design or
+supported extended-lifetime policy is implemented and tested. Increasing the
+job timeout alone does not extend authentication. Expiry fails the run closed.
+
 Do not enable the switch with missing or unverified configuration. Once enabled,
 configuration errors fail closed; they do not fall back to public registries or
 the previous independent builds. Review required-check names before activation:
@@ -235,11 +259,14 @@ modify repository protection settings.
 Authentication uses short-lived OIDC-derived access tokens, passed to Docker
 through stdin. Reader jobs receive only reader configuration and the existing
 test secret parameters; producer jobs receive no test or Docker Hub secrets.
-Generated authentication files are disabled. Docker credentials are placed in
-an isolated temporary directory. Cleanup removes only `config.json` before
-tests and on job completion, preserving Buildx builder records for the action's
-post-job cleanup. The remaining temporary directory is left to runner cleanup;
-it is not removed by a normal step before action post hooks run.
+Generated authentication files are disabled. Private producers and consumers
+place Docker credentials in an isolated temporary directory. Cleanup runs only
+after successful initialization and removes only `config.json` before tests
+and on job completion, preserving Buildx builder records for the action's
+post-job cleanup. Legacy consumers do not override or delete the runner's
+Docker configuration; existing login-action post hooks retain their cleanup
+responsibility. The private temporary directory is left to runner cleanup; it
+is not removed by a normal step before action post hooks run.
 Existing test credentials are passed through step environment parameters rather
 than interpolated into shell code.
 
@@ -279,6 +306,22 @@ promotion remain separate. Existing preprocessing stages are preserved; the
 pre-existing Make target does not forward `USE_PYTORCH_FOR_PREPROCESSING`, so
 distinct effective preprocessing configurations still need a separate fix.
 
+### Changing the rollout flag
+
+The independent workflows read the repository variable separately; the choice
+is not atomic across workflows. Never change it while a main candidate is
+queued, starting or running. For **both enabling and disabling**:
+
+1. Pause merges/pushes to main and new manual dispatches for these workflows.
+2. Wait for all affected queued/running workflows to finish or cancel them.
+3. Change the flag while that pause remains in effect.
+4. Resume with a controlled main candidate and verify the expected producer and
+   consumer jobs actually executed. When reuse is enabled, require the aggregate
+   image-test check to run and pass; skipped jobs are not qualification evidence.
+
+If the pause cannot be guaranteed, do not toggle the flag. This is an operational
+constraint, not an atomic rollout implemented by the code.
+
 Rollback sets `CI_IMAGE_REUSE_ENABLED` to false for subsequent runs, restoring
 the previous independent main builds, including CPU's existing mutable `:test`
 publication. Do not toggle it while a candidate is running: finish or cancel
@@ -298,7 +341,13 @@ The existing GitHub Actions validation workflow discovers `test_ci_image.py`
 with the other script tests. Tests cover malformed/conflicting inputs, legacy
 tags, trusted-source checks, identity mismatches, pull failures, platform
 manifests, single producer invocation, private-output suppression, isolated
-ports, unchanged test scope and incomplete aggregate outcomes.
+ports, unchanged test scope and incomplete aggregate outcomes. Producer checks
+cover CPU indexes, GPU indexes and plain manifests, source labels, exact platform
+selection, all digest outputs and invalid run/builder configuration. Consumer
+checks execute cleanup steps and verify legacy Docker configuration survives
+both non-private runs and private initialization failures. The helper also
+imports successfully on Python 3.9; this does not qualify the complete test suite
+or establish the actual GPU runner's Python version.
 
 Before rollout, run an explicitly authorized full-coverage trial against the
 approved private transport. Verify permissions, real digest pulls, runtime
