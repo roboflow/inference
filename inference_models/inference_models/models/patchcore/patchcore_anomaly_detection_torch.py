@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch import nn
 from torchvision.models import wide_resnet50_2
 
-from inference_models import ClassificationModel, ClassificationPrediction
+from inference_models import AnomalyDetectionModel, AnomalyDetectionPrediction
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError
@@ -154,7 +154,7 @@ def resize_patch_grid(
 
 
 class PatchCoreForAnomalyDetectionTorch(
-    ClassificationModel[AnomalyPreProcessedImages, AnomalyRawPrediction]
+    AnomalyDetectionModel[AnomalyPreProcessedImages, AnomalyRawPrediction]
 ):
 
     @classmethod
@@ -243,10 +243,14 @@ class PatchCoreForAnomalyDetectionTorch(
         self,
         model_results: AnomalyRawPrediction,
         include_anomaly_map: bool = False,
+        anomaly_threshold: Optional[float] = None,
         **kwargs,
-    ) -> ClassificationPrediction:
-        return post_process_anomaly_scores(
+    ) -> AnomalyDetectionPrediction:
+        prediction = post_process_anomaly_scores(
             model_results=model_results,
             calibration=self._manifest.calibration,
             include_anomaly_map=include_anomaly_map,
+            anomaly_threshold=anomaly_threshold,
         )
+
+        return prediction

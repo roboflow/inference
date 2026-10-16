@@ -56,8 +56,8 @@ def manifest(architecture: str = "patchcore", neighbors: int = 1) -> dict:
             "top_k": 10,
         },
         "calibration": {
+            # No `scale`: trainers stopped writing the confidence sigmoid scale.
             "threshold": 1.0,
-            "scale": 0.5,
             "method": "normal_quantile",
             "normal_count": 1,
             "anomalous_count": 0,
@@ -139,21 +139,24 @@ def test_memory_bank_images_score_zero_and_other_images_are_anomalous(
 
     predictions = model([normal_image, other_image, normal_image])
     single = model(other_image, include_anomaly_map=True)
+    overridden = model(other_image, anomaly_threshold=1e9)
 
     assert model.class_names == ["normal", "anomalous"]
-    assert predictions.class_id.tolist() == [0, 1, 0]
-    assert predictions.confidence.shape == (3, 2)
-    scores = [metadata["anomaly_score"] for metadata in predictions.images_metadata]
+    assert predictions.is_anomalous.tolist() == [False, True, False]
+    assert predictions.anomaly_threshold == 1.0
+    scores = predictions.anomaly_scores.tolist()
     assert scores[0] == pytest.approx(0, abs=1e-3)
     assert scores[1] > 1.0
-    assert "anomaly_map" not in predictions.images_metadata[1]
+    assert predictions.anomaly_maps is None
     # Scores do not depend on which other images share the request.
-    assert single.images_metadata[0]["anomaly_score"] == pytest.approx(
-        scores[1], rel=1e-5
-    )
-    assert single.images_metadata[0]["anomaly_map"].shape == (IMAGE_SIZE, IMAGE_SIZE)
-    assert single.images_metadata[0]["anomaly_map"].dtype == np.float32
-    assert single.images_metadata[0]["anomaly_threshold"] == 1.0
+    assert single.anomaly_scores[0].item() == pytest.approx(scores[1], rel=1e-5)
+    assert single.anomaly_maps.shape == (1, IMAGE_SIZE, IMAGE_SIZE)
+    assert single.anomaly_maps.dtype == torch.float32
+    # A caller threshold re-decides the verdict and is reported back; the score
+    # is the same raw value.
+    assert overridden.anomaly_threshold == 1e9
+    assert overridden.is_anomalous.tolist() == [False]
+    assert overridden.anomaly_scores[0].item() == pytest.approx(scores[1], rel=1e-5)
 
 
 def test_package_trained_for_other_architecture_is_rejected(

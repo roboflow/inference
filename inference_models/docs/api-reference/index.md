@@ -14,6 +14,7 @@ Complete API documentation for the `inference_models` package.
 - **[KeyPoints](keypoints.md)** - Keypoint detection predictions
 - **[ClassificationPrediction](classification-prediction.md)** - Classification predictions
 - **[MultiLabelClassificationPrediction](multi-label-classification-prediction.md)** - Multi-label classification predictions
+- **[AnomalyDetectionPrediction](anomaly-detection-prediction.md)** - Anomaly detection verdicts (score, threshold, decision, maps)
 
 ## Enums and Types
 

@@ -140,6 +140,7 @@ nav:
           - KeyPoints: api-reference/keypoints.md
           - ClassificationPrediction: api-reference/classification-prediction.md
           - MultiLabelClassificationPrediction: api-reference/multi-label-classification-prediction.md
+          - AnomalyDetectionPrediction: api-reference/anomaly-detection-prediction.md
       - Enums and Types:
           - BackendType: api-reference/backend-type.md
           - ColorFormat: api-reference/color-format.md

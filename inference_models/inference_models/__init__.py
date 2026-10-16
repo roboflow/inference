@@ -49,6 +49,10 @@ from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction,
     VideoSampling,
 )
+from inference_models.models.base.anomaly_detection import (
+    AnomalyDetectionModel,
+    AnomalyDetectionPrediction,
+)
 from inference_models.models.base.classification import (
     ClassificationModel,
     ClassificationPrediction,

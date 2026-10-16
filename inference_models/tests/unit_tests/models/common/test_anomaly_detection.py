@@ -8,6 +8,7 @@ import pytest
 import torch
 from PIL import Image
 
+from inference_models import AnomalyDetectionPrediction
 from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.models.common.anomaly_detection import (
     AnomalyCalibration,
@@ -145,42 +146,79 @@ def test_float_images_are_rejected() -> None:
         )
 
 
-def test_score_at_threshold_is_anomalous_with_confidence_one_half() -> None:
-    calibration = AnomalyCalibration(threshold=2.0, scale=0.5)
+def test_legacy_calibration_scale_is_accepted_and_ignored() -> None:
+    with_scale = AnomalyCalibration.model_validate({"threshold": 2.0, "scale": 0.5})
+    without_scale = AnomalyCalibration.model_validate({"threshold": 2.0})
+
+    assert with_scale.threshold == without_scale.threshold == 2.0
+    assert without_scale.scale is None
+    assert (
+        AnomalyModelManifest.model_validate(
+            manifest(calibration={"threshold": 2.0})
+        ).calibration.scale
+        is None
+    )
+
+
+def test_score_at_threshold_is_anomalous_and_no_confidence_is_produced() -> None:
+    calibration = AnomalyCalibration(threshold=2.0)
 
     prediction = post_process_anomaly_scores(
         raw_prediction([1.0, 2.0, 1e9]), calibration, include_anomaly_map=False
     )
 
-    assert prediction.class_id.tolist() == [0, 1, 1]
-    assert prediction.confidence[1].tolist() == [0.5, 0.5]
-    assert prediction.confidence.argmax(dim=1).tolist()[0] == 0
-    assert prediction.confidence[2].tolist() == [0.0, 1.0]
-    assert [m["is_anomalous"] for m in prediction.images_metadata] == [
-        False,
-        True,
-        True,
-    ]
-    assert prediction.images_metadata[0]["anomaly_score"] == 1.0
-    assert prediction.images_metadata[0]["anomaly_threshold"] == 2.0
-    assert "anomaly_map" not in prediction.images_metadata[0]
+    assert isinstance(prediction, AnomalyDetectionPrediction)
+    assert len(prediction) == 3
+    assert prediction.anomaly_scores.tolist() == [1.0, 2.0, 1e9]
+    assert prediction.anomaly_threshold == 2.0
+    assert prediction.is_anomalous.tolist() == [False, True, True]
+    assert prediction.anomaly_maps is None
+    assert not hasattr(prediction, "confidence")
+
+
+def test_threshold_override_decides_the_verdict_and_is_reported() -> None:
+    calibration = AnomalyCalibration(threshold=2.0)
+
+    prediction = post_process_anomaly_scores(
+        raw_prediction([1.0, 2.0, 3.0]),
+        calibration,
+        include_anomaly_map=False,
+        anomaly_threshold=2.5,
+    )
+
+    assert prediction.anomaly_threshold == 2.5
+    assert prediction.is_anomalous.tolist() == [False, False, True]
+    # Scores are raw: an override never rescales them.
+    assert prediction.anomaly_scores.tolist() == [1.0, 2.0, 3.0]
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), "0.5", True])
+def test_non_finite_or_non_numeric_threshold_override_is_rejected(invalid) -> None:
+    calibration = AnomalyCalibration(threshold=2.0)
+
+    with pytest.raises(ModelInputError, match="anomaly_threshold"):
+        post_process_anomaly_scores(
+            raw_prediction([1.0]),
+            calibration,
+            include_anomaly_map=False,
+            anomaly_threshold=invalid,
+        )
 
 
 def test_anomaly_map_is_returned_at_network_resolution() -> None:
-    calibration = AnomalyCalibration(threshold=2.0, scale=0.5)
-    raw = raw_prediction([1.0], size_hw=(10, 20))
+    calibration = AnomalyCalibration(threshold=2.0)
+    raw = raw_prediction([1.0, 5.0], size_hw=(10, 20))
 
     prediction = post_process_anomaly_scores(raw, calibration, include_anomaly_map=True)
 
-    anomaly_map = prediction.images_metadata[0]["anomaly_map"]
-    # The map keeps the network's square geometry whatever the image size was.
-    assert anomaly_map.shape == (IMAGE_SIZE, IMAGE_SIZE)
-    assert anomaly_map.dtype == np.float32
-    assert np.array_equal(anomaly_map, raw.maps[0].numpy())
+    # The maps keep the network's square geometry whatever the image size was.
+    assert prediction.anomaly_maps.shape == (2, IMAGE_SIZE, IMAGE_SIZE)
+    assert prediction.anomaly_maps.dtype == torch.float32
+    assert torch.equal(prediction.anomaly_maps, raw.maps)
 
 
 def test_non_finite_scores_are_rejected() -> None:
-    calibration = AnomalyCalibration(threshold=2.0, scale=0.5)
+    calibration = AnomalyCalibration(threshold=2.0)
 
     with pytest.raises(CorruptedModelPackageError, match="non-finite"):
         post_process_anomaly_scores(

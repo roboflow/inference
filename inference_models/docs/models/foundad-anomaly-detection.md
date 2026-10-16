@@ -55,22 +55,29 @@ image = cv2.imread("path/to/image.jpg")
 
 prediction = model(image, include_anomaly_map=True)
 
-result = prediction.images_metadata[0]
-print(model.class_names[prediction.class_id[0].item()])  # "normal" or "anomalous"
-print(result["anomaly_score"], result["anomaly_threshold"], result["is_anomalous"])
-heatmap = result["anomaly_map"]  # float32 array of shape (image_size, image_size)
+print(prediction.anomaly_scores[0].item(), prediction.anomaly_threshold)
+print(prediction.is_anomalous[0].item())  # anomaly_score >= anomaly_threshold
+heatmap = prediction.anomaly_maps[0].numpy()  # float32 array of shape (image_size, image_size)
 overlay = cv2.resize(heatmap, (image.shape[1], image.shape[0]))  # stretch onto the image
+
+# Decide against your own threshold instead of the one saved with the model.
+stricter = model(image, anomaly_threshold=2.5)
 ```
 
 ## Prediction Format
 
-The model returns a `ClassificationPrediction` over the fixed classes `normal` and `anomalous`:
+The model returns an `AnomalyDetectionPrediction`. There is no class confidence: the verdict is a raw score
+compared with a threshold.
 
-- `class_id` follows the threshold saved with the model: `anomalous` when `anomaly_score >= anomaly_threshold`.
-- `confidence` is a monotonic transform of the score margin. The threshold maps to exactly `0.5`, so the
-  argmax always agrees with `class_id`. It is not an estimated defect probability.
-- `images_metadata[i]` holds `anomaly_score` (raw score, larger means more anomalous), `anomaly_threshold`,
-  `is_anomalous` and, when `include_anomaly_map=True` is passed, `anomaly_map`.
+- `anomaly_scores` `(bs,)`: the raw image scores, larger means more anomalous. They are not probabilities and
+  their scale depends on the trained model.
+- `anomaly_threshold`: the decision threshold in effect. It is the threshold fitted on validation images and
+  saved with the model, unless the call passes `anomaly_threshold=<float>` to override it.
+- `is_anomalous` `(bs,)`: `anomaly_scores >= anomaly_threshold`.
+- `anomaly_maps` `(bs, image_size, image_size)`: the local anomaly evidence, only when
+  `include_anomaly_map=True` is passed; otherwise `None`.
+
+`class_names` is the fixed pair `["normal", "anomalous"]` (index 1 is the anomalous verdict).
 
 The score of an image does not depend on the other images in the batch. The heatmap is local evidence for the
 score, not a supervised segmentation mask. It is returned at the network input resolution (a square of the

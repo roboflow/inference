@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Changed
+
+- **Breaking:** PatchCore and FoundAD no longer return a `ClassificationPrediction`.
+  They subclass the new `AnomalyDetectionModel` and return an
+  `AnomalyDetectionPrediction` with `anomaly_scores` (raw, `(bs,)`),
+  `anomaly_threshold` (the threshold in effect), `is_anomalous`
+  (`anomaly_scores >= anomaly_threshold`, `(bs,)`) and, with
+  `include_anomaly_map=True`, `anomaly_maps` (`(bs, image_size, image_size)`
+  float32). The sigmoid class confidence centred on the saved threshold is gone;
+  anomaly models speak only score, threshold and verdict. `post_process` and
+  `infer` accept `anomaly_threshold=<float>` to decide against a caller
+  threshold instead of the saved one (non-finite values raise
+  `ModelInputError`). `calibration.scale` in `inference_config.json` is now
+  optional and never read, so packages written by trainers that stop emitting
+  it load on this release and later; older releases still require it.
+
 ### Added
 
 - `INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV` (default `true`). The shared

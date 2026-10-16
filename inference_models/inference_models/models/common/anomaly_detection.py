@@ -8,6 +8,7 @@ before the network resize.
 """
 
 import json
+import math
 from dataclasses import dataclass
 from io import BytesIO
 from typing import List, Literal, Optional, Tuple, Union
@@ -18,9 +19,9 @@ import torch
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
-from inference_models import ClassificationPrediction
 from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError, ModelInputError
+from inference_models.models.base.anomaly_detection import AnomalyDetectionPrediction
 
 ANOMALY_CLASS_NAMES = ["normal", "anomalous"]
 CORRUPTED_PACKAGE_HELP_URL = "https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror"
@@ -29,8 +30,6 @@ MODEL_INPUT_HELP_URL = (
 )
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-# Sigmoid saturates far before this margin; clipping only avoids overflow warnings.
-MAX_CONFIDENCE_MARGIN = 60.0
 
 
 class ExportPreProcessing(BaseModel):
@@ -57,8 +56,16 @@ class AnomalyModelConfig(BaseModel):
 class AnomalyCalibration(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
-    threshold: float = Field(allow_inf_nan=False)
-    scale: float = Field(gt=0, allow_inf_nan=False)
+    threshold: float = Field(
+        allow_inf_nan=False,
+        description="Decision threshold on the raw anomaly score, fitted at training time.",
+    )
+    # Older packages carry the scale of the confidence sigmoid that used to be
+    # served. Nothing reads it any more: the models speak score and threshold only.
+    scale: Optional[float] = Field(
+        default=None,
+        description="Legacy field written by older trainers; never read.",
+    )
 
 
 class AnomalyModelManifest(BaseModel):
@@ -216,29 +223,68 @@ def _resize_area(image: Image.Image, size_wh: Optional[Tuple[int, int]]) -> Imag
     )
 
 
+def resolve_anomaly_threshold(
+    calibration: AnomalyCalibration, anomaly_threshold: Optional[float]
+) -> float:
+    """Pick the threshold in effect: the caller's override or the saved one.
+
+    Args:
+        calibration (AnomalyCalibration): Calibration saved with the model.
+        anomaly_threshold (Optional[float]): Caller override on the raw anomaly
+            score; ``None`` keeps the threshold saved with the model.
+
+    Returns:
+        The threshold to decide ``is_anomalous`` against.
+
+    Raises:
+        ModelInputError: If the override is not a finite number.
+    """
+    if anomaly_threshold is None:
+        return calibration.threshold
+
+    if isinstance(anomaly_threshold, bool) or not isinstance(
+        anomaly_threshold, (int, float)
+    ):
+        raise ModelInputError(
+            message="anomaly_threshold must be a number, got "
+            f"{type(anomaly_threshold).__name__}.",
+            help_url=MODEL_INPUT_HELP_URL,
+        )
+    threshold = float(anomaly_threshold)
+    if not math.isfinite(threshold):
+        raise ModelInputError(
+            message=f"anomaly_threshold must be finite, got {threshold}.",
+            help_url=MODEL_INPUT_HELP_URL,
+        )
+
+    return threshold
+
+
 def post_process_anomaly_scores(
     model_results: AnomalyRawPrediction,
     calibration: AnomalyCalibration,
     include_anomaly_map: bool,
-) -> ClassificationPrediction:
-    """Turn raw anomaly scores into the shared classification prediction.
+    anomaly_threshold: Optional[float] = None,
+) -> AnomalyDetectionPrediction:
+    """Decide the verdict of each image from its raw anomaly score.
 
     Args:
         model_results (AnomalyRawPrediction): Raw image scores and local anomaly
             maps for one batch, as produced by the model forward pass.
-        calibration (AnomalyCalibration): Threshold and scale saved with the model.
-        include_anomaly_map (bool): If True, each image's metadata carries its map.
+        calibration (AnomalyCalibration): Calibration saved with the model.
+        include_anomaly_map (bool): If True, the prediction carries the maps.
+        anomaly_threshold (Optional[float]): Decision threshold replacing the
+            saved one for this call; ``None`` keeps the saved threshold.
 
     Returns:
-        ClassificationPrediction over ``normal`` and ``anomalous``. ``class_id``
-        follows the saved threshold and ``confidence`` maps the threshold to
-        exactly 0.5. ``images_metadata[i]`` holds ``anomaly_score``,
-        ``anomaly_threshold``, ``is_anomalous`` and, when requested,
-        ``anomaly_map``: a float32 array of shape ``(image_size, image_size)``
-        in network input coordinates, covering the whole (square-resized) image.
+        AnomalyDetectionPrediction with the raw scores, the threshold in effect,
+        ``is_anomalous = anomaly_score >= anomaly_threshold`` and, when requested,
+        the float32 maps of shape ``(bs, image_size, image_size)`` in network input
+        coordinates, covering the whole (square-resized) image.
 
     Raises:
         CorruptedModelPackageError: If the model produced non-finite values.
+        ModelInputError: If ``anomaly_threshold`` is not a finite number.
     """
     scores = model_results.scores.double()
     if not torch.isfinite(scores).all() or not torch.isfinite(model_results.maps).all():
@@ -246,30 +292,21 @@ def post_process_anomaly_scores(
             message="Anomaly detection model produced non-finite scores.",
             help_url=CORRUPTED_PACKAGE_HELP_URL,
         )
-    # The threshold maps to exactly 0.5, so the decision below and the argmax of
-    # the two class confidences always agree.
-    margin = (scores - calibration.threshold) / calibration.scale
-    anomalous_confidence = torch.sigmoid(
-        margin.clamp(-MAX_CONFIDENCE_MARGIN, MAX_CONFIDENCE_MARGIN)
+    threshold = resolve_anomaly_threshold(
+        calibration=calibration, anomaly_threshold=anomaly_threshold
     )
-    is_anomalous = scores >= calibration.threshold
-    images_metadata = []
-    for index in range(len(model_results.original_sizes_hw)):
-        metadata = {
-            "anomaly_score": scores[index].item(),
-            "anomaly_threshold": calibration.threshold,
-            "is_anomalous": bool(is_anomalous[index].item()),
-        }
-        if include_anomaly_map:
-            # Network coordinates: the map covers the whole (square-resized) input, so
-            # resizing it to the image is a plain stretch left to the consumer. The
-            # patch grid is the map's real resolution; anything finer is interpolation.
-            metadata["anomaly_map"] = model_results.maps[index].float().cpu().numpy()
-        images_metadata.append(metadata)
-    return ClassificationPrediction(
-        class_id=is_anomalous.long(),
-        confidence=torch.stack(
-            [1 - anomalous_confidence, anomalous_confidence], dim=-1
-        ).float(),
-        images_metadata=images_metadata,
+
+    anomaly_maps = None
+    if include_anomaly_map:
+        # Network coordinates: the map covers the whole (square-resized) input, so
+        # resizing it to the image is a plain stretch left to the consumer. The
+        # patch grid is the map's real resolution; anything finer is interpolation.
+        anomaly_maps = model_results.maps.float()
+    prediction = AnomalyDetectionPrediction(
+        anomaly_scores=scores,
+        anomaly_threshold=threshold,
+        is_anomalous=scores >= threshold,
+        anomaly_maps=anomaly_maps,
     )
+
+    return prediction
