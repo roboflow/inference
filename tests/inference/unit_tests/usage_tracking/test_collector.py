@@ -2586,6 +2586,118 @@ def test_send_usage_payload_retry_sends_identical_rows(post_mock):
     )
 
 
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_settles_rows_whose_api_key_is_rejected(post_mock):
+    def make_payload():
+        return {
+            hash_: {
+                "model:model-1": {
+                    "api_key_hash": hash_,
+                    "resource_id": "model-1",
+                    "processed_frames": 1,
+                }
+            }
+            for hash_ in ("revoked_hash", "transient_hash")
+        }
+
+    responses = {
+        "revoked-api-key": mock.MagicMock(status_code=401),
+        "transient-api-key": mock.MagicMock(status_code=503),
+    }
+    post_mock.side_effect = lambda *args, headers, **kwargs: responses[
+        headers["Authorization"].removeprefix("Bearer ")
+    ]
+
+    failed_hashes = send_usage_payload(
+        payload=make_payload(),
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={
+            "revoked_hash": "revoked-api-key",
+            "transient_hash": "transient-api-key",
+        },
+    )
+
+    assert failed_hashes == {"transient_hash"}
+    assert post_mock.call_count == 2
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_retries_401_when_a_service_credential_was_sent(
+    post_mock,
+):
+    payload = {
+        "fake_hash": {
+            "model:model-1": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "model-1",
+                "processed_frames": 1,
+            }
+        }
+    }
+    post_mock.return_value.status_code = 401
+
+    failed_hashes = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+        extra_headers={"X-External-Usage-Reporter-Access-Token": "stale-token"},
+    )
+
+    assert failed_hashes == {"fake_hash"}
+
+
+def test_flush_drops_usage_rejected_for_its_api_key_and_keeps_transient_failures(
+    usage_collector_with_mocked_threads,
+):
+    """Regression: a payload recorded under a revoked API key used to be
+    re-enqueued after every 401, so the process POSTed it to the usage endpoint
+    on every flush until it restarted. Only payloads that can still succeed may
+    go back on the queue.
+    """
+    # given
+    collector = usage_collector_with_mocked_threads
+    collector._queue = Queue()
+    for api_key in ("revoked-api-key", "transient-api-key"):
+        collector.record_usage(
+            source="test",
+            category="model",
+            frames=1,
+            api_key=api_key,
+            resource_id="model-1",
+        )
+    revoked_hash = collector._hashed_api_keys["revoked-api-key"]
+    transient_hash = collector._hashed_api_keys["transient-api-key"]
+    statuses = {"revoked-api-key": 401, "transient-api-key": 503}
+
+    def post(*args, headers, **kwargs):
+        api_key = headers["Authorization"].removeprefix("Bearer ")
+        return mock.MagicMock(status_code=statuses[api_key])
+
+    # when
+    with mock.patch(
+        "inference.usage_tracking.payload_helpers.requests.post", side_effect=post
+    ) as post_mock, mock.patch.object(
+        collector._plan_details,
+        "get_api_key_plan",
+        return_value={collector._plan_details._is_enterprise_col_name: False},
+    ):
+        collector._enqueue_usage_payload()
+        collector._flush_queue()
+        first_flush_posts = post_mock.call_count
+        collector._flush_queue()
+
+    # then
+    assert first_flush_posts == 2
+    sent_keys = [
+        call.kwargs["headers"]["Authorization"] for call in post_mock.call_args_list
+    ]
+    assert sent_keys.count("Bearer revoked-api-key") == 1
+    assert sent_keys.count("Bearer transient-api-key") == 2
+    requeued = collector._dump_usage_queue_with_lock()
+    assert [set(payload) for payload in requeued] == [{transient_hash}]
+    assert revoked_hash not in requeued[0]
+
+
 def test_record_usage_accumulates_megapixel_buckets(
     usage_collector_with_mocked_threads,
 ):
