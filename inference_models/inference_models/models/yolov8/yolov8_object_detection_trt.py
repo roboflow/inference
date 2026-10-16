@@ -322,6 +322,16 @@ class YOLOv8ForObjectDetectionTRT(
             default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
         )
         confidence = confidence_filter.get_threshold(self.class_names)
+        # Decoding runs on this thread's model-owned stream. The caller may
+        # still be producing model_results on its current stream, so the
+        # stage waits on an event recorded there instead of the host.
+        caller_stream = torch.cuda.current_stream(device=self._device)
+        stream = self._post_process_stream
+        separate_streams = stream != caller_stream
+        producer_event = None
+        if separate_streams and model_results.is_cuda:
+            producer_event = torch.cuda.Event()
+            producer_event.record(caller_stream)
         request = PostprocessRequest(
             model_results=model_results,
             pre_processing_meta=pre_processing_meta,
@@ -330,8 +340,8 @@ class YOLOv8ForObjectDetectionTRT(
             max_detections=max_detections,
             class_agnostic_nms=class_agnostic_nms,
             fused=self._inference_config.post_processing.fused,
+            ready_event=producer_event,
         )
-        stream = torch.cuda.current_stream(device=self._device)
         context = ExecutionContext(
             device_kind="gpu",
             device=str(stream.device),
@@ -352,6 +362,10 @@ class YOLOv8ForObjectDetectionTRT(
         )
         result = selection.implementation.postprocess(request, context)
         detections = result.wait()
+        if separate_streams:
+            # Outputs were allocated on the model stream; keep their memory
+            # from reuse there until the caller's later work on them finishes.
+            _record_detections_on_stream(detections, stream=caller_stream)
 
         self._postprocess_state.selection = MappingProxyType(
             {**selection.to_dict(), **result.details}
@@ -386,3 +400,20 @@ class YOLOv8ForObjectDetectionTRT(
                 device=self._device
             )
         return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream
+
+
+def _record_detections_on_stream(
+    detections: List[Detections], *, stream: torch.cuda.Stream
+) -> None:
+    for detection in detections:
+        for tensor in (detection.xyxy, detection.class_id, detection.confidence):
+            if tensor.is_cuda:
+                tensor.record_stream(stream)

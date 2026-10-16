@@ -1,12 +1,17 @@
-"""CPU contract tests for opt-in YOLOv8 postprocessing; no CUDA emulation."""
+"""CPU contract tests for opt-in YOLOv8 postprocessing.
+
+CUDA is never executed; stream-wiring tests only observe fake stream objects.
+"""
 
 import copy
+import importlib
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import replace
-from types import SimpleNamespace
+from importlib.machinery import ModuleSpec
+from types import ModuleType, SimpleNamespace
 
 import pytest
 import torch
@@ -595,3 +600,219 @@ def test_request_fallback_precedes_initialization(monkeypatch):
 
     assert selection.effective_id == "base"
     assert "batch" in selection.fallback_reason
+
+
+_MODEL_MODULE = "inference_models.models.yolov8.yolov8_object_detection_trt"
+_TRT_DEPENDENCY_MODULES = (
+    "inference_models.models.common.cuda",
+    "inference_models.models.common.trt",
+    _MODEL_MODULE,
+)
+_MISSING = object()
+
+
+@pytest.fixture
+def model_module(monkeypatch):
+    """Import the TRT model with inert TensorRT and PyCUDA doubles.
+
+    Mirrors the RF-DETR TRT unit-test fixture: only the import boundary is
+    replaced, and both ``sys.modules`` and parent attributes are restored.
+    """
+
+    class ILogger:
+        class Severity:
+            pass
+
+    fake_trt = ModuleType("tensorrt")
+    fake_trt.__spec__ = ModuleSpec("tensorrt", loader=None)
+    fake_trt.ILogger = ILogger
+    fake_trt.ICudaEngine = type("ICudaEngine", (), {})
+    fake_trt.IExecutionContext = type("IExecutionContext", (), {})
+    fake_cuda = ModuleType("pycuda.driver")
+    fake_cuda.__spec__ = ModuleSpec("pycuda.driver", loader=None)
+    fake_cuda.Context = type("Context", (), {})
+    fake_cuda.Device = type("Device", (), {})
+    fake_pycuda = ModuleType("pycuda")
+    fake_pycuda.__spec__ = ModuleSpec("pycuda", loader=None, is_package=True)
+    fake_pycuda.__path__ = []
+    fake_pycuda.driver = fake_cuda
+
+    previous_parent_attributes = {}
+    for name in _TRT_DEPENDENCY_MODULES:
+        parent_name, attribute = name.rsplit(".", 1)
+        parent = importlib.import_module(parent_name)
+        previous_parent_attributes[name] = (
+            parent,
+            attribute,
+            getattr(parent, attribute, _MISSING),
+        )
+    previous_modules = {
+        name: sys.modules.pop(name, None) for name in _TRT_DEPENDENCY_MODULES
+    }
+    monkeypatch.setitem(sys.modules, "tensorrt", fake_trt)
+    monkeypatch.setitem(sys.modules, "pycuda", fake_pycuda)
+    monkeypatch.setitem(sys.modules, "pycuda.driver", fake_cuda)
+
+    try:
+        yield importlib.import_module(_MODEL_MODULE)
+    finally:
+        for name in _TRT_DEPENDENCY_MODULES:
+            sys.modules.pop(name, None)
+            previous = previous_modules[name]
+            if previous is not None:
+                sys.modules[name] = previous
+            parent, attribute, previous_attribute = previous_parent_attributes[name]
+            if previous_attribute is _MISSING:
+                if hasattr(parent, attribute):
+                    delattr(parent, attribute)
+            else:
+                setattr(parent, attribute, previous_attribute)
+
+
+class _FakeStream:
+    def __init__(self, device=None):
+        self.device = torch.device(device)
+
+
+class _FakeEvent:
+    def __init__(self):
+        self.recorded_on = None
+
+    def record(self, stream):
+        self.recorded_on = stream
+
+
+class _RecordedCudaTensor(_CudaMetadataTensor):
+    def record_stream(self, stream):
+        self.recorded_streams.append(stream)
+
+
+def _recorded_output(values):
+    tensor = torch.tensor(values).as_subclass(_RecordedCudaTensor)
+    tensor.recorded_streams = []
+
+    return tensor
+
+
+def _stream_wiring_model(model_module, monkeypatch, *, caller_stream):
+    # Fake CUDA objects only observe which streams and events the model wires;
+    # the real CUDA ordering is covered by the integration suite.
+    monkeypatch.setattr(torch.cuda, "Stream", _FakeStream)
+    monkeypatch.setattr(torch.cuda, "Event", _FakeEvent)
+    monkeypatch.setattr(
+        torch.cuda,
+        "current_stream",
+        lambda device=None: caller_stream(),
+    )
+    calls = []
+
+    def _postprocess(request, context):
+        detections = [
+            Detections(
+                xyxy=_recorded_output([[1, 2, 3, 4]]),
+                class_id=_recorded_output([0]),
+                confidence=_recorded_output([0.5]),
+            )
+        ]
+        calls.append(
+            SimpleNamespace(
+                request=request,
+                context=context,
+                thread=threading.get_ident(),
+                detections=detections,
+            )
+        )
+        result = SimpleNamespace(wait=lambda: detections, details={}, ready_event=None)
+
+        return result
+
+    selection = SimpleNamespace(
+        requested_id="segmented",
+        effective_id="segmented",
+        fallback_reason=None,
+        implementation=SimpleNamespace(postprocess=_postprocess),
+        to_dict=lambda: {"effective_id": "segmented"},
+    )
+    monkeypatch.setattr(
+        model_module, "select_postprocessor", lambda **kwargs: selection
+    )
+    model = model_module.YOLOv8ForObjectDetectionTRT(
+        engine=None,
+        input_name="images",
+        output_name="output",
+        class_names=["first", "second"],
+        inference_config=SimpleNamespace(post_processing=SimpleNamespace(fused=False)),
+        trt_config=None,
+        device=torch.device("cuda:0"),
+        cuda_context=None,
+        execution_context=None,
+        trt_cuda_graph_cache=None,
+        postprocess_implementation="segmented",
+    )
+
+    return model, calls
+
+
+def test_post_process_runs_on_owned_thread_stream_after_caller_event(
+    model_module, monkeypatch
+):
+    caller_streams = threading.local()
+
+    def _caller_stream():
+        if not hasattr(caller_streams, "stream"):
+            caller_streams.stream = _FakeStream("cuda:0")
+        return caller_streams.stream
+
+    model, calls = _stream_wiring_model(
+        model_module, monkeypatch, caller_stream=_caller_stream
+    )
+    raw = _raw().as_subclass(_CudaMetadataTensor)
+    metadata = [_metadata(), _metadata(offset=17)]
+    barrier = threading.Barrier(2)
+
+    def _run(_):
+        barrier.wait(timeout=10)
+        for _ in range(2):
+            model.post_process(raw, metadata, confidence=0.5)
+        return model._post_process_stream, _caller_stream()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        observed = list(pool.map(_run, range(2)))
+
+    assert len(calls) == 4
+    owned = {id(stream) for stream, _ in observed}
+    callers = {id(stream) for _, stream in observed}
+    assert len(owned) == 2
+    assert owned.isdisjoint(callers)
+    for model_stream, caller_stream in observed:
+        assert model_stream.device == torch.device("cuda:0")
+        thread_calls = [
+            call for call in calls if call.context.current_stream is model_stream
+        ]
+        assert len(thread_calls) == 2
+        assert len({call.thread for call in thread_calls}) == 1
+        for call in thread_calls:
+            assert call.context.device == "cuda:0"
+            assert call.request.model_results is raw
+            assert call.request.ready_event.recorded_on is caller_stream
+            for detection in call.detections:
+                for tensor in (
+                    detection.xyxy,
+                    detection.class_id,
+                    detection.confidence,
+                ):
+                    assert tensor.recorded_streams == [caller_stream]
+
+
+def test_post_process_inside_owned_stream_needs_no_cross_stream_wiring(
+    model_module, monkeypatch
+):
+    model, calls = _stream_wiring_model(
+        model_module, monkeypatch, caller_stream=lambda: model._post_process_stream
+    )
+
+    model.post_process(_raw().as_subclass(_CudaMetadataTensor), [_metadata()] * 2)
+
+    assert calls[0].context.current_stream is model._post_process_stream
+    assert calls[0].request.ready_event is None
+    assert calls[0].detections[0].xyxy.recorded_streams == []

@@ -93,9 +93,16 @@ calibration state.
 
 ## Streams and completion
 
-Both implementations run on `torch.cuda.current_stream(device)` of the calling
-thread. The model's `post_process` waits once, on one completion event, and
-returns completed detections. There is no separate postprocess stream.
+Both implementations run on a postprocess CUDA stream owned by the model. Each
+calling thread gets its own stream, created on first use on the model device
+and reused by later calls from that thread, as in preprocessing.
+
+Before decoding, that stream waits on an event recorded on the caller's
+`torch.cuda.current_stream(device)`, so `model_results` produced there need no
+host synchronization. The model's `post_process` then waits once, on one
+completion event, and returns completed detections. Returned CUDA tensors are
+also recorded on the caller's stream, so their memory is not reused while
+later caller-stream work still reads them.
 
 `segmented` output tensors are views of buffers allocated for that call. Later
 calls never overwrite them, and the model output is not modified.

@@ -278,6 +278,9 @@ def test_integrated_results_ready_owned_and_concurrent(model, monkeypatch):
     original_decode = segmented.decode_padded
 
     def _witness(*args, **kwargs):
+        # Inside decoding, the current stream is the stage execution stream.
+        local.stage_stream = torch.cuda.current_stream().cuda_stream
+        local.producer_pending = not local.produced.query()
         result = original_decode(*args, **kwargs)
         local.ready = torch.cuda.Event()
         local.ready.record(torch.cuda.current_stream())
@@ -287,6 +290,8 @@ def test_integrated_results_ready_owned_and_concurrent(model, monkeypatch):
     monkeypatch.setattr(segmented, "decode_padded", _witness)
     # Initialize calibration once; threads below exercise shared initialized
     # kernels, while each request must keep independent scratch/output storage.
+    local.produced = torch.cuda.Event()
+    local.produced.record()
     retained = model.post_process(raw, metadata, confidence=0.5)
     assert local.ready.query()
     barrier = threading.Barrier(2)
@@ -294,25 +299,118 @@ def test_integrated_results_ready_owned_and_concurrent(model, monkeypatch):
     def _run(index):
         torch.cuda.set_device(0)
         stream = torch.cuda.Stream()
+        stage_streams = set()
         with torch.cuda.stream(stream):
             for _ in range(5):
                 barrier.wait(timeout=30)
-                actual = model.post_process(raw, metadata, confidence=0.5)
+                # Inputs come from delayed caller-stream work, as in a pipeline.
+                torch.cuda._sleep(100_000_000)
+                inputs = raw.clone()
+                local.produced = torch.cuda.Event()
+                local.produced.record(stream)
+                actual = model.post_process(inputs, metadata, confidence=0.5)
                 # Check before any comparison or synchronize can conceal a race.
                 assert local.ready.query()
+                assert local.produced.query()
+                assert local.producer_pending
                 assert model.postprocess_selection["effective_id"] == "segmented"
                 _assert_exact(actual, expected)
+                stage_streams.add(local.stage_stream)
                 actual[0].xyxy.fill_(index + 1)
                 actual[0].confidence.zero_()
-        return stream.cuda_stream
+            owned = model._post_process_stream
+        assert stage_streams == {owned.cuda_stream}
+        assert owned.device == torch.device("cuda:0")
+        return stream.cuda_stream, owned.cuda_stream
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         streams = list(pool.map(_run, range(2)))
 
-    assert len(set(streams)) == 2
+    callers = {caller for caller, _ in streams}
+    owned = {stage for _, stage in streams}
+    assert len(callers) == 2
+    assert len(owned) == 2
+    assert owned.isdisjoint(callers)
     _assert_exact(retained, expected)
     assert torch.equal(raw.view(torch.int32), before.view(torch.int32))
     assert metadata == metadata_before
+
+
+def test_model_stream_waits_for_pending_caller_producer(model, monkeypatch):
+    raw = _raw()
+    metadata = _metadata(raw.shape[0])
+    expected = _original(model, raw, metadata, confidence=0.5)
+    # Finish calibration and allocation before the delayed producer starts so
+    # no host synchronization can complete the producer before the stage runs.
+    model.post_process(raw, metadata, confidence=0.5)
+    output = torch.zeros_like(raw)
+    torch.cuda.synchronize()
+    entries = []
+    original_postprocess = SegmentedPostprocessor.postprocess
+
+    def _observe(self, request, context):
+        entries.append(
+            SimpleNamespace(
+                stream=context.current_stream,
+                producer_pending=not produced.query(),
+            )
+        )
+        result = original_postprocess(self, request, context)
+
+        return result
+
+    monkeypatch.setattr(SegmentedPostprocessor, "postprocess", _observe)
+    caller = torch.cuda.Stream()
+    produced = torch.cuda.Event()
+
+    with torch.cuda.stream(caller):
+        torch.cuda._sleep(50_000_000)
+        output.copy_(raw)
+        produced.record(caller)
+        actual = model.post_process(output, metadata, confidence=0.5)
+        owned = model._post_process_stream
+
+    assert len(entries) == 1
+    assert entries[0].producer_pending, "Producer must be pending at stage entry"
+    assert produced.query()
+    assert model.postprocess_ready_event.query()
+    assert entries[0].stream is owned
+    assert owned.cuda_stream != caller.cuda_stream
+    assert owned.device == torch.device("cuda:0")
+    _assert_exact(actual, expected)
+
+
+def test_returned_outputs_are_not_reused_before_delayed_caller_reads(model):
+    raw = _raw()
+    metadata = _metadata(raw.shape[0])
+    expected = _original(model, raw, metadata, confidence=0.5)
+    other = raw.clone()
+    other[:, 4:] = 1 - other[:, 4:]
+    model.post_process(raw, metadata, confidence=0.5)
+    torch.cuda.synchronize()
+    reader = torch.cuda.Stream()
+    unrelated = torch.cuda.Stream()
+    pending = torch.cuda.Event()
+
+    with torch.cuda.stream(reader):
+        first = model.post_process(raw, metadata, confidence=0.5)
+        torch.cuda._sleep(200_000_000)
+        copies = [
+            (detection.xyxy.clone(), detection.confidence.clone())
+            for detection in first
+        ]
+        pending.record(reader)
+    del first
+    # The same worker reuses its model stream for an unrelated caller stream,
+    # which is not ordered after the delayed reads above.
+    with torch.cuda.stream(unrelated):
+        model.post_process(other, metadata, confidence=0.5)
+    assert not pending.query(), "Reads must still be pending during reuse"
+    reader.synchronize()
+
+    for (xyxy, confidence), want in zip(copies, expected):
+        assert torch.equal(xyxy, want.xyxy)
+        assert torch.equal(confidence, want.confidence)
 
 
 def test_request_ready_event_orders_producer_and_consumer(model):
