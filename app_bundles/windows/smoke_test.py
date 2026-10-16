@@ -46,6 +46,7 @@ def _environment(directory: Path, *, port: int) -> dict[str, str]:
         YOLO_CONFIG_DIR=str(directory / "ultralytics"),
         MODEL_CACHE_DIR=str(directory / "models"),
     )
+
     return env
 
 
@@ -107,7 +108,7 @@ def _workflow_request(base_url: str) -> None:
     type=click.Path(exists=True, path_type=Path, dir_okay=False),
     required=True,
 )
-def main(flavor: str, exe: Path) -> None:
+def main(*, flavor: str, exe: Path) -> None:
     """Run native checks, cold server startup and a model-free image workflow.
 
     Args:
@@ -159,6 +160,7 @@ def main(flavor: str, exe: Path) -> None:
                                     break
                         except (urllib.error.URLError, TimeoutError):
                             pass
+
                         time.sleep(0.5)
                     else:
                         raise RuntimeError(

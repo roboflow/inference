@@ -9,13 +9,14 @@ import click
 from packaging_checks import TORCH_BUILDS
 
 
-def _install_torch_pair(python: str, flavor: str, *, index_url: str) -> list[str]:
+def _install_torch_pair(python: str, *, flavor: str, index_url: str) -> list[str]:
     torch_version, vision_version, _ = TORCH_BUILDS[flavor]
     pins = [f"torch=={torch_version}", f"torchvision=={vision_version}"]
     subprocess.run(
         [python, "-m", "pip", "install", "--no-deps", "--index-url", index_url] + pins,
         check=True,
     )
+
     return pins
 
 
@@ -36,7 +37,9 @@ def main(flavor: str) -> None:
     # make create_wheels has already installed PyPI CPU dependencies. Explicit
     # local-version pins replace them even when the CUDA public version is older.
     pins = _install_torch_pair(
-        sys.executable, flavor, index_url=f"https://download.pytorch.org/whl/{index}"
+        sys.executable,
+        flavor=flavor,
+        index_url=f"https://download.pytorch.org/whl/{index}",
     )
     pip = [sys.executable, "-m", "pip"]
     package = "inference" if flavor == "cpu" else "inference_gpu"
@@ -53,6 +56,7 @@ def main(flavor: str) -> None:
             raise RuntimeError(f"Expected exactly one {name} wheel, found {matches}")
 
         wheels.append(str(matches[0]))
+
     wheels[-1] += "[sam,transformers,clip,http,yolo-world,grounding-dino]"
     with tempfile.TemporaryDirectory(prefix="inference-windows-pins-") as directory:
         constraints = Path(directory) / "torch.txt"
@@ -69,6 +73,7 @@ def main(flavor: str) -> None:
             + wheels,
             check=True,
         )
+
     subprocess.run(pip + ["check"], check=True)
     subprocess.run(
         [

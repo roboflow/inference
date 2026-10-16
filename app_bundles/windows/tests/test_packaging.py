@@ -28,6 +28,12 @@ install_spec.loader.exec_module(installer)
 
 @pytest.mark.parametrize("names", [("_C", "image"), ("_C_stable", "image_stable")])
 def test_hook_collects_indirect_extensions_and_nested_dlls(tmp_path, names):
+    """Preserve indirect native extensions without importing the package.
+
+    Args:
+        tmp_path: Isolated package fixture directory.
+        names: Legacy or stable-ABI extension names.
+    """
     package = tmp_path / "torchvision"
     (package / "libs").mkdir(parents=True)
     # Collection must not import torchvision: that can fail before binaries load.
@@ -73,6 +79,14 @@ def test_hook_collects_indirect_extensions_and_nested_dlls(tmp_path, names):
 def test_gpu_gate_rejects_cpu_wheels_wrong_abi_or_stale_metadata(
     torch_version, vision_version, cuda_version, distributions
 ):
+    """Reject incompatible imports and metadata before freezing.
+
+    Args:
+        torch_version: Imported torch version under test.
+        vision_version: Imported torchvision version under test.
+        cuda_version: Reported compiled CUDA version.
+        distributions: Installed distribution metadata.
+    """
     with pytest.raises(RuntimeError, match="Wrong gpu torch build"):
         checks.check_build_identity(
             "gpu",
@@ -83,7 +97,7 @@ def test_gpu_gate_rejects_cpu_wheels_wrong_abi_or_stale_metadata(
         )
 
 
-def _wheel(directory, name, version):
+def _wheel(directory, *, name, version):
     info = f"{name}-{version}.dist-info"
     path = directory / f"{name}-{version}-py3-none-any.whl"
     with zipfile.ZipFile(path, "w") as wheel:
@@ -96,11 +110,18 @@ def _wheel(directory, name, version):
             "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
         )
         wheel.writestr(info + "/RECORD", "")
+
     return path
 
 
 @pytest.mark.parametrize("flavor", ["cpu", "gpu"])
 def test_explicit_pair_replaces_preinstalled_newer_cpu_packages(tmp_path, flavor):
+    """Replace newer CPU wheels and preserve pins during later resolution.
+
+    Args:
+        tmp_path: Isolated wheel index and environment directory.
+        flavor: CPU or GPU pair to select.
+    """
     # Real pip, isolated environment and metadata-only wheels: test selection,
     # not operator execution. Newer public versions reproduce the GPU no-op.
     environment = tmp_path / "venv"
@@ -109,20 +130,22 @@ def test_explicit_pair_replaces_preinstalled_newer_cpu_packages(tmp_path, flavor
     pip = [str(python), "-m", "pip", "install", "--no-index", "--no-deps"]
     wheels = tmp_path / "wheels"
     wheels.mkdir()
-    newer = [_wheel(wheels, name, "9.0.0") for name in ("torch", "torchvision")]
+    newer = [
+        _wheel(wheels, name=name, version="9.0.0") for name in ("torch", "torchvision")
+    ]
     subprocess.run(pip + list(map(str, newer)), check=True, capture_output=True)
     desired = checks.TORCH_BUILDS[flavor][:2]
     selected = tmp_path / "selected"
     selected.mkdir()
     for name, version in zip(("torch", "torchvision"), desired):
-        wheel = _wheel(selected, name, version)
+        wheel = _wheel(selected, name=name, version=version)
         project_index = selected / name
         project_index.mkdir()
         (project_index / "index.html").write_text(
             f'<a href="../{wheel.name}">{wheel.name}</a>'
         )
     pins = installer._install_torch_pair(
-        str(python), flavor, index_url=selected.as_uri()
+        str(python), flavor=flavor, index_url=selected.as_uri()
     )
     result = subprocess.run(
         [
@@ -168,6 +191,12 @@ def test_explicit_pair_replaces_preinstalled_newer_cpu_packages(tmp_path, flavor
 
 
 def test_smoke_environment_isolates_caches_and_drops_credentials(tmp_path, monkeypatch):
+    """Keep build credentials and shared caches out of frozen validation.
+
+    Args:
+        tmp_path: Isolated smoke-test cache root.
+        monkeypatch: Scoped environment overrides.
+    """
     import smoke_test
 
     monkeypatch.setenv("ROBOFLOW_API_KEY", "must-not-inherit")

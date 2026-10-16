@@ -102,6 +102,7 @@ def check_native_ops(flavor: str, *, require_gpu: bool = False) -> dict:
         "cpu_nms": kept,
         "png_roundtrip": True,
     }
+
     return result
 
 
@@ -116,7 +117,7 @@ def check_native_ops(flavor: str, *, require_gpu: bool = False) -> dict:
     is_flag=True,
     help="Require actual CUDA NMS execution; use only on NVIDIA hardware.",
 )
-def main(flavor: str, require_gpu: bool) -> None:
+def main(flavor: str, *, require_gpu: bool) -> None:
     """Check native operations in a fresh interpreter or frozen executable.
 
     Args:
