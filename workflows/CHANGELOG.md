@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
+
 ## `0.2.9`
 
 ### Execution engine
@@ -29,18 +33,17 @@ for contributor and maintainer responsibilities.
 - The nine Roboflow platform blocks are core blocks of this package again: dataset upload v1 and v2, custom metadata, model monitoring inference aggregator, vision events, vision event bundle, asset library attributes, visual search and visual search classifier. They live in `core_steps.sinks.roboflow` and `core_steps.integrations.roboflow`, so a standalone install now lists 248 blocks. Inference 1.6.1 to 1.7.2 shipped them as the `inference.roboflow_workflows_plugin` plugin; that plugin is now an empty compatibility stub.
 - `RoboflowPlatformClient` gains the operations these blocks call: `get_roboflow_workspace`, `add_custom_metadata`, `register_image_at_roboflow`, `annotate_image_at_roboflow`, `update_image_metadata_at_roboflow`, `batch_update_image_metadata_at_roboflow`, `search_project_images_at_roboflow`, `send_inference_results_to_model_monitoring`, `get_device_id`, `get_server_version` and `get_system_info`. The offline client refuses the API operations. A host can register a fallback client for these blocks with `set_platform_blocks_client_factory`, used when a block gets no client, the offline client, or a client that does not implement these operations itself.
 - Vision events sends its cloud image upload and event request only through a client that implements these operations. With the offline client it returns `error_status` with the offline refusal and sends nothing; writing to a local event store is unaffected.
-- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
 
 ### Changed
 
 - `/workflows/blocks/describe` lists these blocks under their names from before the plugin, `inference.core.workflows.core_steps.{sinks,integrations}.roboflow.…`, and in their original positions within the core list, instead of `inference.roboflow_workflows_plugin.…` at the end.
 - A disable pattern on the canonical module path, such as `roboflow_workflows.core_steps.sinks`, now also disables these blocks, like any other core block. Patterns written against either historic path keep matching the same blocks.
 - OpenAI v7: optional `service_tier` (`auto`, `default`, `flex`, `priority`, `ultrafast`), sent with direct OpenAI requests and forwarded to the Roboflow proxy for `rf_key:` keys. Unset keeps OpenAI's default tier.
-- `execution_engine.v1.executor.core` no longer imports the opt-in `inference_models.utils.performance` profiler; step execution timing is unaffected, only the instrumentation is gone.
 - `PlatformClient.register_image_at_roboflow` takes an optional `annotation_follows`
   (default `False`). Dataset Upload `@v1` sets it when an annotation upload follows,
   so a host that retries uploads can fail an upload whose retry reports a duplicate
   instead of silently dropping the annotation.
+
 
 ## `0.2.8`
 
@@ -212,7 +215,6 @@ Bundled execution engine: `1.16.0`.
 - Persistent sessions for the MQTT Reader: an optional `client_id` (unique per broker, for example the pipeline name from a workflow input) connects with that id and a non-clean session, so the broker keeps the subscription and queues QoS 1/2 messages while the block is away and delivers the backlog when the same id reconnects, after a pipeline or process restart included. Requires `qos` 1 or 2 (a run with `client_id` and `qos` 0 reports an error); the publisher must also publish at QoS 1 or higher. Meant for `InferencePipeline`s; `sequential` works through the backlog one message per run. Left empty, the behaviour is unchanged.
 - TLS for the MQTT Reader and MQTT Writer: an `encryption` dropdown (`none`, default, or `tls`) encrypts the connection and verifies the broker's certificate against the system trust store; `ca_certificate_path` (shown for TLS only) points at a PEM bundle for a private CA and requires `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`. The port is not switched automatically and verification cannot be disabled.
 - Operator policy for the MQTT Reader and MQTT Writer broker address: `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (comma-separated `host[:port]` allowlist, no DNS) and `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` (default `True`; when `False` the workflow's host and port are ignored and the first allowlist entry is used). Defaults preserve existing behaviour.
-- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
 
 ### Changed
 
@@ -275,14 +277,6 @@ Bundled execution engine: `1.15.2`.
 - Python 3.13 support (`requires-python` is now `>=3.10,<3.14`).
 - OpenAI v7 detection and instance-segmentation accept optional `output_classes`, keeping visual
   prompts in `classes` while constraining and decoding model output with stable labels.
----
-
-## `0.2.0`
-
-### Added
-
-- `roboflow_workflows.http_contract`: HTTP request/response entities and framework-free describe/error helpers, moved from `inference.core` (which now re-exports them).
-
 ---
 
 ## `0.1.2`
