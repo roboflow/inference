@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 
@@ -28,6 +29,15 @@ else:
         f"got {_offline_mode_value!r}"
     )
 os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
+
+logger = logging.getLogger(__name__)
+
+# Service credentials a deployment may add through ROBOFLOW_API_EXTRA_HEADERS.
+# A 401 can be about one of these (e.g. mid-rotation), so it is only read as a
+# verdict on the API key when none of them was sent.
+SERVICE_CREDENTIAL_HEADERS = frozenset(
+    {"x-assume-identity-access-token", "x-external-usage-reporter-access-token"}
+)
 
 
 ResourceID = str
@@ -257,10 +267,25 @@ def send_usage_payload(
         except Exception:
             api_keys_hashes_failed.add(api_key_hash)
             continue
+        if response.status_code == 401 and _api_key_is_only_credential(extra_headers):
+            # The key itself is unknown, revoked or disabled. Re-sending these
+            # rows under it can never succeed, so settle them instead of
+            # re-enqueuing them on every flush for the life of the process.
+            logger.warning(
+                "Usage endpoint %s rejected the API key with HTTP 401; dropping "
+                "%s usage rows instead of retrying them",
+                api_usage_endpoint_url,
+                len(complete_workflow_payloads),
+            )
+            continue
         if response.status_code != 200:
             api_keys_hashes_failed.add(api_key_hash)
             continue
     return api_keys_hashes_failed
+
+
+def _api_key_is_only_credential(headers: Dict[str, str]) -> bool:
+    return not any(name.lower() in SERVICE_CREDENTIAL_HEADERS for name in headers)
 
 
 def sha256_hash(payload: str, length=5):

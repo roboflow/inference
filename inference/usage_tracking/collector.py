@@ -38,9 +38,13 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
 )
+from inference.core.exceptions import RoboflowAPINotAuthorizedError
 from inference.core.interfaces.http.api_key_resolution import header_api_key
 from inference.core.logger import logger
-from inference.core.roboflow_api import build_roboflow_api_headers
+from inference.core.roboflow_api import (
+    assume_identity_authorised_workspace_db_id,
+    build_roboflow_api_headers,
+)
 from inference.core.version import __version__ as inference_version
 
 try:
@@ -1058,6 +1062,18 @@ class UsageCollector:
             error_details[ERROR_STATUS_CODE_KEY] = error_status_code
         return error_details
 
+    @staticmethod
+    def _credential_was_refused(error: Exception) -> bool:
+        # The platform answered 401 for the credential this call ran under.
+        # /usage/inference authenticates with that same credential, so a usage
+        # row recorded under it could never be accepted. Under assume-identity
+        # the 401 may be about the service token instead, so it is recorded.
+        if assume_identity_authorised_workspace_db_id.get() is not None:
+            return False
+        return isinstance(error, RoboflowAPINotAuthorizedError) or isinstance(
+            getattr(error, "inner_error", None), RoboflowAPINotAuthorizedError
+        )
+
     @classmethod
     def _response_error(cls, response: Any) -> Optional[Dict[str, Any]]:
         status_code = getattr(response, "status_code", None)
@@ -1121,6 +1137,8 @@ class UsageCollector:
                         res = func(*args, **kwargs)
                     except Exception as exc:
                         t2 = time.time()
+                        if self._credential_was_refused(exc):
+                            raise
                         try:
                             self.record_usage(
                                 **self._extract_usage_params_from_func_kwargs(
@@ -1220,6 +1238,8 @@ class UsageCollector:
                         res = await func(*args, **kwargs)
                     except Exception as exc:
                         t2 = time.time()
+                        if self._credential_was_refused(exc):
+                            raise
                         try:
                             await self.async_record_usage(
                                 **self._extract_usage_params_from_func_kwargs(
