@@ -335,6 +335,42 @@ def _pytest(suite: Path, *, recorder: _Recorder, collect: bool = False) -> int:
     return result
 
 
+def _repository_identity() -> dict:
+    ref = os.environ.get("GITHUB_REF", "")
+    approved_ref = os.environ.get("HOSTED_E2E_APPROVED_REF", "")
+    allowed_ref = ref == os.environ.get("HOSTED_E2E_DEFAULT_REF") or bool(
+        re.fullmatch(r"refs/heads/fast-track/post-v\d+\.\d+\.\d+-pt[1-9]\d*", ref)
+    )
+    _require(
+        os.environ.get("GITHUB_REPOSITORY") == "roboflow/inference"
+        and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+        and allowed_ref
+        and ref == approved_ref
+        and os.environ.get("HOSTED_E2E_APPROVED_SHA") == os.environ.get("GITHUB_SHA")
+        and str(os.environ.get("HOSTED_E2E_DEFAULT_REF", "")).startswith("refs/heads/")
+        and os.environ.get("GITHUB_SHA") == os.environ["HOSTED_E2E_TEST_SHA"]
+        and os.environ["HOSTED_E2E_TEST_SHA"] == os.environ["HOSTED_E2E_RUNNER_SHA"],
+        "trusted manual repository execution required",
+    )
+    _require(
+        bool(re.fullmatch(r"[0-9a-f]{40}", os.environ["HOSTED_E2E_TEST_SHA"])),
+        "invalid test SHA",
+    )
+    projects = {
+        "staging": "roboflow-staging-serverless",
+        "production": "roboflow-platform-serverless",
+    }
+    target = os.environ["HOSTED_E2E_TARGET"]
+    _require(target in projects, "invalid target")
+    _require(
+        os.environ.get("HOSTED_PLATFORM_TESTS_PROJECT") == projects[target],
+        "target mismatch",
+    )
+    # Existing public manual tests do not verify serving revision or image.
+    # Never present this mode as deployment-bound acceptance.
+    return {"verification": "not-performed", "target": target}
+
+
 def _context(policy: Path) -> dict:
     context = {
         "run_key": os.environ["HOSTED_E2E_RUN_KEY"],
@@ -342,7 +378,11 @@ def _context(policy: Path) -> dict:
         "target": os.environ["HOSTED_E2E_TARGET"],
         "runner_sha": os.environ["HOSTED_E2E_RUNNER_SHA"],
         "policy_sha": os.environ["HOSTED_E2E_POLICY_SHA"],
-        "identity": _verify_identity(policy),
+        "identity": (
+            _repository_identity()
+            if os.environ.get("HOSTED_E2E_MODE") == "repository"
+            else _verify_identity(policy)
+        ),
         "dependencies_hash": _digest(
             sorted(
                 (dist.metadata["Name"].lower(), dist.version)
@@ -427,11 +467,13 @@ def _prepare(*, suite: Path, policy: Path, output: Path) -> None:
     # SKIP_WARMUP at import time, so pytest must not reuse its collection import.
 
 
-def _warmup(*, suite: Path, policy: Path, output: Path) -> None:
+def _warmup(
+    *, suite: Path, policy: Path, output: Path, skip_warmup: bool = False
+) -> None:
     plan = _read(output / "plan.json")
     _validate_plan(plan)
     _require(_context(policy) == plan["context"], "identity changed before warmup")
-    os.environ["SKIP_WARMUP"] = "false"
+    os.environ["SKIP_WARMUP"] = "true" if skip_warmup else "false"
     recorder = _Recorder(plan=plan, warmup=True)
     _require(_pytest(suite, recorder=recorder) == 0, "warmup failed")
     _require(recorder.collection_errors == 0, "warmup collection failed")
@@ -457,6 +499,7 @@ def _warmup(*, suite: Path, policy: Path, output: Path) -> None:
         {
             "cases": recorder.cases,
             "collection_skips": sorted(recorder.collection_skips),
+            "services_warmup_skipped": skip_warmup,
         },
     )
 
@@ -659,6 +702,10 @@ def main(
         shard (str | None): Shard identifier for the shard stage.
     """
     try:
+        _require(
+            os.environ.get("HOSTED_E2E_MODE") != "repository",
+            "repository execution requires the output-capturing entrypoint",
+        )
         if os.environ.get("GITHUB_ACTIONS") == "true":
             _require(
                 os.environ.get("HOSTED_E2E_PRIVATE") == "true",

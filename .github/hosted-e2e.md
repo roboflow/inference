@@ -1,14 +1,101 @@
-# Private four-shard hosted acceptance
+# Hosted platform E2E execution
 
 See the [changelog](hosted-e2e-changelog.md) for changes and the rationale behind
 the initial runtime-balanced shard proposal.
+
+## Existing manual staging and production workflows
+
+The existing **E2E TEST - hosted inference - STAGING** and **PRODUCTION** manual
+workflows now call `hosted_inference_e2e_repository.yml` in this repository.
+Dispatch from the default branch, select `serverless-v2`, and leave
+`skip_warmup` false unless deliberately skipping service warmup. Execution is:
+
+1. Prepare the complete manifest and frozen dependencies; warm services once.
+2. Run shards A, B, C and D concurrently, with serial pytest inside each job.
+3. Aggregate all four reports, rejecting missing evidence, failures and
+   unexpected skips, even when another job failed.
+
+Credentialed jobs require a manual run on the default branch or an approved
+release fast-track head.
+All checkouts use the dispatch SHA. Both targets share one concurrency group.
+PR events and arbitrary feature-branch dispatches do not run credentialed tests. This does not
+block a separate external system from writing to the same test resources.
+
+For release fast-tracks, use `fast-track/post-vX.Y.Z-ptN` cut from the matching
+release tag. The gate requires an open, non-draft, same-repository umbrella PR
+to main carrying `fast-track-deploy-approved`, whose head SHA exactly matches
+the dispatch SHA. It verifies ancestry against the release tag. Missing approval,
+a moved PR head, wrong ancestry, or API failure fails the guard before hosted
+credentials are available. This follows the existing release approval label;
+it does not automatically dispatch hosted tests from the fast-track CI workflow.
+Dispatch the staging manual workflow explicitly on the approved branch.
+
+The existing API/provider secrets are reused. Five cases deliberately disabled
+in the test source are listed in `.github/hosted-e2e/allowed_skips.json`; the
+collection-skip allowlist is empty. Empty provider credentials fail preparation.
+Nothing automatically expands the allowlist from observed skips.
+
+Optional secrets `HOSTED_E2E_STAGING_TIMING_PROFILE` and
+`HOSTED_E2E_PRODUCTION_TIMING_PROFILE` hold the environment-specific JSON
+profiles described below. Without a profile, scheduling falls back to case
+counts. Profiles are never committed here or printed. Changed files invalidate
+individual estimates rather than blindly reusing stale measurements.
+
+### Public-repository output and encrypted evidence
+
+Treat all Actions output and artifacts as potentially accessible outside the
+team, regardless of whether a particular signed-out browser can open them.
+The stage wrapper captures pytest stdout and stderr into a local file. Only
+fixed stage statuses and aggregate counts go to the visible log. Artifacts
+contain AES-256-GCM ciphertext, including detailed test reports, logs and the
+prepared dependency list; plaintext evidence is never uploaded. Artifact
+retention is three days. Artifact names contain only run/attempt/stage IDs.
+
+HKDF derives the encryption key from the existing hosted-test API credential,
+with a distinct domain and authenticated repository, revision, target, run and
+attempt context. Every bundle has a random nonce. A different credential or
+context, a changed ciphertext, conflicting reports or unexpected paths makes
+restoration fail. Rotating the API credential makes older evidence unreadable
+unless the old credential is available through the authorized secret store.
+This protects artifact contents, not job names, status or runtime metadata.
+
+For restricted investigation, download the encrypted artifacts to an isolated
+local directory and provide the original hosted API credential from the team's
+secret store through `HOSTED_PLATFORM_TESTS_API_KEY` (never a command argument).
+Set `GITHUB_REPOSITORY=roboflow/inference`, `GITHUB_EVENT_NAME=workflow_dispatch`,
+`GITHUB_REF` and `HOSTED_E2E_DEFAULT_REF` to the selected branch ref and the default branch ref respectively,
+`HOSTED_E2E_APPROVED_REF` and `HOSTED_E2E_APPROVED_SHA` to the verified ref and SHA,
+`GITHUB_SHA`, `HOSTED_E2E_TEST_SHA` and `HOSTED_E2E_RUNNER_SHA` to the tested
+commit, `HOSTED_E2E_RUN_KEY` to `RUN_ID:ATTEMPT`, and the original
+`HOSTED_E2E_TARGET` and `HOSTED_PLATFORM_TESTS_PROJECT`. Then use the reviewed
+runner's `restore --source incoming --output evidence` command. It restores
+structured evidence only and deliberately omits raw `stage.log` files; raw logs
+remain encrypted. GitHub does not provide a way to read back secret values.
+Do not publish decrypted reports or attach them to public issues.
+
+These manual runs verify the hosted suite against its configured target. They
+**do not establish the deployed source revision or image digest**, matching the
+previous manual workflows. Their evidence explicitly says deployment identity
+was not verified. They do not deploy, publish or authorize a release.
+
+Use **Re-run all jobs**, not **Re-run failed jobs**. Both artifact names and
+authenticated encryption bind to the run attempt. Preparation, warmup and all
+four shards must be rerun together. Validate actual load and timing in staging
+before dispatching production.
+
+**Rollout status:** wiring and offline tests are implementation evidence. Live
+activation is incomplete until reviewed code is on the default branch or an approved fast-track and an
+actual staging run shows preparation, all four shards and successful complete
+aggregation. Record that run before claiming the solution is operational.
+
+## Separate private deployment-acceptance workflow
 
 `hosted_inference_e2e_sharded.yml` is an opt-in reusable workflow for a private
 repository's protected manual workflow. It collects the complete hosted pytest
 manifest, verifies serving identity, warms up once, runs four serial pytest
 processes, and requires complete successful evidence from all four shards.
-It does not deploy, publish or make the release decision. Existing manual
-workflows are unchanged; migrate their use before enabling parallel acceptance.
+It does not deploy, publish or make the release decision. The repository manual workflows above use a separate encrypted execution path.
+This stronger deployment-acceptance path remains opt-in and requires its own caller.
 
 ## Scheduling
 
@@ -174,9 +261,9 @@ change existing public-workflow logs.
 Offline validation runs synthetic tests without hosted credentials or network:
 
 ```sh
-python -m unittest discover -s .github/scripts -p 'test_hosted_e2e.py'
+python -m unittest discover -s .github/scripts -p 'test_hosted_e2e*.py'
 ```
 
-Use Python 3.12 with pytest 8.4.2, pytest-retry 1.6.3, Click and PyYAML. Live
-rollout still requires private caller configuration, maintainer review,
-deployment verification and measured load/isolation validation.
+Use Python 3.12 with pytest 8.4.2, pytest-retry 1.6.3, Click, PyYAML and cryptography 46.0.3. The repository manual path requires
+a verified live staging run. The separate private deployment-acceptance path
+also requires its private caller and trusted deployment-verification adapter.

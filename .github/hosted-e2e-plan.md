@@ -1,5 +1,10 @@
 # Hosted platform E2E sharding implementation plan
 
+The original private acceptance design below is supplemented by the
+[repository activation plan](hosted-e2e-activation-plan.md), which connects the
+existing manual staging and production entrypoints with encrypted evidence.
+The private deployment-verification contract remains separate.
+
 ## Problem and behavior
 
 The hosted platform suite currently runs serially, with session warmups and

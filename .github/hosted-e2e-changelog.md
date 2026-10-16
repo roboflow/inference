@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Repository activation — October 16, 2026
+
+- Connect the existing staging and production manual entrypoints to preparation,
+  shared warmup, four parallel shard jobs, and unconditional result aggregation.
+- Restrict credentialed execution to manual runs on the default branch or
+  approved release fast-tracks. Check the umbrella PR's exact head SHA, approval
+  label and release ancestry before accessing hosted secrets. Use one dispatch
+  SHA in every job and serialize both target workflows.
+- Preserve the operator's skip-warmup option and explicitly allow only the five
+  cases already disabled in the reviewed suite. Reject empty provider credentials.
+- Capture detailed test output and transfer authenticated encrypted evidence
+  between jobs. Keep visible output to fixed statuses and aggregate counts;
+  reuse existing hosted credentials with run-specific, domain-separated key
+  derivation. Detailed timing profiles can be supplied through repository secrets.
+- Preserve the private deployment-acceptance workflow. The repository manual
+  path makes no deployment-image identity claim, matching the previous workflow.
+- Add subprocess integration tests for isolated job directories, encrypted
+  transfers, four-shard coverage, retries, skip handling, secret-bearing failures,
+  tampering, incorrect contexts and absent evidence. Test the operator-facing
+  entrypoints so a disconnected runner cannot pass integration validation.
+- Live rollout remains pending until a reviewed main/fast-track staging run
+  verifies preparation, shards A–D and aggregation. Offline tests alone do not
+  demonstrate activation or a performance improvement.
+
+
 ### Review follow-ups — October 15, 2026
 
 - Reject unauthorized collection-time skips, including module-level skips and
