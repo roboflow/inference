@@ -28,6 +28,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Create isolated freezer environment
+        shell: pwsh
+        run: ./app_bundles/windows/create_build_env.ps1
+
       - name: Install CUDA Toolkit
         id: cuda-toolkit
         shell: pwsh
