@@ -124,6 +124,11 @@ class Model(BaseInference):
         clear_cache(): Clears any cache if necessary.
     """
 
+    # Only anomaly detection models (FoundAD, PatchCore) decide against a
+    # request-supplied `anomaly_threshold`; the model manager rejects the
+    # parameter for every other model instead of silently ignoring it.
+    accepts_anomaly_threshold: bool = False
+
     @property
     def resolved_model(self) -> Any:
         model = getattr(self, "_model", None)

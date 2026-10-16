@@ -789,3 +789,50 @@ def test_initialize_close_to_threshold_sampling_when_configuration_key_missing()
     # when
     with pytest.raises(ActiveLearningConfigurationError):
         _ = initialize_close_to_threshold_sampling(strategy_config=strategy_config)
+
+
+ANOMALY_DETECTION_PREDICTION = {
+    "image": {"width": 20, "height": 10},
+    "anomaly_score": 1.73,
+    "anomaly_threshold": 1.25,
+    "is_anomalous": True,
+}
+
+
+def test_prediction_is_close_to_threshold_when_anomaly_detection_response_given() -> (
+    None
+):
+    # given: anomaly models answer under the classification task without any
+    # class confidences (no `predictions`, `top` or `confidence`)
+
+    # when
+    result = prediction_is_close_to_threshold(
+        prediction=ANOMALY_DETECTION_PREDICTION,
+        prediction_type=CLASSIFICATION_TASK,
+        selected_class_names=None,
+        threshold=0.5,
+        epsilon=0.3,
+        only_top_classes=False,
+        minimum_objects_close_to_threshold=1,
+    )
+
+    # then: nothing to sample, and no crash on the missing classification keys
+    assert result is False
+
+
+def test_sample_close_to_threshold_when_anomaly_detection_response_given() -> None:
+    # when
+    result = sample_close_to_threshold(
+        image=np.zeros((128, 128, 3), dtype=np.uint8),
+        prediction=ANOMALY_DETECTION_PREDICTION,
+        prediction_type=CLASSIFICATION_TASK,
+        selected_class_names={"anomalous"},
+        threshold=0.5,
+        epsilon=1.0,
+        only_top_classes=True,
+        minimum_objects_close_to_threshold=1,
+        probability=1.0,
+    )
+
+    # then
+    assert result is False

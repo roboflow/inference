@@ -1384,3 +1384,40 @@ def test_sam2_multimask_none_is_rejected_before_inference_with_the_inline_messag
     assert str(through_adapter.value) == str(inline.value)
     assert "multimask_output" in str(inline.value) and "bool_type" in str(inline.value)
     manager.infer_from_request_sync.assert_not_called()
+
+
+def test_run_classification_forwards_the_anomaly_threshold_only_when_set() -> None:
+    """The anomaly detection block sends the caller threshold through the port;
+    a plain classification request never carries the field."""
+    from inference.core.entities.responses.inference import (
+        ClassificationInferenceResponse,
+    )
+
+    manager = manager_returning(
+        ClassificationInferenceResponse(
+            image=InferenceResponseImage(width=10, height=20),
+            predictions=[],
+            top="normal",
+            confidence=0.9,
+        )
+    )
+    ModelManagerModelsProvider(manager).run_classification(
+        model_id="m/1",
+        images=IMAGES,
+        api_key="k",
+        confidence="default",
+        include_anomaly_map=False,
+        anomaly_threshold=1.25,
+    )
+    request = captured_request(manager)
+    assert request.anomaly_threshold == 1.25
+    assert "anomaly_threshold" in request.model_fields_set
+    assert "include_anomaly_map" not in request.model_fields_set
+
+    manager.infer_from_request_sync.reset_mock()
+    ModelManagerModelsProvider(manager).run_classification(
+        model_id="m/1", images=IMAGES, api_key="k", confidence="default"
+    )
+    request = captured_request(manager)
+    assert request.anomaly_threshold is None
+    assert "anomaly_threshold" not in request.model_fields_set

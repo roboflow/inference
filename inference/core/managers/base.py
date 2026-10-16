@@ -13,7 +13,10 @@ from inference.core.entities.requests.action_recognition import (
     ActionRecognitionInferenceRequest,
 )
 from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
-from inference.core.entities.requests.inference import InferenceRequest
+from inference.core.entities.requests.inference import (
+    ClassificationInferenceRequest,
+    InferenceRequest,
+)
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
@@ -30,6 +33,7 @@ from inference.core.exceptions import (
     InferenceModelNotFound,
     ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
+    RequestDataContradiction,
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
@@ -541,6 +545,7 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
+        reject_anomaly_threshold_for_other_models(model=model, request=request)
         if isinstance(request, ImageEmbeddingRequest):
             return model.infer_embeddings_from_request(request)
         return model.infer_from_request(request)
@@ -549,6 +554,7 @@ class ModelManager:
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
+        reject_anomaly_threshold_for_other_models(model=model, request=request)
         if isinstance(request, ImageEmbeddingRequest):
             return model.infer_embeddings_from_request(request)
         elif (
@@ -939,3 +945,31 @@ def try_releasing_cuda_memory() -> None:
         pass
     except Exception as error:
         logger.warning(f"Attempted to purge CUDA memory but failed with error: {error}")
+
+
+def reject_anomaly_threshold_for_other_models(
+    model: Model, request: InferenceRequest
+) -> None:
+    """Refuse `anomaly_threshold` for a model that cannot decide against it.
+
+    Only anomaly detection models (FoundAD, PatchCore) read the parameter; a
+    plain classifier would silently ignore it, so the contradiction is reported.
+
+    Args:
+        model (Model): The model the request is about to run on.
+        request (InferenceRequest): The request as received.
+
+    Raises:
+        RequestDataContradiction: If the request carries `anomaly_threshold` and
+            the model is not an anomaly detection model (mapped to HTTP 400).
+    """
+    if not isinstance(request, ClassificationInferenceRequest):
+        return None
+    if request.anomaly_threshold is None or model.accepts_anomaly_threshold:
+        return None
+
+    raise RequestDataContradiction(
+        f"`anomaly_threshold` was sent for model `{request.model_id}`, which is not "
+        "an anomaly detection model. Only FoundAD and PatchCore models decide "
+        "against a caller threshold; drop the parameter for other classifiers."
+    )

@@ -362,11 +362,25 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         confidence (Optional[float]): The confidence threshold used to filter out predictions.
         visualization_stroke_width (Optional[int]): The stroke width used when visualizing predictions.
         visualize_predictions (Optional[bool]): If true, the predictions will be drawn on the original image and returned as a base64 string.
+        include_anomaly_map (bool): Anomaly detection models only: include the raw anomaly heatmap.
+        anomaly_threshold (Optional[float]): Anomaly detection models only: decide against this threshold instead of the saved one.
     """
 
     include_anomaly_map: bool = Field(
         default=False,
         description="Include a raw anomaly heatmap for FoundAD and PatchCore models",
+    )
+    anomaly_threshold: Optional[float] = Field(
+        default=None,
+        allow_inf_nan=False,
+        examples=[1.25],
+        description=(
+            "Anomaly detection models (FoundAD, PatchCore) only: decision threshold "
+            "on the raw anomaly score replacing the one saved with the model. The "
+            "response reports it as `anomaly_threshold` and decides "
+            "`is_anomalous = anomaly_score >= anomaly_threshold`. Sending it to a "
+            "model that is not an anomaly detector is rejected with HTTP 400."
+        ),
     )
 
     def __init__(self, **kwargs):
@@ -378,7 +392,9 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         examples=[0.5, "best", "default"],
         description=(
             'Confidence threshold. "best" uses model-eval thresholds, '
-            '"default" uses the model built-in, or pass a float.'
+            '"default" uses the model built-in, or pass a float. Anomaly detection '
+            "models (FoundAD, PatchCore) ignore it: their verdict is "
+            "`anomaly_score >= anomaly_threshold`."
         ),
     )
     visualization_stroke_width: Optional[int] = Field(

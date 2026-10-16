@@ -12,6 +12,7 @@ from inference.core.active_learning.post_processing import (
     adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
     encode_prediction,
 )
+from inference.core.constants import CLASSIFICATION_TASK
 from inference.core.exceptions import PredictionFormatNotSupported
 from inference.core.managers.active_learning import ActiveLearningManager
 
@@ -456,3 +457,28 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
 
     # then
     assert result == prediction
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_anomaly_detection_output_given() -> (
+    None
+):
+    # given
+    prediction = {
+        "image": {"width": 200, "height": 100},
+        "anomaly_score": 1.73,
+        "anomaly_threshold": 1.25,
+        "is_anomalous": True,
+    }
+
+    # when
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=0.5, prediction_type=CLASSIFICATION_TASK
+    )
+
+    # then: only the image size is rescaled; the verdict has no geometry
+    assert result == {
+        "image": {"width": 400, "height": 200},
+        "anomaly_score": 1.73,
+        "anomaly_threshold": 1.25,
+        "is_anomalous": True,
+    }

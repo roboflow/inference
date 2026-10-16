@@ -870,3 +870,25 @@ def test_is_prediction_registration_forbidden_when_detection_output_without_pred
 
     # then
     assert result is True
+
+
+def test_is_prediction_registration_forbidden_when_anomaly_detection_output_provided() -> (
+    None
+):
+    # given: an anomaly detection response carries no `predictions` / `top`
+    prediction = {
+        "image": {"width": 20, "height": 10},
+        "anomaly_score": 1.73,
+        "anomaly_threshold": 1.25,
+        "is_anomalous": True,
+    }
+
+    # when
+    result = is_prediction_registration_forbidden(
+        prediction=prediction,
+        persist_predictions=True,
+        roboflow_image_id="some+id",
+    )
+
+    # then: the image may be sampled, but there is no classification to persist
+    assert result is True

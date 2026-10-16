@@ -160,10 +160,15 @@ class ModelManagerModelsProvider:
         active_learning_target_dataset: Optional[str] = None,
         inference_kwargs: Optional[Dict[str, Any]] = None,
         include_anomaly_map: bool = False,
+        anomaly_threshold: Optional[float] = None,
     ) -> List[dict]:
         # Set only when asked, so the request a classification block builds is
         # field-for-field what it was before the anomaly block existed.
-        anomaly_arguments = {"include_anomaly_map": True} if include_anomaly_map else {}
+        anomaly_arguments: Dict[str, Any] = {}
+        if include_anomaly_map:
+            anomaly_arguments["include_anomaly_map"] = True
+        if anomaly_threshold is not None:
+            anomaly_arguments["anomaly_threshold"] = anomaly_threshold
         request = ClassificationInferenceRequest(
             api_key=api_key,
             model_id=model_id,

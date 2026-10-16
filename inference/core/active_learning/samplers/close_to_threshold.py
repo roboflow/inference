@@ -87,6 +87,19 @@ def is_prediction_a_stub(prediction: Prediction) -> bool:
     return prediction.get("is_stub", False)
 
 
+def is_anomaly_detection_prediction(prediction: Prediction) -> bool:
+    """Tell an anomaly detection response from a classification response.
+
+    Args:
+        prediction (Prediction): A dumped inference response.
+
+    Returns:
+        True when the response is an `AnomalyDetectionResponse` (it carries
+        `is_anomalous` and no `predictions`), False otherwise.
+    """
+    return "is_anomalous" in prediction
+
+
 def prediction_is_close_to_threshold(
     prediction: Prediction,
     prediction_type: PredictionType,
@@ -104,6 +117,11 @@ def prediction_is_close_to_threshold(
             epsilon=epsilon,
             minimum_objects_close_to_threshold=minimum_objects_close_to_threshold,
         )
+    if is_anomaly_detection_prediction(prediction=prediction):
+        # Anomaly models (FoundAD, PatchCore) are served under the classification
+        # task but carry no class confidences, so a confidence threshold has
+        # nothing to compare against: there is nothing to sample.
+        return False
     checker = multi_label_classification_prediction_is_close_to_threshold
     if "top" in prediction:
         checker = multi_class_classification_prediction_is_close_to_threshold

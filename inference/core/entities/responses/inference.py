@@ -348,14 +348,35 @@ class AnomalyMapPayload(BaseModel):
     )
 
 
-class AnomalyDetectionResponse(ClassificationInferenceResponse):
+class AnomalyDetectionResponse(CvInferenceResponse, WithVisualizationResponse):
+    """Anomaly detection (FoundAD, PatchCore) inference response.
+
+    Served through the classification route, but it is not a classification
+    response: there are no `predictions`, `top` or `confidence`. The verdict is
+    the raw score compared with the threshold in effect.
+
+    Attributes:
+        anomaly_score (float): Raw image score, larger means more anomalous.
+        anomaly_threshold (float): Threshold the verdict was decided against.
+        is_anomalous (bool): `anomaly_score >= anomaly_threshold`.
+        anomaly_map (Optional[AnomalyMapPayload]): Local evidence, when requested.
+    """
+
     anomaly_score: float = Field(
-        description="Raw anomaly score; larger means more anomalous"
+        description="Raw anomaly score; larger means more anomalous. Not a probability.",
+        examples=[1.73],
     )
     anomaly_threshold: float = Field(
-        description="Decision threshold fitted on validation images"
+        description=(
+            "Decision threshold in effect for this response: the request's "
+            "`anomaly_threshold` when sent, otherwise the one saved with the model"
+        ),
+        examples=[1.25],
     )
-    is_anomalous: bool
+    is_anomalous: bool = Field(
+        description="Verdict: `anomaly_score >= anomaly_threshold`",
+        examples=[True],
+    )
     anomaly_map: Optional[AnomalyMapPayload] = Field(
         default=None,
         description="Raw local anomaly evidence at the network input resolution",
@@ -440,6 +461,10 @@ class DepthEstimationResponse(InferenceResponse):
 
 def response_from_type(model_type, response_dict):
     if model_type == "classification":
+        # Anomaly detectors answer through the classification task but with their
+        # own shape (no `predictions`), so neither classification model fits.
+        if "anomaly_score" in response_dict:
+            return AnomalyDetectionResponse(**response_dict)
         try:
             return ClassificationInferenceResponse(**response_dict)
         except ValidationError:

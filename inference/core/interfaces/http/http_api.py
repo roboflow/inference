@@ -2182,7 +2182,7 @@ class HttpInterface(BaseInterface):
                     background_tasks: (BackgroundTasks) pool of fastapi background tasks
 
                 Returns:
-                    Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
+                    Union[AnomalyDetectionResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results. Anomaly detection models (FoundAD, PatchCore) answer with `AnomalyDetectionResponse` (score, threshold, verdict), not a classification response.
                 """
                 logger.debug(f"Reached /infer/classification")
                 return process_inference_request(
@@ -4905,6 +4905,11 @@ class HttpInterface(BaseInterface):
                     default=False,
                     description="Anomaly detection only: include the raw anomaly heatmap at the network input resolution",
                 ),
+                anomaly_threshold: Optional[float] = Query(
+                    default=None,
+                    allow_inf_nan=False,
+                    description="Anomaly detection only: decision threshold on the raw anomaly score replacing the one saved with the model. Rejected (400) for models that are not anomaly detectors.",
+                ),
                 source: Optional[str] = Query(
                     "external",
                     description="The source of the inference request",
@@ -5066,7 +5071,10 @@ class HttpInterface(BaseInterface):
                         args["response_mask_format"] = response_mask_format
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
-                    args = {"include_anomaly_map": include_anomaly_map}
+                    args = {
+                        "include_anomaly_map": include_anomaly_map,
+                        "anomaly_threshold": anomaly_threshold,
+                    }
                 elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}

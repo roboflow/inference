@@ -103,6 +103,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
+    AnomalyDetectionPrediction,
     AutoModel,
     ClassificationModel,
     ClassificationPrediction,
@@ -1832,7 +1833,14 @@ def _reshape_classification_confidences(
 
 
 class InferenceModelsAnomalyDetectionAdapter(InferenceModelsClassificationAdapter):
-    """Serves PatchCore and FoundAD through the classification route."""
+    """Serves PatchCore and FoundAD through the classification route.
+
+    The response is an `AnomalyDetectionResponse`: raw score, threshold in effect
+    and verdict. The request's `confidence` is never read; `anomaly_threshold`
+    replaces the threshold saved with the model for that request.
+    """
+
+    accepts_anomaly_threshold = True
 
     def postprocess(
         self,
@@ -1841,59 +1849,63 @@ class InferenceModelsAnomalyDetectionAdapter(InferenceModelsClassificationAdapte
         **kwargs,
     ) -> List[AnomalyDetectionResponse]:
         post_processed_predictions = self._model.post_process(
-            predictions, include_anomaly_map=kwargs.get("include_anomaly_map", False)
+            predictions,
+            include_anomaly_map=kwargs.get("include_anomaly_map", False),
+            anomaly_threshold=kwargs.get("anomaly_threshold"),
         )
-        return prepare_anomaly_detection_response(
-            post_processed_predictions,
-            image_sizes=returned_metadata,
-            class_names=self.class_names,
+        responses = prepare_anomaly_detection_response(
+            post_processed_predictions, image_sizes=returned_metadata
         )
+
+        return responses
 
 
 def prepare_anomaly_detection_response(
-    post_processed_predictions: ClassificationPrediction,
+    post_processed_predictions: AnomalyDetectionPrediction,
+    *,
     image_sizes: List[Tuple[int, int]],
-    class_names: List[str],
 ) -> List[AnomalyDetectionResponse]:
-    # The decision comes from the threshold saved with the model, so both classes
-    # are always reported and the request confidence does not filter them.
-    batch_confidences = _reshape_classification_confidences(
-        confidence=post_processed_predictions.confidence.cpu(),
-        expected_num_images=len(image_sizes),
-        class_names=class_names,
-    )
+    """Build one `AnomalyDetectionResponse` per image from the model's verdict.
+
+    Args:
+        post_processed_predictions (AnomalyDetectionPrediction): Batched verdict
+            as returned by the model's `post_process`.
+        image_sizes (List[Tuple[int, int]]): `(height, width)` of each input image.
+
+    Returns:
+        One response per image, in input order, carrying the raw score, the
+        threshold in effect, the verdict and the encoded map when it was requested.
+
+    Raises:
+        PostProcessingError: If the batch does not hold one score per image.
+    """
+    expected_num_images = len(image_sizes)
+    if len(post_processed_predictions) != expected_num_images:
+        raise PostProcessingError(
+            f"Anomaly detection model returned {len(post_processed_predictions)} "
+            f"score(s) for {expected_num_images} image(s)."
+        )
+
+    scores = post_processed_predictions.anomaly_scores.detach().cpu().tolist()
+    verdicts = post_processed_predictions.is_anomalous.detach().cpu().tolist()
+    anomaly_maps = post_processed_predictions.anomaly_maps
+    if anomaly_maps is not None:
+        anomaly_maps = anomaly_maps.detach().cpu().numpy()
     responses = []
-    for classes_confidence, top_class_id, image_metadata, image_size in zip(
-        batch_confidences.tolist(),
-        post_processed_predictions.class_id.tolist(),
-        post_processed_predictions.images_metadata,
-        image_sizes,
-    ):
-        class_predictions = [
-            {
-                "class_id": class_id,
-                "class": class_names[class_id],
-                "confidence": round(classes_confidence[class_id], 4),
-            }
-            for class_id in (top_class_id, 1 - top_class_id)
-        ]
-        anomaly_map = image_metadata.get("anomaly_map")
+    for index, image_size in enumerate(image_sizes):
+        anomaly_map = None
+        if anomaly_maps is not None:
+            anomaly_map = AnomalyMapPayload(**encode_anomaly_map(anomaly_maps[index]))
         responses.append(
             AnomalyDetectionResponse(
                 image=InferenceResponseImage(width=image_size[1], height=image_size[0]),
-                predictions=class_predictions,
-                top=class_predictions[0]["class"],
-                confidence=class_predictions[0]["confidence"],
-                anomaly_score=image_metadata["anomaly_score"],
-                anomaly_threshold=image_metadata["anomaly_threshold"],
-                is_anomalous=image_metadata["is_anomalous"],
-                anomaly_map=(
-                    AnomalyMapPayload(**encode_anomaly_map(anomaly_map))
-                    if anomaly_map is not None
-                    else None
-                ),
+                anomaly_score=float(scores[index]),
+                anomaly_threshold=float(post_processed_predictions.anomaly_threshold),
+                is_anomalous=bool(verdicts[index]),
+                anomaly_map=anomaly_map,
             )
         )
+
     return responses
 
 
@@ -1918,7 +1930,28 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
         i: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
         for i, class_name in enumerate(class_names)
     }
-    if isinstance(inference_response.predictions, list):
+    if isinstance(inference_response, AnomalyDetectionResponse):
+        # No class confidences to list: frame the image with the verdict's class
+        # colour and print score against threshold.
+        verdict_class_id = 1 if inference_response.is_anomalous else 0
+        color = class_id_2_color.get(verdict_class_id, "#4892EA")
+        draw.rectangle(
+            [0, 0, image.size[1], image.size[0]],
+            outline=color,
+            width=inference_request.visualization_stroke_width,
+        )
+        comparison = ">=" if inference_response.is_anomalous else "<"
+        text = (
+            f"{class_names[verdict_class_id]} {inference_response.anomaly_score:.3g} "
+            f"{comparison} {inference_response.anomaly_threshold:.3g}"
+        )
+        text_size = font.getbbox(text)
+        button_size = (text_size[2] + 20, text_size[3] + 20)
+        button_img = Image.new("RGBA", button_size, color)
+        button_draw = ImageDraw.Draw(button_img)
+        button_draw.text((10, 10), text, font=font, fill=(255, 255, 255, 255))
+        image.paste(button_img, (0, 0))
+    elif isinstance(inference_response.predictions, list):
         prediction = inference_response.predictions[0]
         color = class_id_2_color.get(prediction.class_id, "#4892EA")
         draw.rectangle(
