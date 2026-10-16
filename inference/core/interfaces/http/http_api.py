@@ -1142,10 +1142,15 @@ class HttpInterface(BaseInterface):
                                             cache_hit=False,
                                         )
                                     workspace_db_id = usage_check_result.workspace_db_id
+                                    success_auth_cache_ttl = AUTH_CACHE_TTL_SECONDS
+                                    if usage_check_result.has_credit_cap is True:
+                                        success_auth_cache_ttl = (
+                                            SHORT_AUTH_CACHE_TTL_SECONDS
+                                        )
                                     cached_api_keys[cache_key] = (
                                         AuthorizationCacheEntry(
                                             expires_at=time.time()
-                                            + AUTH_CACHE_TTL_SECONDS,
+                                            + success_auth_cache_ttl,
                                             workspace_id=workspace_id,
                                             workspace_db_id=workspace_db_id,
                                         )
