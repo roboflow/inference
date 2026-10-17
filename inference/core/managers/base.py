@@ -386,7 +386,9 @@ class ModelManager:
                                 request.image.value = str(request.image.value)
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                                value=to_cachable_inference_item(request, rtn_val),
+                                value=to_cachable_inference_item(
+                                    request, rtn_val, model_id=model_id
+                                ),
                                 score=finish_time,
                                 expire=METRICS_INTERVAL * 2,
                             )
@@ -492,7 +494,9 @@ class ModelManager:
                                 request.image.value = str(request.image.value)
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                                value=to_cachable_inference_item(request, rtn_val),
+                                value=to_cachable_inference_item(
+                                    request, rtn_val, model_id=model_id
+                                ),
                                 score=finish_time,
                                 expire=METRICS_INTERVAL * 2,
                             )

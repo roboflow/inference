@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from inference.core.cache import serializers
 from inference.core.cache.serializers import (
     build_condensed_response,
     to_cachable_inference_item,
@@ -11,6 +12,7 @@ from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     ClassificationPrediction,
@@ -157,6 +159,39 @@ def test_to_cachable_inference_item_with_tiny_cache_object_detection(
         result["response"][0]["predictions"][0]["confidence"]
         == mock_response.predictions[0].confidence
     )
+
+
+@pytest.mark.parametrize("tiny_cache", [True, False], ids=["tiny", "full"])
+def test_to_cachable_inference_item_fills_model_id_missing_from_request(
+    monkeypatch: pytest.MonkeyPatch,
+    tiny_cache: bool,
+) -> None:
+    monkeypatch.setattr(serializers, "TINY_CACHE", tiny_cache)
+    request = YOLOWorldInferenceRequest(
+        image={"type": "url", "value": "https://some/image.jpg"},
+        text=["person"],
+    )
+    response = ObjectDetectionInferenceResponse(
+        predictions=[], image={"width": 1, "height": 1}, time=0.1
+    )
+
+    result = to_cachable_inference_item(request, response, model_id="yolo_world/l")
+
+    assert result["request"]["model_id"] == "yolo_world/l"
+
+
+def test_to_cachable_inference_item_keeps_model_id_of_request(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_object_detection_data,
+) -> None:
+    monkeypatch.setattr(serializers, "TINY_CACHE", True)
+    mock_request, mock_response = mock_object_detection_data
+
+    result = to_cachable_inference_item(
+        mock_request, mock_response, model_id="sharks:capabilities=image_embeddings"
+    )
+
+    assert result["request"]["model_id"] == "sharks"
 
 
 def test_build_condensed_response_no_predictions_object_detection(
