@@ -1,6 +1,8 @@
 import json
 import os
+import threading
 from contextlib import nullcontext
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, List, Optional, Type
 from unittest import mock
@@ -1644,12 +1646,12 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
 
 
-@mock.patch.object(roboflow_api.requests, "post")
+@mock.patch.object(roboflow_api, "_dataset_upload_session")
 def test_register_image_at_roboflow_when_connection_error_occurs(
-    post_mock: MagicMock,
+    session_mock: MagicMock,
 ) -> None:
     # given
-    post_mock.side_effect = ConnectionError()
+    session_mock.post.side_effect = ConnectionError()
 
     # when
     with pytest.raises(RoboflowAPIConnectionError):
@@ -1661,6 +1663,9 @@ def test_register_image_at_roboflow_when_connection_error_occurs(
             batch_name="my-batch",
             tags=["a", "b", "c/d"],
         )
+
+    # then
+    session_mock.post.assert_called_once()
 
 
 def test_register_image_at_roboflow_when_wrong_api_key_used(
@@ -1874,6 +1879,77 @@ def test_dataset_upload_post_retries(
         assert bodies == [b"some"] * expected_attempts
 
 
+def test_dataset_upload_requests_reuse_pooled_connection_without_cookies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    received_requests = []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers["Content-Length"]))
+            received_requests.append(
+                (
+                    self.path.split("?")[0],
+                    self.client_address,
+                    self.headers.get("Cookie"),
+                )
+            )
+            body = json.dumps({"success": True, "id": "roboflow_id"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Set-Cookie", "affinity=first-api-key; Path=/")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    session = roboflow_api._create_dataset_upload_session()
+    monkeypatch.setattr(
+        roboflow_api, "API_BASE_URL", f"http://127.0.0.1:{server.server_port}"
+    )
+    monkeypatch.setattr(roboflow_api, "_dataset_upload_session", session)
+
+    # when
+    try:
+        register_image_at_roboflow(
+            api_key="first_api_key",
+            dataset_id="coins_detection",
+            local_image_id="local_id",
+            image_bytes=b"SOME_IMAGE_BYTES",
+            batch_name="my-batch",
+        )
+        annotate_image_at_roboflow(
+            api_key="second_api_key",
+            dataset_id="coins_detection",
+            local_image_id="local_id",
+            roboflow_image_id="roboflow_id",
+            annotation_content="some",
+            annotation_file_type="txt",
+        )
+    finally:
+        session.close()
+        server.shutdown()
+        server.server_close()
+
+    # then
+    paths, client_addresses, cookies = zip(*received_requests)
+    assert paths == (
+        "/dataset/coins_detection/upload",
+        "/dataset/coins_detection/annotate/roboflow_id",
+    )
+    assert (
+        len(set(client_addresses)) == 1
+    ), "Expected the annotation to reuse the connection of the upload"
+    assert cookies == (None, None), "Expected no cookie carried between requests"
+
+
 def test_register_image_at_roboflow_when_valid_response_returned(
     requests_mock: Mocker,
 ) -> None:
@@ -2071,12 +2147,12 @@ def test_register_image_at_roboflow_when_lack_of_success_reported(
     assert str({"success": False}) in str(e.value)
 
 
-@mock.patch.object(roboflow_api.requests, "post")
+@mock.patch.object(roboflow_api, "_dataset_upload_session")
 def test_annotate_image_at_roboflow_when_connection_error_occurs(
-    post_mock: MagicMock,
+    session_mock: MagicMock,
 ) -> None:
     # given
-    post_mock.side_effect = ConnectionError()
+    session_mock.post.side_effect = ConnectionError()
 
     # when
     with pytest.raises(RoboflowAPIConnectionError):
@@ -2089,6 +2165,9 @@ def test_annotate_image_at_roboflow_when_connection_error_occurs(
             annotation_file_type="txt",
             is_prediction=True,
         )
+
+    # then
+    session_mock.post.assert_called_once()
 
 
 def test_annotate_image_at_roboflow_when_wrong_api_key_used(
