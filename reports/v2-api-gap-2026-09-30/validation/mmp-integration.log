@@ -1,0 +1,20 @@
+.......                                                                  [100%]
+=============================== warnings summary ===============================
+tests/integration_tests/test_v2_endpoints.py: 15 warnings
+  PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+
+tests/integration_tests/test_v2_endpoints.py::test_health_returns_ok
+tests/integration_tests/test_v2_endpoints.py::test_health_returns_ok
+  PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+
+tests/integration_tests/test_v2_endpoints.py::test_health_returns_ok
+tests/integration_tests/test_v2_endpoints.py::test_health_returns_ok
+tests/integration_tests/test_v2_endpoints.py::test_health_returns_ok
+tests/integration_tests/test_v2_endpoints.py::test_health_returns_ok
+  PydanticDeprecatedSince20: `allow_reuse` is deprecated and will be ignored; it should no longer be necessary. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+
+tests/integration_tests/test_v2_endpoints.py::test_health_returns_ok
+  PydanticDeprecatedSince20: `min_items` is deprecated and will be removed, use `min_length` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+7 passed, 4 deselected, 22 warnings in 0.66s
