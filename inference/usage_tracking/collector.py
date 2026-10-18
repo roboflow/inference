@@ -112,6 +112,31 @@ UNKNOWN_ERROR_TYPE = "unknown"
 ERROR_TYPE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 ERROR_STATUS_CODE_KEY = "error_status_code"
 ERROR_TYPE_KEY = "error_type"
+# The error type the platform's validateToken / validateApiKey give a 401 for a
+# missing, unknown, revoked or disabled API key, or an invalid OAuth token.
+REFUSED_CREDENTIAL_ERROR_TYPE = "OAuthException"
+
+
+def _platform_refused_the_credential(error: Exception) -> bool:
+    # A 401 is not always about the key. A billing-restricted workspace gets a
+    # 401 "AccessException" from validateWorkspaceAccess (for example on the
+    # workflow specification fetch) for a key the platform accepted, and
+    # /usage/inference does not run that check, so its usage is deliverable.
+    # Only a 401 whose body names the credential counts. An error without a
+    # readable body (async client, or re-raised without its cause) is recorded
+    # as before.
+    response = getattr(error.__cause__, "response", None)
+    if response is None:
+        return False
+    try:
+        body = response.json()
+    except Exception:
+        return False
+    details = body.get("error") if isinstance(body, dict) else None
+    return (
+        isinstance(details, dict)
+        and details.get("type") == REFUSED_CREDENTIAL_ERROR_TYPE
+    )
 
 
 class UsageCollector:
@@ -1070,8 +1095,10 @@ class UsageCollector:
         # the 401 may be about the service token instead, so it is recorded.
         if assume_identity_authorised_workspace_db_id.get() is not None:
             return False
-        return isinstance(error, RoboflowAPINotAuthorizedError) or isinstance(
-            getattr(error, "inner_error", None), RoboflowAPINotAuthorizedError
+        return any(
+            isinstance(candidate, RoboflowAPINotAuthorizedError)
+            and _platform_refused_the_credential(candidate)
+            for candidate in (error, getattr(error, "inner_error", None))
         )
 
     @classmethod

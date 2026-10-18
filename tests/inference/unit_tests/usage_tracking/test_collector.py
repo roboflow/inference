@@ -12,6 +12,7 @@ from unittest import mock
 
 import numpy as np
 import pytest
+import requests
 
 from inference.core.env import LAMBDA
 from inference.core.exceptions import (
@@ -2006,6 +2007,28 @@ def test_returned_http_error_response_records_error_outcome(
     assert details["error_status_code"] == 422
 
 
+def _platform_401(error_type, message):
+    """RoboflowAPINotAuthorizedError as wrap_roboflow_api_errors raises it: from
+    the HTTPError, whose response carries the platform's error body."""
+    response = mock.MagicMock(status_code=401)
+    response.json.return_value = {"error": {"message": message, "type": error_type}}
+    try:
+        raise requests.exceptions.HTTPError(response=response)
+    except requests.exceptions.HTTPError as http_error:
+        try:
+            raise RoboflowAPINotAuthorizedError(
+                "Unauthorized access to roboflow API"
+            ) from http_error
+        except RoboflowAPINotAuthorizedError as error:
+            return error
+
+
+def _refused_key():
+    return _platform_401(
+        "OAuthException", "This API key does not exist (or has been revoked)."
+    )
+
+
 def test_request_refused_for_its_credential_records_no_usage(
     usage_collector_with_mocked_threads,
 ):
@@ -2017,7 +2040,7 @@ def test_request_refused_for_its_credential_records_no_usage(
 
     @usage_collector(category="request")
     def direct(api_key="revoked-key"):
-        raise RoboflowAPINotAuthorizedError("Unauthorized access to roboflow API")
+        raise _refused_key()
 
     @usage_collector(category="request")
     def wrapped_in_workflow_step(api_key="revoked-key"):
@@ -2026,12 +2049,12 @@ def test_request_refused_for_its_credential_records_no_usage(
             status_code=401,
             public_message="model step failed",
             context="workflow_execution | step_execution",
-            inner_error=RoboflowAPINotAuthorizedError("Unauthorized"),
+            inner_error=_refused_key(),
         )
 
     @usage_collector(category="request")
     async def direct_async(api_key="revoked-key"):
-        raise RoboflowAPINotAuthorizedError("Unauthorized access to roboflow API")
+        raise _refused_key()
 
     with pytest.raises(RoboflowAPINotAuthorizedError):
         direct()
@@ -2054,10 +2077,26 @@ def test_errors_that_do_not_refuse_the_credential_are_still_recorded(
 
     @usage_collector(category="request")
     def refused_under_assume_identity(api_key="valid-key"):
-        raise RoboflowAPINotAuthorizedError("service token mismatch")
+        raise _refused_key()
+
+    @usage_collector(category="request")
+    def workspace_billing_restricted(api_key="valid-key"):
+        # validateWorkspaceAccess: the key is accepted, the workspace is not,
+        # and /usage/inference does not run that check.
+        raise _platform_401(
+            "AccessException", "Access to this workspace has been restricted"
+        )
+
+    @usage_collector(category="request")
+    def no_platform_body(api_key="valid-key"):
+        raise RoboflowAPINotAuthorizedError("API key does not have access to model")
 
     with pytest.raises(RoboflowAPIForbiddenError):
         forbidden()
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        workspace_billing_restricted()
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        no_platform_body()
     token = assume_identity_authorised_workspace_db_id.set("workspace-db-id")
     try:
         with pytest.raises(RoboflowAPINotAuthorizedError):
@@ -2065,14 +2104,16 @@ def test_errors_that_do_not_refuse_the_credential_are_still_recorded(
     finally:
         assume_identity_authorised_workspace_db_id.reset(token)
 
-    recorded_error_types = {
+    recorded_error_types = [
         json.loads(row["resource_details"])["error_type"]
         for row in usage_collector._usage["valid-key"].values()
-    }
-    assert recorded_error_types == {
+    ]
+    assert sorted(recorded_error_types) == [
         "RoboflowAPIForbiddenError",
         "RoboflowAPINotAuthorizedError",
-    }
+    ]
+    rows = list(usage_collector._usage["valid-key"].values())
+    assert sum(row["processed_frames"] for row in rows) == 4
 
 
 def test_wrapped_remote_http_errors_are_partitioned_by_status_code(
