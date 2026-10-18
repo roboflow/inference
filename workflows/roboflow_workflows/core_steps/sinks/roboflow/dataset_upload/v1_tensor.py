@@ -84,6 +84,9 @@ from roboflow_workflows.execution_engine.entities.workload import (
     RuntimeRestriction,
     WorkOperation,
 )
+from roboflow_workflows.execution_engine.v1.executor.utils import (
+    wrap_with_context_snapshot,
+)
 from roboflow_workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
@@ -169,6 +172,8 @@ This block receives data from workflow steps and uploads it to Roboflow:
 WORKSPACE_NAME_CACHE_EXPIRE = 900  # 15 min
 TIMESTAMP_FORMAT = "%Y_%m_%d"
 DUPLICATED_STATUS = "Duplicated image"
+QUOTA_EXCEEDED_STATUS = "Registration skipped due to usage quota exceeded"
+MAX_CONCURRENT_REGISTRATIONS = 8
 BatchCreationFrequency = Literal["never", "daily", "weekly", "monthly"]
 
 
@@ -403,11 +408,111 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 }
                 for _ in range(len(images))
             ]
-        result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name
-        for image, prediction, img_name in zip(images, predictions, image_names):
-            error_status, message = register_datapoint_at_roboflow(
+        registration_results = register_batch_of_datapoints_at_roboflow(
+            images=list(images),
+            predictions=list(predictions),
+            image_names=list(image_names),
+            target_project=target_project,
+            usage_quota_name=usage_quota_name,
+            persist_predictions=persist_predictions,
+            minutely_usage_limit=minutely_usage_limit,
+            hourly_usage_limit=hourly_usage_limit,
+            daily_usage_limit=daily_usage_limit,
+            max_image_size=max_image_size,
+            compression_level=compression_level,
+            registration_tags=registration_tags,
+            fire_and_forget=fire_and_forget,
+            labeling_batch_prefix=labeling_batch_prefix,
+            new_labeling_batch_frequency=labeling_batches_recreation_frequency,
+            cache=self._cache,
+            background_tasks=self._background_tasks,
+            thread_pool_executor=self._thread_pool_executor,
+            api_key=self._api_key,
+            platform_client=self._platform_client,
+        )
+        return [
+            {"error_status": error_status, "message": message}
+            for error_status, message in registration_results
+        ]
+
+
+def register_batch_of_datapoints_at_roboflow(
+    images: List[WorkflowImageData],
+    predictions: List[Optional[TensorNativePrediction]],
+    image_names: List[Optional[str]],
+    target_project: str,
+    usage_quota_name: str,
+    persist_predictions: bool,
+    minutely_usage_limit: int,
+    hourly_usage_limit: int,
+    daily_usage_limit: int,
+    max_image_size: Tuple[int, int],
+    compression_level: int,
+    registration_tags: List[str],
+    fire_and_forget: bool,
+    labeling_batch_prefix: str,
+    new_labeling_batch_frequency: BatchCreationFrequency,
+    cache: WorkflowsCache,
+    background_tasks: Optional[BackgroundTaskScheduler],
+    thread_pool_executor: Optional[ThreadPoolExecutor],
+    api_key: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    platform_client: Optional[RoboflowPlatformClient] = None,
+) -> List[Tuple[bool, str]]:
+    """Register a batch of datapoints at Roboflow.
+
+    A single datapoint, or a batch handed to a background scheduler or thread
+    pool in fire-and-forget mode, goes through `register_datapoint_at_roboflow`
+    one datapoint at a time. Otherwise the batch registers synchronously: usage
+    quota credits are taken one datapoint at a time, in batch order, and the
+    datapoints that got a credit are uploaded concurrently, at most
+    `MAX_CONCURRENT_REGISTRATIONS` at a time.
+
+    Args:
+        images (List[WorkflowImageData]): Images to register.
+        predictions (List[Optional[TensorNativePrediction]]): Prediction for
+            each image; `None` registers the image alone.
+        image_names (List[Optional[str]]): Name for each image; `None` uses a
+            random UUID.
+        target_project (str): Project receiving the datapoints.
+        usage_quota_name (str): Quota whose limits apply.
+        persist_predictions (bool): Whether predictions are saved as
+            annotations.
+        minutely_usage_limit (int): Registrations allowed per minute.
+        hourly_usage_limit (int): Registrations allowed per hour.
+        daily_usage_limit (int): Registrations allowed per day.
+        max_image_size (Tuple[int, int]): Width and height an image is
+            downscaled to fit.
+        compression_level (int): JPEG quality of the uploaded images.
+        registration_tags (List[str]): Tags attached to each image.
+        fire_and_forget (bool): Whether to register in the background when a
+            scheduler or thread pool is available.
+        labeling_batch_prefix (str): Prefix of the labeling batch name.
+        new_labeling_batch_frequency (BatchCreationFrequency): How often a new
+            labeling batch is started.
+        cache (WorkflowsCache): Cache holding the workspace name and the usage
+            counters.
+        background_tasks (Optional[BackgroundTaskScheduler]): Scheduler for
+            fire-and-forget registration.
+        thread_pool_executor (Optional[ThreadPoolExecutor]): Thread pool for
+            fire-and-forget registration.
+        api_key (str): Roboflow API key.
+        metadata (Optional[Dict[str, Any]]): User metadata attached to each
+            image.
+        platform_client (Optional[RoboflowPlatformClient]): Client reaching
+            the Roboflow API.
+
+    Returns:
+        List[Tuple[bool, str]]: Error status and message for each datapoint,
+        in the order of `images`.
+    """
+    if len(images) < 2 or (
+        fire_and_forget and (background_tasks or thread_pool_executor)
+    ):
+        return [
+            register_datapoint_at_roboflow(
                 image=image,
                 prediction=prediction,
                 target_project=target_project,
@@ -421,16 +526,69 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 registration_tags=registration_tags,
                 fire_and_forget=fire_and_forget,
                 labeling_batch_prefix=labeling_batch_prefix,
-                new_labeling_batch_frequency=labeling_batches_recreation_frequency,
-                cache=self._cache,
-                background_tasks=self._background_tasks,
-                thread_pool_executor=self._thread_pool_executor,
-                api_key=self._api_key,
-                platform_client=self._platform_client,
-                image_name=img_name,
+                new_labeling_batch_frequency=new_labeling_batch_frequency,
+                cache=cache,
+                background_tasks=background_tasks,
+                thread_pool_executor=thread_pool_executor,
+                api_key=api_key,
+                image_name=image_name,
+                metadata=metadata,
+                platform_client=platform_client,
             )
-            result.append({"error_status": error_status, "message": message})
-        return result
+            for image, prediction, image_name in zip(images, predictions, image_names)
+        ]
+    workspace_name = get_workspace_name(
+        api_key=api_key, cache=cache, platform_client=platform_client
+    )
+    registrations = []
+    # Credits are taken in this thread, in batch order, so a batch over the
+    # quota still registers its first datapoints. Leaving the `with` block
+    # waits for the submitted uploads, also when taking a credit raises.
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REGISTRATIONS) as executor:
+        for image, prediction, image_name in zip(images, predictions, image_names):
+            strategy_with_spare_credit = _use_usage_quota_credit(
+                cache=cache,
+                workspace_name=workspace_name,
+                target_project=target_project,
+                usage_quota_name=usage_quota_name,
+                minutely_usage_limit=minutely_usage_limit,
+                hourly_usage_limit=hourly_usage_limit,
+                daily_usage_limit=daily_usage_limit,
+            )
+            if strategy_with_spare_credit is None:
+                registrations.append(None)
+                continue
+            registration = partial(
+                _execute_registration_with_credit,
+                image=image,
+                prediction=prediction,
+                target_project=target_project,
+                persist_predictions=persist_predictions,
+                max_image_size=max_image_size,
+                compression_level=compression_level,
+                registration_tags=registration_tags,
+                labeling_batch_prefix=labeling_batch_prefix,
+                new_labeling_batch_frequency=new_labeling_batch_frequency,
+                cache=cache,
+                api_key=api_key,
+                workspace_name=workspace_name,
+                strategy_with_spare_credit=strategy_with_spare_credit,
+                image_name=image_name,
+                metadata=metadata,
+                platform_client=platform_client,
+            )
+            registrations.append(
+                executor.submit(wrap_with_context_snapshot(registration))
+            )
+    registration_results = [
+        (
+            (False, QUOTA_EXCEEDED_STATUS)
+            if registration is None
+            else registration.result()
+        )
+        for registration in registrations
+    ]
+    return registration_results
 
 
 def register_datapoint_at_roboflow(
@@ -506,6 +664,51 @@ def execute_registration(
     metadata: Optional[Dict[str, Any]] = None,
     platform_client: Optional[RoboflowPlatformClient] = None,
 ) -> Tuple[bool, str]:
+    workspace_name = get_workspace_name(
+        api_key=api_key, cache=cache, platform_client=platform_client
+    )
+    strategy_with_spare_credit = _use_usage_quota_credit(
+        cache=cache,
+        workspace_name=workspace_name,
+        target_project=target_project,
+        usage_quota_name=usage_quota_name,
+        minutely_usage_limit=minutely_usage_limit,
+        hourly_usage_limit=hourly_usage_limit,
+        daily_usage_limit=daily_usage_limit,
+    )
+    if strategy_with_spare_credit is None:
+        return False, QUOTA_EXCEEDED_STATUS
+    registration_result = _execute_registration_with_credit(
+        image=image,
+        prediction=prediction,
+        target_project=target_project,
+        persist_predictions=persist_predictions,
+        max_image_size=max_image_size,
+        compression_level=compression_level,
+        registration_tags=registration_tags,
+        labeling_batch_prefix=labeling_batch_prefix,
+        new_labeling_batch_frequency=new_labeling_batch_frequency,
+        cache=cache,
+        api_key=api_key,
+        workspace_name=workspace_name,
+        strategy_with_spare_credit=strategy_with_spare_credit,
+        image_name=image_name,
+        metadata=metadata,
+        platform_client=platform_client,
+    )
+    return registration_result
+
+
+def _use_usage_quota_credit(
+    cache: WorkflowsCache,
+    workspace_name: str,
+    target_project: str,
+    usage_quota_name: str,
+    minutely_usage_limit: int,
+    hourly_usage_limit: int,
+    daily_usage_limit: int,
+) -> Optional[str]:
+    """Take one credit of the usage quota; `None` when a limit is reached."""
     matching_strategies_limits = OrderedDict(
         {
             usage_quota_name: [
@@ -521,17 +724,34 @@ def execute_registration(
             ]
         }
     )
-    workspace_name = get_workspace_name(
-        api_key=api_key, cache=cache, platform_client=platform_client
-    )
     strategy_with_spare_credit = use_credit_of_matching_strategy(
         cache=cache,
         workspace=workspace_name,
         project=target_project,
         matching_strategies_limits=matching_strategies_limits,
     )
-    if strategy_with_spare_credit is None:
-        return False, "Registration skipped due to usage quota exceeded"
+    return strategy_with_spare_credit
+
+
+def _execute_registration_with_credit(
+    image: WorkflowImageData,
+    prediction: Optional[TensorNativePrediction],
+    target_project: str,
+    persist_predictions: bool,
+    max_image_size: Tuple[int, int],
+    compression_level: int,
+    registration_tags: List[str],
+    labeling_batch_prefix: str,
+    new_labeling_batch_frequency: BatchCreationFrequency,
+    cache: WorkflowsCache,
+    api_key: str,
+    workspace_name: str,
+    strategy_with_spare_credit: str,
+    image_name: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    platform_client: Optional[RoboflowPlatformClient] = None,
+) -> Tuple[bool, str]:
+    """Register a datapoint whose credit is taken, returning it unless used."""
     credit_to_be_returned = False
     try:
         local_image_id = image_name if image_name else str(uuid4())

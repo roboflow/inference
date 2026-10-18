@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- Dataset upload v1 and v2 (`roboflow_core/roboflow_dataset_upload@v1`, `@v2`) upload the images of a batch concurrently, up to 8 at a time, when they register synchronously: with `fire_and_forget` off, or when the host gives the block no background scheduler or thread pool, as on hosted serverless. Usage-quota credits are still taken one image at a time in batch order, so a batch over the quota registers its first images, and the outputs keep the batch order. A credit returned by a duplicate or failed upload is no longer available to a later image of the same batch. Background registration and single-image batches are unchanged.
+
 ## `0.2.10`
 
 Bundled execution engine: `1.16.1`.
