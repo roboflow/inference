@@ -47,6 +47,24 @@ def test_pillow_image_to_base64_jpeg() -> None:
     assert difference.getbbox() is None
 
 
+@pytest.mark.parametrize("mode", ["RGBA", "LA", "P", "I;16"])
+def test_pillow_image_to_base64_jpeg_when_mode_not_supported_by_jpeg(
+    mode: str,
+) -> None:
+    # given
+    image = Image.new(mode="RGB", size=(128, 128), color=(255, 0, 0)).convert(mode)
+
+    # when
+    encoded_image = pillow_image_to_base64_jpeg(image=image)
+    decoded_image = base64.b64decode(encoded_image)
+    recovered_image = Image.open(BytesIO(decoded_image))
+
+    # then
+    assert recovered_image.format == "JPEG"
+    assert recovered_image.mode == "RGB"
+    assert image.size == recovered_image.size
+
+
 def test_encode_base_64() -> None:
     # given
     payload = b"""

@@ -34,6 +34,9 @@ def pillow_image_to_base64_jpeg(image: Image.Image) -> str:
     Returns:
         The base64 JPEG string.
     """
+    if image.mode not in ("RGB", "L"):
+        # JPEG cannot store alpha, palette or 16-bit modes
+        image = image.convert("RGB")
     with BytesIO() as buffer:
         image.save(buffer, format="JPEG")
         return encode_base_64(payload=buffer.getvalue())
