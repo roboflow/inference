@@ -1010,8 +1010,7 @@ def test_execute_registration_scales_predictions_to_exact_jpeg_canvas_anisotropi
     return_strategy_credit_mock.assert_not_called()
 
 
-@pytest.mark.parametrize("disable_sink", [False, True])
-def test_run_sink_when_api_key_is_not_specified(disable_sink: bool) -> None:
+def test_run_sink_when_api_key_is_not_specified() -> None:
     # given
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
@@ -1034,11 +1033,80 @@ def test_run_sink_when_api_key_is_not_specified(disable_sink: bool) -> None:
             max_image_size=(128, 128),
             compression_level=75,
             registration_tags=["some"],
-            disable_sink=disable_sink,
+            disable_sink=False,
             fire_and_forget=True,
             labeling_batch_prefix="my_batch",
             labeling_batches_recreation_frequency="never",
         )
+
+
+def test_disabled_sink_noops_without_api_key() -> None:
+    data_collector_block = RoboflowDatasetUploadBlockV1(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+
+    result = data_collector_block.run(
+        images=Batch(content=[MagicMock()], indices=[(0,)]),
+        predictions=Batch(content=[MagicMock()], indices=[(0,)]),
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=True,
+        fire_and_forget=True,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by parameter `disable_sink`",
+        }
+    ]
+
+
+@_TENSOR_ONLY
+def test_disabled_sink_noops_without_api_key_tensor_native() -> None:
+    data_collector_block = TensorRoboflowDatasetUploadBlockV1(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+
+    result = data_collector_block.run(
+        images=Batch(content=[MagicMock()], indices=[(0,)]),
+        predictions=Batch(content=[MagicMock()], indices=[(0,)]),
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=True,
+        fire_and_forget=True,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by parameter `disable_sink`",
+        }
+    ]
 
 
 def test_execution_policy_noops_without_api_key() -> None:

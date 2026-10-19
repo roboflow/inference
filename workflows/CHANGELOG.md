@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- Dataset upload v1 and v2 (`roboflow_core/roboflow_dataset_upload@v1`, `@v2`) return the `disable_sink` message when `disable_sink` is true and no API key is set. They checked the API key first, so a disabled sink raised `ValueError` instead of uploading nothing.
+
 ## `0.2.10`
 
 Bundled execution engine: `1.16.1`.

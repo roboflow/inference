@@ -386,13 +386,6 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 }
                 for _ in range(len(images))
             ]
-        if self._api_key is None:
-            raise ValueError(
-                "RoboflowDataCollector block cannot run without Roboflow API key. "
-                "If you do not know how to get API key - visit "
-                "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
-                "retrieve one."
-            )
         if disable_sink:
             return [
                 {
@@ -403,6 +396,13 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 }
                 for _ in range(len(images))
             ]
+        if self._api_key is None:
+            raise ValueError(
+                "RoboflowDataCollector block cannot run without Roboflow API key. "
+                "If you do not know how to get API key - visit "
+                "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
+                "retrieve one."
+            )
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name
