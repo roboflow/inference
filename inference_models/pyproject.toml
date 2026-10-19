@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.39.4"
+version = "0.39.5rc2"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -139,6 +139,22 @@ trt10 = [
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
   "Mako>=1.4.2",
 ]
+# Runtime-only TRT: lean runtime (executes prebuilt engines) without the ~6GB
+# full builder libs. Code prefers `tensorrt` and falls back to `tensorrt_lean`. Use for
+# serving images; use `trt10` (full) where engines are BUILT (development/).
+trt10-runtime = [
+  "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "Mako>=1.4.2",
+]
+# Serving images: full runtime pinned to the registry engine build (non-version-compatible engines need it).
+trt10-serving = [
+  "tensorrt-cu12==10.12.0.36; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-cu12-bindings==10.12.0.36; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-cu12-libs==10.12.0.36; platform_system == 'Linux' or platform_system == 'Windows'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "Mako>=1.4.2",
+]
 test = [
   "pytest>=9.0.3",
   "pytest-timeout==2.4.0",
@@ -169,6 +185,7 @@ torch = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
+  { index = "torch-cu126", extra = "torch-cu126" },
   { index = "torch-cu128", extra = "torch-cu128" },
   { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
@@ -177,6 +194,7 @@ torchvision = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
+  { index = "torch-cu126", extra = "torch-cu126" },
   { index = "torch-cu128", extra = "torch-cu128" },
   { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },

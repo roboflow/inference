@@ -76,7 +76,9 @@ def test_str2bool_when_value_content_is_invalid() -> None:
         _ = str2bool(value="invalid", variable_name="some")
 
 
-@pytest.mark.parametrize("value", ["true", "TruE", "True"])
+@pytest.mark.parametrize(
+    "value", ["true", "TruE", "True", "1", "yes", "Y", "on", "t", " 1 "]
+)
 def test_str2bool_when_value_should_be_true(value: Any) -> None:
     # when
     result = str2bool(value=value, variable_name="some")
@@ -85,10 +87,24 @@ def test_str2bool_when_value_should_be_true(value: Any) -> None:
     assert result is True
 
 
-@pytest.mark.parametrize("value", ["False", "false", "FalSe"])
+@pytest.mark.parametrize(
+    "value", ["False", "false", "FalSe", "0", "no", "N", "off", "f"]
+)
 def test_str2bool_when_value_should_be_false(value: Any) -> None:
     # when
     result = str2bool(value=value, variable_name="some")
 
     # then
     assert result is False
+
+
+@pytest.mark.parametrize("value", ["", " ", "\t\n"])
+def test_str2bool_when_value_is_empty_or_whitespace_only(value: Any) -> None:
+    # when
+    with pytest.raises(InvalidEnvVariable):
+        _ = str2bool(value=value, variable_name="some")
+
+
+def test_invalid_env_variable_is_not_a_value_error() -> None:
+    # then
+    assert not issubclass(InvalidEnvVariable, ValueError)
