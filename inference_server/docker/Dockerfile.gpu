@@ -59,6 +59,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         -e "../inference_server[workflows,otel,redis,enterprise,streams]"
 
 RUN python -c "import importlib.metadata as m, tensorrt; v = {n: m.version(n) for n in ('tensorrt-cu12', 'tensorrt-cu12-bindings', 'tensorrt-cu12-libs')}; assert set(v.values()) == {'10.12.0.36'} and tensorrt.__version__ == '10.12.0.36', (v, tensorrt.__version__)"
+RUN rm -f /opt/venv/lib/python*/site-packages/tensorrt_libs/libnvinfer_builder_resource*.so.*
 
 # ── source layer: real packages over the stubs (editable finders already point
 #    at these dirs, so no reinstall needed) ─────────────────────────────────
