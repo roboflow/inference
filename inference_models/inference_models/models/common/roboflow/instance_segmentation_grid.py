@@ -6,6 +6,9 @@ from typing import Literal, Tuple
 import torch
 
 from inference_models.models.base.types import InstanceSegmentationGrid
+from inference_models.models.common.roboflow._grid_geometry_cache import (
+    geometry_constants,
+)
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 
 
@@ -89,11 +92,12 @@ def build_instance_segmentation_grid(
         ),
     )
     boxes = image_bboxes.detach().to(dtype=torch.float32).clone()
-    padding = boxes.new_tensor(
-        [metadata.pad_left, metadata.pad_top, metadata.pad_left, metadata.pad_top]
+    padding, scale, offset = geometry_constants(
+        boxes,
+        padding=[metadata.pad_left, metadata.pad_top] * 2,
+        scale=[metadata.scale_width, metadata.scale_height] * 2,
+        offset=[crop.offset_x, crop.offset_y] * 2,
     )
-    scale = boxes.new_tensor([metadata.scale_width, metadata.scale_height] * 2)
-    offset = boxes.new_tensor([crop.offset_x, crop.offset_y] * 2)
     boxes.sub_(padding).div_(scale).add_(offset)
 
     return boxes, grid
