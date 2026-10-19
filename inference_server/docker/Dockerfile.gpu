@@ -54,9 +54,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv python install ${PYTHON_VERSION} \
     && uv venv --python ${PYTHON_VERSION} /opt/venv \
     && uv pip install \
-        -e ".[torch-cu124,onnx-cu12,trt10-runtime]" \
+        -e ".[torch-cu124,onnx-cu12,trt10-serving]" \
         -e "../inference_model_manager" \
         -e "../inference_server[workflows,otel,redis,enterprise,streams]"
+
+RUN python -c "import importlib.metadata as m, tensorrt; v = {n: m.version(n) for n in ('tensorrt-cu12', 'tensorrt-cu12-bindings', 'tensorrt-cu12-libs')}; assert set(v.values()) == {'10.12.0.36'} and tensorrt.__version__ == '10.12.0.36', (v, tensorrt.__version__)"
 
 # ── source layer: real packages over the stubs (editable finders already point
 #    at these dirs, so no reinstall needed) ─────────────────────────────────
@@ -79,7 +81,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git curl ca-certificates openssl \
-        libgl1 libglib2.0-0 libvips ffmpeg libgomp1 \
+        libgl1 libglib2.0-0 libvips ffmpeg libgomp1 gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # uv-managed interpreter the venv symlinks to — venv is broken without it.
@@ -94,6 +96,9 @@ RUN { ls -d /opt/venv/lib/python*/site-packages/nvidia/*/lib \
             /opt/venv/lib/python*/site-packages/tensorrt_libs 2>/dev/null || true; } \
       > /etc/ld.so.conf.d/nvidia-pip.conf \
     && ldconfig
+
+COPY docker/scripts/verify_triton_jit_toolchain.py /usr/local/bin/verify_triton_jit_toolchain.py
+RUN python /usr/local/bin/verify_triton_jit_toolchain.py
 
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh

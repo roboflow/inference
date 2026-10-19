@@ -147,6 +147,14 @@ trt10-runtime = [
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
   "Mako>=1.4.2",
 ]
+# Serving images: full runtime pinned to the registry engine build (non-version-compatible engines need it).
+trt10-serving = [
+  "tensorrt-cu12==10.12.0.36; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-cu12-bindings==10.12.0.36; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-cu12-libs==10.12.0.36; platform_system == 'Linux' or platform_system == 'Windows'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "Mako>=1.4.2",
+]
 test = [
   "pytest>=9.0.3",
   "pytest-timeout==2.4.0",
