@@ -130,6 +130,26 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
+- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
+
+## `0.2.10`
+
+Bundled execution engine: `1.16.1`.
+
+### Fixed
+
+- Dataset upload v1 (`roboflow_core/roboflow_dataset_upload@v1`) compiles again. Its `images` field listed `image` as the first validation alias, so the JSON schema named the property `image` while the manifest attribute is `images`; compilation raised `BlockInterfaceError` and `/describe_interface` raised `AttributeError`. The alias order is now `images`, `image`: both keys still validate, and the block schema lists `images`, as dataset upload v2 does.
+
+## `0.2.9`
+
+### Execution engine
+
+- Prevent supporting metadata and workflow validation-model caches from retaining dynamically generated custom Python manifests after their compiled workflows are evicted. Static manifest caching and compiled-workflow reuse are preserved; no workflow changes are required.
+- Workflows with custom Python blocks executed locally are cached again after compilation (as before 1.6.1), fixing per-request memory growth and the throughput drop on HTTP hosts; module-level state of a local custom Python block is again shared across requests that use the same definition in one process. Modal execution and unresolved inner-workflow references still compile per request.
+- The compilation cache no longer raises `KeyError` when evicting a key that was cached twice.
+
+### Added
+
 - The nine Roboflow platform blocks are core blocks of this package again: dataset upload v1 and v2, custom metadata, model monitoring inference aggregator, vision events, vision event bundle, asset library attributes, visual search and visual search classifier. They live in `core_steps.sinks.roboflow` and `core_steps.integrations.roboflow`, so a standalone install now lists 248 blocks. Inference 1.6.1 to 1.7.2 shipped them as the `inference.roboflow_workflows_plugin` plugin; that plugin is now an empty compatibility stub.
 - `RoboflowPlatformClient` gains the operations these blocks call: `get_roboflow_workspace`, `add_custom_metadata`, `register_image_at_roboflow`, `annotate_image_at_roboflow`, `update_image_metadata_at_roboflow`, `batch_update_image_metadata_at_roboflow`, `search_project_images_at_roboflow`, `send_inference_results_to_model_monitoring`, `get_device_id`, `get_server_version` and `get_system_info`. The offline client refuses the API operations. A host can register a fallback client for these blocks with `set_platform_blocks_client_factory`, used when a block gets no client, the offline client, or a client that does not implement these operations itself.
 - Vision events sends its cloud image upload and event request only through a client that implements these operations. With the offline client it returns `error_status` with the offline refusal and sends nothing; writing to a local event store is unaffected.
@@ -139,6 +159,10 @@ for contributor and maintainer responsibilities.
 - `/workflows/blocks/describe` lists these blocks under their names from before the plugin, `inference.core.workflows.core_steps.{sinks,integrations}.roboflow.…`, and in their original positions within the core list, instead of `inference.roboflow_workflows_plugin.…` at the end.
 - A disable pattern on the canonical module path, such as `roboflow_workflows.core_steps.sinks`, now also disables these blocks, like any other core block. Patterns written against either historic path keep matching the same blocks.
 - OpenAI v7: optional `service_tier` (`auto`, `default`, `flex`, `priority`, `ultrafast`), sent with direct OpenAI requests and forwarded to the Roboflow proxy for `rf_key:` keys. Unset keeps OpenAI's default tier.
+- `PlatformClient.register_image_at_roboflow` takes an optional `annotation_follows`
+  (default `False`). Dataset Upload `@v1` sets it when an annotation upload follows,
+  so a host that retries uploads can fail an upload whose retry reports a duplicate
+  instead of silently dropping the annotation.
 
 
 ## `0.2.8`

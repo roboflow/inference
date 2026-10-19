@@ -1,0 +1,278 @@
+name: Hosted platform E2E - private four-shard acceptance
+
+on:
+  workflow_call:
+    inputs:
+      test_sha:
+        description: Reviewed test commit reachable from inference main
+        required: true
+        type: string
+      runner_sha:
+        description: Reviewed orchestration commit; pin to the reusable workflow commit
+        required: true
+        type: string
+      target:
+        description: staging or production; metadata and endpoints stay in secrets
+        required: true
+        type: string
+      load_validated:
+        description: Private caller has validated four-shard load and resource isolation
+        default: false
+        type: boolean
+    secrets:
+      DEPLOYMENT_REFERENCE:
+        required: true
+      EXPECTED_CANDIDATE_SHA:
+        required: true
+      EXPECTED_IMAGE_DIGEST:
+        required: true
+      HOSTED_PLATFORM_TESTS_PROJECT:
+        required: true
+      HOSTED_PLATFORM_TESTS_API_KEY:
+        required: true
+      OPENAI_KEY:
+        required: true
+      GOOGLE_API_KEY:
+        required: true
+      ANTHROPIC_API_KEY:
+        required: true
+      GOOGLE_VISION_API_KEY:
+        required: true
+      DEPLOYMENT_VERIFICATION_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+# Serializes this acceptance workflow within its private caller repository.
+# Other writers and other repositories need the same external resource lock.
+concurrency:
+  group: hosted-platform-private-acceptance
+  cancel-in-progress: false
+
+env:
+  HOSTED_E2E_PRIVATE: ${{ github.event.repository.private }}
+  HOSTED_E2E_RUN_KEY: ${{ github.run_id }}:${{ github.run_attempt }}
+  HOSTED_E2E_TEST_SHA: ${{ inputs.test_sha }}
+  HOSTED_E2E_RUNNER_SHA: ${{ inputs.runner_sha }}
+  HOSTED_E2E_POLICY_SHA: ${{ github.sha }}
+  HOSTED_E2E_TARGET: ${{ inputs.target }}
+  PYTHONPATH: ${{ github.workspace }}/inference
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require private, protected manual execution
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_REF: ${{ github.ref }}
+          DEFAULT_REF: refs/heads/${{ github.event.repository.default_branch }}
+          LOAD_VALIDATED: ${{ inputs.load_validated }}
+        run: |
+          python3 - <<'PYTHON'
+          import os, re, sys
+          valid = (
+              os.environ['HOSTED_E2E_PRIVATE'] == 'true'
+              and os.environ['EVENT_NAME'] == 'workflow_dispatch'
+              and os.environ['RUN_REF'] == os.environ['DEFAULT_REF']
+              and os.environ['LOAD_VALIDATED'] == 'true'
+              and os.environ['HOSTED_E2E_TARGET'] in {'staging', 'production'}
+              and all(re.fullmatch(r'[0-9a-f]{40}', os.environ[key])
+                      for key in ['HOSTED_E2E_TEST_SHA', 'HOSTED_E2E_RUNNER_SHA'])
+          )
+          if not valid:
+              sys.exit('Private manual caller, trusted SHAs and validated load required.')
+          PYTHON
+
+  prepare:
+    needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: roboflow/inference
+          ref: main
+          path: inference
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify reviewed revisions before executing code
+        working-directory: inference
+        run: |
+          git merge-base --is-ancestor "$HOSTED_E2E_TEST_SHA" origin/main
+          git merge-base --is-ancestor "$HOSTED_E2E_RUNNER_SHA" origin/main
+          git show "$HOSTED_E2E_RUNNER_SHA:.github/scripts/hosted_e2e.py" > "$RUNNER_TEMP/hosted_e2e.py"
+          git checkout --detach "$HOSTED_E2E_TEST_SHA"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: policy
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.31"
+          enable-cache: false
+      - name: Install and freeze the test environment
+        working-directory: inference
+        run: |
+          uv pip install --system -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.sdk.http.txt 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8'
+          mkdir -p evidence
+          uv pip freeze --system > evidence/dependencies.txt
+      - name: Collect exact coverage, verify identity and warm up once
+        working-directory: inference
+        env:
+          DEPLOYMENT_REFERENCE: ${{ secrets.DEPLOYMENT_REFERENCE }}
+          EXPECTED_CANDIDATE_SHA: ${{ secrets.EXPECTED_CANDIDATE_SHA }}
+          EXPECTED_IMAGE_DIGEST: ${{ secrets.EXPECTED_IMAGE_DIGEST }}
+          HOSTED_PLATFORM_TESTS_PROJECT: ${{ secrets.HOSTED_PLATFORM_TESTS_PROJECT }}
+          HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_VISION_API_KEY: ${{ secrets.GOOGLE_VISION_API_KEY }}
+          DEPLOYMENT_VERIFICATION_TOKEN: ${{ secrets.DEPLOYMENT_VERIFICATION_TOKEN }}
+        run: |
+          python "$RUNNER_TEMP/hosted_e2e.py" prepare
+          python "$RUNNER_TEMP/hosted_e2e.py" warmup
+      - name: Retain private preparation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hosted-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            inference/evidence/collection.json
+            inference/evidence/plan.json
+            inference/evidence/readiness.json
+            inference/evidence/warmup.json
+            inference/evidence/dependencies.txt
+          retention-days: 3
+          if-no-files-found: warn
+
+  shards:
+    needs: [guard, prepare]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [A, B, C, D]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: roboflow/inference
+          ref: main
+          path: inference
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify reviewed revisions before executing code
+        working-directory: inference
+        run: |
+          git merge-base --is-ancestor "$HOSTED_E2E_TEST_SHA" origin/main
+          git merge-base --is-ancestor "$HOSTED_E2E_RUNNER_SHA" origin/main
+          git show "$HOSTED_E2E_RUNNER_SHA:.github/scripts/hosted_e2e.py" > "$RUNNER_TEMP/hosted_e2e.py"
+          git checkout --detach "$HOSTED_E2E_TEST_SHA"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: policy
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.31"
+          enable-cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: hosted-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: inference/evidence
+      - name: Install exactly the prepared dependency versions
+        working-directory: inference
+        run: uv pip sync --system evidence/dependencies.txt
+      - name: Execute the assigned cases serially
+        working-directory: inference
+        env:
+          DEPLOYMENT_REFERENCE: ${{ secrets.DEPLOYMENT_REFERENCE }}
+          EXPECTED_CANDIDATE_SHA: ${{ secrets.EXPECTED_CANDIDATE_SHA }}
+          EXPECTED_IMAGE_DIGEST: ${{ secrets.EXPECTED_IMAGE_DIGEST }}
+          HOSTED_PLATFORM_TESTS_PROJECT: ${{ secrets.HOSTED_PLATFORM_TESTS_PROJECT }}
+          HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_VISION_API_KEY: ${{ secrets.GOOGLE_VISION_API_KEY }}
+          DEPLOYMENT_VERIFICATION_TOKEN: ${{ secrets.DEPLOYMENT_VERIFICATION_TOKEN }}
+        run: |
+          python "$RUNNER_TEMP/hosted_e2e.py" shard --shard "${{ matrix.shard }}"
+      - name: Retain private shard evidence even after failure
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hosted-shard-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: inference/evidence/shard-${{ matrix.shard }}.json
+          retention-days: 3
+          if-no-files-found: warn
+
+  aggregate:
+    needs: [guard, prepare, shards]
+    if: ${{ always() && needs.guard.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: roboflow/inference
+          ref: main
+          path: inference
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify reviewed revisions before executing code
+        working-directory: inference
+        run: |
+          git merge-base --is-ancestor "$HOSTED_E2E_TEST_SHA" origin/main
+          git merge-base --is-ancestor "$HOSTED_E2E_RUNNER_SHA" origin/main
+          git show "$HOSTED_E2E_RUNNER_SHA:.github/scripts/hosted_e2e.py" > "$RUNNER_TEMP/hosted_e2e.py"
+          git checkout --detach "$HOSTED_E2E_TEST_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.31"
+          enable-cache: false
+      - name: Download all available evidence from this attempt
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: hosted-*-${{ github.run_id }}-${{ github.run_attempt }}*
+          path: inference/evidence
+          merge-multiple: true
+      - name: Install accounting dependencies without credentials
+        run: uv pip install --system 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8'
+      - name: Require complete coverage and successful prerequisites
+        working-directory: inference
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          SHARD_RESULT: ${{ needs.shards.result }}
+        run: |
+          python "$RUNNER_TEMP/hosted_e2e.py" aggregate
+          test "$PREPARE_RESULT" = success
+          test "$SHARD_RESULT" = success
+      - name: Retain private acceptance details
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hosted-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: inference/evidence/acceptance.json
+          retention-days: 3
+          if-no-files-found: warn

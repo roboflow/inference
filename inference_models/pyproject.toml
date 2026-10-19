@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.39.3"
+version = "0.39.5rc2"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -57,18 +57,12 @@ dependencies = [
   "idna>=3.15",
   "setuptools>=83.0.0",
   "anyio>=4.14.2,<5.0.0",
-  "fsspec>=2026.6.0"
+  "fsspec>=2026.6.0",
 ]
 
 [project.optional-dependencies]
-model-blob-cache = [
-  "boto3>=1.40.0,<=1.41.5",
-  "botocore>=1.40.0,<=1.41.5",
-]
-torch-cpu = [
-  "torch>=2.0.0,<3.0.0",
-  "torchvision"
-]
+model-blob-cache = ["boto3>=1.40.0,<=1.41.5", "botocore>=1.40.0,<=1.41.5"]
+torch-cpu = ["torch>=2.0.0,<3.0.0", "torchvision"]
 torch-cu118 = [
   "sam3==0.1.4; sys_platform != 'darwin'",
   "torch>=2.0.0,<3.0.0",
@@ -112,11 +106,7 @@ torch-jp6-cu126 = [
   "pycuda>=2025.0.0,<2026.0.0",
   "Mako>=1.4.2",
 ]
-onnx-cpu = [
-  "onnxruntime>=1.15.1,<1.23.0",
-  "onnx>=1.21.0",
-  "protobuf>=5.29.6",
-]
+onnx-cpu = ["onnxruntime>=1.15.1,<1.23.0", "onnx>=1.21.0", "protobuf>=5.29.6"]
 onnx-cu118 = [
   "onnxruntime-gpu>=1.15.1,<1.23.0; platform_system != 'darwin'",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin'",
@@ -149,12 +139,28 @@ trt10 = [
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
   "Mako>=1.4.2",
 ]
+# Runtime-only TRT: lean runtime (executes prebuilt engines) without the ~6GB
+# full builder libs. Code prefers `tensorrt` and falls back to `tensorrt_lean`. Use for
+# serving images; use `trt10` (full) where engines are BUILT (development/).
+trt10-runtime = [
+  "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "Mako>=1.4.2",
+]
+# Serving images: full runtime pinned to the registry engine build (non-version-compatible engines need it).
+trt10-serving = [
+  "tensorrt-cu12==10.12.0.36; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-cu12-bindings==10.12.0.36; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-cu12-libs==10.12.0.36; platform_system == 'Linux' or platform_system == 'Windows'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "Mako>=1.4.2",
+]
 test = [
   "pytest>=9.0.3",
   "pytest-timeout==2.4.0",
   "pytest-xdist>=3.0.0",
   "pytest-timeout",
-  "requests-mock>=1.12.1"
+  "requests-mock>=1.12.1",
 ]
 docs = [
   "mkdocs-material[imaging]>=9.7.7",
@@ -171,7 +177,7 @@ docs = [
   "mistune>=3.3.3,<4.0.0",
   "pymdown-extensions>=11.0.0",
   "bleach>=6.4.0",
-  "soupsieve>=2.8.4,<3.0.0"
+  "soupsieve>=2.8.4,<3.0.0",
 ]
 
 [tool.uv.sources]
@@ -179,6 +185,7 @@ torch = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
+  { index = "torch-cu126", extra = "torch-cu126" },
   { index = "torch-cu128", extra = "torch-cu128" },
   { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
@@ -187,13 +194,14 @@ torchvision = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
+  { index = "torch-cu126", extra = "torch-cu126" },
   { index = "torch-cu128", extra = "torch-cu128" },
   { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 
 onnxruntime-gpu = [
-  { index = "onnx-cu118", extra = "onnx-cu118"},
+  { index = "onnx-cu118", extra = "onnx-cu118" },
   { index = "jp6-cu126", extra = "onnx-jp6-cu126" },
 ]
 
@@ -301,5 +309,5 @@ conflicts = [
 [tool.setuptools.package-data]
 inference_models = [
   "models/rfdetr/dinov2_configs/*.json",
-  "models/perception_encoder/vision_encoder/bpe_simple_vocab_16e6.txt.gz"
+  "models/perception_encoder/vision_encoder/bpe_simple_vocab_16e6.txt.gz",
 ]

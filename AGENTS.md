@@ -7,7 +7,7 @@ This guide governs the entire repository. If a subfolder provides its own
 Roboflow Inference is a set of Python packages that run computer vision models
 locally and expose them via an HTTP API and command line interface. The repo
 contains the core library, CLI, SDK, and Dockerfiles for building CPU or GPU
-images. Supported Python versions are 3.10–3.12.
+images. Supported Python versions are 3.10–3.13.
 
 ## Project Structure
 - `inference/` – core library with model loading and streaming utilities.
@@ -135,7 +135,7 @@ do not need access to Roboflow's Slack or Slab; follow the general guidelines ab
   with a finding, explain why in a PR comment beginning
   `/maintainer-review <reason>` to escalate. The handoff requires an open,
   non-draft, same-repository PR; escalation also requires repository write access
-  or higher. Coordinate in the linked Slack thread and record final approval in
+  or higher. Coordinate in the Slack thread and record final approval in
   GitHub. See [handoff behavior](.github/maintainer-review-slack.md) for details.
 
 ## Workflows Package (roboflow-workflows)

@@ -31,7 +31,8 @@ jobs:
   # Build the deploy matrix from the chosen targets. Both regions live in the SAME
   # Modal workspace ($MODAL_WORKSPACE_NAME); they differ only by Modal environment +
   # region knobs, so one deploy credential covers both.
-  #   us -> env `main` (workspace default), aws/us-east-1  (unchanged from prior behavior)
+  #   us -> env `main` (workspace default), any cloud in region `us` (not pinned to one
+  #         cloud region: aws/us-east-1 capacity exhaustion stranded preempted executors)
   #   eu -> env `eu`, gcp + region eu, routed eu-west       -> roboflow-eu--...eu-west.modal.run
   # `stage` picks the Roboflow project the deployed app talks to, per region.
   setup:
@@ -48,8 +49,8 @@ jobs:
           IFS=',' read -ra TS <<< "$TARGETS"
           for t in "${TS[@]}"; do
             case "$t:$STAGE" in
-              us:staging) inc=$(jq -c '. + [{"target":"us","environment":"main","cloud":"aws","region":"us-east-1","routing_region":"","project":"roboflow-staging","app_name":"webexec-roboflow-staging"}]' <<< "$inc") ;;
-              us:prod)    inc=$(jq -c '. + [{"target":"us","environment":"main","cloud":"aws","region":"us-east-1","routing_region":"","project":"roboflow-platform","app_name":"webexec-roboflow-platform"}]' <<< "$inc") ;;
+              us:staging) inc=$(jq -c '. + [{"target":"us","environment":"main","cloud":"","region":"us","routing_region":"","project":"roboflow-staging","app_name":"webexec-roboflow-staging"}]' <<< "$inc") ;;
+              us:prod)    inc=$(jq -c '. + [{"target":"us","environment":"main","cloud":"","region":"us","routing_region":"","project":"roboflow-platform","app_name":"webexec-roboflow-platform"}]' <<< "$inc") ;;
               eu:staging) inc=$(jq -c '. + [{"target":"eu","environment":"eu","cloud":"gcp","region":"eu","routing_region":"eu-west","project":"roboflow-staging","app_name":"webexec-roboflow-eu-staging"}]' <<< "$inc") ;;
               eu:prod)    inc=$(jq -c '. + [{"target":"eu","environment":"eu","cloud":"gcp","region":"eu","routing_region":"eu-west","project":"roboflow-platform","app_name":"webexec-roboflow-eu-platform"}]' <<< "$inc") ;;
               *) echo "unsupported target/stage combination: $t:$STAGE" >&2; exit 1 ;;

@@ -15,6 +15,9 @@ style:
 	python3 -m isort $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**' --skip-glob '**/.venv/**'
 
 check_code_quality:
+	which uv || pip install uv
+	# four GPU/TRT dockerfiles build with `uv sync --locked`; a stale lock fails there, not here
+	cd inference_models && uv lock --check
 	python3 -m black --check $(check_dirs) --extend-exclude '__init__\.py|node_modules|perception_encoder/vision_encoder/'
 	python3 -m isort --check-only $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**' --skip-glob '**/.venv/**'
 	# stop the build if there are Python syntax errors or undefined names
@@ -26,21 +29,26 @@ check_code_quality:
 download_fonts:
 	${PYTHON} build_scripts/download_fonts.py
 
+# CI may use a verified immutable image and an isolated container/host port.
+INFERENCE_TEST_IMAGE ?= roboflow/${INFERENCE_SERVER_REPO}:test
+INFERENCE_TEST_CONTAINER ?= inference-test
+INFERENCE_TEST_BIND ?= $(PORT):$(PORT)
+
 start_test_docker_cpu:
-	docker run -d --rm -p $(PORT):$(PORT) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+	docker run -d --rm -p $(INFERENCE_TEST_BIND) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name $(INFERENCE_TEST_CONTAINER) $(INFERENCE_TEST_IMAGE)
 
 start_test_docker_gpu:
-	docker run -d --rm -p $(PORT):$(PORT) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+	docker run -d --rm -p $(INFERENCE_TEST_BIND) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all --name $(INFERENCE_TEST_CONTAINER) $(INFERENCE_TEST_IMAGE)
 
 start_test_docker_gpu_with_roboflow_staging:
 	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all -e PROJECT=roboflow-staging --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
 
 start_test_docker_jetson:
-	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_ACTIVE_MODELS=1 -e MAX_BATCH_SIZE=17 --runtime=nvidia --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+	docker run -d --rm -p $(PORT):$(PORT) -e USE_INFERENCE_MODELS=$(or $(USE_INFERENCE_MODELS),True) -e PORT=$(PORT) -e MAX_ACTIVE_MODELS=1 -e MAX_BATCH_SIZE=17 --runtime=nvidia --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
 stop_test_docker:
-	docker rm -f inference-test
+	docker rm -f $(INFERENCE_TEST_CONTAINER)
 
 create_workflows_wheel: download_fonts
 	which uv || pip install uv

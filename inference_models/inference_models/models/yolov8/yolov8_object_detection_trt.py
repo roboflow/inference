@@ -65,7 +65,10 @@ from inference_models.weights_providers.entities import RecommendedParameters
 logger = logging.getLogger(__name__)
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt as trt
+    except ImportError:
+        import tensorrt_lean as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLOv8 model with TRT backend on GPU requires pycuda installation, which is brought with "

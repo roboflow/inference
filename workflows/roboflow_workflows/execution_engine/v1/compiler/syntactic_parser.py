@@ -9,6 +9,9 @@ from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     _get_env_configuration_state,
     load_workflow_blocks,
 )
+from roboflow_workflows.execution_engine.introspection.manifest_cache import (
+    is_dynamic_manifest,
+)
 from roboflow_workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
     execution_phase,
@@ -101,12 +104,25 @@ def parse_workflow_definition(
 def build_workflow_definition_entity(
     available_blocks: List[BlockSpecification],
 ) -> Type[BaseModel]:
-    cache_key = WORKFLOW_DEFINITION_ENTITIES_CACHE.get_hash_key(
-        available_blocks=available_blocks
+    """Build the workflow validation model without caching dynamic manifests.
+
+    Args:
+        available_blocks: Block classes and manifests available to the workflow.
+
+    Returns:
+        Pydantic model that validates the workflow definition.
+    """
+    cacheable = not any(
+        is_dynamic_manifest(block.manifest_class) for block in available_blocks
     )
-    cached_value = WORKFLOW_DEFINITION_ENTITIES_CACHE.get(key=cache_key)
-    if cached_value is not None:
-        return cached_value
+    if cacheable:
+        cache_key = WORKFLOW_DEFINITION_ENTITIES_CACHE.get_hash_key(
+            available_blocks=available_blocks
+        )
+        cached_value = WORKFLOW_DEFINITION_ENTITIES_CACHE.get(key=cache_key)
+        if cached_value is not None:
+            return cached_value
+
     steps_manifests = tuple(block.manifest_class for block in available_blocks)
     block_manifest_types_union = Union[steps_manifests]
     block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]
@@ -117,10 +133,12 @@ def build_workflow_definition_entity(
         steps=(List[block_type], ...),
         outputs=(List[JsonField], ...),
     )
-    WORKFLOW_DEFINITION_ENTITIES_CACHE.cache(
-        key=cache_key,
-        value=entity,
-    )
+    if cacheable:
+        WORKFLOW_DEFINITION_ENTITIES_CACHE.cache(
+            key=cache_key,
+            value=entity,
+        )
+
     return entity
 
 
