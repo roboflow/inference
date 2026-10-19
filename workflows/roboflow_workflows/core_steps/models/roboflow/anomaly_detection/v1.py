@@ -3,12 +3,15 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.anomaly_detection import (
+    ANOMALY_DECISION_THRESHOLD_KEY,
     ANOMALY_MAP_KEY,
+    ANOMALY_SCALE_KEY,
     ANOMALY_SCORE_KEY,
     ANOMALY_THRESHOLD_KEY,
     IS_ANOMALOUS_KEY,
     apply_threshold_override,
     coerce_anomaly_map,
+    decision_threshold,
     require_anomaly_response,
     validate_threshold_override,
 )
@@ -81,6 +84,9 @@ scores a new image by how far it departs from that. The block reports:
 - `anomaly_threshold`: the threshold in effect for this image (saved with the
   model, or the override).
 - `is_anomalous`: whether the anomalous confidence reached `confidence`.
+- `anomaly_decision_threshold`: the raw score at which the anomalous confidence
+  equals `confidence` (`anomaly_threshold` itself at 0.5). Connect it to the
+  heatmap's `anomaly_threshold` so the middle of its ramp marks the decision.
 - `anomaly_map`: the local anomaly evidence as a float32 `(height, width)`
   array at the network's input resolution (square), in the same units as
   `anomaly_score`. The map covers the whole image as the network saw it, so
@@ -188,6 +194,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
             OutputDefinition(name=ANOMALY_SCORE_KEY, kind=[FLOAT_KIND]),
             OutputDefinition(name=ANOMALY_THRESHOLD_KEY, kind=[FLOAT_KIND]),
+            OutputDefinition(name=ANOMALY_DECISION_THRESHOLD_KEY, kind=[FLOAT_KIND]),
             OutputDefinition(name=IS_ANOMALOUS_KEY, kind=[BOOLEAN_KIND]),
             OutputDefinition(name=ANOMALY_MAP_KEY, kind=[NUMPY_ARRAY_KIND]),
             OutputDefinition(name=INFERENCE_ID_KEY, kind=[INFERENCE_ID_KIND]),
@@ -376,6 +383,11 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
                     "predictions": prediction,
                     ANOMALY_SCORE_KEY: float(prediction[ANOMALY_SCORE_KEY]),
                     ANOMALY_THRESHOLD_KEY: float(prediction[ANOMALY_THRESHOLD_KEY]),
+                    ANOMALY_DECISION_THRESHOLD_KEY: decision_threshold(
+                        threshold=float(prediction[ANOMALY_THRESHOLD_KEY]),
+                        scale=float(prediction[ANOMALY_SCALE_KEY]),
+                        confidence=confidence,
+                    ),
                     IS_ANOMALOUS_KEY: bool(prediction[IS_ANOMALOUS_KEY]),
                     ANOMALY_MAP_KEY: anomaly_map,
                     INFERENCE_ID_KEY: prediction.get(INFERENCE_ID_KEY),

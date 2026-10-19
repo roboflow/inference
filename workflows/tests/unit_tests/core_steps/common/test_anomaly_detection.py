@@ -5,6 +5,7 @@ import pytest
 from roboflow_workflows.core_steps.common.anomaly_detection import (
     apply_threshold_override,
     coerce_anomaly_map,
+    decision_threshold,
     decode_anomaly_map,
     require_anomaly_response,
     validate_threshold_override,
@@ -136,3 +137,20 @@ def test_apply_threshold_override_without_override_is_a_no_op() -> None:
 
     # then
     assert result == response
+
+
+@pytest.mark.parametrize(
+    "confidence, expected",
+    [
+        (0.5, 2.0),
+        (0.8, 2.0 + 0.5 * 1.3862944),
+        (0.0, 2.0 - 0.5 * 60),
+        (1.0, 2.0 + 0.5 * 60),
+    ],
+)
+def test_decision_threshold_is_where_the_anomalous_confidence_meets_confidence(
+    confidence: float, expected: float
+) -> None:
+    assert decision_threshold(threshold=2.0, scale=0.5, confidence=confidence) == (
+        pytest.approx(expected)
+    )

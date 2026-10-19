@@ -64,8 +64,9 @@ model preview, with transparency that fades out where the evidence is low. The
 OpenCV ramps (`JET`, `TURBO`, `INFERNO`, `VIRIDIS`, `HOT`) are opaque colour maps
 over the same scale; use `opacity` to see the image through them.
 
-Pass the model block's `anomaly_threshold` output so the ramp follows the threshold
-in effect (the saved one, or the block's override).
+Pass the model block's `anomaly_decision_threshold` output so the middle of the ramp
+marks the block's decision (its threshold and `confidence`); at the default confidence
+of 0.5 it equals `anomaly_threshold`.
 
 ## Common Use Cases
 
@@ -119,8 +120,8 @@ class AnomalyHeatmapManifest(VisualizationManifest):
         examples=["$steps.anomaly_model.anomaly_map"],
     )
     anomaly_threshold: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
-        description="The decision threshold on the raw anomaly score that anchors the colour ramp; the threshold maps to the middle of the ramp. Connect the model block's anomaly_threshold output so the ramp follows the threshold in effect.",
-        examples=["$steps.anomaly_model.anomaly_threshold", 1.25],
+        description="The raw anomaly score that anchors the colour ramp; it maps to the middle of the ramp. Connect the model block's anomaly_decision_threshold output so the ramp follows the block's decision.",
+        examples=["$steps.anomaly_model.anomaly_decision_threshold", 1.25],
     )
     color_map: Union[
         Literal["ROBOFLOW", "JET", "TURBO", "INFERNO", "VIRIDIS", "HOT"],

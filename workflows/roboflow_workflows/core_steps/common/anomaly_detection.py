@@ -25,6 +25,7 @@ import numpy as np
 ANOMALY_SCORE_KEY = "anomaly_score"
 ANOMALY_THRESHOLD_KEY = "anomaly_threshold"
 ANOMALY_SCALE_KEY = "anomaly_scale"
+ANOMALY_DECISION_THRESHOLD_KEY = "anomaly_decision_threshold"
 IS_ANOMALOUS_KEY = "is_anomalous"
 ANOMALY_MAP_KEY = "anomaly_map"
 ANOMALY_METADATA_KEYS = (
@@ -156,6 +157,22 @@ def validate_threshold_override(threshold: Optional[float]) -> Optional[float]:
     if not math.isfinite(value):
         raise ValueError(f"anomaly_threshold must be finite, got {value}")
     return value
+
+
+def decision_threshold(threshold: float, scale: float, confidence: float) -> float:
+    """The raw score at which the anomalous confidence equals ``confidence``.
+
+    ``threshold + scale * logit(confidence)``, so ``threshold`` itself at 0.5. The
+    logit is clipped like the sigmoid, keeping the result finite at 0 and 1.
+    """
+    if confidence <= 0:
+        margin = -MAX_CONFIDENCE_MARGIN
+    elif confidence >= 1:
+        margin = MAX_CONFIDENCE_MARGIN
+    else:
+        margin = math.log(confidence / (1 - confidence))
+        margin = max(-MAX_CONFIDENCE_MARGIN, min(MAX_CONFIDENCE_MARGIN, margin))
+    return threshold + scale * margin
 
 
 def anomalous_confidence(score: float, threshold: float, scale: float) -> float:

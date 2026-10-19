@@ -201,6 +201,7 @@ def test_manifest_outputs_are_declared_in_contract_order() -> None:
         "predictions",
         "anomaly_score",
         "anomaly_threshold",
+        "anomaly_decision_threshold",
         "is_anomalous",
         "anomaly_map",
         "inference_id",
@@ -226,6 +227,7 @@ def test_run_locally_forwards_the_map_flag_and_decodes_the_payload() -> None:
     assert len(result) == 1
     assert result[0]["anomaly_score"] == 3.0
     assert result[0]["anomaly_threshold"] == 2.0
+    assert result[0]["anomaly_decision_threshold"] == 2.0
     assert result[0]["is_anomalous"] is True
     assert result[0]["inference_id"] == "iid-1"
     assert result[0]["model_id"] == "ws/anomaly/1"
@@ -282,6 +284,8 @@ def test_run_locally_sends_confidence_and_applies_it_under_an_override() -> None
     assert provider.calls[0]["confidence"] == 0.8
     assert result[0]["is_anomalous"] is False
     assert result[0]["predictions"]["top"] == "normal"
+    # 1.0 + 0.5 * logit(0.8): the score the override needs for an anomalous verdict.
+    assert result[0]["anomaly_decision_threshold"] == pytest.approx(1.6931, abs=1e-4)
 
 
 def test_run_rejects_a_plain_classifier_response() -> None:

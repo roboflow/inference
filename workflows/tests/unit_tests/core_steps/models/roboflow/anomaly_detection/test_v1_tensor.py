@@ -190,6 +190,7 @@ def test_run_locally_applies_confidence_under_an_override() -> None:
     assert provider.calls[0]["confidence"] == 0.8
     assert result[0]["is_anomalous"] is False
     assert result[0]["predictions"].class_id.tolist() == [0]
+    assert result[0]["anomaly_decision_threshold"] == pytest.approx(1.6931, abs=1e-4)
 
 
 def test_run_locally_rejects_a_plain_classifier() -> None:
