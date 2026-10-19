@@ -9,6 +9,12 @@ The host owns one manager for one credential policy, device, and lifetime. CUDA
 devices must include an index such as `cuda:0`; thread-relative `cuda` is refused. Loads
 use the direct backend, pinned models, and the exact `ModelRequest` identity.
 Identical concurrent requests share one load. Different package IDs stay separate.
+The host may set `allow_untrusted_packages=True` only when it deliberately accepts
+a package whose source is not marked trusted. The default is `False`, and the
+option must be a boolean. It is fixed for the owner, must not come from workflow
+JSON, and does not bypass authorization, package selection or integrity checks.
+This is the same explicit loader policy available to a host using `ModelCache`.
+
 A request without a package ID permits normal package selection; use an explicit
 package ID for reproducible deployments and comparisons.
 

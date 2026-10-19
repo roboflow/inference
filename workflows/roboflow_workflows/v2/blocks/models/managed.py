@@ -60,12 +60,15 @@ class ManagedModels:
             workflow JSON or use one owner across different credential policies.
         device: Explicit model device, such as ``"cpu"`` or ``"cuda:0"``.
             CUDA devices require an index; thread-relative ``"cuda"`` is refused.
+        allow_untrusted_packages: Explicit host opt-in for packages whose source
+            is not marked trusted. Defaults to False; never set from workflow JSON.
         namespace: Host ownership label. Separate owners always get separate
             routing keys, even when this label is identical.
 
     Raises:
         ValueError: When device or namespace is empty, CUDA has no valid index,
             or api_key is not a string.
+        TypeError: When allow_untrusted_packages is not a bool.
         ImportError: When the optional manager or its dependencies are unavailable.
 
     Notes:
@@ -76,7 +79,14 @@ class ManagedModels:
         capacity setting; this owner is not a memory admission controller.
     """
 
-    def __init__(self, *, api_key: str, device: str, namespace: str = "workflows"):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        device: str,
+        namespace: str = "workflows",
+        allow_untrusted_packages: bool = False,
+    ):
         if not isinstance(api_key, str):
             raise ValueError("api_key must be a host-provided string")
         if not isinstance(device, str) or not device.strip():
@@ -90,6 +100,10 @@ class ManagedModels:
         if not isinstance(namespace, str) or not namespace.strip():
             raise ValueError("namespace must be a non-empty string")
 
+        if not isinstance(allow_untrusted_packages, bool):
+            raise TypeError("allow_untrusted_packages must be a bool")
+
+        self._allow_untrusted_packages = allow_untrusted_packages
         self._api_key = api_key
         self._device = device
         self._namespace = namespace
@@ -298,6 +312,7 @@ class ManagedModels:
                 device=self._device,
                 pinned=True,
                 warmup_iters=0,
+                allow_untrusted_packages=self._allow_untrusted_packages,
             )
             backend = self._manager.get_backend(route)
             model = getattr(backend, "model", None)

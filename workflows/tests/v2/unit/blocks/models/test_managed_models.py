@@ -73,6 +73,7 @@ def test_exact_request_policy_identity_and_resource_type(manager):
             backend="direct",
             pinned=True,
             warmup_iters=0,
+            allow_untrusted_packages=False,
         )
     assert manager.shutdowns == 1
     with pytest.raises(RuntimeError, match="closing or closed"):
@@ -367,3 +368,22 @@ def test_indexed_cuda_policy_is_forwarded_without_optional_torch_import(manager)
     with managed.ManagedModels(api_key="", device="cuda:2") as models:
         models.preload(ModelRequest("model"))
     assert manager.calls[0][1]["device"] == "cuda:2"
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", "false"])
+def test_untrusted_package_policy_requires_boolean(manager, value):
+    with pytest.raises(TypeError, match="must be a bool"):
+        managed.ManagedModels(api_key="", device="cpu", allow_untrusted_packages=value)
+    assert not manager.calls
+
+
+def test_untrusted_package_policy_is_explicit_and_fixed_for_the_owner(manager):
+    with managed.ManagedModels(
+        api_key="", device="cpu", allow_untrusted_packages=True
+    ) as models:
+        models.preload(ModelRequest("model", "package-a"))
+        models.preload(ModelRequest("model", "package-b"))
+    assert len(manager.calls) == 2
+    assert all(
+        options["allow_untrusted_packages"] is True for _, options in manager.calls
+    )
