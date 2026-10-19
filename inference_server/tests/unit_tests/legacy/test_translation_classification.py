@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
-from inference_models.models.base.classification import ClassificationPrediction
 from PIL import Image
 
+from inference_models.models.base.classification import ClassificationPrediction
 from inference_server.legacy.bridge import Route
 from inference_server.legacy.entities import (
     AnomalyDetectionResponse,
@@ -38,6 +38,7 @@ def test_anomaly_metadata_repacks_as_anomaly_detection_response():
             {
                 "anomaly_score": 1.5,
                 "anomaly_threshold": 1.0,
+                "anomaly_scale": 0.5,
                 "is_anomalous": True,
                 "anomaly_map": np.array([[0.1, 0.2], [0.3, 0.4]], dtype=np.float32),
             }
@@ -57,6 +58,7 @@ def test_anomaly_metadata_repacks_as_anomaly_detection_response():
     assert [p["class"] for p in d["predictions"]] == ["anomalous", "normal"]
     assert d["anomaly_score"] == 1.5
     assert d["anomaly_threshold"] == 1.0
+    assert d["anomaly_scale"] == 0.5
     assert d["is_anomalous"] is True
     assert d["anomaly_map"] == [
         [pytest.approx(0.1), pytest.approx(0.2)],
@@ -69,7 +71,12 @@ def test_anomaly_metadata_without_map_leaves_anomaly_map_out():
         class_id=torch.tensor([0]),
         confidence=torch.tensor([[0.7, 0.3]]),
         images_metadata=[
-            {"anomaly_score": 0.5, "anomaly_threshold": 1.0, "is_anomalous": False}
+            {
+                "anomaly_score": 0.5,
+                "anomaly_threshold": 1.0,
+                "anomaly_scale": 0.5,
+                "is_anomalous": False,
+            }
         ],
     )
     resp = repack_prediction(
@@ -111,6 +118,20 @@ def test_build_task_params_forwards_include_anomaly_map_for_classification():
     }
     assert build_task_params("multi-label-classification", "infer", request, route) == {
         "confidence": 0.3
+    }
+
+
+def test_build_task_params_leaves_an_omitted_classification_confidence_unset():
+    # The request defaults confidence to 0.4; an anomaly model must not decide at
+    # it, so only a confidence the caller sent reaches the model.
+    request = ClassificationInferenceRequest(model_id="ds/1", image=IMG)
+    route = _anomaly_route()
+
+    assert "confidence" not in build_task_params(
+        "classification", "infer", request, route
+    )
+    assert build_task_params("multi-label-classification", "infer", request, route) == {
+        "confidence": 0.4
     }
 
 
