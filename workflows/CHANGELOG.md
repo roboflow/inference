@@ -16,6 +16,8 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- **Opt-in V2 model ownership** — Add `ManagedModels` for host-owned, pinned direct models from the optional in-process model manager. Native phased execution and the existing `ModelCache` default remain unchanged. Hosts must finish sessions and external output consumers before closing the owner.
+
 - **V2 combined detection visualization** — Add `roboflow_core/detection_visualization@v1` to draw boxes and labels in one step with shared palette parameters. Accurate rendering preserves the existing accurate box-then-label chain; explicit fast quality uses portable fast implementations with documented outline raster differences. Existing blocks and defaults are unchanged.
 
 - **V2 empty coarse masks** — Return an empty full-image mask raster when no instances remain, preserving device and frame metadata without interpolating zero channels.
