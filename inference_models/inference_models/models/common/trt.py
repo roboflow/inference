@@ -740,6 +740,10 @@ def _execute_trt_engine(
         else:
             trt_cuda_graph_state = trt_cuda_graph_cache[cache_key]
             stream = trt_cuda_graph_state.cuda_stream
+            # The caller stream may own readiness waits without a tensor event.
+            # Preserve those dependencies before copying or replaying on this stream.
+            stream.wait_stream(torch.cuda.current_stream(device))
+            pre_processed_images.record_stream(stream)
             consumer_done = trt_cuda_graph_state.consumer_done_event
             if consumer_done is not None:
                 stream.wait_event(consumer_done)
@@ -833,6 +837,10 @@ def _capture_cuda_graph(
     graph_context = engine.create_execution_context()
 
     stream = torch.cuda.Stream(device=device)
+    # Capture uses a private stream, so inherit the caller's preprocessing waits
+    # before either copying the input or executing with an external input buffer.
+    stream.wait_stream(torch.cuda.current_stream(device))
+    pre_processed_images.record_stream(stream)
     input_ready = getattr(pre_processed_images, "_trt_ready_event", None)
     if use_pre_processed_images_as_input_buffer:
         input_buffer = pre_processed_images
