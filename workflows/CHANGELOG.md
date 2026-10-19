@@ -16,6 +16,20 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
+
+## `0.2.10`
+
+Bundled execution engine: `1.16.1`.
+
+### Fixed
+
+- Dataset upload v1 (`roboflow_core/roboflow_dataset_upload@v1`) compiles again. Its `images` field listed `image` as the first validation alias, so the JSON schema named the property `image` while the manifest attribute is `images`; compilation raised `BlockInterfaceError` and `/describe_interface` raised `AttributeError`. The alias order is now `images`, `image`: both keys still validate, and the block schema lists `images`, as dataset upload v2 does.
+
+## `0.2.9`
+
 ### Execution engine
 
 - Prevent supporting metadata and workflow validation-model caches from retaining dynamically generated custom Python manifests after their compiled workflows are evicted. Static manifest caching and compiled-workflow reuse are preserved; no workflow changes are required.
@@ -35,6 +49,10 @@ for contributor and maintainer responsibilities.
 - `/workflows/blocks/describe` lists these blocks under their names from before the plugin, `inference.core.workflows.core_steps.{sinks,integrations}.roboflow.…`, and in their original positions within the core list, instead of `inference.roboflow_workflows_plugin.…` at the end.
 - A disable pattern on the canonical module path, such as `roboflow_workflows.core_steps.sinks`, now also disables these blocks, like any other core block. Patterns written against either historic path keep matching the same blocks.
 - OpenAI v7: optional `service_tier` (`auto`, `default`, `flex`, `priority`, `ultrafast`), sent with direct OpenAI requests and forwarded to the Roboflow proxy for `rf_key:` keys. Unset keeps OpenAI's default tier.
+- `PlatformClient.register_image_at_roboflow` takes an optional `annotation_follows`
+  (default `False`). Dataset Upload `@v1` sets it when an annotation upload follows,
+  so a host that retries uploads can fail an upload whose retry reports a duplicate
+  instead of silently dropping the annotation.
 
 
 ## `0.2.8`
