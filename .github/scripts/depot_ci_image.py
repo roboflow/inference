@@ -60,11 +60,30 @@ def _repository() -> str:
     return repository
 
 
+def _project() -> str:
+    # The project is a repository variable; it must own the saved-image repository.
+    project = os.environ.get("DEPOT_PROJECT_ID", "")
+    if not project or project != _repository().rsplit("/", 1)[1]:
+        raise ValueError("Configure the matching project and repository")
+
+    return project
+
+
 def _validate() -> None:
     _authorize()
-    _repository()
+    _project()
     if os.environ.get("IMAGE_FAMILY") not in {"cpu", "gpu"}:
         raise ValueError("Invalid image family")
+
+
+def _pull_token(project: str) -> str:
+    # The CLI authenticates with GitHub OIDC through the org-level Depot
+    # connection; the registry only ever sees a one-hour read-only token.
+    token = _run(["depot", "pull-token", "--project", project]).strip()
+    if not token or any(character.isspace() for character in token):
+        raise ValueError("Missing or invalid pull token")
+
+    return token
 
 
 def _login(*, env: dict, token: str) -> None:
@@ -88,11 +107,7 @@ def _login(*, env: dict, token: str) -> None:
 def _build() -> None:
     _validate()
     repository = _repository()
-    project = os.environ.get("DEPOT_PROJECT_ID", "")
-    token = os.environ.get("DEPOT_TOKEN", "")
-    if project != repository.rsplit("/", 1)[1] or not token:
-        raise ValueError("Configure the matching builder project and token")
-
+    project = _project()
     family = os.environ["IMAGE_FAMILY"]
     sha = os.environ["GITHUB_SHA"]
     # Buildx is installed before this helper. Keep its records for its post hook.
@@ -132,7 +147,7 @@ def _build() -> None:
                 raise ValueError("Missing saved build identity")
 
             index = _digest(result["containerimage.digest"])
-            _login(env=dict(os.environ), token=token)
+            _login(env=dict(os.environ), token=_pull_token(project))
             manifest = json.loads(
                 _run(
                     [
@@ -166,11 +181,11 @@ def _pull() -> None:
 
     digest = _digest(os.environ.get("IMAGE_DIGEST", ""))
     reference = f"{_repository()}@{digest}"
-    # The pull credential never enters GITHUB_ENV or a test-step environment.
-    # No Depot CLI/API token or OIDC permission is needed by consumers.
+    # The one-hour pull token lives only in a temporary DOCKER_CONFIG; it never
+    # enters GITHUB_ENV or a test-step environment.
     with TemporaryDirectory(dir=os.environ["RUNNER_TEMP"]) as directory:
         env = dict(os.environ, DOCKER_CONFIG=directory)
-        _login(env=env, token=os.environ.get("CI_DEPOT_PULL_TOKEN", ""))
+        _login(env=env, token=_pull_token(_project()))
         _run(["docker", "pull", "--platform", "linux/amd64", reference], env=env)
         info = json.loads(_run(["docker", "image", "inspect", reference], env=env))[0]
         labels = info.get("Config", {}).get("Labels") or {}

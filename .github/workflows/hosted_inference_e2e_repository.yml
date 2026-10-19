@@ -48,7 +48,9 @@ jobs:
     # Accident prevention only: any same-repository branch or tag may run, and
     # the secrets are repository-level. Pins one dispatched SHA for every job.
     name: Verify manual same-repository dispatch
-    runs-on: ubuntu-24.04
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 5
     outputs:
       approved_ref: ${{ steps.authorize.outputs.approved_ref }}
@@ -67,7 +69,9 @@ jobs:
     env:
       HOSTED_E2E_APPROVED_REF: ${{ needs.guard.outputs.approved_ref }}
       HOSTED_E2E_APPROVED_SHA: ${{ needs.guard.outputs.approved_sha }}
-    runs-on: ubuntu-24.04
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -114,7 +118,9 @@ jobs:
     env:
       HOSTED_E2E_APPROVED_REF: ${{ needs.guard.outputs.approved_ref }}
       HOSTED_E2E_APPROVED_SHA: ${{ needs.guard.outputs.approved_sha }}
-    runs-on: ubuntu-24.04
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -171,7 +177,9 @@ jobs:
     env:
       HOSTED_E2E_APPROVED_REF: ${{ needs.guard.outputs.approved_ref }}
       HOSTED_E2E_APPROVED_SHA: ${{ needs.guard.outputs.approved_sha }}
-    runs-on: ubuntu-24.04
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

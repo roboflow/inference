@@ -8,18 +8,21 @@
   and tests their exact digests in both model modes. Share the existing server
   test stages with the legacy workflows and use `fail-fast: true`.
 - Require same-repository manual execution, an explicitly approved branch and
-  commit, and separate protected builder/reader environments. Supply credentials
-  and private resource configuration only through secret references; remove pull
-  credentials before tests and withhold raw build/test output from public logs.
+  commit, and separate protected builder/reader environments. Authenticate to
+  Depot with GitHub OIDC through the org-level connection, as every other Depot
+  workflow at Roboflow does; store no Depot token anywhere. Keep the project and
+  registry as repository variables, mint one-hour read-only pull tokens in the
+  job for registry logins, remove them before tests and withhold raw build/test
+  output from public logs.
 - Keep the existing default path and release publishing unchanged. The trial
   remains disabled unless configured; Depot permissions, retention, runner
   isolation and a live build/pull/test run still require verification.
 - Add offline regression coverage for authorization, image identity, credential
   cleanup, output suppression, complete test coverage and legacy-path exclusion.
-- Pass `CI_DEPOT_*` by name on every reusable-workflow hop and declare them
-  `required` in the called workflows. GitHub resolves an environment secret the
-  caller does not pass to an empty string without an error; the called job's
-  `ci-depot-builder` / `ci-depot-reader` environment supplies the values.
+- Validate the Depot transport locally against project `inference-ci-test`:
+  `--save`, digest-addressed manifest inspection, pull by child digest, the
+  identity checks and push denial for pull tokens all pass. The Actions OIDC
+  path still needs one live run.
 
 ### Review follow-ups — October 16, 2026
 

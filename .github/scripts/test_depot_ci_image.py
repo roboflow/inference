@@ -40,8 +40,6 @@ class DepotImageTests(unittest.TestCase):
             "CI_DEPOT_APPROVED_SHA": SHA,
             "CI_DEPOT_REGISTRY": REPOSITORY,
             "DEPOT_PROJECT_ID": "exampleproject",
-            "DEPOT_TOKEN": "synthetic-builder-secret",
-            "CI_DEPOT_PULL_TOKEN": "synthetic-reader-secret",
             "IMAGE_FAMILY": "cpu",
             "MODEL_MODE": "true",
             "IMAGE_DIGEST": DIGEST,
@@ -82,6 +80,8 @@ class DepotImageTests(unittest.TestCase):
         self.calls.append((args, env, stdin))
         if args[:2] == ["git", "rev-parse"]:
             return SHA
+        if args[:2] == ["depot", "pull-token"]:
+            return "synthetic-pull-token\n"
         if args[:2] == ["docker", "login"]:
             Path(env["DOCKER_CONFIG"], "config.json").write_text(stdin)
         if args[:2] == ["depot", "build"]:
@@ -151,11 +151,14 @@ class DepotImageTests(unittest.TestCase):
             ["docker", "pull", "--platform", "linux/amd64", f"{REPOSITORY}@{DIGEST}"],
             commands,
         )
-        self.assertFalse(
-            any(args[0] == "depot" or "build" in args for args in commands)
+        # OIDC mints a read-only pull token; the consumer never builds anything.
+        self.assertEqual(
+            [args for args in commands if args[0] == "depot"],
+            [["depot", "pull-token", "--project", "exampleproject"]],
         )
+        self.assertFalse(any("build" in args for args in commands))
         login = next(call for call in self.calls if call[0][:2] == ["docker", "login"])
-        self.assertEqual(login[2], self.env["CI_DEPOT_PULL_TOKEN"])
+        self.assertEqual(login[2], "synthetic-pull-token")
         self.assertNotIn(login[2], str(login[0]))
         self.assertFalse(Path(login[1]["DOCKER_CONFIG"]).exists())
 
@@ -194,13 +197,20 @@ class DepotImageTests(unittest.TestCase):
                 login = self.calls[-3]
                 self.assertFalse(Path(login[1]["DOCKER_CONFIG"]).exists())
 
-    def test_missing_reader_token_never_logs_in(self):
-        with patch.dict(os.environ, {"CI_DEPOT_PULL_TOKEN": ""}), patch.object(
-            image, "_run", side_effect=self._run
-        ):
-            with self.assertRaises(ValueError):
-                image._pull()
-        self.assertEqual([call[0][0] for call in self.calls], ["git"])
+    def test_empty_or_malformed_pull_token_never_logs_in(self):
+        for minted in ["", "\n", "two words\n"]:
+
+            def run(args, **kwargs):
+                result = self._run(args, **kwargs)
+                return minted if args[:2] == ["depot", "pull-token"] else result
+
+            self.calls.clear()
+            with self.subTest(minted=minted), patch.object(
+                image, "_run", side_effect=run
+            ):
+                with self.assertRaises(ValueError):
+                    image._pull()
+                self.assertEqual([call[0][0] for call in self.calls], ["git", "depot"])
 
     def test_build_saves_tracked_source_without_release_publication(self):
         for family in ["cpu", "gpu"]:
@@ -258,8 +268,8 @@ class DepotImageTests(unittest.TestCase):
                 self.assertFalse((self.root / "output").exists())
                 self.assertFalse((self.root / "builder/config.json").exists())
 
-    def test_build_requires_explicit_token_and_matching_project(self):
-        for change in [{"DEPOT_TOKEN": ""}, {"DEPOT_PROJECT_ID": "wrong"}]:
+    def test_build_requires_matching_project_and_uses_a_minted_pull_token(self):
+        for change in [{"DEPOT_PROJECT_ID": ""}, {"DEPOT_PROJECT_ID": "wrong"}]:
             self.calls.clear()
             with patch.dict(os.environ, change), patch.object(
                 image, "_run", side_effect=self._run
@@ -267,6 +277,17 @@ class DepotImageTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     image._build()
             self.assertFalse(any(args[0] == "depot" for args, _, _ in self.calls))
+        self.calls.clear()
+        with patch.object(image, "_run", side_effect=self._run):
+            image._build()
+        depot = [args for args, _, _ in self.calls if args[0] == "depot"]
+        self.assertEqual(depot[0][:2], ["depot", "build"])
+        self.assertEqual(
+            depot[1], ["depot", "pull-token", "--project", "exampleproject"]
+        )
+        login = next(call for call in self.calls if call[0][:2] == ["docker", "login"])
+        self.assertEqual(login[2], "synthetic-pull-token")
+        self.assertNotIn("DEPOT_TOKEN", os.environ)
 
     def test_failure_removes_only_builder_credentials(self):
         (self.root / "builder/config.json").write_text("synthetic-secret")
@@ -291,14 +312,16 @@ class DepotImageTests(unittest.TestCase):
         bindir.mkdir()
         git = bindir / "git"
         git.write_text(f"#!/bin/sh\nprintf '%s' '{SHA}'\n")
+        depot = bindir / "depot"
+        depot.write_text("#!/bin/sh\nprintf '%s' 'synthetic-pull-token'\n")
         docker = bindir / "docker"
         docker.write_text("""#!/bin/sh
 cat > "$DOCKER_CONFIG/config.json"
-echo "synthetic-private-host $CI_DEPOT_PULL_TOKEN"
-echo "synthetic-private-host $CI_DEPOT_PULL_TOKEN" >&2
+echo "synthetic-private-host synthetic-pull-token"
+echo "synthetic-private-host synthetic-pull-token" >&2
 exit 17
 """)
-        for path in [git, docker]:
+        for path in [git, depot, docker]:
             path.chmod(0o700)
         env = dict(os.environ, PATH=f"{bindir}:/usr/bin:/bin", CI_DEPOT_ACTION="pull")
         result = subprocess.run(
@@ -360,7 +383,10 @@ class WorkflowTests(unittest.TestCase):
             workflow["concurrency"]["group"], nested["concurrency"]["group"]
         )
 
-    def test_credentials_and_permissions_are_separated(self):
+    def test_oidc_auth_without_stored_depot_tokens_and_separated_permissions(self):
+        # Org convention: GitHub OIDC through the org-level Depot connection,
+        # no stored Depot token anywhere, project and registry as variables.
+        oidc = {"contents": "read", "id-token": "write"}
         for name in [
             "fast_track_depot_images.yml",
             "depot_ci_image_build.yml",
@@ -368,76 +394,51 @@ class WorkflowTests(unittest.TestCase):
         ]:
             workflow = _load(name)
             self.assertEqual(workflow["permissions"], {"contents": "read"})
-            for job in workflow["jobs"].values():
-                self.assertNotIn("id-token", job.get("permissions", {}))
+            self.assertNotRegex(json.dumps(workflow), r"(CI_)?DEPOT_[A-Z_]*TOKEN")
+            self.assertNotIn("secrets.CI_DEPOT", json.dumps(workflow))
+            for job_id, job in workflow["jobs"].items():
                 self.assertNotEqual(job.get("secrets"), "inherit")
+                if job_id in {"authorize", "complete"}:
+                    self.assertNotIn("id-token", job.get("permissions", {}))
+                else:
+                    self.assertEqual(job["permissions"], oidc, f"{name}:{job_id}")
                 for step in job.get("steps", []):
                     self.assertNotIn("${{ secrets.", step.get("run", ""))
                     action = step.get("uses", "")
                     self.assertNotIn("upload-artifact", action)
                     if action and not action.startswith("./"):
                         self.assertRegex(action, r"@[0-9a-f]{40}$")
+        caller = _load("fast_track_integration_tests.yml")["jobs"]["depot-trial"]
+        self.assertEqual(caller["permissions"], oidc)
+        self.assertNotIn("CI_DEPOT", json.dumps(caller))
         tests = _load("depot_ci_image_tests.yml")
-        self.assertNotIn("CI_DEPOT_BUILD_TOKEN", json.dumps(tests))
+        build = _load("depot_ci_image_build.yml")["jobs"]["build"]
+        self.assertEqual(build["environment"], "ci-depot-builder")
+        for job in [build, *tests["jobs"].values()]:
+            self.assertEqual(
+                job["env"]["CI_DEPOT_REGISTRY"], "${{ vars.CI_DEPOT_REGISTRY }}"
+            )
+            self.assertEqual(
+                job["env"]["DEPOT_PROJECT_ID"], "${{ vars.CI_DEPOT_PROJECT }}"
+            )
+            setup = [
+                index
+                for index, step in enumerate(job["steps"])
+                if "depot/setup-action" in step.get("uses", "")
+            ]
+            self.assertEqual(len(setup), 1)
+            depot_steps = [
+                index
+                for index, step in enumerate(job["steps"])
+                if step.get("env", {}).get("CI_DEPOT_ACTION") in {"build", "pull"}
+            ]
+            self.assertEqual(len(depot_steps), 1)
+            self.assertLess(setup[0], depot_steps[0])
+            self.assertEqual(
+                set(job["steps"][depot_steps[0]].get("env", {})), {"CI_DEPOT_ACTION"}
+            )
         for job in tests["jobs"].values():
             self.assertEqual(job["environment"], "ci-depot-reader")
-            credential_steps = [
-                step
-                for step in job["steps"]
-                if "CI_DEPOT_PULL_TOKEN" in step.get("env", {})
-            ]
-            self.assertEqual(len(credential_steps), 1)
-            self.assertNotIn("CI_DEPOT_PULL_TOKEN", job["env"])
-            self.assertFalse(
-                any(
-                    "depot/setup-action" in step.get("uses", "")
-                    for step in job["steps"]
-                )
-            )
-        self.assertEqual(
-            _load("depot_ci_image_build.yml")["jobs"]["build"]["environment"],
-            "ci-depot-builder",
-        )
-
-    def test_environment_secrets_are_passed_by_name_on_every_hop(self):
-        # GitHub resolves an environment secret the caller did not pass to an
-        # empty string in the called job, without an error. `inherit` is
-        # forbidden above, so each hop must pass the CI_DEPOT_* names.
-        builder = ["CI_DEPOT_PROJECT", "CI_DEPOT_REGISTRY", "CI_DEPOT_BUILD_TOKEN"]
-        reader = ["CI_DEPOT_REGISTRY", "CI_DEPOT_PULL_TOKEN"]
-
-        def declared(name):
-            workflow = _load(name)
-            # PyYAML parses the bare `on` key as boolean True.
-            triggers = workflow.get("on", workflow.get(True))
-            return triggers["workflow_call"]["secrets"]
-
-        for name, expected in [
-            ("depot_ci_image_build.yml", builder),
-            ("depot_ci_image_tests.yml", reader),
-        ]:
-            for secret in expected:
-                self.assertTrue(declared(name)[secret]["required"], f"{name}:{secret}")
-        trial = _load("fast_track_depot_images.yml")
-        for secret in {*builder, *reader}:
-            self.assertIn(secret, declared("fast_track_depot_images.yml"))
-        for job, expected in [
-            ("cpu-image", builder),
-            ("gpu-image", builder),
-            ("cpu-tests", reader),
-            ("gpu-tests", reader),
-        ]:
-            for secret in expected:
-                self.assertEqual(
-                    trial["jobs"][job]["secrets"][secret],
-                    f"${{{{ secrets.{secret} }}}}",
-                    f"{job}:{secret}",
-                )
-        caller = _load("fast_track_integration_tests.yml")["jobs"]["depot-trial"]
-        for secret in {*builder, *reader}:
-            self.assertEqual(
-                caller["secrets"][secret], f"${{{{ secrets.{secret} }}}}", secret
-            )
 
     def test_all_modes_and_shared_stages_are_required(self):
         tests = _load("depot_ci_image_tests.yml")

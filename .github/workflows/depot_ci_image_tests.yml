@@ -8,13 +8,7 @@ on:
       image_digest:
         type: string
         required: true
-    # Callers must pass these by name so the ci-depot-reader environment can
-    # supply the values; an unpassed environment secret is silently empty.
     secrets:
-      CI_DEPOT_REGISTRY:
-        required: true
-      CI_DEPOT_PULL_TOKEN:
-        required: true
       API_KEY:
         required: false
       ASL_INSTANCE_SEGMENTATION_API_KEY:
@@ -45,10 +39,17 @@ jobs:
     runs-on:
       group: group8core
     timeout-minutes: 60
+    # GitHub OIDC mints a one-hour read-only pull token in the job; no stored
+    # Depot token. The caller must grant id-token.
+    permissions: &test_permissions
+      contents: read
+      id-token: write
     env: &test_environment
       CI_DEPOT_REUSE_ENABLED: ${{ vars.CI_DEPOT_REUSE_ENABLED }}
       CI_DEPOT_APPROVED_REF: ${{ vars.CI_DEPOT_APPROVED_REF }}
       CI_DEPOT_APPROVED_SHA: ${{ vars.CI_DEPOT_APPROVED_SHA }}
+      CI_DEPOT_REGISTRY: ${{ vars.CI_DEPOT_REGISTRY }}
+      DEPOT_PROJECT_ID: ${{ vars.CI_DEPOT_PROJECT }}
       IMAGE_FAMILY: ${{ inputs.family }}
       IMAGE_DIGEST: ${{ inputs.image_digest }}
       MODEL_MODE: ${{ matrix.model_mode }}
@@ -65,11 +66,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Set up Depot CLI
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
       - name: Pull and verify exact image, then remove pull credentials
         env:
           CI_DEPOT_ACTION: pull
-          CI_DEPOT_REGISTRY: ${{ secrets.CI_DEPOT_REGISTRY }}
-          CI_DEPOT_PULL_TOKEN: ${{ secrets.CI_DEPOT_PULL_TOKEN }}
         run: python3 .github/scripts/depot_ci_image.py
       - name: Install CPU test dependencies
         if: ${{ inputs.family == 'cpu' }}
@@ -121,6 +122,7 @@ jobs:
     environment: ci-depot-reader
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 120
+    permissions: *test_permissions
     env: *test_environment
     strategy: *test_matrix
     outputs:

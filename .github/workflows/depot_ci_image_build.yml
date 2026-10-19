@@ -5,16 +5,6 @@ on:
       family:
         type: string
         required: true
-    # Environment secrets reach a called job only when the caller passes them by
-    # name; otherwise they resolve to empty strings without an error. The job's
-    # ci-depot-builder environment then supplies the values.
-    secrets:
-      CI_DEPOT_PROJECT:
-        required: true
-      CI_DEPOT_REGISTRY:
-        required: true
-      CI_DEPOT_BUILD_TOKEN:
-        required: true
     outputs:
       amd64_digest:
         value: ${{ jobs.build.outputs.amd64_digest }}
@@ -28,13 +18,18 @@ jobs:
     environment: ci-depot-builder
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # GitHub OIDC through the org-level Depot connection, as in every other
+    # Depot workflow here; no stored Depot token. The caller must grant id-token.
+    permissions:
+      contents: read
+      id-token: write
     env:
       CI_DEPOT_REUSE_ENABLED: ${{ vars.CI_DEPOT_REUSE_ENABLED }}
       CI_DEPOT_APPROVED_REF: ${{ vars.CI_DEPOT_APPROVED_REF }}
       CI_DEPOT_APPROVED_SHA: ${{ vars.CI_DEPOT_APPROVED_SHA }}
       IMAGE_FAMILY: ${{ inputs.family }}
-      CI_DEPOT_REGISTRY: ${{ secrets.CI_DEPOT_REGISTRY }}
-      DEPOT_PROJECT_ID: ${{ secrets.CI_DEPOT_PROJECT }}
+      CI_DEPOT_REGISTRY: ${{ vars.CI_DEPOT_REGISTRY }}
+      DEPOT_PROJECT_ID: ${{ vars.CI_DEPOT_PROJECT }}
     outputs:
       amd64_digest: ${{ steps.build.outputs.amd64_digest }}
       arm64_digest: ${{ steps.build.outputs.arm64_digest }}
@@ -61,7 +56,6 @@ jobs:
         id: build
         env:
           CI_DEPOT_ACTION: build
-          DEPOT_TOKEN: ${{ secrets.CI_DEPOT_BUILD_TOKEN }}
         run: python3 .github/scripts/depot_ci_image.py
       - name: Remove registry credentials, retaining Buildx post-hook state
         if: ${{ always() && steps.config.outcome == 'success' }}

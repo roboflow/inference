@@ -1,35 +1,29 @@
 name: Fast-track Depot image reuse trial
 # Opt in through Fast-track integration tests: use_depot_images=true.
 # Repository variables (not environment variables): CI_DEPOT_REUSE_ENABLED=true,
-# CI_DEPOT_APPROVED_REF=<exact fast-track ref>, CI_DEPOT_APPROVED_SHA=<reviewed SHA>.
-# Before configuration, verify Depot trust, pull-only scope, saved-image retention
-# covering retries, and isolated ephemeral runners. Protect both environments
-# with required reviewers and exact deployment-branch restrictions.
-# ci-depot-builder secrets: CI_DEPOT_PROJECT, CI_DEPOT_REGISTRY, CI_DEPOT_BUILD_TOKEN
-# ci-depot-reader secrets: CI_DEPOT_REGISTRY, CI_DEPOT_PULL_TOKEN (registry Pull only).
-# Keep tokens in environment secrets; no repository/org tokens or OIDC grants.
-# Every hop passes CI_DEPOT_* by name: an environment secret that the caller
-# does not pass resolves to an empty string in the called job, with no error.
-# The called job's environment supplies the value (environment takes precedence).
-# Registry is the same project-scoped Depot repository in both environments.
+# CI_DEPOT_APPROVED_REF=<exact fast-track ref>, CI_DEPOT_APPROVED_SHA=<reviewed SHA>,
+# CI_DEPOT_PROJECT=<Depot project ID>, CI_DEPOT_REGISTRY=registry.depot.dev/<project ID>.
+# Authentication is GitHub OIDC through the org-level Depot connection, as in
+# every other Depot workflow at Roboflow: build and test jobs request
+# id-token: write and hold no Depot token. Registry logins use one-hour
+# read-only `depot pull-token` credentials minted in the job and removed
+# before any test step runs. No repository, organization or environment
+# secrets are required beyond the existing test API keys.
+# Before enabling, verify saved-image retention covering retries and isolated
+# ephemeral runners. Protect both environments (ci-depot-builder,
+# ci-depot-reader) with required reviewers and exact deployment-branch
+# restrictions; they hold no secrets and exist only as that approval gate.
 # This trial saves images without release tags and always runs both model modes
 # and all existing server stages. CPU arm64 is built, not runtime tested.
 # Public logs omit build metadata and test output. No public diagnostic artifacts.
 # Rerun failed jobs while saved manifests remain available; never rebuild on pull
 # failure. Full reruns create new images. Do not change approval during a run.
-# Service-side policies and live transport have not been verified by offline tests.
+# Live transport was validated locally against project inference-ci-test;
+# the Actions OIDC path still needs one live run.
 on:
   workflow_dispatch:
   workflow_call:
     secrets:
-      CI_DEPOT_PROJECT:
-        required: false
-      CI_DEPOT_REGISTRY:
-        required: false
-      CI_DEPOT_BUILD_TOKEN:
-        required: false
-      CI_DEPOT_PULL_TOKEN:
-        required: false
       API_KEY:
         required: false
       ASL_INSTANCE_SEGMENTATION_API_KEY:
@@ -72,22 +66,23 @@ jobs:
         run: python3 .github/scripts/depot_ci_image.py
   cpu-image:
     needs: authorize
+    # A called workflow cannot hold more permissions than granted here.
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/depot_ci_image_build.yml
     with:
       family: cpu
-    secrets:
-      CI_DEPOT_PROJECT: ${{ secrets.CI_DEPOT_PROJECT }}
-      CI_DEPOT_REGISTRY: ${{ secrets.CI_DEPOT_REGISTRY }}
-      CI_DEPOT_BUILD_TOKEN: ${{ secrets.CI_DEPOT_BUILD_TOKEN }}
   cpu-tests:
     needs: cpu-image
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/depot_ci_image_tests.yml
     with:
       family: cpu
       image_digest: ${{ needs.cpu-image.outputs.amd64_digest }}
     secrets:
-      CI_DEPOT_REGISTRY: ${{ secrets.CI_DEPOT_REGISTRY }}
-      CI_DEPOT_PULL_TOKEN: ${{ secrets.CI_DEPOT_PULL_TOKEN }}
       API_KEY: ${{ secrets.API_KEY }}
       ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
       ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
@@ -99,22 +94,22 @@ jobs:
       YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
   gpu-image:
     needs: authorize
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/depot_ci_image_build.yml
     with:
       family: gpu
-    secrets:
-      CI_DEPOT_PROJECT: ${{ secrets.CI_DEPOT_PROJECT }}
-      CI_DEPOT_REGISTRY: ${{ secrets.CI_DEPOT_REGISTRY }}
-      CI_DEPOT_BUILD_TOKEN: ${{ secrets.CI_DEPOT_BUILD_TOKEN }}
   gpu-tests:
     needs: gpu-image
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/depot_ci_image_tests.yml
     with:
       family: gpu
       image_digest: ${{ needs.gpu-image.outputs.amd64_digest }}
     secrets:
-      CI_DEPOT_REGISTRY: ${{ secrets.CI_DEPOT_REGISTRY }}
-      CI_DEPOT_PULL_TOKEN: ${{ secrets.CI_DEPOT_PULL_TOKEN }}
       API_KEY: ${{ secrets.API_KEY }}
       ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
       ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
