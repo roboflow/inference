@@ -36,11 +36,13 @@ from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
+    FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INFERENCE_ID_KIND,
     NUMPY_ARRAY_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
+    FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
     Selector,
@@ -72,12 +74,13 @@ An anomaly model learns what *normal* looks like from normal images only and
 scores a new image by how far it departs from that. The block reports:
 
 - `predictions`: the classification-style response, with `top` being `normal`
-  or `anomalous` and the two class confidences. The anomalous confidence is a
-  sigmoid centred on the threshold saved with the model, so 0.5 marks the
-  decision boundary.
+  or `anomalous` and the two class confidences. The anomalous confidence is
+  `sigmoid((anomaly_score - anomaly_threshold) / scale)`, with the scale saved
+  with the model, so it is exactly 0.5 at the threshold.
 - `anomaly_score`: the raw image score (unbounded, larger means more anomalous).
-- `anomaly_threshold`: the decision boundary in effect for this image.
-- `is_anomalous`: `anomaly_score >= anomaly_threshold`.
+- `anomaly_threshold`: the threshold in effect for this image (saved with the
+  model, or the override).
+- `is_anomalous`: whether the anomalous confidence reached `confidence`.
 - `anomaly_map`: the local anomaly evidence as a float32 `(height, width)`
   array at the network's input resolution (square), in the same units as
   `anomaly_score`. The map covers the whole image as the network saw it, so
@@ -85,10 +88,12 @@ scores a new image by how far it departs from that. The block reports:
   Heatmap Visualization** block to draw it. Set `include_anomaly_map` to
   `False` to skip the map when only the verdict is needed.
 
-`anomaly_threshold` lets you tune the operating point without retraining:
-lower it to catch more defects at the cost of more false alarms, raise it to
-do the opposite. The override re-decides `is_anomalous` and `top`; the class
-confidences stay relative to the saved threshold.
+`confidence` sets the operating point without retraining: the default 0.5
+reproduces the decision calibrated during training; lower it to catch more
+defects at the cost of more false alarms, raise it to do the opposite.
+`anomaly_threshold` replaces the saved threshold on the raw score; the class
+confidences are then recomputed relative to it and `confidence` applies to them
+the same way.
 
 You will need to set your Roboflow API key in your Inference environment to use
 this block. To learn more about setting your Roboflow API key, [refer to the
@@ -130,9 +135,17 @@ class BlockManifest(WorkflowBlockManifest):
         description="Return the local anomaly map at the network input resolution. Disable it when only the verdict and score are needed.",
         examples=[True, "$inputs.include_anomaly_map"],
     )
+    confidence: Union[
+        FloatZeroToOne,
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.5,
+        description="Minimum anomalous confidence for an anomalous verdict. 0.5 reproduces the decision calibrated during training; lower it to flag more images as anomalous.",
+        examples=[0.5, "$inputs.confidence"],
+    )
     anomaly_threshold: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
         default=None,
-        description="Decision threshold on the raw anomaly score, replacing the one saved with the model. Lower it to flag more images as anomalous. Leave empty to use the saved threshold.",
+        description="Threshold on the raw anomaly score, replacing the one saved with the model; the anomalous confidence is recomputed relative to it. Leave empty to use the saved threshold.",
         examples=[1.25, "$inputs.anomaly_threshold"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
@@ -221,6 +234,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_id: str,
         include_anomaly_map: bool,
+        confidence: float,
         anomaly_threshold: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
@@ -231,6 +245,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
                 images=images,
                 model_id=model_id,
                 include_anomaly_map=include_anomaly_map,
+                confidence=confidence,
                 anomaly_threshold=threshold_override,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
@@ -240,6 +255,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
                 images=images,
                 model_id=model_id,
                 include_anomaly_map=include_anomaly_map,
+                confidence=confidence,
                 anomaly_threshold=threshold_override,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
@@ -254,6 +270,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_id: str,
         include_anomaly_map: bool,
+        confidence: float,
         anomaly_threshold: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
@@ -263,13 +280,11 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
             model_id=model_id,
             api_key=self._api_key,
         )
-        # The request schema needs a confidence although an anomaly response never
-        # filters on it: the verdict comes from the threshold on the raw score.
         predictions = self._model_manager.run_classification(
             model_id=model_id,
             images=inference_images,
             api_key=self._api_key,
-            confidence="default",
+            confidence=confidence,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
             include_anomaly_map=include_anomaly_map,
@@ -278,6 +293,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
             predictions=predictions,
             images=images,
             model_id=model_id,
+            confidence=confidence,
             anomaly_threshold=anomaly_threshold,
         )
 
@@ -286,6 +302,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
         images: Batch[Optional[WorkflowImageData]],
         model_id: str,
         include_anomaly_map: bool,
+        confidence: float,
         anomaly_threshold: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
@@ -304,6 +321,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
         client_config = InferenceConfiguration(
             api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             include_anomaly_map=include_anomaly_map,
+            confidence_threshold=confidence,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
@@ -322,6 +340,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
             predictions=predictions,
             images=images,
             model_id=model_id,
+            confidence=confidence,
             anomaly_threshold=anomaly_threshold,
         )
 
@@ -330,6 +349,7 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         predictions: List[dict],
         model_id: str,
+        confidence: float,
         anomaly_threshold: Optional[float],
     ) -> BlockResult:
         predictions = attach_prediction_type_info(
@@ -344,7 +364,9 @@ class AnomalyDetectionModelBlockV1(WorkflowBlock):
             anomaly_map: Optional[np.ndarray] = coerce_anomaly_map(
                 prediction.pop(ANOMALY_MAP_KEY, None)
             )
-            prediction = apply_threshold_override(prediction, anomaly_threshold)
+            prediction = apply_threshold_override(
+                prediction, anomaly_threshold, confidence
+            )
             prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
             prediction[ROOT_PARENT_ID_KEY] = (
                 image.workflow_root_ancestor_metadata.parent_id

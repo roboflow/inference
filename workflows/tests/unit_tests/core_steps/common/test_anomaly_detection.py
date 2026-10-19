@@ -81,38 +81,58 @@ def test_validate_threshold_override_keeps_none_and_casts_ints() -> None:
     assert validate_threshold_override(2) == 2.0
 
 
-def test_apply_threshold_override_re_decides_and_reorders_classes() -> None:
-    # given: the model said normal at its saved threshold of 2.0
-    response = {
+def _normal_response() -> dict:
+    # The model said normal at its saved threshold of 2.0 with scale 0.5.
+    return {
         "predictions": [
-            {"class": "normal", "class_id": 0, "confidence": 0.73},
-            {"class": "anomalous", "class_id": 1, "confidence": 0.27},
+            {"class": "normal", "class_id": 0, "confidence": 0.7311},
+            {"class": "anomalous", "class_id": 1, "confidence": 0.2689},
         ],
         "top": "normal",
-        "confidence": 0.73,
+        "confidence": 0.7311,
         "anomaly_score": 1.5,
         "anomaly_threshold": 2.0,
+        "anomaly_scale": 0.5,
         "is_anomalous": False,
     }
 
-    # when: lowering the threshold below the score flips the verdict
-    result = apply_threshold_override(response, 1.0)
+
+def test_apply_threshold_override_re_decides_and_recomputes_confidences() -> None:
+    # given
+    response = _normal_response()
+
+    # when: relative to 1.0 the anomalous confidence is sigmoid(1) ~ 0.7311
+    result = apply_threshold_override(response, 1.0, confidence=0.5)
 
     # then
     assert result is response
     assert result["is_anomalous"] is True
     assert result["anomaly_threshold"] == 1.0
     assert result["top"] == "anomalous"
-    assert result["confidence"] == 0.27
-    assert [p["class"] for p in result["predictions"]] == ["anomalous", "normal"]
+    assert result["confidence"] == 0.7311
+    assert result["predictions"] == [
+        {"class_id": 1, "class": "anomalous", "confidence": 0.7311},
+        {"class_id": 0, "class": "normal", "confidence": 0.2689},
+    ]
+
+
+def test_confidence_applies_relative_to_the_threshold_override() -> None:
+    # when: the same override, but the anomalous confidence must reach 0.8
+    result = apply_threshold_override(_normal_response(), 1.0, confidence=0.8)
+
+    # then
+    assert result["is_anomalous"] is False
+    assert result["anomaly_threshold"] == 1.0
+    assert result["top"] == "normal"
+    assert result["confidence"] == 0.2689
 
 
 def test_apply_threshold_override_without_override_is_a_no_op() -> None:
     # given
-    response = {"anomaly_score": 1.5, "anomaly_threshold": 2.0, "is_anomalous": False}
+    response = _normal_response()
 
     # when
-    result = apply_threshold_override(dict(response), None)
+    result = apply_threshold_override(_normal_response(), None, confidence=0.1)
 
     # then
     assert result == response

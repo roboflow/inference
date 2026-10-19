@@ -4,7 +4,10 @@ The inference server answers an anomaly model through the classification route
 with an ``AnomalyDetectionResponse``: the usual classification fields plus
 ``anomaly_score`` (raw, unbounded, larger means more anomalous),
 ``anomaly_threshold`` (the decision boundary saved with the model),
-``is_anomalous`` and, on request, ``anomaly_map`` - the local evidence at the
+``anomaly_scale`` (the anomalous confidence is
+``sigmoid((anomaly_score - anomaly_threshold) / anomaly_scale)``),
+``is_anomalous`` (the anomalous confidence reached the request confidence) and,
+on request, ``anomaly_map`` - the local evidence at the
 network input resolution, serialised as ``{"shape": [h, w], "dtype":
 "float32", "data": <base64 of row-major little-endian float32>}``.
 
@@ -21,15 +24,24 @@ import numpy as np
 
 ANOMALY_SCORE_KEY = "anomaly_score"
 ANOMALY_THRESHOLD_KEY = "anomaly_threshold"
+ANOMALY_SCALE_KEY = "anomaly_scale"
 IS_ANOMALOUS_KEY = "is_anomalous"
 ANOMALY_MAP_KEY = "anomaly_map"
-ANOMALY_METADATA_KEYS = (ANOMALY_SCORE_KEY, ANOMALY_THRESHOLD_KEY, IS_ANOMALOUS_KEY)
+ANOMALY_METADATA_KEYS = (
+    ANOMALY_SCORE_KEY,
+    ANOMALY_THRESHOLD_KEY,
+    ANOMALY_SCALE_KEY,
+    IS_ANOMALOUS_KEY,
+)
 
 ANOMALY_MAP_DTYPE = "float32"
 _ANOMALY_MAP_NUMPY_DTYPE = np.dtype("<f4")
 
 NORMAL_CLASS_NAME = "normal"
 ANOMALOUS_CLASS_NAME = "anomalous"
+# Mirrors inference_models: the sigmoid saturates far before this margin, clipping
+# only avoids overflow.
+MAX_CONFIDENCE_MARGIN = 60.0
 
 
 def decode_anomaly_map(payload: Mapping[str, Any]) -> np.ndarray:
@@ -114,9 +126,9 @@ def require_anomaly_response(prediction: Dict[str, Any], model_id: str) -> None:
         model_id (str): The model that produced it, for the error message.
 
     Raises:
-        ValueError: If ``anomaly_score``, ``anomaly_threshold`` or
-            ``is_anomalous`` is missing - the model is a plain classifier, not
-            a PatchCore or FoundAD anomaly model.
+        ValueError: If ``anomaly_score``, ``anomaly_threshold``,
+            ``anomaly_scale`` or ``is_anomalous`` is missing - the model is a
+            plain classifier, not a PatchCore or FoundAD anomaly model.
     """
     missing = [key for key in ANOMALY_METADATA_KEYS if key not in prediction]
     if missing:
@@ -146,36 +158,78 @@ def validate_threshold_override(threshold: Optional[float]) -> Optional[float]:
     return value
 
 
-def apply_threshold_override(
-    prediction: Dict[str, Any], threshold: Optional[float]
-) -> Dict[str, Any]:
-    """Re-decide the verdict against a caller-supplied threshold, in place.
+def anomalous_confidence(score: float, threshold: float, scale: float) -> float:
+    """``sigmoid((score - threshold) / scale)``, exactly 0.5 at ``threshold``."""
+    margin = (score - threshold) / scale
+    margin = max(-MAX_CONFIDENCE_MARGIN, min(MAX_CONFIDENCE_MARGIN, margin))
+    return 1.0 / (1.0 + math.exp(-margin))
 
-    ``is_anomalous`` becomes ``anomaly_score >= threshold`` and
-    ``anomaly_threshold`` reports the override. ``predictions`` is reordered so
-    the decided class comes first, and ``top`` / ``confidence`` follow it. The
-    per-class confidences are left as served: they are a sigmoid centred on the
-    threshold SAVED with the model, so under an override 0.5 no longer marks the
-    decision boundary. With ``threshold`` ``None`` the response is unchanged.
+
+def redecide_at_threshold(
+    verdict: Dict[str, Any], threshold: float, confidence: float
+) -> float:
+    """Re-decide a verdict against a caller-supplied threshold, in place.
+
+    The rule is the server's with the override in place of the saved threshold:
+    ``is_anomalous`` becomes ``sigmoid((anomaly_score - threshold) /
+    anomaly_scale) >= confidence`` and ``anomaly_threshold`` reports the
+    override.
+
+    Args:
+        verdict (Dict[str, Any]): Holds ``anomaly_score`` and ``anomaly_scale``.
+        threshold (float): The override, already validated.
+        confidence (float): The anomalous confidence an image must reach.
+
+    Returns:
+        The anomalous confidence relative to the override.
+    """
+    anomalous = anomalous_confidence(
+        score=float(verdict[ANOMALY_SCORE_KEY]),
+        threshold=threshold,
+        scale=float(verdict[ANOMALY_SCALE_KEY]),
+    )
+    verdict[ANOMALY_THRESHOLD_KEY] = threshold
+    verdict[IS_ANOMALOUS_KEY] = anomalous >= confidence
+    return anomalous
+
+
+def apply_threshold_override(
+    prediction: Dict[str, Any], threshold: Optional[float], confidence: float
+) -> Dict[str, Any]:
+    """Re-decide a dumped anomaly detection response against an override, in place.
+
+    See ``redecide_at_threshold`` for the verdict. ``predictions`` is rebuilt with
+    both class confidences relative to the override, the decided class first, and
+    ``top`` / ``confidence`` follow it. With ``threshold`` ``None`` the response
+    is unchanged: the server already decided against the saved threshold with the
+    same ``confidence``.
 
     Args:
         prediction (Dict[str, Any]): A dumped anomaly detection response.
         threshold (Optional[float]): The override, already validated.
+        confidence (float): The anomalous confidence an image must reach.
 
     Returns:
         The same dict.
     """
     if threshold is None:
         return prediction
-    is_anomalous = float(prediction[ANOMALY_SCORE_KEY]) >= threshold
-    prediction[ANOMALY_THRESHOLD_KEY] = threshold
-    prediction[IS_ANOMALOUS_KEY] = is_anomalous
-    decided_class = ANOMALOUS_CLASS_NAME if is_anomalous else NORMAL_CLASS_NAME
-    class_predictions: List[Dict[str, Any]] = list(prediction.get("predictions") or [])
-    decided = [p for p in class_predictions if p.get("class") == decided_class]
-    others = [p for p in class_predictions if p.get("class") != decided_class]
-    if decided:
-        prediction["predictions"] = decided + others
-        prediction["top"] = decided[0]["class"]
-        prediction["confidence"] = decided[0]["confidence"]
+    anomalous = redecide_at_threshold(prediction, threshold, confidence)
+    class_predictions: List[Dict[str, Any]] = [
+        {
+            "class_id": 0,
+            "class": NORMAL_CLASS_NAME,
+            "confidence": round(1 - anomalous, 4),
+        },
+        {
+            "class_id": 1,
+            "class": ANOMALOUS_CLASS_NAME,
+            "confidence": round(anomalous, 4),
+        },
+    ]
+    if prediction[IS_ANOMALOUS_KEY]:
+        class_predictions.reverse()
+    prediction["predictions"] = class_predictions
+    prediction["top"] = class_predictions[0]["class"]
+    prediction["confidence"] = class_predictions[0]["confidence"]
     return prediction

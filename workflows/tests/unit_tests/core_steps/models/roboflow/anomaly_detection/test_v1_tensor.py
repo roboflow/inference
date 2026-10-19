@@ -40,6 +40,7 @@ def _batched(scores: List[float], threshold: float = 2.0, with_map: bool = True)
         entry: Dict[str, Any] = {
             "anomaly_score": score,
             "anomaly_threshold": threshold,
+            "anomaly_scale": 0.5,
             "is_anomalous": score >= threshold,
         }
         if with_map:
@@ -77,6 +78,7 @@ def _run(block, images: List[WorkflowImageData], **overrides):
     kwargs = dict(
         model_id="ws/anomaly/1",
         include_anomaly_map=True,
+        confidence=0.5,
         anomaly_threshold=None,
         disable_active_learning=True,
         active_learning_target_dataset=None,
@@ -106,6 +108,7 @@ def _remote_response(score: float = 3.0, threshold: float = 2.0) -> dict:
         "confidence": classes[0]["confidence"],
         "anomaly_score": score,
         "anomaly_threshold": threshold,
+        "anomaly_scale": 0.5,
         "is_anomalous": is_anomalous,
         "anomaly_map": MAP.copy(),
     }
@@ -163,11 +166,30 @@ def test_run_locally_without_map_and_with_override() -> None:
 
     # then
     assert provider.calls[0]["include_anomaly_map"] is False
+    assert provider.calls[0]["confidence"] == 0.5
     assert result[0]["anomaly_map"] is None
     assert result[0]["is_anomalous"] is True
     assert result[0]["anomaly_threshold"] == 1.0
     assert result[0]["predictions"].class_id.tolist() == [1]
+    # Both confidences are recomputed relative to the override: sigmoid(1) ~ 0.7311.
+    assert result[0]["predictions"].confidence[0].tolist() == pytest.approx(
+        [0.2689, 0.7311], abs=1e-4
+    )
     assert result[0]["predictions"].images_metadata[0]["is_anomalous"] is True
+
+
+def test_run_locally_applies_confidence_under_an_override() -> None:
+    # given
+    provider = _StubProvider(_batched([1.5], with_map=False))
+    block = _block(provider, StepExecutionMode.LOCAL)
+
+    # when: the anomalous confidence relative to 1.0 (~0.73) misses 0.8
+    result = _run(block, [_image()], confidence=0.8, anomaly_threshold=1.0)
+
+    # then
+    assert provider.calls[0]["confidence"] == 0.8
+    assert result[0]["is_anomalous"] is False
+    assert result[0]["predictions"].class_id.tolist() == [0]
 
 
 def test_run_locally_rejects_a_plain_classifier() -> None:
@@ -191,7 +213,7 @@ def test_serialised_local_prediction_matches_the_numpy_dict_shape() -> None:
     # when
     serialised = serialise_native_classification(result[0]["predictions"])
 
-    # then: the override decided "anomalous" although its confidence is lower
+    # then: the override decided "anomalous" with confidences relative to it
     assert list(serialised.keys()) == [
         "inference_id",
         "time",
@@ -201,6 +223,7 @@ def test_serialised_local_prediction_matches_the_numpy_dict_shape() -> None:
         "confidence",
         "anomaly_score",
         "anomaly_threshold",
+        "anomaly_scale",
         "is_anomalous",
         "prediction_type",
         "parent_id",
@@ -209,7 +232,7 @@ def test_serialised_local_prediction_matches_the_numpy_dict_shape() -> None:
     assert serialised["image"] == {"width": 4, "height": 3}
     assert [p["class"] for p in serialised["predictions"]] == ["anomalous", "normal"]
     assert serialised["top"] == "anomalous"
-    assert serialised["confidence"] == 0.25
+    assert serialised["confidence"] == pytest.approx(0.7311, abs=1e-4)
     assert serialised["anomaly_score"] == 1.5
     assert serialised["anomaly_threshold"] == 1.0
     assert serialised["is_anomalous"] is True
@@ -229,6 +252,7 @@ def test_run_remotely_rebuilds_a_native_prediction() -> None:
     # then
     configuration = client.configure.call_args.kwargs["inference_configuration"]
     assert configuration.include_anomaly_map is True
+    assert configuration.confidence_threshold == 0.5
     prediction = result[0]["predictions"]
     assert isinstance(prediction, ClassificationPrediction)
     assert prediction.class_id.tolist() == [1]

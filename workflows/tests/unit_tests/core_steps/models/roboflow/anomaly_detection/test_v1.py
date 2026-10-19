@@ -50,6 +50,7 @@ def _response(
         "confidence": classes[0]["confidence"],
         "anomaly_score": score,
         "anomaly_threshold": threshold,
+        "anomaly_scale": 0.5,
         "is_anomalous": is_anomalous,
     }
     if anomaly_map is not None:
@@ -87,6 +88,7 @@ def _run(
     kwargs = dict(
         model_id="ws/anomaly/1",
         include_anomaly_map=True,
+        confidence=0.5,
         anomaly_threshold=None,
         disable_active_learning=True,
         active_learning_target_dataset=None,
@@ -118,6 +120,7 @@ def test_manifest_validation_when_minimal_config_is_given(
         type=TYPE, name="anomaly", images="$inputs.image", model_id="ws/anomaly/1"
     )
     assert result.include_anomaly_map is True
+    assert result.confidence == 0.5
     assert result.anomaly_threshold is None
 
 
@@ -126,6 +129,8 @@ def test_manifest_validation_when_minimal_config_is_given(
     [
         ("include_anomaly_map", "$inputs.include_map"),
         ("include_anomaly_map", False),
+        ("confidence", "$inputs.confidence"),
+        ("confidence", 0.3),
         ("anomaly_threshold", "$inputs.threshold"),
         ("anomaly_threshold", 1.25),
         ("anomaly_threshold", None),
@@ -168,6 +173,7 @@ def test_manifest_validation_when_required_field_is_missing(field: str) -> None:
     "field, value",
     [
         ("anomaly_threshold", "high"),
+        ("confidence", 1.5),
         ("include_anomaly_map", "maybe"),
         ("model_id", None),
     ],
@@ -213,6 +219,7 @@ def test_run_locally_forwards_the_map_flag_and_decodes_the_payload() -> None:
     # then
     provider.add_model.assert_called_once_with(model_id="ws/anomaly/1", api_key="key")
     assert provider.calls[0]["include_anomaly_map"] is True
+    assert provider.calls[0]["confidence"] == 0.5
     assert provider.calls[0]["images"] == [
         {"type": "numpy_object", "value": provider.calls[0]["images"][0]["value"]}
     ]
@@ -253,13 +260,28 @@ def test_run_locally_applies_the_threshold_override() -> None:
     # when
     result = _run(block, [_image()], anomaly_threshold=1.0)
 
-    # then
+    # then: relative to 1.0 the anomalous confidence is sigmoid(1) ~ 0.7311
     assert result[0]["is_anomalous"] is True
     assert result[0]["anomaly_threshold"] == 1.0
     assert result[0]["anomaly_score"] == 1.5
     assert result[0]["predictions"]["top"] == "anomalous"
+    assert result[0]["predictions"]["confidence"] == 0.7311
     assert result[0]["predictions"]["anomaly_threshold"] == 1.0
     assert result[0]["predictions"]["is_anomalous"] is True
+
+
+def test_run_locally_sends_confidence_and_applies_it_under_an_override() -> None:
+    # given
+    provider = _StubProvider([_response(score=1.5, threshold=2.0)])
+    block = _block(provider, StepExecutionMode.LOCAL)
+
+    # when: the anomalous confidence relative to 1.0 (~0.73) misses 0.8
+    result = _run(block, [_image()], confidence=0.8, anomaly_threshold=1.0)
+
+    # then
+    assert provider.calls[0]["confidence"] == 0.8
+    assert result[0]["is_anomalous"] is False
+    assert result[0]["predictions"]["top"] == "normal"
 
 
 def test_run_rejects_a_plain_classifier_response() -> None:
@@ -314,6 +336,7 @@ def test_run_remotely_configures_the_client_and_accepts_both_map_forms(
     # then
     configuration = client.configure.call_args.kwargs["inference_configuration"]
     assert configuration.include_anomaly_map is True
+    assert configuration.confidence_threshold == 0.5
     assert configuration.disable_active_learning is True
     assert configuration.source == "workflow-execution"
     client.infer.assert_called_once()

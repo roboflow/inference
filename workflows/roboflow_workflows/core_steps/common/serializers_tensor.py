@@ -606,9 +606,9 @@ def _serialise_classification_model_style(
             key=lambda item: item["confidence"],
             reverse=True,
         )
-        # An anomaly model's verdict is decided against a threshold on the raw
-        # score (possibly overridden by the block), not by the larger confidence:
-        # the decided class leads, as the numpy anomaly block orders it.
+        # An anomaly model's verdict is decided by the request confidence, not by
+        # the larger class confidence: the decided class leads, as the numpy
+        # anomaly block orders it.
         if IS_ANOMALOUS_KEY in image_metadata:
             individual_classes_predictions = _decided_anomaly_class_first(
                 individual_classes_predictions,
