@@ -399,6 +399,46 @@ class WorkflowTests(unittest.TestCase):
             "ci-depot-builder",
         )
 
+    def test_environment_secrets_are_passed_by_name_on_every_hop(self):
+        # GitHub resolves an environment secret the caller did not pass to an
+        # empty string in the called job, without an error. `inherit` is
+        # forbidden above, so each hop must pass the CI_DEPOT_* names.
+        builder = ["CI_DEPOT_PROJECT", "CI_DEPOT_REGISTRY", "CI_DEPOT_BUILD_TOKEN"]
+        reader = ["CI_DEPOT_REGISTRY", "CI_DEPOT_PULL_TOKEN"]
+
+        def declared(name):
+            workflow = _load(name)
+            # PyYAML parses the bare `on` key as boolean True.
+            triggers = workflow.get("on", workflow.get(True))
+            return triggers["workflow_call"]["secrets"]
+
+        for name, expected in [
+            ("depot_ci_image_build.yml", builder),
+            ("depot_ci_image_tests.yml", reader),
+        ]:
+            for secret in expected:
+                self.assertTrue(declared(name)[secret]["required"], f"{name}:{secret}")
+        trial = _load("fast_track_depot_images.yml")
+        for secret in {*builder, *reader}:
+            self.assertIn(secret, declared("fast_track_depot_images.yml"))
+        for job, expected in [
+            ("cpu-image", builder),
+            ("gpu-image", builder),
+            ("cpu-tests", reader),
+            ("gpu-tests", reader),
+        ]:
+            for secret in expected:
+                self.assertEqual(
+                    trial["jobs"][job]["secrets"][secret],
+                    f"${{{{ secrets.{secret} }}}}",
+                    f"{job}:{secret}",
+                )
+        caller = _load("fast_track_integration_tests.yml")["jobs"]["depot-trial"]
+        for secret in {*builder, *reader}:
+            self.assertEqual(
+                caller["secrets"][secret], f"${{{{ secrets.{secret} }}}}", secret
+            )
+
     def test_all_modes_and_shared_stages_are_required(self):
         tests = _load("depot_ci_image_tests.yml")
         for job in tests["jobs"].values():

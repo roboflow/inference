@@ -8,12 +8,13 @@ on:
       image_digest:
         type: string
         required: true
-    # Supplied by ci-depot-reader environment; callers do not pass these.
+    # Callers must pass these by name so the ci-depot-reader environment can
+    # supply the values; an unpassed environment secret is silently empty.
     secrets:
       CI_DEPOT_REGISTRY:
-        required: false
+        required: true
       CI_DEPOT_PULL_TOKEN:
-        required: false
+        required: true
       API_KEY:
         required: false
       ASL_INSTANCE_SEGMENTATION_API_KEY:

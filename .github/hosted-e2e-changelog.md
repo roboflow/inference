@@ -16,6 +16,10 @@
   isolation and a live build/pull/test run still require verification.
 - Add offline regression coverage for authorization, image identity, credential
   cleanup, output suppression, complete test coverage and legacy-path exclusion.
+- Pass `CI_DEPOT_*` by name on every reusable-workflow hop and declare them
+  `required` in the called workflows. GitHub resolves an environment secret the
+  caller does not pass to an empty string without an error; the called job's
+  `ci-depot-builder` / `ci-depot-reader` environment supplies the values.
 
 ### Review follow-ups — October 16, 2026
 

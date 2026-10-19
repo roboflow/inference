@@ -5,6 +5,16 @@ on:
       family:
         type: string
         required: true
+    # Environment secrets reach a called job only when the caller passes them by
+    # name; otherwise they resolve to empty strings without an error. The job's
+    # ci-depot-builder environment then supplies the values.
+    secrets:
+      CI_DEPOT_PROJECT:
+        required: true
+      CI_DEPOT_REGISTRY:
+        required: true
+      CI_DEPOT_BUILD_TOKEN:
+        required: true
     outputs:
       amd64_digest:
         value: ${{ jobs.build.outputs.amd64_digest }}

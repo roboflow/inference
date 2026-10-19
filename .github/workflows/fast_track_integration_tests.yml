@@ -93,7 +93,13 @@ jobs:
   depot-trial:
     if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && inputs.use_depot_images }}
     uses: ./.github/workflows/fast_track_depot_images.yml
+    # Secrets reach only the directly called workflow, so the CI_DEPOT_* names
+    # must be passed here too; the called jobs' environments supply the values.
     secrets:
+      CI_DEPOT_PROJECT: ${{ secrets.CI_DEPOT_PROJECT }}
+      CI_DEPOT_REGISTRY: ${{ secrets.CI_DEPOT_REGISTRY }}
+      CI_DEPOT_BUILD_TOKEN: ${{ secrets.CI_DEPOT_BUILD_TOKEN }}
+      CI_DEPOT_PULL_TOKEN: ${{ secrets.CI_DEPOT_PULL_TOKEN }}
       API_KEY: ${{ secrets.API_KEY }}
       ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
       ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
