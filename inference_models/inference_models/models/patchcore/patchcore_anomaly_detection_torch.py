@@ -8,7 +8,7 @@ from torchvision.models import wide_resnet50_2
 
 from inference_models import ClassificationModel, ClassificationPrediction
 from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.anomaly_detection import (
     ANOMALY_CLASS_NAMES,
@@ -21,6 +21,7 @@ from inference_models.models.common.anomaly_detection import (
     pre_process_anomaly_images,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.weights_providers.entities import RecommendedParameters
 
 # Settings of the PatchCore recipe used by Roboflow training
 # (https://github.com/amazon-science/patchcore-inspection).
@@ -162,6 +163,7 @@ class PatchCoreForAnomalyDetectionTorch(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "PatchCoreForAnomalyDetectionTorch":
         model_package_content = get_model_package_contents(
@@ -193,17 +195,24 @@ class PatchCoreForAnomalyDetectionTorch(
             image_size=manifest.config.image_size,
         )
         model.backbone.load_state_dict(state["backbone"])
-        return cls(model=model.to(device).eval(), manifest=manifest, device=device)
+        return cls(
+            model=model.to(device).eval(),
+            manifest=manifest,
+            device=device,
+            recommended_parameters=recommended_parameters,
+        )
 
     def __init__(
         self,
         model: PatchCoreModel,
         manifest: AnomalyModelManifest,
         device: torch.device,
+        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._model = model
         self._manifest = manifest
         self._device = device
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -243,10 +252,13 @@ class PatchCoreForAnomalyDetectionTorch(
         self,
         model_results: AnomalyRawPrediction,
         include_anomaly_map: bool = False,
+        confidence: Confidence = "best",
         **kwargs,
     ) -> ClassificationPrediction:
         return post_process_anomaly_scores(
             model_results=model_results,
             calibration=self._manifest.calibration,
             include_anomaly_map=include_anomaly_map,
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
         )
