@@ -125,7 +125,21 @@ def test_normalize_anomaly_map_anchors_the_threshold_at_half() -> None:
     # then
     np.testing.assert_allclose(normalized, [[0.0, 0.0], [0.5, 0.75]])
     with pytest.raises(ValueError):
-        normalize_anomaly_map(values, threshold=0.0)
+        normalize_anomaly_map(values, threshold=float("nan"))
+
+
+@pytest.mark.parametrize("threshold", [0.0, -0.5])
+def test_normalize_anomaly_map_saturates_past_a_non_positive_threshold(
+    threshold: float,
+) -> None:
+    # given: a decision threshold at a very low confidence can reach zero
+    values = np.array([[-1.0, 0.0], [1e-3, 6.0]], dtype=np.float32)
+
+    # when
+    normalized = normalize_anomaly_map(values, threshold=threshold)
+
+    # then: every positive value is past the decision; zero stays transparent
+    np.testing.assert_array_equal(normalized, [[0.0, 0.0], [1.0, 1.0]])
 
 
 def test_roboflow_ramp_hits_its_stops() -> None:

@@ -3,7 +3,9 @@
 Anomaly map values share the units of the model's anomaly score and are
 unbounded above, so every value is placed on a fixed saturating scale anchored
 to the model's threshold: ``t = v / (v + threshold)``. Zero is transparent, the
-threshold sits at the ramp's midpoint, and the ramp saturates as values grow.
+threshold sits at the ramp's midpoint, and the ramp saturates as values grow. A
+threshold at or below zero (a decision threshold at a very low confidence) is the
+limit of that scale: every positive value is past it, so the ramp saturates.
 The scale depends only on the model, never on the image, so the same colour
 means the same evidence on every image and normal images show their map too.
 This is local anomaly evidence, not a defect mask.
@@ -39,24 +41,28 @@ SUPPORTED_COLOR_MAPS = (ROBOFLOW_COLOR_MAP, *OPENCV_COLOR_MAPS)
 
 
 def normalize_anomaly_map(anomaly_map: np.ndarray, threshold: float) -> np.ndarray:
-    """Map raw anomaly values onto ``[0, 1)``: 0 at or below zero, 0.5 at the threshold.
+    """Map raw anomaly values onto ``[0, 1]``: 0 at or below zero, 0.5 at the threshold.
 
     Args:
         anomaly_map (np.ndarray): Raw map in the units of the anomaly score.
-        threshold (float): The model's decision threshold; must be positive and finite.
+        threshold (float): The decision threshold anchoring the ramp. At or below
+            zero every positive value is past it and maps to 1, the limit of
+            ``v / (v + threshold)`` as the threshold falls to zero.
 
     Returns:
-        A float32 array of the same shape with values in ``[0, 1)``.
+        A float32 array of the same shape with values in ``[0, 1]``.
 
     Raises:
-        ValueError: If ``threshold`` is not a positive finite number.
+        ValueError: If ``threshold`` is not finite.
     """
-    if not np.isfinite(threshold) or threshold <= 0:
+    if not np.isfinite(threshold):
         raise ValueError(
-            f"Anomaly threshold must be a positive finite number to anchor the "
-            f"heatmap ramp, got {threshold!r}"
+            f"Anomaly threshold must be finite to anchor the heatmap ramp, "
+            f"got {threshold!r}"
         )
     positive = np.maximum(anomaly_map.astype(np.float32, copy=False), 0.0)
+    if threshold <= 0:
+        return (positive > 0).astype(np.float32)
     normalized = positive / (positive + np.float32(threshold))
     return normalized.astype(np.float32, copy=False)
 
