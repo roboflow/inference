@@ -11,35 +11,30 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
-# This switch replaces the four independent main paths together. Keep disabled
-# until private transport, OIDC policy and isolated runners have been reviewed.
+# This switch replaces the four independent main paths together. Pushes to
+# main use it only while CI_IMAGE_REUSE_ENABLED is true; a manual dispatch from
+# any same-repository branch exercises the whole path without enabling it.
+# The Depot project below is the repository's existing project (see the
+# release build workflows); its registry keeps the saved CI images.
 jobs:
   cpu-image:
-    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CI_IMAGE_REUSE_ENABLED == 'true') || github.event_name == 'workflow_dispatch') }}
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/ci_image_build.yml
     with:
       family: cpu
-    secrets:
-      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
-      CI_WIF_PROVIDER: ${{ secrets.CI_WIF_PROVIDER }}
-      CI_REGISTRY_WRITER: ${{ secrets.CI_REGISTRY_WRITER }}
-      CI_DEPOT_PROJECT: ${{ secrets.CI_DEPOT_PROJECT }}
+      depot_project: grl7ffzxd7
   gpu-image:
-    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CI_IMAGE_REUSE_ENABLED == 'true') || github.event_name == 'workflow_dispatch') }}
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/ci_image_build.yml
     with:
       family: gpu
-    secrets:
-      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
-      CI_WIF_PROVIDER: ${{ secrets.CI_WIF_PROVIDER }}
-      CI_REGISTRY_WRITER: ${{ secrets.CI_REGISTRY_WRITER }}
-      CI_DEPOT_PROJECT: ${{ secrets.CI_DEPOT_PROJECT }}
+      depot_project: grl7ffzxd7
   cpu-tests:
     needs: cpu-image
     permissions:
@@ -48,12 +43,10 @@ jobs:
     uses: ./.github/workflows/integration_tests_inference_server_x86.yml
     with:
       private_image: true
+      depot_project: grl7ffzxd7
       image_digest: ${{ needs.cpu-image.outputs.amd64_digest }}
       use-inference-models: all
     secrets:
-      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
-      CI_WIF_PROVIDER: ${{ secrets.CI_WIF_PROVIDER }}
-      CI_REGISTRY_READER: ${{ secrets.CI_REGISTRY_READER }}
       API_KEY: ${{ secrets.API_KEY }}
       ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
       ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
@@ -71,13 +64,11 @@ jobs:
     uses: ./.github/workflows/test.nvidia_t4.yml
     with:
       private_image: true
+      depot_project: grl7ffzxd7
       image_digest: ${{ needs.gpu-image.outputs.amd64_digest }}
       use-inference-models: all
       test_name: ""
     secrets:
-      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
-      CI_WIF_PROVIDER: ${{ secrets.CI_WIF_PROVIDER }}
-      CI_REGISTRY_READER: ${{ secrets.CI_REGISTRY_READER }}
       API_KEY: ${{ secrets.API_KEY }}
       ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
       ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
@@ -90,7 +81,7 @@ jobs:
   image-tests-complete:
     name: CPU and GPU image tests complete
     needs: [cpu-image, gpu-image, cpu-tests, gpu-tests]
-    if: ${{ always() && vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ always() && github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CI_IMAGE_REUSE_ENABLED == 'true') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

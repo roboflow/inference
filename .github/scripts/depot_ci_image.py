@@ -1,4 +1,7 @@
-"""Opt-in fast-track Depot transport; never print commands, metadata or errors."""
+"""Depot Registry transport for CI image reuse.
+
+Never print commands, metadata or errors: they can carry private details.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +13,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from ci_image import _digest, _emit, _manifest_digests
+
+_ORCHESTRATOR = "roboflow/inference/.github/workflows/ci_image_reuse.yml"
 
 
 def _run(args: list[str], *, env: dict | None = None, stdin: str | None = None) -> str:
@@ -23,23 +28,22 @@ def _run(args: list[str], *, env: dict | None = None, stdin: str | None = None) 
 
 
 def _authorize() -> None:
+    # Pushes to main use saved images while the switch is on; a manual dispatch
+    # of the orchestrator from any same-repository branch proves the path early.
     ref = os.environ.get("GITHUB_REF", "")
     sha = os.environ.get("GITHUB_SHA", "")
-    workflows = {
-        f"roboflow/inference/.github/workflows/{name}@{ref}"
-        for name in ("fast_track_depot_images.yml", "fast_track_integration_tests.yml")
-    }
+    event = os.environ.get("GITHUB_EVENT_NAME", "")
+    main_push = (
+        event == "push"
+        and ref == "refs/heads/main"
+        and os.environ.get("CI_IMAGE_REUSE_ENABLED") == "true"
+    )
+    manual = event == "workflow_dispatch" and ref.startswith("refs/heads/")
     if (
         os.environ.get("GITHUB_REPOSITORY") != "roboflow/inference"
-        or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
-        or os.environ.get("CI_DEPOT_REUSE_ENABLED") != "true"
-        or not re.fullmatch(
-            r"refs/heads/fast-track/post-v\d+\.\d+\.\d+-pt[1-9]\d*", ref
-        )
-        or ref != os.environ.get("CI_DEPOT_APPROVED_REF")
         or not re.fullmatch(r"[0-9a-f]{40}", sha)
-        or sha != os.environ.get("CI_DEPOT_APPROVED_SHA")
-        or os.environ.get("GITHUB_WORKFLOW_REF") not in workflows
+        or not (main_push or manual)
+        or os.environ.get("GITHUB_WORKFLOW_REF") != f"{_ORCHESTRATOR}@{ref}"
     ):
         raise ValueError("Unapproved execution")
 
@@ -47,26 +51,20 @@ def _authorize() -> None:
         raise ValueError("Checkout differs from approval")
 
 
-def _repository() -> str:
-    # A project-scoped Depot repository, supplied through a secret. No arbitrary
-    # registry host, nested path, mutable tag or public-registry fallback.
-    repository = os.environ.get("CI_DEPOT_REGISTRY", "")
-    if not re.fullmatch(
-        r"(?:[a-z0-9][a-z0-9-]*\.registry\.depot\.dev|registry\.depot\.dev)/[a-z0-9]+",
-        repository,
-    ):
-        raise ValueError("Invalid Depot repository")
-
-    return repository
-
-
 def _project() -> str:
-    # The project is a repository variable; it must own the saved-image repository.
+    # The orchestrator passes one Depot project ID to every producer and consumer.
     project = os.environ.get("DEPOT_PROJECT_ID", "")
-    if not project or project != _repository().rsplit("/", 1)[1]:
-        raise ValueError("Configure the matching project and repository")
+    if not re.fullmatch(r"[a-z0-9]+", project):
+        raise ValueError("Invalid Depot project")
 
     return project
+
+
+def _repository() -> str:
+    # Saved images live in the project-scoped Depot Registry repository, addressed
+    # by digest only. No host override, nested path or mutable tag.
+    repository = f"registry.depot.dev/{_project()}"
+    return repository
 
 
 def _validate() -> None:
@@ -127,6 +125,8 @@ def _build() -> None:
                     "build",
                     "--save",
                     "--progress=plain",
+                    "--project",
+                    project,
                     "--platform",
                     "linux/amd64,linux/arm64" if family == "cpu" else "linux/amd64",
                     "--provenance=mode=min",
@@ -207,7 +207,6 @@ def _pull() -> None:
 if __name__ == "__main__":
     try:
         {
-            "authorize": _authorize,
             "validate": _validate,
             "build": _build,
             "pull": _pull,

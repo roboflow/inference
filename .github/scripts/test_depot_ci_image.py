@@ -1,9 +1,7 @@
-"""Offline security and coverage checks for the opt-in Depot transport."""
+"""Offline security and coverage checks for the Depot Registry CI image transport."""
 
-import ast
 import json
 import os
-import re
 import subprocess
 import sys
 import unittest
@@ -19,9 +17,15 @@ SHA = "d" * 40
 DIGEST = "sha256:" + "a" * 64
 ARM = "sha256:" + "b" * 64
 IMAGE_ID = "sha256:" + "c" * 64
-REF = "refs/heads/fast-track/post-v1.8.0-pt1"
-WORKFLOW = "roboflow/inference/.github/workflows/fast_track_depot_images.yml"
-REPOSITORY = "example.registry.depot.dev/exampleproject"
+REF = "refs/heads/main"
+ORCHESTRATOR = "roboflow/inference/.github/workflows/ci_image_reuse.yml"
+REPOSITORY = "registry.depot.dev/exampleproject"
+CONSUMERS = ("integration_tests_inference_server_x86.yml", "test.nvidia_t4.yml")
+
+
+def _load(name):
+    result = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
+    return result
 
 
 class DepotImageTests(unittest.TestCase):
@@ -31,14 +35,11 @@ class DepotImageTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.env = {
             "GITHUB_REPOSITORY": "roboflow/inference",
-            "GITHUB_EVENT_NAME": "workflow_dispatch",
+            "GITHUB_EVENT_NAME": "push",
             "GITHUB_REF": REF,
             "GITHUB_SHA": SHA,
-            "GITHUB_WORKFLOW_REF": f"{WORKFLOW}@{REF}",
-            "CI_DEPOT_REUSE_ENABLED": "true",
-            "CI_DEPOT_APPROVED_REF": REF,
-            "CI_DEPOT_APPROVED_SHA": SHA,
-            "CI_DEPOT_REGISTRY": REPOSITORY,
+            "GITHUB_WORKFLOW_REF": f"{ORCHESTRATOR}@{REF}",
+            "CI_IMAGE_REUSE_ENABLED": "true",
             "DEPOT_PROJECT_ID": "exampleproject",
             "IMAGE_FAMILY": "cpu",
             "MODEL_MODE": "true",
@@ -95,45 +96,60 @@ class DepotImageTests(unittest.TestCase):
 
         return ""
 
-    def test_approval_rejects_untrusted_or_stale_execution_before_external_commands(
-        self,
-    ):
-        for key, value in [
-            ("GITHUB_REPOSITORY", "external/inference"),
-            ("GITHUB_EVENT_NAME", "pull_request"),
-            ("GITHUB_EVENT_NAME", "pull_request_target"),
-            ("GITHUB_EVENT_NAME", "push"),
-            ("CI_DEPOT_REUSE_ENABLED", "false"),
-            ("CI_DEPOT_APPROVED_REF", ""),
-            ("CI_DEPOT_APPROVED_SHA", ""),
-            ("CI_DEPOT_APPROVED_SHA", "e" * 40),
-            ("GITHUB_REF", "refs/heads/main"),
-            ("GITHUB_REF", "refs/heads/feature"),
-            ("GITHUB_WORKFLOW_REF", f"wrong/workflow@{REF}"),
-            ("GITHUB_SHA", "d" * 39),
-        ]:
-            with self.subTest(key=key, value=value), patch.dict(
-                os.environ, {key: value}
-            ), patch.object(image, "_run") as run:
-                with self.assertRaises(ValueError):
-                    image._authorize()
-                run.assert_not_called()
+    def test_authorization_trusts_main_pushes_and_manual_branch_dispatches_only(self):
+        accepted = [
+            {},
+            {
+                "GITHUB_EVENT_NAME": "workflow_dispatch",
+                "GITHUB_REF": "refs/heads/feature",
+                "GITHUB_WORKFLOW_REF": f"{ORCHESTRATOR}@refs/heads/feature",
+                "CI_IMAGE_REUSE_ENABLED": "false",
+            },
+        ]
+        for changed in accepted:
+            with self.subTest(accepted=changed), patch.dict(
+                os.environ, changed
+            ), patch.object(image, "_run", return_value=SHA):
+                image._authorize()
+        rejected = [
+            {"GITHUB_REF": "refs/heads/feature"},
+            {"CI_IMAGE_REUSE_ENABLED": "false"},
+            {"GITHUB_EVENT_NAME": "pull_request"},
+            {"GITHUB_EVENT_NAME": "pull_request_target"},
+            {"GITHUB_REPOSITORY": "external/inference"},
+            {"GITHUB_WORKFLOW_REF": f"{ORCHESTRATOR}@refs/heads/feature"},
+            {
+                "GITHUB_WORKFLOW_REF": (
+                    "roboflow/inference/.github/workflows/"
+                    f"fast_track_integration_tests.yml@{REF}"
+                )
+            },
+            {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/tags/v1"},
+            {"GITHUB_SHA": "d" * 39},
+        ]
+        for changed in rejected:
+            with self.subTest(rejected=changed), patch.dict(
+                os.environ, changed
+            ), patch.object(image, "_run") as run, self.assertRaises(ValueError):
+                image._authorize()
+            run.assert_not_called()
         with patch.object(image, "_run", return_value="e" * 40):
             with self.assertRaises(ValueError):
                 image._authorize()
 
     def test_destination_and_digest_validation_precede_login(self):
         for key, value in [
-            ("CI_DEPOT_REGISTRY", "docker.io/public/image"),
-            ("CI_DEPOT_REGISTRY", "example.registry.depot.dev/project/nested"),
-            ("CI_DEPOT_REGISTRY", "example.registry.depot.dev/project:tag"),
+            ("DEPOT_PROJECT_ID", ""),
+            ("DEPOT_PROJECT_ID", "Example/Project"),
+            ("DEPOT_PROJECT_ID", "project:tag"),
+            ("DEPOT_PROJECT_ID", "registry.depot.dev/project"),
             ("IMAGE_DIGEST", "latest"),
             ("IMAGE_DIGEST", ""),
             ("MODEL_MODE", "all"),
             ("IMAGE_FAMILY", "parallel"),
         ]:
             self.calls.clear()
-            with self.subTest(key=key), patch.dict(
+            with self.subTest(key=key, value=value), patch.dict(
                 os.environ, {key: value}
             ), patch.object(image, "_run", side_effect=self._run):
                 with self.assertRaises(ValueError):
@@ -158,6 +174,7 @@ class DepotImageTests(unittest.TestCase):
         )
         self.assertFalse(any("build" in args for args in commands))
         login = next(call for call in self.calls if call[0][:2] == ["docker", "login"])
+        self.assertEqual(login[0][2], "registry.depot.dev")
         self.assertEqual(login[2], "synthetic-pull-token")
         self.assertNotIn(login[2], str(login[0]))
         self.assertFalse(Path(login[1]["DOCKER_CONFIG"]).exists())
@@ -229,6 +246,7 @@ class DepotImageTests(unittest.TestCase):
                 self.assertNotIn("--push", build)
                 self.assertNotIn("--tag", build)
                 self.assertIn("--provenance=mode=min", build)
+                self.assertEqual(build[build.index("--project") + 1], "exampleproject")
                 self.assertIn(f"org.opencontainers.image.revision={SHA}", build)
                 self.assertIn(f"io.roboflow.ci.image-family={family}", build)
                 self.assertEqual(
@@ -268,8 +286,8 @@ class DepotImageTests(unittest.TestCase):
                 self.assertFalse((self.root / "output").exists())
                 self.assertFalse((self.root / "builder/config.json").exists())
 
-    def test_build_requires_matching_project_and_uses_a_minted_pull_token(self):
-        for change in [{"DEPOT_PROJECT_ID": ""}, {"DEPOT_PROJECT_ID": "wrong"}]:
+    def test_build_requires_a_valid_project_and_uses_a_minted_pull_token(self):
+        for change in [{"DEPOT_PROJECT_ID": ""}, {"DEPOT_PROJECT_ID": "Bad-Id"}]:
             self.calls.clear()
             with patch.dict(os.environ, change), patch.object(
                 image, "_run", side_effect=self._run
@@ -315,12 +333,14 @@ class DepotImageTests(unittest.TestCase):
         depot = bindir / "depot"
         depot.write_text("#!/bin/sh\nprintf '%s' 'synthetic-pull-token'\n")
         docker = bindir / "docker"
-        docker.write_text("""#!/bin/sh
+        docker.write_text(
+            """#!/bin/sh
 cat > "$DOCKER_CONFIG/config.json"
 echo "synthetic-private-host synthetic-pull-token"
 echo "synthetic-private-host synthetic-pull-token" >&2
 exit 17
-""")
+"""
+        )
         for path in [git, depot, docker]:
             path.chmod(0o700)
         env = dict(os.environ, PATH=f"{bindir}:/usr/bin:/bin", CI_DEPOT_ACTION="pull")
@@ -341,7 +361,8 @@ exit 17
     def test_private_test_shell_preserves_failure_and_environment_outputs(self):
         script = self.root / "script.sh"
         script.write_text(
-            'echo "private-token"\necho "private-token" >&2\necho "TEST_PORT=1234" >> "$GITHUB_ENV"\nexit 17\n'
+            'echo "private-token"\necho "private-token" >&2\n'
+            'echo "TEST_PORT=1234" >> "$GITHUB_ENV"\nexit 17\n'
         )
         result = subprocess.run(
             [
@@ -358,98 +379,72 @@ exit 17
         self.assertEqual((self.root / "env").read_text(), "TEST_PORT=1234\n")
 
 
-def _load(name):
-    result = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
-    return result
-
-
 class WorkflowTests(unittest.TestCase):
-    def test_depot_selection_excludes_legacy_jobs_even_for_resume_inputs(self):
-        workflow = _load("fast_track_integration_tests.yml")
-        # YAML 1.1 parses GitHub's `on` key as True.
-        self.assertFalse(
-            workflow[True]["workflow_dispatch"]["inputs"]["use_depot_images"]["default"]
-        )
-        for name, job in workflow["jobs"].items():
-            if name == "depot-trial":
-                self.assertIn("&& inputs.use_depot_images", job["if"])
-                self.assertEqual(
-                    job["uses"], "./.github/workflows/fast_track_depot_images.yml"
-                )
-            else:
-                self.assertIn("!inputs.use_depot_images", job["if"], name)
-        nested = _load("fast_track_depot_images.yml")
-        self.assertNotEqual(
-            workflow["concurrency"]["group"], nested["concurrency"]["group"]
-        )
-
-    def test_oidc_auth_without_stored_depot_tokens_and_separated_permissions(self):
-        # Org convention: GitHub OIDC through the org-level Depot connection,
-        # no stored Depot token anywhere, project and registry as variables.
-        oidc = {"contents": "read", "id-token": "write"}
-        for name in [
-            "fast_track_depot_images.yml",
-            "depot_ci_image_build.yml",
-            "depot_ci_image_tests.yml",
-        ]:
+    def test_one_project_from_the_orchestrator_and_no_stored_depot_tokens(self):
+        orchestrator = _load("ci_image_reuse.yml")
+        projects = {
+            orchestrator["jobs"][job]["with"]["depot_project"]
+            for job in ["cpu-image", "gpu-image", "cpu-tests", "gpu-tests"]
+        }
+        self.assertEqual(len(projects), 1)
+        self.assertRegex(projects.pop(), r"^[a-z0-9]+$")
+        for name in ["ci_image_build.yml", *CONSUMERS]:
             workflow = _load(name)
-            self.assertEqual(workflow["permissions"], {"contents": "read"})
-            self.assertNotRegex(json.dumps(workflow), r"(CI_)?DEPOT_[A-Z_]*TOKEN")
-            self.assertNotIn("secrets.CI_DEPOT", json.dumps(workflow))
-            for job_id, job in workflow["jobs"].items():
-                self.assertNotEqual(job.get("secrets"), "inherit")
-                if job_id in {"authorize", "complete"}:
-                    self.assertNotIn("id-token", job.get("permissions", {}))
-                else:
-                    self.assertEqual(job["permissions"], oidc, f"{name}:{job_id}")
-                for step in job.get("steps", []):
-                    self.assertNotIn("${{ secrets.", step.get("run", ""))
-                    action = step.get("uses", "")
-                    self.assertNotIn("upload-artifact", action)
-                    if action and not action.startswith("./"):
-                        self.assertRegex(action, r"@[0-9a-f]{40}$")
-        caller = _load("fast_track_integration_tests.yml")["jobs"]["depot-trial"]
-        self.assertEqual(caller["permissions"], oidc)
-        self.assertNotIn("CI_DEPOT", json.dumps(caller))
-        tests = _load("depot_ci_image_tests.yml")
-        build = _load("depot_ci_image_build.yml")["jobs"]["build"]
-        self.assertEqual(build["environment"], "ci-depot-builder")
-        for job in [build, *tests["jobs"].values()]:
+            text = (ROOT / ".github/workflows" / name).read_text()
+            self.assertNotRegex(
+                text, r"DEPOT_[A-Z_]*TOKEN|CI_DEPOT_(?!ACTION)|CI_REGISTRY|CI_WIF"
+            )
+            triggers = workflow.get("on", workflow.get(True))
+            self.assertIn("depot_project", triggers["workflow_call"]["inputs"])
+            job = workflow["jobs"]["build"]
             self.assertEqual(
-                job["env"]["CI_DEPOT_REGISTRY"], "${{ vars.CI_DEPOT_REGISTRY }}"
+                job["env"]["DEPOT_PROJECT_ID"], "${{ inputs.depot_project }}"
             )
             self.assertEqual(
-                job["env"]["DEPOT_PROJECT_ID"], "${{ vars.CI_DEPOT_PROJECT }}"
+                job["permissions"], {"contents": "read", "id-token": "write"}
             )
+            self.assertNotEqual(job.get("secrets"), "inherit")
+            steps = job["steps"]
             setup = [
                 index
-                for index, step in enumerate(job["steps"])
+                for index, step in enumerate(steps)
                 if "depot/setup-action" in step.get("uses", "")
             ]
             self.assertEqual(len(setup), 1)
             depot_steps = [
                 index
-                for index, step in enumerate(job["steps"])
+                for index, step in enumerate(steps)
                 if step.get("env", {}).get("CI_DEPOT_ACTION") in {"build", "pull"}
             ]
             self.assertEqual(len(depot_steps), 1)
             self.assertLess(setup[0], depot_steps[0])
             self.assertEqual(
-                set(job["steps"][depot_steps[0]].get("env", {})), {"CI_DEPOT_ACTION"}
+                set(steps[depot_steps[0]].get("env", {})), {"CI_DEPOT_ACTION"}
             )
-        for job in tests["jobs"].values():
-            self.assertEqual(job["environment"], "ci-depot-reader")
+            for step in steps:
+                self.assertNotIn("upload-artifact", step.get("uses", ""))
+                self.assertNotIn("${{ secrets.", step.get("run", ""))
+                action = step.get("uses", "")
+                if action and not action.startswith("./"):
+                    self.assertRegex(action, r"@[0-9a-f]{40}$")
 
-    def test_all_modes_and_shared_stages_are_required(self):
-        tests = _load("depot_ci_image_tests.yml")
-        for job in tests["jobs"].values():
-            self.assertTrue(job["strategy"]["fail-fast"])
-            self.assertEqual(job["strategy"]["matrix"]["model_mode"], ["true", "false"])
-            for step in job["steps"]:
-                if "server-tests-" in step.get("uses", ""):
-                    self.assertEqual(step["with"]["private_logs"], "true")
-                    if step["uses"].endswith("gpu"):
-                        self.assertEqual(step["with"]["test_name"], "")
+    def test_fast_track_trial_is_superseded(self):
+        for name in [
+            "fast_track_depot_images.yml",
+            "depot_ci_image_build.yml",
+            "depot_ci_image_tests.yml",
+        ]:
+            self.assertFalse((ROOT / ".github/workflows" / name).exists(), name)
+        fast_track = ROOT / ".github/workflows/fast_track_integration_tests.yml"
+        self.assertNotIn("use_depot_images", fast_track.read_text())
+        self.assertNotRegex(
+            "".join(
+                path.read_text() for path in (ROOT / ".github/workflows").glob("*.yml")
+            ),
+            r"CI_DEPOT_(REUSE_ENABLED|APPROVED_REF|APPROVED_SHA|PROJECT|REGISTRY)",
+        )
+
+    def test_all_gpu_stages_and_shared_actions_remain_in_use(self):
         gpu = yaml.safe_load(
             (ROOT / ".github/actions/server-tests-gpu/action.yml").read_text()
         )
@@ -477,125 +472,6 @@ class WorkflowTests(unittest.TestCase):
                 ],
             )
 
-    def test_job_guards_reject_external_callers_and_unapproved_revisions(self):
-        context = {
-            "github.repository": "roboflow/inference",
-            "github.event_name": "workflow_dispatch",
-            "github.ref": REF,
-            "github.sha": SHA,
-            "github.workflow_ref": f"{WORKFLOW}@{REF}",
-            "vars.CI_DEPOT_REUSE_ENABLED": "true",
-            "vars.CI_DEPOT_APPROVED_REF": REF,
-            "vars.CI_DEPOT_APPROVED_SHA": SHA,
-            "inputs.family": "cpu",
-        }
 
-        def evaluate(node):
-            if isinstance(node, ast.Constant):
-                return node.value
-            if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
-                values = [evaluate(value) for value in node.values]
-                return all(values) if isinstance(node.op, ast.And) else any(values)
-            if (
-                isinstance(node, ast.Compare)
-                and len(node.ops) == 1
-                and isinstance(node.ops[0], ast.Eq)
-            ):
-                return evaluate(node.left) == evaluate(node.comparators[0])
-            raise AssertionError("Unexpected guard syntax")
-
-        def allows(condition, values):
-            expression = condition[3:-2].replace(
-                "startsWith(github.ref, 'refs/heads/fast-track/post-v')",
-                repr(values["github.ref"].startswith("refs/heads/fast-track/post-v")),
-            )
-            expression = expression.replace(
-                "format('roboflow/inference/.github/workflows/fast_track_depot_images.yml@{0}', github.ref)",
-                repr(f'{WORKFLOW}@{values["github.ref"]}'),
-            )
-            expression = expression.replace(
-                "format('roboflow/inference/.github/workflows/fast_track_integration_tests.yml@{0}', github.ref)",
-                repr(
-                    f'roboflow/inference/.github/workflows/fast_track_integration_tests.yml@{values["github.ref"]}'
-                ),
-            )
-            expression = re.sub(
-                r"\b(?:github|vars|inputs)\.[\w.]+",
-                lambda match: repr(values[match.group()]),
-                expression,
-            )
-            return evaluate(
-                ast.parse(
-                    expression.replace("&&", " and ").replace("||", " or ").strip(),
-                    mode="eval",
-                ).body
-            )
-
-        for name in ["depot_ci_image_build.yml", "depot_ci_image_tests.yml"]:
-            for job_id, job in _load(name)["jobs"].items():
-                values = dict(
-                    context,
-                    **{"inputs.family": job_id if job_id in {"cpu", "gpu"} else "cpu"},
-                )
-                self.assertTrue(allows(job["if"], values))
-                for key, value in [
-                    ("github.repository", "external/inference"),
-                    ("github.event_name", "pull_request"),
-                    ("github.event_name", "pull_request_target"),
-                    ("github.event_name", "push"),
-                    ("vars.CI_DEPOT_REUSE_ENABLED", "false"),
-                    ("github.sha", "e" * 40),
-                    ("github.ref", "refs/heads/main"),
-                    ("github.workflow_ref", "another-workflow"),
-                ]:
-                    with self.subTest(name=name, job=job_id, key=key):
-                        self.assertFalse(allows(job["if"], {**values, key: value}))
-
-    def test_aggregate_rejects_skipped_cancelled_failed_or_wrong_image(self):
-        script = _load("fast_track_depot_images.yml")["jobs"]["complete"]["steps"][0][
-            "run"
-        ]
-        with TemporaryDirectory() as directory:
-            env = {
-                "PATH": "/usr/bin:/bin",
-                "RESULTS": "success success success success success",
-                "CPU_DIGEST": DIGEST,
-                "CPU_ARM_DIGEST": ARM,
-                "GPU_DIGEST": DIGEST,
-                "CPU_TESTED": DIGEST,
-                "GPU_TESTED": DIGEST,
-                "GITHUB_STEP_SUMMARY": f"{directory}/summary",
-            }
-            self.assertEqual(
-                subprocess.run(
-                    ["bash", "-c", script], env=env, capture_output=True
-                ).returncode,
-                0,
-            )
-            for result in ["failure", "cancelled", "skipped", ""]:
-                for index in range(5):
-                    outcomes = ["success"] * 5
-                    outcomes[index] = result
-                    self.assertNotEqual(
-                        subprocess.run(
-                            ["bash", "-c", script],
-                            env={**env, "RESULTS": " ".join(outcomes)},
-                            capture_output=True,
-                        ).returncode,
-                        0,
-                    )
-            for key in [
-                "CPU_DIGEST",
-                "CPU_ARM_DIGEST",
-                "GPU_DIGEST",
-                "CPU_TESTED",
-                "GPU_TESTED",
-            ]:
-                self.assertNotEqual(
-                    subprocess.run(
-                        ["bash", "-c", script],
-                        env={**env, key: ""},
-                        capture_output=True,
-                    ).returncode,
-                    0,
-                )
+if __name__ == "__main__":
+    unittest.main()

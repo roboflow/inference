@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Main image reuse through Depot — October 20, 2026
+
+- Supersede the fast-track Depot saved-image trial with image reuse for every
+  push to main (`ci_image_reuse.yml`): build once per family with
+  `depot build --save` under GitHub OIDC, then pull the exact digest in both
+  model modes. The trial workflows, their approval variables and reviewer
+  environments are removed; a release branch proves the same path by
+  dispatching the orchestrator. GCP Artifact Registry stays the release mirror.
+
 ### Depot saved-image trial — October 16, 2026
 
 - Add an opt-in fast-track path that saves CPU and GPU images in Depot once
