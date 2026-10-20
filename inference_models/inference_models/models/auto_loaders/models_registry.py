@@ -591,6 +591,31 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.resnet.resnet_classification_trt",
         class_name="ResNetForMultiLabelClassificationTRT",
     ),
+    # ConvNeXt classifiers are timm models packaged exactly like ResNet ones.
+    ("convnext", CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.resnet.resnet_classification_onnx",
+        class_name="ResNetForClassificationOnnx",
+    ),
+    ("convnext", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.resnet.resnet_classification_onnx",
+        class_name="ResNetForMultiLabelClassificationOnnx",
+    ),
+    ("convnext", CLASSIFICATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.resnet.resnet_classification_torch",
+        class_name="ResNetForClassificationTorch",
+    ),
+    ("convnext", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.resnet.resnet_classification_torch",
+        class_name="ResNetForMultiLabelClassificationTorch",
+    ),
+    ("convnext", CLASSIFICATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.resnet.resnet_classification_trt",
+        class_name="ResNetForClassificationTRT",
+    ),
+    ("convnext", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.resnet.resnet_classification_trt",
+        class_name="ResNetForMultiLabelClassificationTRT",
+    ),
     ("segment-anything-2-rt", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.sam2_rt.sam2_pytorch",
         class_name="SAM2ForStream",
