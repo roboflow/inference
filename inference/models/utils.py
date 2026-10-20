@@ -243,6 +243,7 @@ ROBOFLOW_MODEL_TYPES = _LazyModelRegistry(
         ("classification", "convnext_tiny"): ResNetClassification,
         ("classification", "convnext_small"): ResNetClassification,
         ("classification", "convnext_base"): ResNetClassification,
+        ("classification", "convnext_large"): ResNetClassification,
         ("classification", "yolov8"): YOLOv8Classification,
         ("classification", "yolov8n"): YOLOv8Classification,
         ("classification", "yolov8s"): YOLOv8Classification,
