@@ -14,11 +14,19 @@ Earlier engine changes and migration guidance remain in the
 See the [engine release rule](../.cursor/rules/execution-engine-version-changelog.mdc)
 for contributor and maintainer responsibilities.
 
-## Unreleased
+## `0.2.11`
+
+Bundled execution engine: `1.16.1`.
 
 ### Added
 
+- Anomaly Detection Model block (`roboflow_core/anomaly_detection_model@v1`): runs a PatchCore or FoundAD model trained on a Roboflow anomaly detection project (served on the classification route). Outputs the classification-style `predictions` (plus `anomaly_score`, `anomaly_threshold`, `anomaly_scale`, `is_anomalous`), the raw `anomaly_score`, the `anomaly_threshold` in effect, the `anomaly_decision_threshold` (the raw score at which the anomalous confidence equals `confidence`), the `is_anomalous` verdict and the `anomaly_map` (a float32 `numpy_array` at the network input resolution; `None` when `include_anomaly_map` is off). `confidence` (default 0.5, the calibrated decision) is the anomalous confidence an image must reach; `anomaly_threshold` overrides the threshold saved with the model and re-decides with the same rule. `ModelsProvider.run_classification` gains `include_anomaly_map`.
+- Anomaly Heatmap Visualization block (`roboflow_core/anomaly_heatmap_visualization@v1`): stretches an anomaly map onto its image (bilinear) and blends it as a heatmap on a ramp anchored at its `anomaly_threshold` input, meant to be wired to the model block's `anomaly_decision_threshold`: `t = max(v, 0) / (max(v, 0) + anchor)`; an anchor at or below zero saturates every positive value. `color_map` is the Roboflow app's ramp (`ROBOFLOW`) or an OpenCV map (`JET`, `TURBO`, `INFERNO`, `VIRIDIS`, `HOT`); `opacity` and `copy_image` as the other visualization blocks.
 - `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
+
+### Changed
+
+- `inference-sdk>=1.8.0`: the hosted (API v0) request carries `include_anomaly_map` from 1.8.0, which the Anomaly Detection Model block needs in REMOTE execution. The anomaly blocks need `inference-models` 0.39.5 (`anomaly_scale`).
 
 ## `0.2.10`
 
@@ -38,8 +46,6 @@ Bundled execution engine: `1.16.1`.
 
 ### Added
 
-- Anomaly Detection Model block (`roboflow_core/anomaly_detection_model@v1`): runs a PatchCore or FoundAD model trained on a Roboflow anomaly detection project and outputs the classification-style `predictions`, the raw `anomaly_score`, the `anomaly_threshold` in effect, the `is_anomalous` verdict and the `anomaly_map` (a float32 `numpy_array` at the network input resolution). `include_anomaly_map` skips the map; `anomaly_threshold` overrides the threshold saved with the model. `ModelsProvider.run_classification` gains `include_anomaly_map`.
-- Anomaly Heatmap Visualization block (`roboflow_core/anomaly_heatmap_visualization@v1`): stretches an anomaly map onto its image and blends it as a heatmap on a scale anchored to the threshold (`value / (value + threshold)`), with the Roboflow app's ramp or an OpenCV colour map.
 - The nine Roboflow platform blocks are core blocks of this package again: dataset upload v1 and v2, custom metadata, model monitoring inference aggregator, vision events, vision event bundle, asset library attributes, visual search and visual search classifier. They live in `core_steps.sinks.roboflow` and `core_steps.integrations.roboflow`, so a standalone install now lists 248 blocks. Inference 1.6.1 to 1.7.2 shipped them as the `inference.roboflow_workflows_plugin` plugin; that plugin is now an empty compatibility stub.
 - `RoboflowPlatformClient` gains the operations these blocks call: `get_roboflow_workspace`, `add_custom_metadata`, `register_image_at_roboflow`, `annotate_image_at_roboflow`, `update_image_metadata_at_roboflow`, `batch_update_image_metadata_at_roboflow`, `search_project_images_at_roboflow`, `send_inference_results_to_model_monitoring`, `get_device_id`, `get_server_version` and `get_system_info`. The offline client refuses the API operations. A host can register a fallback client for these blocks with `set_platform_blocks_client_factory`, used when a block gets no client, the offline client, or a client that does not implement these operations itself.
 - Vision events sends its cloud image upload and event request only through a client that implements these operations. With the offline client it returns `error_status` with the offline refusal and sends nothing; writing to a local event store is unaffected.
