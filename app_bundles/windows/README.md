@@ -58,3 +58,14 @@ hash-verified Windows/Python/flavor-specific wheelhouse and system prerequisites
 That is separate from model/workflow artifact provisioning, entitlement and leases,
 telemetry and managed remote blocks. No offline installer bundle or truly offline
 native deployment support is delivered by this repair.
+
+## GPU compatibility
+
+The native Windows GPU installer uses PyTorch CUDA 12.6 builds. Blackwell GPUs,
+including GeForce RTX 50-series, are unsupported by this installer. Use the CPU
+installer for CPU execution on these systems. This limitation concerns the native
+Windows installer; Docker images have separate compatibility requirements.
+
+Installer release notes and download guidance must carry this compatibility
+notice. An ONNX model backend alone does not establish a supported Blackwell
+inference path: preprocessing and postprocessing can also use PyTorch CUDA.
