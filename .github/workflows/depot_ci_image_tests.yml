@@ -1,0 +1,130 @@
+name: Test saved fast-track Depot image
+on:
+  workflow_call:
+    inputs:
+      family:
+        type: string
+        required: true
+      image_digest:
+        type: string
+        required: true
+    secrets:
+      API_KEY:
+        required: false
+      ASL_INSTANCE_SEGMENTATION_API_KEY:
+        required: false
+      ASL_POLY_INSTANCE_SEG_API_KEY:
+        required: false
+      BCCD_FAVZ3_API_KEY:
+        required: false
+      BCCD_I4NYM_API_KEY:
+        required: false
+      CATS_AND_DOGS_SMNPL_API_KEY:
+        required: false
+      COINS_XAZ9I_API_KEY:
+        required: false
+      MELEE_API_KEY:
+        required: false
+      YOLONAS_TEST_API_KEY:
+        required: false
+    outputs:
+      verified_digest:
+        value: ${{ jobs.cpu.outputs.verified_digest || jobs.gpu.outputs.verified_digest }}
+permissions:
+  contents: read
+jobs:
+  cpu:
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && vars.CI_DEPOT_REUSE_ENABLED == 'true' && startsWith(github.ref, 'refs/heads/fast-track/post-v') && github.ref == vars.CI_DEPOT_APPROVED_REF && github.sha == vars.CI_DEPOT_APPROVED_SHA && (github.workflow_ref == format('roboflow/inference/.github/workflows/fast_track_depot_images.yml@{0}', github.ref) || github.workflow_ref == format('roboflow/inference/.github/workflows/fast_track_integration_tests.yml@{0}', github.ref)) && inputs.family == 'cpu' }}
+    environment: ci-depot-reader
+    runs-on:
+      group: group8core
+    timeout-minutes: 60
+    # GitHub OIDC mints a one-hour read-only pull token in the job; no stored
+    # Depot token. The caller must grant id-token.
+    permissions: &test_permissions
+      contents: read
+      id-token: write
+    env: &test_environment
+      CI_DEPOT_REUSE_ENABLED: ${{ vars.CI_DEPOT_REUSE_ENABLED }}
+      CI_DEPOT_APPROVED_REF: ${{ vars.CI_DEPOT_APPROVED_REF }}
+      CI_DEPOT_APPROVED_SHA: ${{ vars.CI_DEPOT_APPROVED_SHA }}
+      CI_DEPOT_REGISTRY: ${{ vars.CI_DEPOT_REGISTRY }}
+      DEPOT_PROJECT_ID: ${{ vars.CI_DEPOT_PROJECT }}
+      IMAGE_FAMILY: ${{ inputs.family }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+      MODEL_MODE: ${{ matrix.model_mode }}
+      INFERENCE_TEST_CONTAINER: depot-ci-${{ inputs.family }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
+      INFERENCE_TEST_BIND: 127.0.0.1::9101
+    strategy: &test_matrix
+      fail-fast: true
+      matrix:
+        model_mode: ["true", "false"]
+    outputs:
+      verified_digest: ${{ steps.verified.outputs.digest }}
+    steps: &test_steps
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Depot CLI
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
+      - name: Pull and verify exact image, then remove pull credentials
+        env:
+          CI_DEPOT_ACTION: pull
+        run: python3 .github/scripts/depot_ci_image.py
+      - name: Install CPU test dependencies
+        if: ${{ inputs.family == 'cpu' }}
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.code_analysis.txt
+      - name: Install GPU test dependencies
+        if: ${{ inputs.family == 'gpu' }}
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements/requirements.test.integration.txt -r requirements/requirements.test.unit.txt
+      - name: Run all CPU server stages
+        if: ${{ inputs.family == 'cpu' }}
+        uses: ./.github/actions/server-tests-cpu
+        with:
+          private_logs: "true"
+          verify_runtime: "true"
+          API_KEY: ${{ secrets.API_KEY }}
+          ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+          ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+          BCCD_FAVZ3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+          BCCD_I4NYM_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+          CATS_AND_DOGS_SMNPL_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+          COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+          MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
+          YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
+      - name: Run all GPU server stages
+        if: ${{ inputs.family == 'gpu' }}
+        uses: ./.github/actions/server-tests-gpu
+        with:
+          private_logs: "true"
+          test_name: ""
+          API_KEY: ${{ secrets.API_KEY }}
+          ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+          ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+          BCCD_FAVZ3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+          BCCD_I4NYM_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+          CATS_AND_DOGS_SMNPL_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+          COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+          MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
+          YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
+      - name: Record successful image verification and tests
+        id: verified
+        run: echo "digest=$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+  gpu:
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && vars.CI_DEPOT_REUSE_ENABLED == 'true' && startsWith(github.ref, 'refs/heads/fast-track/post-v') && github.ref == vars.CI_DEPOT_APPROVED_REF && github.sha == vars.CI_DEPOT_APPROVED_SHA && (github.workflow_ref == format('roboflow/inference/.github/workflows/fast_track_depot_images.yml@{0}', github.ref) || github.workflow_ref == format('roboflow/inference/.github/workflows/fast_track_integration_tests.yml@{0}', github.ref)) && inputs.family == 'gpu' }}
+    environment: ci-depot-reader
+    runs-on: Roboflow-GPU-VM-Runner
+    timeout-minutes: 120
+    permissions: *test_permissions
+    env: *test_environment
+    strategy: *test_matrix
+    outputs:
+      verified_digest: ${{ steps.verified.outputs.digest }}
+    steps: *test_steps
