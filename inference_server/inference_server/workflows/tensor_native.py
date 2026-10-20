@@ -48,7 +48,11 @@ NATIVE_PARAMS: Dict[str, frozenset] = {
     "object-detection": _DETECTION_PARAMS | _COLOR_FORMAT_PARAM,
     "instance-segmentation": _DETECTION_PARAMS | _COLOR_FORMAT_PARAM,
     "keypoint-detection": _DETECTION_PARAMS | _COLOR_FORMAT_PARAM,
-    "classification": _DETECTION_PARAMS | _COLOR_FORMAT_PARAM,
+    # Anomaly detection models (PatchCore, FoundAD) are served as classification;
+    # the flag asks them for the anomaly map, as on the legacy request path.
+    "classification": _DETECTION_PARAMS
+    | _COLOR_FORMAT_PARAM
+    | frozenset({"include_anomaly_map"}),
     "multi-label-classification": _DETECTION_PARAMS | _COLOR_FORMAT_PARAM,
     "semantic-segmentation": frozenset({"confidence"}) | _COLOR_FORMAT_PARAM,
     "depth-estimation": _COLOR_FORMAT_PARAM,
@@ -84,12 +88,20 @@ NATIVE_ACTIONS: Dict[str, Dict[Optional[str], Tuple[str, ...]]] = {
 }
 
 
+# Prediction fields that stay host-side: a model fills them with numpy arrays
+# (e.g. the anomaly map in `ClassificationPrediction.images_metadata`), and the
+# tensor blocks read them as numpy, exactly as they do with an in-process model.
+_HOST_SIDE_FIELDS = frozenset({"images_metadata"})
+
+
 # NOTE: bfloat16 tensors were widened to float32 on the wire; the original precision is not restored.
 def numpy_to_tensors(result: Any, device: Any) -> Any:
     if isinstance(result, np.ndarray):
         return torch.as_tensor(result, device=device)
     if dataclasses.is_dataclass(result) and not isinstance(result, type):
         for field in dataclasses.fields(result):
+            if field.name in _HOST_SIDE_FIELDS:
+                continue
             object.__setattr__(
                 result,
                 field.name,

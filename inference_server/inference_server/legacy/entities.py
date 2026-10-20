@@ -1678,7 +1678,8 @@ class AnomalyDetectionResponse(ClassificationInferenceResponse):
     Attributes:
         anomaly_score (float): Raw anomaly score; larger means more anomalous.
         anomaly_threshold (float): Decision threshold fitted on validation images.
-        is_anomalous (bool): Whether the score reached the threshold.
+        anomaly_scale (float): Calibration scale of the anomalous confidence.
+        is_anomalous (bool): Whether the anomalous confidence reached the request confidence.
         anomaly_map (Optional[List[List[float]]]): Raw local anomaly evidence in original image coordinates.
     """
 
@@ -1688,7 +1689,13 @@ class AnomalyDetectionResponse(ClassificationInferenceResponse):
     anomaly_threshold: float = Field(
         description="Decision threshold fitted on validation images"
     )
-    is_anomalous: bool = Field(description="Whether the score reached the threshold")
+    anomaly_scale: float = Field(
+        description="Calibration scale: the anomalous confidence is "
+        "sigmoid((anomaly_score - anomaly_threshold) / anomaly_scale)"
+    )
+    is_anomalous: bool = Field(
+        description="Whether the anomalous confidence reached the request confidence"
+    )
     anomaly_map: Optional[List[List[float]]] = Field(
         default=None,
         description="Raw local anomaly evidence in original image coordinates",

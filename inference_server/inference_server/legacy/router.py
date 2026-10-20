@@ -21,8 +21,15 @@ from starlette.datastructures import UploadFile
 
 from inference_model_manager.registry_defaults import IMAGE_EMBEDDINGS_ACTION
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
-from inference_server import configuration, platform_http, server_identity, telemetry
+from inference_server import (
+    configuration,
+    pingback,
+    platform_http,
+    server_identity,
+    telemetry,
+)
 from inference_server.dependencies import get_model_manager
+from inference_server.hosted.common import service_secret_is_valid
 from inference_server.legacy.action_recognition import (
     ACTION_RECOGNITION_TASK,
     classify_video,
@@ -145,8 +152,6 @@ from inference_server.legacy.visualization import (
     encode_image_to_jpeg_bytes,
     render_visualization,
 )
-from inference_server import pingback
-from inference_server.hosted.common import service_secret_is_valid
 from inference_server.prometheus import measure_inference
 from inference_server.routing import (
     IMAGE_EMBEDDINGS,
@@ -1132,12 +1137,15 @@ async def legacy_infer_from_request(
         extra_args = {"keypoint_confidence": keypoint_confidence}
     elif route.task_type == "semantic-segmentation":
         request_type = SemanticSegmentationInferenceRequest
+    # Leave an omitted confidence unset so anomaly detection models can tell it
+    # apart from an explicit one and use the model-eval value.
+    if route.task_type != "classification" or "confidence" in request.query_params:
+        extra_args["confidence"] = confidence
     try:
         inference_request = request_type(
             api_key=resolved_key,
             model_id=model_id,
             image=request_image,
-            confidence=confidence,
             iou_threshold=overlap,
             max_detections=max_detections,
             visualization_labels=labels,

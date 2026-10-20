@@ -1,0 +1,62 @@
+name: Save fast-track CI image in Depot
+on:
+  workflow_call:
+    inputs:
+      family:
+        type: string
+        required: true
+    outputs:
+      amd64_digest:
+        value: ${{ jobs.build.outputs.amd64_digest }}
+      arm64_digest:
+        value: ${{ jobs.build.outputs.arm64_digest }}
+permissions:
+  contents: read
+jobs:
+  build:
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && vars.CI_DEPOT_REUSE_ENABLED == 'true' && startsWith(github.ref, 'refs/heads/fast-track/post-v') && github.ref == vars.CI_DEPOT_APPROVED_REF && github.sha == vars.CI_DEPOT_APPROVED_SHA && (github.workflow_ref == format('roboflow/inference/.github/workflows/fast_track_depot_images.yml@{0}', github.ref) || github.workflow_ref == format('roboflow/inference/.github/workflows/fast_track_integration_tests.yml@{0}', github.ref)) }}
+    environment: ci-depot-builder
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    # GitHub OIDC through the org-level Depot connection, as in every other
+    # Depot workflow here; no stored Depot token. The caller must grant id-token.
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CI_DEPOT_REUSE_ENABLED: ${{ vars.CI_DEPOT_REUSE_ENABLED }}
+      CI_DEPOT_APPROVED_REF: ${{ vars.CI_DEPOT_APPROVED_REF }}
+      CI_DEPOT_APPROVED_SHA: ${{ vars.CI_DEPOT_APPROVED_SHA }}
+      IMAGE_FAMILY: ${{ inputs.family }}
+      CI_DEPOT_REGISTRY: ${{ vars.CI_DEPOT_REGISTRY }}
+      DEPOT_PROJECT_ID: ${{ vars.CI_DEPOT_PROJECT }}
+    outputs:
+      amd64_digest: ${{ steps.build.outputs.amd64_digest }}
+      arm64_digest: ${{ steps.build.outputs.arm64_digest }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate approved source and destination before authentication
+        env:
+          CI_DEPOT_ACTION: validate
+        run: python3 .github/scripts/depot_ci_image.py
+      - name: Initialize isolated Docker configuration
+        id: config
+        run: |
+          umask 077
+          directory="$(mktemp -d "$RUNNER_TEMP/depot-ci.XXXXXXXX")"
+          echo "DOCKER_CONFIG=$directory" >> "$GITHUB_ENV"
+      - name: Set up Depot CLI
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
+      - name: Set up Buildx for manifest inspection
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Save image and export platform digests
+        id: build
+        env:
+          CI_DEPOT_ACTION: build
+        run: python3 .github/scripts/depot_ci_image.py
+      - name: Remove registry credentials, retaining Buildx post-hook state
+        if: ${{ always() && steps.config.outcome == 'success' }}
+        run: rm -f -- "$DOCKER_CONFIG/config.json"

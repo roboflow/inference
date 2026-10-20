@@ -477,6 +477,7 @@ class WorkflowContractTests(unittest.TestCase):
             "github.event.act": False,
             "vars.CI_IMAGE_REUSE_ENABLED": "false",
             "inputs.private_image": False,
+            "inputs.use_depot_images": False,
         }
         context.update(overrides)
         condition = self._workflow(name)["jobs"][job]["if"]
@@ -642,7 +643,16 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertNotIn("DOCKERHUB_TOKEN", job["secrets"])
         self.assertEqual(main["jobs"]["gpu-tests"]["with"]["test_name"], "")
         gpu = self._workflow("test.nvidia_t4.yml")["jobs"]["build"]
-        ids = {step.get("id") for step in gpu["steps"]}
+        call = next(
+            step
+            for step in gpu["steps"]
+            if step.get("uses") == "./.github/actions/server-tests-gpu"
+        )
+        self.assertEqual(call["with"]["test_name"], "${{ inputs.test_name }}")
+        action = yaml.safe_load(
+            (ROOT / ".github/actions/server-tests-gpu/action.yml").read_text()
+        )
+        ids = {step.get("id") for step in action["runs"]["steps"]}
         self.assertTrue(
             {
                 "regression_tests_without_torch",
