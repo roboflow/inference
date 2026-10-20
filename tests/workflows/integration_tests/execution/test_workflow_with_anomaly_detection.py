@@ -3,6 +3,7 @@ import pytest
 
 from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
+    USE_INFERENCE_MODELS,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
 )
 from inference.core.managers.base import ModelManager
@@ -13,6 +14,11 @@ from inference.core.workflows.core_steps.common.serializers_tensor import (
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
+)
+
+pytestmark = pytest.mark.skipif(
+    not USE_INFERENCE_MODELS,
+    reason="PatchCore and FoundAD load only under the inference_models runtime",
 )
 
 # Public models of the anomaly reference project, trained on the same data.
