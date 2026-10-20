@@ -14,6 +14,7 @@ import urllib.parse
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
+from http.cookiejar import DefaultCookiePolicy
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
@@ -25,6 +26,7 @@ from cachetools.func import ttl_cache
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from requests import Response, Timeout
+from requests.adapters import HTTPAdapter
 from requests_toolbelt import MultipartEncoder
 from yarl import URL
 
@@ -1962,6 +1964,35 @@ def _get_from_url(
     return response
 
 
+DATASET_UPLOAD_CONNECTION_POOL_SIZE = 32
+
+
+def _create_dataset_upload_session() -> requests.Session:
+    session = requests.Session()
+    # Requests made with different API keys share this session, so it must not
+    # carry cookies from one request to the next.
+    session.cookies.set_policy(DefaultCookiePolicy(allowed_domains=[]))
+    adapter = HTTPAdapter(pool_maxsize=DATASET_UPLOAD_CONNECTION_POOL_SIZE)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+# Image and annotation uploads reuse pooled connections instead of opening a
+# new TCP and TLS connection for every request.
+_dataset_upload_session = _create_dataset_upload_session()
+
+
+def _replace_dataset_upload_session_after_fork() -> None:
+    # A forked child must not write to the sockets pooled by its parent.
+    global _dataset_upload_session
+    _dataset_upload_session = _create_dataset_upload_session()
+
+
+if hasattr(os, "register_at_fork"):  # not available on Windows
+    os.register_at_fork(after_in_child=_replace_dataset_upload_session_after_fork)
+
+
 @backoff.on_exception(
     backoff.constant,
     exception=RetryRequestError,
@@ -1977,8 +2008,9 @@ def _post_to_url(
 ) -> Response:
     """POST with the GET retry policy, rebuilding multipart data per attempt.
 
-    Errors that trigger a retry are appended to `failed_attempts`, so callers can
-    tell when a retried request may already have taken effect.
+    Requests go through the pooled dataset upload session. Errors that trigger
+    a retry are appended to `failed_attempts`, so callers can tell when a
+    retried request may already have taken effect.
     """
     body = (
         MultipartEncoder(fields=multipart_fields)
@@ -1989,7 +2021,7 @@ def _post_to_url(
         body.content_type if isinstance(body, MultipartEncoder) else "text/plain"
     )
     try:
-        response = requests.post(
+        response = _dataset_upload_session.post(
             wrap_url(url),
             data=body,
             headers=build_roboflow_api_headers(
