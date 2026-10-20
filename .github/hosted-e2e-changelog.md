@@ -28,7 +28,8 @@
   isolation and a live build/pull/test run still require verification.
 - Add offline regression coverage for authorization, image identity, credential
   cleanup, output suppression, complete test coverage and legacy-path exclusion.
-- Validate the Depot transport locally against project `inference-ci-test`:
+- Validate the Depot transport locally against project `inference-ci-test`
+  (since renamed `manual-inference-ci-test`):
   `--save`, digest-addressed manifest inspection, pull by child digest, the
   identity checks and push denial for pull tokens all pass. The Actions OIDC
   path still needs one live run.

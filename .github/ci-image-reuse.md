@@ -90,7 +90,7 @@ apply.
   with a one-hour read-only `depot pull-token`. No registry secret, service
   account or Depot token is stored; the orchestrator passes one Depot project
   ID to every producer and consumer: `inference-ci` on pushes to main, the
-  `inference-ci-test` sandbox by default on a manual dispatch.
+  `manual-inference-ci-test` sandbox by default on a manual dispatch.
 - Allow a manual dispatch of the orchestrator from any same-repository branch
   so the whole path can be proven before a change reaches main.
 - Supersede the manual fast-track Depot trial: release branches prove the
@@ -179,9 +179,9 @@ copy of the YAML.
 ### Configuration
 
 None. Pushes to main save images in Depot project `inference-ci`
-(`9x3fbbxlnm`), whose image retention policy should be a bounded window (for
-example 14 days). A manual dispatch of the orchestrator takes a `depot_project`
-input that defaults to `inference-ci-test` (`7m01vtml7h`), the team sandbox for
+(`9x3fbbxlnm`), whose image retention policy is 7 days; the sandbox keeps
+images for 1 day. A manual dispatch of the orchestrator takes a `depot_project`
+input that defaults to `manual-inference-ci-test` (`7m01vtml7h`), the team sandbox for
 CI experiments, so manual runs never share a registry or cache with the main
 process. Both IDs are literals in `ci_image_reuse.yml`.
 

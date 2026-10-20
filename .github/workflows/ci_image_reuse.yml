@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       depot_project:
-        description: "Depot project for this manual run. Default is inference-ci-test (7m01vtml7h), the team sandbox; pushes to main always use inference-ci (9x3fbbxlnm)."
+        description: "Depot project for this manual run. Default is manual-inference-ci-test (7m01vtml7h), the team sandbox; pushes to main always use inference-ci (9x3fbbxlnm)."
         type: string
         default: 7m01vtml7h
 
@@ -20,7 +20,7 @@ concurrency:
 # modes; the standalone CPU/T4 builds skip on pushes. A manual dispatch from any
 # same-repository branch exercises the whole path.
 # Pushes to main save images in Depot project inference-ci (9x3fbbxlnm). A
-# manual dispatch defaults to inference-ci-test (7m01vtml7h) so experiments
+# manual dispatch defaults to manual-inference-ci-test (7m01vtml7h) so experiments
 # never share a registry or cache with the main CI process.
 jobs:
   cpu-image:
