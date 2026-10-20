@@ -193,7 +193,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam3' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="-e MAX_ACTIVE_MODELS=1 -e DISK_CACHE_CLEANUP=False" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests - SAM3
       id: sam3_tests
