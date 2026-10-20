@@ -38,12 +38,11 @@ def _emit(path_variable: str, name: str, value: str) -> None:
 
 
 def _trusted() -> None:
-    # Pushes to main consume saved images only while reuse is enabled; a manual
-    # dispatch from any same-repository branch may exercise the path before that.
+    # Pushes to main consume saved images; a manual dispatch from any
+    # same-repository branch may exercise the path before a change reaches main.
     ref = os.environ.get("GITHUB_REF", "")
     event = os.environ.get("GITHUB_EVENT_NAME", "")
-    enabled = os.environ.get("CI_IMAGE_REUSE_ENABLED") == "true"
-    main_push = event == "push" and ref == "refs/heads/main" and enabled
+    main_push = event == "push" and ref == "refs/heads/main"
     manual = event == "workflow_dispatch" and ref.startswith("refs/heads/")
     if os.environ.get("GITHUB_REPOSITORY") != "roboflow/inference" or not (
         main_push or manual

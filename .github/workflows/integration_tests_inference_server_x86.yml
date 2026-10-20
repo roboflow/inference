@@ -92,7 +92,7 @@ jobs:
       ${{ github.repository == 'roboflow/inference'
           && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
           && !github.event.act
-          && (github.event_name != 'push' || vars.CI_IMAGE_REUSE_ENABLED != 'true' || inputs.private_image)
+          && (github.event_name != 'push' || inputs.private_image)
           && (!inputs.private_image || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
     runs-on:
       group: group8core
@@ -108,7 +108,6 @@ jobs:
       IMAGE_TAG: ${{ inputs.image_tag }}
       IMAGE_DIGEST: ${{ inputs.image_digest }}
       PRIVATE_IMAGE: ${{ inputs.private_image || false }}
-      CI_IMAGE_REUSE_ENABLED: ${{ vars.CI_IMAGE_REUSE_ENABLED }}
       DEPOT_PROJECT_ID: ${{ inputs.depot_project }}
       INFERENCE_TEST_CONTAINER: ci-cpu-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       INFERENCE_TEST_BIND: 127.0.0.1::9101

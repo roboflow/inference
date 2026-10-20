@@ -41,7 +41,6 @@ class ImageTransportTests(unittest.TestCase):
             "GITHUB_REF": "refs/heads/main",
             "GITHUB_EVENT_NAME": "push",
             "GITHUB_SHA": SHA,
-            "CI_IMAGE_REUSE_ENABLED": "true",
             "IMAGE_FAMILY": "cpu",
             "MODEL_MODE": "true",
             "PRIVATE_IMAGE": "false",
@@ -116,14 +115,13 @@ class ImageTransportTests(unittest.TestCase):
                 self.assertFalse(any(command[0] == "docker" for command in self.calls))
 
     def test_untrusted_private_contexts_are_rejected(self):
-        """Forks, PR events, feature pushes and disabled rollout cannot consume."""
+        """Forks, PR events and feature pushes cannot consume saved images."""
         os.environ["PRIVATE_IMAGE"] = "true"
         for key, value in [
             ("GITHUB_REPOSITORY", "external/inference"),
             ("GITHUB_REF", "refs/heads/feature"),
             ("GITHUB_EVENT_NAME", "pull_request_target"),
             ("GITHUB_EVENT_NAME", "pull_request"),
-            ("CI_IMAGE_REUSE_ENABLED", "false"),
         ]:
             with self.subTest(key=key, value=value), patch.dict(
                 os.environ, {key: value}
@@ -137,7 +135,6 @@ class ImageTransportTests(unittest.TestCase):
             {
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_REF": "refs/heads/feature",
-                "CI_IMAGE_REUSE_ENABLED": "false",
             },
         ), patch.object(IMAGE, "_run", side_effect=self._run):
             IMAGE._validate()
@@ -383,7 +380,6 @@ class WorkflowContractTests(unittest.TestCase):
             "github.ref": "refs/heads/main",
             "github.event_name": "push",
             "github.event.act": False,
-            "vars.CI_IMAGE_REUSE_ENABLED": "false",
             "inputs.private_image": False,
             "inputs.use_depot_images": False,
         }
@@ -443,23 +439,19 @@ class WorkflowContractTests(unittest.TestCase):
         ]
         for name, job in jobs:
             for private in (False, True):
-                for flag in ("false", "true"):
-                    for event in ("push", "workflow_dispatch", "pull_request_target"):
-                        with self.subTest(
-                            name=name, private=private, flag=flag, event=event
-                        ):
-                            self.assertFalse(
-                                self._job_is_allowed(
-                                    name,
-                                    job,
-                                    **{
-                                        "github.repository": "external/inference",
-                                        "github.event_name": event,
-                                        "inputs.private_image": private,
-                                        "vars.CI_IMAGE_REUSE_ENABLED": flag,
-                                    },
-                                )
+                for event in ("push", "workflow_dispatch", "pull_request_target"):
+                    with self.subTest(name=name, private=private, event=event):
+                        self.assertFalse(
+                            self._job_is_allowed(
+                                name,
+                                job,
+                                **{
+                                    "github.repository": "external/inference",
+                                    "github.event_name": event,
+                                    "inputs.private_image": private,
+                                },
                             )
+                        )
             for event in ("pull_request", "pull_request_target"):
                 with self.subTest(name=name, event=event):
                     self.assertFalse(
@@ -469,32 +461,25 @@ class WorkflowContractTests(unittest.TestCase):
                             **{
                                 "github.event_name": event,
                                 "inputs.private_image": True,
-                                "vars.CI_IMAGE_REUSE_ENABLED": "true",
                             },
                         )
                     )
 
     def test_expected_image_entry_points_remain_available(self):
-        """Preserve legacy/manual runs and trusted main reuse without PR access."""
+        """Preserve manual runs and main reuse without PR access."""
         for name in self.CONSUMERS:
-            for event, ref in (
-                ("push", "refs/heads/main"),
-                ("workflow_dispatch", "refs/heads/fast-track/example"),
-            ):
-                self.assertTrue(
-                    self._job_is_allowed(
-                        name,
-                        "build",
-                        **{"github.event_name": event, "github.ref": ref},
-                    )
-                )
+            # A push to main runs only through the orchestrator (private_image).
+            self.assertFalse(self._job_is_allowed(name, "build"))
+            self.assertTrue(
+                self._job_is_allowed(name, "build", **{"inputs.private_image": True})
+            )
             self.assertTrue(
                 self._job_is_allowed(
                     name,
                     "build",
                     **{
-                        "inputs.private_image": True,
-                        "vars.CI_IMAGE_REUSE_ENABLED": "true",
+                        "github.event_name": "workflow_dispatch",
+                        "github.ref": "refs/heads/fast-track/example",
                     },
                 )
             )
@@ -525,19 +510,13 @@ class WorkflowContractTests(unittest.TestCase):
                 self._workflow(name)["jobs"]["build"]["strategy"]["fail-fast"], True
             )
         for name in ("docker.cpu.yml", "docker.gpu.yml"):
-            for event in ("push", "workflow_dispatch", "release"):
+            self.assertFalse(self._job_is_allowed(name, "docker"))
+            for event in ("workflow_dispatch", "release"):
                 self.assertTrue(
                     self._job_is_allowed(name, "docker", **{"github.event_name": event})
                 )
         for job in ("cpu-image", "gpu-image", "image-tests-complete"):
-            self.assertFalse(self._job_is_allowed("ci_image_reuse.yml", job))
-            self.assertTrue(
-                self._job_is_allowed(
-                    "ci_image_reuse.yml",
-                    job,
-                    **{"vars.CI_IMAGE_REUSE_ENABLED": "true"},
-                )
-            )
+            self.assertTrue(self._job_is_allowed("ci_image_reuse.yml", job))
             self.assertTrue(
                 self._job_is_allowed(
                     "ci_image_reuse.yml",
@@ -601,16 +580,20 @@ class WorkflowContractTests(unittest.TestCase):
         )
         self.assertTrue(gpu["strategy"]["fail-fast"])
 
-    def test_rollout_switch_disables_old_build_paths_together(self):
-        """All four independent main jobs share the same rollout switch."""
-        for name, job in [
-            ("docker.cpu.yml", "docker"),
-            ("docker.gpu.yml", "docker"),
-            ("test.nvidia_t4.yml", "build"),
-            ("integration_tests_inference_server_x86.yml", "build"),
-        ]:
-            condition = self._workflow(name)["jobs"][job]["if"]
-            self.assertIn("vars.CI_IMAGE_REUSE_ENABLED != 'true'", condition)
+    def test_main_pushes_build_only_through_the_orchestrator(self):
+        """No standalone main-push build remains, and no rollout switch exists."""
+        for name in (
+            "docker.cpu.yml",
+            "docker.gpu.yml",
+            "ci_image_build.yml",
+            "ci_image_reuse.yml",
+            *self.CONSUMERS,
+        ):
+            self.assertNotIn(
+                "CI_IMAGE_REUSE_ENABLED",
+                (ROOT / ".github/workflows" / name).read_text(),
+                name,
+            )
         for name in self.CONSUMERS:
             workflow = self._workflow(name)
             for step in workflow["jobs"]["build"]["steps"]:

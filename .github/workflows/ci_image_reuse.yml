@@ -11,14 +11,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
-# This switch replaces the four independent main paths together. Pushes to
-# main use it only while CI_IMAGE_REUSE_ENABLED is true; a manual dispatch from
-# any same-repository branch exercises the whole path without enabling it.
+# Every push to main builds each image once here and tests it in both model
+# modes; the standalone CPU/T4 builds skip on pushes. A manual dispatch from any
+# same-repository branch exercises the whole path.
 # The Depot project below is the repository's existing project (see the
 # release build workflows); its registry keeps the saved CI images.
 jobs:
   cpu-image:
-    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CI_IMAGE_REUSE_ENABLED == 'true') || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     permissions:
       contents: read
       id-token: write
@@ -27,7 +27,7 @@ jobs:
       family: cpu
       depot_project: grl7ffzxd7
   gpu-image:
-    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CI_IMAGE_REUSE_ENABLED == 'true') || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     permissions:
       contents: read
       id-token: write
@@ -81,7 +81,7 @@ jobs:
   image-tests-complete:
     name: CPU and GPU image tests complete
     needs: [cpu-image, gpu-image, cpu-tests, gpu-tests]
-    if: ${{ always() && github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CI_IMAGE_REUSE_ENABLED == 'true') || github.event_name == 'workflow_dispatch') }}
+    if: ${{ always() && github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

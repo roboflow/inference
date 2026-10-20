@@ -91,7 +91,7 @@ apply.
   account or Depot token is stored; the Depot project ID is passed once from
   the orchestrator to every producer and consumer.
 - Allow a manual dispatch of the orchestrator from any same-repository branch
-  so the whole path can be proven before `CI_IMAGE_REUSE_ENABLED` governs main.
+  so the whole path can be proven before a change reaches main.
 - Supersede the manual fast-track Depot trial: release branches prove the
   same path by dispatching the orchestrator, so the trial workflows, their
   approval variables and reviewer environments are removed.
@@ -134,21 +134,20 @@ This section records the CI change without assigning it to a package release.
 
 ## Configuration and activation
 
-The implementation is disabled until the repository variable
-`CI_IMAGE_REUSE_ENABLED` is exactly `true`. With it unset or false, the existing
-main producer and consumer jobs continue. With it true, those four independent
-main jobs skip on pushes to main and the orchestrator owns their builds and
-tests. Same-repository release and manual/fast-track entry points remain
-available, and a manual dispatch of **Main CPU and GPU image reuse** from any
-same-repository branch runs the complete path regardless of the switch.
+There is no switch. Every push to main runs the orchestrator, which builds each
+family once and tests both model modes against that digest; the standalone CPU
+and T4 jobs and the push-triggered release builds skip on pushes to main.
+Same-repository release and manual entry points remain available, and a manual
+dispatch of **Main CPU and GPU image reuse** from any same-repository branch
+runs the complete path before a change reaches main. Reverting the orchestrator
+change restores the independent builds.
 
-The flag does **not** disable every change. The CPU and T4 `build` jobs and
-their `server-cpu` / `t4` fast-track callers grant `id-token: write` even with
-reuse off, as every other Depot workflow in this repository does. Every step in
-those jobs can request an OIDC token; the org-level Depot connection decides
-what that token is worth. Repository/event guards, action pins and isolated
-container names/ports also apply with the flag off. Both consumer matrices
-retain `fail-fast: true`.
+The CPU and T4 `build` jobs and their `server-cpu` / `t4` fast-track callers
+grant `id-token: write`, as every other Depot workflow in this repository does.
+Every step in those jobs can request an OIDC token; the org-level Depot
+connection decides what that token is worth. Repository/event guards, action
+pins and isolated container names/ports apply on every path. Both consumer
+matrices retain `fail-fast: true`.
 
 ### Transport
 
@@ -178,13 +177,10 @@ copy of the YAML.
 
 ### Configuration
 
-One repository **variable**, not a secret: `CI_IMAGE_REUSE_ENABLED` — `true`
-switches pushes to main to the orchestrator. The Depot project ID is a literal
-in `ci_image_reuse.yml`; saved images are kept by that project's image
-retention policy, which should be set to a bounded window (for example 14
-days) before activation.
+None. The Depot project ID is a literal in `ci_image_reuse.yml`; saved images
+are kept by that project's image retention policy, which should be set to a
+bounded window (for example 14 days) before merging.
 
-Activation order: dispatch the orchestrator from a branch and confirm both
-producers and all four consumer legs pass; then set `CI_IMAGE_REUSE_ENABLED`
-to `true` while no main push is in flight. Setting it back to `false` restores
-the independent builds on the next push.
+Activation order: dispatch the orchestrator from the branch and confirm both
+producers and all four consumer legs pass, set the retention window, then
+merge; the next push to main already reuses images.

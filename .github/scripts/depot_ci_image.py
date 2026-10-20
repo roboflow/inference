@@ -28,16 +28,12 @@ def _run(args: list[str], *, env: dict | None = None, stdin: str | None = None) 
 
 
 def _authorize() -> None:
-    # Pushes to main use saved images while the switch is on; a manual dispatch
-    # of the orchestrator from any same-repository branch proves the path early.
+    # Pushes to main use saved images; a manual dispatch of the orchestrator
+    # from any same-repository branch proves the path early.
     ref = os.environ.get("GITHUB_REF", "")
     sha = os.environ.get("GITHUB_SHA", "")
     event = os.environ.get("GITHUB_EVENT_NAME", "")
-    main_push = (
-        event == "push"
-        and ref == "refs/heads/main"
-        and os.environ.get("CI_IMAGE_REUSE_ENABLED") == "true"
-    )
+    main_push = event == "push" and ref == "refs/heads/main"
     manual = event == "workflow_dispatch" and ref.startswith("refs/heads/")
     if (
         os.environ.get("GITHUB_REPOSITORY") != "roboflow/inference"

@@ -39,7 +39,6 @@ class DepotImageTests(unittest.TestCase):
             "GITHUB_REF": REF,
             "GITHUB_SHA": SHA,
             "GITHUB_WORKFLOW_REF": f"{ORCHESTRATOR}@{REF}",
-            "CI_IMAGE_REUSE_ENABLED": "true",
             "DEPOT_PROJECT_ID": "exampleproject",
             "IMAGE_FAMILY": "cpu",
             "MODEL_MODE": "true",
@@ -103,7 +102,6 @@ class DepotImageTests(unittest.TestCase):
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_REF": "refs/heads/feature",
                 "GITHUB_WORKFLOW_REF": f"{ORCHESTRATOR}@refs/heads/feature",
-                "CI_IMAGE_REUSE_ENABLED": "false",
             },
         ]
         for changed in accepted:
@@ -113,7 +111,6 @@ class DepotImageTests(unittest.TestCase):
                 image._authorize()
         rejected = [
             {"GITHUB_REF": "refs/heads/feature"},
-            {"CI_IMAGE_REUSE_ENABLED": "false"},
             {"GITHUB_EVENT_NAME": "pull_request"},
             {"GITHUB_EVENT_NAME": "pull_request_target"},
             {"GITHUB_REPOSITORY": "external/inference"},

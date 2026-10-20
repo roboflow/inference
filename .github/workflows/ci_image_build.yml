@@ -25,14 +25,13 @@ permissions:
 # other Depot workflow here; no registry credential or Depot token is stored.
 jobs:
   build:
-    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CI_IMAGE_REUSE_ENABLED == 'true') || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
       contents: read
       id-token: write
     env:
-      CI_IMAGE_REUSE_ENABLED: ${{ vars.CI_IMAGE_REUSE_ENABLED }}
       IMAGE_FAMILY: ${{ inputs.family }}
       DEPOT_PROJECT_ID: ${{ inputs.depot_project }}
       DOCKER_BUILD_SUMMARY: false
