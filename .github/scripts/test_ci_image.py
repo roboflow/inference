@@ -381,7 +381,6 @@ class WorkflowContractTests(unittest.TestCase):
             "github.event_name": "push",
             "github.event.act": False,
             "inputs.private_image": False,
-            "inputs.use_depot_images": False,
         }
         context.update(overrides)
         condition = self._workflow(name)["jobs"][job]["if"]

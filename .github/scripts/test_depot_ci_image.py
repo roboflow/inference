@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -17,6 +18,7 @@ SHA = "d" * 40
 DIGEST = "sha256:" + "a" * 64
 ARM = "sha256:" + "b" * 64
 IMAGE_ID = "sha256:" + "c" * 64
+INDEX = "sha256:" + "e" * 64
 REF = "refs/heads/main"
 ORCHESTRATOR = "roboflow/inference/.github/workflows/ci_image_reuse.yml"
 REPOSITORY = "registry.depot.dev/exampleproject"
@@ -134,6 +136,29 @@ class DepotImageTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 image._authorize()
 
+    def test_protected_projects_are_rejected_unless_pushed_to_main(self):
+        manual = {
+            "GITHUB_EVENT_NAME": "workflow_dispatch",
+            "GITHUB_REF": "refs/heads/feature",
+            "GITHUB_WORKFLOW_REF": f"{ORCHESTRATOR}@refs/heads/feature",
+        }
+        for project in ["9x3fbbxlnm", "grl7ffzxd7"]:
+            self.calls.clear()
+            with self.subTest(project=project), patch.dict(
+                os.environ, {**manual, "DEPOT_PROJECT_ID": project}
+            ), patch.object(image, "_run", side_effect=self._run):
+                with self.assertRaises(ValueError):
+                    image._validate()
+                self.assertFalse(any(args[0] == "depot" for args, _, _ in self.calls))
+        with patch.dict(
+            os.environ, {**manual, "DEPOT_PROJECT_ID": "7m01vtml7h"}
+        ), patch.object(image, "_run", side_effect=self._run):
+            image._validate()
+        with patch.dict(os.environ, {"DEPOT_PROJECT_ID": "9x3fbbxlnm"}), patch.object(
+            image, "_run", side_effect=self._run
+        ):
+            image._validate()
+
     def test_destination_and_digest_validation_precede_login(self):
         for key, value in [
             ("DEPOT_PROJECT_ID", ""),
@@ -227,13 +252,27 @@ class DepotImageTests(unittest.TestCase):
                 self.assertEqual([call[0][0] for call in self.calls], ["git", "depot"])
 
     def test_build_saves_tracked_source_without_release_publication(self):
-        for family in ["cpu", "gpu"]:
-            with self.subTest(family=family), patch.dict(
-                os.environ, {"IMAGE_FAMILY": family}
-            ), patch.object(image, "_run", side_effect=self._run):
+        amd = {"platform": {"os": "linux", "architecture": "amd64"}, "digest": DIGEST}
+        arm = {"platform": {"os": "linux", "architecture": "arm64"}, "digest": ARM}
+        cases = [
+            (
+                "cpu",
+                {"manifests": [amd, arm]},
+                {"amd64_digest": DIGEST, "arm64_digest": ARM},
+            ),
+            ("gpu", {"manifests": [amd]}, {"amd64_digest": DIGEST}),
+            ("gpu", {"schemaVersion": 2}, {"amd64_digest": INDEX}),
+        ]
+        for family, manifest, children in cases:
+            with self.subTest(
+                family=family, indexed="manifests" in manifest
+            ), patch.dict(os.environ, {"IMAGE_FAMILY": family}), patch.object(
+                image, "_run", side_effect=self._run
+            ):
                 self.calls.clear()
-                if family == "gpu":
-                    self.manifest = {}
+                (self.root / "output").unlink(missing_ok=True)
+                self.manifest = manifest
+                self.metadata = {**self.metadata, "containerimage.digest": INDEX}
                 image._build()
                 commands = [call[0] for call in self.calls]
                 builds = [args for args in commands if args[:2] == ["depot", "build"]]
@@ -242,11 +281,11 @@ class DepotImageTests(unittest.TestCase):
                 self.assertIn("--save", build)
                 self.assertNotIn("--push", build)
                 self.assertNotIn("--tag", build)
+                self.assertIn("--provenance=mode=min", build)
+                self.assertEqual(build[build.index("--project") + 1], "exampleproject")
                 self.assertEqual(
                     build[build.index("--save-tag") + 1], f"ci-{family}-{SHA}"
                 )
-                self.assertIn("--provenance=mode=min", build)
-                self.assertEqual(build[build.index("--project") + 1], "exampleproject")
                 self.assertIn(f"org.opencontainers.image.revision={SHA}", build)
                 self.assertIn(f"io.roboflow.ci.image-family={family}", build)
                 self.assertEqual(
@@ -258,9 +297,12 @@ class DepotImageTests(unittest.TestCase):
                 )
                 self.assertEqual(archive[-1], SHA)
                 self.assertNotEqual(build[-1], ".")
-                output = (self.root / "output").read_text()
-                self.assertIn(f"amd64_digest={DIGEST}", output)
-                self.assertNotIn("example", output)
+                outputs = dict(
+                    line.split("=", 1)
+                    for line in (self.root / "output").read_text().splitlines()
+                )
+                self.assertEqual(outputs, {"index_digest": INDEX, **children})
+                self.assertNotIn("example", (self.root / "output").read_text())
                 self.assertFalse((self.root / "builder/config.json").exists())
 
     def test_bad_saved_metadata_and_incomplete_platforms_fail_closed(self):
@@ -388,13 +430,22 @@ class WorkflowTests(unittest.TestCase):
         }
         self.assertEqual(len(projects), 1)
         # Pushes use the CI project; a manual dispatch may pick another one.
+        expression = projects.pop()
         self.assertRegex(
-            projects.pop(), r"^\$\{\{ inputs\.depot_project \|\| '[a-z0-9]+' \}\}$"
+            expression,
+            r"^\$\{\{ github\.event_name == 'push' && '[a-z0-9]+' "
+            r"\|\| inputs\.depot_project \|\| '[a-z0-9]+' \}\}$",
         )
+        push_project, manual_project = [
+            value
+            for value in re.findall(r"'([a-z0-9]+)'", expression)
+            if value != "push"
+        ]
+        self.assertIn(push_project, image._PROTECTED_PROJECTS)
+        self.assertNotIn(manual_project, image._PROTECTED_PROJECTS)
         triggers = orchestrator.get("on", orchestrator.get(True))
         manual = triggers["workflow_dispatch"]["inputs"]["depot_project"]["default"]
-        self.assertRegex(manual, r"^[a-z0-9]+$")
-        self.assertNotIn(manual, json.dumps(orchestrator["jobs"]))
+        self.assertEqual(manual, manual_project)
         for name in ["ci_image_build.yml", *CONSUMERS]:
             workflow = _load(name)
             text = (ROOT / ".github/workflows" / name).read_text()

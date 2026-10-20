@@ -15,6 +15,9 @@ from tempfile import TemporaryDirectory
 from ci_image import _digest, _emit, _manifest_digests
 
 _ORCHESTRATOR = "roboflow/inference/.github/workflows/ci_image_reuse.yml"
+# Only a push to main may write into the CI project; the release project is
+# never a CI target. Manual dispatches must use a sandbox project.
+_PROTECTED_PROJECTS = frozenset({"9x3fbbxlnm", "grl7ffzxd7"})
 
 
 def _run(args: list[str], *, env: dict | None = None, stdin: str | None = None) -> str:
@@ -52,6 +55,9 @@ def _project() -> str:
     project = os.environ.get("DEPOT_PROJECT_ID", "")
     if not re.fullmatch(r"[a-z0-9]+", project):
         raise ValueError("Invalid Depot project")
+
+    if project in _PROTECTED_PROJECTS and os.environ.get("GITHUB_EVENT_NAME") != "push":
+        raise ValueError("Manual runs must use a sandbox project")
 
     return project
 

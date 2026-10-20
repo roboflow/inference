@@ -4,8 +4,6 @@ permissions:
 on:
   release:
     types: [created]
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       force_push:

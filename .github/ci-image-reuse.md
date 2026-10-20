@@ -73,8 +73,8 @@ must verify transport and timing before activation.
 | Does reuse improve end-to-end duration? | Offline tests verify routing and failure handling, not transfer costs or GPU queueing. | Measure the complete candidate path and GPU occupancy in a full-coverage trial. | An authorized trial is required; no numerical performance claim is made. |
 | What qualifies CPU arm64 for release? | Existing server consumers execute on amd64 only. | Retain the arm64 build and report it separately from tested amd64 images. | Release maintainers must define runtime coverage before treating a multi-platform image as release-qualified; this does not block preparing the reuse path. |
 
-The remaining infrastructure decisions block activation, not preparation of
-the disabled implementation.
+The remaining infrastructure decisions are tracked here; none of them blocks
+the implementation.
 The team discussion required by
 [AGENTS.md](../AGENTS.md#internal-contributions-roboflow-team-only) has been
 confirmed by the PR author; code review and the activation prerequisites still
@@ -92,7 +92,12 @@ apply.
   ID to every producer and consumer: `inference-ci` on pushes to main, the
   `manual-inference-ci-test` sandbox by default on a manual dispatch.
 - Allow a manual dispatch of the orchestrator from any same-repository branch
-  so the whole path can be proven before a change reaches main.
+  so the whole path can be proven before a change reaches main. Dispatches
+  default to the sandbox project and the transport refuses the CI and release
+  projects on anything but a push, so manual runs never share a registry or
+  cache with the main process.
+- Remove the push trigger from the release build workflows; on a push to main
+  their jobs never published and now skip entirely.
 - Supersede the manual fast-track Depot trial: release branches prove the
   same path by dispatching the orchestrator, so the trial workflows, their
   approval variables and reviewer environments are removed.
@@ -109,22 +114,23 @@ apply.
   runs. A failed mode cancels its sibling; the aggregate gate still fails.
 - Reject external repository callers and unsupported events before allocating
   runners in the CPU/GPU build and test entry points.
-- Require verified OIDC provider and identity restrictions before configuring
-  the OIDC secrets; disclose job-wide token permissions even with reuse off.
+- Disclose that `id-token: write` is job-wide on the producer and consumer
+  jobs; the Depot projects' trust relationships decide what the token is worth.
 - Defer helper annotations for Python 3.9 import compatibility, and preserve
-  the runner's Docker configuration on legacy consumer paths. Only private
-  consumers initialize and clean temporary registry credentials.
+  the runner's Docker configuration on legacy consumer paths. Only saved-image
+  consumers use a temporary registry configuration, removed before tests.
 - Cover CPU and GPU producer manifests, source labels, platform selection,
   complete digest outputs and invalid producer identities with offline tests.
 
 ### Added
 
-- Add opt-in CPU/GPU producer-to-consumer reuse by immutable digest, preserving
-  both model modes and the existing server test scope.
+- Add CPU/GPU producer-to-consumer reuse by immutable digest on every push to
+  main, preserving both model modes and the existing server test scope.
 - Validate artifact identity, isolate test container names and host ports, and
   require complete producer/test results before the aggregate check passes.
-- Parameterize credentials, restrict the new transport to trusted main runs,
-  and pin external actions in the affected workflows to verified commit SHAs.
+- Authenticate with GitHub OIDC, restrict the transport to pushes to main and
+  manual dispatches of the orchestrator, and pin external actions in the
+  affected workflows to verified commit SHAs.
 
 This is a CI infrastructure change. It changes no runtime package, execution
 engine behavior, package dependency or release version. The package-specific
@@ -160,9 +166,10 @@ matrices retain `fail-fast: true`.
 | Retention | Depot project image retention policy |
 
 The Python transport (`depot_ci_image.py`) additionally requires
-`roboflow/inference`, a push to `refs/heads/main` with the switch on or a
-manual dispatch of the orchestrator from a `refs/heads/` ref, the orchestrator
-as `GITHUB_WORKFLOW_REF`, a project ID of the form `[a-z0-9]+`, and a checkout
+`roboflow/inference`, a push to `refs/heads/main` or a manual dispatch of the
+orchestrator from a `refs/heads/` ref, the orchestrator as
+`GITHUB_WORKFLOW_REF`, a project ID of the form `[a-z0-9]+` that is neither the
+CI project nor the release project unless the event is a push, and a checkout
 equal to `GITHUB_SHA`.
 
 ### Workflow execution boundary
@@ -172,9 +179,10 @@ CPU/GPU build and consumer jobs require `github.repository` to be
 push and manual-dispatch events; legacy producers additionally accept release
 events. The fast-track entry point requires a same-repository manual dispatch.
 These job guards run before runner allocation and reject cross-repository
-reusable calls, fork pushes and PR/PR-target callers. Forks never receive
-`id-token`, so they cannot obtain a Depot credential even by editing their
-copy of the YAML.
+reusable calls, fork pushes and PR/PR-target callers. GitHub issues no
+`id-token` to pull requests from forks; which identities Depot accepts is
+governed by each project's trust relationships in Depot, not by this
+repository.
 
 ### Configuration
 
