@@ -29,8 +29,10 @@ PATCH_SIZE = 3
 EMBEDDING_DIMENSION = 1024
 MAP_SMOOTHING_SIGMA = 4.0
 MAP_SMOOTHING_RADIUS = 16  # scipy.ndimage.gaussian_filter default: truncate=4.0
-# Bounds the (patches x memory bank) distance matrix held in memory at once.
-NEAREST_NEIGHBOURS_CHUNK_SIZE = 4096
+# Bounds the (patches x memory bank) distance matrix held in memory at once, in
+# elements (256 MiB in fp32). A 640px model has 6400 patches per image and a memory
+# bank of ~10^5 entries, so a row count alone would let a single request take GiBs.
+NEAREST_NEIGHBOURS_CHUNK_ELEMENTS = 2**26
 
 
 class PatchCoreModel(nn.Module):
@@ -98,12 +100,16 @@ class PatchCoreModel(nn.Module):
     def score_patches(self, embeddings: torch.Tensor) -> torch.Tensor:
         """Mean squared L2 distance to the nearest memory bank entries."""
         scores = []
-        for chunk in embeddings.split(NEAREST_NEIGHBOURS_CHUNK_SIZE):
-            distances = (
-                (chunk**2).sum(dim=1, keepdim=True)
-                - 2 * chunk @ self.memory_bank.T
-                + self.memory_bank_squared_norms[None]
-            ).clamp(min=0)
+        chunk_size = max(1, NEAREST_NEIGHBOURS_CHUNK_ELEMENTS // len(self.memory_bank))
+        for chunk in embeddings.split(chunk_size):
+            # In place, so the chunk's distance matrix is the only one held.
+            distances = torch.addmm(
+                self.memory_bank_squared_norms[None],
+                chunk,
+                self.memory_bank.T,
+                alpha=-2,
+            )
+            distances.add_((chunk**2).sum(dim=1, keepdim=True)).clamp_(min=0)
             nearest = distances.topk(self.neighbors, dim=1, largest=False).values
             scores.append(nearest.mean(dim=1))
         return torch.cat(scores)
