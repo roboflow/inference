@@ -4517,7 +4517,7 @@ wheels = [
 
 [[package]]
 name = "streamvision"
-version = "0.1.2rc3"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -4548,12 +4548,14 @@ webrtc = [
     { name = "requests" },
 ]
 workflows = [
+    { name = "aiohttp" },
     { name = "roboflow-workflows" },
     { name = "torch" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", marker = "extra == 'workflows'", specifier = "~=3.14.4" },
     { name = "aiortc", marker = "extra == 'webrtc'", specifier = ">=1.9.0" },
     { name = "av", marker = "extra == 'webrtc'", specifier = "==14.2.0" },
     { name = "numpy", specifier = ">=2.0.0,<2.4.0" },
