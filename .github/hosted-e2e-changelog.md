@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Main image reuse through Depot — October 20, 2026
+
+- Supersede the fast-track Depot saved-image trial with image reuse for every
+  push to main (`ci_image_reuse.yml`): build once per family with
+  `depot build --save` under GitHub OIDC, then pull the exact digest in both
+  model modes. The trial workflows, their approval variables and reviewer
+  environments are removed; a release branch proves the same path by
+  dispatching the orchestrator. GCP Artifact Registry stays the release mirror.
+
 ### Depot saved-image trial — October 16, 2026
 
 - Add an opt-in fast-track path that saves CPU and GPU images in Depot once
@@ -19,7 +28,8 @@
   isolation and a live build/pull/test run still require verification.
 - Add offline regression coverage for authorization, image identity, credential
   cleanup, output suppression, complete test coverage and legacy-path exclusion.
-- Validate the Depot transport locally against project `inference-ci-test`:
+- Validate the Depot transport locally against project `inference-ci-test`
+  (since renamed `manual-inference-ci-test`):
   `--save`, digest-addressed manifest inspection, pull by child digest, the
   identity checks and push denial for pull tokens all pass. The Actions OIDC
   path still needs one live run.

@@ -1,7 +1,5 @@
 name: Fast-track integration tests
 # Build-once, test-many integration run for a fast-track branch.
-# use_depot_images opts into the separate approved saved-image trial, with
-# full CPU/GPU coverage and no publication to release registries.
 #
 # Dispatch this on the fast-track branch (fast-track/post-vX.Y.Z-ptN). It
 # builds the CPU and GPU server images once with the given tag suffix through
@@ -26,14 +24,10 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
-      use_depot_images:
-        description: "Use approved Depot saved images for full CPU/GPU coverage. Ignores release tag, resume and suite filters."
-        type: boolean
-        default: false
       custom_tag:
-        description: "Required for release-image runs: <VERSION>-<custom_tag>. Unused when use_depot_images=true."
+        description: "Tag suffix, same as in the build workflows; the image under test is <VERSION>-<custom_tag> (e.g. rc1 -> 1.6.2-post3-rc1)."
         type: string
-        required: false
+        required: true
       build_images:
         description: "Build and push the CPU and GPU images first. false = resume: test the already published <VERSION>-<custom_tag> image."
         type: boolean
@@ -83,34 +77,16 @@ on:
           - torch_models
           - hf_vlm_models
 
-run-name: "Fast-track integration tests - ${{ github.ref_name }} - ${{ inputs.custom_tag }} - ${{ inputs.use_depot_images && 'depot-full' || (inputs.build_images && 'build' || 'resume') }}"
+run-name: "Fast-track integration tests - ${{ github.ref_name }} - ${{ inputs.custom_tag }} - ${{ inputs.build_images && 'build' || 'resume' }}"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  depot-trial:
-    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && inputs.use_depot_images }}
-    # Depot authenticates with GitHub OIDC; the nested build and test jobs
-    # cannot hold more permissions than granted here.
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/fast_track_depot_images.yml
-    secrets:
-      API_KEY: ${{ secrets.API_KEY }}
-      ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
-      ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
-      BCCD_FAVZ3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
-      BCCD_I4NYM_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
-      CATS_AND_DOGS_SMNPL_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
-      COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
-      MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
-      YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
   resolve:
     name: Resolve image tag
-    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && !inputs.use_depot_images }}
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -149,7 +125,7 @@ jobs:
   build-cpu:
     name: Build CPU image
     needs: resolve
-    if: ${{ !inputs.use_depot_images && inputs.build_images && inputs.run_server_cpu }}
+    if: ${{ inputs.build_images && inputs.run_server_cpu }}
     # The build workflow authenticates to GCP with OIDC; a called workflow
     # cannot hold more permissions than its caller grants here.
     permissions:
@@ -164,7 +140,7 @@ jobs:
   build-gpu:
     name: Build GPU image
     needs: resolve
-    if: ${{ !inputs.use_depot_images && inputs.build_images && inputs.run_t4 }}
+    if: ${{ inputs.build_images && inputs.run_t4 }}
     # The build workflow authenticates to GCP with OIDC; a called workflow
     # cannot hold more permissions than its caller grants here.
     permissions:
@@ -181,7 +157,7 @@ jobs:
     needs: [resolve, build-cpu]
     # Run when the suite is enabled and the build either succeeded or was
     # skipped on purpose (resume); never after a failed or cancelled build.
-    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && !inputs.use_depot_images && !cancelled() && inputs.run_server_cpu && (needs.build-cpu.result == 'success' || (needs.build-cpu.result == 'skipped' && !inputs.build_images)) }}
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && !cancelled() && inputs.run_server_cpu && (needs.build-cpu.result == 'success' || (needs.build-cpu.result == 'skipped' && !inputs.build_images)) }}
     permissions:
       contents: read
       id-token: write
@@ -196,7 +172,7 @@ jobs:
   t4:
     name: NVIDIA T4 regression
     needs: [resolve, build-gpu]
-    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && !inputs.use_depot_images && !cancelled() && inputs.run_t4 && (needs.build-gpu.result == 'success' || (needs.build-gpu.result == 'skipped' && !inputs.build_images)) }}
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && !cancelled() && inputs.run_t4 && (needs.build-gpu.result == 'success' || (needs.build-gpu.result == 'skipped' && !inputs.build_images)) }}
     permissions:
       contents: read
       id-token: write
@@ -210,7 +186,7 @@ jobs:
   models-gpu:
     name: inference-models GPU integration
     needs: resolve
-    if: ${{ !inputs.use_depot_images && inputs.run_models_gpu }}
+    if: ${{ inputs.run_models_gpu }}
     uses: ./.github/workflows/integration_tests_inference_experimental_gpu.yml
     with:
       extras: ${{ inputs.models_gpu_extras }}
@@ -220,7 +196,7 @@ jobs:
   summary:
     name: Summary
     needs: [resolve, build-cpu, build-gpu, server-cpu, t4, models-gpu]
-    if: ${{ always() && github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' && !inputs.use_depot_images }}
+    if: ${{ always() && github.repository == 'roboflow/inference' && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
