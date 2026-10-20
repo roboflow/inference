@@ -14,6 +14,16 @@ Earlier engine changes and migration guidance remain in the
 See the [engine release rule](../.cursor/rules/execution-engine-version-changelog.mdc)
 for contributor and maintainer responsibilities.
 
+## Unreleased
+
+## `0.2.12`
+
+Bundled execution engine: `1.16.1`.
+
+### Changed
+
+- `aiohttp~=3.14.4`: requires the aiohttp release that fixes GHSA-2g87-pp6c-29x5 (unbounded memory/CPU use) and GHSA-5wr8-gcqf-gqf3 (no initial request/header timeout). aiohttp reached the package only through `inference-sdk` and `twilio`, which still allow 3.14.3.
+
 ## `0.2.11`
 
 Bundled execution engine: `1.16.1`.
