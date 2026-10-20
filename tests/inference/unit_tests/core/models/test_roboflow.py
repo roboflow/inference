@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import Optional
 from unittest import mock
 from unittest.mock import MagicMock
@@ -272,4 +273,47 @@ def test_get_class_names_from_environment_file() -> None:
         "class_j",
         "class_k",
         "class_l",
+    ]
+
+
+def test_download_model_from_roboflow_api_streams_each_weights_file_into_cache(
+    tmp_path: Path,
+) -> None:
+    # given
+    model = object.__new__(RoboflowCoreModel)
+    model.endpoint = "sam3/sam3_large"
+    model.api_key = "my_api_key"
+    model.device_id = "device"
+    model.countinference = None
+    model.service_secret = None
+    model.cache_dir = str(tmp_path / "sam3" / "sam3_large")
+    api_data = {
+        "weights": {
+            "model": "https://storage.example.com/sam3/model.pt?X-Goog-Signature=1",
+            "config": "https://storage.example.com/sam3/config.yaml?X-Goog-Signature=2",
+        }
+    }
+
+    # when
+    with mock.patch.object(
+        roboflow, "MODEL_CACHE_DIR", str(tmp_path)
+    ), mock.patch.object(
+        roboflow, "get_roboflow_model_data", return_value=api_data
+    ), mock.patch.object(
+        roboflow, "download_file_to_cache"
+    ) as download_mock:
+        model.download_model_from_roboflow_api()
+
+    # then
+    assert download_mock.call_args_list == [
+        mock.call(
+            "https://storage.example.com/sam3/model.pt?X-Goog-Signature=1",
+            file="model.pt",
+            model_id="sam3/sam3_large",
+        ),
+        mock.call(
+            "https://storage.example.com/sam3/config.yaml?X-Goog-Signature=2",
+            file="config.yaml",
+            model_id="sam3/sam3_large",
+        ),
     ]

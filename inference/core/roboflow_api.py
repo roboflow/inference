@@ -31,7 +31,11 @@ from yarl import URL
 from inference.core import logger
 from inference.core.cache import cache
 from inference.core.cache.base import BaseCache
-from inference.core.cache.model_artifacts import get_cache_dir, initialise_cache
+from inference.core.cache.model_artifacts import (
+    get_cache_dir,
+    get_cache_file_path,
+    initialise_cache,
+)
 from inference.core.entities.types import (
     DatasetID,
     ModelID,
@@ -259,6 +263,12 @@ def wrap_roboflow_api_errors(
                     record_error(error)
                     raise RoboflowAPIConnectionError(
                         "Could not connect to Roboflow API."
+                    ) from error
+                except requests.exceptions.ChunkedEncodingError as error:
+                    record_error(error)
+                    raise RoboflowAPIConnectionError(
+                        "Connection to Roboflow API was interrupted before the "
+                        "response was fully received."
                     ) from error
                 except requests.exceptions.HTTPError as error:
                     record_error(error)
@@ -1920,6 +1930,14 @@ def _get_from_url(
                 message="Connectivity error", inner_error=error
             ) from error
         raise error
+    except requests.exceptions.ChunkedEncodingError as error:
+        # The request reached the server but the body ended early (for example
+        # a dropped connection mid-transfer), so it is retried regardless of
+        # RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API, which covers failures to
+        # connect at all.
+        raise RetryRequestError(
+            message="Response body truncated", inner_error=error
+        ) from error
     try:
         api_key_safe_raise_for_status(response=response)
     except Exception as error:
@@ -1928,38 +1946,314 @@ def _get_from_url(
         raise error
 
     if MD5_VERIFICATION_ENABLED:
-        x_goog_hash = response.headers.get("x-goog-hash")
-        if x_goog_hash is None:
-            logger.warning(
-                f"MD5 verification enabled but response missing x-goog-hash header. "
-                f"Request url: {_url_for_safe_logging(full_url)}"
+        md5_from_header = _md5_from_x_goog_hash(
+            headers=response.headers, full_url=full_url
+        )
+        if (
+            md5_from_header is not None
+            and md5_from_header != hashlib.md5(response.content).digest()
+        ):
+            raise RoboflowAPIUnsuccessfulRequestError(
+                "MD5 hash does not match MD5 received from x-goog-hash header"
             )
-        else:
-            md5_part = None
-            for part in x_goog_hash.split(","):
-                if part.strip().startswith("md5="):
-                    md5_part = part.strip()[4:]
-                    break
-            if md5_part is not None:
-                try:
-                    md5_from_header = base64.b64decode(md5_part)
-                except binascii.Error as decode_error:
-                    raise RoboflowAPIUnsuccessfulRequestError(
-                        "Invalid MD5 value in x-goog-hash header: not valid base64"
-                    ) from decode_error
-                if md5_from_header != hashlib.md5(response.content).digest():
-                    raise RoboflowAPIUnsuccessfulRequestError(
-                        "MD5 hash does not match MD5 received from x-goog-hash header"
-                    )
-            else:
-                logger.warning(
-                    f"MD5 verification enabled but x-goog-hash header has no md5= part. "
-                    f"Request url: {_url_for_safe_logging(full_url)}"
-                )
 
     if json_response:
         return response.json()
     return response
+
+
+def _md5_from_x_goog_hash(headers: Any, full_url: str) -> Optional[bytes]:
+    # Returns the decoded md5 part of the x-goog-hash header, or None (with a
+    # warning) when the header or the part is missing.
+    x_goog_hash = headers.get("x-goog-hash")
+    if x_goog_hash is None:
+        logger.warning(
+            f"MD5 verification enabled but response missing x-goog-hash header. "
+            f"Request url: {_url_for_safe_logging(full_url)}"
+        )
+        return None
+
+    md5_part = None
+    for part in x_goog_hash.split(","):
+        if part.strip().startswith("md5="):
+            md5_part = part.strip()[4:]
+            break
+    if md5_part is None:
+        logger.warning(
+            f"MD5 verification enabled but x-goog-hash header has no md5= part. "
+            f"Request url: {_url_for_safe_logging(full_url)}"
+        )
+        return None
+
+    try:
+        md5_from_header = base64.b64decode(md5_part)
+    except binascii.Error as decode_error:
+        raise RoboflowAPIUnsuccessfulRequestError(
+            "Invalid MD5 value in x-goog-hash header: not valid base64"
+        ) from decode_error
+
+    return md5_from_header
+
+
+DOWNLOAD_CHUNK_SIZE = 8 * 1024 * 1024
+
+_RESUMABLE_DOWNLOAD_ERRORS = (
+    requests.exceptions.ChunkedEncodingError,
+    requests.exceptions.ConnectionError,
+    Timeout,
+    ConnectionError,
+)
+
+
+class _IncompleteDownloadError(Exception):
+    # The streamed body ended, or could not be resumed, before the announced
+    # size was reached; the download is retried from the bytes already saved.
+    pass
+
+
+class _StreamedDownload:
+    # Bytes received so far, written to ``handle`` and hashed on the fly so a
+    # retried attempt can resume with a Range request instead of starting over.
+
+    def __init__(self, handle: Any):
+        self.handle = handle
+        self.received = 0
+        self.expected_total: Optional[int] = None
+        self.hasher = hashlib.md5()
+        self.headers: Any = {}
+
+    def write(self, chunk: bytes) -> None:
+        self.handle.write(chunk)
+        self.hasher.update(chunk)
+        self.received += len(chunk)
+
+    def restart(self) -> None:
+        self.handle.seek(0)
+        self.handle.truncate()
+        self.received = 0
+        self.expected_total = None
+        self.hasher = hashlib.md5()
+
+
+@wrap_roboflow_api_errors()
+def download_file_to_cache(
+    url: str,
+    *,
+    file: str,
+    model_id: Optional[str] = None,
+) -> str:
+    """Download a (possibly multi-gigabyte) file straight into the model cache.
+
+    Streams the body to disk instead of holding it in memory, resumes an
+    interrupted transfer with HTTP Range requests and only moves the file into
+    place once the whole body arrived (and, when ``MD5_VERIFICATION_ENABLED``,
+    its MD5 matched the ``x-goog-hash`` header).
+
+    Args:
+        url: Download URL; signed storage URLs are passed through as-is.
+        file: File name inside the model cache directory.
+        model_id: Model whose cache directory receives the file.
+
+    Returns:
+        Path of the cached file.
+
+    Raises:
+        RoboflowAPIConnectionError: If the transfer kept failing after the
+            configured retries, or ``OFFLINE_MODE`` is enabled.
+        RoboflowAPITimeoutError: If the server stopped responding.
+        RoboflowAPIUnsuccessfulRequestError: On a non-success HTTP status or an
+            MD5 mismatch.
+    """
+    destination = get_cache_file_path(file=file, model_id=model_id)
+    _download_file_from_url(url=url, destination=destination)
+
+    return destination
+
+
+@wrap_roboflow_api_errors()
+def download_file_from_url(
+    url: str,
+    *,
+    destination: Union[str, Path],
+    chunk_size: int = DOWNLOAD_CHUNK_SIZE,
+) -> None:
+    """Download a file to ``destination``, streaming and resuming on failure.
+
+    See ``download_file_to_cache`` for the retry, resume and verification
+    behaviour; this variant takes an explicit destination path.
+
+    Args:
+        url: Download URL; signed storage URLs are passed through as-is.
+        destination: Target path; parent directories are created, an existing
+            file is replaced atomically.
+        chunk_size: Bytes read from the socket per write to disk.
+
+    Raises:
+        RoboflowAPIConnectionError: If the transfer kept failing after the
+            configured retries, or ``OFFLINE_MODE`` is enabled.
+        RoboflowAPITimeoutError: If the server stopped responding.
+        RoboflowAPIUnsuccessfulRequestError: On a non-success HTTP status or an
+            MD5 mismatch.
+    """
+    _download_file_from_url(url=url, destination=destination, chunk_size=chunk_size)
+
+
+def _download_file_from_url(
+    url: str,
+    destination: Union[str, Path],
+    chunk_size: int = DOWNLOAD_CHUNK_SIZE,
+) -> None:
+    if OFFLINE_MODE:
+        raise ConnectionError("OFFLINE_MODE is enabled - cannot make API requests.")
+
+    full_url = wrap_url(url)
+    destination_path = Path(destination)
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_handle = tempfile.NamedTemporaryFile(
+        dir=destination_path.parent,
+        prefix=".tmp_",
+        suffix=f"_{destination_path.name}",
+        delete=False,
+    )
+    temp_path = Path(temp_handle.name)
+    try:
+        with temp_handle:
+            download = _StreamedDownload(handle=temp_handle)
+            _download_with_retries(
+                full_url=full_url, download=download, chunk_size=chunk_size
+            )
+            temp_handle.flush()
+            os.fsync(temp_handle.fileno())
+        if MD5_VERIFICATION_ENABLED:
+            _verify_download_md5(download=download, full_url=full_url)
+        os.replace(temp_path, destination_path)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+def _download_with_retries(
+    full_url: str,
+    download: _StreamedDownload,
+    chunk_size: int,
+) -> None:
+    max_attempts = max(TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES, 1)
+    for attempt in range(1, max_attempts + 1):
+        try:
+            _download_attempt(
+                full_url=full_url, download=download, chunk_size=chunk_size
+            )
+            return None
+        except RetryRequestError as error:
+            if attempt == max_attempts:
+                raise error.inner_error from error
+            failure = error
+        except _RESUMABLE_DOWNLOAD_ERRORS as error:
+            if attempt == max_attempts:
+                raise error
+            failure = error
+        except _IncompleteDownloadError as error:
+            if attempt == max_attempts:
+                raise RoboflowAPIConnectionError(
+                    f"Download ended after {download.received} of "
+                    f"{download.expected_total} bytes and could not be completed "
+                    f"in {max_attempts} attempts."
+                ) from error
+            failure = error
+        logger.warning(
+            f"Download of {_url_for_safe_logging(full_url)} failed after "
+            f"{download.received} bytes ({failure.__class__.__name__}); "
+            f"retrying (attempt {attempt + 1}/{max_attempts})"
+        )
+        time.sleep(TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL)
+
+
+def _download_attempt(
+    full_url: str,
+    download: _StreamedDownload,
+    chunk_size: int,
+) -> None:
+    explicit_headers = None
+    if download.received > 0:
+        explicit_headers = {"Range": f"bytes={download.received}-"}
+    response = requests.get(
+        full_url,
+        headers=build_roboflow_api_headers(explicit_headers=explicit_headers),
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
+        stream=True,
+    )
+    with response:
+        if download.received > 0 and response.status_code == 416:
+            # The range is no longer valid (object replaced); start over.
+            download.restart()
+            raise _IncompleteDownloadError("Range request rejected")
+
+        try:
+            api_key_safe_raise_for_status(response=response)
+        except Exception as error:
+            if response.status_code in TRANSIENT_ROBOFLOW_API_ERRORS:
+                raise RetryRequestError(
+                    message=str(error), inner_error=error
+                ) from error
+            raise error
+
+        if download.received > 0 and response.status_code == 206:
+            range_start, range_total = _parse_content_range(response=response)
+            if range_start != download.received:
+                download.restart()
+                raise _IncompleteDownloadError("Unexpected Content-Range")
+            download.expected_total = range_total
+        else:
+            # Either a fresh download or a server that ignored the Range
+            # header and sends the whole body again.
+            download.restart()
+            download.expected_total = _announced_length(response=response)
+        download.headers = response.headers
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            download.write(chunk)
+
+    if (
+        download.expected_total is not None
+        and download.received != download.expected_total
+    ):
+        raise _IncompleteDownloadError("Body shorter than announced")
+
+
+def _announced_length(response: Response) -> Optional[int]:
+    # Content-Length counts encoded bytes, so it only predicts the decoded
+    # body size when no content encoding is applied.
+    encoding = response.headers.get("Content-Encoding", "identity").strip().lower()
+    content_length = response.headers.get("Content-Length")
+    if encoding not in {"", "identity"} or content_length is None:
+        return None
+
+    try:
+        return int(content_length)
+    except ValueError:
+        return None
+
+
+def _parse_content_range(response: Response) -> Tuple[Optional[int], Optional[int]]:
+    # "bytes <start>-<end>/<total>"; total may be "*" when unknown.
+    match = re.fullmatch(
+        r"\s*bytes\s+(\d+)-(\d+)/(\d+|\*)\s*",
+        response.headers.get("Content-Range", ""),
+    )
+    if match is None:
+        return None, None
+
+    total = None if match.group(3) == "*" else int(match.group(3))
+
+    return int(match.group(1)), total
+
+
+def _verify_download_md5(download: _StreamedDownload, full_url: str) -> None:
+    md5_from_header = _md5_from_x_goog_hash(headers=download.headers, full_url=full_url)
+    if md5_from_header is not None and md5_from_header != download.hasher.digest():
+        raise RoboflowAPIUnsuccessfulRequestError(
+            "MD5 hash does not match MD5 received from x-goog-hash header"
+        )
 
 
 @backoff.on_exception(

@@ -48,7 +48,6 @@ from inference.core.cache.model_artifacts import (
     initialise_cache,
     load_json_from_cache,
     load_text_file_from_cache,
-    save_bytes_in_cache,
     save_json_in_cache,
     save_text_lines_in_cache,
 )
@@ -72,6 +71,7 @@ from inference.core.models.utils.onnx import (
 from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 from inference.core.roboflow_api import (
     ModelEndpointType,
+    download_file_to_cache,
     get_from_url,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
@@ -373,9 +373,10 @@ class RoboflowInferenceModel(Model):
                                 "Could not find `environment` key in roboflow API model description response."
                             )
                         environment = get_from_url(api_data["environment"])
-                        model_weights_response = get_from_url(
+                        download_file_to_cache(
                             api_data["model"],
-                            json_response=False,
+                            file=self.weights_file,
+                            model_id=self.endpoint,
                         )
                     else:
                         api_data = get_roboflow_instant_model_data(
@@ -396,9 +397,10 @@ class RoboflowInferenceModel(Model):
                             raise ModelArtefactError(
                                 "Could not find `environment` key in roboflow API model description response."
                             )
-                        model_weights_response = get_from_url(
+                        download_file_to_cache(
                             api_data["modelFiles"]["ort"]["model"],
-                            json_response=False,
+                            file=self.weights_file,
+                            model_id=self.endpoint,
                         )
                         environment = api_data["environment"]
                         if "classes" in api_data:
@@ -408,11 +410,6 @@ class RoboflowInferenceModel(Model):
                                 model_id=self.endpoint,
                             )
 
-                    save_bytes_in_cache(
-                        content=model_weights_response.content,
-                        file=self.weights_file,
-                        model_id=self.endpoint,
-                    )
                     if "colors" in api_data:
                         environment["COLORS"] = api_data["colors"]
                     save_json_in_cache(
@@ -730,14 +727,9 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 for weights_url_key in api_data["weights"]:
                     weights_url = api_data["weights"][weights_url_key]
                     t1 = perf_counter()
-                    model_weights_response = get_from_url(
-                        weights_url, json_response=False
-                    )
                     filename = weights_url.split("?")[0].split("/")[-1]
-                    save_bytes_in_cache(
-                        content=model_weights_response.content,
-                        file=filename,
-                        model_id=self.endpoint,
+                    download_file_to_cache(
+                        weights_url, file=filename, model_id=self.endpoint
                     )
                     if perf_counter() - t1 > 120:
                         logger.debug(

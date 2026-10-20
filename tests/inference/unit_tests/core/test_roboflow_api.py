@@ -245,7 +245,12 @@ def test_wrap_roboflow_api_errors_when_given_up_on_http_error() -> None:
 
 
 @pytest.mark.parametrize(
-    "exception_class", [ConnectionError, requests.exceptions.ConnectionError]
+    "exception_class",
+    [
+        ConnectionError,
+        requests.exceptions.ConnectionError,
+        requests.exceptions.ChunkedEncodingError,
+    ],
 )
 def test_wrap_roboflow_api_errors_when_connection_error_occurs(
     exception_class: Type[Exception],
@@ -5803,3 +5808,411 @@ def test_add_custom_metadata_direct_when_no_secure_gateway(
 
     assert requests_mock.called
     assert "proxy" not in requests_mock.last_request.url
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_response_body_is_truncated_once(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/some"),
+        response_list=[
+            {"exc": requests.exceptions.ChunkedEncodingError},
+            {"json": {"status": "ok"}, "status_code": 200},
+        ],
+    )
+
+    # when
+    result = get_from_url(url=wrap_url(f"{API_BASE_URL}/some"), json_response=True)
+
+    # then
+    assert result == {"status": "ok"}
+    assert requests_mock.call_count == 2
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_response_body_keeps_being_truncated(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/some"),
+        exc=requests.exceptions.ChunkedEncodingError,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPIConnectionError):
+        _ = get_from_url(url=wrap_url(f"{API_BASE_URL}/some"), json_response=True)
+
+    # then
+    assert (
+        requests_mock.call_count == roboflow_api.TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES
+    )
+
+
+DOWNLOAD_URL = "https://storage.example.com/weights.pt?X-Goog-Signature=secret"
+
+
+def _download_response(
+    *,
+    status_code: int = 200,
+    headers: Optional[dict] = None,
+    chunks: Optional[List[bytes]] = None,
+    error: Optional[Exception] = None,
+) -> MagicMock:
+    """Fake a streamed ``requests.Response`` yielding ``chunks`` then ``error``."""
+    response = MagicMock()
+    response.status_code = status_code
+    response.url = DOWNLOAD_URL
+    response.headers = requests.structures.CaseInsensitiveDict(headers or {})
+    response.__enter__.return_value = response
+    response.__exit__.return_value = False
+    if status_code >= 400:
+        response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            response=response
+        )
+
+    def iter_content(chunk_size: int):
+        for chunk in chunks or []:
+            yield chunk
+        if error is not None:
+            raise error
+
+    response.iter_content.side_effect = iter_content
+
+    return response
+
+
+def _range_header(get_mock: MagicMock, call_index: int) -> Optional[str]:
+    return get_mock.call_args_list[call_index].kwargs["headers"].get("Range")
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_download_succeeds(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.return_value = _download_response(
+        headers={"Content-Length": "10"},
+        chunks=[b"0123", b"456789"],
+    )
+    destination = tmp_path / "models" / "weights.pt"
+
+    # when
+    roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert destination.read_bytes() == b"0123456789"
+    assert sorted(path.name for path in destination.parent.iterdir()) == ["weights.pt"]
+    assert get_mock.call_count == 1
+    assert get_mock.call_args.kwargs["stream"] is True
+    assert _range_header(get_mock, 0) is None
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_transfer_breaks_and_server_resumes(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.side_effect = [
+        _download_response(
+            headers={"Content-Length": "10"},
+            chunks=[b"0123"],
+            error=requests.exceptions.ChunkedEncodingError(
+                "Response ended prematurely"
+            ),
+        ),
+        _download_response(
+            status_code=206,
+            headers={"Content-Length": "6", "Content-Range": "bytes 4-9/10"},
+            chunks=[b"456789"],
+        ),
+    ]
+    destination = tmp_path / "weights.pt"
+
+    # when
+    roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert destination.read_bytes() == b"0123456789"
+    assert get_mock.call_count == 2
+    assert _range_header(get_mock, 0) is None
+    assert _range_header(get_mock, 1) == "bytes=4-"
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_body_is_silently_short(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.side_effect = [
+        _download_response(headers={"Content-Length": "10"}, chunks=[b"0123456"]),
+        _download_response(
+            status_code=206,
+            headers={"Content-Range": "bytes 7-9/10"},
+            chunks=[b"789"],
+        ),
+    ]
+    destination = tmp_path / "weights.pt"
+
+    # when
+    roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert destination.read_bytes() == b"0123456789"
+    assert _range_header(get_mock, 1) == "bytes=7-"
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_server_ignores_range_request(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.side_effect = [
+        _download_response(
+            headers={"Content-Length": "10"},
+            chunks=[b"0123"],
+            error=requests.exceptions.ConnectionError("reset"),
+        ),
+        _download_response(
+            headers={"Content-Length": "10"},
+            chunks=[b"0123456789"],
+        ),
+    ]
+    destination = tmp_path / "weights.pt"
+
+    # when
+    roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert destination.read_bytes() == b"0123456789"
+    assert _range_header(get_mock, 1) == "bytes=4-"
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_resumed_range_does_not_match(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.side_effect = [
+        _download_response(
+            headers={"Content-Length": "10"},
+            chunks=[b"0123"],
+            error=requests.exceptions.ChunkedEncodingError(
+                "Response ended prematurely"
+            ),
+        ),
+        _download_response(
+            status_code=206,
+            headers={"Content-Range": "bytes 2-9/10"},
+            chunks=[b"23456789"],
+        ),
+        _download_response(
+            headers={"Content-Length": "10"},
+            chunks=[b"0123456789"],
+        ),
+    ]
+    destination = tmp_path / "weights.pt"
+
+    # when
+    roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert destination.read_bytes() == b"0123456789"
+    assert get_mock.call_count == 3
+    assert _range_header(get_mock, 2) is None
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES", 2)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_transfer_keeps_breaking(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.side_effect = lambda *args, **kwargs: _download_response(
+        headers={"Content-Length": "10"},
+        chunks=[b"01"],
+        error=requests.exceptions.ChunkedEncodingError("Response ended prematurely"),
+    )
+    destination = tmp_path / "weights.pt"
+
+    # when
+    with pytest.raises(RoboflowAPIConnectionError):
+        roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert get_mock.call_count == 2
+    assert list(tmp_path.iterdir()) == []
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES", 2)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_body_stays_short(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.side_effect = lambda *args, **kwargs: _download_response(
+        headers={"Content-Length": "10"}, chunks=[b"01"]
+    )
+    destination = tmp_path / "weights.pt"
+
+    # when
+    with pytest.raises(RoboflowAPIConnectionError):
+        roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert get_mock.call_count == 2
+    assert list(tmp_path.iterdir()) == []
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", {503})
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_transient_http_error_precedes_success(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.side_effect = [
+        _download_response(status_code=503),
+        _download_response(headers={"Content-Length": "3"}, chunks=[b"abc"]),
+    ]
+    destination = tmp_path / "weights.pt"
+
+    # when
+    roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert destination.read_bytes() == b"abc"
+    assert get_mock.call_count == 2
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_http_error_is_not_transient(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.return_value = _download_response(status_code=500)
+    destination = tmp_path / "weights.pt"
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert get_mock.call_count == 1
+    assert list(tmp_path.iterdir()) == []
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_md5_matches_after_resume(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    md5_of_full_body = "eB5eJF1ptWaXm4bijSPyxw=="  # md5("0123456789")
+    get_mock.side_effect = [
+        _download_response(
+            headers={"Content-Length": "10", "x-goog-hash": f"md5={md5_of_full_body}"},
+            chunks=[b"01234"],
+            error=requests.exceptions.ChunkedEncodingError(
+                "Response ended prematurely"
+            ),
+        ),
+        _download_response(
+            status_code=206,
+            headers={
+                "Content-Range": "bytes 5-9/10",
+                "x-goog-hash": f"crc32c=AAAAAA==,md5={md5_of_full_body}",
+            },
+            chunks=[b"56789"],
+        ),
+    ]
+    destination = tmp_path / "weights.pt"
+
+    # when
+    roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert destination.read_bytes() == b"0123456789"
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_when_md5_does_not_match(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # given
+    get_mock.return_value = _download_response(
+        headers={"Content-Length": "3", "x-goog-hash": "md5=AAAAAAAAAAAAAAAAAAAAAA=="},
+        chunks=[b"abc"],
+    )
+    destination = tmp_path / "weights.pt"
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        roboflow_api.download_file_from_url(DOWNLOAD_URL, destination=destination)
+
+    # then
+    assert list(tmp_path.iterdir()) == []
+
+
+@mock.patch.object(roboflow_api, "OFFLINE_MODE", True)
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_from_url_in_offline_mode(
+    get_mock: MagicMock, tmp_path: Path
+) -> None:
+    # when
+    with pytest.raises(RoboflowAPIConnectionError):
+        roboflow_api.download_file_from_url(
+            DOWNLOAD_URL, destination=tmp_path / "weights.pt"
+        )
+
+    # then
+    get_mock.assert_not_called()
+    assert list(tmp_path.iterdir()) == []
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", 0)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+@mock.patch.object(roboflow_api.requests, "get")
+def test_download_file_to_cache(get_mock: MagicMock, tmp_path: Path) -> None:
+    # given
+    get_mock.return_value = _download_response(
+        headers={"Content-Length": "3"}, chunks=[b"abc"]
+    )
+
+    # when
+    with mock.patch.object(
+        roboflow_api,
+        "get_cache_file_path",
+        return_value=str(tmp_path / "some" / "model" / "1" / "weights.pt"),
+    ) as cache_path_mock:
+        result = roboflow_api.download_file_to_cache(
+            DOWNLOAD_URL, file="weights.pt", model_id="some/model/1"
+        )
+
+    # then
+    cache_path_mock.assert_called_once_with(file="weights.pt", model_id="some/model/1")
+    assert result == str(tmp_path / "some" / "model" / "1" / "weights.pt")
+    assert Path(result).read_bytes() == b"abc"

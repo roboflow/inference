@@ -17,7 +17,6 @@ from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
 from inference.core import logger
-from inference.core.cache.model_artifacts import save_bytes_in_cache
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -46,7 +45,7 @@ from inference.core.models.roboflow import (
 )
 from inference.core.roboflow_api import (
     ModelEndpointType,
-    get_from_url,
+    download_file_to_cache,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
 )
@@ -990,8 +989,10 @@ class SerializedOwlV2(RoboflowInferenceModel):
                             "Could not find `model` key in roboflow API model description response."
                         )
                     logger.info("Downloading OWLv2 model weights for %s", self.endpoint)
-                    model_weights_response = get_from_url(
-                        api_data["model"], json_response=False
+                    download_file_to_cache(
+                        api_data["model"],
+                        file=self.weights_file,
+                        model_id=self.endpoint,
                     )
                 else:
                     logger.info("Getting OWLv2 model data for %s", self.endpoint)
@@ -1010,14 +1011,11 @@ class SerializedOwlV2(RoboflowInferenceModel):
                             "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
                         )
                     logger.info("Downloading OWLv2 model weights for %s", self.endpoint)
-                    model_weights_response = get_from_url(
-                        api_data["modelFiles"]["owlv2"]["model"], json_response=False
+                    download_file_to_cache(
+                        api_data["modelFiles"]["owlv2"]["model"],
+                        file=self.weights_file,
+                        model_id=self.endpoint,
                     )
-                save_bytes_in_cache(
-                    content=model_weights_response.content,
-                    file=self.weights_file,
-                    model_id=self.endpoint,
-                )
                 logger.info("OWLv2 model weights saved to cache")
         except Exception as e:
             logger.error("Error downloading OWLv2 model artifacts: %s", e)

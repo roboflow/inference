@@ -30,10 +30,7 @@ from sam3.train.transforms.basic_for_api import (
     ToTensorAPI,
 )
 
-from inference.core.cache.model_artifacts import (
-    are_all_files_cached,
-    save_bytes_in_cache,
-)
+from inference.core.cache.model_artifacts import are_all_files_cached
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam3 import (
     Sam3InferenceRequest,
@@ -61,7 +58,7 @@ from inference.core.models.roboflow import (
 from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 from inference.core.roboflow_api import (
     ModelEndpointType,
-    get_from_url,
+    download_file_to_cache,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image_rgb
@@ -486,12 +483,7 @@ class SegmentAnything3(RoboflowCoreModel):
         weights_map = ort.get("weights")
         if isinstance(weights_map, dict) and len(weights_map) > 0:
             for filename, url in weights_map.items():
-                resp = get_from_url(url, json_response=False)
-                save_bytes_in_cache(
-                    content=resp.content,
-                    file=str(filename),
-                    model_id=self.endpoint,
-                )
+                download_file_to_cache(url, file=str(filename), model_id=self.endpoint)
             return None
 
         raise ModelArtefactError(
