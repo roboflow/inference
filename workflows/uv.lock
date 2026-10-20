@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.10, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'darwin'",
@@ -1577,7 +1577,7 @@ wheels = [
 
 [[package]]
 name = "inference-sdk"
-version = "1.7.2"
+version = "1.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1594,7 +1594,7 @@ dependencies = [
     { name = "urllib3" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f7/7b/726fc47d541b633c41d7ded6dbad206aee1ec67d4a1df0e6875816d6fcc3/inference_sdk-1.7.2-py3-none-any.whl", hash = "sha256:94711e6e756e26a7c5e62eb58e2110926721df7691ce926d0e219b8352370cb3", size = 105201, upload-time = "2026-09-25T19:24:47.147Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/00/6fafb460ef153c2d641e35040d4334264a0f8c86d5ce63219eac319e19b3/inference_sdk-1.8.1-py3-none-any.whl", hash = "sha256:5c7293f174532b3523bafa59aa696b909f315b9bfaf6436300acb58e6986d8ae", size = 108404, upload-time = "2026-10-19T15:57:59.291Z" },
 ]
 
 [[package]]
@@ -2946,6 +2946,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pkgconfig"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/fd/0adde075cd3bfecd557bc7d757e00e231d34d8a6edb4c8d1642759254c21/pkgconfig-1.6.0.tar.gz", hash = "sha256:4a5a6631ce937fafac457104a40d558785a658bbdca5c49b6295bc3fd651907f", size = 5691, upload-time = "2026-03-06T11:26:01.194Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/6f/f7ec07fba48f07c555cc4099481df644fbbc12067879072c17ac229f6556/pkgconfig-1.6.0-py3-none-any.whl", hash = "sha256:98e71754855e9563838d952a160eb577edabb57782e49853edb5381927e6bea1", size = 7086, upload-time = "2026-03-06T11:26:07.688Z" },
+]
+
+[[package]]
 name = "platformdirs"
 version = "4.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3669,6 +3678,7 @@ version = "2.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi" },
+    { name = "pkgconfig" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7b/88/f73dae807ec68b228fba72507105e3ba80a561dc0bade0004ce24fd118fc/pyvips-2.2.3.tar.gz", hash = "sha256:43bceced0db492654c93008246a58a508e0373ae1621116b87b322f2ac72212f", size = 56626, upload-time = "2024-04-28T11:19:58.158Z" }
 
@@ -4151,7 +4161,7 @@ requires-dist = [
     { name = "filelock", specifier = ">=3.20.3,<=4.0.0" },
     { name = "httpx", specifier = "~=0.28.1" },
     { name = "inference-models", specifier = ">=0.39.5rc1" },
-    { name = "inference-sdk", specifier = ">=1.7.2" },
+    { name = "inference-sdk", specifier = ">=1.8.0" },
     { name = "matplotlib" },
     { name = "msgpack" },
     { name = "networkx", specifier = ">=3.0.0,<4.0.0" },
