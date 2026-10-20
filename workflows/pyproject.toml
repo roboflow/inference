@@ -1,6 +1,6 @@
 [project]
 name = "roboflow-workflows"
-version = "0.2.11"
+version = "0.2.12"
 description = "Roboflow Workflows execution engine and block library"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -25,6 +25,7 @@ dependencies = [
   "torchvision",
   "inference-models>=0.39.5rc1",
   "inference-sdk>=1.8.0",
+  "aiohttp~=3.14.4",
   "msgpack",
   "websocket-client~=1.9.0",
   "openai>=1.17.0,<2.0.0",
