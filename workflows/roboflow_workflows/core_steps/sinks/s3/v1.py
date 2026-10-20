@@ -1,8 +1,11 @@
+import atexit
 import json
 import logging
 from datetime import datetime
-from time import sleep
+from threading import Lock
+from time import monotonic, sleep
 from typing import Any, List, Literal, Optional, Type, Union
+from weakref import WeakSet
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -15,6 +18,7 @@ from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    INTEGER_KIND,
     SECRET_KIND,
     STRING_KIND,
     Selector,
@@ -33,6 +37,7 @@ from roboflow_workflows.prototypes.block import (
     WorkflowBlockManifest,
     actual_restrictions_of,
 )
+from roboflow_workflows.utils.lru_cache import LRUCache
 
 CONTENT_TYPES = {
     "csv": "text/csv",
@@ -53,6 +58,8 @@ NON_RETRYABLE_CLIENT_ERROR_CODES = {
 
 MAX_UPLOAD_RETRIES = 3  # additional attempts after the initial try
 UPLOAD_RETRY_INITIAL_DELAY = 1.0  # seconds; doubles on each subsequent retry
+DEFAULT_UPLOAD_INTERVAL_SECONDS = 30
+MAX_CACHED_S3_CLIENTS = 32
 
 LONG_DESCRIPTION = """
 Save workflow data directly to an AWS S3 bucket, supporting CSV, JSON, and text file formats with configurable output modes for aggregating multiple entries into single objects or saving each entry as a separate S3 object.
@@ -62,10 +69,10 @@ Save workflow data directly to an AWS S3 bucket, supporting CSV, JSON, and text 
 This block uploads string content from workflow steps to S3 objects. The block:
 
 1. Takes string content (from formatters, predictions, or other string-producing blocks) and S3 configuration as input
-2. Connects to AWS S3 using the provided credentials (or the default AWS credential chain if none are supplied)
+2. Connects to AWS S3 using the credentials supplied by the workflow (the server's ambient AWS credentials are never used)
 3. Selects the appropriate upload strategy based on `output_mode`:
    - **Separate Files Mode**: Creates a new S3 object for each input, generating unique keys with timestamps
-   - **Append Log Mode**: Buffers content in memory, uploading a complete object when `max_entries_per_file` is reached or when the block is destroyed
+   - **Append Log Mode**: Buffers content in memory under a single S3 key and uploads the accumulated object on its first entry, at most every `upload_interval_seconds` after that, when `max_entries_per_file` is reached, and when the block is torn down
 4. For **separate files mode**: Generates a unique S3 key from the prefix, file name prefix, file type, and a timestamp, then uploads the content directly
 5. For **append log mode**:
    - Buffers content entries in memory under a single S3 key
@@ -73,11 +80,13 @@ This block uploads string content from workflow steps to S3 objects. The block:
      - **CSV**: Removes the header row from subsequent appends (CSV content must include headers on first write)
      - **JSON**: Converts to JSONL (JSON Lines) format, parsing and re-serializing each JSON document to fit on a single line
      - **TXT**: Appends content directly with newlines
+   - Uploads the buffer on the first entry of each object, so credential and permission errors surface on the first run
+   - Uploads it again once `upload_interval_seconds` have passed since the last successful upload; entries that arrive sooner are only buffered
    - Tracks entry count and uploads the full buffer as a complete S3 object when `max_entries_per_file` is reached, then starts a fresh buffer with a new key
-   - Uploads any remaining buffered data when the block is destroyed
+   - Uploads any remaining buffered data when the block is torn down
 6. Returns error status and messages indicating save success or failure
 
-The block supports two storage strategies: separate files mode creates individual timestamped S3 objects per input (useful for organizing outputs by execution), while append log mode accumulates entries in memory and writes them as complete S3 objects on rotation (useful for time-series logging with controlled upload frequency). S3 key names include timestamps (format: `YYYY_MM_DD_HH_MM_SS_microseconds`) for unique keys and chronological ordering.
+The block supports two storage strategies: separate files mode creates individual timestamped S3 objects per input (useful for organizing outputs by execution), while append log mode accumulates entries in memory and rewrites the accumulated S3 object periodically and on rotation (useful for time-series logging with controlled upload frequency). S3 key names include timestamps (format: `YYYY_MM_DD_HH_MM_SS_microseconds`) for unique keys and chronological ordering.
 
 ## AWS Credentials
 
@@ -99,11 +108,13 @@ If `s3_prefix` is empty, the key starts directly with the file name.
 
 ## Note on Append Log Mode
 
-In append log mode, data is buffered in memory and only uploaded to S3 when:
-- The `max_entries_per_file` limit is reached (object rotation), or
-- The block instance is destroyed at workflow teardown
+S3 objects cannot be appended to, so each upload in append log mode rewrites the whole object with every entry buffered so far. To keep that cost bounded, entries are buffered in memory and the object is uploaded only:
+- On the first entry of each object, which also validates credentials and permissions right away
+- On the first run after `upload_interval_seconds` (default 30) have passed since the last successful upload
+- When the `max_entries_per_file` limit is reached (object rotation)
+- When the block is torn down: when the workflow releases it (for example at the end of an HTTP request, or when a stream manager pipeline is terminated) or when the Python process exits normally
 
-This means data may not be immediately visible in S3 after each step execution. Use `separate_files` mode if immediate S3 visibility is required.
+An entry that does not trigger an upload is reported as buffered and becomes visible in S3 with the next upload. Buffered entries are lost if the process crashes or is killed before that upload. A failed upload is retried on the next run, so errors keep surfacing until an upload succeeds. Set `upload_interval_seconds` to 0 to upload on every run, or use `separate_files` mode if every entry must be in S3 as soon as the step completes.
 
 ## Common Use Cases
 
@@ -142,13 +153,13 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["csv"],
     )
     output_mode: Literal["append_log", "separate_files"] = Field(
-        description="Upload strategy: 'append_log' buffers multiple entries and uploads them as a single S3 object when the entry limit is reached (useful for batched logging), or 'separate_files' uploads each input as a new S3 object with a unique timestamp-based key (useful for per-execution outputs).",
+        description="Upload strategy: 'append_log' buffers multiple entries in a single S3 object, uploaded periodically (see upload_interval_seconds) and when the entry limit is reached (useful for batched logging), or 'separate_files' uploads each input as a new S3 object with a unique timestamp-based key (useful for per-execution outputs).",
         examples=["append_log"],
         json_schema_extra={
             "values_metadata": {
                 "append_log": {
                     "name": "Append Log",
-                    "description": "Buffers multiple entries and uploads as a single S3 object on rotation",
+                    "description": "Buffers multiple entries in a single S3 object, uploaded periodically and on rotation",
                 },
                 "separate_files": {
                     "name": "Separate File",
@@ -190,6 +201,19 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
+    upload_interval_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
+        default=DEFAULT_UPLOAD_INTERVAL_SECONDS,
+        description="Minimum number of seconds between uploads of the current S3 object in append_log mode. The first entry of each object, the entry that reaches max_entries_per_file, and block teardown always upload; any other entry uploads only once this many seconds have passed since the last successful upload, and stays buffered in memory until then. Each upload rewrites the whole object, so a longer interval uploads fewer bytes but delays when entries become visible in S3 and loses more entries if the process crashes. Set to 0 to upload on every run. Only applies when output_mode is 'append_log'.",
+        examples=[30, "$inputs.upload_interval_seconds"],
+        json_schema_extra={
+            "relevant_for": {
+                "output_mode": {
+                    "values": ["append_log"],
+                    "required": False,
+                },
+            }
+        },
+    )
     aws_access_key_id: Optional[
         Union[Selector(kind=[SECRET_KIND, STRING_KIND]), str]
     ] = Field(
@@ -215,6 +239,13 @@ class BlockManifest(WorkflowBlockManifest):
     def ensure_max_entries_per_file_is_correct(cls, value: Any) -> Any:
         if isinstance(value, int) and value < 1:
             raise ValueError("`max_entries_per_file` cannot be lower than 1.")
+        return value
+
+    @field_validator("upload_interval_seconds")
+    @classmethod
+    def ensure_upload_interval_seconds_is_correct(cls, value: Any) -> Any:
+        if isinstance(value, int) and value < 0:
+            raise ValueError("`upload_interval_seconds` cannot be lower than 0.")
         return value
 
     @classmethod
@@ -287,8 +318,16 @@ class S3SinkBlockV1(WorkflowBlock):
     def __init__(self, disable_sinks: bool = False):
         self._buffer: List[str] = []
         self._entries_in_buffer: int = 0
+        self._entries_uploaded: int = 0
         self._current_key: Optional[str] = None
+        self._last_upload_time: Optional[float] = None
+        self._s3_client = None
+        self._bucket_name: Optional[str] = None
+        self._content_type: Optional[str] = None
+        # close() can run from the atexit hook while a pipeline thread is in run()
+        self._lock = Lock()
         self._disable_sinks = disable_sinks
+        _live_blocks.add(self)
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -297,6 +336,23 @@ class S3SinkBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
+
+    def close(self) -> None:
+        """Upload the append_log entries that are not in S3 yet.
+
+        Called when the block is torn down: by ``__del__`` when the workflow
+        releases the block, and by an ``atexit`` hook for blocks still alive at
+        interpreter exit. Does nothing when every entry is already uploaded. A
+        failed upload is only logged, as no run is left to report it to.
+        """
+        with self._lock:
+            self._upload_pending_entries()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception as error:
+            logging.warning(f"Could not upload buffered S3 sink entries: {error}")
 
     def run(
         self,
@@ -310,10 +366,11 @@ class S3SinkBlockV1(WorkflowBlock):
         aws_access_key_id: Optional[str] = None,
         aws_secret_access_key: Optional[str] = None,
         aws_region: Optional[str] = None,
+        upload_interval_seconds: int = DEFAULT_UPLOAD_INTERVAL_SECONDS,
     ) -> BlockResult:
         if self._disable_sinks:
             return disabled_sink_response()
-        s3_client = create_s3_client(
+        s3_client = get_s3_client(
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
             aws_region=aws_region,
@@ -336,6 +393,7 @@ class S3SinkBlockV1(WorkflowBlock):
             s3_prefix=s3_prefix,
             file_name_prefix=file_name_prefix,
             max_entries_per_file=max_entries_per_file,
+            upload_interval_seconds=upload_interval_seconds,
         )
 
     def _upload_separate_file(
@@ -370,6 +428,7 @@ class S3SinkBlockV1(WorkflowBlock):
         s3_prefix: str,
         file_name_prefix: str,
         max_entries_per_file: int,
+        upload_interval_seconds: int,
     ) -> BlockResult:
         extension = file_type if file_type != "json" else "jsonl"
         content_type = CONTENT_TYPES.get(extension, "text/plain")
@@ -383,39 +442,141 @@ class S3SinkBlockV1(WorkflowBlock):
                 )
                 return {"error_status": True, "message": "Invalid JSON content"}
 
-        needs_rotation = (
-            self._current_key is not None
-            and self._entries_in_buffer >= max_entries_per_file
-        )
-        is_first_entry = self._current_key is None
-
-        if needs_rotation or is_first_entry:
-            self._buffer = []
-            self._entries_in_buffer = 0
-            self._current_key = generate_s3_key(
-                s3_prefix=s3_prefix,
-                file_name_prefix=file_name_prefix,
-                file_type=extension,
+        with self._lock:
+            needs_rotation = (
+                self._current_key is not None
+                and self._entries_in_buffer >= max_entries_per_file
             )
-        elif file_type == "csv":
-            content = deduct_csv_header(content=content)
+            is_first_entry = self._current_key is None
 
-        if not content.endswith("\n"):
-            content = f"{content}\n"
-        self._buffer.append(content)
-        self._entries_in_buffer += 1
+            if needs_rotation or is_first_entry:
+                # Entries are left here when the upload of the full object failed:
+                # try once more before they are dropped.
+                self._upload_pending_entries()
+                self._buffer = []
+                self._entries_in_buffer = 0
+                self._entries_uploaded = 0
+                self._last_upload_time = None
+                self._current_key = generate_s3_key(
+                    s3_prefix=s3_prefix,
+                    file_name_prefix=file_name_prefix,
+                    file_type=extension,
+                )
+            elif file_type == "csv":
+                content = deduct_csv_header(content=content)
 
-        # Always upload the full accumulated buffer so that every run() call
-        # validates credentials and permissions, and errors are surfaced immediately
-        # rather than only when the buffer rotation limit is reached.
-        full_content = "".join(self._buffer)
-        return upload_content_to_s3(
-            s3_client=s3_client,
-            bucket_name=bucket_name,
+            if not content.endswith("\n"):
+                content = f"{content}\n"
+            self._buffer.append(content)
+            self._entries_in_buffer += 1
+            self._s3_client = s3_client
+            self._bucket_name = bucket_name
+            self._content_type = content_type
+
+            # The first entry of each object uploads right away, so credential and
+            # permission errors surface on the first run. The interval counts from
+            # the last successful upload, so after a failure the next run retries.
+            upload_is_due = (
+                self._last_upload_time is None
+                or self._entries_in_buffer >= max_entries_per_file
+                or monotonic() - self._last_upload_time >= upload_interval_seconds
+            )
+            if not upload_is_due:
+                return {
+                    "error_status": False,
+                    "message": (
+                        "Data buffered for upload to "
+                        f"s3://{bucket_name}/{self._current_key}"
+                    ),
+                }
+            result = self._upload_buffer()
+
+        return result
+
+    def _upload_pending_entries(self) -> None:
+        pending_entries = self._entries_in_buffer - self._entries_uploaded
+        if pending_entries == 0:
+            return None
+
+        result = self._upload_buffer()
+        if result["error_status"]:
+            logging.warning(
+                f"Could not upload {pending_entries} buffered entries to "
+                f"s3://{self._bucket_name}/{self._current_key}: {result['message']}"
+            )
+
+    def _upload_buffer(self) -> BlockResult:
+        result = upload_content_to_s3(
+            s3_client=self._s3_client,
+            bucket_name=self._bucket_name,
             s3_key=self._current_key,
-            content=full_content,
-            content_type=content_type,
+            content="".join(self._buffer),
+            content_type=self._content_type,
         )
+        if not result["error_status"]:
+            self._entries_uploaded = self._entries_in_buffer
+            self._last_upload_time = monotonic()
+
+        return result
+
+
+# A block still alive at interpreter exit is only finalized after botocore is torn
+# down, too late to upload, so this hook uploads what those blocks still buffer.
+_live_blocks: "WeakSet[S3SinkBlockV1]" = WeakSet()
+
+
+@atexit.register
+def _close_live_blocks() -> None:
+    for block in list(_live_blocks):
+        block.close()
+
+
+# Clients are thread-safe and keep their connection pool, so every block instance
+# shares one per credentials and region. They are created under the lock because
+# the default boto3 session is not thread-safe.
+_s3_clients = LRUCache(capacity=MAX_CACHED_S3_CLIENTS)
+_s3_clients_lock = Lock()
+
+
+def get_s3_client(
+    aws_access_key_id: Optional[str],
+    aws_secret_access_key: Optional[str],
+    aws_region: Optional[str],
+):
+    """Return the S3 client shared by all runs that use these credentials.
+
+    Clients are created on first use and kept in a bounded LRU cache keyed by
+    credentials and region, so runs reuse a client and its open connections
+    instead of creating a client, and a new TLS connection, per run.
+
+    Args:
+        aws_access_key_id: AWS access key ID supplied by the workflow.
+        aws_secret_access_key: AWS secret access key supplied by the workflow.
+        aws_region: Region of the bucket, or None for boto3's default region.
+
+    Returns:
+        The boto3 S3 client for these credentials and region.
+
+    Raises:
+        ValueError: If either credential is missing, before the cache is consulted.
+    """
+    _ensure_credentials_are_provided(
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+    )
+
+    cache_key = (aws_access_key_id, aws_secret_access_key, aws_region)
+    with _s3_clients_lock:
+        s3_client = _s3_clients.get(cache_key)
+        if s3_client is None:
+            s3_client = create_s3_client(
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                aws_region=aws_region,
+            )
+            _s3_clients.set(cache_key, s3_client)
+
+    return s3_client
 
 
 def create_s3_client(
@@ -423,11 +584,10 @@ def create_s3_client(
     aws_secret_access_key: Optional[str],
     aws_region: Optional[str],
 ):
-    if not aws_access_key_id or not aws_secret_access_key:
-        raise ValueError(
-            "S3 sink requires `aws_access_key_id` and `aws_secret_access_key` to be "
-            "provided by the workflow. The server's ambient AWS credentials are not used."
-        )
+    _ensure_credentials_are_provided(
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+    )
     kwargs = {
         "aws_access_key_id": aws_access_key_id,
         "aws_secret_access_key": aws_secret_access_key,
@@ -435,6 +595,17 @@ def create_s3_client(
     if aws_region:
         kwargs["region_name"] = aws_region
     return boto3.client("s3", **kwargs)
+
+
+def _ensure_credentials_are_provided(
+    aws_access_key_id: Optional[str],
+    aws_secret_access_key: Optional[str],
+) -> None:
+    if not aws_access_key_id or not aws_secret_access_key:
+        raise ValueError(
+            "S3 sink requires `aws_access_key_id` and `aws_secret_access_key` to be "
+            "provided by the workflow. The server's ambient AWS credentials are not used."
+        )
 
 
 def generate_s3_key(s3_prefix: str, file_name_prefix: str, file_type: str) -> str:

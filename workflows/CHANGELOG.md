@@ -28,6 +28,11 @@ Bundled execution engine: `1.16.1`.
 
 - `inference-sdk>=1.8.0`: the hosted (API v0) request carries `include_anomaly_map` from 1.8.0, which the Anomaly Detection Model block needs in REMOTE execution. The anomaly blocks need `inference-models` 0.39.5 (`anomaly_scale`).
 
+### Changed
+
+- S3 Sink (`roboflow_core/s3_sink@v1`) in `append_log` mode no longer uploads the whole accumulated object on every run. It uploads on the first entry of each object, so credential and permission errors still surface on the first run; when the object reaches `max_entries_per_file`; when the block is torn down, including at normal interpreter exit; and otherwise at most every `upload_interval_seconds`, a new optional field (default `30`). Entries in between are reported as buffered and reach S3 with the next upload; if the process crashes, the entries buffered since the last upload are lost. A failed upload is retried on the next run. Set `upload_interval_seconds` to `0` to upload on every run, as before.
+- S3 Sink reuses one boto3 client per credentials and region across runs and block instances, instead of creating a client, and a new connection, on every run.
+
 ## `0.2.10`
 
 Bundled execution engine: `1.16.1`.
