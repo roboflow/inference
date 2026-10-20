@@ -285,7 +285,12 @@ def test_cosmos3_edge_reasoner_action_config():
     assert prompt_action[2] is True
     assert prompt_action[3]["images"] == {"type": "image", "required": True}
     assert prompt_action[3]["prompt"] == {"type": "str", "required": True}
-    for param in ("max_new_tokens", "do_sample", "skip_special_tokens", "return_thinking"):
+    for param in (
+        "max_new_tokens",
+        "do_sample",
+        "skip_special_tokens",
+        "return_thinking",
+    ):
         assert param in prompt_action[3], param
         assert prompt_action[3][param]["required"] is False
     assert prompt_action[3]["max_new_tokens"]["type"] == "int"
@@ -364,7 +369,11 @@ def test_model_owned_defaults_not_injected():
 
 
 def test_per_family_detector_contracts():
-    from inference_model_manager.registry_defaults import _K_ISEG, _ACTION_CONFIGS, _unpack_config
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _K_ISEG,
+        _unpack_config,
+    )
 
     def params_of(key):
         return _unpack_config(_ACTION_CONFIGS[key][0])[3]
@@ -514,8 +523,8 @@ def test_per_family_contracts_have_no_default_keys():
 
 def test_vlm_generation_params():
     from inference_model_manager.registry_defaults import (
-        _P_VLM_PROMPT,
         _ACTION_CONFIGS,
+        _P_VLM_PROMPT,
         _unpack_config,
     )
 
@@ -550,8 +559,8 @@ def test_vllm_proxy_action_configs_equal_the_hf_rows(proxy_name, hf_name):
 
 def test_vlm_generation_contracts_match_model_signatures():
     from inference_model_manager.registry_defaults import (
-        _P_GEN_FLAGS,
         _ACTION_CONFIGS,
+        _P_GEN_FLAGS,
         _unpack_config,
     )
 
@@ -581,10 +590,18 @@ def test_vlm_generation_contracts_match_model_signatures():
     assert g4["enable_thinking"] == {"type": "bool", "required": False}
 
     sv = cfgs_of("SmolVLMHF")["prompt"][3]
-    assert sv["images_to_single_prompt"] == {"type": "bool", "required": False, "default": True}
+    assert sv["images_to_single_prompt"] == {
+        "type": "bool",
+        "required": False,
+        "default": True,
+    }
 
     q35 = cfgs_of("Qwen35HF")["prompt"][3]
-    assert q35["enable_thinking"] == {"type": "bool", "required": False, "default": False}
+    assert q35["enable_thinking"] == {
+        "type": "bool",
+        "required": False,
+        "default": False,
+    }
 
     cosmos = cfgs_of("Cosmos3EdgeReasoner")["prompt"][3]
     assert set(cosmos) == {
@@ -614,7 +631,12 @@ def test_vlm_generation_contracts_match_model_signatures():
     glm = cfgs_of("GlmOcrHF")
     for action in ("recognize_text", "recognize_table", "recognize_formula"):
         p = glm[action][3]
-        assert set(p) == {"images", "max_new_tokens", "do_sample", "skip_special_tokens"}, action
+        assert set(p) == {
+            "images",
+            "max_new_tokens",
+            "do_sample",
+            "skip_special_tokens",
+        }, action
         for name, spec in p.items():
             assert "default" not in spec, (action, name)
     gp = glm["prompt"][3]
@@ -653,8 +675,14 @@ def test_classification_declares_include_anomaly_map():
 
     params = _unpack_config(_ACTION_CONFIGS["ClassificationModel"][0])[3]
 
-    assert set(params) == {"images", "include_anomaly_map", *PREPROC_FLAGS}
+    assert set(params) == {
+        "images",
+        "include_anomaly_map",
+        "confidence",
+        *PREPROC_FLAGS,
+    }
     assert params["include_anomaly_map"] == {"type": "bool", "required": False}
+    assert params["confidence"] == {"type": "confidence", "required": False}
 
 
 def test_roboflow_trained_families_declare_pre_processing_flags():

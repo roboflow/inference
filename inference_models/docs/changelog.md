@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## `0.39.5`
 
 ### Added
 
+- Anomaly detection models put `anomaly_scale` in `images_metadata[i]`, next to `anomaly_score`, `anomaly_threshold` and `is_anomalous`, so a caller can re-decide against its own threshold with the same rule.
 - `RoboflowModelMetadata.model_latency_ms` exposes the registry's `modelLatencyMs`.
   A non-numeric value is read as `None` instead of failing the metadata parse.
 - `SAM3Torch.segment_with_visual_prompts(...)` accepts `mask_format="rle"` to return
@@ -45,6 +46,14 @@
   image channels are reversed before inference; the default keeps treating
   inputs as RGB.
 - GLM-OCR table recognition sent the formula-recognition prompt.
+
+### Changed
+
+- Anomaly detection (PatchCore, FoundAD): `is_anomalous` and `class_id` are decided by the request `confidence` — `sigmoid((anomaly_score - anomaly_threshold) / anomaly_scale) >= confidence` — instead of always `anomaly_score >= anomaly_threshold`. `post_process(..., confidence=...)` accepts a number in `[0, 1]`, `"best"` (the model-eval recommendation through `recommended_parameters`, which both models now accept at load) or `"default"` (0.5, the calibrated decision, identical to the previous rule).
+
+### Fixed
+
+- PatchCore bounds its nearest-neighbour distance matrix by elements (`NEAREST_NEIGHBOURS_CHUNK_ELEMENTS = 2**26`, 256 MiB in fp32) instead of 4096 rows, and computes it in place. A 640 px model with a ~140k-entry memory bank allocated about 2 GiB per chunk per request and ran out of GPU memory under concurrent requests.
 
 ## `0.39.4`
 

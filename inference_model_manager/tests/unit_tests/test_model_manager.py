@@ -565,11 +565,19 @@ class TestAnomalyClassificationDefaultProcess:
                     original_sizes_hw=[(8, 8), (8, 8)],
                 )
 
-            def post_process(self, model_results, include_anomaly_map=False, **kwargs):
+            def post_process(
+                self,
+                model_results,
+                include_anomaly_map=False,
+                confidence="best",
+                **kwargs,
+            ):
                 return post_process_anomaly_scores(
                     model_results,
                     calibration=AnomalyCalibration(threshold=2.0, scale=1.0),
                     include_anomaly_map=include_anomaly_map,
+                    confidence=confidence,
+                    recommended_parameters=None,
                 )
 
         mm = ModelManager()
@@ -1100,9 +1108,7 @@ class TestCudaReleaseOnUnload:
         import inference_model_manager.model_manager as mm_mod
 
         calls = []
-        monkeypatch.setattr(
-            mm_mod, "_try_release_cuda_memory", lambda: calls.append(1)
-        )
+        monkeypatch.setattr(mm_mod, "_try_release_cuda_memory", lambda: calls.append(1))
         mm = ModelManager()
         _patch_create_backend(mm, {})
         mm.load("model-a", api_key="")
@@ -1225,8 +1231,7 @@ class TestEvictionConcurrencySafety:
                 errors.append(exc)
 
         threads = [
-            threading.Thread(target=load_model, args=(f"new{i}",))
-            for i in range(n_new)
+            threading.Thread(target=load_model, args=(f"new{i}",)) for i in range(n_new)
         ]
         for t in threads:
             t.start()
@@ -1465,11 +1470,10 @@ class TestStreamPipeline:
 
     @pytest.fixture
     def segmentation_manager(self, monkeypatch):
+        from inference_model_manager.registry_defaults import lazy_register
         from inference_models.models.base.instance_segmentation import (
             InstanceSegmentationModel,
         )
-
-        from inference_model_manager.registry_defaults import lazy_register
         from tests.unit_tests.test_stream_pipeline import FakeSegmentationModel
 
         lazy_register(InstanceSegmentationModel)
@@ -1697,9 +1701,7 @@ class TestStreamPipeline:
         assert mm.flush_model_stream_pipeline("seg/1") is None
 
     def test_unload_resolves_an_in_flight_frame(self, segmentation_manager):
-        from inference_models.models.base.async_handoff import (
-            get_async_response_future,
-        )
+        from inference_models.models.base.async_handoff import get_async_response_future
 
         mm, _, models = segmentation_manager
         mm.load("seg/1", api_key="")
@@ -1824,7 +1826,6 @@ class TestStreamPipeline:
         from inference_models.models.base.async_handoff import (
             get_async_response_context_id,
         )
-
         from tests.unit_tests.test_stream_pipeline import (
             FakeSegmentationModel,
             queues_of,
