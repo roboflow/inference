@@ -3,6 +3,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      depot_project:
+        description: "Depot project for this manual run. Default is inference-ci-test (7m01vtml7h), the team sandbox; pushes to main always use inference-ci (9x3fbbxlnm)."
+        type: string
+        default: 7m01vtml7h
 
 permissions:
   contents: read
@@ -14,8 +19,9 @@ concurrency:
 # Every push to main builds each image once here and tests it in both model
 # modes; the standalone CPU/T4 builds skip on pushes. A manual dispatch from any
 # same-repository branch exercises the whole path.
-# The Depot project below is the repository's existing project (see the
-# release build workflows); its registry keeps the saved CI images.
+# Pushes to main save images in Depot project inference-ci (9x3fbbxlnm). A
+# manual dispatch defaults to inference-ci-test (7m01vtml7h) so experiments
+# never share a registry or cache with the main CI process.
 jobs:
   cpu-image:
     if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
@@ -25,7 +31,7 @@ jobs:
     uses: ./.github/workflows/ci_image_build.yml
     with:
       family: cpu
-      depot_project: grl7ffzxd7
+      depot_project: ${{ inputs.depot_project || '9x3fbbxlnm' }}
   gpu-image:
     if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     permissions:
@@ -34,7 +40,7 @@ jobs:
     uses: ./.github/workflows/ci_image_build.yml
     with:
       family: gpu
-      depot_project: grl7ffzxd7
+      depot_project: ${{ inputs.depot_project || '9x3fbbxlnm' }}
   cpu-tests:
     needs: cpu-image
     permissions:
@@ -43,7 +49,7 @@ jobs:
     uses: ./.github/workflows/integration_tests_inference_server_x86.yml
     with:
       private_image: true
-      depot_project: grl7ffzxd7
+      depot_project: ${{ inputs.depot_project || '9x3fbbxlnm' }}
       image_digest: ${{ needs.cpu-image.outputs.amd64_digest }}
       use-inference-models: all
     secrets:
@@ -64,7 +70,7 @@ jobs:
     uses: ./.github/workflows/test.nvidia_t4.yml
     with:
       private_image: true
-      depot_project: grl7ffzxd7
+      depot_project: ${{ inputs.depot_project || '9x3fbbxlnm' }}
       image_digest: ${{ needs.gpu-image.outputs.amd64_digest }}
       use-inference-models: all
       test_name: ""

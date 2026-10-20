@@ -242,6 +242,9 @@ class DepotImageTests(unittest.TestCase):
                 self.assertIn("--save", build)
                 self.assertNotIn("--push", build)
                 self.assertNotIn("--tag", build)
+                self.assertEqual(
+                    build[build.index("--save-tag") + 1], f"ci-{family}-{SHA}"
+                )
                 self.assertIn("--provenance=mode=min", build)
                 self.assertEqual(build[build.index("--project") + 1], "exampleproject")
                 self.assertIn(f"org.opencontainers.image.revision={SHA}", build)
@@ -384,7 +387,14 @@ class WorkflowTests(unittest.TestCase):
             for job in ["cpu-image", "gpu-image", "cpu-tests", "gpu-tests"]
         }
         self.assertEqual(len(projects), 1)
-        self.assertRegex(projects.pop(), r"^[a-z0-9]+$")
+        # Pushes use the CI project; a manual dispatch may pick another one.
+        self.assertRegex(
+            projects.pop(), r"^\$\{\{ inputs\.depot_project \|\| '[a-z0-9]+' \}\}$"
+        )
+        triggers = orchestrator.get("on", orchestrator.get(True))
+        manual = triggers["workflow_dispatch"]["inputs"]["depot_project"]["default"]
+        self.assertRegex(manual, r"^[a-z0-9]+$")
+        self.assertNotIn(manual, json.dumps(orchestrator["jobs"]))
         for name in ["ci_image_build.yml", *CONSUMERS]:
             workflow = _load(name)
             text = (ROOT / ".github/workflows" / name).read_text()

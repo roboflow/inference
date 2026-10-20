@@ -120,6 +120,10 @@ def _build() -> None:
                     "depot",
                     "build",
                     "--save",
+                    # Readable name in the Depot Registry UI; consumers still
+                    # verify by digest and labels, never by tag.
+                    "--save-tag",
+                    f"ci-{family}-{sha}",
                     "--progress=plain",
                     "--project",
                     project,

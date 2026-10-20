@@ -67,7 +67,7 @@ must verify transport and timing before activation.
 
 | Question | Investigation | Recommendation | Input needed |
 | --- | --- | --- | --- |
-| Which transport should carry saved images? | The GCP Artifact Registry path designed first was never provisioned and would place CI images next to production-serving images. Depot Registry is project-scoped and OIDC-authenticated through the existing org-level connection. | Save and pull CI images in Depot Registry under the repository's existing Depot project; leave GCP Artifact Registry to release publishing. | None: the project ID is written once in the orchestrator, like every other Depot workflow here. |
+| Which transport should carry saved images? | The GCP Artifact Registry path designed first was never provisioned and would place CI images next to production-serving images. Depot Registry is project-scoped and OIDC-authenticated through the existing org-level connection. | Save and pull CI images in Depot Registry under a dedicated `inference-ci` project; leave GCP Artifact Registry to release publishing and the existing `inference` project to release builds. | None: the project IDs are literals in the orchestrator, like every other Depot workflow here. |
 | Are runners and builder caches sufficiently isolated? | Unique container names and loopback ports prevent accidental naming/port collisions; they cannot isolate jobs sharing a Docker daemon. | Use isolated ephemeral runners and a trusted builder/cache boundary. | Runner and builder owners must confirm isolation before activation. |
 | Which required-check names should protect main? | The orchestrator adds caller prefixes to reusable job names and introduces an aggregate image-test check. | Review protection expectations while retaining all independent required suites. | Repository maintainers must approve the required-check mapping before activation. |
 | Does reuse improve end-to-end duration? | Offline tests verify routing and failure handling, not transfer costs or GPU queueing. | Measure the complete candidate path and GPU occupancy in a full-coverage trial. | An authorized trial is required; no numerical performance claim is made. |
@@ -88,8 +88,9 @@ apply.
   Registry: `ci_image_build.yml` saves each image once with `depot build
   --save` under GitHub OIDC, and the CPU/T4 consumers pull the exact digest
   with a one-hour read-only `depot pull-token`. No registry secret, service
-  account or Depot token is stored; the Depot project ID is passed once from
-  the orchestrator to every producer and consumer.
+  account or Depot token is stored; the orchestrator passes one Depot project
+  ID to every producer and consumer: `inference-ci` on pushes to main, the
+  `inference-ci-test` sandbox by default on a manual dispatch.
 - Allow a manual dispatch of the orchestrator from any same-repository branch
   so the whole path can be proven before a change reaches main.
 - Supersede the manual fast-track Depot trial: release branches prove the
@@ -153,7 +154,7 @@ matrices retain `fail-fast: true`.
 
 | Stage | Mechanism |
 | --- | --- |
-| Producer (`ci_image_build.yml`) | `depot build --save` on Depot builders; GitHub OIDC authenticates the CLI; the saved image is addressed by digest under `registry.depot.dev/<project>` and labelled with the source revision and family |
+| Producer (`ci_image_build.yml`) | `depot build --save` on Depot builders; GitHub OIDC authenticates the CLI; the saved image is addressed by digest under `registry.depot.dev/<project>`, labelled with the source revision and family, and tagged `ci-<family>-<sha>` so it is readable in the Depot Registry UI |
 | Producer manifest check | `depot pull-token` (one hour, read-only) for `docker buildx imagetools inspect` in an isolated `DOCKER_CONFIG` that is removed afterwards |
 | Consumers (CPU x86, T4) | `depot pull-token` in a temporary `DOCKER_CONFIG`, `docker pull` by digest, verification of OS, architecture, `RepoDigests`, revision and family labels, then tests by local image ID |
 | Retention | Depot project image retention policy |
@@ -177,9 +178,12 @@ copy of the YAML.
 
 ### Configuration
 
-None. The Depot project ID is a literal in `ci_image_reuse.yml`; saved images
-are kept by that project's image retention policy, which should be set to a
-bounded window (for example 14 days) before merging.
+None. Pushes to main save images in Depot project `inference-ci`
+(`9x3fbbxlnm`), whose image retention policy should be a bounded window (for
+example 14 days). A manual dispatch of the orchestrator takes a `depot_project`
+input that defaults to `inference-ci-test` (`7m01vtml7h`), the team sandbox for
+CI experiments, so manual runs never share a registry or cache with the main
+process. Both IDs are literals in `ci_image_reuse.yml`.
 
 Activation order: dispatch the orchestrator from the branch and confirm both
 producers and all four consumer legs pass, set the retention window, then
