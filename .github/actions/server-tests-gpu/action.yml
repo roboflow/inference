@@ -7,6 +7,9 @@ inputs:
   test_name:
     description: Empty runs every existing GPU test stage
     default: ""
+  server_image:
+    description: legacy inference image or the new inference_server image
+    default: legacy
   API_KEY:
     description: Test credential supplied by the calling workflow
     required: false
@@ -38,12 +41,12 @@ runs:
   using: composite
   steps:
     - name: Show NVIDIA driver - GPU
-      if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' }}
+      if: ${{ (inputs.test_name == '' || inputs.test_name == 'fast_track') && inputs.server_image == 'legacy' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: nvidia-smi
 
     - name: Verify CUDA OpenCV - GPU
-      if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' }}
+      if: ${{ (inputs.test_name == '' || inputs.test_name == 'fast_track') && inputs.server_image == 'legacy' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
         docker run --rm --gpus all --entrypoint sh \
@@ -54,7 +57,7 @@ runs:
           /tmp/verify_opencv
 
     - name: Verify NVIDIA GStreamer codecs - GPU
-      if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' }}
+      if: ${{ (inputs.test_name == '' || inputs.test_name == 'fast_track') && inputs.server_image == 'legacy' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
         docker run --rm --gpus all --entrypoint sh \
@@ -65,7 +68,7 @@ runs:
           /tmp/verify_gstreamer
 
     - name: Verify CUDA GStreamer tensor bridge - GPU
-      if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' }}
+      if: ${{ (inputs.test_name == '' || inputs.test_name == 'fast_track') && inputs.server_image == 'legacy' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
         docker run --rm --gpus all --entrypoint python3 \
@@ -77,7 +80,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'regression_without_torch' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests without Torch Preprocessing - GPU
       id: regression_tests_without_torch
@@ -95,21 +98,21 @@ runs:
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
         source .venv/bin/activate
-        USE_INFERENCE_MODELS="$MODEL_MODE" MINIMUM_FPS=25 FUNCTIONAL=true PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python3 -m pytest tests/inference/integration_tests/
+        USE_INFERENCE_MODELS="$MODEL_MODE" MINIMUM_FPS=25 FUNCTIONAL=true PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python3 -m pytest tests/inference/integration_tests/ $PYTEST_EXTRA_ARGS
     - name: 🧹 Cleanup Test Docker - GPU
       if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'regression_without_torch' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: make stop_test_docker
 
     - name: 🔋 Start Test Docker with Torch Preprocessing - GPU
-      if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_with_torch' }}
+      if: ${{ inputs.test_name == 'regression_with_torch' || (inputs.test_name == '' && inputs.server_image == 'legacy') }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests with Torch Preprocessing - GPU
       id: regression_tests_with_torch
-      if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_with_torch' }}
+      if: ${{ inputs.test_name == 'regression_with_torch' || (inputs.test_name == '' && inputs.server_image == 'legacy') }}
       env:
         API_KEY: ${{ inputs.API_KEY }}
         asl_instance_segmentation_API_KEY: ${{ inputs.ASL_INSTANCE_SEGMENTATION_API_KEY }}
@@ -123,9 +126,9 @@ runs:
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
         source .venv/bin/activate
-        USE_INFERENCE_MODELS="$MODEL_MODE" MINIMUM_FPS=25 FUNCTIONAL=true PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python3 -m pytest tests/inference/integration_tests/
+        USE_INFERENCE_MODELS="$MODEL_MODE" MINIMUM_FPS=25 FUNCTIONAL=true PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python3 -m pytest tests/inference/integration_tests/ $PYTEST_EXTRA_ARGS
     - name: 🧹 Cleanup Test Docker - GPU
-      if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_with_torch' }}
+      if: ${{ inputs.test_name == 'regression_with_torch' || (inputs.test_name == '' && inputs.server_image == 'legacy') }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: make stop_test_docker
 
@@ -133,7 +136,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'paligemma' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Paligemma - GPU
       id: paligemma_tests
@@ -152,7 +155,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'florence' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Florence - GPU
       id: florence_tests
@@ -171,7 +174,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam2' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests - SAM2
       id: sam2_tests
@@ -190,7 +193,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam3' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests - SAM3
       id: sam3_tests
@@ -208,7 +211,7 @@ runs:
 #      - name: 🔋 Start Test Docker - GPU
 #        if: ${{ inputs.test_name == '' || inputs.test_name == 'qwen25' }}
 #        run: |
-#          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+#          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
 #      - name: 🧪 Regression Tests - Qwen2.5
 #        id: qwen25_tests
 #        if: ${{ inputs.test_name == '' || inputs.test_name == 'qwen25' }}
@@ -224,7 +227,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'moondream2' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests - MoonDream
       id: moondream_tests

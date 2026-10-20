@@ -37,6 +37,13 @@ on:
         description: "Prebuilt roboflow/roboflow-inference-server-gpu tag to test (e.g. 1.6.2-post3-rc1). Empty = build the image from this ref."
         type: string
         default: ""
+      server-image:
+        description: "Server under test: legacy inference image or the new inference_server image"
+        type: choice
+        default: legacy
+        options:
+          - legacy
+          - new
   workflow_call:
     # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
     # the 32-minute in-job image build is skipped. test_name `fast_track` runs
@@ -114,6 +121,9 @@ jobs:
       contents: read
       id-token: write
     env:
+      SERVER_IMAGE: ${{ github.event.inputs.server-image || 'legacy' }}
+      INFERENCE_SERVER_REPO: ${{ github.event.inputs.server-image == 'new' && 'inference-server-experimental' || 'roboflow-inference-server-gpu' }}
+      PYTEST_EXTRA_ARGS: ${{ github.event.inputs.server-image == 'new' && '--ignore=tests/inference/integration_tests/test_video_processing_endpoints.py --ignore=tests/inference/integration_tests/yolo_world_test.py --deselect tests/inference/integration_tests/test_workflow_endpoints.py::test_compilation_endpoint_when_compilation_succeeds_with_custom_block' || '' }}
       MODEL_MODE: ${{ matrix.use-inference-models }}
       IMAGE_FAMILY: gpu
       IMAGE_TAG: ${{ inputs.image_tag }}
@@ -126,7 +136,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        use-inference-models: ${{ fromJSON((inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', inputs.use-inference-models)) }}
+        use-inference-models: ${{ fromJSON(github.event.inputs.server-image == 'new' && '["true"]' || ((inputs.use-inference-models || 'all') == 'all' && '["true","false"]' || format('["{0}"]', inputs.use-inference-models))) }}
     timeout-minutes: 120
 
     steps:
@@ -174,7 +184,7 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements/requirements.test.integration.txt -r requirements/requirements.test.unit.txt 
       - name: 🔨 Build Test Docker - GPU
-        if: ${{ inputs.image_tag == '' && inputs.image_digest == '' && !inputs.private_image }}
+        if: ${{ env.SERVER_IMAGE == 'legacy' && inputs.image_tag == '' && inputs.image_digest == '' && !inputs.private_image }}
         run: |
           docker build -t roboflow/roboflow-inference-server-gpu:test -f docker/dockerfiles/Dockerfile.onnx.gpu .
       - name: Pull and verify prebuilt amd64 image
@@ -186,11 +196,16 @@ jobs:
       - name: Remove registry credentials before executing tests
         if: ${{ always() && inputs.private_image && steps.ci_docker_config.outcome == 'success' }}
         run: rm -f -- "$DOCKER_CONFIG/config.json"
+      - name: 🔨 Build Test Docker - inference_server GPU
+        if: ${{ env.SERVER_IMAGE == 'new' && inputs.image_digest == '' && !inputs.private_image }}
+        run: |
+          docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.gpu .
 
       - name: Run shared GPU server test stages
         uses: ./.github/actions/server-tests-gpu
         with:
           test_name: ${{ inputs.test_name }}
+          server_image: ${{ env.SERVER_IMAGE }}
           API_KEY: ${{ secrets.API_KEY }}
           ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
           ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}

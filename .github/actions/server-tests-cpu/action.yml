@@ -45,10 +45,13 @@ runs:
           -e CPU_IMAGE_TEST=true \
           -v "$PWD/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
           "$INFERENCE_TEST_IMAGE" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'
+    # INFERENCE_SERVER_REPO and PYTEST_EXTRA_ARGS come from the calling job's
+    # env when it selects the new inference_server image; defaults keep the
+    # legacy image for callers that set neither (saved-image trial).
     - name: 🔋 Start Test Docker
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-cpu make start_test_docker_cpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-cpu}" make start_test_docker_cpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Integration Tests of inference server [x86 CPU]
       env:
@@ -63,8 +66,14 @@ runs:
         yolonas_test_API_KEY: ${{ inputs.YOLONAS_TEST_API_KEY }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python -m pytest tests/inference/integration_tests
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python -m pytest tests/inference/integration_tests $PYTEST_EXTRA_ARGS
         make stop_test_docker
+    - name: 📜 Dump server logs on failure
+      if: failure()
+      shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
+      run: |
+        docker logs "$INFERENCE_TEST_CONTAINER" --tail 1000 || true
+        make stop_test_docker || true
     - name: Remove this job's test container
       if: ${{ always() }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}

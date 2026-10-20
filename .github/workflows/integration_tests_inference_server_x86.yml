@@ -22,6 +22,13 @@ on:
         description: "Prebuilt roboflow/roboflow-inference-server-cpu tag to test (e.g. 1.6.2-post3-rc1). Empty = build the image from this ref."
         type: string
         default: ""
+      server-image:
+        description: "Server under test: legacy inference image or the new inference_server image"
+        type: choice
+        default: legacy
+        options:
+          - legacy
+          - new
   workflow_call:
     # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
     # the 15-minute in-job image build is skipped.
@@ -95,6 +102,9 @@ jobs:
       contents: read
       id-token: write
     env:
+      SERVER_IMAGE: ${{ github.event.inputs.server-image || 'legacy' }}
+      INFERENCE_SERVER_REPO: ${{ github.event.inputs.server-image == 'new' && 'inference-server-experimental' || 'roboflow-inference-server-cpu' }}
+      PYTEST_EXTRA_ARGS: ${{ github.event.inputs.server-image == 'new' && '--ignore=tests/inference/integration_tests/test_video_processing_endpoints.py --ignore=tests/inference/integration_tests/yolo_world_test.py --deselect tests/inference/integration_tests/test_workflow_endpoints.py::test_compilation_endpoint_when_compilation_succeeds_with_custom_block' || '' }}
       MODEL_MODE: ${{ matrix.use-inference-models }}
       IMAGE_FAMILY: cpu
       IMAGE_TAG: ${{ inputs.image_tag }}
@@ -107,7 +117,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        use-inference-models: ${{ fromJSON((inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', inputs.use-inference-models)) }}
+        use-inference-models: ${{ fromJSON(github.event.inputs.server-image == 'new' && '["true"]' || ((inputs.use-inference-models || 'all') == 'all' && '["true","false"]' || format('["{0}"]', inputs.use-inference-models))) }}
     timeout-minutes: 60
 
     steps:
@@ -160,7 +170,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.code_analysis.txt
       - name: 🔨 Build and Push Test Docker
-        if: ${{ inputs.image_tag == '' && inputs.image_digest == '' && !inputs.private_image }}
+        if: ${{ env.SERVER_IMAGE == 'legacy' && inputs.image_tag == '' && inputs.image_digest == '' && !inputs.private_image }}
         run: |
           docker pull roboflow/roboflow-inference-server-cpu:test
           docker build -t roboflow/roboflow-inference-server-cpu:test -f docker/dockerfiles/Dockerfile.onnx.cpu .
@@ -175,6 +185,10 @@ jobs:
         if: ${{ always() && inputs.private_image && steps.ci_docker_config.outcome == 'success' }}
         run: rm -f -- "$DOCKER_CONFIG/config.json"
 
+      - name: 🔨 Build Test Docker - inference_server
+        if: ${{ env.SERVER_IMAGE == 'new' && inputs.image_digest == '' && !inputs.private_image }}
+        run: |
+          docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.cpu .
       - name: Run shared CPU server test stages
         uses: ./.github/actions/server-tests-cpu
         with:
