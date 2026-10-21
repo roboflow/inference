@@ -4,6 +4,10 @@
 
 ### Added
 
+- Weight-free authorized package preparation and exact admitted-candidate loading
+  for dedicated process managers, preserving resolution-cache preferences and
+  revalidating compatibility before worker initialization.
+
 - Process-manager integration primitives for strict explicit-package compatibility
   checks and single-candidate initialization without automatic package fallback.
   Existing `AutoModel.from_pretrained` selection and fallback behavior is unchanged.

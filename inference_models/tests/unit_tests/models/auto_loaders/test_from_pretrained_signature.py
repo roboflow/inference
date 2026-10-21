@@ -67,6 +67,7 @@ def test_from_pretrained_keeps_positional_binding_of_every_parameter_on_main() -
         "preloaded_model_dependencies": None,
         "disabled_backends": None,
         "allow_vllm_proxy": False,
+        "_admission": None,
     }
 
 
