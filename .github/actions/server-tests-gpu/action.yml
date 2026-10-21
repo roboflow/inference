@@ -43,24 +43,8 @@ inputs:
 runs:
   using: composite
   steps:
-    # Model weights stay on the self-hosted runner between runs, under the
-    # runner user's home, so later stages and later runs skip the download.
-    # Each USE_INFERENCE_MODELS leg mounts its own directory as the container's
-    # MODEL_CACHE_DIR (/tmp/cache, which also holds the inference-models and
-    # Hugging Face caches), so two legs on one host never clear or evict each
-    # other's weights, and a second run of the same leg on the host falls back
-    # to the container-local cache while the first still holds the directory.
-    # DISK_CACHE_CLEANUP=False keeps /model/clear and hot-cache eviction from
-    # deleting the cached files; ATOMIC_CACHE_WRITES_ENABLED=True keeps a
-    # container killed mid-download from leaving a truncated file behind, and
-    # the dirty marker (cleared only when the job succeeded) covers the writes
-    # that cannot be atomic, such as LoRA bases extracted in place; a failed
-    # or cancelled run therefore costs the next run one re-download.
-    # The script discards the cache when MODEL_CACHE_KEY changes (bump it to
-    # invalidate every runner), when it is older than MODEL_CACHE_MAX_AGE_DAYS,
-    # when a previous run was interrupted, when free disk drops below
-    # MODEL_CACHE_MIN_FREE_GIB, or on the reset_model_cache input; the wipe
-    # runs inside the test image, not sudo.
+    # Model weights persist on the runner between stages and runs; see
+    # .github/scripts/ci_model_cache.py for the mount, invalidation and wipe.
     - name: Prepare persistent model cache
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       env:
