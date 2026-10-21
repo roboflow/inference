@@ -44,6 +44,10 @@ on:
         options:
           - legacy
           - new
+      reset_model_cache:
+        description: "Discard the runner's cached model weights before this run"
+        type: boolean
+        default: false
   workflow_call:
     # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
     # the 32-minute in-job image build is skipped. test_name `fast_track` runs
@@ -71,6 +75,10 @@ on:
         description: "Depot project holding the saved image; set by the orchestrator"
         type: string
         default: ""
+      reset_model_cache:
+        description: "Discard the runner's cached model weights before this run"
+        type: boolean
+        default: false
     secrets:
       API_KEY:
         required: false
@@ -185,6 +193,7 @@ jobs:
         with:
           test_name: ${{ inputs.test_name }}
           server_image: ${{ env.SERVER_IMAGE }}
+          reset_model_cache: ${{ inputs.reset_model_cache || false }}
           API_KEY: ${{ secrets.API_KEY }}
           ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
           ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}

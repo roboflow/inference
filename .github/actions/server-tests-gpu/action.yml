@@ -10,6 +10,9 @@ inputs:
   server_image:
     description: legacy inference image or the new inference_server image
     default: legacy
+  reset_model_cache:
+    description: Discard the runner's cached model weights before this run
+    default: "false"
   API_KEY:
     description: Test credential supplied by the calling workflow
     required: false
@@ -40,6 +43,23 @@ inputs:
 runs:
   using: composite
   steps:
+    # Model weights stay on the self-hosted runner between runs, under the
+    # runner user's home, so later stages and later runs skip the download.
+    # Each USE_INFERENCE_MODELS leg mounts its own directory as the container's
+    # MODEL_CACHE_DIR (/tmp/cache, which also holds the inference-models and
+    # Hugging Face caches), so two legs on one host never clear or evict each
+    # other's weights. DISK_CACHE_CLEANUP=False keeps /model/clear and
+    # hot-cache eviction from deleting the cached files. The script discards
+    # the cache when MODEL_CACHE_KEY changes (bump it to invalidate every
+    # runner), when it is older than MODEL_CACHE_MAX_AGE_DAYS, or on the
+    # reset_model_cache input; the wipe runs inside the test image, not sudo.
+    - name: Prepare persistent model cache
+      shell: bash
+      env:
+        MODEL_CACHE_KEY: v1
+        MODEL_CACHE_MAX_AGE_DAYS: "14"
+        MODEL_CACHE_RESET: ${{ inputs.reset_model_cache }}
+      run: python3 .github/scripts/ci_model_cache.py
     - name: Show NVIDIA driver - GPU
       if: ${{ (inputs.test_name == '' || inputs.test_name == 'fast_track') && inputs.server_image == 'legacy' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
@@ -80,7 +100,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'regression_without_torch' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="$MODEL_CACHE_DOCKER_ARGS" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests without Torch Preprocessing - GPU
       id: regression_tests_without_torch
@@ -108,7 +128,7 @@ runs:
       if: ${{ inputs.test_name == 'regression_with_torch' || (inputs.test_name == '' && inputs.server_image == 'legacy') }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="$MODEL_CACHE_DOCKER_ARGS" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests with Torch Preprocessing - GPU
       id: regression_tests_with_torch
@@ -136,7 +156,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'paligemma' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="$MODEL_CACHE_DOCKER_ARGS" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Paligemma - GPU
       id: paligemma_tests
@@ -155,7 +175,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'florence' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="$MODEL_CACHE_DOCKER_ARGS" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Florence - GPU
       id: florence_tests
@@ -174,7 +194,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam2' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="$MODEL_CACHE_DOCKER_ARGS" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests - SAM2
       id: sam2_tests
@@ -193,7 +213,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam3' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="-e MAX_ACTIVE_MODELS=1 -e DISK_CACHE_CLEANUP=False" make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="$MODEL_CACHE_DOCKER_ARGS -e MAX_ACTIVE_MODELS=1 -e DISK_CACHE_CLEANUP=False" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests - SAM3
       id: sam3_tests
@@ -211,7 +231,7 @@ runs:
 #      - name: 🔋 Start Test Docker - GPU
 #        if: ${{ inputs.test_name == '' || inputs.test_name == 'qwen25' }}
 #        run: |
-#          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
+#          USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="$MODEL_CACHE_DOCKER_ARGS" make start_test_docker_gpu
 #      - name: 🧪 Regression Tests - Qwen2.5
 #        id: qwen25_tests
 #        if: ${{ inputs.test_name == '' || inputs.test_name == 'qwen25' }}
@@ -227,7 +247,7 @@ runs:
       if: ${{ inputs.test_name == '' || inputs.test_name == 'moondream2' }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" make start_test_docker_gpu
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-gpu}" INFERENCE_TEST_DOCKER_ARGS="$MODEL_CACHE_DOCKER_ARGS" make start_test_docker_gpu
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Regression Tests - MoonDream
       id: moondream_tests
