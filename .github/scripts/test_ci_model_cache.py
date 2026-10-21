@@ -133,7 +133,7 @@ class ModelCacheTests(unittest.TestCase):
         self.assertEqual((self.cache_dir / CACHE.DIRTY_FILE).read_text(), "100-1\n")
 
     def test_clean_removes_only_this_runs_dirty_marker(self):
-        """A run that was not cancelled clears its own dirty marker and no other."""
+        """A run that succeeded clears its own dirty marker and no other."""
         self.cache_dir.mkdir(parents=True)
         (self.cache_dir / CACHE.DIRTY_FILE).write_text("100-1\n")
         CACHE._clean()
@@ -305,7 +305,7 @@ class ModelCacheTests(unittest.TestCase):
         steps = action["runs"]["steps"]
         self.assertEqual(steps[0]["env"]["CI_MODEL_CACHE_ACTION"], "prepare")
         self.assertEqual(steps[-2]["env"]["CI_MODEL_CACHE_ACTION"], "clean")
-        self.assertEqual(steps[-2]["if"], "${{ !cancelled() }}")
+        self.assertEqual(steps[-2]["if"], "${{ success() }}")
         self.assertEqual(steps[-1]["env"]["CI_MODEL_CACHE_ACTION"], "release")
         self.assertEqual(steps[-1]["if"], "${{ always() }}")
         for step in (steps[0], steps[-2], steps[-1]):

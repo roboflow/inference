@@ -7,9 +7,9 @@ MODEL_CACHE_MAX_AGE_DAYS, when free disk drops below MODEL_CACHE_MIN_FREE_GIB,
 or when MODEL_CACHE_RESET is requested. A run marks the directory in use and
 releases it at the end; a concurrent run of the same leg falls back to the
 container-local cache instead of sharing files with a live server. A run also
-marks the directory dirty and cleans it only when it was not cancelled, so a
-container killed mid-download (LoRA bases extract a tar in place and cannot be
-made atomic from outside) never leaves a partial cache behind. The server
+marks the directory dirty and cleans it only when the job succeeded, so a
+container killed or failing mid-download (LoRA bases extract a tar in place and
+cannot be made atomic from outside) never leaves a partial cache behind. The server
 writes the files as root, so wiping runs inside the test image rather than
 with sudo. Never print subprocess output.
 """
@@ -247,7 +247,7 @@ def _remove_own_marker(marker_path: Path) -> None:
 
 
 def _clean() -> None:
-    # Runs only when the job was not cancelled, so no container was killed
+    # Runs only when the job succeeded, so no container was killed or failed
     # while writing into the cache.
     _remove_own_marker(_cache_dir() / DIRTY_FILE)
 

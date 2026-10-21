@@ -17,10 +17,10 @@
   Mark the directory in use for the job and release it in a final `always()`
   step, so a second run of the same leg on the host falls back to the
   container-local cache instead of sharing files with a live server. Mark it
-  dirty for the job and clean it only when the job was not cancelled, and
-  turn on `ATOMIC_CACHE_WRITES_ENABLED` in the test containers, so a
-  container killed mid-download cannot leave a truncated or half-extracted
-  artifact in the cache.
+  dirty for the job and clean it only when the job succeeded, and turn on
+  `ATOMIC_CACHE_WRITES_ENABLED` in the test containers, so a container killed
+  or failing mid-download cannot leave a truncated or half-extracted artifact
+  in the cache; a red run costs the next run one re-download.
 - Make `/model/clear` honour `DISK_CACHE_CLEANUP`, so the per-module clears in
   the integration tests no longer delete cached weights when the flag is off.
 - Add offline tests for the cache script and the action wiring. A live T4
