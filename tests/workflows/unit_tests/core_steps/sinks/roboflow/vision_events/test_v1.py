@@ -738,8 +738,8 @@ def test_execute_local_event_builds_v2_payload(mock_send: MagicMock) -> None:
     assert len(payload["images"]) == 1
 
     image = payload["images"][0]
-    assert "base64Image" in image  # output image
-    assert "inputBase64Image" in image  # input image
+    prepared = mock_send.call_args.kwargs["prepared_images"]
+    assert [key for key, _, _ in prepared] == ["base64Image", "inputBase64Image"]
     assert image["label"] == "workflow"
     assert "objectDetections" in image
 
