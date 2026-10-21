@@ -3,7 +3,10 @@
 Every server test stage mounts a per-leg directory as the container's
 MODEL_CACHE_DIR, so later stages and later runs skip the weight downloads.
 The cache is discarded when MODEL_CACHE_KEY changes, when it is older than
-MODEL_CACHE_MAX_AGE_DAYS, or when MODEL_CACHE_RESET is requested. The server
+MODEL_CACHE_MAX_AGE_DAYS, when free disk drops below MODEL_CACHE_MIN_FREE_GIB,
+or when MODEL_CACHE_RESET is requested. A run marks the directory in use and
+releases it at the end; a concurrent run of the same leg falls back to the
+container-local cache instead of sharing files with a live server. The server
 writes the files as root, so wiping runs inside the test image rather than
 with sudo. Never print subprocess output.
 """
@@ -19,9 +22,14 @@ from pathlib import Path
 
 KEY_FILE = ".cache-key"
 CREATED_FILE = ".created"
+IN_USE_FILE = ".in-use"
 CONTAINER_CACHE_DIR = "/tmp/cache"
 DEFAULT_MAX_AGE_DAYS = "14"
+DEFAULT_MIN_FREE_GIB = "20"
+# A job may hold the cache for at most the workflow's timeout-minutes.
+DEFAULT_BUSY_TIMEOUT_MINUTES = "120"
 DEFAULT_IMAGE = "roboflow/roboflow-inference-server-gpu:test"
+CONTAINER_ENV = "-e DISK_CACHE_CLEANUP=False -e ATOMIC_CACHE_WRITES_ENABLED=True"
 
 
 def _run(args: list[str]) -> str:
@@ -62,12 +70,44 @@ def _key() -> str:
     return key
 
 
-def _max_age_seconds() -> int:
-    days = os.environ.get("MODEL_CACHE_MAX_AGE_DAYS", DEFAULT_MAX_AGE_DAYS)
-    if not re.fullmatch(r"[0-9]{1,4}", days):
-        raise ValueError("Invalid model cache age")
+def _number(name: str, default: str) -> int:
+    value = os.environ.get(name, default)
+    if not re.fullmatch(r"[0-9]{1,5}", value):
+        raise ValueError(f"Invalid {name}")
 
-    return int(days) * 86400
+    return int(value)
+
+
+def _identity() -> str:
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    if not re.fullmatch(r"[0-9]{1,20}", run_id) or not re.fullmatch(
+        r"[0-9]{1,5}", attempt
+    ):
+        raise ValueError("Invalid run identity")
+
+    return f"{run_id}-{attempt}"
+
+
+def _read_marker(path: Path) -> tuple[str, int] | None:
+    if not path.is_file():
+        return None
+
+    fields = path.read_text().split()
+    if len(fields) != 2 or not re.fullmatch(r"[0-9]+", fields[1]):
+        return None
+
+    return fields[0], int(fields[1])
+
+
+def _held_by_other_run(cache_dir: Path, *, identity: str, timeout: int) -> bool:
+    marker = _read_marker(cache_dir / IN_USE_FILE)
+    if marker is None:
+        return False
+
+    owner, since = marker
+    # A marker older than the job timeout belongs to a run the runner lost.
+    return owner != identity and time.time() - since <= timeout
 
 
 def _invalidation_reason(cache_dir: Path, *, key: str, max_age: int) -> str | None:
@@ -136,13 +176,27 @@ def _size_bytes(cache_dir: Path) -> int:
     return total
 
 
+def _free_gib(cache_dir: Path) -> float:
+    return shutil.disk_usage(cache_dir).free / 2**30
+
+
 def _prepare() -> None:
     key = _key()
-    max_age = _max_age_seconds()
+    max_age = _number("MODEL_CACHE_MAX_AGE_DAYS", DEFAULT_MAX_AGE_DAYS) * 86400
+    min_free = _number("MODEL_CACHE_MIN_FREE_GIB", DEFAULT_MIN_FREE_GIB)
+    timeout = _number("MODEL_CACHE_BUSY_TIMEOUT_MINUTES", DEFAULT_BUSY_TIMEOUT_MINUTES)
+    identity = _identity()
     cache_dir = _cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    if _held_by_other_run(cache_dir, identity=identity, timeout=timeout * 60):
+        _emit("GITHUB_ENV", "MODEL_CACHE_DOCKER_ARGS", "")
+        print(f"Model cache {cache_dir}: in use by another run; not mounted")
+        return
+
     reason = _invalidation_reason(cache_dir, key=key, max_age=max_age)
+    if reason is None and _free_gib(cache_dir) < min_free:
+        reason = "free disk below the minimum"
     if reason is None:
         status = "reused"
     else:
@@ -151,22 +205,43 @@ def _prepare() -> None:
         _write_markers(cache_dir, key=key)
         status = f"started fresh ({reason})"
 
+    free_gib = _free_gib(cache_dir)
+    if free_gib < min_free:
+        print(
+            "::error::Runner free disk is below MODEL_CACHE_MIN_FREE_GIB "
+            "even with an empty model cache"
+        )
+        raise ValueError("Insufficient free disk for the model cache")
+
+    (cache_dir / IN_USE_FILE).write_text(f"{identity} {int(time.time())}\n")
     _emit(
         "GITHUB_ENV",
         "MODEL_CACHE_DOCKER_ARGS",
-        f"-v {cache_dir}:{CONTAINER_CACHE_DIR} -e DISK_CACHE_CLEANUP=False",
+        f"-v {cache_dir}:{CONTAINER_CACHE_DIR} {CONTAINER_ENV}",
     )
     used_gib = _size_bytes(cache_dir) / 2**30
-    free_gib = shutil.disk_usage(cache_dir).free / 2**30
     print(
         f"Model cache {cache_dir}: {status}; "
         f"{used_gib:.1f} GiB cached, {free_gib:.1f} GiB free on disk"
     )
 
 
+def _release() -> None:
+    cache_dir = _cache_dir()
+    marker_path = cache_dir / IN_USE_FILE
+    marker = _read_marker(marker_path)
+    if marker is None or marker[0] != _identity():
+        return
+
+    marker_path.unlink(missing_ok=True)
+
+
 if __name__ == "__main__":
     try:
-        _prepare()
+        {
+            "prepare": _prepare,
+            "release": _release,
+        }[os.environ["CI_MODEL_CACHE_ACTION"]]()
     except (ValueError, KeyError, OSError):
         # Do not render the exception, command or user input.
         print("::error::Model cache preparation failed; no fallback performed")
