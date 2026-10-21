@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- Vision Events (`roboflow_core/roboflow_vision_events@v1`, local event store mode) and Event Writer (`roboflow_enterprise/event_writer_sink@v1`) hand JPEGs to the local Event Ingestion Service through shared memory (`/dev/shm`, or `EVENT_STORE_SHM_DIR`) instead of base64 when its `/health` reports the same `shm_identity`, falling back to base64 when it does not or rejects the files. `EVENT_STORE_SHARED_MEMORY=false` always sends base64. The Event Writer now encodes images in the request task, so fire-and-forget runs no longer encode them on the workflow thread.
+
 ## `0.2.12`
 
 Bundled execution engine: `1.16.1`.
