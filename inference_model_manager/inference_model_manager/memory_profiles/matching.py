@@ -47,6 +47,36 @@ class MemoryProfileError(ValueError):
         self.code = code
         self.retryable = retryable
 
+    def to_result(self, request_id: str) -> dict:
+        """Serialize C16 without a numeric estimate.
+
+        Args:
+            request_id: Request correlation identifier.
+
+        Returns:
+            Typed failure envelope with retry guidance.
+        """
+        categories = {
+            "memory_publication_invalid": "integrity",
+            "memory_evidence_invalid": "integrity",
+            "memory_publication_conflict": "publication",
+            "unsupported_family_descriptor": "unsupported",
+            "environment_metadata_unavailable": "unsupported",
+            "memory_access_denied": "authorization",
+            "memory_lookup_unavailable": "dependency",
+        }
+        result = {
+            "status": "failure",
+            "requestId": request_id,
+            "error": {
+                "code": self.code,
+                "category": categories.get(self.code, "coverage"),
+                "message": str(self),
+                "retryable": self.retryable,
+            },
+        }
+        return result
+
 
 @dataclass(frozen=True)
 class Snapshot:

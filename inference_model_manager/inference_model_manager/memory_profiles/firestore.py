@@ -12,10 +12,29 @@ from inference_model_manager.memory_profiles.matching import (
 
 
 def _transaction(client, operation, *, read_only=False):
+    from google.api_core.exceptions import (
+        DeadlineExceeded,
+        Forbidden,
+        PermissionDenied,
+        ServiceUnavailable,
+        Unauthenticated,
+    )
     from google.cloud import firestore
 
     transaction = client.transaction(read_only=read_only)
-    result = firestore.transactional(operation)(transaction)
+    try:
+        result = firestore.transactional(operation)(transaction)
+    except (Forbidden, PermissionDenied, Unauthenticated) as error:
+        raise MemoryProfileError(
+            "memory_access_denied", "Publication metadata access denied"
+        ) from error
+    except (DeadlineExceeded, ServiceUnavailable) as error:
+        raise MemoryProfileError(
+            "memory_lookup_unavailable",
+            "Publication metadata service unavailable",
+            retryable=True,
+        ) from error
+
     return result
 
 
@@ -123,7 +142,14 @@ class FirestoreCatalog:
                 )
             return snapshot
 
-        result = _transaction(self.client, read, read_only=True)
+        try:
+            result = _transaction(self.client, read, read_only=True)
+        except MemoryProfileError:
+            raise
+        except (ValueError, KeyError, TypeError) as error:
+            raise MemoryProfileError(
+                "memory_publication_invalid", "Malformed publication metadata"
+            ) from error
         return result
 
     def stage(self, snapshot: Snapshot) -> None:
