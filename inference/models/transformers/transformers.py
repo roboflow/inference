@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import tarfile
+from hashlib import sha256
+from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Tuple, Type
 
@@ -40,6 +43,9 @@ if TYPE_CHECKING:
     from transformers import AutoModel, AutoProcessor
 
     from inference.core.entities.responses.inference import InferenceResponseImage
+
+
+LORA_BASE_COMPLETE_MARKER = ".complete"
 
 
 def load_compatible_adapter_config(
@@ -409,27 +415,67 @@ class LoRATransformerModel(TransformerModel):
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
+        """Get a fully extracted LoRA base, rebuilding incomplete online caches.
+
+        Args:
+            repo (str): Base model repository identifier.
+            revision (str): Base model revision to cache.
+
+        Returns:
+            str: Directory containing the extracted base model.
+
+        Raises:
+            ModelArtefactError: The base is unavailable offline or the API
+                response contains no weights.
+            filelock.Timeout: Another download holds the cache lock too long.
+        """
         base_dir = os.path.join("lora-bases", repo, revision)
         cache_dir = get_cache_dir(base_dir)
-        if os.path.exists(cache_dir):
+        cache_path = Path(cache_dir)
+        completion_marker = cache_path / LORA_BASE_COMPLETE_MARKER
+        # Preserve support for legacy, pre-provisioned offline caches.
+        if completion_marker.is_file() or (OFFLINE_MODE and cache_path.is_dir()):
             return cache_dir
-        api_data = get_roboflow_base_lora(self.api_key, repo, revision, self.device_id)
-        if "weights" not in api_data:
+
+        if OFFLINE_MODE:
             raise ModelArtefactError(
-                f"`weights` key not available in Roboflow API response while downloading model weights."
+                f"LoRA base {repo}@{revision} is not cached and OFFLINE_MODE is enabled."
             )
 
-        weights_url = api_data["weights"]["model"]
-        filename = weights_url.split("?")[0].split("/")[-1]
-        assert filename.endswith("tar.gz")
-        stream_url_to_cache(
-            url=weights_url,
-            filename=filename,
-            model_id=base_dir,
-        )
-        tar_file_path = get_cache_file_path(filename, base_dir)
-        with tarfile.open(tar_file_path, "r:gz") as tar:
-            tar.extractall(path=cache_dir)
+        lock_dir = Path(MODEL_CACHE_DIR) / "_file_locks"
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock_name = sha256(str(cache_path.resolve()).encode("utf-8")).hexdigest()
+        with FileLock(lock_dir / f"lora-base-{lock_name}.lock", timeout=120):
+            if completion_marker.is_file():
+                return cache_dir
+
+            if cache_path.exists():
+                logger.warning(
+                    "LoRA base cache has no completion marker at %s; rebuilding it.",
+                    cache_dir,
+                )
+                shutil.rmtree(cache_path)
+
+            api_data = get_roboflow_base_lora(
+                self.api_key, repo, revision, self.device_id
+            )
+            if "weights" not in api_data:
+                raise ModelArtefactError(
+                    "`weights` key not available in Roboflow API response while downloading model weights."
+                )
+
+            weights_url = api_data["weights"]["model"]
+            filename = weights_url.split("?")[0].split("/")[-1]
+            assert filename.endswith("tar.gz")
+            stream_url_to_cache(
+                url=weights_url,
+                filename=filename,
+                model_id=base_dir,
+            )
+            tar_file_path = get_cache_file_path(filename, base_dir)
+            with tarfile.open(tar_file_path, "r:gz") as tar:
+                tar.extractall(path=cache_dir)
+            completion_marker.touch()
 
         return cache_dir
 

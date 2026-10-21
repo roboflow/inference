@@ -1894,7 +1894,7 @@ def get_from_url(
 
 @backoff.on_exception(
     backoff.constant,
-    exception=RetryRequestError,
+    exception=(RetryRequestError, requests.exceptions.ChunkedEncodingError),
     max_tries=TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
     interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
 )
