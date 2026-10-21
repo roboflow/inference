@@ -472,7 +472,9 @@ class EventWriterSinkBlockV1(WorkflowBlock):
             custom_value=custom_value,
         )
 
-        prepared_images = prepare_local_images(output_image, input_image)
+        prepared_images = prepare_local_images(
+            output_image=output_image, input_image=input_image
+        )
         image_entry = _build_image_entry(
             image_label=image_label,
             object_detections=object_detections,
@@ -775,7 +777,11 @@ def _execute_event_request(
             headers["X-API-Key"] = api_key
 
         response = post_local_event(
-            url, payload, prepared_images, headers=headers, timeout=timeout
+            url,
+            payload=payload,
+            prepared_images=prepared_images,
+            headers=headers,
+            timeout=timeout,
         )
 
         if response.status_code == 201:

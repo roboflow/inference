@@ -65,6 +65,7 @@ def prepare_local_images(
     for (base64_key, shm_key), image in zip(IMAGE_FIELDS, (output_image, input_image)):
         if image is None:
             continue
+
         if (
             not _shared_memory_enabled()
             or getattr(image, "_base64_image", None) is not None
@@ -80,6 +81,7 @@ def prepare_local_images(
 
 def post_local_event(
     url: str,
+    *,
     payload: Dict[str, Any],
     prepared_images: Sequence[PreparedImage] = (),
     **requests_kwargs: Any,
@@ -108,11 +110,15 @@ def post_local_event(
     try:
         if prepared_images:
             _attach_images(
-                payload["images"][0], prepared_images, event_store_url, shm_images
+                payload["images"][0],
+                prepared_images=prepared_images,
+                event_store_url=event_store_url,
+                shm_images=shm_images,
             )
+
         response = requests.post(url, json=payload, **requests_kwargs)
         if shm_images and _is_shm_image_unavailable(response):
-            _inline_shm_images(payload, shm_images)
+            _inline_shm_images(payload, shm_images=shm_images)
             _remove_shm_files(shm_images)
             _probe_cache[_event_store_key(event_store_url)] = (time.monotonic(), False)
             response = requests.post(url, json=payload, **requests_kwargs)
@@ -124,6 +130,7 @@ def post_local_event(
 
 def _attach_images(
     entry: Dict[str, Any],
+    *,
     prepared_images: Sequence[PreparedImage],
     event_store_url: str,
     shm_images: Dict[str, bytes],
@@ -131,30 +138,36 @@ def _attach_images(
     identity = None
     if any(isinstance(value, bytes) for _, _, value in prepared_images):
         identity = _shared_memory_identity(event_store_url)
+
     for base64_key, shm_key, value in prepared_images:
         if isinstance(value, str):
             entry[base64_key] = value
             continue
+
         name = _write_shm_image(value) if identity is not None else None
         if name is None:
             entry[base64_key] = base64.b64encode(value).decode("ascii")
             continue
+
         shm_images[name] = value
         entry[shm_key] = {"name": name, "size": len(value), "identity": identity}
 
 
 def _shared_memory_enabled() -> bool:
     mode = os.getenv(EVENT_STORE_SHARED_MEMORY_ENV, "auto").strip().lower()
+
     return mode not in SHARED_MEMORY_DISABLED_VALUES
 
 
 def _shm_dir() -> Path:
-    return Path(os.getenv(EVENT_STORE_SHM_DIR_ENV, DEFAULT_SHM_DIR))
+    directory = Path(os.getenv(EVENT_STORE_SHM_DIR_ENV, DEFAULT_SHM_DIR))
+
+    return directory
 
 
 def _local_identity() -> Optional[str]:
     try:
-        st = os.stat(_shm_dir())
+        st = _shm_dir().stat()
     except OSError:
         return None
 
@@ -162,7 +175,9 @@ def _local_identity() -> Optional[str]:
 
 
 def _event_store_key(event_store_url: str) -> str:
-    return event_store_url.rstrip("/")
+    key = event_store_url.rstrip("/")
+
+    return key
 
 
 def _shared_memory_identity(event_store_url: str) -> Optional[str]:
@@ -232,12 +247,16 @@ def _is_shm_image_unavailable(response: requests.Response) -> bool:
         return False
 
     try:
-        return response.json().get("error") == SHM_IMAGE_UNAVAILABLE_ERROR
+        unavailable = response.json().get("error") == SHM_IMAGE_UNAVAILABLE_ERROR
     except Exception:
-        return False
+        unavailable = False
+
+    return unavailable
 
 
-def _inline_shm_images(payload: Dict[str, Any], shm_images: Dict[str, bytes]) -> None:
+def _inline_shm_images(
+    payload: Dict[str, Any], *, shm_images: Dict[str, bytes]
+) -> None:
     for entry in payload.get("images", []):
         for base64_key, shm_key in IMAGE_FIELDS:
             reference = entry.pop(shm_key, None)
