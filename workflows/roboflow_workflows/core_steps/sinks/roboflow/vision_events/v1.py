@@ -840,7 +840,9 @@ def _execute_local_event(
         # Convert predictions to vision events annotation format
         annotations = _convert_predictions_to_annotations(prediction)
 
-        prepared_images = prepare_local_images(output_image, input_image)
+        prepared_images = prepare_local_images(
+            output_image=output_image, input_image=input_image
+        )
         image_entry: Dict[str, Any] = {}
         if prepared_images:
             image_entry["label"] = "workflow"
@@ -893,7 +895,11 @@ def _send_local_event(
         if api_key:
             headers["X-API-Key"] = api_key
         response = post_local_event(
-            url, payload, prepared_images, headers=headers, timeout=30
+            url,
+            payload=payload,
+            prepared_images=prepared_images,
+            headers=headers,
+            timeout=30,
         )
 
         if response.status_code == 201:

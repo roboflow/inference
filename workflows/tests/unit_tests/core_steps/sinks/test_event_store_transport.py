@@ -78,7 +78,7 @@ def _send(
     health=None,
     responses=None,
 ) -> tuple:
-    prepared = prepare_local_images(output_image, input_image)
+    prepared = prepare_local_images(output_image=output_image, input_image=input_image)
     payload = {"event_schema": "custom", "images": [{"label": "x"}]}
     sent = []
 
@@ -111,7 +111,9 @@ def _send(
     with patch.object(requests, "get", **get_kwargs) as get:
         with patch.object(requests, "post", side_effect=record):
             try:
-                response = post_local_event(EVENTS_URL, payload, prepared, timeout=5)
+                response = post_local_event(
+                    EVENTS_URL, payload=payload, prepared_images=prepared, timeout=5
+                )
             except BaseException as error:
                 response = error
     return response, sent, get
@@ -395,7 +397,9 @@ def test_unavailable_fallback_does_not_need_the_shared_memory_file(
     payload = {"event_schema": "custom", "images": [{"label": "x"}]}
     with patch.object(requests, "get", return_value=_health(_identity(shm_dir))):
         with patch.object(requests, "post", side_effect=rejecting):
-            response = post_local_event(EVENTS_URL, payload, prepared, timeout=5)
+            response = post_local_event(
+                EVENTS_URL, payload=payload, prepared_images=prepared, timeout=5
+            )
 
     assert response.status_code == 201
     assert base64.b64decode(rejecting.second["base64Image"]) == expected
