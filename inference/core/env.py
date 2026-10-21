@@ -1206,7 +1206,41 @@ MODAL_ANONYMOUS_WORKSPACE_NAME = os.getenv(
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+
+
+def _resolve_default_device() -> Optional[str]:
+    """Resolves the default compute device when the ``DEVICE`` env var is unset.
+
+    ``torch.cuda`` only describes NVIDIA GPUs, so a CUDA-only fallback pins every
+    model to the CPU on a machine that carries a different accelerator (Ascend
+    NPU, Intel XPU, ...). ``torch.accelerator`` (PyTorch >= 2.5) reports whichever
+    accelerator is actually installed, so it is consulted first; ``torch.cuda`` is
+    kept as a fallback for older PyTorch builds.
+
+    Returns ``None`` when ``torch`` is not installed so that importing this module
+    keeps working without torch, exactly as before.
+    """
+    try:
+        import torch
+    except ImportError:
+        return None
+
+    accelerator = getattr(torch, "accelerator", None)
+    if accelerator is not None:
+        try:
+            device = accelerator.current_accelerator(check_available=True)
+        except Exception:
+            device = None
+        if device is not None:
+            return "cuda:0" if device.type == "cuda" else device.type
+    if torch.cuda.is_available():
+        return "cuda:0"
+    return "cpu"
+
+
 DEVICE = os.getenv("DEVICE")
+if DEVICE is None:
+    DEVICE = _resolve_default_device()
 
 DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
     "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None
