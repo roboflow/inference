@@ -74,7 +74,9 @@ class ModelCacheTests(unittest.TestCase):
         return ""
 
     def _populate(self, *, key="v1", created=None):
+        """Lay out a cache left behind by a run that finished without cancellation."""
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        (self.cache_dir / CACHE.DIRTY_FILE).unlink(missing_ok=True)
         (self.cache_dir / "weights.onnx").write_bytes(b"x" * 10)
         (self.cache_dir / CACHE.KEY_FILE).write_text(f"{key}\n")
         created = int(time.time()) if created is None else created
@@ -117,7 +119,32 @@ class ModelCacheTests(unittest.TestCase):
         self.assertTrue(
             (self.cache_dir / CACHE.IN_USE_FILE).read_text().startswith("100-1 ")
         )
+        self.assertEqual((self.cache_dir / CACHE.DIRTY_FILE).read_text(), "100-1\n")
         self.assertEqual((self.root / "env").read_text(), self._mount_args())
+
+    def test_interrupted_previous_run_wipes_the_cache(self):
+        """A dirty marker left by a cancelled run discards every cached file."""
+        self._populate()
+        (self.cache_dir / CACHE.DIRTY_FILE).write_text("99-1\n")
+
+        CACHE._prepare()
+
+        self.assertEqual(self.calls, [self._wipe_command()])
+        self.assertEqual((self.cache_dir / CACHE.DIRTY_FILE).read_text(), "100-1\n")
+
+    def test_clean_removes_only_this_runs_dirty_marker(self):
+        """A run that was not cancelled clears its own dirty marker and no other."""
+        self.cache_dir.mkdir(parents=True)
+        (self.cache_dir / CACHE.DIRTY_FILE).write_text("100-1\n")
+        CACHE._clean()
+        self.assertFalse((self.cache_dir / CACHE.DIRTY_FILE).exists())
+
+        (self.cache_dir / CACHE.DIRTY_FILE).write_text("99-1\n")
+        CACHE._clean()
+        self.assertTrue((self.cache_dir / CACHE.DIRTY_FILE).exists())
+
+        (self.cache_dir / CACHE.DIRTY_FILE).unlink()
+        CACHE._clean()
 
     def test_valid_cache_is_reused_without_touching_docker(self):
         """A populated cache with the current key and age keeps its files."""
@@ -127,6 +154,7 @@ class ModelCacheTests(unittest.TestCase):
                 os.environ, {"MODEL_CACHE_RESET": reset}
             ):
                 CACHE._prepare()
+                CACHE._clean()
                 self.assertEqual(self.calls, [])
                 self.assertTrue((self.cache_dir / "weights.onnx").is_file())
 
@@ -161,14 +189,16 @@ class ModelCacheTests(unittest.TestCase):
             CACHE._prepare()
             self.assertEqual(self.calls, [self._wipe_command()])
 
-    def test_low_free_disk_wipes_then_fails_when_still_low(self):
-        """A full disk discards the cache first and fails only if that is not enough."""
+    def test_low_free_disk_wipes_then_skips_the_mount_when_still_low(self):
+        """A full disk discards the cache and, if still full, runs without it."""
         self._populate()
         self.free = 10 * GIB
-        with self.assertRaises(ValueError):
-            CACHE._prepare()
+        CACHE._prepare()
         self.assertEqual(self.calls, [self._wipe_command()])
+        self.assertEqual((self.root / "env").read_text(), "MODEL_CACHE_DOCKER_ARGS=\n")
         self.assertFalse((self.cache_dir / CACHE.IN_USE_FILE).exists())
+        self.assertFalse((self.cache_dir / CACHE.DIRTY_FILE).exists())
+        (self.root / "env").write_text("")
 
         self.calls.clear()
         self.free = 25 * GIB
@@ -197,6 +227,7 @@ class ModelCacheTests(unittest.TestCase):
         self.assertTrue(
             (self.cache_dir / CACHE.IN_USE_FILE).read_text().startswith("99-1 ")
         )
+        self.assertFalse((self.cache_dir / CACHE.DIRTY_FILE).exists())
 
     def test_marker_from_a_lost_run_or_this_run_is_taken_over(self):
         """A marker past the job timeout, or our own, does not block the cache."""
@@ -265,7 +296,7 @@ class ModelCacheTests(unittest.TestCase):
                 self.assertEqual(self.calls, [])
 
     def test_every_gpu_stage_mounts_the_cache_and_the_job_releases_it(self):
-        """The action prepares first, mounts on every server start and releases last."""
+        """The action prepares first, mounts every start, then cleans and releases."""
         action = yaml.safe_load(
             (
                 ROOT / ".github" / "actions" / "server-tests-gpu" / "action.yml"
@@ -273,9 +304,11 @@ class ModelCacheTests(unittest.TestCase):
         )
         steps = action["runs"]["steps"]
         self.assertEqual(steps[0]["env"]["CI_MODEL_CACHE_ACTION"], "prepare")
+        self.assertEqual(steps[-2]["env"]["CI_MODEL_CACHE_ACTION"], "clean")
+        self.assertEqual(steps[-2]["if"], "${{ !cancelled() }}")
         self.assertEqual(steps[-1]["env"]["CI_MODEL_CACHE_ACTION"], "release")
         self.assertEqual(steps[-1]["if"], "${{ always() }}")
-        for step in (steps[0], steps[-1]):
+        for step in (steps[0], steps[-2], steps[-1]):
             self.assertEqual(
                 step["run"].strip(), "python3 .github/scripts/ci_model_cache.py"
             )

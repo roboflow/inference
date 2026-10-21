@@ -10,14 +10,17 @@
   them again. Image reuse does not cover weights, since the image holds none.
 - Validate the cache before each run with `ci_model_cache.py`: discard it when
   `MODEL_CACHE_KEY` changes, when it is older than `MODEL_CACHE_MAX_AGE_DAYS`
-  (14), when free disk drops below `MODEL_CACHE_MIN_FREE_GIB` (20), or on the
-  `reset_model_cache` dispatch input; wipe through the already-pulled test
-  image rather than sudo, and log reuse, size and free disk. Mark the
-  directory in use for the job and release it in a final `always()` step, so
-  a second run of the same leg on the host falls back to the container-local
-  cache instead of sharing files with a live server. Turn on
-  `ATOMIC_CACHE_WRITES_ENABLED` in the test containers so a container killed
-  mid-download cannot leave a truncated legacy artifact in the cache.
+  (14), when a previous run was interrupted, or on the `reset_model_cache`
+  dispatch input; wipe through the already-pulled test image rather than
+  sudo, and log reuse, size and free disk. Skip the mount instead of failing
+  when free disk stays below `MODEL_CACHE_MIN_FREE_GIB` (20) after a wipe.
+  Mark the directory in use for the job and release it in a final `always()`
+  step, so a second run of the same leg on the host falls back to the
+  container-local cache instead of sharing files with a live server. Mark it
+  dirty for the job and clean it only when the job was not cancelled, and
+  turn on `ATOMIC_CACHE_WRITES_ENABLED` in the test containers, so a
+  container killed mid-download cannot leave a truncated or half-extracted
+  artifact in the cache.
 - Make `/model/clear` honour `DISK_CACHE_CLEANUP`, so the per-module clears in
   the integration tests no longer delete cached weights when the flag is off.
 - Add offline tests for the cache script and the action wiring. A live T4

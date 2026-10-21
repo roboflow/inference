@@ -52,11 +52,14 @@ runs:
     # to the container-local cache while the first still holds the directory.
     # DISK_CACHE_CLEANUP=False keeps /model/clear and hot-cache eviction from
     # deleting the cached files; ATOMIC_CACHE_WRITES_ENABLED=True keeps a
-    # container killed mid-download from leaving a truncated file behind. The
-    # script discards the cache when MODEL_CACHE_KEY changes (bump it to
+    # container killed mid-download from leaving a truncated file behind, and
+    # the dirty marker (cleared only when the job was not cancelled) covers
+    # the writes that cannot be atomic, such as LoRA bases extracted in place.
+    # The script discards the cache when MODEL_CACHE_KEY changes (bump it to
     # invalidate every runner), when it is older than MODEL_CACHE_MAX_AGE_DAYS,
-    # when free disk drops below MODEL_CACHE_MIN_FREE_GIB, or on the
-    # reset_model_cache input; the wipe runs inside the test image, not sudo.
+    # when a previous run was interrupted, when free disk drops below
+    # MODEL_CACHE_MIN_FREE_GIB, or on the reset_model_cache input; the wipe
+    # runs inside the test image, not sudo.
     - name: Prepare persistent model cache
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       env:
@@ -279,6 +282,12 @@ runs:
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
         docker rm -f "$INFERENCE_TEST_CONTAINER" > /dev/null 2>&1 || true
+    - name: Mark persistent model cache clean
+      if: ${{ !cancelled() }}
+      shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
+      env:
+        CI_MODEL_CACHE_ACTION: clean
+      run: python3 .github/scripts/ci_model_cache.py
     - name: Release persistent model cache
       if: ${{ always() }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}

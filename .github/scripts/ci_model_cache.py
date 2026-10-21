@@ -6,7 +6,10 @@ The cache is discarded when MODEL_CACHE_KEY changes, when it is older than
 MODEL_CACHE_MAX_AGE_DAYS, when free disk drops below MODEL_CACHE_MIN_FREE_GIB,
 or when MODEL_CACHE_RESET is requested. A run marks the directory in use and
 releases it at the end; a concurrent run of the same leg falls back to the
-container-local cache instead of sharing files with a live server. The server
+container-local cache instead of sharing files with a live server. A run also
+marks the directory dirty and cleans it only when it was not cancelled, so a
+container killed mid-download (LoRA bases extract a tar in place and cannot be
+made atomic from outside) never leaves a partial cache behind. The server
 writes the files as root, so wiping runs inside the test image rather than
 with sudo. Never print subprocess output.
 """
@@ -23,6 +26,7 @@ from pathlib import Path
 KEY_FILE = ".cache-key"
 CREATED_FILE = ".created"
 IN_USE_FILE = ".in-use"
+DIRTY_FILE = ".dirty"
 CONTAINER_CACHE_DIR = "/tmp/cache"
 DEFAULT_MAX_AGE_DAYS = "14"
 DEFAULT_MIN_FREE_GIB = "20"
@@ -113,6 +117,9 @@ def _held_by_other_run(cache_dir: Path, *, identity: str, timeout: int) -> bool:
 def _invalidation_reason(cache_dir: Path, *, key: str, max_age: int) -> str | None:
     if os.environ.get("MODEL_CACHE_RESET") == "true":
         return "reset requested"
+
+    if (cache_dir / DIRTY_FILE).is_file():
+        return "previous run was interrupted"
 
     key_file = cache_dir / KEY_FILE
     created_file = cache_dir / CREATED_FILE
@@ -207,12 +214,14 @@ def _prepare() -> None:
 
     free_gib = _free_gib(cache_dir)
     if free_gib < min_free:
+        _emit("GITHUB_ENV", "MODEL_CACHE_DOCKER_ARGS", "")
         print(
-            "::error::Runner free disk is below MODEL_CACHE_MIN_FREE_GIB "
-            "even with an empty model cache"
+            "::warning::Runner free disk is below MODEL_CACHE_MIN_FREE_GIB even "
+            "with an empty model cache; weights are not cached for this run"
         )
-        raise ValueError("Insufficient free disk for the model cache")
+        return
 
+    (cache_dir / DIRTY_FILE).write_text(f"{identity}\n")
     (cache_dir / IN_USE_FILE).write_text(f"{identity} {int(time.time())}\n")
     _emit(
         "GITHUB_ENV",
@@ -226,23 +235,35 @@ def _prepare() -> None:
     )
 
 
-def _release() -> None:
-    cache_dir = _cache_dir()
-    marker_path = cache_dir / IN_USE_FILE
-    marker = _read_marker(marker_path)
-    if marker is None or marker[0] != _identity():
+def _remove_own_marker(marker_path: Path) -> None:
+    if not marker_path.is_file():
+        return
+
+    owner = marker_path.read_text().split()[:1]
+    if owner != [_identity()]:
         return
 
     marker_path.unlink(missing_ok=True)
+
+
+def _clean() -> None:
+    # Runs only when the job was not cancelled, so no container was killed
+    # while writing into the cache.
+    _remove_own_marker(_cache_dir() / DIRTY_FILE)
+
+
+def _release() -> None:
+    _remove_own_marker(_cache_dir() / IN_USE_FILE)
 
 
 if __name__ == "__main__":
     try:
         {
             "prepare": _prepare,
+            "clean": _clean,
             "release": _release,
         }[os.environ["CI_MODEL_CACHE_ACTION"]]()
     except (ValueError, KeyError, OSError):
         # Do not render the exception, command or user input.
-        print("::error::Model cache preparation failed; no fallback performed")
+        print("::error::Model cache step failed; no fallback performed")
         raise SystemExit(1) from None
