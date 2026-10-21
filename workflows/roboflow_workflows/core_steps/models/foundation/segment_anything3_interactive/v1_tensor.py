@@ -25,6 +25,9 @@ separate ``sv.Detections`` row. Tensor-native differences:
 - Masks are carried as ``InstancesRLEMasks`` (compact, serverless-safe);
   ``xyxy`` is the mask's tight bbox (inclusive min/max, no +1 — family-wide
   convention keeping numpy-faithful boxes).
+- ``output_format`` only selects the declared output kind: masks are RLE on
+  every path either way, and ``"rle"`` declares the RLE kind first, so the
+  serializer emits ``rle_mask`` instead of polygon ``points``.
 """
 
 import logging
@@ -83,6 +86,7 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -153,6 +157,11 @@ Two prompt inputs are supported (at least one must be provided):
 - **boxes**: detections from another model. Each bounding box becomes a separate prompt and
   the model segments the object inside it. Class names of the boxes are forwarded to the
   predicted masks.
+
+This block supports two output formats:
+- **polygons** (default): Returns polygon coordinates for each mask.
+- **rle**: Returns the mask the model predicted in RLE (Run-Length Encoding) format. Use it
+  when you need the exact mask.
 """
 
 
@@ -238,6 +247,12 @@ class BlockManifest(WorkflowBlockManifest):
         "For ambiguous prompts (like a single point) setting to True is recommended.",
         examples=[True, "$inputs.multimask_output"],
     )
+    output_format: Literal["rle", "polygons"] = Field(
+        default="polygons",
+        title="Output Format",
+        description="'polygons' returns polygon coordinates, 'rle' returns efficient RLE encoding of the exact mask",
+        examples=["polygons", "rle"],
+    )
 
     @model_validator(mode="after")
     def _validate_points(self) -> "BlockManifest":
@@ -254,9 +269,29 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="predictions",
-                kind=[TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                kind=[
+                    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
             ),
         ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        """Declare the kind of ``predictions`` for the selected output format.
+
+        Returns:
+            For ``rle``, the RLE kind first, so the RLE serializer emits
+            ``rle_mask``, then the dense kind, which keeps consumers declared
+            on it connected. For ``polygons``, the dense kind alone.
+        """
+        if self.output_format == "rle":
+            kind = [
+                TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            ]
+        else:
+            kind = [TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND]
+        return [OutputDefinition(name="predictions", kind=kind)]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -351,7 +386,10 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         boxes: Optional[Batch],
         threshold: float,
         multimask_output: bool,
+        output_format: Literal["rle", "polygons"] = "polygons",
     ) -> BlockResult:
+        # `output_format` is applied through `get_actual_outputs`: the masks are
+        # RLE on every path below either way.
         if SAM3_EXEC_MODE == "remote":
             logger.debug(
                 "Running SAM3 Interactive via inference proxy (SAM3_EXEC_MODE=remote)"
