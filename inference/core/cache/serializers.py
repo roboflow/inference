@@ -3,6 +3,7 @@ from typing import List, Optional, Union
 from fastapi.encoders import jsonable_encoder
 
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -24,6 +25,10 @@ def to_cachable_inference_item(
     model_id: Optional[str] = None,
 ) -> dict:
     """Build the model monitoring cache entry that the pingback reports.
+
+    Grounding DINO requests have no ``confidence`` and threshold boxes with
+    ``box_threshold``, so the entry reports that threshold as the request's
+    ``confidence``, which Roboflow requires as the requested confidence.
 
     Args:
         infer_request: Request the model served.
@@ -53,6 +58,8 @@ def to_cachable_inference_item(
 
     if request.get("model_id") is None:
         request["model_id"] = model_id
+    if isinstance(infer_request, GroundingDINOInferenceRequest):
+        request["confidence"] = infer_request.box_threshold
 
     return {
         "inference_id": infer_request.id,

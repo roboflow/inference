@@ -50,7 +50,7 @@ def test_get_inference_results_for_model_reads_from_model_monitoring_cache(
             "request_time": 123.0,
             "inference": {
                 "request": {"model_id": "model/1"},
-                "response": {"time": 0.25},
+                "response": [{"time": 0.25}],
             },
         }
     ]

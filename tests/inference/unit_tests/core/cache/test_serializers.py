@@ -8,6 +8,7 @@ from inference.core.cache.serializers import (
     build_condensed_response,
     to_cachable_inference_item,
 )
+from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     ObjectDetectionInferenceRequest,
@@ -192,6 +193,28 @@ def test_to_cachable_inference_item_keeps_model_id_of_request(
     )
 
     assert result["request"]["model_id"] == "sharks"
+
+
+@pytest.mark.parametrize("tiny_cache", [True, False], ids=["tiny", "full"])
+def test_to_cachable_inference_item_reports_box_threshold_as_grounding_dino_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tiny_cache: bool,
+) -> None:
+    monkeypatch.setattr(serializers, "TINY_CACHE", tiny_cache)
+    request = GroundingDINOInferenceRequest(
+        image={"type": "url", "value": "https://some/image.jpg"},
+        text=["dog"],
+        box_threshold=0.3,
+    )
+    response = ObjectDetectionInferenceResponse(
+        predictions=[], image={"width": 1, "height": 1}, time=0.1
+    )
+
+    result = to_cachable_inference_item(
+        request, response, model_id="grounding_dino/default"
+    )
+
+    assert result["request"]["confidence"] == 0.3
 
 
 def test_build_condensed_response_no_predictions_object_detection(
