@@ -62,6 +62,28 @@ def _route_paths(interface):
     return {route.path for route in interface.app.routes}
 
 
+@pytest.mark.parametrize(
+    "path", ["/index.jsp%00x", "/static/image%00.png", "/_next/static/script%00.js"]
+)
+def test_null_byte_paths_are_rejected_before_static_file_lookup(monkeypatch, path):
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    interface = http_api.HttpInterface(model_manager=MagicMock())
+
+    response = TestClient(interface.app).get(path)
+
+    assert response.status_code == 400
+    assert response.json() == {"message": "Request path contains a null byte."}
+
+
+def test_unknown_path_still_returns_not_found(monkeypatch):
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    interface = http_api.HttpInterface(model_manager=MagicMock())
+
+    response = TestClient(interface.app).get("/missing.txt")
+
+    assert response.status_code == 404
+
+
 def _build_serverless_interface(
     monkeypatch,
     usage_check_result,

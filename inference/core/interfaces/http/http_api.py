@@ -721,11 +721,19 @@ class HttpInterface(BaseInterface):
 
         @app.middleware("http")
         async def set_request_path_context(request: Request, call_next):
+            request_path = request.scope["path"]
+            if "\x00" in request_path:
+                response = JSONResponse(
+                    status_code=400,
+                    content={"message": "Request path contains a null byte."},
+                )
+                return response
+
             # CVE-2026-48710: prefer the raw ASGI scope path over
             # request.url.path. This ContextVar feeds downstream registry
             # metadata (_model_request_paths in ModelManagerBase), so a
             # Host-poisoned path would surface in model-info responses.
-            token = current_request_path.set(request.scope["path"])
+            token = current_request_path.set(request_path)
             try:
                 return await call_next(request)
             finally:
