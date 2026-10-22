@@ -5,7 +5,6 @@ import pickle
 import threading
 import time
 from contextlib import asynccontextmanager
-from copy import copy
 from typing import Any, Optional
 
 import redis
@@ -51,6 +50,7 @@ class RedisCache(BaseCache):
         self.client.ping()
         logger.debug("Redis connection established.")
         self.zexpires = dict()
+        self._zexpires_lock = threading.Lock()
 
         self._expire_thread = threading.Thread(target=self._expire, daemon=True)
         self._expire_thread.start()
@@ -63,13 +63,18 @@ class RedisCache(BaseCache):
         """
         while True:
             now = time.time()
-            for k, v in copy(list(self.zexpires.items())):
+            with self._zexpires_lock:
+                expirations = list(self.zexpires.items())
+            for k, v in expirations:
                 if v < now:
-                    tolerance_factor = 1e-14  # floating point accuracy
-                    self.zremrangebyscore(
-                        k[0], k[1] - tolerance_factor, k[1] + tolerance_factor
-                    )
-                    del self.zexpires[k]
+                    with self._zexpires_lock:
+                        if self.zexpires.get(k) != v:
+                            continue
+                        tolerance_factor = 1e-14  # floating point accuracy
+                        self.zremrangebyscore(
+                            k[0], k[1] - tolerance_factor, k[1] + tolerance_factor
+                        )
+                        del self.zexpires[k]
             sleep_time = MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now)
             time.sleep(max(sleep_time, 0))
 
@@ -125,14 +130,15 @@ class RedisCache(BaseCache):
             # memory leak. A real EXPIRE lets Redis reclaim the key ``expire`` seconds
             # after the last write regardless of process lifecycle. ``max(1, ...)``
             # guards against EXPIRE 0 (immediate delete) for sub-second values.
-            with self.client.pipeline() as pipe:
-                pipe.zadd(key, {value: score})
-                pipe.expire(key, max(1, int(expire)))
-                pipe.execute()
-            # Keep per-member bookkeeping so ``_expire()`` can still trim individual
-            # expired members from an otherwise-live key (now a best-effort
-            # optimisation rather than the only safety net).
-            self.zexpires[(key, score)] = expire + time.time()
+            # Serialize the write and its deadline with expiration so a stale
+            # expiration cannot remove a freshly renewed member.
+            with self._zexpires_lock:
+                with self.client.pipeline() as pipe:
+                    pipe.zadd(key, {value: score})
+                    pipe.expire(key, max(1, int(expire)))
+                    pipe.execute()
+                # Keep per-member trimming for otherwise-live keys.
+                self.zexpires[(key, score)] = expire + time.time()
         else:
             self.client.zadd(key, {value: score})
 

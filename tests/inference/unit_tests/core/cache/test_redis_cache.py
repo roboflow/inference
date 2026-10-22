@@ -1,3 +1,4 @@
+import threading
 from unittest.mock import MagicMock, patch
 
 from inference.core.cache.redis import RedisCache
@@ -59,3 +60,58 @@ def test_zadd_without_expire_does_not_set_ttl_or_bookkeeping():
     mock_client.zadd.assert_called_once()
     mock_client.pipeline.assert_not_called()
     assert cache.zexpires == {}
+
+
+def test_expiration_cannot_delete_a_concurrently_renewed_member():
+    cache, mock_client = _build_cache_with_mock_client()
+    cache.zexpires[("stream", 1.0)] = 90.0
+    expiration_started = threading.Event()
+    finish_expiration = threading.Event()
+    writer_started = threading.Event()
+    writer_finished = threading.Event()
+    errors = []
+
+    def remove_expired_member(*args):
+        expiration_started.set()
+        assert finish_expiration.wait(2)
+
+    mock_client.zremrangebyscore.side_effect = remove_expired_member
+
+    def expire_once():
+        try:
+            cache._expire()
+        except StopIteration:
+            pass
+        except Exception as error:
+            errors.append(error)
+
+    def renew_member():
+        try:
+            writer_started.set()
+            cache.zadd("stream", {"new": "value"}, score=1.0, expire=120.0)
+        except Exception as error:
+            errors.append(error)
+        finally:
+            writer_finished.set()
+
+    with patch("inference.core.cache.redis.time.time", return_value=100.0), patch(
+        "inference.core.cache.redis.time.sleep", side_effect=StopIteration
+    ):
+        expiration = threading.Thread(target=expire_once)
+        writer = threading.Thread(target=renew_member)
+        expiration.start()
+        try:
+            assert expiration_started.wait(2)
+            writer.start()
+            assert writer_started.wait(2)
+            assert not writer_finished.wait(0.05)
+        finally:
+            finish_expiration.set()
+            expiration.join(timeout=2)
+            if writer.ident is not None:
+                writer.join(timeout=2)
+
+    assert not expiration.is_alive()
+    assert not writer.is_alive()
+    assert not errors
+    assert cache.zexpires[("stream", 1.0)] == 220.0
