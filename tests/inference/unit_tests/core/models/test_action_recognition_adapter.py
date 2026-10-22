@@ -17,6 +17,7 @@ from inference_models.models.base.action_recognition import (
 )
 
 MODULE = "inference.core.models.inference_models_adapters"
+RUNNER = "inference_models.video.action_recognition"
 
 
 class _FakeModel:
@@ -133,9 +134,9 @@ def test_candidate_overflow_fails_before_response_or_known_oversized_inference(
 def _clip(frame_count: int, source_fps: float):
     frame = np.zeros((8, 8, 3), dtype=np.uint8)
     with patch(f"{MODULE}.video_source_path") as source_path, patch(
-        f"{MODULE}.probe_video", return_value=(source_fps, frame_count)
+        f"{RUNNER}.probe_video", return_value=(source_fps, frame_count)
     ), patch(
-        f"{MODULE}.read_frame_windows",
+        f"{RUNNER}.read_frame_windows",
         side_effect=lambda path, windows, max_frame_side=None, frame_transform=None, **kwargs: (
             [frame_transform(frame) if frame_transform else frame] * len(window)
             for window in windows
@@ -287,9 +288,9 @@ def test_windows_classified_counts_calls_not_plans() -> None:
     model = _FakeModel(responses=[[]], class_names=["walk"])
     frame = np.zeros((8, 8, 3), dtype=np.uint8)
     with patch(f"{MODULE}.video_source_path") as source_path, patch(
-        f"{MODULE}.probe_video", return_value=(10.0, 80)
+        f"{RUNNER}.probe_video", return_value=(10.0, 80)
     ), patch(
-        f"{MODULE}.read_frame_windows",
+        f"{RUNNER}.read_frame_windows",
         side_effect=lambda path, windows, max_frame_side, **kwargs: (
             [frame] for _ in windows
         ),
@@ -317,7 +318,7 @@ def test_an_open_vocabulary_label_reports_no_class_id() -> None:
 @pytest.mark.parametrize("reported_count", [31, 120])
 @pytest.mark.parametrize("include_candidates", [False, True])
 def test_early_decode_end_clips_timeline_candidates_and_metadata(
-    reported_count, include_candidates
+    reported_count, include_candidates, tmp_path
 ):
     class ScoredModel(_FakeModel):
         supports_confidence = True
@@ -347,9 +348,11 @@ def test_early_decode_end_clips_timeline_candidates_and_metadata(
     request.include_candidates = include_candidates
 
     with patch(f"{MODULE}.video_source_path") as source_path, patch(
-        f"{MODULE}.probe_video", return_value=(30.0, reported_count)
-    ), patch("inference.core.utils.video_utils.cv2.VideoCapture", return_value=capture):
-        source_path.return_value.__enter__.return_value = "/tmp/clip"
+        f"{RUNNER}.probe_video", return_value=(30.0, reported_count)
+    ), patch("inference_models.video.io.cv2.VideoCapture", return_value=capture):
+        path = tmp_path / "clip.avi"
+        path.touch()
+        source_path.return_value.__enter__.return_value = str(path)
         response = _adapter(model).infer_from_request(request)
 
     assert model.calls[0]["duration_seconds"] == 1.0
@@ -448,9 +451,10 @@ def test_a_negative_duration_cap_removes_the_limit(monkeypatch):
 
 def _side_handed_to_the_reader(model) -> object:
     with patch(f"{MODULE}.video_source_path") as source_path, patch(
-        f"{MODULE}.probe_video", return_value=(10.0, 100)
+        f"{RUNNER}.probe_video", return_value=(10.0, 100)
     ), patch(
-        f"{MODULE}.read_frame_windows", return_value=(item for item in [])
+        f"{RUNNER}.read_frame_windows",
+        side_effect=lambda **kwargs: ([] for _ in kwargs["windows"]),
     ) as reader:
         source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
         source_path.return_value.__exit__ = MagicMock(return_value=False)
@@ -458,7 +462,7 @@ def _side_handed_to_the_reader(model) -> object:
     return reader.call_args.kwargs["max_frame_side"]
 
 
-def test_cancellation_after_one_window_closes_decoder_and_source(monkeypatch):
+def test_cancellation_after_one_window_closes_decoder_and_source(monkeypatch, tmp_path):
     from inference.core.models import inference_models_adapters as adapters
     from inference.core.utils.video_processing import (
         VideoProcessingCancelledError,
@@ -466,11 +470,13 @@ def test_cancellation_after_one_window_closes_decoder_and_source(monkeypatch):
     )
 
     state = {"cancelled": False, "source_closed": False}
+    path = tmp_path / "clip.avi"
+    path.touch()
 
     @contextlib.contextmanager
     def source(**kwargs):
         try:
-            yield "/tmp/clip"
+            yield str(path)
         finally:
             state["source_closed"] = True
 
@@ -488,11 +494,12 @@ def test_cancellation_after_one_window_closes_decoder_and_source(monkeypatch):
         timeout_seconds=60, is_disconnected=lambda: state["cancelled"]
     )
     monkeypatch.setattr(adapters, "video_source_path", source)
-    monkeypatch.setattr(adapters, "probe_video", lambda **kwargs: (4.0, 128))
+    monkeypatch.setattr(
+        "inference_models.video.action_recognition.probe_video",
+        lambda **kwargs: (4.0, 128),
+    )
 
-    with patch(
-        "inference.core.utils.video_utils.cv2.VideoCapture", return_value=capture
-    ):
+    with patch("inference_models.video.io.cv2.VideoCapture", return_value=capture):
         with pytest.raises(VideoProcessingCancelledError):
             _adapter(model).infer_from_request(_request(), processing_control=control)
 
@@ -576,3 +583,132 @@ def test_shared_loader_honors_vjepa_enablement(
                 countinference=None,
                 service_secret=None,
             )
+
+
+@pytest.mark.parametrize("scored", [False, True])
+@pytest.mark.parametrize("confidence", ["best", 0.9])
+@pytest.mark.parametrize("include_candidates", [False, True])
+@pytest.mark.parametrize(
+    "count,fps,declared_count", [(2, 30.0, 2), (47, 29.97, 47), (30, 10.0, 43)]
+)
+def test_local_and_http_real_video_parity(
+    tmp_path,
+    monkeypatch,
+    scored,
+    confidence,
+    include_candidates,
+    count,
+    fps,
+    declared_count,
+):
+    import base64
+
+    import cv2
+
+    from inference_models import ActionRecognitionVideoPipeline
+    from inference_models.video.action_recognition import probe_video
+
+    class ParityModel(_FakeModel):
+        supports_confidence = scored
+        supports_observed_duration = scored
+        confidence_threshold = 0.9
+        recommended_parameters = SimpleNamespace(
+            confidence=0.9,
+            per_class_confidence={"walk": 0.9, "run": 0.5},
+        )
+        span_semantics = "class_union" if scored else "instances"
+
+        def infer(self, frames, *, fps, class_names=None, **kwargs):
+            predictions = []
+            for label, score in zip(self.class_names, torch.tensor([0.9, 0.6])):
+                if class_names is not None and label not in class_names:
+                    continue
+                if scored:
+                    option = kwargs["confidence"]
+                    threshold = (
+                        self.recommended_parameters.per_class_confidence[label]
+                        if option == "best"
+                        else option
+                    )
+                    if score < threshold:
+                        continue
+                predictions.append(
+                    ActionRecognitionPrediction(
+                        0,
+                        len(frames) if scored else len(frames) - 1,
+                        label,
+                        score.item() if scored else None,
+                        scored,
+                    )
+                )
+            return predictions
+
+    def make_model():
+        return ParityModel(
+            [],
+            class_names=["walk", "run"],
+            sampling=VideoSampling(
+                window_seconds=1.0,
+                sample_fps=4.0,
+                min_frames=1,
+                max_frames=4,
+                overlap_frames=2 if scored else 0,
+                end_aligned=scored,
+                fixed_sample_fps=scored,
+            ),
+        )
+
+    path = tmp_path / "clip.avi"
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"FFV1"), fps, (16, 16))
+    assert writer.isOpened()
+    try:
+        for index in range(count):
+            writer.write(np.full((16, 16, 3), index, dtype=np.uint8))
+    finally:
+        writer.release()
+    if declared_count != count:
+
+        def overstated_probe(**kwargs):
+            actual_fps, _ = probe_video(**kwargs)
+            return actual_fps, declared_count
+
+        monkeypatch.setattr(f"{RUNNER}.probe_video", overstated_probe)
+
+    local = ActionRecognitionVideoPipeline(make_model()).run(
+        path,
+        confidence=confidence,
+        include_candidates=include_candidates,
+        class_names=["run"],
+    )
+    request = ActionRecognitionInferenceRequest(
+        model_id="workspace/model",
+        confidence=confidence,
+        include_candidates=include_candidates,
+        class_filter=["run"],
+        video=InferenceRequestVideo(
+            type="base64", value=base64.b64encode(path.read_bytes()).decode()
+        ),
+    )
+    http = _adapter(make_model()).infer_from_request(request)
+    assert [entry.to_dict() for entry in local.timeline] == [
+        entry.model_dump(exclude_none=True) for entry in http.timeline
+    ]
+    assert (
+        None
+        if local.candidates is None
+        else [entry.to_dict() for entry in local.candidates]
+    ) == (
+        None
+        if http.candidates is None
+        else [entry.model_dump(exclude_none=True) for entry in http.candidates]
+    )
+    for attribute in [
+        "source_fps",
+        "frame_count",
+        "windows_classified",
+        "span_semantics",
+        "confidence_threshold",
+        "per_class_confidence_thresholds",
+    ]:
+        assert getattr(local, attribute) == getattr(http, attribute)
+    assert local.frame_count == count

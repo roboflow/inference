@@ -113,3 +113,17 @@ Workflows discards old samples and caps retained state at 256 streams and 5,000 
 Model changes clear all streams.
 Filter, window, stride, confidence changes, frame rewinds, and eviction discard affected state.
 There is no explicit stream-end cleanup.
+
+## Local-video action recognition
+
+```python
+from inference_models import ActionRecognitionVideoPipeline, AutoModel
+
+model = AutoModel.from_pretrained("my-project-abc123/2", api_key="YOUR_API_KEY")
+result = ActionRecognitionVideoPipeline(model).run("video.mp4", confidence="best")
+for prediction in result.timeline:
+    print(prediction.to_dict())
+```
+
+See the [local-video guide](../how-to/local-video-action-recognition.md) for
+installation, candidates, progress, incremental output, cancellation and limits.

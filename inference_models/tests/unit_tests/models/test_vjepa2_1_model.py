@@ -375,3 +375,62 @@ def test_contract_rejects_mismatched_or_unaligned_frame_side():
     metadata["network_input"]["width"] = 256
     with pytest.raises(ValueError, match="encoder arguments"):
         validate_config(metadata)
+
+
+@pytest.mark.parametrize("count,source_fps", [(2, 30.0), (15, 10.0), (47, 29.97)])
+def test_local_video_pipeline_with_real_vjepa_preparation_and_span_head(
+    tmp_path, count, source_fps
+):
+    import cv2
+
+    from inference_models import ActionRecognitionVideoPipeline
+
+    captured = []
+
+    def encoder(inputs):
+        captured.append(inputs.shape)
+        return inputs
+
+    def head(_features):
+        logits = torch.tensor([[[2.0, -2.0]]] * 1).repeat(1, 4, 1)
+        intervals = torch.tensor([[[[0.0, 4.0], [0.0, 4.0]]] * 4])
+        return logits, intervals
+
+    metadata = config()
+    metadata["network_input"]["height"] = 64
+    metadata["network_input"]["width"] = 64
+    metadata["encoder"]["arguments"]["img_size"] = [64, 64]
+    validate_config(metadata)
+    model = VJepaActionRecognition(
+        SimpleNamespace(encoder=encoder, head=head),
+        metadata,
+        ["a", "b"],
+        torch.device("cpu"),
+    )
+    path = tmp_path / "clip.avi"
+    writer = cv2.VideoWriter(
+        str(path), cv2.VideoWriter_fourcc(*"FFV1"), source_fps, (32, 16)
+    )
+    assert writer.isOpened()
+    try:
+        for number in range(count):
+            writer.write(np.full((16, 32, 3), number, dtype=np.uint8))
+    finally:
+        writer.release()
+
+    pipeline = ActionRecognitionVideoPipeline(model)
+    filtered = pipeline.run(path)
+    with_candidates = pipeline.run(path, include_candidates=True)
+    assert filtered.timeline == with_candidates.timeline
+    assert len(filtered.timeline) == 1
+    prediction = filtered.timeline[0]
+    assert (
+        prediction.start_frame_idx,
+        prediction.end_frame_idx,
+        prediction.class_name,
+    ) == (0, count - 1, "a")
+    assert len(with_candidates.candidates) > len(filtered.timeline)
+    assert all(shape == (1, 3, 4, 64, 64) for shape in captured)
+    assert all(
+        candidate.end_frame_idx < count for candidate in with_candidates.candidates
+    )

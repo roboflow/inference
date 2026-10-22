@@ -86,3 +86,18 @@ from inference_models.weights_providers.offline_registry import (
     OfflineModelStatus,
     OfflineArtefactVerification
 )
+
+from inference_models.video.action_recognition import ActionRecognitionVideoPipeline
+from inference_models.video.control import VideoProcessingControl, VideoProcessingLimits
+from inference_models.video.results import (
+    ActionRecognitionProgress,
+    ActionRecognitionVideoPrediction,
+    ActionRecognitionVideoResult,
+    ActionRecognitionWindowResult,
+)
+from inference_models.errors import (
+    VideoInputError,
+    VideoProcessingCancelledError,
+    VideoProcessingLimitError,
+    VideoProcessingTimeoutError,
+)

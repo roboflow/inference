@@ -193,3 +193,55 @@ class ModelPipelineInitializationError(ModelLoadingError):
 
 class ModelPipelineNotFound(ModelPipelineInitializationError):
     pass
+
+
+class VideoInputError(ModelInputError):
+    """A local video cannot supply usable frames or source metadata."""
+
+    def __init__(
+        self,
+        message: str,
+        help_url: Optional[
+            str
+        ] = "https://inference-models.roboflow.com/errors/video-processing/#videoinputerror",
+    ):
+        super().__init__(message=message, help_url=help_url)
+
+
+class VideoProcessingLimitError(BaseInferenceModelsError):
+    """Video processing would exceed an explicit planning or result limit."""
+
+    def __init__(
+        self,
+        message: str,
+        help_url: Optional[
+            str
+        ] = "https://inference-models.roboflow.com/errors/video-processing/#videoprocessinglimiterror",
+    ):
+        super().__init__(message=message, help_url=help_url)
+
+
+class VideoProcessingCancelledError(BaseInferenceModelsError):
+    """A caller requested cooperative cancellation of video processing."""
+
+    def __init__(
+        self,
+        message: str,
+        help_url: Optional[
+            str
+        ] = "https://inference-models.roboflow.com/errors/video-processing/#videoprocessingcancellederror",
+    ):
+        super().__init__(message=message, help_url=help_url)
+
+
+class VideoProcessingTimeoutError(BaseInferenceModelsError):
+    """Video processing exhausted its deadline."""
+
+    def __init__(
+        self,
+        message: str,
+        help_url: Optional[
+            str
+        ] = "https://inference-models.roboflow.com/errors/video-processing/#videoprocessingtimeouterror",
+    ):
+        super().__init__(message=message, help_url=help_url)

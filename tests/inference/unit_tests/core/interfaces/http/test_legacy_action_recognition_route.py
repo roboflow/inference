@@ -178,9 +178,12 @@ def test_legacy_cosmos_ignores_explicit_confidence(monkeypatch) -> None:
     monkeypatch.setattr(
         adapters, "video_source_path", lambda **kwargs: nullcontext("clip")
     )
-    monkeypatch.setattr(adapters, "probe_video", lambda **kwargs: (4, 8))
     monkeypatch.setattr(
-        adapters, "read_frame_windows", lambda **kwargs: ([None] * 8 for _ in range(1))
+        "inference_models.video.action_recognition.probe_video", lambda **kwargs: (4, 8)
+    )
+    monkeypatch.setattr(
+        "inference_models.video.action_recognition.read_frame_windows",
+        lambda **kwargs: ([None] * 8 for _ in range(1)),
     )
     manager.infer_from_request_sync.side_effect = (
         lambda model_id, request, **kwargs: adapter.infer_from_request(

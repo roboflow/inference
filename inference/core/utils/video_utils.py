@@ -3,10 +3,8 @@ import binascii
 import contextlib
 import os
 import tempfile
-from dataclasses import dataclass
-from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Callable, Iterator, List, Optional, Sequence, Tuple
 
-import cv2
 import numpy as np
 from requests import RequestException
 
@@ -26,17 +24,12 @@ from inference.core.utils.image_utils import (
     _validate_url_destination,
 )
 from inference.core.utils.url_input import URLAddressNotAllowedError
+from inference_models.errors import VideoInputError
+from inference_models.video import io as _video_io
+from inference_models.video.io import VideoDecodeState
 
 VIDEO_TYPE_URL = "url"
 VIDEO_TYPE_BASE64 = "base64"
-
-
-@dataclass
-class VideoDecodeState:
-    """Record how much source video the sequential decoder actually reads."""
-
-    frame_count: int = 0
-    reached_end: bool = False
 
 
 @contextlib.contextmanager
@@ -122,42 +115,21 @@ def _max_download_bytes() -> Optional[int]:
 
 
 def probe_video(path: str) -> Tuple[float, int]:
-    """Report the clip's frame rate and frame count without decoding it.
+    """Probe a local file, translating package input errors to HTTP errors.
 
-    The frame count comes from the container header, which the sender writes
-    and nothing verifies. Everything downstream sizes itself from it: the
-    duration it implies decides how many windows get planned, and each window
-    holds a frame index per sample. A header claiming far more frames than it
-    has costs memory and time in proportion to the claim.
+    Args:
+        path (str): Local video path.
 
-    A frame cannot occupy less than one byte, so the file size is a ceiling
-    the header cannot honestly exceed. A claim above it gets counted instead,
-    and counting reads the real file, whose size is already capped.
+    Returns:
+        Tuple[float, int]: Nominal source FPS and frame count.
     """
-    capture = cv2.VideoCapture(path)
     try:
-        if not capture.isOpened():
-            message = "Video could not be decoded."
-            raise InputImageLoadError(message=message, public_message=message)
-        source_fps = float(capture.get(cv2.CAP_PROP_FPS))
-        frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    finally:
-        capture.release()
-    if source_fps <= 0 or not np.isfinite(source_fps):
-        message = "Video declares no usable frame rate."
-        raise InputImageLoadError(message=message, public_message=message)
-    if frame_count <= 0 or frame_count > os.path.getsize(path):
-        frame_count = _count_frames(path=path)
-    # OpenCV opens a still image as a one-frame video, so a JPEG reaches here
-    # looking like a clip and would be classified as one, with a frame rate
-    # nothing declared. An action is a change, and one frame cannot show one.
-    if frame_count < 2:
-        message = (
-            f"Video holds {frame_count} frame(s). A clip needs at least two frames "
-            "to hold an action. Send a video, not a still image."
-        )
-        raise InputImageLoadError(message=message, public_message=message)
-    return source_fps, frame_count
+        metadata = _video_io.probe_video(path)
+    except VideoInputError as error:
+        raise InputImageLoadError(
+            message=str(error), public_message=str(error)
+        ) from error
+    return metadata
 
 
 def read_frame_windows(
@@ -169,114 +141,56 @@ def read_frame_windows(
     window_end_frames: Optional[Sequence[int]] = None,
     check_cancelled: Optional[Callable[[], None]] = None,
 ) -> Iterator[List[np.ndarray]]:
-    """Read every window's frames in one pass, yielding a window at a time.
-
-    Windows tile forward, so one walk of the video serves all of them. Reading
-    each window on its own capture re-decodes everything the windows before it
-    already decoded, which grows with the square of the clip length.
-
-    Frames are read in order rather than sought. A sought frame and a
-    sequentially decoded one are not the same pixels for every codec, and the
-    model's answer moves with them. ``max_frame_side`` of ``None`` reads the
-    frames at their own size, which is what a model that never trained on a
-    frame side needs.
+    """Delegate sequential local decoding while preserving server error types.
 
     Args:
-        path: Local video path.
-        windows: Source-frame indices for each requested window.
-        max_frame_side: Optional longest-side cap applied during RGB conversion.
-        frame_transform: Optional model-owned transform applied once per decoded
-            RGB frame, before storing it for overlapping windows.
-        decode_state: Observed decoded count and whether decoding reached EOF.
-        window_end_frames: Exclusive source endpoints to read before yielding.
-            These include the real interval after a window's final sample.
-        check_cancelled: Request control called during decoding and before yields.
+        path (str): Local video path.
+        windows (Sequence[Sequence[int]]): Requested source indices per window.
+        max_frame_side (Optional[int]): Longest-side cap before retaining frames.
+        frame_transform (Optional[Callable]): Model-owned RGB storage transform.
+        decode_state (Optional[VideoDecodeState]): Mutable observed decode state.
+        window_end_frames (Optional[Sequence[int]]): Exclusive decode endpoints.
+        check_cancelled (Optional[Callable]): Cooperative request control.
 
     Yields:
-        Lists of prepared RGB frames in each window's requested order.
+        List[np.ndarray]: Prepared RGB frames for each requested window.
     """
-    if not windows:
-        return
-    needed = {int(index) for window in windows for index in window}
-    last_of = [max((int(i) for i in window), default=-1) for window in windows]
-    if window_end_frames is not None:
-        if len(window_end_frames) != len(windows):
-            raise ValueError("Each window needs one exclusive source endpoint")
-        last_of = [max(last, end - 1) for last, end in zip(last_of, window_end_frames)]
-    state = decode_state if decode_state is not None else VideoDecodeState()
-    by_index: Dict[int, np.ndarray] = {}
-    emitted = 0
-
-    def _window_frames(index: int) -> List[np.ndarray]:
-        return [by_index[i] for i in windows[index] if i in by_index]
-
-    capture = cv2.VideoCapture(path)
     try:
-        if not capture.isOpened():
-            message = "Video could not be decoded."
-            raise InputImageLoadError(message=message, public_message=message)
-        position = 0
-        stop = max(last_of, default=-1)
-        while emitted < len(windows) and position <= stop:
-            if check_cancelled is not None and position % 32 == 0:
-                check_cancelled()
-            read_succeeded, frame = capture.read()
-            if not read_succeeded:
-                state.reached_end = True
-                break
-            state.frame_count = position + 1
-            if position in needed:
-                rgb_frame = _to_rgb(frame=frame, max_side=max_frame_side)
-                if frame_transform is not None:
-                    rgb_frame = frame_transform(rgb_frame)
-                by_index[position] = rgb_frame
-            while emitted < len(windows) and last_of[emitted] <= position:
-                if check_cancelled is not None:
-                    check_cancelled()
-                yield _window_frames(emitted)
-                emitted += 1
-                # Hold only what a window still to come asks for.
-                still_wanted = {int(i) for window in windows[emitted:] for i in window}
-                by_index = {i: f for i, f in by_index.items() if i in still_wanted}
-            position += 1
-    finally:
-        capture.release()
-    # A truncated video leaves the trailing windows short, and the caller
-    # drops the ones that fall under the model's minimum.
-    while emitted < len(windows):
-        yield _window_frames(emitted)
-        emitted += 1
+        with contextlib.closing(
+            _video_io.read_frame_windows(
+                path=path,
+                windows=windows,
+                max_frame_side=max_frame_side,
+                frame_transform=frame_transform,
+                decode_state=decode_state,
+                window_end_frames=window_end_frames,
+                check_cancelled=check_cancelled,
+            )
+        ) as decoded:
+            yield from decoded
+    except VideoInputError as error:
+        raise InputImageLoadError(
+            message=str(error), public_message=str(error)
+        ) from error
 
 
 def read_frames(
     path: str, frame_indices: Sequence[int], max_frame_side: Optional[int] = None
 ) -> List[np.ndarray]:
-    """Read one window's frames. See :func:`read_frame_windows`."""
-    for frames in read_frame_windows(
-        path=path, windows=[list(frame_indices)], max_frame_side=max_frame_side
-    ):
-        return frames
-    return []
+    """Read one window using the shared local decoder.
 
+    Args:
+        path (str): Local video path.
+        frame_indices (Sequence[int]): Requested source indices.
+        max_frame_side (Optional[int]): Longest-side cap.
 
-def _to_rgb(frame: np.ndarray, max_side: Optional[int]) -> np.ndarray:
-    height, width = frame.shape[:2]
-    scale = max_side / max(height, width) if max_side and max_side > 0 else 1.0
-    if scale < 1.0:
-        frame = cv2.resize(
-            frame,
-            (round(width * scale), round(height * scale)),
-            interpolation=cv2.INTER_AREA,
+    Returns:
+        List[np.ndarray]: Available RGB frames in requested order.
+    """
+    with contextlib.closing(
+        read_frame_windows(
+            path=path, windows=[frame_indices], max_frame_side=max_frame_side
         )
-    return np.ascontiguousarray(frame[:, :, ::-1])
-
-
-def _count_frames(path: str) -> int:
-    capture = cv2.VideoCapture(path)
-    try:
-        count = 0
-        while capture.read()[0]:
-            count += 1
-    finally:
-        capture.release()
-    return count
+    ) as windows:
+        frames = next(windows, [])
+    return frames

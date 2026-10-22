@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `ActionRecognitionVideoPipeline` runs a loaded V-JEPA or Cosmos model on a local
+  video using only `inference-models`. It returns source-coordinate timelines,
+  optional candidates, source metadata and progress; context-managed incremental
+  output, explicit limits and cooperative cancellation/deadlines bound execution.
+- Package-owned local video readers and temporal conversion are shared with the
+  HTTP adapter and Workflows while preserving their existing response entities.
+
 ## `0.39.5`
 
 ### Added

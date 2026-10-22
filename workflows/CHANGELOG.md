@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- Action recognition shares window-to-video coordinate conversion with `inference-models`, preserving Workflow prediction entities and streaming behavior.
+
 ### Fixed
 
 - Buffer block outputs retain their per-frame list contents when later frames update the buffer, including batched workflows and padded histories.
