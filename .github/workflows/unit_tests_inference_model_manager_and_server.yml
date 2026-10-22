@@ -6,13 +6,21 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - inference_models/**
       - inference_model_manager/**
       - inference_server/**
+      - workflows/**
+      - stream_vision/**
+      - scripts/**
   push:
     branches: [main]
     paths:
+      - inference_models/**
       - inference_model_manager/**
       - inference_server/**
+      - workflows/**
+      - stream_vision/**
+      - scripts/**
   workflow_dispatch:
 
 concurrency:
@@ -40,13 +48,16 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+      - name: 📅 Cache week
+        id: cache-week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-cpu-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml', 'inference_model_manager/pyproject.toml', 'inference_server/pyproject.toml') }}
+          key: ${{ steps.cache-week.outputs.week }}-${{ runner.os }}-uv-cpu-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml', 'inference_model_manager/pyproject.toml', 'inference_server/pyproject.toml', 'workflows/pyproject.toml', 'stream_vision/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-uv-cpu-${{ matrix.python-version }}-
+            ${{ steps.cache-week.outputs.week }}-${{ runner.os }}-uv-cpu-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -59,12 +70,33 @@ jobs:
           python -m uv venv
           python -m uv pip install -e inference_models[test] --python .venv
           python -m uv pip install -e inference_model_manager[test] --python .venv
-          python -m uv pip install -e inference_server[test] --python .venv
+          python -m uv pip install -e workflows[test] --python .venv
+          python -m uv pip install -e stream_vision --python .venv
+          python -m uv pip install -e inference_server[test,workflows] --python .venv
       - name: 🧪 Unit Tests of Inference Server
         timeout-minutes: 10
         working-directory: inference_server
         run: ../.venv/bin/pytest tests/unit_tests
+      - name: 🧪 Integration Tests of Inference Server
+        timeout-minutes: 10
+        working-directory: inference_server
+        run: ../.venv/bin/pytest tests/integration_tests
       - name: 🧪 Unit Tests of Inference Model Manager
         timeout-minutes: 10
         working-directory: inference_model_manager
         run: ../.venv/bin/pytest tests/unit_tests
+      - name: 📦 Install dependencies (slim, no workflows extra)
+        run: |
+          python -m uv venv .venv-slim
+          # inference-models is transitive here (via inference-model-manager), so
+          # [tool.uv.sources] does not apply and it would come from PyPI; install
+          # the checkout first, as the full env above does.
+          python -m uv pip install -e inference_models --python .venv-slim
+          python -m uv pip install -e stream_vision --python .venv-slim
+          python -m uv pip install -e inference_server[test] --python .venv-slim
+      - name: 🧪 Unit Tests of Inference Server (slim install guard)
+        timeout-minutes: 10
+        working-directory: inference_server
+        run: |
+          ../.venv-slim/bin/python -c "import importlib.util; assert importlib.util.find_spec('roboflow_workflows') is None"
+          ../.venv-slim/bin/pytest tests/unit_tests/legacy/test_slim_install.py
