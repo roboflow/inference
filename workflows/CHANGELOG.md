@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- Buffer block outputs retain their per-frame list contents when later frames update the buffer, including batched workflows and padded histories.
+
 ## `0.2.12`
 
 Bundled execution engine: `1.16.1`.
