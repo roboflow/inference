@@ -1907,6 +1907,39 @@ def test_register_image_at_roboflow_when_valid_response_returned(
     assert response == {"success": True, "id": "xxx"}
 
 
+def test_register_image_at_roboflow_with_scalar_registration_tags(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/coins_detection/upload"),
+        json={"success": True, "id": "xxx"},
+    )
+
+    response = register_image_at_roboflow(
+        api_key="my_api_key",
+        dataset_id="coins_detection",
+        local_image_id="local_id",
+        image_bytes=b"SOME_IMAGE_BYTES",
+        batch_name="my-batch",
+        tags=["a b+c/d", 42, 0, False, 1.5, b"raw/a"],
+    )
+
+    _assert_request_query_seen(
+        requests_mock,
+        "api_key=my_api_key&batch=my-batch&tag=a+b%2bc%2fd"
+        "&tag=42&tag=0&tag=false&tag=1.5&tag=raw%2fa",
+    )
+    assert response == {"success": True, "id": "xxx"}
+
+
+def test_add_params_to_url_preserves_empty_parameters() -> None:
+    url = "https://api.roboflow.com/dataset/example/upload"
+
+    result = roboflow_api._add_params_to_url(url=url, params=[])
+
+    assert result == url
+
+
 def test_register_image_at_roboflow_when_valid_response_returned_and_no_tags_used(
     requests_mock: Mocker,
 ) -> None:
