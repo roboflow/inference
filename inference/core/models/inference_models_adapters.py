@@ -1834,6 +1834,16 @@ def _reshape_classification_confidences(
 class InferenceModelsAnomalyDetectionAdapter(InferenceModelsClassificationAdapter):
     """Serves PatchCore and FoundAD through the classification route."""
 
+    def infer_from_request(
+        self,
+        request: ClassificationInferenceRequest,
+    ) -> Union[List[InferenceResponse], InferenceResponse]:
+        # The classification request defaults confidence to 0.4; a caller who sends
+        # none gets the model-eval recommendation instead.
+        if "confidence" not in request.model_fields_set:
+            request = request.model_copy(update={"confidence": "best"})
+        return super().infer_from_request(request)
+
     def postprocess(
         self,
         predictions: Any,
@@ -1841,7 +1851,9 @@ class InferenceModelsAnomalyDetectionAdapter(InferenceModelsClassificationAdapte
         **kwargs,
     ) -> List[AnomalyDetectionResponse]:
         post_processed_predictions = self._model.post_process(
-            predictions, include_anomaly_map=kwargs.get("include_anomaly_map", False)
+            predictions,
+            include_anomaly_map=kwargs.get("include_anomaly_map", False),
+            confidence=kwargs["confidence"],
         )
         return prepare_anomaly_detection_response(
             post_processed_predictions,
@@ -1855,8 +1867,8 @@ def prepare_anomaly_detection_response(
     image_sizes: List[Tuple[int, int]],
     class_names: List[str],
 ) -> List[AnomalyDetectionResponse]:
-    # The decision comes from the threshold saved with the model, so both classes
-    # are always reported and the request confidence does not filter them.
+    # The request confidence decides the verdict instead of filtering classes, so
+    # both classes are always reported, the decided one first.
     batch_confidences = _reshape_classification_confidences(
         confidence=post_processed_predictions.confidence.cpu(),
         expected_num_images=len(image_sizes),
@@ -1886,6 +1898,7 @@ def prepare_anomaly_detection_response(
                 confidence=class_predictions[0]["confidence"],
                 anomaly_score=image_metadata["anomaly_score"],
                 anomaly_threshold=image_metadata["anomaly_threshold"],
+                anomaly_scale=image_metadata["anomaly_scale"],
                 is_anomalous=image_metadata["is_anomalous"],
                 anomaly_map=(
                     AnomalyMapPayload(**encode_anomaly_map(anomaly_map))
