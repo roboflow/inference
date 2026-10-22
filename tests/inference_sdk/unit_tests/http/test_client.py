@@ -45,6 +45,7 @@ from inference_sdk.http.entities import (
 from inference_sdk.http.errors import (
     HTTPCallErrorError,
     HTTPClientError,
+    HTTPServerConnectionError,
     InvalidInputFormatError,
     InvalidModelIdentifier,
     InvalidParameterError,
@@ -266,7 +267,7 @@ def test_wrap_errors_when_connection_error_occurs() -> None:
         raise ConnectionError()
 
     # when
-    with pytest.raises(HTTPClientError):
+    with pytest.raises(HTTPServerConnectionError):
         example()
 
 
@@ -278,7 +279,7 @@ async def test_wrap_errors_async_when_connection_error_occurs() -> None:
         raise ClientConnectionError()
 
     # when
-    with pytest.raises(HTTPClientError):
+    with pytest.raises(HTTPServerConnectionError):
         await example()
 
 
