@@ -4046,6 +4046,14 @@ class HttpInterface(BaseInterface):
                             "source": inference_request.source,
                             "source_info": inference_request.source_info,
                         }
+                        if inference_request.nms_iou_threshold is not None:
+                            payload["nms_iou_threshold"] = (
+                                inference_request.nms_iou_threshold
+                            )
+                        # Polygons are the proxy's default and it answers JSON,
+                        # which cannot carry binary masks: only RLE is forwarded.
+                        if inference_request.format == "rle":
+                            payload["format"] = "rle"
 
                         try:
                             headers = {"Content-Type": "application/json"}
@@ -4182,6 +4190,10 @@ class HttpInterface(BaseInterface):
                             "source": inference_request.source,
                             "source_info": inference_request.source_info,
                         }
+                        # Polygons are the proxy's default and it answers JSON,
+                        # which cannot carry binary masks: only RLE is forwarded.
+                        if inference_request.format == "rle":
+                            payload["format"] = "rle"
 
                         try:
                             headers = {"Content-Type": "application/json"}

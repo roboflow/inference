@@ -1947,6 +1947,12 @@ def _sam3_concept_remote_payload(inference_request: Sam3SegmentationRequest) -> 
         "source": inference_request.source,
         "source_info": inference_request.source_info,
     }
+    if inference_request.nms_iou_threshold is not None:
+        payload["nms_iou_threshold"] = inference_request.nms_iou_threshold
+    # Polygons are the proxy's default and it answers JSON, which cannot carry
+    # binary masks: only RLE is forwarded.
+    if inference_request.format == "rle":
+        payload["format"] = "rle"
 
     return payload
 
@@ -1967,6 +1973,10 @@ def _sam3_visual_remote_payload(inference_request: Sam2SegmentationRequest) -> d
         "source": inference_request.source,
         "source_info": inference_request.source_info,
     }
+    # Polygons are the proxy's default and it answers JSON, which cannot carry
+    # binary masks: only RLE is forwarded.
+    if inference_request.format == "rle":
+        payload["format"] = "rle"
 
     return payload
 
