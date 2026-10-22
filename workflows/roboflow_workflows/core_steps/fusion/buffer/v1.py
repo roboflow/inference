@@ -167,8 +167,7 @@ class BufferBlockV1(WorkflowBlock):
         return BlockManifest
 
     def run(self, data: Any, length: int, pad: bool) -> BlockResult:
-        """Append a value and return a snapshot of the buffer entries.
-        """
+        """Append a value and return a snapshot of the buffer entries."""
         self.buffer.insert(0, data)
         if len(self.buffer) > length:
             self.buffer = self.buffer[:length]
