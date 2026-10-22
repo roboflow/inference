@@ -4,6 +4,13 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.2`
+
+### Changed
+
+- The `workflows` extra requires `aiohttp~=3.14.4`, the aiohttp release that fixes GHSA-2g87-pp6c-29x5 and GHSA-5wr8-gcqf-gqf3.
+- The `workflows` extra requires `roboflow-workflows>=0.2.11rc1` (previously `>=0.2.4rc3`).
+
 ## `0.1.1`
 
 ### Added

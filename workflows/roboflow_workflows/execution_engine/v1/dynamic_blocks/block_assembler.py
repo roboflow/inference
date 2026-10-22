@@ -260,6 +260,16 @@ def assembly_dynamic_block_manifest(
     manifest_description: ManifestDescription,
     kinds_lookup: Dict[str, Kind],
 ) -> Type[WorkflowBlockManifest]:
+    """Build a manifest marked as ineligible for global class-keyed caches.
+
+    Args:
+        unique_identifier: Identity of this compilation's generated class.
+        manifest_description: Custom block's input, output and execution contract.
+        kinds_lookup: Available data kinds indexed by name.
+
+    Returns:
+        Generated manifest class implementing the workflow block interface.
+    """
     inputs_definitions = build_inputs(
         block_type=manifest_description.block_type,
         inputs=manifest_description.inputs,
@@ -284,6 +294,9 @@ def assembly_dynamic_block_manifest(
         type=(Literal[manifest_description.block_type], ...),
         **inputs_definitions,
     )
+    # This class is fresh on every compilation. Global introspection caches
+    # must not extend its lifetime beyond the workflow that owns it.
+    manifest_class.__workflow_dynamic_manifest__ = True
     outputs_definitions = build_outputs_definitions(
         block_type=manifest_description.block_type,
         outputs=manifest_description.outputs,

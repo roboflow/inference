@@ -17,6 +17,12 @@ Covers:
 from typing import List, Literal, Optional, get_args
 
 import pytest
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
+    BlockManifest as DatasetUploadV2Manifest,
+)
+from roboflow_workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
+    BlockManifest as ModelMonitoringV1Manifest,
+)
 
 from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
     BlockManifest as ClipV1Manifest,
@@ -39,7 +45,6 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 imp
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
-    load_blocks_from_plugin,
     load_core_workflow_blocks,
 )
 from inference.core.workflows.execution_engine.introspection.schema_parser import (
@@ -59,12 +64,6 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 from inference.core.workflows.prototypes.models_provider import CORE_MODEL_ENDPOINT_TYPE
-from inference.roboflow_workflows_plugin.sinks.dataset_upload.v2 import (
-    BlockManifest as DatasetUploadV2Manifest,
-)
-from inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1 import (
-    BlockManifest as ModelMonitoringV1Manifest,
-)
 
 # ---------------------------------------------------------------------------
 # Envelope
@@ -517,9 +516,7 @@ def _declares_resource_kind_field(manifest_class) -> bool:
 
 def test_every_block_with_resource_kind_fields_declares_dependencies() -> None:
     flagged_types, missing_declarations = [], []
-    for block in load_core_workflow_blocks() + load_blocks_from_plugin(
-        plugin_name="inference.roboflow_workflows_plugin.loader"
-    ):
+    for block in load_core_workflow_blocks():
         if not _declares_resource_kind_field(block.manifest_class):
             continue
         block_type = _canonical_block_type(block.manifest_class)
@@ -542,7 +539,9 @@ def test_every_block_with_resource_kind_fields_declares_dependencies() -> None:
         "roboflow_core/visual_search_classifier@v1",
         "roboflow_core/roboflow_dataset_upload@v2",
         "roboflow_core/model_monitoring_inference_aggregator@v1",
-    } <= set(flagged_types), "relocated blocks left the dependent-resources guard"
+    } <= set(
+        flagged_types
+    ), "Roboflow-platform blocks left the dependent-resources guard"
 
 
 # ---------------------------------------------------------------------------

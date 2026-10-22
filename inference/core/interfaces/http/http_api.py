@@ -2032,7 +2032,10 @@ class HttpInterface(BaseInterface):
                 "/model/clear",
                 response_model=ModelsDescriptions,
                 summary="Remove all models",
-                description="Remove all loaded models",
+                description=(
+                    "Remove all loaded models. Cached weights stay on disk "
+                    "when DISK_CACHE_CLEANUP=False."
+                ),
             )
             @with_route_exceptions
             def model_clear():
@@ -5072,11 +5075,17 @@ class HttpInterface(BaseInterface):
                     args = {"keypoint_confidence": keypoint_confidence}
                 elif task_type == "semantic-segmentation":
                     inference_request_type = SemanticSegmentationInferenceRequest
+                # Leave an omitted confidence unset so anomaly detection models can
+                # tell it apart from an explicit one and use the model-eval value.
+                if (
+                    task_type != "classification"
+                    or "confidence" in request.query_params
+                ):
+                    args["confidence"] = confidence
                 inference_request = inference_request_type(
                     api_key=api_key,
                     model_id=model_id,
                     image=request_image,
-                    confidence=confidence,
                     iou_threshold=overlap,
                     max_detections=max_detections,
                     visualization_labels=labels,

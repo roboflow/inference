@@ -105,6 +105,10 @@ _PREFIX_MAP: Tuple[Tuple[str, str], ...] = (
         "streamvision.webrtc_worker.watchdog",
     ),
     (
+        "inference.roboflow_workflows_plugin.integrations",
+        "roboflow_workflows.core_steps.integrations.roboflow",
+    ),
+    (
         "inference.core.interfaces.webrtc_worker.sources",
         "streamvision.webrtc_worker.sources",
     ),
@@ -115,6 +119,10 @@ _PREFIX_MAP: Tuple[Tuple[str, str], ...] = (
     (
         "streamvision.stream.model_handlers.yolo_world",
         "inference.core.interfaces.legacy_stream.model_handlers.yolo_world",
+    ),
+    (
+        "inference.roboflow_workflows_plugin.sinks",
+        "roboflow_workflows.core_steps.sinks.roboflow",
     ),
     (
         "inference.core.interfaces.stream_manager",

@@ -12,12 +12,11 @@ import numpy as np
 import pytest
 import supervision as sv
 from pydantic import ValidationError
-
-from inference.roboflow_workflows_plugin.sinks import vision_events_bundle
-from inference.roboflow_workflows_plugin.sinks.vision_events.v1 import (
+from roboflow_workflows.core_steps.sinks.roboflow import vision_events_bundle
+from roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1 import (
     _convert_predictions_to_annotations,
 )
-from inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1 import (
+from roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
     BUNDLE_FORMAT_VERSION,
     MAX_ANNOTATIONS_PER_LIST,
     MAX_BUNDLE_SIZE_BYTES,
@@ -25,6 +24,7 @@ from inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1 import (
     VisionEventBundleSinkBlockV1,
     _cap_annotation_lists,
 )
+
 from inference.core.workflows.execution_engine.constants import PREDICTION_TYPE_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -854,7 +854,7 @@ def test_interrupted_write_leaves_no_marker_blocking_the_name(
 def test_publish_never_replaces_an_existing_bundle(tmp_path) -> None:
     # the foreground check is skipped here on purpose, so this exercises the
     # publish itself - the guarantee that survives a lost race
-    from inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1 import (
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
         _publish_bundle,
     )
 
@@ -887,7 +887,7 @@ def test_publish_falls_back_when_hard_links_are_unavailable(
 
 
 def test_fallback_still_refuses_an_existing_bundle(tmp_path, monkeypatch) -> None:
-    from inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1 import (
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
         _publish_bundle,
     )
 
@@ -974,13 +974,13 @@ def test_sync_write_with_native_detections_tensor_native(tmp_path) -> None:
     # inference_models.Detections carrier - mirrors
     # test_sync_write_with_both_images_and_predictions
     import torch
-
-    from inference.roboflow_workflows_plugin.sinks.vision_events.v1_tensor import (
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1_tensor import (
         _convert_predictions_to_annotations as tensor_convert_predictions,
     )
-    from inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1_tensor import (
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
         VisionEventBundleSinkBlockV1 as TensorVisionEventBundleSinkBlockV1,
     )
+
     from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
     from inference_models.models.base.object_detection import Detections
 

@@ -5,6 +5,7 @@ plain definition still is."""
 import ast
 import pathlib
 from typing import Any, Dict, Optional
+from unittest import mock
 
 import pytest
 
@@ -115,19 +116,28 @@ def test_the_server_resolver_preserves_the_api_key_error_message() -> None:
 
 
 def test_a_resolver_dependent_definition_is_not_cached() -> None:
-    """Round-2 defect 4: the cache returns before reference resolution, so a
-    second engine's resolver would be bypassed. Resolver-dependent definitions
-    therefore bypass the cache entirely."""
+    """The cache returns before reference resolution and Modal validation, so
+    unresolved references and Modal-mode dynamic blocks bypass it; local
+    dynamic blocks consult no resolver and are cached."""
     from inference.core.workflows.execution_engine.v1.compiler.core import (
         _is_resolver_dependent,
     )
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+        block_scaffolding,
+    )
+
+    dynamic_definitions = [{"type": "DynamicBlockDefinition"}]
 
     assert _is_resolver_dependent(PLAIN_DEFINITION, []) is False
-    assert (
-        _is_resolver_dependent(PLAIN_DEFINITION, [{"type": "DynamicBlockDefinition"}])
-        is True
-    )
     assert _is_resolver_dependent(REFERENCING_DEFINITION, []) is True
+    with mock.patch.object(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
+    ):
+        assert _is_resolver_dependent(PLAIN_DEFINITION, dynamic_definitions) is False
+    with mock.patch.object(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    ):
+        assert _is_resolver_dependent(PLAIN_DEFINITION, dynamic_definitions) is True
 
 
 def test_two_engines_with_different_resolvers_and_api_keys_do_not_share_a_compilation() -> (
