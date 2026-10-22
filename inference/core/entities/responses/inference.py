@@ -355,7 +355,13 @@ class AnomalyDetectionResponse(ClassificationInferenceResponse):
     anomaly_threshold: float = Field(
         description="Decision threshold fitted on validation images"
     )
-    is_anomalous: bool
+    anomaly_scale: float = Field(
+        description="Calibration scale: the anomalous confidence is "
+        "sigmoid((anomaly_score - anomaly_threshold) / anomaly_scale)"
+    )
+    is_anomalous: bool = Field(
+        description="Whether the anomalous confidence reached the request confidence"
+    )
     anomaly_map: Optional[AnomalyMapPayload] = Field(
         default=None,
         description="Raw local anomaly evidence at the network input resolution",

@@ -105,6 +105,7 @@ class ModelsProvider(Protocol):
         disable_active_learning: Optional[bool] = None,
         active_learning_target_dataset: Optional[str] = None,
         inference_kwargs: Optional[Dict[str, Any]] = None,
+        include_anomaly_map: bool = False,
     ) -> List[dict]: ...
 
     def run_image_embeddings(
