@@ -278,14 +278,18 @@ def test_csi_source_uses_nvargus_camera() -> None:
     assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
 
 
-def test_v4l2_device_path_uses_live_sink() -> None:
+def test_v4l2_device_path_uses_live_sink(monkeypatch) -> None:
+    _patch_camera_formats(monkeypatch, set(), set())
     pipeline = build_gstreamer_pipeline("/dev/video3")
 
     assert pipeline.startswith('v4l2src device="/dev/video3" ! decodebin !')
     assert "max-buffers=1 drop=true sync=false" in pipeline
 
 
-def test_v4l2_decodebin_can_negotiate_raw_mjpeg_and_h264_sources() -> None:
+def test_v4l2_decodebin_can_negotiate_raw_mjpeg_and_h264_sources(
+    monkeypatch,
+) -> None:
+    _patch_camera_formats(monkeypatch, set(), set())
     pipeline = build_gstreamer_pipeline("/dev/video3", output_tensor=True)
     elements = set(required_gstreamer_elements("/dev/video3", output_tensor=True))
 
