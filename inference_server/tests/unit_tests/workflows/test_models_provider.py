@@ -13,7 +13,6 @@ from roboflow_workflows.prototypes.models_provider import (
 )
 
 from inference_models.errors import ModelInputError, ModelNotFoundError
-
 from inference_server.gateway import ModelManagerGateway
 from inference_server.legacy.bridge import (
     LegacyModelBridge,
@@ -349,6 +348,29 @@ def test_classification_inference_kwargs_override_action_params():
         inference_kwargs={"confidence": 0.9},
     )
     assert b.calls[0][2]["confidence"] == 0.9
+
+
+def test_classification_forwards_anomaly_map_flag_and_confidence_to_the_model():
+    b = FakeSyncBridge()
+    b.routes["cls/1"] = Route(
+        model_id="cls/1",
+        registry_id="cls/1",
+        task_type="classification",
+        action="infer",
+        actions={"infer"},
+        class_names=["cat"],
+    )
+    b.predictions[("cls/1", "infer")] = SimpleNamespace(
+        confidence=np.array([0.9]), class_id=np.array([0])
+    )
+    GatewayModelsProvider(b, api_key=None).run_classification(
+        "cls/1",
+        [{"type": "numpy_object", "value": np.zeros((4, 6, 3), np.uint8)}],
+        confidence=0.7,
+        include_anomaly_map=True,
+    )
+    assert b.calls[0][2]["include_anomaly_map"] is True
+    assert b.calls[0][2]["confidence"] == 0.7
 
 
 def test_get_class_names_and_contains():
@@ -1238,11 +1260,10 @@ class _PipelineBridge(_StreamSyncBridge):
         self.unloaded = False
 
     def infer(self, route, api_key, action, images, params, record=True):
+        from inference_model_manager.model_manager import ModelManager
         from inference_models.models.base.async_handoff import (
             get_async_response_context_id,
         )
-
-        from inference_model_manager.model_manager import ModelManager
 
         self.calls.append(
             (route.model_id, action, dict(params), [i.data for i in images])

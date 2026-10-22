@@ -4,8 +4,6 @@ permissions:
 on:
   release:
     types: [created]
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       force_push:
@@ -51,7 +49,7 @@ env:
 
 jobs:
   docker:
-    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'release') && (github.event_name != 'push' || vars.CI_IMAGE_REUSE_ENABLED != 'true') }}
+    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'workflow_dispatch' || github.event_name == 'release') }}
     runs-on:
       labels: ubuntu-latest
     timeout-minutes: 120

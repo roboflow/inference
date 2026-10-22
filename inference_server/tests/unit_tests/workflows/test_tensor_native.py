@@ -180,6 +180,83 @@ def test_classification_batch_without_images_metadata_stays_none():
     assert out.images_metadata is None
 
 
+def test_native_params_forwards_include_anomaly_map_for_classification():
+    params = native_params(
+        "classification",
+        {"confidence": 0.5, "include_anomaly_map": True, "input_color_format": "bgr"},
+    )
+    assert params == {
+        "confidence": 0.5,
+        "include_anomaly_map": True,
+        "input_color_format": "bgr",
+    }
+
+
+def test_native_params_drops_include_anomaly_map_for_other_task_types():
+    params = native_params(
+        "object-detection",
+        {"confidence": 0.5, "include_anomaly_map": True, "input_color_format": "bgr"},
+    )
+    assert "include_anomaly_map" not in params
+
+
+def test_numpy_to_tensors_keeps_images_metadata_host_side():
+    from inference_models.models.base.classification import ClassificationPrediction
+
+    anomaly_map = np.zeros((4, 4), dtype=np.float32)
+    restored = numpy_to_tensors(
+        ClassificationPrediction(
+            class_id=np.array([1]),
+            confidence=np.array([[0.2, 0.8]], dtype=np.float32),
+            images_metadata=[{"anomaly_score": 1.5, "anomaly_map": anomaly_map}],
+        ),
+        device=None,
+    )
+    assert isinstance(restored.class_id, torch.Tensor)
+    assert isinstance(restored.confidence, torch.Tensor)
+    assert restored.images_metadata[0]["anomaly_map"] is anomaly_map
+
+
+def test_classification_forwards_anomaly_map_flag_and_keeps_the_map_as_numpy():
+    from inference_models.models.base.classification import ClassificationPrediction
+
+    bridge = FakeSyncBridge()
+    bridge.routes["anomaly/1"] = Route(
+        model_id="anomaly/1",
+        registry_id="anomaly/1",
+        task_type="classification",
+        action="infer",
+        actions={"infer"},
+        class_names=["normal", "anomalous"],
+    )
+    anomaly_map = np.ones((8, 8), dtype=np.float32)
+    bridge.predictions[("anomaly/1", "infer")] = ClassificationPrediction(
+        class_id=np.array([1]),
+        confidence=np.array([[0.3, 0.7]], dtype=np.float32),
+        images_metadata=[
+            {
+                "anomaly_score": 2.0,
+                "anomaly_threshold": 1.0,
+                "anomaly_scale": 0.5,
+                "is_anomalous": True,
+                "anomaly_map": anomaly_map,
+            }
+        ],
+    )
+    out = GatewayModelsProvider(bridge, api_key="k").run_tensor_native_inference(
+        model_id="anomaly/1",
+        images=[np.zeros((2, 2, 3), np.uint8)],
+        input_color_format="bgr",
+        include_anomaly_map=True,
+        confidence=0.5,
+    )
+    assert bridge.calls[0][2]["include_anomaly_map"] is True
+    assert bridge.calls[0][2]["confidence"] == 0.5
+    assert isinstance(out, ClassificationPrediction)
+    assert isinstance(out.class_id, torch.Tensor)
+    assert out.images_metadata[0]["anomaly_map"] is anomaly_map
+
+
 def test_multi_label_classification_is_one_prediction_per_image():
     from inference_models.models.base.classification import (
         MultiLabelClassificationPrediction,

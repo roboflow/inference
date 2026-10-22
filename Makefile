@@ -33,12 +33,13 @@ download_fonts:
 INFERENCE_TEST_IMAGE ?= roboflow/${INFERENCE_SERVER_REPO}:test
 INFERENCE_TEST_CONTAINER ?= inference-test
 INFERENCE_TEST_BIND ?= $(PORT):$(PORT)
+INFERENCE_TEST_DOCKER_ARGS ?=
 
 start_test_docker_cpu:
 	docker run -d --rm -p $(INFERENCE_TEST_BIND) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name $(INFERENCE_TEST_CONTAINER) $(INFERENCE_TEST_IMAGE)
 
 start_test_docker_gpu:
-	docker run -d --rm -p $(INFERENCE_TEST_BIND) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all --name $(INFERENCE_TEST_CONTAINER) $(INFERENCE_TEST_IMAGE)
+	docker run -d --rm -p $(INFERENCE_TEST_BIND) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all $(INFERENCE_TEST_DOCKER_ARGS) --name $(INFERENCE_TEST_CONTAINER) $(INFERENCE_TEST_IMAGE)
 
 start_test_docker_gpu_with_roboflow_staging:
 	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all -e PROJECT=roboflow-staging --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test

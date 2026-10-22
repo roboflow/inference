@@ -27,6 +27,8 @@ def _anomaly_prediction(include_anomaly_map: bool) -> ClassificationPrediction:
         raw,
         calibration=AnomalyCalibration(threshold=2.0, scale=1.0),
         include_anomaly_map=include_anomaly_map,
+        confidence="default",
+        recommended_parameters=None,
     )
 
     return prediction
