@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Persistent model cache on the GPU runner — October 21, 2026
+
+- Mount a per-leg directory under the runner user's home as the server test
+  container's `MODEL_CACHE_DIR` in every stage of the shared GPU action, so
+  later stages and later runs load weights from disk instead of downloading
+  them again; image reuse does not cover weights. The cache is discarded when
+  `MODEL_CACHE_KEY` changes or after `MODEL_CACHE_MAX_AGE_DAYS` (14), by
+  deleting through the test image rather than sudo. The containers run with
+  `DISK_CACHE_CLEANUP=False` and `ATOMIC_CACHE_WRITES_ENABLED=True`.
+- Make `/model/clear` honour `DISK_CACHE_CLEANUP`, so the per-module clears in
+  the integration tests no longer delete cached weights when the flag is off.
+
 ### Main image reuse through Depot — October 20, 2026
 
 - Supersede the fast-track Depot saved-image trial with image reuse for every

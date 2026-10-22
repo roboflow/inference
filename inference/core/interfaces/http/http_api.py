@@ -2032,7 +2032,10 @@ class HttpInterface(BaseInterface):
                 "/model/clear",
                 response_model=ModelsDescriptions,
                 summary="Remove all models",
-                description="Remove all loaded models",
+                description=(
+                    "Remove all loaded models. Cached weights stay on disk "
+                    "when DISK_CACHE_CLEANUP=False."
+                ),
             )
             @with_route_exceptions
             def model_clear():
