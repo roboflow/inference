@@ -134,7 +134,8 @@ def test_shared_memory_used_when_identities_match(shm_dir: Path) -> None:
         assert reference["identity"] == _identity(shm_dir)
         assert reference["size"] == len(expected)
         assert len(reference["name"]) == len("rfevt-") + 32
-        assert files[reference["name"]] == expected
+        assert len(reference["token"]) == 64
+        assert files[reference["name"]] == bytes.fromhex(reference["token"]) + expected
     assert sorted(files) == _shm_files(shm_dir)
     for name in files:
         assert (shm_dir / name).stat().st_mode & 0o777 == 0o600
@@ -242,14 +243,27 @@ def test_failed_response_deletes_files(shm_dir: Path, status_code: int) -> None:
     assert _shm_files(shm_dir) == []
 
 
-def test_request_exception_deletes_files(shm_dir: Path) -> None:
-    response, sent, _ = _send(
-        shm_dir, _image(1), responses=[requests.exceptions.Timeout()]
-    )
+@pytest.mark.parametrize(
+    "error",
+    [requests.exceptions.ConnectTimeout(), requests.exceptions.ConnectionError()],
+)
+def test_request_exception_deletes_files(
+    shm_dir: Path, error: requests.RequestException
+) -> None:
+    response, sent, _ = _send(shm_dir, _image(1), responses=[error])
 
-    assert isinstance(response, requests.exceptions.Timeout)
+    assert response is error
     assert len(sent) == 1
     assert _shm_files(shm_dir) == []
+
+
+def test_read_timeout_leaves_files_to_the_event_store(shm_dir: Path) -> None:
+    response, sent, _ = _send(
+        shm_dir, _image(1), responses=[requests.exceptions.ReadTimeout()]
+    )
+
+    assert isinstance(response, requests.exceptions.ReadTimeout)
+    assert _shm_files(shm_dir) == sorted(sent[0][1])
 
 
 def test_shm_image_unavailable_resends_with_base64(shm_dir: Path) -> None:
@@ -268,18 +282,18 @@ def test_shm_image_unavailable_resends_with_base64(shm_dir: Path) -> None:
     assert "shmImage" in first and "base64Image" not in first
     assert second == {
         "label": "x",
-        "base64Image": base64.b64encode(files[first["shmImage"]["name"]]).decode(
+        "base64Image": base64.b64encode(files[first["shmImage"]["name"]][32:]).decode(
             "ascii"
         ),
         "inputBase64Image": base64.b64encode(
-            files[first["inputShmImage"]["name"]]
+            files[first["inputShmImage"]["name"]][32:]
         ).decode("ascii"),
     }
     assert _shm_files(shm_dir) == []
 
     _, later, get = _send(shm_dir, _image(3))
     get.assert_not_called()
-    assert "base64Image" in later[0][0]
+    assert "shmImage" in later[0][0]
 
 
 def test_event_writer_sends_shared_memory_references(shm_dir: Path) -> None:
@@ -330,7 +344,7 @@ def test_event_writer_fire_and_forget_sends_the_image_as_it_was_when_queued(
 
     def capture(url, json, **kwargs):
         reference = json["images"][0]["shmImage"]
-        posted["bytes"] = (shm_dir / reference["name"]).read_bytes()
+        posted["bytes"] = (shm_dir / reference["name"]).read_bytes()[32:]
         return _response(201, {"id": "evt-1"})
 
     with patch.object(requests, "get", return_value=_health(_identity(shm_dir))):

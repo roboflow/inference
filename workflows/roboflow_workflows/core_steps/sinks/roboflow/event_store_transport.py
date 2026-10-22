@@ -8,6 +8,7 @@ store reports the same shared-memory identity as this process.
 import base64
 import logging
 import os
+import secrets
 import shutil
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ EVENT_STORE_SHM_DIR_ENV = "EVENT_STORE_SHM_DIR"
 EVENT_STORE_SHARED_MEMORY_ENV = "EVENT_STORE_SHARED_MEMORY"
 DEFAULT_SHM_DIR = "/dev/shm"
 SHM_FILE_PREFIX = "rfevt-"
+SHM_TOKEN_BYTES = 32
 SHM_IMAGE_UNAVAILABLE_ERROR = "shm_image_unavailable"
 PROBE_CACHE_SECONDS = 30.0
 PROBE_TIMEOUT_SECONDS = 2.0
@@ -90,8 +92,10 @@ def post_local_event(
 
     The images are attached to the payload's first image entry, through shared
     memory when the event store shares this process's shared-memory directory
-    and as base64 otherwise. The event store deletes the shared-memory files
-    when it answers 201; on any other outcome they are deleted here. A 400
+    and as base64 otherwise. Each shared-memory file starts with a random
+    capability token that the reference repeats. The event store deletes the
+    files when it answers 201 and sweeps the ones a timed-out request leaves
+    behind; on any other outcome they are deleted here. A 400
     ``shm_image_unavailable`` answer re-sends the event once with the images
     inlined as base64.
 
@@ -120,9 +124,11 @@ def post_local_event(
         if shm_images and _is_shm_image_unavailable(response):
             _inline_shm_images(payload, shm_images=shm_images)
             _remove_shm_files(shm_images)
-            _probe_cache[_event_store_key(event_store_url)] = (time.monotonic(), False)
             response = requests.post(url, json=payload, **requests_kwargs)
         return response
+    except requests.ReadTimeout:
+        shm_images.clear()
+        raise
     finally:
         if response is None or response.status_code != 201:
             _remove_shm_files(shm_images)
@@ -144,13 +150,19 @@ def _attach_images(
             entry[base64_key] = value
             continue
 
-        name = _write_shm_image(value) if identity is not None else None
+        token = secrets.token_bytes(SHM_TOKEN_BYTES)
+        name = _write_shm_image(value, token=token) if identity is not None else None
         if name is None:
             entry[base64_key] = base64.b64encode(value).decode("ascii")
             continue
 
         shm_images[name] = value
-        entry[shm_key] = {"name": name, "size": len(value), "identity": identity}
+        entry[shm_key] = {
+            "name": name,
+            "size": len(value),
+            "identity": identity,
+            "token": token.hex(),
+        }
 
 
 def _shared_memory_enabled() -> bool:
@@ -212,10 +224,11 @@ def _probe_event_store(event_store_url: str, *, identity: str) -> bool:
     return supported
 
 
-def _write_shm_image(jpeg: bytes) -> Optional[str]:
+def _write_shm_image(jpeg: bytes, *, token: bytes) -> Optional[str]:
     directory = _shm_dir()
     try:
-        if shutil.disk_usage(directory).free - len(jpeg) < MIN_FREE_SHM_BYTES:
+        free = shutil.disk_usage(directory).free
+        if free - len(token) - len(jpeg) < MIN_FREE_SHM_BYTES:
             return None
 
         name = f"{SHM_FILE_PREFIX}{uuid4().hex}"
@@ -229,9 +242,10 @@ def _write_shm_image(jpeg: bytes) -> Optional[str]:
         return None
 
     try:
-        view = memoryview(jpeg)
-        while view:
-            view = view[os.write(fd, view) :]
+        for data in (token, jpeg):
+            view = memoryview(data)
+            while view:
+                view = view[os.write(fd, view) :]
     except OSError as error:
         logger.warning("Cannot write event image to shared memory: %s", error)
         _remove_shm_files([name])
