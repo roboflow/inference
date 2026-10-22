@@ -25,9 +25,11 @@ separate ``sv.Detections`` row. Tensor-native differences:
 - Masks are carried as ``InstancesRLEMasks`` (compact, serverless-safe);
   ``xyxy`` is the mask's tight bbox (inclusive min/max, no +1 — family-wide
   convention keeping numpy-faithful boxes).
-- ``output_format`` only selects the declared output kind: masks are RLE on
-  every path either way, and ``"rle"`` declares the RLE kind first, so the
-  serializer emits ``rle_mask`` instead of polygon ``points``.
+- ``output_format="rle"`` declares the RLE kind first, so the serializer emits
+  ``rle_mask`` instead of polygon ``points`` (masks are RLE on every path either
+  way). Like the numpy block's RLE output, it also keeps one instance per prompt
+  when a polygon answer is rasterised, and drops empty masks, which the polygon
+  serializer drops too.
 """
 
 import logging
@@ -388,8 +390,6 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         multimask_output: bool,
         output_format: Literal["rle", "polygons"] = "polygons",
     ) -> BlockResult:
-        # `output_format` is applied through `get_actual_outputs`: the masks are
-        # RLE on every path below either way.
         if SAM3_EXEC_MODE == "remote":
             logger.debug(
                 "Running SAM3 Interactive via inference proxy (SAM3_EXEC_MODE=remote)"
@@ -400,6 +400,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 boxes=boxes,
                 threshold=threshold,
                 multimask_output=multimask_output,
+                output_format=output_format,
             )
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
@@ -408,6 +409,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 boxes=boxes,
                 threshold=threshold,
                 multimask_output=multimask_output,
+                output_format=output_format,
             )
         if self._step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(
@@ -416,6 +418,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 boxes=boxes,
                 threshold=threshold,
                 multimask_output=multimask_output,
+                output_format=output_format,
             )
         raise ValueError(f"Unknown step execution mode: {self._step_execution_mode}")
 
@@ -426,6 +429,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         boxes: Optional[Batch],
         threshold: float,
         multimask_output: bool,
+        output_format: Literal["rle", "polygons"] = "polygons",
     ) -> BlockResult:
         if boxes is None:
             boxes = [None] * len(images)
@@ -487,6 +491,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 detection_ids=detection_ids,
                 image=single_image,
                 threshold=threshold,
+                output_format=output_format,
             )
             results.append({"predictions": instance_detections})
         return results
@@ -498,6 +503,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         boxes: Optional[Batch],
         threshold: float,
         multimask_output: bool,
+        output_format: Literal["rle", "polygons"] = "polygons",
     ) -> BlockResult:
         ensure_builtin_remote_execution_allowed("SAM3 Interactive remote execution")
         api_url = (
@@ -557,6 +563,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 detection_ids=detection_ids,
                 image=single_image,
                 threshold=threshold,
+                output_format=output_format,
             )
             results.append({"predictions": instance_detections})
         return results
@@ -568,6 +575,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         boxes: Optional[Batch],
         threshold: float,
         multimask_output: bool,
+        output_format: Literal["rle", "polygons"] = "polygons",
     ) -> BlockResult:
         ensure_builtin_remote_execution_allowed(
             "SAM3 Interactive inference proxy execution"
@@ -642,6 +650,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 detection_ids=detection_ids,
                 image=single_image,
                 threshold=threshold,
+                output_format=output_format,
             )
             results.append({"predictions": instance_detections})
         return results
@@ -810,6 +819,7 @@ def _segmentation_results_to_instance_detections(
     detection_ids: List[Optional[str]],
     image: WorkflowImageData,
     threshold: float,
+    output_format: Literal["rle", "polygons"] = "polygons",
 ) -> InstanceDetections:
     """Build a native ``InstanceDetections`` from per-prompt SAM3 PVS results.
 
@@ -817,7 +827,9 @@ def _segmentation_results_to_instance_detections(
     semantics (confidence filter, class/detection-id forwarding by prompt order)
     with the family's raw-mask instance model: an RLE mask yields ONE instance per
     prompt; a polygon-format payload is rasterised per polygon (numpy-parity
-    expansion for responses where RLE was unavailable).
+    expansion for responses where RLE was unavailable). With ``output_format="rle"``
+    the result matches the numpy block's RLE output instead: a polygon payload is
+    rasterised into ONE mask per prompt, and empty masks are dropped.
     """
     height, width = image._read_shape_without_materialization()
     kept_masks: List[torch.Tensor] = []
@@ -833,6 +845,10 @@ def _segmentation_results_to_instance_detections(
         class_name: str,
         detection_id: Optional[str],
     ) -> None:
+        if output_format == "rle" and not bool(mask.any()):
+            # skipping empty masks: the RLE serializer would emit them with an
+            # empty box, while the polygon serializer drops them
+            return
         kept_masks.append(mask)
         kept_confidences.append(confidence)
         kept_class_ids.append(int(class_id) if class_id is not None else 0)
@@ -859,6 +875,13 @@ def _segmentation_results_to_instance_detections(
             continue
         if isinstance(masks_payload, dict):
             dense = _coco_rle_to_torch_mask(
+                masks_payload, image_height=height, image_width=width
+            )
+            _keep(dense, confidence, class_id, class_name, detection_id)
+            continue
+        if output_format == "rle":
+            # One mask per prompt, like the numpy block's RLE output.
+            dense = _polygons_to_torch_mask(
                 masks_payload, image_height=height, image_width=width
             )
             _keep(dense, confidence, class_id, class_name, detection_id)
@@ -939,12 +962,29 @@ def _coco_rle_to_torch_mask(
 def _polygon_to_torch_mask(
     polygon: List[List[float]], image_height: int, image_width: int
 ) -> torch.Tensor:
+    mask = _polygons_to_torch_mask(
+        [polygon], image_height=image_height, image_width=image_width
+    )
+    return mask
+
+
+def _polygons_to_torch_mask(
+    polygons: List[List[List[float]]], *, image_height: int, image_width: int
+) -> torch.Tensor:
+    """Rasterise polygons (>= 3 points) into one mask. A single fill keeps the
+    inside of a hole outline empty."""
     import cv2
 
     canvas = np.zeros((image_height, image_width), dtype=np.uint8)
-    contour = np.round(np.array(polygon, dtype=np.float32)).astype(np.int32)
-    cv2.fillPoly(canvas, [contour], 1)
-    return torch.from_numpy(canvas.astype(bool))
+    contours = [
+        np.round(np.array(polygon, dtype=np.float32)).astype(np.int32)
+        for polygon in polygons
+        if len(polygon) >= 3
+    ]
+    if contours:
+        cv2.fillPoly(canvas, contours, 1)
+    mask = torch.from_numpy(canvas.astype(bool))
+    return mask
 
 
 def _mask_to_xyxy(mask: torch.Tensor) -> torch.Tensor:

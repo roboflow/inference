@@ -14,6 +14,9 @@ from roboflow_workflows.core_steps.common.segmentation_entities import (
 from roboflow_workflows.core_steps.models.foundation.segment_anything3_interactive import (
     v1 as sam3_interactive_v1,
 )
+from roboflow_workflows.core_steps.models.foundation.segment_anything3_interactive import (
+    v1_tensor as sam3_interactive_v1_tensor,
+)
 from roboflow_workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
     BlockManifest,
     SegmentAnything3InteractiveBlockV1,
@@ -36,6 +39,7 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 
 from inference_models.models.base.object_detection import Detections
+from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
 
 @pytest.fixture
@@ -794,3 +798,102 @@ def test_workflow_output_carries_polygons_by_default() -> None:
     for prediction in serialized["predictions"]:
         assert "rle_mask" not in prediction
         assert len(prediction["points"]) >= 3
+
+
+def test_workflow_rle_output_drops_empty_masks() -> None:
+    serialized = _run_workflow(
+        output_format="rle", mask=np.zeros((480, 640), dtype=bool)
+    )
+
+    assert serialized["predictions"] == []
+
+
+def _tensor_box_prompt() -> Detections:
+    return Detections(
+        xyxy=torch.tensor([[10, 10, 50, 50]], dtype=torch.float32),
+        class_id=torch.tensor([0], dtype=torch.int64),
+        confidence=torch.tensor([0.9], dtype=torch.float32),
+        image_metadata={CLASS_NAMES_KEY: {0: "object"}},
+        bboxes_metadata=[{"detection_id": "det_1"}],
+    )
+
+
+def _run_tensor_via_polygon_proxy(
+    workflow_image: WorkflowImageData, output_format: str
+):
+    block = TensorSegmentAnything3InteractiveBlockV1(
+        model_manager=MagicMock(),
+        api_key="test_api_key",
+        step_execution_mode=StepExecutionMode.REMOTE,
+    )
+    response = MagicMock()
+    response.json.return_value = {
+        "predictions": [{"confidence": 0.95, "masks": TWO_REGION_POLYGONS}]
+    }
+    with patch.object(sam3_interactive_v1_tensor, "requests") as requests_mock:
+        requests_mock.post.return_value = response
+        result = block.run_via_request(
+            images=[workflow_image],
+            points=None,
+            boxes=[_tensor_box_prompt()],
+            threshold=0.0,
+            multimask_output=False,
+            output_format=output_format,
+        )
+    return result[0]["predictions"]
+
+
+def test_tensor_rle_output_rasterises_a_polygon_answer_into_one_mask_per_prompt(
+    mock_workflow_image_data,
+) -> None:
+    predictions = _run_tensor_via_polygon_proxy(
+        workflow_image=mock_workflow_image_data, output_format="rle"
+    )
+
+    assert predictions.xyxy.shape[0] == 1
+    assert np.array_equal(
+        coco_rle_masks_to_numpy_mask(predictions.mask)[0], _two_region_mask()
+    )
+    assert [metadata["detection_id"] for metadata in predictions.bboxes_metadata] == [
+        "det_1"
+    ]
+
+
+def test_tensor_polygon_output_keeps_one_instance_per_polygon(
+    mock_workflow_image_data,
+) -> None:
+    predictions = _run_tensor_via_polygon_proxy(
+        workflow_image=mock_workflow_image_data, output_format="polygons"
+    )
+
+    assert predictions.xyxy.shape[0] == 2
+
+
+@pytest.mark.parametrize(
+    "output_format, expected_instances", [("rle", 0), ("polygons", 1)]
+)
+def test_tensor_empty_masks_are_dropped_for_rle_output(
+    mock_workflow_image_data, output_format, expected_instances
+) -> None:
+    model_manager = MagicMock()
+    model_prediction = MagicMock()
+    model_prediction.masks = torch.full((1, 480, 640), -1.0)
+    model_prediction.scores = torch.tensor([0.95])
+    model_manager.run_tensor_native_inference.return_value = [model_prediction]
+    block = TensorSegmentAnything3InteractiveBlockV1(
+        model_manager=model_manager,
+        api_key="test_api_key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    result = block.run(
+        images=[mock_workflow_image_data],
+        points=[[150, 125]],
+        boxes=None,
+        threshold=0.0,
+        multimask_output=True,
+        output_format=output_format,
+    )
+
+    # the polygon output keeps the empty instance and its serializer drops it
+    assert result[0]["predictions"].xyxy.shape[0] == expected_instances
