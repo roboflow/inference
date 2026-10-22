@@ -594,7 +594,6 @@ def get_roboflow_model_data(
     device_id: str,
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
-    *,
     use_cache: bool = True,
 ) -> dict:
     """Fetch model metadata and artifact URLs from Roboflow.
