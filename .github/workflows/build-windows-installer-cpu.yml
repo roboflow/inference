@@ -12,15 +12,18 @@ on:
 jobs:
   build_windows:
     runs-on: Windows-2022
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
         # No 'path' means checkout to the root
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
 
@@ -86,7 +89,7 @@ jobs:
 
       - name: Install DigiCert Client tools
         id: install_digicert_tools # Renamed for clarity
-        uses: digicert/ssm-code-signing@v1.2.1
+        uses: digicert/ssm-code-signing@1d820463733701cf1484c7eb5d7d24a15ca2c454 # v1.2.1
 
 
       - name: Set DigiCert certificate
@@ -335,7 +338,7 @@ jobs:
           echo "Installer signed successfully (based on smctl exit code and absence of 'FAILED' in CLI output). Review logs carefully."
 
       - name: Upload Windows Installer
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Roboflow-Inference-Windows-Installer
           # The build.py script creates the installer in installer/inference-{version}-installer.exe
@@ -345,7 +348,7 @@ jobs:
 
       - name: Upload Installer to Release
         if: github.event_name == 'release'
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

@@ -52,6 +52,7 @@ jobs:
         )
       )
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       should_review: ${{ steps.gate.outputs.should_review }}
       number: ${{ steps.gate.outputs.number }}
@@ -153,7 +154,7 @@ jobs:
 
     steps:
       - name: Checkout trusted base branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.gate.outputs.base_sha }}
           fetch-depth: 1
@@ -212,7 +213,7 @@ jobs:
       # Keep the agent's working directory and configuration on the trusted base.
       # PR source is data in a subdirectory, never a shell/action working directory.
       - name: Checkout PR source for static reading
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
           path: review-source
@@ -284,13 +285,14 @@ jobs:
     needs: [gate, review]
     if: needs.gate.outputs.should_review == 'true' && fromJSON(needs.review.outputs.verdict || '{}').verdict == 'pass'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
     steps:
       # A fresh runner, trusted base code, and NO Slack credentials. The agent's
       # workspace and processes cannot affect this collector.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.gate.outputs.base_sha }}
           persist-credentials: false
@@ -314,7 +316,7 @@ jobs:
         run: '"$RUNNER_TEMP/maintainer-review/bin/python" .github/scripts/maintainer_review.py collect'
       - name: Publish handoff data
         if: steps.result.outputs.ready == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: maintainer-review-result-${{ github.run_attempt }}
           path: ${{ runner.temp }}/result.json

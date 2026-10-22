@@ -57,9 +57,9 @@ jobs:
           CI_DEPOT_ACTION: validate
         run: python3 .github/scripts/depot_ci_image.py
       - name: Set up Depot CLI
-        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1.7.2
       - name: Set up Buildx for manifest inspection
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Save image once and record platform digests
         id: build
         env:
