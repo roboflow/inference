@@ -1216,6 +1216,8 @@ def test_sam3_concept_segment_remote_posts_to_seg_preview_proxy(
             },
         ],
         "output_prob_thresh": 0.3,
+        "nms_iou_threshold": None,
+        "format": "polygon",
         "source": "ui",
         "source_info": "canvas",
     }
@@ -1252,6 +1254,7 @@ def test_sam3_visual_segment_remote_posts_to_sam3_pvs_proxy(legacy_client, sam3_
         "image": image,
         "prompts": {"prompts": [{"points": [{"x": 5.0, "y": 6.0, "positive": True}]}]},
         "multimask_output": False,
+        "format": "json",
         "source": "ui",
         "source_info": None,
     }
@@ -1283,18 +1286,15 @@ def test_sam3_visual_segment_remote_forwards_rle_format(legacy_client, sam3_remo
     assert call["json"]["format"] == "rle"
 
 
-@pytest.mark.parametrize("response_format", ["json", "binary"])
-def test_sam3_visual_segment_remote_does_not_forward_other_formats(
-    legacy_client, sam3_remote, response_format
-):
+@pytest.mark.parametrize("path", ["/sam3/visual_segment", "/sam3/concept_segment"])
+def test_sam3_remote_rejects_binary_masks(legacy_client, sam3_remote, path):
     remote = sam3_remote(body=_SAM3_VISUAL_BODY)
     r = legacy_client(FakeGateway()).post(
-        "/sam3/visual_segment",
-        json={"image": _image(), "format": response_format},
+        path,
+        json={"image": _image(), "prompts": [{"text": "cat"}], "format": "binary"},
     )
-    assert r.status_code == 200, r.text
-    (call,) = remote.calls
-    assert "format" not in call["json"]
+    assert r.status_code == 501, r.text
+    assert remote.calls == []
 
 
 def test_sam3_concept_segment_remote_forwards_rle_format_and_nms_threshold(

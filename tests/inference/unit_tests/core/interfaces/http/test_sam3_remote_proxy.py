@@ -88,21 +88,39 @@ def test_visual_segment_forwards_the_rle_format(remote_client) -> None:
     assert call["json"]["format"] == "rle"
 
 
-@pytest.mark.parametrize("response_format", ["json", "binary"])
-def test_visual_segment_does_not_forward_other_formats(
-    remote_client, response_format
-) -> None:
+def test_visual_segment_forwards_the_default_format(remote_client) -> None:
     client, install_proxy = remote_client
     proxy = install_proxy(body=_visual_body(masks=POLYGON_MASK))
 
-    response = client.post(
-        "/sam3/visual_segment",
-        json={"image": IMAGE, "format": response_format},
-    )
+    response = client.post("/sam3/visual_segment", json={"image": IMAGE})
 
     assert response.status_code == 200, response.text
     (call,) = proxy.calls
-    assert "format" not in call["json"]
+    assert call["json"]["format"] == "json"
+
+
+@pytest.mark.parametrize(
+    "path, payload",
+    [
+        ("/sam3/visual_segment", {"image": IMAGE, "format": "binary"}),
+        (
+            "/sam3/concept_segment",
+            {
+                "image": IMAGE,
+                "prompts": [{"type": "text", "text": "cat"}],
+                "format": "binary",
+            },
+        ),
+    ],
+)
+def test_binary_masks_are_rejected_in_remote_mode(remote_client, path, payload) -> None:
+    client, install_proxy = remote_client
+    proxy = install_proxy(body=_visual_body(masks=POLYGON_MASK))
+
+    response = client.post(path, json=payload)
+
+    assert response.status_code == 501, response.text
+    assert proxy.calls == []
 
 
 def test_concept_segment_forwards_the_rle_format_and_nms_threshold(
@@ -130,7 +148,7 @@ def test_concept_segment_forwards_the_rle_format_and_nms_threshold(
     assert call["json"]["nms_iou_threshold"] == 0.5
 
 
-def test_concept_segment_keeps_the_default_payload(remote_client) -> None:
+def test_concept_segment_forwards_the_default_format(remote_client) -> None:
     client, install_proxy = remote_client
     proxy = install_proxy(body=_concept_body(masks=POLYGON_MASK))
 
@@ -141,10 +159,5 @@ def test_concept_segment_keeps_the_default_payload(remote_client) -> None:
 
     assert response.status_code == 200, response.text
     (call,) = proxy.calls
-    assert set(call["json"]) == {
-        "image",
-        "prompts",
-        "output_prob_thresh",
-        "source",
-        "source_info",
-    }
+    assert call["json"]["format"] == "polygon"
+    assert call["json"]["nms_iou_threshold"] is None

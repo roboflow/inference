@@ -3992,6 +3992,12 @@ class HttpInterface(BaseInterface):
                             )
 
                     if SAM3_EXEC_MODE == "remote":
+                        if inference_request.format == "binary":
+                            # The proxy answers JSON, which cannot carry binary masks.
+                            raise HTTPException(
+                                status_code=501,
+                                detail="Binary SAM3 masks are not supported in remote execution mode.",
+                            )
                         endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
 
                         # Construct payload for remote API
@@ -4043,17 +4049,11 @@ class HttpInterface(BaseInterface):
                             "image": http_image,
                             "prompts": http_prompts,
                             "output_prob_thresh": inference_request.output_prob_thresh,
+                            "nms_iou_threshold": inference_request.nms_iou_threshold,
+                            "format": inference_request.format,
                             "source": inference_request.source,
                             "source_info": inference_request.source_info,
                         }
-                        if inference_request.nms_iou_threshold is not None:
-                            payload["nms_iou_threshold"] = (
-                                inference_request.nms_iou_threshold
-                            )
-                        # Polygons are the proxy's default and it answers JSON,
-                        # which cannot carry binary masks: only RLE is forwarded.
-                        if inference_request.format == "rle":
-                            payload["format"] = "rle"
 
                         try:
                             headers = {"Content-Type": "application/json"}
@@ -4170,6 +4170,12 @@ class HttpInterface(BaseInterface):
                         inference_request.api_key = api_key
 
                     if SAM3_EXEC_MODE == "remote":
+                        if inference_request.format == "binary":
+                            # The proxy answers JSON, which cannot carry binary masks.
+                            raise HTTPException(
+                                status_code=501,
+                                detail="Binary SAM3 masks are not supported in remote execution mode.",
+                            )
                         endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
 
                         http_image = {
@@ -4187,13 +4193,10 @@ class HttpInterface(BaseInterface):
                             "image": http_image,
                             "prompts": prompts_data,
                             "multimask_output": inference_request.multimask_output,
+                            "format": inference_request.format,
                             "source": inference_request.source,
                             "source_info": inference_request.source_info,
                         }
-                        # Polygons are the proxy's default and it answers JSON,
-                        # which cannot carry binary masks: only RLE is forwarded.
-                        if inference_request.format == "rle":
-                            payload["format"] = "rle"
 
                         try:
                             headers = {"Content-Type": "application/json"}
