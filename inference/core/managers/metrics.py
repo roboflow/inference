@@ -94,8 +94,9 @@ def get_inference_results_for_model(
     """Read the inference results a model cached for the pingback.
 
     Drops images from the cached requests and responses. A single image's
-    response, cached on its own when ``TINY_CACHE`` is off, is wrapped in a list,
-    the shape Roboflow reads.
+    response, cached on its own when ``TINY_CACHE`` is off, is returned wrapped in
+    a list, the shape Roboflow reads. The cached entry keeps its response as is,
+    for ``get_model_metrics``.
 
     Args:
         inference_server_id: Id of the inference server that cached the results.
@@ -123,7 +124,7 @@ def get_inference_results_for_model(
         if responses:
             if not isinstance(responses, list):
                 responses = [responses]
-                result["response"] = responses
+                result = {**result, "response": responses}
             for resp in responses:
                 if resp.get("image"):
                     del resp["image"]
