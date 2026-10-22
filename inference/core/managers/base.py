@@ -17,6 +17,7 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
+    DISK_CACHE_CLEANUP,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     METRICS_ENABLED,
     METRICS_INTERVAL,
@@ -797,10 +798,14 @@ class ModelManager:
             )
 
     def clear(self) -> None:
-        """Removes all models from the manager."""
+        """Removes all models from the manager.
+
+        Cached weights are deleted from disk only when ``DISK_CACHE_CLEANUP``
+        is enabled, so a persistent model cache survives ``/model/clear``.
+        """
         model_ids = list(self.keys())
         for model_id in model_ids:
-            self.remove(model_id)
+            self.remove(model_id, delete_from_disk=DISK_CACHE_CLEANUP)
 
     def _get_model_reference(self, model_id: str) -> Model:
         try:

@@ -193,9 +193,13 @@ class WithFixedSizeCache(ModelManagerDecorator):
             raise error
 
     def clear(self) -> None:
-        """Removes all models from the manager."""
+        """Removes all models from the manager.
+
+        Cached weights are deleted from disk only when ``DISK_CACHE_CLEANUP``
+        is enabled, so a persistent model cache survives ``/model/clear``.
+        """
         for model_id in list(self.keys()):
-            self.remove(model_id)
+            self.remove(model_id, delete_from_disk=DISK_CACHE_CLEANUP)
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         with acquire_with_timeout(

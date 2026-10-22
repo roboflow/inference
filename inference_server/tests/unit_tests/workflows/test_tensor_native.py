@@ -5,7 +5,11 @@ import torch
 from inference_models.models.base.object_detection import Detections
 from inference_server.legacy.bridge import Route
 from inference_server.workflows.models_provider import GatewayModelsProvider
-from inference_server.workflows.tensor_native import native_params, numpy_to_tensors
+from inference_server.workflows.tensor_native import (
+    assemble_native_result,
+    native_params,
+    numpy_to_tensors,
+)
 from tests.unit_tests.workflows.test_models_provider import FakeSyncBridge
 
 
@@ -119,6 +123,61 @@ def test_classification_is_one_batched_prediction():
         and tuple(out.confidence.shape) == (3, 2)
         and tuple(out.class_id.shape) == (3,)
     )
+
+
+def test_classification_batch_keeps_one_images_metadata_entry_per_image():
+    from inference_models.models.base.classification import ClassificationPrediction
+
+    bridge = FakeSyncBridge()
+    bridge.routes["anomaly/1"] = Route(
+        model_id="anomaly/1",
+        registry_id="anomaly/1",
+        task_type="classification",
+        action="infer",
+        actions={"infer"},
+        class_names=["normal", "anomalous"],
+    )
+    bridge.predictions[("anomaly/1", "infer")] = ClassificationPrediction(
+        class_id=np.array([1]),
+        confidence=np.array([[0.3, 0.7]], dtype=np.float32),
+        images_metadata=[{"anomaly_score": 2.0, "is_anomalous": True}],
+    )
+    out = GatewayModelsProvider(bridge, api_key="k").run_tensor_native_inference(
+        model_id="anomaly/1",
+        images=[np.zeros((2, 2, 3), np.uint8)] * 3,
+        input_color_format="bgr",
+    )
+    assert tuple(out.class_id.shape) == (3,)
+    assert len(out.images_metadata) == 3
+
+
+def test_classification_batch_keeps_images_metadata_in_image_order():
+    from inference_models.models.base.classification import ClassificationPrediction
+
+    per_image = [
+        ClassificationPrediction(
+            class_id=np.array([index % 2]),
+            confidence=np.array([[0.5, 0.5]], dtype=np.float32),
+            images_metadata=[{"anomaly_score": float(index)}],
+        )
+        for index in range(3)
+    ]
+    out = assemble_native_result("classification", per_image, "cpu")
+    assert [entry["anomaly_score"] for entry in out.images_metadata] == [0.0, 1.0, 2.0]
+
+
+def test_classification_batch_without_images_metadata_stays_none():
+    from inference_models.models.base.classification import ClassificationPrediction
+
+    per_image = [
+        ClassificationPrediction(
+            class_id=np.array([0]),
+            confidence=np.array([[1.0, 0.0]], dtype=np.float32),
+        )
+        for _ in range(3)
+    ]
+    out = assemble_native_result("classification", per_image, "cpu")
+    assert out.images_metadata is None
 
 
 def test_native_params_forwards_include_anomaly_map_for_classification():

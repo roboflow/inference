@@ -558,7 +558,7 @@ No new package reads these. They never get an alias or a default row.
 | `DISABLE_PREPROC_STATIC_CROP` | `env.py:502` | legacy ORT preprocessing |
 | `DISABLE_VERSION_CHECK` | `env.py:546` | legacy GitHub version check; none in the new stack |
 | `DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS` | `env.py:1037` | legacy `describe_workload` routes; not in the new server |
-| `DISK_CACHE_CLEANUP` | `env.py:1424` | legacy artifact cache internals |
+| `DISK_CACHE_CLEANUP` | `env.py:1424` | legacy artifact cache internals; `False` also keeps weights on disk across `/model/clear` and hot-cache eviction |
 | `ELASTICACHE_ENDPOINT` | `env.py:551` | legacy AWS-era setting |
 | `ENABLE_BYTE_TRACK` | `env.py:561` | legacy stream-mode setting |
 | `ENABLE_HTTPS` | `env.py:587` | legacy uvicorn TLS; the new entrypoints (Task 5.7) own TLS |

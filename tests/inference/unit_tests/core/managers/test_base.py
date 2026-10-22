@@ -546,6 +546,28 @@ def test_clear() -> None:
     assert model_manager.models() == {}
 
 
+@pytest.mark.parametrize("disk_cache_cleanup", [True, False])
+def test_clear_passes_disk_cache_cleanup_to_models(
+    disk_cache_cleanup: bool,
+) -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    first_model, second_model = MagicMock(), MagicMock()
+    model_manager._models = {"some/1": first_model, "some/2": second_model}
+
+    # when
+    with patch.object(base_module, "DISK_CACHE_CLEANUP", disk_cache_cleanup):
+        model_manager.clear()
+
+    # then
+    first_model.clear_cache.assert_called_once_with(delete_from_disk=disk_cache_cleanup)
+    second_model.clear_cache.assert_called_once_with(
+        delete_from_disk=disk_cache_cleanup
+    )
+    assert model_manager.models() == {}
+
+
 def test_model_manager_contains_when_result_should_be_positive() -> None:
     # given
     model_registry = MagicMock()
