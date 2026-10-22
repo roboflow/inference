@@ -99,7 +99,8 @@ def get_latest_release_version():
             response.raise_for_status()
             latest_release = response.json()["tag_name"].lstrip("v")
             last_checked = now
-        except (requests.exceptions.RequestException, KeyError, ValueError, TypeError):
+        except (OSError, KeyError, ValueError, TypeError):
+            # OSError covers RequestException and unavailable TLS CA bundles.
             # KeyError/ValueError/TypeError: a 200 response whose body is not
             # the expected GitHub payload (proxy interstitials, rate-limit
             # bodies) must degrade like a network failure, not crash the

@@ -57,3 +57,26 @@ def test_get_latest_release_version_parses_expected_payload() -> None:
     # then
     assert inference_core.latest_release == "9.9.9"
     _reset_version_check_state()
+
+
+def test_get_latest_release_version_retries_after_unavailable_ca_bundle() -> None:
+    _reset_version_check_state()
+    response = mock.MagicMock()
+    response.json.return_value = {"tag_name": "v9.9.9"}
+    missing_ca = OSError(
+        "Could not find a suitable TLS CA certificate bundle, invalid path: "
+        "/etc/ssl/certs/ca-certificates.crt"
+    )
+
+    with mock.patch.object(
+        inference_core, "DISABLE_VERSION_CHECK", False
+    ), mock.patch.object(
+        inference_core.requests, "get", side_effect=[missing_ca, response]
+    ) as get_mock:
+        inference_core.check_latest_release_against_current()
+        assert inference_core.latest_release is None
+        inference_core.get_latest_release_version()
+
+    assert get_mock.call_count == 2
+    assert inference_core.latest_release == "9.9.9"
+    _reset_version_check_state()
