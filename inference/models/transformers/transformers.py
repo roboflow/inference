@@ -417,6 +417,9 @@ class LoRATransformerModel(TransformerModel):
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
         """Get a fully extracted LoRA base, rebuilding incomplete online caches.
 
+        Build replacements in staging and retain the old cache as a backup until
+        promotion succeeds. Recover interrupted replacements on the next load.
+
         Args:
             repo (str): Base model repository identifier.
             revision (str): Base model revision to cache.
@@ -426,18 +429,27 @@ class LoRATransformerModel(TransformerModel):
 
         Raises:
             ModelArtefactError: The base is unavailable offline or the API
-                response contains no weights.
+                response contains no weights, or recovery finds conflicting
+                unmarked cache and backup directories.
             filelock.Timeout: Another download holds the cache lock too long.
+            OSError: Cache promotion, restoration, or cleanup fails.
         """
         base_dir = os.path.join("lora-bases", repo, revision)
         cache_dir = get_cache_dir(base_dir)
         cache_path = Path(cache_dir)
         completion_marker = cache_path / LORA_BASE_COMPLETE_MARKER
+        # "~" cannot occur in a git ref or HF repo id. Use the cache resolver so
+        # temporary paths retain its collision and path-length protections.
+        staging_id = f"{base_dir}~staging"
+        staging_path = Path(get_cache_dir(staging_id))
+        backup_path = Path(get_cache_dir(f"{base_dir}~backup"))
         # Preserve support for legacy, pre-provisioned offline caches.
-        if completion_marker.is_file() or (OFFLINE_MODE and cache_path.is_dir()):
+        if not backup_path.exists() and (
+            completion_marker.is_file() or (OFFLINE_MODE and cache_path.is_dir())
+        ):
             return cache_dir
 
-        if OFFLINE_MODE:
+        if OFFLINE_MODE and not backup_path.exists():
             raise ModelArtefactError(
                 f"LoRA base {repo}@{revision} is not cached and OFFLINE_MODE is enabled."
             )
@@ -446,15 +458,32 @@ class LoRATransformerModel(TransformerModel):
         lock_dir.mkdir(parents=True, exist_ok=True)
         lock_name = sha256(str(cache_path.resolve()).encode("utf-8")).hexdigest()
         with FileLock(lock_dir / f"lora-base-{lock_name}.lock", timeout=120):
-            if completion_marker.is_file():
+            if backup_path.exists():
+                if completion_marker.is_file():
+                    # Promotion finished, but the process stopped before cleanup.
+                    shutil.rmtree(backup_path)
+                elif not cache_path.exists():
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(backup_path, cache_path)
+                else:
+                    raise ModelArtefactError(
+                        f"Cannot recover LoRA base {repo}@{revision}: both an "
+                        "unmarked cache and its backup exist."
+                    )
+
+            if completion_marker.is_file() or (OFFLINE_MODE and cache_path.is_dir()):
                 return cache_dir
+
+            if OFFLINE_MODE:
+                raise ModelArtefactError(
+                    f"LoRA base {repo}@{revision} is not cached and OFFLINE_MODE is enabled."
+                )
 
             if cache_path.exists():
                 logger.warning(
                     "LoRA base cache has no completion marker at %s; rebuilding it.",
                     cache_dir,
                 )
-                shutil.rmtree(cache_path)
 
             api_data = get_roboflow_base_lora(
                 self.api_key, repo, revision, self.device_id
@@ -467,15 +496,33 @@ class LoRATransformerModel(TransformerModel):
             weights_url = api_data["weights"]["model"]
             filename = weights_url.split("?")[0].split("/")[-1]
             assert filename.endswith("tar.gz")
+
+            if staging_path.exists():
+                shutil.rmtree(staging_path)
+
             stream_url_to_cache(
                 url=weights_url,
                 filename=filename,
-                model_id=base_dir,
+                model_id=staging_id,
             )
-            tar_file_path = get_cache_file_path(filename, base_dir)
+            tar_file_path = get_cache_file_path(filename, staging_id)
             with tarfile.open(tar_file_path, "r:gz") as tar:
-                tar.extractall(path=cache_dir)
-            completion_marker.touch()
+                tar.extractall(path=staging_path)
+            (staging_path / LORA_BASE_COMPLETE_MARKER).touch()
+
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            if cache_path.exists():
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(cache_path, backup_path)
+            try:
+                os.replace(staging_path, cache_path)
+            except OSError:
+                if backup_path.exists():
+                    os.replace(backup_path, cache_path)
+                raise
+
+            if backup_path.exists():
+                shutil.rmtree(backup_path)
 
         return cache_dir
 
