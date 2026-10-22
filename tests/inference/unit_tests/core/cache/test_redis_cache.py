@@ -1,5 +1,9 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
 from inference.core.cache.redis import RedisCache
 
 
@@ -58,4 +62,20 @@ def test_zadd_without_expire_does_not_set_ttl_or_bookkeeping():
     # then - plain ZADD, no pipeline / EXPIRE, no zexpires entry
     mock_client.zadd.assert_called_once()
     mock_client.pipeline.assert_not_called()
+    assert cache.zexpires == {}
+
+
+@pytest.mark.parametrize("error", [RedisConnectionError, RedisTimeoutError])
+def test_expiration_retries_after_a_transient_redis_error(error):
+    cache, mock_client = _build_cache_with_mock_client()
+    cache.zexpires[("stream", 1.0)] = 90.0
+    mock_client.zremrangebyscore.side_effect = [error("unavailable"), 1]
+
+    with patch("inference.core.cache.redis.time.time", return_value=100.0), patch(
+        "inference.core.cache.redis.time.sleep", side_effect=[None, StopIteration]
+    ):
+        with pytest.raises(StopIteration):
+            cache._expire()
+
+    assert mock_client.zremrangebyscore.call_count == 2
     assert cache.zexpires == {}

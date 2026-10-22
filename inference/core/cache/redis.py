@@ -66,10 +66,20 @@ class RedisCache(BaseCache):
             for k, v in copy(list(self.zexpires.items())):
                 if v < now:
                     tolerance_factor = 1e-14  # floating point accuracy
-                    self.zremrangebyscore(
-                        k[0], k[1] - tolerance_factor, k[1] + tolerance_factor
-                    )
-                    del self.zexpires[k]
+                    try:
+                        self.zremrangebyscore(
+                            k[0], k[1] - tolerance_factor, k[1] + tolerance_factor
+                        )
+                    except (
+                        redis.exceptions.ConnectionError,
+                        redis.exceptions.TimeoutError,
+                    ):
+                        logger.warning(
+                            "Could not expire Redis sorted-set member; will retry",
+                            exc_info=True,
+                        )
+                    else:
+                        del self.zexpires[k]
             sleep_time = MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now)
             time.sleep(max(sleep_time, 0))
 
