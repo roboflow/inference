@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Keeps the SHA-pinned actions (and their version comments) current. One
+  # grouped PR per month limits CI runs spent on action bumps.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    # Skip releases younger than a week, so a compromised tag has time to be
+    # caught before it is pinned here.
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
