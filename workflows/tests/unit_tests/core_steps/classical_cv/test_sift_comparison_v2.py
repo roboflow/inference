@@ -12,6 +12,15 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _seed_opencv_rng() -> None:
+    # FlannBasedMatcher builds randomized kd-trees from OpenCV's global RNG, so
+    # the match count otherwise depends on how many FLANN calls already ran in
+    # this process (443 or 444 here). A fixed seed makes every test independent
+    # of test order and of which xdist worker runs it.
+    cv2.setRNGSeed(0)
+
+
 def test_sift_comparison_validation_when_valid_manifest_is_given() -> None:
     # given
     data = {

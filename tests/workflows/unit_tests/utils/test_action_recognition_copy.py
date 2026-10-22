@@ -91,6 +91,32 @@ def test_repeated_calls_union_into_the_same_timeline_identically() -> None:
     assert _dump(ours) == _dump(theirs)
 
 
+@pytest.mark.parametrize("continuous", [False, True])
+@pytest.mark.parametrize("function", [merge_window_segments, server_implementation])
+def test_late_source_indices_do_not_shift_continuous_spans(function, continuous):
+    segment = _segment("walk", 0, 1)
+    segment.end_exclusive = continuous
+    timeline = []
+    function(
+        timeline=timeline,
+        frame_numbers=[16, 23],
+        segments=[segment],
+        id_vocabulary=["walk"],
+        stride=8,
+        sample_stride=7.5,
+        sample_start_frame=15.0,
+        frame_limit=30,
+    )
+
+    prediction = timeline[0]
+    if continuous:
+        assert prediction.start_frame_idx == 15
+        assert prediction.end_frame_idx == 22
+    else:
+        assert prediction.start_frame_idx == 16
+        assert prediction.end_frame_idx == 23
+
+
 def test_the_module_imports_only_allowed_packages() -> None:
     path = (
         pathlib.Path(__file__).resolve().parents[4]

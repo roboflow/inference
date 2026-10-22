@@ -78,7 +78,7 @@ The block supports dynamic message content through parameter placeholders that a
 - Token must have `chat:write` scope to send messages to channels
 - Token must have `files:write` scope if using attachments
 - Token can be provided via workflow inputs (recommended for security) or stored in workflow definitions
-- View [Slack API documentation](https://api.slack.com/tutorials/tracks/getting-a-token) or [Roboflow Blog guide](https://blog.roboflow.com/slack-notification-workflows/) for token generation instructions
+- View [Slack API documentation](https://docs.slack.dev/authentication/tokens/) or [Roboflow Blog guide](https://blog.roboflow.com/slack-notification-workflows/) for token generation instructions
 
 **Channel Configuration**: Requires a valid Slack channel identifier (channel ID or channel name starting with `#`). The bot or user associated with the token must be a member of the channel.
 
@@ -125,7 +125,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/slack_notification@v1"]
     slack_token: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
-        description="Slack API token (Bot Token or User Token) for authenticating with Slack API. Token must have 'chat:write' scope to send messages and 'files:write' scope if using attachments. Token is marked as private for security. Recommended to provide via workflow inputs using SECRET_KIND selectors rather than storing in workflow definitions. Generate tokens via Slack API apps or workspace administration. See [Slack API documentation](https://api.slack.com/tutorials/tracks/getting-a-token) or [Roboflow Blog guide](https://blog.roboflow.com/slack-notification-workflows/) for setup instructions.",
+        description="Slack API token (Bot Token or User Token) for authenticating with Slack API. Token must have 'chat:write' scope to send messages and 'files:write' scope if using attachments. Token is marked as private for security. Recommended to provide via workflow inputs using SECRET_KIND selectors rather than storing in workflow definitions. Generate tokens via Slack API apps or workspace administration. See [Slack API documentation](https://docs.slack.dev/authentication/tokens/) or [Roboflow Blog guide](https://blog.roboflow.com/slack-notification-workflows/) for setup instructions.",
         private=True,
         examples=["$inputs.slack_token"],
     )

@@ -38,7 +38,7 @@ The package contains the full WideResNet50 backbone and the memory bank. Loading
 |---------|-----------|
 | **Training** | ✅ Train custom models on Roboflow |
 | **Upload Weights** | ❌ Not supported |
-| **Workflows** | ✅ Use in [Workflows](https://docs.roboflow.com/workflows) via Classification block |
+| **Workflows** | ✅ Use in [Workflows](https://docs.roboflow.com/workflows) via the Anomaly Detection Model block |
 | **Self-Hosting** | ✅ Deploy with `inference-models` |
 
 ## Usage Example
@@ -53,26 +53,35 @@ model = AutoModel.from_pretrained(
 )
 image = cv2.imread("path/to/image.jpg")
 
-prediction = model(image, include_anomaly_map=True)
+prediction = model(image, include_anomaly_map=True, confidence=0.5)
 
 result = prediction.images_metadata[0]
 print(model.class_names[prediction.class_id[0].item()])  # "normal" or "anomalous"
 print(result["anomaly_score"], result["anomaly_threshold"], result["is_anomalous"])
-heatmap = result["anomaly_map"]  # float32 array with the input image height and width
+print(result["anomaly_scale"])  # sigmoid((score - threshold) / scale) is the anomalous confidence
+heatmap = result["anomaly_map"]  # float32 array of shape (image_size, image_size)
+overlay = cv2.resize(heatmap, (image.shape[1], image.shape[0]))  # stretch onto the image
 ```
 
 ## Prediction Format
 
 The model returns a `ClassificationPrediction` over the fixed classes `normal` and `anomalous`:
 
-- `class_id` follows the threshold saved with the model: `anomalous` when `anomaly_score >= anomaly_threshold`.
-- `confidence` is a monotonic transform of the score margin. The threshold maps to exactly `0.5`, so the
-  argmax always agrees with `class_id`. It is not an estimated defect probability.
+- `confidence` is the anomalous confidence `sigmoid((anomaly_score - anomaly_threshold) / anomaly_scale)`,
+  with the threshold and scale calibrated at training, so it is exactly `0.5` at the saved threshold. It is
+  not an estimated defect probability.
+- `class_id` is `anomalous` when that confidence reaches the `confidence` passed to the model: a number in
+  `[0, 1]`, `"best"` (the model-eval recommendation, the default) or `"default"` (`0.5`, which reproduces the
+  decision calibrated at training). The argmax of `confidence` agrees with `class_id` only at `0.5`.
 - `images_metadata[i]` holds `anomaly_score` (raw score, larger means more anomalous), `anomaly_threshold`,
-  `is_anomalous` and, when `include_anomaly_map=True` is passed, `anomaly_map`.
+  `anomaly_scale`, `is_anomalous` and, when `include_anomaly_map=True` is passed, `anomaly_map`. A caller can
+  re-decide against its own threshold with the same rule.
 
 The score of an image does not depend on the other images in the batch. The heatmap is local evidence for the
-score, not a supervised segmentation mask.
+score, not a supervised segmentation mask. It is returned at the network input resolution (a square of the
+package's `image_size`) and covers the whole image as the network saw it, so resizing it to the image's width
+and height is a plain stretch. Over HTTP, `inference` serves it as base64 float32 bytes with its shape and the
+`inference_sdk` client decodes it back to a numpy array.
 
 ## Input Images
 

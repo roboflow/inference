@@ -17,6 +17,7 @@ from inference_models.models.common.anomaly_detection import (
     post_process_anomaly_scores,
     pre_process_anomaly_images,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 IMAGE_SIZE = 32
 
@@ -149,7 +150,11 @@ def test_score_at_threshold_is_anomalous_with_confidence_one_half() -> None:
     calibration = AnomalyCalibration(threshold=2.0, scale=0.5)
 
     prediction = post_process_anomaly_scores(
-        raw_prediction([1.0, 2.0, 1e9]), calibration, include_anomaly_map=False
+        raw_prediction([1.0, 2.0, 1e9]),
+        calibration,
+        include_anomaly_map=False,
+        confidence="default",
+        recommended_parameters=None,
     )
 
     assert prediction.class_id.tolist() == [0, 1, 1]
@@ -163,18 +168,101 @@ def test_score_at_threshold_is_anomalous_with_confidence_one_half() -> None:
     ]
     assert prediction.images_metadata[0]["anomaly_score"] == 1.0
     assert prediction.images_metadata[0]["anomaly_threshold"] == 2.0
+    assert prediction.images_metadata[0]["anomaly_scale"] == 0.5
     assert "anomaly_map" not in prediction.images_metadata[0]
 
 
-def test_anomaly_map_is_returned_in_original_image_coordinates() -> None:
+@pytest.mark.parametrize(
+    "confidence, expected_is_anomalous",
+    [
+        (0.5, [False, True, True]),
+        (0.25, [True, True, True]),
+        (0.75, [False, False, True]),
+    ],
+)
+def test_confidence_moves_the_decision_and_keeps_the_saved_threshold(
+    confidence: float, expected_is_anomalous: list
+) -> None:
+    calibration = AnomalyCalibration(threshold=2.0, scale=0.5)
+
+    # Anomalous confidences: sigmoid(-0.4) ~ 0.40, sigmoid(0) = 0.5, sigmoid(2) ~ 0.88.
+    prediction = post_process_anomaly_scores(
+        raw_prediction([1.8, 2.0, 3.0]),
+        calibration,
+        include_anomaly_map=False,
+        confidence=confidence,
+        recommended_parameters=None,
+    )
+
+    assert [m["is_anomalous"] for m in prediction.images_metadata] == (
+        expected_is_anomalous
+    )
+    assert prediction.class_id.tolist() == [int(v) for v in expected_is_anomalous]
+    assert {m["anomaly_threshold"] for m in prediction.images_metadata} == {2.0}
+
+
+@pytest.mark.parametrize(
+    "recommended_parameters, expected_is_anomalous",
+    [
+        (None, [False, True]),
+        (RecommendedParameters(confidence=0.7), [False, False]),
+        (
+            RecommendedParameters(
+                confidence=0.7, per_class_confidence={"anomalous": 0.3}
+            ),
+            [True, True],
+        ),
+    ],
+)
+def test_best_confidence_follows_model_eval_recommendation(
+    recommended_parameters, expected_is_anomalous: list
+) -> None:
     calibration = AnomalyCalibration(threshold=2.0, scale=0.5)
 
     prediction = post_process_anomaly_scores(
-        raw_prediction([1.0], size_hw=(10, 20)), calibration, include_anomaly_map=True
+        raw_prediction([1.8, 2.0]),
+        calibration,
+        include_anomaly_map=False,
+        confidence="best",
+        recommended_parameters=recommended_parameters,
     )
 
-    assert prediction.images_metadata[0]["anomaly_map"].shape == (10, 20)
-    assert prediction.images_metadata[0]["anomaly_map"].dtype == np.float32
+    assert [m["is_anomalous"] for m in prediction.images_metadata] == (
+        expected_is_anomalous
+    )
+
+
+@pytest.mark.parametrize("confidence", [-0.1, 1.5, True, "high"])
+def test_invalid_confidence_is_rejected(confidence) -> None:
+    calibration = AnomalyCalibration(threshold=2.0, scale=0.5)
+
+    with pytest.raises(ModelInputError, match="confidence"):
+        post_process_anomaly_scores(
+            raw_prediction([1.0]),
+            calibration,
+            include_anomaly_map=False,
+            confidence=confidence,
+            recommended_parameters=None,
+        )
+
+
+def test_anomaly_map_is_returned_at_network_resolution() -> None:
+    calibration = AnomalyCalibration(threshold=2.0, scale=0.5)
+    raw = raw_prediction([1.0], size_hw=(10, 20))
+
+    prediction = post_process_anomaly_scores(
+        raw,
+        calibration,
+        include_anomaly_map=True,
+        confidence="default",
+        recommended_parameters=None,
+    )
+
+    anomaly_map = prediction.images_metadata[0]["anomaly_map"]
+    # The map keeps the network's square geometry whatever the image size was.
+    assert anomaly_map.shape == (IMAGE_SIZE, IMAGE_SIZE)
+    assert anomaly_map.dtype == np.float32
+    assert np.array_equal(anomaly_map, raw.maps[0].numpy())
 
 
 def test_non_finite_scores_are_rejected() -> None:
@@ -182,5 +270,9 @@ def test_non_finite_scores_are_rejected() -> None:
 
     with pytest.raises(CorruptedModelPackageError, match="non-finite"):
         post_process_anomaly_scores(
-            raw_prediction([float("nan")]), calibration, include_anomaly_map=False
+            raw_prediction([float("nan")]),
+            calibration,
+            include_anomaly_map=False,
+            confidence="default",
+            recommended_parameters=None,
         )

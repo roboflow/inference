@@ -87,9 +87,18 @@ def save_package(
     return str(package_dir)
 
 
+@pytest.mark.parametrize(
+    "chunk_elements",
+    [patchcore_anomaly_detection_torch.NEAREST_NEIGHBOURS_CHUNK_ELEMENTS, 120, 10],
+)
 def test_patch_scores_are_mean_squared_distances_to_nearest_memory_entries(
-    tiny_backbone: None,
+    tiny_backbone: None, monkeypatch: pytest.MonkeyPatch, chunk_elements: int
 ) -> None:
+    monkeypatch.setattr(
+        patchcore_anomaly_detection_torch,
+        "NEAREST_NEIGHBOURS_CHUNK_ELEMENTS",
+        chunk_elements,
+    )
     torch.manual_seed(0)
     memory_bank = torch.randn(50, EMBEDDING_DIMENSION)
     embeddings = torch.randn(7, EMBEDDING_DIMENSION)
@@ -151,7 +160,8 @@ def test_memory_bank_images_score_zero_and_other_images_are_anomalous(
     assert single.images_metadata[0]["anomaly_score"] == pytest.approx(
         scores[1], rel=1e-5
     )
-    assert single.images_metadata[0]["anomaly_map"].shape == (48, 80)
+    assert single.images_metadata[0]["anomaly_map"].shape == (IMAGE_SIZE, IMAGE_SIZE)
+    assert single.images_metadata[0]["anomaly_map"].dtype == np.float32
     assert single.images_metadata[0]["anomaly_threshold"] == 1.0
 
 

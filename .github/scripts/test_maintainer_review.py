@@ -558,10 +558,7 @@ class HandoffTests(unittest.TestCase):
             sum(bridge.STATE_MARKER in c["body"] for c in self.github.comments), 1
         )
         self.assertNotIn("secret", self.github.comments[2]["body"])
-        self.assertIn(
-            "https://roboflow.slack.com/archives/C123/p12345000001",
-            self.github.comments[2]["body"],
-        )
+        self.assertNotIn("slack.com", self.github.comments[2]["body"])
 
     def test_fresh_comment_ids_coalesce_for_same_revision(self):
         """Three separate requests on one unchanged PR produce only one post."""

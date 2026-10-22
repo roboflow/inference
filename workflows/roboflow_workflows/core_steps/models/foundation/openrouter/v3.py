@@ -84,6 +84,10 @@ DETECTION_FORMAT_METADATA = {
         "name": "xyxy, 0-1000",
         "description": "`box_2d` list of integers normalized to 0-1000.",
     },
+    "xyxy_0_999": {
+        "name": "xyxy, 0-999",
+        "description": "`box_2d` list of integers normalized to 0-999.",
+    },
     "yxyx_0_1000": {
         "name": "yxyx, 0-1000",
         "description": "`box_2d` list of integers normalized to 0-1000, y first.",
