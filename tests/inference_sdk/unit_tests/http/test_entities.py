@@ -343,6 +343,24 @@ def test_to_legacy_call_parameters_context_overrides_explicit_count_inference_tr
 
 
 @pytest.mark.parametrize("client_mode", [HTTPClientMode.V0, HTTPClientMode.V1])
+@pytest.mark.parametrize("requested", [None, False, True])
+def test_include_anomaly_map_reaches_both_api_versions(client_mode, requested):
+    # given - the anomaly heatmap is requested the same way on the legacy route and v1
+    configuration = InferenceConfiguration(include_anomaly_map=requested)
+
+    # when
+    parameters = configuration.to_api_call_parameters(
+        client_mode=client_mode, task_type=CLASSIFICATION_TASK
+    )
+
+    # then
+    if requested is None:
+        assert "include_anomaly_map" not in parameters
+    else:
+        assert parameters["include_anomaly_map"] is requested
+
+
+@pytest.mark.parametrize("client_mode", [HTTPClientMode.V0, HTTPClientMode.V1])
 @pytest.mark.parametrize("opt_in", [None, False, True])
 def test_mask_resolution_opt_in_is_serialized_only_when_selected(client_mode, opt_in):
     configuration = InferenceConfiguration(allow_reduced_mask_resolution=opt_in)

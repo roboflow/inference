@@ -1,0 +1,226 @@
+name: Hosted platform E2E - repository four-shard tests
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        required: true
+      skip_warmup:
+        type: boolean
+        default: false
+    secrets:
+      TIMING_PROFILE:
+        required: false
+      HOSTED_PLATFORM_TESTS_API_KEY:
+        required: true
+      OPENAI_KEY:
+        required: true
+      GOOGLE_API_KEY:
+        required: true
+      ANTHROPIC_API_KEY:
+        required: true
+      GOOGLE_VISION_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+# Both manual entrypoints share this group. Never overlap staging/production runs.
+concurrency:
+  group: hosted-platform-repository-e2e
+  cancel-in-progress: false
+
+env:
+  HOSTED_E2E_MODE: repository
+  HOSTED_E2E_RUN_KEY: ${{ github.run_id }}:${{ github.run_attempt }}
+  HOSTED_E2E_TEST_SHA: ${{ github.sha }}
+  HOSTED_E2E_RUNNER_SHA: ${{ github.sha }}
+  HOSTED_E2E_POLICY_SHA: ${{ github.sha }}
+  HOSTED_E2E_TARGET: ${{ inputs.target }}
+  HOSTED_E2E_SKIP_WARMUP: ${{ inputs.skip_warmup }}
+  HOSTED_PLATFORM_TESTS_PROJECT: ${{ inputs.target == 'staging' && 'roboflow-staging-serverless' || 'roboflow-platform-serverless' }}
+  PYTHONPATH: ${{ github.workspace }}
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  guard:
+    # Accident prevention only: any same-repository branch or tag may run, and
+    # the secrets are repository-level. Pins one dispatched SHA for every job.
+    name: Verify manual same-repository dispatch
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    timeout-minutes: 5
+    outputs:
+      approved_ref: ${{ steps.authorize.outputs.approved_ref }}
+      approved_sha: ${{ steps.authorize.outputs.approved_sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the dispatched ref, commit and target
+        id: authorize
+        run: python3 .github/scripts/hosted_e2e_gate.py
+
+  prepare:
+    needs: guard
+    env:
+      HOSTED_E2E_APPROVED_REF: ${{ needs.guard.outputs.approved_ref }}
+      HOSTED_E2E_APPROVED_SHA: ${{ needs.guard.outputs.approved_sha }}
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.31"
+          enable-cache: false
+      - name: Create isolated test environment
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8' 'cryptography==46.0.3'
+      - name: Install and freeze suite dependencies
+        run: |
+          uv pip install --python .venv/bin/python -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.sdk.http.txt 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8' 'cryptography==46.0.3'
+          mkdir -m 700 evidence
+          uv pip freeze --python .venv/bin/python > evidence/dependencies.txt
+      - name: Execute stage with captured output and encrypted evidence
+        env:
+          HOSTED_E2E_TIMING_PROFILE: ${{ secrets.TIMING_PROFILE }}
+          HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_VISION_API_KEY: ${{ secrets.GOOGLE_VISION_API_KEY }}
+        run: |
+          .venv/bin/python .github/scripts/hosted_e2e_repository.py prepare
+      - name: Retain encrypted evidence only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hosted-encrypted-${{ github.run_id }}-${{ github.run_attempt }}-prepare
+          path: encrypted/*.bin
+          retention-days: 3
+          if-no-files-found: warn
+
+  shards:
+    needs: [guard, prepare]
+    env:
+      HOSTED_E2E_APPROVED_REF: ${{ needs.guard.outputs.approved_ref }}
+      HOSTED_E2E_APPROVED_SHA: ${{ needs.guard.outputs.approved_sha }}
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [A, B, C, D]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.31"
+          enable-cache: false
+      - name: Create isolated test environment
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8' 'cryptography==46.0.3'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: hosted-encrypted-${{ github.run_id }}-${{ github.run_attempt }}-prepare
+          path: incoming
+      - name: Authenticate and restore evidence for this attempt
+        env:
+          HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
+        run: .venv/bin/python .github/scripts/hosted_e2e_repository.py restore
+      - name: Install the prepared dependency versions
+        run: uv pip sync --python .venv/bin/python evidence/dependencies.txt
+      - name: Execute stage with captured output and encrypted evidence
+        env:
+          HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_VISION_API_KEY: ${{ secrets.GOOGLE_VISION_API_KEY }}
+        run: |
+          .venv/bin/python .github/scripts/hosted_e2e_repository.py shard --shard "${{ matrix.shard }}"
+      - name: Retain encrypted evidence only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hosted-encrypted-${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
+          path: encrypted/*.bin
+          retention-days: 3
+          if-no-files-found: warn
+
+  aggregate:
+    needs: [guard, prepare, shards]
+    if: ${{ always() && needs.guard.result == 'success' }}
+    env:
+      HOSTED_E2E_APPROVED_REF: ${{ needs.guard.outputs.approved_ref }}
+      HOSTED_E2E_APPROVED_SHA: ${{ needs.guard.outputs.approved_sha }}
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.31"
+          enable-cache: false
+      - name: Create isolated test environment
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8' 'cryptography==46.0.3'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        continue-on-error: true
+        with:
+          pattern: hosted-encrypted-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: incoming
+          merge-multiple: true
+      - name: Authenticate and restore evidence for this attempt
+        env:
+          HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
+        run: .venv/bin/python .github/scripts/hosted_e2e_repository.py restore
+      - name: Execute stage with captured output and encrypted evidence
+        env:
+          HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          SHARDS_RESULT: ${{ needs.shards.result }}
+        run: |
+          .venv/bin/python .github/scripts/hosted_e2e_repository.py aggregate
+          test "$PREPARE_RESULT" = success
+          test "$SHARDS_RESULT" = success
+      - name: Retain encrypted evidence only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hosted-encrypted-${{ github.run_id }}-${{ github.run_attempt }}-aggregate
+          path: encrypted/*.bin
+          retention-days: 3
+          if-no-files-found: warn

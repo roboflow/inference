@@ -892,6 +892,14 @@ else:
         RoboflowClassificationModelBlockV3,
     )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.anomaly_detection.v1_tensor import (
+        AnomalyDetectionModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.anomaly_detection.v1 import (
+        AnomalyDetectionModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v1_tensor import (
         RoboflowMultiLabelClassificationModelBlockV1,
     )
@@ -1285,6 +1293,14 @@ else:
     )
 
 # Visualizers
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.anomaly_heatmap.v1 import (
+        AnomalyHeatmapVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.anomaly_heatmap.v1_tensor import (
+        AnomalyHeatmapVisualizationBlockV1,
+    )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.visualizations.background_color.v1 import (
         BackgroundColorVisualizationBlockV1,
@@ -1796,6 +1812,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SpaceXAIBlockV2,
         SpaceXAIBlockV3,
         CosineSimilarityBlockV1,
+        AnomalyHeatmapVisualizationBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
         BlurVisualizationBlockV1,
@@ -1942,6 +1959,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowKeypointDetectionModelBlockV3,
         RoboflowClassificationModelBlockV2,
         RoboflowClassificationModelBlockV3,
+        AnomalyDetectionModelBlockV1,
         RoboflowMultiLabelClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV3,
         ActionRecognitionModelBlockV1,
