@@ -168,15 +168,6 @@ class BufferBlockV1(WorkflowBlock):
 
     def run(self, data: Any, length: int, pad: bool) -> BlockResult:
         """Append a value and return a snapshot of the buffer entries.
-
-        Args:
-            data: Value to prepend to the history.
-            length: Maximum number of entries to retain.
-            pad: Whether to fill unused entries with None.
-
-        Returns:
-            The current history in a separate list, newest entry first.
-            Buffered values themselves are shared, not deep-copied.
         """
         self.buffer.insert(0, data)
         if len(self.buffer) > length:
