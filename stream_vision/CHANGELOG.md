@@ -4,6 +4,24 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.3rc1`
+
+### Changed
+
+- The `workflows` extra requires `roboflow-workflows>=0.2.13rc1` instead of
+  `>=0.2.11rc1`, providing the execution-engine cleanup used below.
+
+### Fixed
+
+- Joining a workflow `InferencePipeline` (after end of stream, `terminate()` or an inference error) now closes the workflow's blocks through `ExecutionEngine.close()`, after the workflow thread pools are shut down. Blocks with background connections, such as the OPC UA Reader, MQTT Reader and Kafka Consumer, no longer keep their threads and broker or server sessions while a stopped pipeline object is still referenced. With a `roboflow-workflows` that has no `ExecutionEngine.close()`, nothing changes.
+
+## `0.1.2`
+
+### Changed
+
+- The `workflows` extra requires `aiohttp~=3.14.4`, the aiohttp release that fixes GHSA-2g87-pp6c-29x5 and GHSA-5wr8-gcqf-gqf3.
+- The `workflows` extra requires `roboflow-workflows>=0.2.11rc1` (previously `>=0.2.4rc3`).
+
 ## `0.1.1`
 
 ### Added

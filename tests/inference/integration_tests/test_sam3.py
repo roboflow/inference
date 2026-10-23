@@ -19,9 +19,7 @@ BASE_URL = os.environ.get("BASE_URL", "http://localhost")
     bool_env(os.getenv("SKIP_SAM3_TESTS", True)),
     reason="Skipping SAM test",
 )
-def test_image_embedding(
-    auth_mode: str, clean_loaded_models_every_test_fixture
-) -> None:
+def test_image_embedding(auth_mode: str, clean_loaded_models_fixture) -> None:
     # given
     payload = {
         "image": {
@@ -49,9 +47,7 @@ def test_image_embedding(
     bool_env(os.getenv("SKIP_SAM3_TESTS", True)),
     reason="Skipping SAM test",
 )
-def test_visual_segmentation(
-    auth_mode: str, clean_loaded_models_every_test_fixture
-) -> None:
+def test_visual_segmentation(auth_mode: str, clean_loaded_models_fixture) -> None:
     payload = {
         "image": {
             "type": "url",
@@ -75,9 +71,7 @@ def test_visual_segmentation(
     bool_env(os.getenv("SKIP_SAM3_TESTS", True)),
     reason="Skipping SAM test",
 )
-def test_concept_segmentation(
-    auth_mode: str, clean_loaded_models_every_test_fixture
-) -> None:
+def test_concept_segmentation(auth_mode: str, clean_loaded_models_fixture) -> None:
     payload = {
         "image": {
             "type": "url",

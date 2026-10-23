@@ -188,6 +188,30 @@ class AccountingTests(unittest.TestCase):
             case["durations"][phase] = [0.1] * len(outcomes)
             self.assertFalse(self._accepted(reports))
 
+    def test_failure_summaries_are_surfaced_only_for_failures_and_validated(self):
+        """Expose recorded one-line summaries for failing cases; reject bad shapes."""
+        self.assertEqual(
+            runner._aggregate(self.plan, self.reports, readiness=self.ready)[
+                "failure_summaries"
+            ],
+            {},
+        )
+        reports = copy.deepcopy(self.reports)
+        node, case = next(iter(reports[0]["cases"].items()))
+        case["outcomes"]["call"] = ["failed"]
+        case["failures"] = {"call": "AssertionError: boom"}
+        result = runner._aggregate(self.plan, reports, readiness=self.ready)
+        self.assertEqual(result["failures"], [node])
+        self.assertEqual(
+            result["failure_summaries"], {node: {"call": "AssertionError: boom"}}
+        )
+        for invalid in [{"bogus": "x"}, {"call": ""}, {"call": 1}, ["call"]]:
+            with self.subTest(failures=invalid):
+                reports = copy.deepcopy(self.reports)
+                next(iter(reports[0]["cases"].values()))["failures"] = invalid
+                with self.assertRaises(ValueError):
+                    runner._aggregate(self.plan, reports, readiness=self.ready)
+
     def test_explicit_skip_is_allowed_but_cannot_hide_a_failure(self):
         """Allow only deliberate final skips with valid fixture evidence."""
         node = self.plan["assignments"]["A"][0]
@@ -536,6 +560,32 @@ class CommandTests(unittest.TestCase):
         self._run("aggregate", expected=1)
         acceptance = json.loads(self.output.joinpath("acceptance.json").read_text())
         self.assertEqual(acceptance["failures"], ["suite/test_a.py::test_retry"])
+
+    def test_failure_summaries_keep_final_attempt_first_line_without_secrets(self):
+        """Record a redacted single line for the last failing attempt only."""
+        nodeid = "suite/test_a.py::test_retry"
+        self.env["HOSTED_PLATFORM_TESTS_API_KEY"] = "synthetic-secret-value-1234"
+        self.suite.joinpath("test_a.py").write_text(
+            "import os, pytest\ncalls=0\n"
+            "@pytest.mark.flaky(retries=1, delay=0)\n"
+            "def test_retry():\n"
+            "    global calls\n    calls+=1\n"
+            "    key = os.environ['HOSTED_PLATFORM_TESTS_API_KEY']\n"
+            '    raise RuntimeError(f"attempt {calls} {key}\\nresponse body")\n'
+        )
+        self._run("prepare")
+        self._run("warmup")
+        plan = json.loads(self.output.joinpath("plan.json").read_text())
+        for shard, ids in plan["assignments"].items():
+            self._run("shard", shard=shard, expected=1 if nodeid in ids else 0)
+        self._run("aggregate", expected=1)
+        acceptance = json.loads(self.output.joinpath("acceptance.json").read_text())
+        self.assertEqual(
+            acceptance["failure_summaries"],
+            {nodeid: {"call": "RuntimeError: attempt 2 [redacted]"}},
+        )
+        for path in self.output.glob("*.json"):
+            self.assertNotIn("synthetic-secret-value", path.read_text())
 
 
 class WorkflowGuardTests(unittest.TestCase):
