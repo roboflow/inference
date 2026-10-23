@@ -225,6 +225,9 @@ SAM3_VISUAL_REMOTE_FAILURE_MESSAGE = "SAM3 visual_segment remote request failed.
 SAM3_EMBEDDING_REMOTE_UNSUPPORTED_MESSAGE = (
     "SAM3 embedding is not supported in remote execution mode."
 )
+SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE = (
+    "Binary SAM3 masks are not supported in remote execution mode."
+)
 _DEPTH_SINGLE_IMAGE_MESSAGE = "Depth estimation accepts a single image."
 _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE = (
     "Image embeddings require a ResNet, ViT or DINOv3 classifier."
@@ -1931,6 +1934,10 @@ async def _sam3_remote(
 
 
 def _sam3_concept_remote_payload(inference_request: Sam3SegmentationRequest) -> dict:
+    # The proxy answers JSON, which cannot carry binary masks.
+    if inference_request.format == "binary":
+        raise LegacyHTTPError(501, SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE)
+
     prompts = []
     for prompt in inference_request.prompts:
         prompt_data = prompt.model_dump(exclude_none=True)
@@ -1944,6 +1951,8 @@ def _sam3_concept_remote_payload(inference_request: Sam3SegmentationRequest) -> 
         },
         "prompts": prompts,
         "output_prob_thresh": inference_request.output_prob_thresh,
+        "nms_iou_threshold": inference_request.nms_iou_threshold,
+        "format": inference_request.format,
         "source": inference_request.source,
         "source_info": inference_request.source_info,
     }
@@ -1952,6 +1961,10 @@ def _sam3_concept_remote_payload(inference_request: Sam3SegmentationRequest) -> 
 
 
 def _sam3_visual_remote_payload(inference_request: Sam2SegmentationRequest) -> dict:
+    # The proxy answers JSON, which cannot carry binary masks.
+    if inference_request.format == "binary":
+        raise LegacyHTTPError(501, SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE)
+
     prompts = (
         inference_request.prompts.model_dump(exclude_none=True)
         if inference_request.prompts
@@ -1964,6 +1977,7 @@ def _sam3_visual_remote_payload(inference_request: Sam2SegmentationRequest) -> d
         },
         "prompts": prompts,
         "multimask_output": inference_request.multimask_output,
+        "format": inference_request.format,
         "source": inference_request.source,
         "source_info": inference_request.source_info,
     }

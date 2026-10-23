@@ -466,6 +466,11 @@ def is_workflow_selector(value: Any) -> bool:
 class WorkflowBlockManifest(BaseModel, ABC):
     model_config = ConfigDict(
         validate_assignment=True,
+        # A rendered validation error would otherwise repeat the step's raw input,
+        # literal secrets included, wherever a manifest is validated directly (input
+        # and output discovery behind `describe_interface`, for example). Subclasses'
+        # own `model_config` is merged with this one, so every block inherits it.
+        hide_input_in_errors=True,
     )
 
     type: str

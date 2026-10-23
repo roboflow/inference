@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
+from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
 from inference.core.exceptions import InferenceModelNotFound
 from inference.core.managers import base as base_module
 from inference.core.managers.base import ModelManager
@@ -178,7 +180,7 @@ def test_infer_from_request_sync_caches_results_in_model_monitoring_cache(
     monkeypatch.setattr(
         base_module,
         "to_cachable_inference_item",
-        lambda _request, _response: cached_item,
+        lambda _request, _response, model_id: cached_item,
     )
     monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
     monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
@@ -188,6 +190,45 @@ def test_infer_from_request_sync_caches_results_in_model_monitoring_cache(
     assert any(
         call.args[0].startswith("inference:") for call in cache_mock.zadd.call_args_list
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+async def test_infer_from_request_caches_served_model_id_when_request_has_none(
+    monkeypatch: pytest.MonkeyPatch,
+    use_async: bool,
+) -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    model.infer_from_request.return_value = ObjectDetectionInferenceResponse(
+        predictions=[], image={"width": 1, "height": 1}, time=0.1
+    )
+    model_manager._models = {"yolo_world/l": model}
+    request = YOLOWorldInferenceRequest(
+        image={"type": "url", "value": "https://some/image.jpg"},
+        text=["person"],
+    )
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
+
+    if use_async:
+        await model_manager.infer_from_request(model_id="yolo_world/l", request=request)
+    else:
+        model_manager.infer_from_request_sync(model_id="yolo_world/l", request=request)
+
+    cached_items = [
+        call.kwargs["value"]
+        for call in cache_mock.zadd.call_args_list
+        if call.args[0].startswith("inference:")
+    ]
+    assert [item["request"]["model_id"] for item in cached_items] == ["yolo_world/l"]
 
 
 def test_infer_from_request_sync_skips_model_monitoring_cache_when_disabled(

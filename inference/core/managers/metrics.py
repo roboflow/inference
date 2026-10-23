@@ -91,6 +91,22 @@ def get_system_info() -> dict:
 def get_inference_results_for_model(
     inference_server_id: str, model_id: str, min: float = -1, max: float = float("inf")
 ):
+    """Read the inference results a model cached for the pingback.
+
+    Drops images from the cached requests and responses. A single image's
+    response, cached on its own when ``TINY_CACHE`` is off, is returned wrapped in
+    a list, the shape Roboflow reads. The cached entry keeps its response as is,
+    for ``get_model_metrics``.
+
+    Args:
+        inference_server_id: Id of the inference server that cached the results.
+        model_id: Id of the model that served the requests.
+        min: Earliest finish time to include.
+        max: Latest finish time to include.
+
+    Returns:
+        List of dicts with the ``request_time`` and the cached ``inference``.
+    """
     inferences_with_times = (
         model_monitoring_cache_module.model_monitoring_cache.zrangebyscore(
             f"inference:{inference_server_id}:{model_id}",
@@ -108,6 +124,7 @@ def get_inference_results_for_model(
         if responses:
             if not isinstance(responses, list):
                 responses = [responses]
+                result = {**result, "response": responses}
             for resp in responses:
                 if resp.get("image"):
                     del resp["image"]

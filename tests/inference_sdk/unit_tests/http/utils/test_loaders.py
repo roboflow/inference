@@ -1,6 +1,7 @@
 import base64
 import os.path
-from typing import Tuple
+from pathlib import Path
+from typing import List, Optional, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -610,6 +611,111 @@ def test_load_directory_inference_input_when_filtering_by_extension_is_enabled(
     # then
     assert len(results) == 1
     assert file_name2results["file_1.jpg"].shape == (128, 128, 3)
+
+
+@pytest.mark.parametrize(
+    "directory_name,file_name,image_extensions",
+    [
+        ("images", "frame.jpg", None),
+        ("Images", "FRAME.JPG", None),
+        ("images", "Frame.PNG", None),
+        ("Images", "frame.jpg", ["jpg"]),
+        ("Images", "FRAME.PNG", ["png", "PNG"]),
+    ],
+)
+def test_load_directory_inference_input_preserves_path_case(
+    tmp_path: Path,
+    directory_name: str,
+    file_name: str,
+    image_extensions: Optional[List[str]],
+) -> None:
+    """Read real images using the original directory and file name casing."""
+    directory = tmp_path / directory_name
+    directory.mkdir()
+    file_path = directory / file_name
+    image = np.zeros((16, 24, 3), dtype=np.uint8)
+    assert cv2.imwrite(str(file_path), image)
+
+    with mock.patch.object(loaders.cv2, "imread", wraps=cv2.imread) as imread_mock:
+        results = list(
+            load_directory_inference_input(
+                directory_path=str(directory),
+                image_extensions=image_extensions,
+            )
+        )
+
+    assert [reference for reference, _ in results] == [file_path.as_posix()]
+    imread_mock.assert_called_once_with(file_path.as_posix())
+    assert np.array_equal(results[0][1], image)
+
+
+def test_load_directory_inference_input_filters_repeated_extension_patterns(
+    tmp_path: Path,
+) -> None:
+    """Filter real images without returning one file for each matching pattern."""
+    image = np.zeros((16, 24, 3), dtype=np.uint8)
+    png_path = tmp_path / "image.png"
+    assert cv2.imwrite(str(png_path), image)
+    assert cv2.imwrite(str(tmp_path / "ignored.jpg"), image)
+
+    results = list(
+        load_directory_inference_input(
+            directory_path=str(tmp_path),
+            image_extensions=["png", "PNG", "png"],
+        )
+    )
+
+    assert [reference for reference, _ in results] == [png_path.as_posix()]
+    assert np.array_equal(results[0][1], image)
+
+
+@mock.patch.object(loaders.sv, "list_files_with_extensions")
+def test_load_directory_inference_input_deduplicates_discovered_paths(
+    list_files_mock: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Read one real image once if overlapping patterns discover its path twice."""
+    file_path = tmp_path / "image.png"
+    image = np.zeros((16, 24, 3), dtype=np.uint8)
+    assert cv2.imwrite(str(file_path), image)
+    list_files_mock.return_value = [file_path, file_path]
+
+    with mock.patch.object(loaders.cv2, "imread", wraps=cv2.imread) as imread_mock:
+        results = list(
+            load_directory_inference_input(
+                directory_path=str(tmp_path),
+                image_extensions=["png", "PNG"],
+            )
+        )
+
+    assert [reference for reference, _ in results] == [file_path.as_posix()]
+    imread_mock.assert_called_once_with(file_path.as_posix())
+    assert np.array_equal(results[0][1], image)
+
+
+def test_load_directory_inference_input_keeps_case_distinct_files(
+    tmp_path: Path,
+) -> None:
+    """Keep both real images when the filesystem supports case-distinct names."""
+    upper_path = tmp_path / "FRAME.PNG"
+    lower_path = tmp_path / "frame.png"
+    upper_image = np.zeros((16, 24, 3), dtype=np.uint8)
+    lower_image = np.full((16, 24, 3), 255, dtype=np.uint8)
+    assert cv2.imwrite(str(upper_path), upper_image)
+    if lower_path.exists():
+        pytest.skip("The filesystem does not support case-distinct file names")
+
+    assert cv2.imwrite(str(lower_path), lower_image)
+    results = dict(
+        load_directory_inference_input(
+            directory_path=str(tmp_path),
+            image_extensions=["png", "PNG"],
+        )
+    )
+
+    assert set(results) == {upper_path.as_posix(), lower_path.as_posix()}
+    assert np.array_equal(results[upper_path.as_posix()], upper_image)
+    assert np.array_equal(results[lower_path.as_posix()], lower_image)
 
 
 @mock.patch.object(loaders.sv, "get_video_frames_generator")

@@ -50,10 +50,36 @@ def test_get_inference_results_for_model_reads_from_model_monitoring_cache(
             "request_time": 123.0,
             "inference": {
                 "request": {"model_id": "model/1"},
-                "response": {"time": 0.25},
+                "response": [{"time": 0.25}],
             },
         }
     ]
+
+
+def test_get_inference_results_for_model_keeps_cached_response_for_get_model_metrics(
+    monkeypatch,
+) -> None:
+    cache = MemoryCache()
+    monkeypatch.setattr(
+        metrics.model_monitoring_cache_module, "model_monitoring_cache", cache
+    )
+    cache.zadd(
+        key="inference:server-1:model/1",
+        value={"request": {"model_id": "model/1"}, "response": {"time": 0.25}},
+        score=123.0,
+    )
+
+    metrics.get_inference_results_for_model(
+        inference_server_id="server-1",
+        model_id="model/1",
+    )
+
+    assert cache.zrangebyscore("inference:server-1:model/1") == [
+        {"request": {"model_id": "model/1"}, "response": {"time": 0.25}}
+    ]
+    assert metrics.get_model_metrics(
+        inference_server_id="server-1", model_id="model/1"
+    ) == {"num_inferences": 1, "avg_inference_time": 0.25, "num_errors": 0}
 
 
 def test_model_monitoring_cache_uses_memory_cache_when_forced() -> None:

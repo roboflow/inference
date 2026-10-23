@@ -48,6 +48,7 @@ from inference_sdk.http.errors import (
     FeatureDeprecatedError,
     HTTPCallErrorError,
     HTTPClientError,
+    HTTPServerConnectionError,
     InvalidInputFormatError,
     InvalidModelIdentifier,
     InvalidParameterError,
@@ -197,7 +198,7 @@ def wrap_errors(function: callable) -> callable:
                 api_message=api_message,
             ) from error
         except (ConnectionError, requests.exceptions.ConnectionError) as error:
-            raise HTTPClientError(
+            raise HTTPServerConnectionError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
 
@@ -215,7 +216,7 @@ def wrap_errors_async(function: callable) -> callable:
                 api_message=deduct_api_key_from_string(error.message),
             ) from error
         except ClientConnectionError as error:
-            raise HTTPClientError(
+            raise HTTPServerConnectionError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
 

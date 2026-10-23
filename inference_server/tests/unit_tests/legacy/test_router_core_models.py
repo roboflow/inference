@@ -1216,6 +1216,8 @@ def test_sam3_concept_segment_remote_posts_to_seg_preview_proxy(
             },
         ],
         "output_prob_thresh": 0.3,
+        "nms_iou_threshold": None,
+        "format": "polygon",
         "source": "ui",
         "source_info": "canvas",
     }
@@ -1252,11 +1254,81 @@ def test_sam3_visual_segment_remote_posts_to_sam3_pvs_proxy(legacy_client, sam3_
         "image": image,
         "prompts": {"prompts": [{"points": [{"x": 5.0, "y": 6.0, "positive": True}]}]},
         "multimask_output": False,
+        "format": "json",
         "source": "ui",
         "source_info": None,
     }
     assert call["timeout"] == 60
     assert call["headers"]["X-Roboflow-Internal-Service-Name"] == "gpu-pool"
+
+
+_RLE_MASK = {"size": [8, 8], "counts": "52000N`0"}
+
+
+def test_sam3_visual_segment_remote_forwards_rle_format(legacy_client, sam3_remote):
+    remote = sam3_remote(
+        body={
+            "predictions": [{"masks": _RLE_MASK, "confidence": 0.9, "format": "rle"}],
+            "time": 0.3,
+        }
+    )
+    r = legacy_client(FakeGateway()).post(
+        "/sam3/visual_segment",
+        json={
+            "image": _image(),
+            "prompts": [{"points": [{"x": 5, "y": 6, "positive": True}]}],
+            "format": "rle",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["predictions"][0]["masks"] == _RLE_MASK
+    (call,) = remote.calls
+    assert call["json"]["format"] == "rle"
+
+
+@pytest.mark.parametrize("path", ["/sam3/visual_segment", "/sam3/concept_segment"])
+def test_sam3_remote_rejects_binary_masks(legacy_client, sam3_remote, path):
+    remote = sam3_remote(body=_SAM3_VISUAL_BODY)
+    r = legacy_client(FakeGateway()).post(
+        path,
+        json={"image": _image(), "prompts": [{"text": "cat"}], "format": "binary"},
+    )
+    assert r.status_code == 501, r.text
+    assert remote.calls == []
+
+
+def test_sam3_concept_segment_remote_forwards_rle_format_and_nms_threshold(
+    legacy_client, sam3_remote
+):
+    remote = sam3_remote(
+        body={
+            "prompt_results": [
+                {
+                    "prompt_index": 0,
+                    "echo": {"prompt_index": 0, "type": "text", "text": "cat"},
+                    "predictions": [
+                        {"masks": _RLE_MASK, "confidence": 0.8, "format": "rle"}
+                    ],
+                }
+            ],
+            "time": 0.2,
+        }
+    )
+    r = legacy_client(FakeGateway()).post(
+        "/sam3/concept_segment",
+        json={
+            "image": _image(),
+            "prompts": [{"text": "cat"}],
+            "format": "rle",
+            "nms_iou_threshold": 0.5,
+        },
+    )
+    assert r.status_code == 200, r.text
+    prediction = r.json()["prompt_results"][0]["predictions"][0]
+    assert prediction["masks"] == _RLE_MASK
+    (call,) = remote.calls
+    assert call["json"]["format"] == "rle"
+    assert call["json"]["nms_iou_threshold"] == 0.5
 
 
 def test_sam3_remote_omits_internal_service_headers_when_unset(

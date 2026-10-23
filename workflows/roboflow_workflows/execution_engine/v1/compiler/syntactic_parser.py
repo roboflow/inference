@@ -2,7 +2,7 @@ from functools import lru_cache
 from typing import Dict, List, Optional, Tuple, Type, Union
 
 import pydantic
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model
 from roboflow_workflows.errors import WorkflowBlockError, WorkflowSyntaxError
 from roboflow_workflows.execution_engine.entities.base import InputType, JsonField
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
@@ -128,6 +128,11 @@ def build_workflow_definition_entity(
     block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]
     entity = create_model(
         "WorkflowSpecificationV1",
+        # Rendered validation errors would otherwise repeat each failing step's raw
+        # input, secrets in literal fields included (passwords, credentials in a URL),
+        # into server logs and the `inner_error_message` of API responses. Messages
+        # and error locations are unaffected.
+        __config__=ConfigDict(hide_input_in_errors=True),
         version=(str, ...),
         inputs=(List[InputType], ...),
         steps=(List[block_type], ...),

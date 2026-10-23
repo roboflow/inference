@@ -54,6 +54,12 @@ class HTTPCallErrorError(HTTPClientError):
         return self.__repr__()
 
 
+class HTTPServerConnectionError(HTTPClientError):
+    """Error for failing to connect to the inference server (no response received)."""
+
+    pass
+
+
 class InvalidInputFormatError(HTTPClientError):
     """Error for invalid input format."""
 
