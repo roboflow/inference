@@ -49,6 +49,7 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- OPC UA Reader waits for the subscription's negotiated publishing interval when awaiting its initial notification, so a server that revises the interval upward does not cause repeated reconnects before the first value arrives. The first workflow run still returns within its configured `timeout` while the subscription continues waiting in the background.
 - Buffer block outputs retain their per-frame list contents when later frames update the buffer, including batched workflows and padded histories.
 
 ## `0.2.12`

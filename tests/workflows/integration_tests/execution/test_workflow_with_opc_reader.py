@@ -7,6 +7,8 @@ from typing import Any, Callable, Optional
 import pytest
 from asyncua import Server, ua
 from asyncua.common.callback import CallbackType
+from asyncua.crypto.permission_rules import SimpleRoleRuleset
+from asyncua.server.internal_subscription import InternalSubscription
 
 try:
     from asyncua.server.users import User, UserRole
@@ -195,6 +197,61 @@ def test_first_run_returns_current_value_and_later_runs_repeat_it(opc_server):
             "error_message": None,
         }
         assert second == {**first, "is_new": False}
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(30)
+def test_server_revised_publishing_interval_keeps_initial_subscription(
+    opc_server, monkeypatch
+):
+    # The server publishes its initial value after 5 s, beyond the requested
+    # interval's old deadline (2 s timeout + two 100 ms publishing cycles).
+    revised_interval_ms = 5000.0
+    requested_intervals = []
+    service = opc_server._server.iserver.subscription_service
+    create_subscription = service.create_subscription
+    subscription_loop = InternalSubscription._subscription_loop
+    check_validity = SimpleRoleRuleset.check_validity
+
+    async def create_revised_subscription(params, *args, **kwargs):
+        requested_intervals.append(params.RequestedPublishingInterval)
+        params.RequestedPublishingInterval = revised_interval_ms
+        return await create_subscription(params, *args, **kwargs)
+
+    async def publish_on_first_cycle(subscription):
+        await asyncio.sleep(subscription.data.RevisedPublishingInterval / 1000)
+        await subscription_loop(subscription)
+
+    def allow_modify_subscription(rules, user, action_type_id, body):
+        # asyncua 1.1.x omits this service from its default user permissions;
+        # the client uses it to adjust keepalive counts after interval revision.
+        if action_type_id == ua.NodeId(
+            ua.ObjectIds.ModifySubscriptionRequest_Encoding_DefaultBinary
+        ):
+            return True
+
+        return check_validity(rules, user, action_type_id, body)
+
+    monkeypatch.setattr(service, "create_subscription", create_revised_subscription)
+    monkeypatch.setattr(
+        InternalSubscription, "_subscription_loop", publish_on_first_cycle
+    )
+    monkeypatch.setattr(SimpleRoleRuleset, "check_validity", allow_modify_subscription)
+    block = OPCReaderBlockV1()
+    kwargs = reader_kwargs(opc_server, publishing_interval_ms=100, timeout=2.0)
+
+    try:
+        started = time.monotonic()
+        first = block.run(**kwargs)
+        elapsed = time.monotonic() - started
+
+        assert first["error_status"] is True
+        assert 2.0 <= elapsed < 3.5
+        assert wait_until(lambda: not block.run(**kwargs)["error_status"], timeout=8.0)
+        assert block.run(**kwargs)["value"] is False
+        assert requested_intervals == [100]
+        assert opc_server.subscription_count() == 1
     finally:
         block.close()
 

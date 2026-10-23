@@ -639,11 +639,13 @@ class _SubscriptionWorker:
             # Settle only on the subscription's own initial value: the read above can be
             # overtaken by a change before the monitored item exists, and that change
             # would never be notified. Servers send the initial value on the first
-            # publishing cycle.
+            # publishing cycle. asyncua stores the negotiated interval on the
+            # subscription; the server may have revised our requested interval up.
+            publishing_interval_ms = subscription.parameters.RequestedPublishingInterval
             try:
                 await asyncio.wait_for(
                     handler.initial_value_delivered.wait(),
-                    config.timeout + 2 * config.publishing_interval_ms / 1000,
+                    config.timeout + 2 * publishing_interval_ms / 1000,
                 )
             except asyncio.TimeoutError:
                 raise ConnectionError(

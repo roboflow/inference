@@ -946,7 +946,12 @@ class FakeAsyncClient:
                 )
             return 1
 
-        return SimpleNamespace(subscribe_data_change=subscribe_data_change)
+        return SimpleNamespace(
+            subscribe_data_change=subscribe_data_change,
+            parameters=ua.CreateSubscriptionParameters(
+                RequestedPublishingInterval=period
+            ),
+        )
 
     async def check_connection(self):
         pass
