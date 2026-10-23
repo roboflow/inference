@@ -201,6 +201,10 @@ def register_datapoint_at_roboflow(
         batch_name=batch_name,
         tags=tags,
         inference_id=inference_id,
+        annotation_follows=should_persist_prediction(
+            prediction=prediction,
+            persist_predictions=configuration.persist_predictions,
+        ),
     )
     if is_prediction_registration_forbidden(
         prediction=prediction,
@@ -244,6 +248,7 @@ def safe_register_image_at_roboflow(
     batch_name: str,
     tags: List[str],
     inference_id: Optional[str],
+    annotation_follows: bool = False,
 ) -> Optional[str]:
     credit_to_be_returned = False
     try:
@@ -255,6 +260,7 @@ def safe_register_image_at_roboflow(
             batch_name=batch_name,
             tags=tags,
             inference_id=inference_id,
+            annotation_follows=annotation_follows,
         )
         image_duplicated = registration_response.get("duplicate", False)
         if image_duplicated:
@@ -281,9 +287,17 @@ def is_prediction_registration_forbidden(
     persist_predictions: bool,
     roboflow_image_id: Optional[str],
 ) -> bool:
-    return (
-        roboflow_image_id is None
-        or persist_predictions is False
+    return roboflow_image_id is None or not should_persist_prediction(
+        prediction=prediction, persist_predictions=persist_predictions
+    )
+
+
+def should_persist_prediction(
+    prediction: Prediction,
+    persist_predictions: bool,
+) -> bool:
+    return not (
+        persist_predictions is False
         or prediction.get("is_stub", False) is True
         or (len(prediction.get("predictions", [])) == 0 and "top" not in prediction)
     )

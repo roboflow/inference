@@ -146,6 +146,7 @@ def _assert_image_serialised(value: Any) -> None:
             "fps": 15.0,
             "measured_fps": None,
             "comes_from_video_file": None,
+            "total_frames": None,
         },
     }
     decoded = cv2.imdecode(

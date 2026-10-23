@@ -10,6 +10,7 @@ npm-debug.log
 .coverage.*
 .env
 .aws
+gha-creds-*.json
 
 # Python (inference)
 __pycache__

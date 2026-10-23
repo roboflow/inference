@@ -18,7 +18,161 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Buffer block outputs retain their per-frame list contents when later frames update the buffer, including batched workflows and padded histories.
+
 - `DetectionsPropertyExtract` reads Supervision tracker IDs from their native field, so `tracker_id` extraction works on tracked detections in NumPy mode. Properties that live alongside each detection (`tracker_id`, `time_in_zone`, Bounding Rectangle `width` and the other non built-in properties) return an empty list on empty detections in both NumPy and tensor modes instead of raising. Requesting such a property on nonempty detections that do not carry it now raises an operation error naming the property and asking for the upstream block that supplies it; NumPy mode previously raised a bare `KeyError`, and tensor mode now uses the same message.
+
+## `0.2.12`
+
+Bundled execution engine: `1.16.1`.
+
+### Changed
+
+- `aiohttp~=3.14.4`: requires the aiohttp release that fixes GHSA-2g87-pp6c-29x5 (unbounded memory/CPU use) and GHSA-5wr8-gcqf-gqf3 (no initial request/header timeout). aiohttp reached the package only through `inference-sdk` and `twilio`, which still allow 3.14.3.
+
+## `0.2.11`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Anomaly Detection Model block (`roboflow_core/anomaly_detection_model@v1`): runs a PatchCore or FoundAD model trained on a Roboflow anomaly detection project (served on the classification route). Outputs the classification-style `predictions` (plus `anomaly_score`, `anomaly_threshold`, `anomaly_scale`, `is_anomalous`), the raw `anomaly_score`, the `anomaly_threshold` in effect, the `anomaly_decision_threshold` (the raw score at which the anomalous confidence equals `confidence`), the `is_anomalous` verdict and the `anomaly_map` (a float32 `numpy_array` at the network input resolution; `None` when `include_anomaly_map` is off). `confidence` (default 0.5, the calibrated decision) is the anomalous confidence an image must reach; `anomaly_threshold` overrides the threshold saved with the model and re-decides with the same rule. `ModelsProvider.run_classification` gains `include_anomaly_map`.
+- Anomaly Heatmap Visualization block (`roboflow_core/anomaly_heatmap_visualization@v1`): stretches an anomaly map onto its image (bilinear) and blends it as a heatmap on a ramp anchored at its `anomaly_threshold` input, meant to be wired to the model block's `anomaly_decision_threshold`: `t = max(v, 0) / (max(v, 0) + anchor)`; an anchor at or below zero saturates every positive value. `color_map` is the Roboflow app's ramp (`ROBOFLOW`) or an OpenCV map (`JET`, `TURBO`, `INFERNO`, `VIRIDIS`, `HOT`); `opacity` and `copy_image` as the other visualization blocks.
+- `roboflow_workflows.http_contract` (`describe`, `entities`, `errors`) — the HTTP surface `inference-server` imports to expose workflow routes.
+
+### Changed
+
+- `inference-sdk>=1.8.0`: the hosted (API v0) request carries `include_anomaly_map` from 1.8.0, which the Anomaly Detection Model block needs in REMOTE execution. The anomaly blocks need `inference-models` 0.39.5 (`anomaly_scale`).
+
+## `0.2.10`
+
+Bundled execution engine: `1.16.1`.
+
+### Fixed
+
+- Dataset upload v1 (`roboflow_core/roboflow_dataset_upload@v1`) compiles again. Its `images` field listed `image` as the first validation alias, so the JSON schema named the property `image` while the manifest attribute is `images`; compilation raised `BlockInterfaceError` and `/describe_interface` raised `AttributeError`. The alias order is now `images`, `image`: both keys still validate, and the block schema lists `images`, as dataset upload v2 does.
+
+## `0.2.9`
+
+### Execution engine
+
+- Prevent supporting metadata and workflow validation-model caches from retaining dynamically generated custom Python manifests after their compiled workflows are evicted. Static manifest caching and compiled-workflow reuse are preserved; no workflow changes are required.
+- Workflows with custom Python blocks executed locally are cached again after compilation (as before 1.6.1), fixing per-request memory growth and the throughput drop on HTTP hosts; module-level state of a local custom Python block is again shared across requests that use the same definition in one process. Modal execution and unresolved inner-workflow references still compile per request.
+- The compilation cache no longer raises `KeyError` when evicting a key that was cached twice.
+
+### Added
+
+- The nine Roboflow platform blocks are core blocks of this package again: dataset upload v1 and v2, custom metadata, model monitoring inference aggregator, vision events, vision event bundle, asset library attributes, visual search and visual search classifier. They live in `core_steps.sinks.roboflow` and `core_steps.integrations.roboflow`, so a standalone install now lists 248 blocks. Inference 1.6.1 to 1.7.2 shipped them as the `inference.roboflow_workflows_plugin` plugin; that plugin is now an empty compatibility stub.
+- `RoboflowPlatformClient` gains the operations these blocks call: `get_roboflow_workspace`, `add_custom_metadata`, `register_image_at_roboflow`, `annotate_image_at_roboflow`, `update_image_metadata_at_roboflow`, `batch_update_image_metadata_at_roboflow`, `search_project_images_at_roboflow`, `send_inference_results_to_model_monitoring`, `get_device_id`, `get_server_version` and `get_system_info`. The offline client refuses the API operations. A host can register a fallback client for these blocks with `set_platform_blocks_client_factory`, used when a block gets no client, the offline client, or a client that does not implement these operations itself.
+- Vision events sends its cloud image upload and event request only through a client that implements these operations. With the offline client it returns `error_status` with the offline refusal and sends nothing; writing to a local event store is unaffected.
+
+### Changed
+
+- `/workflows/blocks/describe` lists these blocks under their names from before the plugin, `inference.core.workflows.core_steps.{sinks,integrations}.roboflow.…`, and in their original positions within the core list, instead of `inference.roboflow_workflows_plugin.…` at the end.
+- A disable pattern on the canonical module path, such as `roboflow_workflows.core_steps.sinks`, now also disables these blocks, like any other core block. Patterns written against either historic path keep matching the same blocks.
+- OpenAI v7: optional `service_tier` (`auto`, `default`, `flex`, `priority`, `ultrafast`), sent with direct OpenAI requests and forwarded to the Roboflow proxy for `rf_key:` keys. Unset keeps OpenAI's default tier.
+- `PlatformClient.register_image_at_roboflow` takes an optional `annotation_follows`
+  (default `False`). Dataset Upload `@v1` sets it when an annotation upload follows,
+  so a host that retries uploads can fail an upload whose retry reports a duplicate
+  instead of silently dropping the annotation.
+
+
+## `0.2.8`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Google Gemini v6: Argon-only instance segmentation with normalized YX polygons, detached components, holes, and RLE mask output.
+
+## `0.2.7`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Meta block (`roboflow_core/meta_vlm@v3`): Muse Wonder (`meta/muse-wonder` via OpenRouter), reasoning levels `minimal` through `xhigh`, with the same flat 0-1000 `named_0_1000` detection decoding as the Spark models.
+
+### Changed
+
+- Meta block (`roboflow_core/meta_vlm@v3`) defaults `model_version` to Muse Wonder instead of Muse Spark 1.3. Workflows that omit `model_version` now call Muse Wonder.
+
+## `0.2.6`
+
+Bundled execution engine: `1.16.1`.
+
+### Execution engine
+
+- `VideoMetadata` carries an optional `total_frames`: the frame count of the
+  source video file, or `None` for live streams, files that don't report it,
+  realtime WebRTC uploads, and after a source restart or initial seek.
+  Blocks can compute playback progress as `frame_number / total_frames` (e.g. a
+  timeline overlay). Image inputs may include it under `video_metadata`.
+
+### Changed
+
+- V-JEPA streaming samples accept frames up to 50 ms after the requested source index, capped at half a sample interval. Predictions use the intended sample clock. Larger gaps skip affected windows with an error.
+- Action Recognition Model rejects missing samples only when the model declares that it requires regular sampling. Cosmos retains its previous behavior for FPS-limited streams.
+- Action Recognition Model uses explicit confidence and observed-duration capabilities for each model family.
+- Inference hosts can set `VJEPA2_1_ENABLED=False` to block V-JEPA loading through the Action Recognition Model block before weights load.
+- Action-recognition response schemas retain frame indices, class fields, and optional confidence for HTTP clients and Workflows.
+- Action Recognition Model ignores confidence overrides for unscored models, including Cosmos, instead of rejecting them.
+- Action Recognition Model keeps streaming sample counts and span durations within the model's recorded window at fractional source frame rates.
+- Action Recognition Model applies an optional model-owned frame transform before buffering. V-JEPA retains resized RGB uint8 frames; Cosmos keeps its existing resize behavior.
+- Action Recognition Model accepts `confidence="best"` for model-eval thresholds and `"default"` for the package default, like detection blocks. Numeric overrides and unscored Cosmos behavior stay unchanged.
+- Instance segmentation `@v1`–`@v4` preserve image-resolution masks when using
+  the local `inference_models` backend. Non-tensor local legacy execution
+  continues to honor `mask_decode_mode` and `tradeoff_factor` when
+  `USE_INFERENCE_MODELS=False`.
+  Remote calls always request `accurate` / `1.0`, since the local backend setting
+  does not identify the remote server. Remote legacy workflows that previously
+  requested fast/tradeoff masks now receive accurate masks. `@v4` retains its
+  RLE response format.
+- The new instance-segmentation `@v5` block is deferred to a separate PR together
+  with reduced-grid Supervision conversion and downstream block support.
+  **Full tensor support will come in a separate PR.** Existing tensor variants
+  remain pinned to `accurate` / `1.0`.
+
+### Added
+
+- Optional `original_image` and `mask_metadata` on instance-segmentation response
+  DTOs retain the input dimensions and output-to-input coordinate mapping for
+  opted-in HTTP responses. Response `image`, boxes, polygons and RLE masks all
+  use the selected mask grid. Existing workflow blocks do not opt in and retain
+  their image-space contract. The `image` field continues to accept a single image
+  descriptor or a list for multi-image responses.
+
+- `ModelsConfiguration.use_inference_models`, defaulting to `True`. Hosts using
+  the legacy backend must set it to `False` to retain non-tensor local legacy
+  decoding.
+  The server sets it from `inference.core.env.USE_INFERENCE_MODELS`.
+
+- MQTT Writer v2 (`roboflow_enterprise/mqtt_writer_sink@v2`): v1 plus an optional `fire_and_forget` (default `False`) and outage hardening; v1 is unchanged.
+  - With `fire_and_forget` a run queues the message and returns without waiting for the send or the broker's acknowledgement, and after the first run it never waits for a reconnect, so a disconnected broker no longer stalls each frame by up to `timeout`. If the first connection attempt fails, the client is kept and retries in the background instead of reconnecting synchronously on every frame. Success means queued, not delivered.
+  - While the broker is disconnected a QoS 0 message is dropped and a QoS 1/2 message is queued and sent after reconnect, both reported with `error_status` set; these repeating failures are logged when they start or change and once on recovery, not on every run.
+  - The step declares the `fire_and_forget_hides_persistence_failures` and `connection_and_state_rebuilt_per_request` restrictions when the switch is on (over the HTTP API every request builds a fresh block, so each request is a first run and a message still queued when the request ends is dropped), and reports a selector-driven switch as unknown.
+  - In either mode the block refuses a new publish once 1000 QoS 1/2 messages await acknowledgement or 1000 packets wait to be sent (paho buffers both without limit by default), and reports it as a queue-full error; after a reconnect up to about 2000 packets can be buffered briefly. The limits count messages, not bytes.
+  - The background reconnect backs off exponentially: the first retry waits half of `timeout` (at least 0.1 s), each further one doubles that, up to twice `timeout` (at least 1 s), plus the time each attempt takes, so a tiny `timeout` cannot retry a dead broker in a busy loop.
+  - Selector-supplied `retain`, `fail_fast` and `fire_and_forget` are coerced the way the manifest validates them (for example `"false"` is False; v1 treats any non-empty string as True), and so are `port` and `qos` (for example `"1883.0"`, which v1 rejects); booleans are still rejected as a port or QoS.
+  - While the broker stays unreachable or keeps answering "unavailable", the background reconnect loop logs the first failure as an error and later attempts at debug level until a connection succeeds, instead of an error about once per second.
+  - Closing the block (when a pipeline stops) is bounded even when it races a background reconnect: a connection the broker accepts after the close began is disconnected at once, and the close never waits for acknowledgements or for the broker; messages not yet acknowledged are dropped, though packets already queued may still be sent before the disconnect. A close during an in-flight reconnect first waits for that connection attempt (TCP bounded by `timeout`, a TLS handshake by the 15 s keepalive, DNS by the OS resolver).
+
+### Fixed
+
+- Action Recognition Model preserves repeated samples when V-JEPA requests a higher sampling rate than the source FPS. Complete low-FPS streams run inference while genuinely missing source frames still invalidate affected windows.
+- SAM3 v1/v2/v3 remote SDK execution, with NumPy or tensor predictions, now honors `WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS` across the input batch while sending one image per HTTP request. Each concurrency-sized group is converted before dispatching the next, bounding response buffering and stopping later groups after an HTTP failure. Results retain input order, formats and class mapping; empty batches issue no requests. Local execution and the inference-proxy transport are unchanged.
+- Tracker blocks log the missing-FPS fallback only when creating a tracker for a video, including tensor variants.
+
+## `0.2.4-post1`
+
+Bundled execution engine: `1.16.1`.
+
+### Added
+
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-haiku-5-5` model option.
+- Mistral AI block (`roboflow_core/mistral_vlm@v1`): runs Mistral Large 4 (`mistralai/mistral-large-4-0`) via OpenRouter with the vlm-exam request contract (image-first user message, reasoning off by default with a `high` option, `max_tokens` unset by default) and in-block decoding of detections and classifications.
+- VLM detection box format `xyxy_0_999`: `box_2d` integers normalized to 0-999, Mistral's documented grounding convention. Used by the Mistral AI block and selectable as `detection_format` on the OpenRouter block (`openrouter@v3`).
+- The shared OpenRouter executor accepts `max_tokens=None`: the direct path omits the parameter so the provider default applies, the Roboflow-proxied path sends the proxy ceiling (16384) because the proxy requires the field and otherwise applies a 500-token default.
 
 ## `0.2.4`
 
@@ -47,6 +201,8 @@ Bundled execution engine: `1.16.1`.
 - Predictions whose polygon has fewer than 3 points are dropped before `supervision` parses the response, in model blocks, OCR blocks and detections passed as workflow inputs. The result is unchanged: the prediction is left out and the others keep their masks. `supervision` 0.30 on its own would keep it as a box and remove the masks of every detection in the response.
 
 ### Fixed
+
+- Detections Stitch (`roboflow_core/detections_stitch@v1`): segmentation masks are stitched as crop-scoped compact masks (`supervision.CompactMask`) and only the detections that survive overlap filtering are materialised at reference resolution. Previously every crop mask was first re-allocated as a full-size dense array, merged, then filtered, which needed about `N x H x W` bytes before any filtering: a 1080p frame sliced 12 ways with ~25 masks per slice took ~3 GiB inside this block and OOM-killed an 8 GiB video worker. Outputs keep the same boxes, order and dense masks, with one numerical correction: mask IoU is now computed from exact pixel counts instead of `float32` arithmetic, so a pair whose IoU equals `iou_threshold` is decided by the documented comparison. With `nms`, IoU equal to the threshold no longer suppresses (30 of 100 pixels at `0.3` used to round to `0.30000001` and drop a detection); with `nmm`, IoU equal to the threshold now merges (70 of 100 pixels at `0.7` used to round to `0.69999999` and keep both). A mix of crops with and without masks now raises a clear `ValueError` instead of failing inside `Detections.merge`.
 
 - CLIP v1 and CLIP Comparison v1/v2 blocks, including tensor variants, now report
   a model's text-context-length validation error as `RuntimeInputError`, allowing

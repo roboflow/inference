@@ -1,25 +1,41 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import ANY, MagicMock
 
 import numpy as np
 import supervision as sv
 from fastapi import BackgroundTasks
-
-from inference.core.cache import MemoryCache
-from inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1 import (
+from roboflow_workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
 )
 
+from inference.core.cache import MemoryCache
 
-@patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
-)
-def test_run_not_in_reporting_range_success(
-    get_roboflow_workspace_mock: MagicMock,
-    send_inference_results_to_model_monitoring_mock: MagicMock,
-) -> None:
+
+def _platform_client() -> MagicMock:
+    """A platform client reporting a host the way the servers do."""
+    platform_client = MagicMock()
+    platform_client.get_device_id.return_value = "device-id"
+    platform_client.get_server_version.return_value = "1.0.0"
+    platform_client.get_system_info.return_value = {
+        "platform": "Linux",
+        "platform_release": "6.0",
+        "platform_version": "#1",
+        "architecture": "x86_64",
+        "hostname": "host",
+        "ip_address": "127.0.0.1",
+        "mac_address": "00:00:00:00:00:00",
+        "processor": "x86_64",
+    }
+    return platform_client
+
+
+def test_run_not_in_reporting_range_success() -> None:
+    platform_client = _platform_client()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
+    send_inference_results_to_model_monitoring_mock = (
+        platform_client.send_inference_results_to_model_monitoring
+    )
     # given
     get_roboflow_workspace_mock.return_value = "my_workspace"
     send_inference_results_to_model_monitoring_mock.return_value = 200
@@ -50,6 +66,7 @@ def test_run_not_in_reporting_range_success(
 
     # when
     block = ModelMonitoringInferenceAggregatorBlockV1(
+        platform_client=platform_client,
         cache=cache,
         api_key="my_api_key",
         background_tasks=None,
@@ -71,16 +88,12 @@ def test_run_not_in_reporting_range_success(
     assert cache.get(cache_key) is not None
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
-)
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
-)
-def test_run_in_reporting_range_success_with_object_detection(
-    get_roboflow_workspace_mock: MagicMock,
-    send_inference_results_to_model_monitoring_mock: MagicMock,
-) -> None:
+def test_run_in_reporting_range_success_with_object_detection() -> None:
+    platform_client = _platform_client()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
+    send_inference_results_to_model_monitoring_mock = (
+        platform_client.send_inference_results_to_model_monitoring
+    )
     # given
     unique_aggregator_key = (
         "session-test_run_in_reporting_range_success_with_object_detection"
@@ -117,6 +130,7 @@ def test_run_in_reporting_range_success_with_object_detection(
 
     # when
     block = ModelMonitoringInferenceAggregatorBlockV1(
+        platform_client=platform_client,
         cache=cache,
         api_key=api_key,
         background_tasks=None,
@@ -176,16 +190,12 @@ def test_run_in_reporting_range_success_with_object_detection(
     assert cache.get(cache_key) != datetime(2024, 11, 10, 12, 0, 0).isoformat()
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
-)
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
-)
-def test_run_in_reporting_range_success_with_single_label_classification(
-    get_roboflow_workspace_mock: MagicMock,
-    send_inference_results_to_model_monitoring_mock: MagicMock,
-) -> None:
+def test_run_in_reporting_range_success_with_single_label_classification() -> None:
+    platform_client = _platform_client()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
+    send_inference_results_to_model_monitoring_mock = (
+        platform_client.send_inference_results_to_model_monitoring
+    )
     # given
     unique_aggregator_key = (
         "session-test_run_in_reporting_range_success_with_single_label_classification"
@@ -213,6 +223,7 @@ def test_run_in_reporting_range_success_with_single_label_classification(
 
     # when
     block = ModelMonitoringInferenceAggregatorBlockV1(
+        platform_client=platform_client,
         cache=cache,
         api_key=api_key,
         background_tasks=None,
@@ -262,16 +273,12 @@ def test_run_in_reporting_range_success_with_single_label_classification(
     assert cache.get(cache_key) != datetime(2024, 11, 10, 12, 0, 0).isoformat()
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
-)
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
-)
-def test_run_in_reporting_range_success_with_multi_label_classification(
-    get_roboflow_workspace_mock: MagicMock,
-    send_inference_results_to_model_monitoring_mock: MagicMock,
-) -> None:
+def test_run_in_reporting_range_success_with_multi_label_classification() -> None:
+    platform_client = _platform_client()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
+    send_inference_results_to_model_monitoring_mock = (
+        platform_client.send_inference_results_to_model_monitoring
+    )
     # given
     send_inference_results_to_model_monitoring_mock.return_value = (
         False,
@@ -309,6 +316,7 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
 
     # when
     block = ModelMonitoringInferenceAggregatorBlockV1(
+        platform_client=platform_client,
         cache=cache,
         api_key=api_key,
         background_tasks=None,
@@ -368,16 +376,12 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
     assert cache.get(cache_key) != datetime(2024, 11, 10, 12, 0, 0).isoformat()
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
-)
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
-)
-def test_send_inference_results_to_model_monitoring_failure(
-    get_roboflow_workspace_mock: MagicMock,
-    send_inference_results_to_model_monitoring_mock: MagicMock,
-) -> None:
+def test_send_inference_results_to_model_monitoring_failure() -> None:
+    platform_client = _platform_client()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
+    send_inference_results_to_model_monitoring_mock = (
+        platform_client.send_inference_results_to_model_monitoring
+    )
     # given
     send_inference_results_to_model_monitoring_mock.side_effect = Exception("API error")
     get_roboflow_workspace_mock.return_value = "workspace-name"
@@ -411,6 +415,7 @@ def test_send_inference_results_to_model_monitoring_failure(
 
     # when
     block = ModelMonitoringInferenceAggregatorBlockV1(
+        platform_client=platform_client,
         cache=cache,
         api_key=api_key,
         background_tasks=None,
@@ -433,14 +438,12 @@ def test_send_inference_results_to_model_monitoring_failure(
     assert cache.get(cache_key) is not None
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
-)
-@patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
-def test_run_when_not_in_reporting_range(
-    send_inference_results_to_model_monitoring_mock: MagicMock,
-    get_roboflow_workspace_mock: MagicMock,
-) -> None:
+def test_run_when_not_in_reporting_range() -> None:
+    platform_client = _platform_client()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
+    send_inference_results_to_model_monitoring_mock = (
+        platform_client.send_inference_results_to_model_monitoring
+    )
     # given
     send_inference_results_to_model_monitoring_mock.return_value = (
         False,
@@ -475,6 +478,7 @@ def test_run_when_not_in_reporting_range(
 
     # when
     block = ModelMonitoringInferenceAggregatorBlockV1(
+        platform_client=platform_client,
         cache=cache,
         api_key=api_key,
         background_tasks=None,
@@ -496,14 +500,12 @@ def test_run_when_not_in_reporting_range(
     assert cache.get(cache_key) is not None
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
-)
-@patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
-def test_run_when_fire_and_forget_with_background_tasks(
-    send_inference_results_to_model_monitoring_mock: MagicMock,
-    get_roboflow_workspace_mock: MagicMock,
-) -> None:
+def test_run_when_fire_and_forget_with_background_tasks() -> None:
+    platform_client = _platform_client()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
+    send_inference_results_to_model_monitoring_mock = (
+        platform_client.send_inference_results_to_model_monitoring
+    )
     # given
     background_tasks = BackgroundTasks()
     unique_aggregator_key = (
@@ -541,6 +543,7 @@ def test_run_when_fire_and_forget_with_background_tasks(
 
     # when
     block = ModelMonitoringInferenceAggregatorBlockV1(
+        platform_client=platform_client,
         cache=cache,
         api_key=api_key,
         background_tasks=background_tasks,
@@ -562,14 +565,12 @@ def test_run_when_fire_and_forget_with_background_tasks(
     assert len(background_tasks.tasks) == 1, "Expected one background task"
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
-)
-@patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
-def test_run_when_fire_and_forget_with_thread_pool(
-    send_inference_results_to_model_monitoring_mock: MagicMock,
-    get_roboflow_workspace_mock: MagicMock,
-) -> None:
+def test_run_when_fire_and_forget_with_thread_pool() -> None:
+    platform_client = _platform_client()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
+    send_inference_results_to_model_monitoring_mock = (
+        platform_client.send_inference_results_to_model_monitoring
+    )
     # given
     with ThreadPoolExecutor() as thread_pool_executor:
         send_inference_results_to_model_monitoring_mock.return_value = (
@@ -605,6 +606,7 @@ def test_run_when_fire_and_forget_with_thread_pool(
 
         # when
         block = ModelMonitoringInferenceAggregatorBlockV1(
+            platform_client=platform_client,
             cache=cache,
             api_key=api_key,
             background_tasks=None,

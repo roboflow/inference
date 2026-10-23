@@ -25,6 +25,7 @@ from inference_sdk.config import (
     EXECUTION_ID_HEADER,
     InferenceSDKGuidanceWarning,
     execution_id,
+    usage_source_tags,
 )
 from inference_sdk.http.entities import (
     ACTION_RECOGNITION_TASK,
@@ -60,6 +61,7 @@ from inference_sdk.http.utils.aliases import (
     resolve_ocr_path,
     resolve_roboflow_model_alias,
 )
+from inference_sdk.http.utils.anomaly_maps import decode_anomaly_detection_result
 from inference_sdk.http.utils.depth_maps import (
     decode_depth_estimation_result,
     warn_depth_map_json_format_deprecated,
@@ -595,6 +597,7 @@ class InferenceHTTPClient:
                         visualisation=parsed_response["visualization"],
                         expected_format=self.__inference_configuration.output_visualisation_format,
                     )
+                parsed_response = decode_anomaly_detection_result(parsed_response)
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
@@ -733,6 +736,7 @@ class InferenceHTTPClient:
                         visualisation=parsed_response["visualization"],
                         expected_format=self.__inference_configuration.output_visualisation_format,
                     )
+                parsed_response = decode_anomaly_detection_result(parsed_response)
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
@@ -767,6 +771,9 @@ class InferenceHTTPClient:
                             expected_format=self.__inference_configuration.output_visualisation_format,
                         )
                     )
+                parsed_response_element = decode_anomaly_detection_result(
+                    parsed_response_element
+                )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
@@ -883,6 +890,9 @@ class InferenceHTTPClient:
                             expected_format=self.__inference_configuration.output_visualisation_format,
                         )
                     )
+                parsed_response_element = decode_anomaly_detection_result(
+                    parsed_response_element
+                )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
@@ -1455,7 +1465,7 @@ class InferenceHTTPClient:
         }
         payload = {
             **preprocessing,
-            "source": self.__inference_configuration.source,
+            **self.__inference_configuration.to_source_parameters(),
             "output_type": output_type,
         }
 
@@ -3411,12 +3421,13 @@ class InferenceHTTPClient:
         return {"api_key": self.__api_key}
 
     def __initialise_payload(self) -> dict:
+        payload = self.__inference_configuration.to_source_parameters()
         if (
             self.__client_mode is not HTTPClientMode.V0
             and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER
         ):
-            return {"api_key": self.__api_key}
-        return {}
+            payload["api_key"] = self.__api_key
+        return payload
 
     def __wrap_url_with_api_key(self, url: str) -> str:
         # The one URL seam every hand-built request method routes through, so
@@ -3425,6 +3436,10 @@ class InferenceHTTPClient:
         # send time) - the standard v0/v1 `infer()` methods serialize those
         # through `InferenceConfiguration` instead, and never call this.
         query_params: Dict[str, Any] = {}
+        if usage_source_tags.get():
+            query_params.update(
+                self.__inference_configuration.to_source_parameters(include_origin=True)
+            )
         if (
             self.__client_mode is HTTPClientMode.V0
             and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER

@@ -18,6 +18,8 @@ from roboflow_workflows.configuration import get_configuration
 
 _CONFIGURATION = get_configuration()
 
+USE_INFERENCE_MODELS = _CONFIGURATION.models.use_inference_models
+
 # --- engine ---
 WORKFLOWS_STEP_EXECUTION_MODE = _CONFIGURATION.engine.step_execution_mode
 WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT = (
