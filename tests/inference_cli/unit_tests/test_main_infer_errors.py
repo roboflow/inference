@@ -1,12 +1,14 @@
 from unittest import mock
 from unittest.mock import MagicMock
 
+import pytest
 from typer.testing import CliRunner
 
 from inference_cli import main
 from inference_sdk.http.errors import (
     APIKeyNotProvided,
     HTTPCallErrorError,
+    HTTPClientError,
     HTTPServerConnectionError,
 )
 
@@ -69,15 +71,26 @@ def test_infer_keeps_the_plain_message_when_the_server_answered(
     # then
     assert result.exit_code == 1
     assert "Command failed. Cause:" in result.output
+    assert "404" in result.output
+    assert "Model not found" in result.output
     assert "Could not reach an inference server" not in result.output
+    assert "inference server start" not in result.output
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        APIKeyNotProvided("API key must be provided"),
+        HTTPClientError("Could not load image from URL. Details: Connection refused"),
+    ],
+)
 @mock.patch.object(main.inference_cli.lib, "infer")
 def test_infer_does_not_blame_reachability_for_other_client_errors(
     infer_mock: MagicMock,
+    error: HTTPClientError,
 ) -> None:
     # given
-    infer_mock.side_effect = APIKeyNotProvided("API key must be provided")
+    infer_mock.side_effect = error
 
     # when
     result = runner.invoke(
@@ -87,8 +100,9 @@ def test_infer_does_not_blame_reachability_for_other_client_errors(
 
     # then
     assert result.exit_code == 1
-    assert "API key must be provided" in result.output
+    assert str(error) in result.output
     assert "Could not reach an inference server" not in result.output
+    assert "inference server start" not in result.output
 
 
 @mock.patch.object(main.inference_cli.lib, "infer")
@@ -116,4 +130,8 @@ def test_infer_reports_the_host_that_was_actually_used(infer_mock: MagicMock) ->
 
     # then
     assert result.exit_code == 1
-    assert "http://192.168.1.10:9001" in result.output
+    assert (
+        "Could not reach an inference server at http://192.168.1.10:9001"
+        in result.output
+    )
+    assert infer_mock.call_args.kwargs["host"] == "http://192.168.1.10:9001"
