@@ -202,25 +202,39 @@ def test_first_run_returns_current_value_and_later_runs_repeat_it(opc_server):
 
 
 @pytest.mark.timeout(30)
+@pytest.mark.parametrize(
+    "create_interval_ms, modify_interval_ms",
+    [(5000.0, 5000.0), (500.0, 5000.0)],
+    ids=["create-revision", "modify-revision"],
+)
 def test_server_revised_publishing_interval_keeps_initial_subscription(
-    opc_server, monkeypatch
+    opc_server, monkeypatch, create_interval_ms, modify_interval_ms
 ):
-    # The server publishes its initial value after 5 s, beyond the requested
-    # interval's old deadline (2 s timeout + two 100 ms publishing cycles).
-    revised_interval_ms = 5000.0
+    # The first notification arrives at 5 s: beyond both the original 100 ms
+    # request's deadline and, in the second case, the intermediate 500 ms deadline.
     requested_intervals = []
+    modification_intervals = []
     service = opc_server._server.iserver.subscription_service
     create_subscription = service.create_subscription
+    modify_subscription = service.modify_subscription
     subscription_loop = InternalSubscription._subscription_loop
     check_validity = SimpleRoleRuleset.check_validity
 
     async def create_revised_subscription(params, *args, **kwargs):
         requested_intervals.append(params.RequestedPublishingInterval)
-        params.RequestedPublishingInterval = revised_interval_ms
-        return await create_subscription(params, *args, **kwargs)
+        params.RequestedPublishingInterval = create_interval_ms
+        result = await create_subscription(params, *args, **kwargs)
+        return result
+
+    def modify_revised_subscription(params):
+        modification_intervals.append(params.RequestedPublishingInterval)
+        subscription = service.subscriptions[params.SubscriptionId]
+        subscription.data.RevisedPublishingInterval = modify_interval_ms
+        result = modify_subscription(params)
+        return result
 
     async def publish_on_first_cycle(subscription):
-        await asyncio.sleep(subscription.data.RevisedPublishingInterval / 1000)
+        await asyncio.sleep(modify_interval_ms / 1000)
         await subscription_loop(subscription)
 
     def allow_modify_subscription(rules, user, action_type_id, body):
@@ -234,6 +248,7 @@ def test_server_revised_publishing_interval_keeps_initial_subscription(
         return check_validity(rules, user, action_type_id, body)
 
     monkeypatch.setattr(service, "create_subscription", create_revised_subscription)
+    monkeypatch.setattr(service, "modify_subscription", modify_revised_subscription)
     monkeypatch.setattr(
         InternalSubscription, "_subscription_loop", publish_on_first_cycle
     )
@@ -251,6 +266,7 @@ def test_server_revised_publishing_interval_keeps_initial_subscription(
         assert wait_until(lambda: not block.run(**kwargs)["error_status"], timeout=8.0)
         assert block.run(**kwargs)["value"] is False
         assert requested_intervals == [100]
+        assert modification_intervals == [create_interval_ms]
         assert opc_server.subscription_count() == 1
     finally:
         block.close()

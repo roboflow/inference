@@ -5,9 +5,10 @@ import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import List, Optional, Tuple
+from unittest.mock import AsyncMock
 
 import pytest
-from asyncua import ua
+from asyncua import Client, ua
 from asyncua.ua.uaerrors import BadTooManySessions, BadUserAccessDenied
 from pydantic import ValidationError
 from roboflow_workflows.enterprise_blocks import loader as enterprise_loader
@@ -19,6 +20,7 @@ from roboflow_workflows.enterprise_blocks.sinks.opc_reader.v1 import (
     OPCUAReaderConfig,
     OPCUAReaderState,
     _build_config,
+    _create_subscription,
     _DataChangeHandler,
     _display_url,
     _SubscriptionWorker,
@@ -898,6 +900,55 @@ class TestRun:
         assert all(set(result) == declared for result in results)
 
 
+@pytest.mark.parametrize(
+    "requested_interval, created_interval, modified_interval",
+    [
+        (100.0, 100.0, None),
+        (100.0, 5000.0, 5000.0),
+        (100.0, 500.0, 5000.0),
+        # Both intervals request zero keepalives: asyncua skips ModifySubscription
+        # even though the server revised the publishing interval.
+        (50000.0, 150000.0, None),
+    ],
+)
+def test_subscription_uses_final_service_response_interval(
+    requested_interval, created_interval, modified_interval
+):
+    client = Client("opc.tcp://host:4840")
+    client.session_timeout = 60000
+    client.uaclient.create_subscription = AsyncMock(
+        return_value=ua.CreateSubscriptionResult(
+            SubscriptionId=42,
+            RevisedPublishingInterval=created_interval,
+            RevisedLifetimeCount=10000,
+            RevisedMaxKeepAliveCount=client.get_keepalive_count(requested_interval),
+        )
+    )
+    client.uaclient.update_subscription = AsyncMock(
+        return_value=ua.ModifySubscriptionResult(
+            RevisedPublishingInterval=modified_interval or created_interval,
+            RevisedLifetimeCount=10000,
+            RevisedMaxKeepAliveCount=client.get_keepalive_count(created_interval),
+        )
+    )
+    handler = _DataChangeHandler(OPCUAReaderState(), asyncio.Event())
+
+    subscription, interval = asyncio.run(
+        _create_subscription(
+            client, publishing_interval_ms=requested_interval, handler=handler
+        )
+    )
+
+    assert subscription.subscription_id == 42
+    assert interval == (modified_interval or created_interval)
+    if modified_interval is None:
+        client.uaclient.update_subscription.assert_not_awaited()
+    else:
+        client.uaclient.update_subscription.assert_awaited_once()
+        modified_parameters = client.uaclient.update_subscription.await_args.args[0]
+        assert modified_parameters.RequestedPublishingInterval == created_interval
+
+
 class FakeAsyncClient:
     """Just enough of asyncua's Client for one direct-mode connection attempt."""
 
@@ -946,12 +997,7 @@ class FakeAsyncClient:
                 )
             return 1
 
-        return SimpleNamespace(
-            subscribe_data_change=subscribe_data_change,
-            parameters=ua.CreateSubscriptionParameters(
-                RequestedPublishingInterval=period
-            ),
-        )
+        return SimpleNamespace(subscribe_data_change=subscribe_data_change)
 
     async def check_connection(self):
         pass
@@ -967,6 +1013,10 @@ class FakeAsyncClient:
 
 @pytest.fixture
 def fake_clients(monkeypatch):
+    async def create_subscription(client, *, publishing_interval_ms, handler):
+        subscription = await client.create_subscription(publishing_interval_ms, handler)
+        return subscription, publishing_interval_ms
+
     FakeAsyncClient.instances = []
     FakeAsyncClient.read_result = ua.DataValue(ua.Variant(True))
     FakeAsyncClient.initial_notification = ua.DataValue(ua.Variant(True))
@@ -974,6 +1024,7 @@ def fake_clients(monkeypatch):
     FakeAsyncClient.disconnect_hangs = False
     FakeAsyncClient.publish_loop_ended = False
     monkeypatch.setattr(v1, "Client", FakeAsyncClient)
+    monkeypatch.setattr(v1, "_create_subscription", create_subscription)
     yield FakeAsyncClient.instances
 
 

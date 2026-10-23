@@ -12,6 +12,7 @@ from typing import Any, List, Literal, Optional, Tuple, Type, Union
 from urllib.parse import urlsplit
 
 from asyncua import Client, Node, ua
+from asyncua.common.subscription import Subscription
 from asyncua.ua.uaerrors import (
     BadAttributeIdInvalid,
     BadIdentityTokenInvalid,
@@ -447,6 +448,34 @@ class _DataChangeHandler:
             self._subscription_lost.set()
 
 
+async def _create_subscription(
+    client: Client,
+    *,
+    publishing_interval_ms: float,
+    handler: _DataChangeHandler,
+) -> Tuple[Subscription, float]:
+    """Create a subscription and retain the final server-revised interval."""
+    # Match Client.create_subscription's defaults and keepalive negotiation, but
+    # retain the service responses: asyncua 1.1.x's subscription.parameters stores
+    # request values, which may differ from BOTH Create and Modify responses.
+    parameters = ua.CreateSubscriptionParameters(
+        RequestedPublishingInterval=publishing_interval_ms,
+        RequestedLifetimeCount=10000,
+        RequestedMaxKeepAliveCount=client.get_keepalive_count(publishing_interval_ms),
+        MaxNotificationsPerPublish=10000,
+        PublishingEnabled=True,
+        Priority=0,
+    )
+    subscription = Subscription(client.uaclient, parameters, handler)
+    result = await subscription.init()
+    revised_parameters = client.get_subscription_revised_params(parameters, result)
+    if revised_parameters is not None:
+        result = await subscription.update(revised_parameters)
+
+    publishing_interval_ms = result.RevisedPublishingInterval
+    return subscription, publishing_interval_ms
+
+
 class _SubscriptionWorker:
     """Owns one OPC UA session and subscription on a private event loop thread.
 
@@ -622,8 +651,10 @@ class _SubscriptionWorker:
                     data_value.StatusCode.check()
                 # A Bad value (Ignition lost its PLC, say) is still the current value.
                 self._state.record_value(data_value)
-                subscription = await client.create_subscription(
-                    config.publishing_interval_ms, handler
+                subscription, publishing_interval_ms = await _create_subscription(
+                    client,
+                    publishing_interval_ms=config.publishing_interval_ms,
+                    handler=handler,
                 )
                 await subscription.subscribe_data_change(
                     node, sampling_interval=config.publishing_interval_ms
@@ -639,9 +670,8 @@ class _SubscriptionWorker:
             # Settle only on the subscription's own initial value: the read above can be
             # overtaken by a change before the monitored item exists, and that change
             # would never be notified. Servers send the initial value on the first
-            # publishing cycle. asyncua stores the negotiated interval on the
-            # subscription; the server may have revised our requested interval up.
-            publishing_interval_ms = subscription.parameters.RequestedPublishingInterval
+            # publishing cycle. Use the final service response's revised interval,
+            # including any second revision made during ModifySubscription.
             try:
                 await asyncio.wait_for(
                     handler.initial_value_delivered.wait(),
