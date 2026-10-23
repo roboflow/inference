@@ -4,9 +4,7 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
-## `0.1.3rc0`
-
-The package version `0.1.3rc` normalizes to `0.1.3rc0`.
+## `0.1.3rc1`
 
 ### Changed
 
