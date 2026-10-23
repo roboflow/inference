@@ -16,6 +16,14 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.13`
+
+Bundled execution engine: `1.17.0`.
+
+### Changed
+
+- Requires the stable `inference-models>=0.39.5` release instead of `>=0.39.5rc1`.
+
 ### Execution engine
 
 - Workflow syntax errors no longer repeat the raw input of the step that failed

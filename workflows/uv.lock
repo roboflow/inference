@@ -1516,7 +1516,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.39.5rc2"
+version = "0.39.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -1571,9 +1571,9 @@ dependencies = [
     { name = "transformers" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f1/da/09ed4dd852d65d29fad0adeb12dbc09fbd26f86a7ac1409ce4ef067916a4/inference_models-0.39.5rc2.tar.gz", hash = "sha256:899b847da8a4fe272019c9385360363ac2aab4a422bff39408f1758564bdb378", size = 1993074, upload-time = "2026-10-16T16:23:25.869Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/09/0e2714aa3eb15c179c6defdfc07f1909fd15ea4882b54526bdb2937cc3a7/inference_models-0.39.5.tar.gz", hash = "sha256:84dd0442c122c097db8675c7264ffffdab22b9103b454f2d0351530b790b2d26", size = 1993255, upload-time = "2026-10-20T10:38:47.687Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3d/e2/67d8c78b63cce0fe32cda62463957dffe897cbe32b63c7bcd1ffc736805e/inference_models-0.39.5rc2-py3-none-any.whl", hash = "sha256:3aa1e5121b2ebbbe0714b1953a2668a9a8d6a217b52d740e3d78886a73c00519", size = 2251626, upload-time = "2026-10-16T16:23:23.875Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/aa/e2046039e7c1fa3a8e53cd5ea5658b48fbcb80f99fef8e50d17424d522d4/inference_models-0.39.5-py3-none-any.whl", hash = "sha256:7a78b6cc3e203f16227f79280a645f38cdc6c2852646752b513a53d88a781b6c", size = 2252638, upload-time = "2026-10-20T10:38:45.663Z" },
 ]
 
 [[package]]
@@ -4077,7 +4077,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.12"
+version = "0.2.13"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -4153,7 +4153,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'enterprise'", specifier = ">=0.134,<0.142" },
     { name = "filelock", specifier = ">=3.20.3,<=4.0.0" },
     { name = "httpx", specifier = "~=0.28.1" },
-    { name = "inference-models", specifier = ">=0.39.5rc1" },
+    { name = "inference-models", specifier = ">=0.39.5" },
     { name = "inference-sdk", specifier = ">=1.8.0" },
     { name = "matplotlib" },
     { name = "msgpack" },

@@ -4,6 +4,16 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.3`
+
+### Changed
+
+- The `workflows` extra requires the stable `roboflow-workflows>=0.2.12` release instead of `>=0.2.11rc1`. The Inference 1.8.2 distribution pins Workflows 0.2.13, which provides the execution-engine cleanup used below.
+
+### Documentation
+
+- Clarify `max_fps` behavior: video files retain every frame and wait by default; streams drop intermediate frames. `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True` enables frame dropping for files, and the Inference CLI sets this flag automatically.
+
 ### Fixed
 
 - Joining a workflow `InferencePipeline` (after end of stream, `terminate()` or an inference error) now closes the workflow's blocks through `ExecutionEngine.close()`, after the workflow thread pools are shut down. Blocks with background connections, such as the OPC UA Reader, MQTT Reader and Kafka Consumer, no longer keep their threads and broker or server sessions while a stopped pipeline object is still referenced. With a `roboflow-workflows` that has no `ExecutionEngine.close()`, nothing changes.
