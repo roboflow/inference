@@ -1,9 +1,13 @@
 import threading
 from collections import OrderedDict
 from contextlib import contextmanager
+from datetime import datetime
+from typing import Generator
+from unittest import mock
 
 import numpy as np
 import pytest
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload import active_learning
 from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.active_learning import (
     ImageDimensions,
     StrategyLimit,
@@ -14,6 +18,14 @@ from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.active_learning
     use_credit_of_matching_strategy,
 )
 from roboflow_workflows.utils.in_memory_cache import InMemoryWorkflowsCache
+
+
+@pytest.fixture(autouse=True)
+def _fixed_quota_clock() -> Generator[None, None, None]:
+    """Keep quota checks and updates in the same minute, hour, and day."""
+    with mock.patch.object(active_learning, "datetime") as datetime_mock:
+        datetime_mock.utcnow.return_value = datetime(2026, 1, 1, 12, 0, 0)
+        yield
 
 
 def _limits(minutely: int, hourly: int = 100, daily: int = 1000):
