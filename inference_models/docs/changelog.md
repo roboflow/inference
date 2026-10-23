@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Process-manager integration primitives for strict explicit-package compatibility
+  checks and single-candidate initialization without automatic package fallback.
+  Existing `AutoModel.from_pretrained` selection and fallback behavior is unchanged.
+
 ## `0.39.5`
 
 ### Added
