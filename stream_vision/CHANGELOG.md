@@ -4,12 +4,16 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
-## `0.1.3rc1`
+## `0.1.3`
 
 ### Changed
 
-- The `workflows` extra requires `roboflow-workflows>=0.2.13rc1` instead of
+- The `workflows` extra requires `roboflow-workflows>=0.2.13` instead of
   `>=0.2.11rc1`, providing the execution-engine cleanup used below.
+
+### Documentation
+
+- Clarify `max_fps` behavior: video files retain every frame and wait by default; streams drop intermediate frames. `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True` enables frame dropping for files, and the Inference CLI sets this flag automatically.
 
 ### Fixed
 
