@@ -22,11 +22,13 @@ Bundled execution engine: `1.17.0`.
 
 ### Changed
 
-- Requires the stable `inference-models>=0.39.5` release instead of `>=0.39.5rc1`.
-- Raises the `inference-sdk` minimum from `>=1.8.0` to the published `>=1.8.1`
-  release.
+- Require the stable `inference-models>=0.39.5` and `inference-sdk>=1.8.1`
+  releases, and refresh the Workflows lockfile to match these minimum versions.
 
 ### Execution engine
+
+- Update the engine compatibility version to `1.17.0` and align the integration
+  and hosted-platform version assertions with the published `0.2.13rc1` package.
 
 - Workflow syntax errors no longer repeat the raw input of the step that failed
   validation. The rendered `pydantic` error (the `inner_error_message` of an HTTP
