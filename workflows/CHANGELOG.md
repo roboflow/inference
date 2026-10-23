@@ -16,6 +16,19 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- Require `openai>=3.32.0,<4.0.0` (it was `>=1.17.0,<2.0.0`). 3.32 is the first release whose `client.decisions.create` accepts `prompt_cache_options`. Environments that cap `openai` below 3, as the current litellm, crewai and llama-index-llms-openai releases do, can no longer install `roboflow-workflows` alongside them.
+  - openai 3 replaced HTTPX with HTTPX2. The blocks that call models through the SDK (OpenAI, OpenAI-Compatible, and the OpenRouter- and xAI-based blocks) now verify TLS certificates against the operating-system trust store instead of `certifi`; `SSL_CERT_FILE` and `SSL_CERT_DIR` still apply.
+  - The OpenAI-Compatible block builds its client with `DefaultHttpx2Client` and parses base URLs with `httpx2.URL`. It still refuses redirects, and its redirect test intercepts the HTTPX2 transport.
+
+### Added
+
+- OpenAI Decisions block (`roboflow_core/open_ai_decisions@v1`): asks OpenAI's Decisions API (`POST /v1/decisions`, GPT-6 Luna) typed questions about each image and returns probabilities instead of generated text.
+  - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
+  - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
+  - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
+
 ## `0.2.13`
 
 Bundled execution engine: `1.17.0`.
