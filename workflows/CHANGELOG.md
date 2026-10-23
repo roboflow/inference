@@ -23,6 +23,9 @@ for contributor and maintainer responsibilities.
 
 ### Execution engine
 
+- Update the engine compatibility version to `1.17.0` and align the integration
+  and hosted-platform version assertions with the published `0.2.13rc1` package.
+
 - Workflow syntax errors no longer repeat the raw input of the step that failed
   validation. The rendered `pydantic` error (the `inner_error_message` of an HTTP
   `WorkflowSyntaxError` response, and the traceback the server logs) used to
