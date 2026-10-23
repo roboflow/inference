@@ -34,8 +34,11 @@ def pillow_image_to_base64_jpeg(image: Image.Image) -> str:
     Returns:
         The base64 JPEG string.
     """
-    if image.mode not in ("RGB", "L"):
-        # JPEG cannot store alpha, palette or 16-bit modes
+    if image.mode == "I;16":
+        # Scale unsigned 16-bit to 8-bit with a right shift instead of clipping.
+        image = Image.fromarray((np.asarray(image) >> 8).astype(np.uint8), mode="L")
+    elif image.mode in ("RGBA", "LA", "P", "PA"):
+        # JPEG cannot store alpha or palette modes.
         image = image.convert("RGB")
     with BytesIO() as buffer:
         image.save(buffer, format="JPEG")
