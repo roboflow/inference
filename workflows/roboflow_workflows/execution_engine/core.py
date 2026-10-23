@@ -100,6 +100,15 @@ class ExecutionEngine(BaseExecutionEngine):
             serialize_results=serialize_results,
         )
 
+    def close(self) -> None:
+        """Release resources the workflow's blocks hold between runs.
+
+        Calls ``close()`` on every block that defines one, such as the background
+        connections of reader blocks. Safe to call more than once; the engine must
+        not be run afterwards.
+        """
+        self._engine.close()
+
 
 def retrieve_requested_execution_engine_version(workflow_definition: dict) -> Version:
     raw_version = workflow_definition.get("version")
