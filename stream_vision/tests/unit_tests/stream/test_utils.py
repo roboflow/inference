@@ -184,3 +184,70 @@ def test_on_pipeline_end_when_profiling_directory_readonly(
     assert (
         len(json_files_in_directory) == 0
     ), "Expected no profiler trace saved on read-only FS"
+
+
+@mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", False)
+def test_on_pipeline_end_closes_the_execution_engine_after_the_pools(
+    empty_directory: str,
+) -> None:
+    # given
+    thread_pool_executor = ThreadPoolExecutor(max_workers=1)
+    execution_engine = MagicMock()
+    execution_engine.close.side_effect = lambda: order.append(
+        ("close", thread_pool_executor._shutdown)
+    )
+    order = []
+
+    # when
+    on_pipeline_end(
+        thread_pool_executor=thread_pool_executor,
+        cancel_thread_pool_tasks_on_exit=True,
+        profiler=MagicMock(),
+        profiling_directory=empty_directory,
+        execution_engine=execution_engine,
+    )
+
+    # then: blocks are closed once, with the pool already shut down
+    execution_engine.close.assert_called_once_with()
+    assert order == [("close", True)]
+
+
+@mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", False)
+def test_on_pipeline_end_survives_a_failing_engine_close(empty_directory: str) -> None:
+    # given
+    thread_pool_executor = ThreadPoolExecutor(max_workers=1)
+    execution_engine = MagicMock()
+    execution_engine.close.side_effect = RuntimeError("cannot close")
+
+    # when
+    on_pipeline_end(
+        thread_pool_executor=thread_pool_executor,
+        cancel_thread_pool_tasks_on_exit=True,
+        profiler=MagicMock(),
+        profiling_directory=empty_directory,
+        execution_engine=execution_engine,
+    )
+
+    # then
+    assert thread_pool_executor._shutdown is True
+
+
+@pytest.mark.parametrize("execution_engine", [None, object()])
+@mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", False)
+def test_on_pipeline_end_accepts_engines_without_close(
+    empty_directory: str, execution_engine
+) -> None:
+    # given an absent engine, or one from a roboflow-workflows without close()
+    thread_pool_executor = ThreadPoolExecutor(max_workers=1)
+
+    # when
+    on_pipeline_end(
+        thread_pool_executor=thread_pool_executor,
+        cancel_thread_pool_tasks_on_exit=True,
+        profiler=MagicMock(),
+        profiling_directory=empty_directory,
+        execution_engine=execution_engine,
+    )
+
+    # then
+    assert thread_pool_executor._shutdown is True
