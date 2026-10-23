@@ -212,26 +212,6 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         reference_height, reference_width = reference_image.numpy_image.shape[:2]
         resolution_wh = (reference_width, reference_height)
 
-        # Masks travel separately from the rest of the detections and are
-        # only materialised at reference resolution once the survivors are
-        # known. Moving every crop mask to a full-size dense array first costs
-        # N x H x W bytes before any filtering: a 1080p frame sliced 12 ways
-        # with ~25 masks per slice took ~3 GiB inside this block and
-        # OOM-killed an 8 GiB video worker (2026-09-28).
-        #
-        # With overlap filtering every crop's masks become crop-scoped
-        # CompactMask (RLE of each mask's bounding box); merge / NMS / NMM run
-        # on the compact form, so peak memory is bounded by the survivors.
-        # Without filtering every mask survives and the output is dense, so
-        # the RLE round trip is pure overhead (7x slower on fragmented
-        # masks); the crop masks are copied straight into the output stack.
-        #
-        # Input masks may already be CompactMask (e.g. from a model block
-        # emitting compact masks). Their dense form is only ever materialised
-        # one crop at a time: with filtering, inside compact_mask_for_crop
-        # while the crop is converted; without, inside stitch_masks_dense
-        # while the crop is copied. Decoding every crop up front would hold
-        # all N x crop_h x crop_w bytes until the block returns.
         overlap_filter = choose_overlap_filter_strategy(
             overlap_filtering_strategy=overlap_filtering_strategy,
         )
