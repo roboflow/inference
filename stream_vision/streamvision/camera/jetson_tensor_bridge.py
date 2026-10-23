@@ -108,6 +108,9 @@ class NativeJetsonTensorPipeline:
         # providing this serialization.
         self._lifecycle_lock = threading.Lock()
         self._handle = None
+        self._grabbed_tensor = None
+        self._grabbed_retrieved = False
+        self._frames_discarded_before_retrieve = 0
         self._library = _load_bridge_library()
         error = ctypes.create_string_buffer(_ERROR_CAPACITY)
         self._handle = self._library.rf_jetson_pipeline_create(
@@ -121,7 +124,7 @@ class NativeJetsonTensorPipeline:
             raise RuntimeError(_decode_error(error))
 
     def grab(self, timeout_ns: Optional[int] = None) -> bool:
-        """Poll the native pipeline for the next frame.
+        """Reserve the next frame, discarding any previously grabbed frame.
 
         ``timeout_ns`` is the overall deadline: when it elapses without a frame
         the source is treated as stalled and ``TimeoutError`` is raised so the
@@ -129,6 +132,10 @@ class NativeJetsonTensorPipeline:
         ``None`` preserves the historic unbounded wait, but still returns
         promptly on interrupt()/EOS/bus errors because the pull is chunked.
         """
+        if self._grabbed_tensor is not None and not self._grabbed_retrieved:
+            self._frames_discarded_before_retrieve += 1
+        self._grabbed_tensor = None
+        self._grabbed_retrieved = False
         error = ctypes.create_string_buffer(_ERROR_CAPACITY)
         deadline_ns: Optional[int] = None
         if timeout_ns is not None:
@@ -154,6 +161,11 @@ class NativeJetsonTensorPipeline:
             if status < 0:
                 raise RuntimeError(_decode_error(error))
             if status == 1:
+                # The native grab only waits for a nonempty handoff queue.
+                # Pop it now so repeated grabs advance even without retrieve,
+                # and a live producer cannot replace the selected frame.
+                # DLPack transfers ownership without copying GPU pixels.
+                self._grabbed_tensor = self._take_ready_tensor()
                 return True
             if status == 0:
                 # End of stream, or interrupt() flipped the native flag from
@@ -165,6 +177,12 @@ class NativeJetsonTensorPipeline:
 
     def retrieve(self):
         self._ensure_open()
+        if self._grabbed_tensor is None:
+            raise RuntimeError("No grabbed frame is available")
+        self._grabbed_retrieved = True
+        return self._grabbed_tensor
+
+    def _take_ready_tensor(self):
         error = ctypes.create_string_buffer(_ERROR_CAPACITY)
         managed_tensor = self._library.rf_jetson_pipeline_retrieve(
             self._handle,
@@ -228,7 +246,14 @@ class NativeJetsonTensorPipeline:
         )
         if status < 0:
             raise RuntimeError("Could not read Jetson tensor bridge statistics")
-        return {name: int(getattr(stats, name)) for name, _ in stats._fields_}
+        result = {name: int(getattr(stats, name)) for name, _ in stats._fields_}
+        # Keep native ready-queue replacement distinct from frames intentionally
+        # grabbed but not retrieved (FPS subsampling/adaptive source policies).
+        # These can overlap source-layer drop events; do not sum the layers.
+        result["frames_discarded_before_retrieve"] = (
+            self._frames_discarded_before_retrieve
+        )
+        return result
 
     def interrupt(self) -> None:
         with self._lifecycle_lock:
@@ -240,6 +265,7 @@ class NativeJetsonTensorPipeline:
 
     def close(self) -> None:
         with self._lifecycle_lock:
+            self._grabbed_tensor = None
             handle = getattr(self, "_handle", None)
             if handle:
                 self._handle = None
