@@ -629,6 +629,9 @@ from roboflow_workflows.core_steps.models.foundation.openai.v7 import OpenAIBloc
 from roboflow_workflows.core_steps.models.foundation.openai_compatible.v1 import (
     OpenAICompatibleBlockV1,
 )
+from roboflow_workflows.core_steps.models.foundation.openai_decisions.v1 import (
+    OpenAIDecisionsBlockV1,
+)
 from roboflow_workflows.core_steps.models.foundation.openrouter.v1 import (
     OpenRouterBlockV1,
 )
@@ -1887,6 +1890,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV5,
         OpenAIBlockV6,
         OpenAIBlockV7,
+        OpenAIDecisionsBlockV1,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
