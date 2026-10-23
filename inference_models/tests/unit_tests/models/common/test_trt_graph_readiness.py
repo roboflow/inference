@@ -24,7 +24,7 @@ from inference_models.models.rfdetr.optimization.schedulers import (
     BaseExecutionScheduler,
 )
 
-pytestmark = [pytest.mark.gpu_only, pytest.mark.torch_models]
+pytestmark = [pytest.mark.gpu_only, pytest.mark.torch_models, pytest.mark.trt_extras]
 
 
 class _Context:

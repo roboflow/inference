@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- TensorRT CUDA graph capture and replay wait on the caller's CUDA stream and
+  record the input tensor on the graph stream before copying or executing it.
+  Previously, an input still being produced on the caller stream without a
+  tensor readiness event (RF-DETR tracker-based preprocessing, batch padding)
+  could be read too early and yield predictions for stale input when CUDA
+  graphs were enabled.
+
 ## `0.39.4`
 
 ### Added
