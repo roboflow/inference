@@ -8,7 +8,7 @@ This is the canonical changelog for the `streamvision` package.
 
 ### Changed
 
-- The `workflows` extra requires the stable `roboflow-workflows>=0.2.12` release instead of `>=0.2.11rc1`. The Inference 1.8.2 release branch pins Workflows 0.2.13rc1, which provides the execution-engine cleanup used below.
+- The `workflows` extra requires `roboflow-workflows>=0.2.13rc1` instead of `>=0.2.11rc1`, providing the execution-engine cleanup used below.
 
 ### Documentation
 

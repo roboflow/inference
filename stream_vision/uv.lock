@@ -4065,7 +4065,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.12"
+version = "0.2.13rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -4111,9 +4111,9 @@ dependencies = [
     { name = "zxing-cpp", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "zxing-cpp", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ca/f1/d3868aaa8abf8a443ba3372ec5f74467dbd702b5f5b41d81cd83ef2301c4/roboflow_workflows-0.2.12.tar.gz", hash = "sha256:39a646e6b0fd0df61a7732a432fe57c7bf76e34d69c58e2b939429b3cc68bcd6", size = 5404805, upload-time = "2026-10-20T11:38:35.999Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/45/c446eadcbbb70eedf4ab8ace40196348fa623cfc0364e50b9c59d154b1a0/roboflow_workflows-0.2.13rc1.tar.gz", hash = "sha256:e6e91d9a72ca41cf29cc9c4c0f375d65d88303f3999727a92a952253ac0ff568", size = 5423456, upload-time = "2026-10-23T13:30:40.264Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/3d/7c8d2c37c33e4cf60257fd99b6afeb6974a400a569263d8bb9c1a3676e56/roboflow_workflows-0.2.12-py3-none-any.whl", hash = "sha256:b671bde120d5060d80433829661f46970d4b2841754f380797e01dcc3c9b5046", size = 6509855, upload-time = "2026-10-20T11:38:34.199Z" },
+    { url = "https://files.pythonhosted.org/packages/31/68/cc8b328b0b2d950d80aec10a77a0b84b3eb01f07c4231f9ae4f23de7a2d2/roboflow_workflows-0.2.13rc1-py3-none-any.whl", hash = "sha256:2f2fbfcef41aa15fd8c0c897f01baa5990360dc69ebfe0897689e7d40017159e", size = 6528241, upload-time = "2026-10-23T13:30:38.391Z" },
 ]
 
 [[package]]
@@ -4571,7 +4571,7 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.2.0" },
     { name = "requests", marker = "extra == 'webrtc'", specifier = ">=2.33.0,<3.0.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
-    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.12" },
+    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.13rc1" },
     { name = "supervision", specifier = ">=0.30.6,<0.31.0" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2.0.0" },
     { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.0.1,<3.0.0" },
