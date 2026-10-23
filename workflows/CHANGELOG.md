@@ -23,6 +23,8 @@ Bundled execution engine: `1.17.0`.
 ### Changed
 
 - Requires the stable `inference-models>=0.39.5` release instead of `>=0.39.5rc1`.
+- Raises the `inference-sdk` minimum from `>=1.8.0` to the published `>=1.8.1`
+  release.
 
 ### Execution engine
 
