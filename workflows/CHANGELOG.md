@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.13`
+
+Bundled execution engine: `1.17.0`.
+
 ### Changed
 
 - Require the stable `inference-models>=0.39.5` and `inference-sdk>=1.8.1`
