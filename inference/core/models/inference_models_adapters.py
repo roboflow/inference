@@ -2,7 +2,6 @@ import base64
 import io
 from collections import OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
-from contextlib import ExitStack, closing
 from inspect import Parameter, signature
 from io import BytesIO
 from threading import local
@@ -69,12 +68,12 @@ from inference.core.env import (
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
 from inference.core.exceptions import (
+    InputImageLoadError,
     InvalidMaskDecodeArgument,
     ModelDeploymentNotSupportedError,
     PayloadTooLargeError,
     PostProcessingError,
 )
-from inference.core.models.action_recognition import merge_window_segments
 from inference.core.models.base import Model
 from inference.core.models.embeddings import make_embedding_info
 from inference.core.models.semantic_segmentation_utils import (
@@ -90,12 +89,7 @@ from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
 from inference.core.utils.video_processing import VideoProcessingControl
-from inference.core.utils.video_utils import (
-    VideoDecodeState,
-    probe_video,
-    read_frame_windows,
-    video_source_path,
-)
+from inference.core.utils.video_utils import video_source_path
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -124,11 +118,8 @@ from inference_models.configuration import (
     get_rfdetr_pipeline_depth,
 )
 from inference_models.entities import ImageDimensions
-from inference_models.models.base.action_recognition import (
-    ActionRecognitionModel,
-    effective_max_frame_side,
-    plan_windows,
-)
+from inference_models.errors import VideoInputError, VideoProcessingLimitError
+from inference_models.models.base.action_recognition import ActionRecognitionModel
 from inference_models.models.base.async_handoff import (
     STREAM_PIPELINE_CONTEXT_ID_KWARG,
     adapter_gpu_work_submitted,
@@ -148,10 +139,11 @@ from inference_models.models.base.semantic_segmentation import (
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 from inference_models.models.common.roboflow.post_processing import (
-    ConfidenceFilter,
     resolve_mask_frame_size,
     scale_polygons_to_image,
 )
+from inference_models.video.action_recognition import ActionRecognitionVideoPipeline
+from inference_models.video.control import VideoProcessingLimits
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -2272,9 +2264,8 @@ class InferenceModelsDepthEstimationAdapter(Model):
 class InferenceModelsActionRecognitionAdapter(Model):
     """Serves a clip to an action recognition model, one window at a time.
 
-    The model declares how a clip is cut and sampled, so a caller never states
-    a window length or a frame rate. Windows tile from the start of the clip
-    and the trailing remainder is dropped, which is how training validates.
+    The package runner owns local decoding, sampling and timeline assembly.
+    This adapter retains HTTP transport policy and response conversion.
     """
 
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
@@ -2292,209 +2283,84 @@ class InferenceModelsActionRecognitionAdapter(Model):
         *,
         processing_control: Optional[VideoProcessingControl] = None,
     ) -> ActionRecognitionInferenceResponse:
+        """Run a materialized clip through the shared local-video pipeline.
+
+        Args:
+            request (ActionRecognitionInferenceRequest): Validated HTTP input.
+            processing_control (Optional[VideoProcessingControl]): Server deadline
+                and disconnect control; omitted values use the server timeout.
+
+        Returns:
+            ActionRecognitionInferenceResponse: Existing HTTP timeline and metadata.
+
+        Raises:
+            InputImageLoadError: The materialized video cannot be read.
+            PayloadTooLargeError: Duration or processing output exceeds a limit.
+        """
         control = processing_control or VideoProcessingControl(
             timeout_seconds=ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS
         )
         control.check()
-        sampling = self._model.video_sampling
-        default_confidence = getattr(self._model, "confidence_threshold", None)
-        class_filter = request.class_filter or None
-        result_budget = ActionRecognitionResultBudget(
-            max_candidates=MAX_ACTION_RECOGNITION_CANDIDATES,
-            max_bytes=MAX_ACTION_RECOGNITION_RESPONSE_BYTES,
+        pipeline = ActionRecognitionVideoPipeline(
+            self._model,
+            limits=VideoProcessingLimits(
+                max_candidates=MAX_ACTION_RECOGNITION_CANDIDATES,
+                max_result_bytes=MAX_ACTION_RECOGNITION_RESPONSE_BYTES,
+            ),
         )
-        # Only a model that carries its own class list has ids to report. A
-        # request filter is not a vocabulary: a zero-shot model ignores it and
-        # answers in its own words, so a caption that happens to match one of
-        # the requested names would otherwise be given that name's index.
-        id_vocabulary = self._model.class_names or None
-        threshold = None
-        per_class_thresholds = None
-        if self._model.supports_confidence:
-            thresholds = ConfidenceFilter(
-                confidence=(
-                    "default" if request.confidence is None else request.confidence
-                ),
-                recommended_parameters=getattr(
-                    self._model, "recommended_parameters", None
-                ),
-                default_confidence=default_confidence,
-            ).get_threshold(id_vocabulary or [])
-            if isinstance(thresholds, torch.Tensor):
-                per_class_thresholds = dict(zip(id_vocabulary, thresholds.tolist()))
-            else:
-                threshold = thresholds
-        with video_source_path(
-            video_type=request.video.type, value=request.video.value
-        ) as path, ExitStack() as cleanup:
-            control.check()
-            source_fps, frame_count = probe_video(path=path)
-            _ensure_clip_fits_the_duration_cap(
-                frame_count=frame_count, source_fps=source_fps
-            )
-            windows = plan_windows(
-                frame_count=frame_count,
-                source_fps=source_fps,
-                sampling=sampling,
-            )
-            timeline: List[ActionRecognitionPrediction] = []
-            candidates = (
-                []
-                if request.include_candidates and self._model.supports_confidence
-                else None
-            )
-            if candidates is not None:
-                estimate = self._model.estimate_candidate_count(
-                    sum(len(window.frame_indices) for window in windows),
-                    class_names=class_filter,
-                )
-                if estimate is not None:
-                    result_budget.check_candidate_count(estimate)
-            windows_classified = 0
-            frame_transform = getattr(self._model, "frame_storage_transform", None)
-            decode_kwargs = (
-                {"frame_transform": frame_transform}
-                if frame_transform is not None
-                else {"max_frame_side": effective_max_frame_side(sampling)}
-            )
-            decode_state = VideoDecodeState()
-            window_limits = [
-                min(
-                    frame_count,
-                    round(
-                        window.frame_indices[0]
-                        + (
-                            window.duration_seconds
-                            if window.duration_seconds is not None
-                            else len(window.frame_indices) / window.sample_fps
-                        )
-                        * source_fps
+        try:
+            with video_source_path(
+                video_type=request.video.type, value=request.video.value
+            ) as path:
+                result = pipeline.run(
+                    path,
+                    class_names=request.class_filter,
+                    confidence=request.confidence,
+                    include_candidates=request.include_candidates,
+                    control=control,
+                    on_source=lambda fps, count: _ensure_clip_fits_the_duration_cap(
+                        frame_count=count,
+                        source_fps=fps,
                     ),
                 )
-                for window in windows
+        except VideoInputError as error:
+            raise InputImageLoadError(
+                message=str(error), public_message=str(error)
+            ) from error
+        except VideoProcessingLimitError as error:
+            raise PayloadTooLargeError(
+                message=str(error), public_message=str(error)
+            ) from error
+
+        timeline = [
+            ActionRecognitionPrediction(**entry.to_dict()) for entry in result.timeline
+        ]
+        candidates = (
+            None
+            if result.candidates is None
+            else [
+                ActionRecognitionPrediction(**entry.to_dict())
+                for entry in result.candidates
             ]
-            window_frames = cleanup.enter_context(
-                closing(
-                    read_frame_windows(
-                        path=path,
-                        windows=[window.frame_indices for window in windows],
-                        decode_state=decode_state,
-                        window_end_frames=window_limits,
-                        check_cancelled=control.check,
-                        **decode_kwargs,
-                    )
-                )
-            )
-            for window, planned_limit, frames in zip(
-                windows, window_limits, window_frames
-            ):
-                control.check()
-                if len(frames) < max(1, sampling.min_frames):
-                    continue
-                windows_classified += 1
-                # A window's segments index its own frames; the timeline
-                # counts the clip's.
-                infer_kwargs = {}
-                window_frame_limit = min(
-                    planned_limit,
-                    (
-                        decode_state.frame_count
-                        if decode_state.reached_end
-                        else frame_count
-                    ),
-                )
-                window_duration_seconds = getattr(window, "duration_seconds", None)
-                if (
-                    self._model.supports_observed_duration
-                    and window_duration_seconds is not None
-                ):
-                    infer_kwargs["duration_seconds"] = min(
-                        window_duration_seconds,
-                        (window_frame_limit - window.frame_indices[0]) / source_fps,
-                    )
-                if self._model.supports_confidence:
-                    infer_kwargs["confidence"] = (
-                        0.0
-                        if request.include_candidates
-                        else (
-                            "default"
-                            if request.confidence is None
-                            else request.confidence
-                        )
-                    )
-                segments = self._model.infer(
-                    frames=frames,
-                    class_names=class_filter,
-                    fps=window.sample_fps,
-                    check_cancelled=control.check,
-                    **infer_kwargs,
-                )
-                control.check()
-                if candidates is not None:
-                    result_budget.check_candidate_count(len(segments))
-                    candidate_start = len(candidates)
-                    merge_window_segments(
-                        timeline=candidates,
-                        frame_numbers=window.frame_indices[: len(frames)],
-                        segments=segments,
-                        id_vocabulary=id_vocabulary,
-                        stride=source_fps / window.sample_fps,
-                        sample_stride=source_fps / window.sample_fps,
-                        frame_limit=window_frame_limit,
-                        merge=False,
-                    )
-                    result_budget.add_candidates(candidates[candidate_start:])
-                    segment_thresholds = (
-                        torch.tensor(
-                            [
-                                per_class_thresholds[segment.class_name]
-                                for segment in segments
-                            ],
-                            dtype=torch.float32,
-                        )
-                        if per_class_thresholds is not None
-                        else threshold
-                    )
-                    keep = torch.ge(
-                        torch.tensor(
-                            [segment.confidence for segment in segments],
-                            dtype=torch.float32,
-                        ),
-                        torch.as_tensor(segment_thresholds, dtype=torch.float32),
-                    ).tolist()
-                    segments = [
-                        segment for segment, accepted in zip(segments, keep) if accepted
-                    ]
-                merge_window_segments(
-                    timeline=timeline,
-                    frame_numbers=window.frame_indices[: len(frames)],
-                    segments=segments,
-                    id_vocabulary=id_vocabulary,
-                    stride=max(1.0, source_fps / window.sample_fps),
-                    frame_limit=window_frame_limit,
-                    sample_stride=source_fps / window.sample_fps,
-                )
-                result_budget.check_response(
-                    timeline,
-                    {
-                        "per_class_confidence_thresholds": per_class_thresholds,
-                    },
-                )
-            if decode_state.reached_end:
-                frame_count = decode_state.frame_count
-        timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
+        )
         response = ActionRecognitionInferenceResponse(
             timeline=timeline,
-            source_fps=source_fps,
-            frame_count=frame_count,
-            windows_classified=windows_classified,
-            span_semantics=getattr(self._model, "span_semantics", "instances"),
-            confidence_threshold=threshold,
-            per_class_confidence_thresholds=per_class_thresholds,
+            source_fps=result.source_fps,
+            frame_count=result.frame_count,
+            windows_classified=result.windows_classified,
+            span_semantics=result.span_semantics,
+            confidence_threshold=result.confidence_threshold,
+            per_class_confidence_thresholds=result.per_class_confidence_thresholds,
             candidates=candidates,
         )
         self._attach_resolved_model_metadata(response)
         control.check()
+        result_budget = ActionRecognitionResultBudget(
+            max_candidates=MAX_ACTION_RECOGNITION_CANDIDATES,
+            max_bytes=MAX_ACTION_RECOGNITION_RESPONSE_BYTES,
+        )
+        if candidates is not None:
+            result_budget.add_candidates(candidates)
         result_budget.check_response(
             timeline,
             response.model_dump(mode="json", exclude={"timeline", "candidates"}),

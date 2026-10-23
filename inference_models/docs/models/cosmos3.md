@@ -36,7 +36,7 @@ You can also use fine-tuned models from Roboflow by specifying the model id of a
 
 | Feature | Supported |
 |---------|-----------|
-| **Training** | ✅ LoRA fine-tuning on multimodal projects (`cosmos3-edge-vlm`); video (`cosmos3-edge`) fine-tunes are not servable yet |
+| **Training** | ✅ LoRA fine-tuning on multimodal projects (`cosmos3-edge-vlm`); video (`cosmos3-edge`) fine-tunes support action recognition |
 | **Upload Weights** | ❌ Not supported |
 | **Serverless API (v2)** | ⚠️ Limited support (not yet fully stable) |
 | **Workflows** | ✅ Use in [Workflows](https://inference.roboflow.com/workflows/about/) via the Cosmos 3 Edge block |
@@ -105,3 +105,17 @@ print(f"Answer: {answers[0]}")
 |----------|---------|-------------|
 | `INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS` | `512` | Tokens generated when `max_new_tokens` is not given |
 | `INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE` | `INFERENCE_MODELS_DEFAULT_DO_SAMPLE` | Sample instead of greedy decoding |
+
+## Local-video action recognition
+
+```python
+from inference_models import ActionRecognitionVideoPipeline, AutoModel
+
+model = AutoModel.from_pretrained("nvidia/cosmos-3-edge")
+result = ActionRecognitionVideoPipeline(model).run("video.mp4")
+for prediction in result.timeline:
+    print(prediction.to_dict())
+```
+
+See the [local-video guide](../how-to/local-video-action-recognition.md) for
+installation, candidates, progress, incremental output, cancellation and limits.

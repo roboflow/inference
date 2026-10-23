@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 from inference_models.entities import Confidence
+from inference_models.errors import VideoProcessingLimitError
 
 
 @dataclass(frozen=True)
@@ -227,6 +228,10 @@ def plan_windows(
     frame_count: int,
     source_fps: float,
     sampling: VideoSampling,
+    *,
+    max_windows: Optional[int] = None,
+    max_sampled_frames: Optional[int] = None,
+    check_cancelled: Optional[Callable[[], None]] = None,
 ) -> List[WindowSpec]:
     """Cut a clip into the windows a model trained for ``sampling`` expects.
 
@@ -236,13 +241,52 @@ def plan_windows(
     clip goes unread. A clip shorter than one window becomes a single sample
     spanning it, which is what training does. Under ``whole_video`` the clip is
     one sample.
+
+    Args:
+        frame_count (int): Declared source-frame count.
+        source_fps (float): Nominal source frame rate.
+        sampling (VideoSampling): Model-owned temporal contract.
+        max_windows (Optional[int]): Positive limit on planned windows.
+        max_sampled_frames (Optional[int]): Positive limit on retained indices.
+        check_cancelled (Optional[Callable]): Called before planning each window.
+
+    Returns:
+        List[WindowSpec]: Ordered windows, including eligible short/tail windows.
+
+    Raises:
+        ValueError: A limit or sampling configuration is invalid.
+        VideoProcessingLimitError: Planning would exceed an explicit limit.
     """
+    for value in (max_windows, max_sampled_frames):
+        if value is not None and (type(value) is not int or value <= 0):
+            raise ValueError("Window planning limits must be positive integers")
+
+    planned_count = 0
+    sampled_count = 0
+
+    def plan_interval(*args):
+        nonlocal planned_count, sampled_count
+        if check_cancelled is not None:
+            check_cancelled()
+        if max_windows is not None and planned_count >= max_windows:
+            raise VideoProcessingLimitError(
+                f"Video planning exceeds the limit of {max_windows} windows."
+            )
+
+        remaining = (
+            None if max_sampled_frames is None else max_sampled_frames - sampled_count
+        )
+        window = _plan_interval(*args, max_samples=remaining)
+        planned_count += 1
+        sampled_count += len(window.frame_indices)
+        return window
+
     if frame_count <= 0 or source_fps <= 0 or sampling.sample_fps <= 0:
         return []
     duration_us = int(round(frame_count / source_fps * _MICROSECONDS))
     window_us = _window_span_us(sampling=sampling)
     if window_us is None or duration_us <= window_us:
-        return [_plan_interval(0, duration_us, frame_count, source_fps, sampling)]
+        return [plan_interval(0, duration_us, frame_count, source_fps, sampling)]
     if sampling.overlap_frames or sampling.end_aligned:
         stride_us = window_us - round(
             sampling.overlap_frames / sampling.sample_fps * _MICROSECONDS
@@ -252,13 +296,18 @@ def plan_windows(
                 "Window overlap must be nonnegative and shorter than the window"
             )
         last_start = duration_us - window_us
-        starts = list(range(0, last_start + 1, stride_us))
+        start_range = range(0, last_start + 1, stride_us)
+        if max_windows is not None and len(start_range) > max_windows:
+            raise VideoProcessingLimitError(
+                f"Video planning exceeds the limit of {max_windows} windows."
+            )
+        starts = list(start_range)
         if sampling.end_aligned and starts[-1] != last_start:
             starts.append(last_start)
         elif not sampling.end_aligned and starts[-1] + window_us < duration_us:
             starts.append(starts[-1] + stride_us)
         return [
-            _plan_interval(
+            plan_interval(
                 start,
                 min(start + window_us, duration_us),
                 frame_count,
@@ -269,7 +318,7 @@ def plan_windows(
         ]
     whole_windows = duration_us // window_us
     windows = [
-        _plan_interval(
+        plan_interval(
             index * window_us,
             (index + 1) * window_us,
             frame_count,
@@ -284,7 +333,7 @@ def plan_windows(
     # window of its own, sampled the way a short clip is.
     remainder_us = duration_us - whole_windows * window_us
     if remainder_us > 0:
-        remainder = _plan_interval(
+        remainder = plan_interval(
             whole_windows * window_us,
             duration_us,
             frame_count,
@@ -356,6 +405,8 @@ def _plan_interval(
     frame_count: int,
     source_fps: float,
     sampling: VideoSampling,
+    *,
+    max_samples: Optional[int] = None,
 ) -> WindowSpec:
     """The frames one sample reads, and the rate they stand for.
 
@@ -385,6 +436,7 @@ def _plan_interval(
                 sampling.max_frames, int(round(duration_seconds * sampling.sample_fps))
             ),
         )
+        _check_sample_budget(count=count, limit=max_samples)
         step_us = (
             _MICROSECONDS / sampling.sample_fps
             if sampling.fixed_sample_fps
@@ -405,6 +457,7 @@ def _plan_interval(
         )
     effective_fps = min(sampling.sample_fps, source_fps)
     count = max(floor, int(round(duration_seconds * effective_fps)))
+    _check_sample_budget(count=count, limit=max_samples)
     step_us = _MICROSECONDS / effective_fps
     indices = tuple(
         min(
@@ -414,6 +467,14 @@ def _plan_interval(
         for index in range(count)
     )
     return WindowSpec(frame_indices=indices, sample_fps=effective_fps)
+
+
+def _check_sample_budget(*, count: int, limit: Optional[int]) -> None:
+    if limit is not None and count > limit:
+        raise VideoProcessingLimitError(
+            "Video planning exceeds the sampled-frame index budget. "
+            "Use a shorter clip or raise max_sampled_frames."
+        )
 
 
 def _frame_at_or_after(timestamp_us: float, source_fps: float) -> int:

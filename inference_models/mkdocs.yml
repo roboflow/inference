@@ -112,6 +112,7 @@ nav:
   - How-To:
       - Understand Core Concepts: how-to/understand-core-concepts.md
       - Choose the Right Backend: how-to/choose-backend.md
+      - Recognize Actions in Local Videos: how-to/local-video-action-recognition.md
       - Work with Model Predictions: how-to/work-with-predictions.md
       - Understand Prediction Parameters: how-to/prediction-parameters.md
       - Debug Model Loading Issues: how-to/debug-model-loading.md
@@ -133,6 +134,7 @@ nav:
       - Overview: api-reference/index.md
       - Core Classes:
           - AutoModel: api-reference/auto-model.md
+          - Local-video Action Recognition: api-reference/action-recognition-video.md
           - AutoModelPipeline: api-reference/auto-model-pipeline.md
       - Prediction Types:
           - Detections: api-reference/detections.md
@@ -189,6 +191,7 @@ nav:
       - File & Download: errors/file-download.md
       - Runtime & Environment: errors/runtime-environment.md
       - Input & Validation: errors/input-validation.md
+      - Video Processing: errors/video-processing.md
       - Models Runtime: errors/models-runtime.md
   - Changelog: changelog.md
 
