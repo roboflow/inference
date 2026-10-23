@@ -8,14 +8,7 @@ This is the canonical changelog for the `streamvision` package.
 
 ### Changed
 
-- Promote `0.1.3rc1` to a stable release and require
-  `roboflow-workflows>=0.2.13` in the `workflows` extra.
-
-## `0.1.3rc1`
-
-### Changed
-
-- The `workflows` extra requires `roboflow-workflows>=0.2.13rc1` instead of
+- The `workflows` extra requires `roboflow-workflows>=0.2.13` instead of
   `>=0.2.11rc1`, providing the execution-engine cleanup used below.
 
 ### Documentation
