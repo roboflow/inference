@@ -55,9 +55,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/uv
-          key: ${{ steps.cache-week.outputs.week }}-${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml', 'inference_model_manager/pyproject.toml', 'inference_server/pyproject.toml', 'workflows/pyproject.toml', 'stream_vision/pyproject.toml') }}
+          key: ${{ steps.cache-week.outputs.week }}-${{ runner.os }}-uv-cpu-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml', 'inference_model_manager/pyproject.toml', 'inference_server/pyproject.toml', 'workflows/pyproject.toml', 'stream_vision/pyproject.toml') }}
           restore-keys: |
-            ${{ steps.cache-week.outputs.week }}-${{ runner.os }}-uv-${{ matrix.python-version }}-
+            ${{ steps.cache-week.outputs.week }}-${{ runner.os }}-uv-cpu-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
