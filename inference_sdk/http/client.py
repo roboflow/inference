@@ -167,6 +167,20 @@ def _collect_processing_time_from_response(
 
 
 def wrap_errors(function: callable) -> callable:
+    """Translate synchronous request failures into SDK exceptions.
+
+    Args:
+        function (callable): Client operation to wrap.
+
+    Returns:
+        callable: Operation preserving HTTP status and connection error categories.
+
+    Raises:
+        HTTPServerConnectionError: If a server connection fails, including after retries.
+        HTTPCallErrorError: If the request receives an HTTP error status.
+        HTTPClientError: If retries fail for another reason.
+    """
+
     def decorate(*args, **kwargs) -> Any:
         try:
             return function(*args, **kwargs)
@@ -178,6 +192,15 @@ def wrap_errors(function: callable) -> callable:
                     status_code=error.status_code,
                     api_message=None,
                 ) from error
+            if isinstance(
+                error.inner_error,
+                (ConnectionError, requests.exceptions.ConnectionError),
+            ):
+                raise HTTPServerConnectionError(
+                    "Error with server connection: "
+                    f"{deduct_api_key_from_string(str(error.inner_error))}"
+                ) from error
+
             raise HTTPClientError(
                 f"Original request failed and retry did not succeed. Details: {error}"
             ) from error
@@ -206,6 +229,20 @@ def wrap_errors(function: callable) -> callable:
 
 
 def wrap_errors_async(function: callable) -> callable:
+    """Translate asynchronous request failures into SDK exceptions.
+
+    Args:
+        function (callable): Async client operation to wrap.
+
+    Returns:
+        callable: Operation distinguishing connection failures from server timeouts.
+
+    Raises:
+        HTTPServerConnectionError: If a server connection fails.
+        HTTPCallErrorError: If the request receives an HTTP error status.
+        HTTPClientError: If the request times out while communicating with the server.
+    """
+
     async def decorate(*args, **kwargs) -> Any:
         try:
             return await function(*args, **kwargs)
@@ -214,6 +251,11 @@ def wrap_errors_async(function: callable) -> callable:
                 description=deduct_api_key_from_string(value=str(error)),
                 status_code=error.status,
                 api_message=deduct_api_key_from_string(error.message),
+            ) from error
+        except aiohttp.ServerTimeoutError as error:
+            # Includes read timeouts, which do not imply an unreachable server.
+            raise HTTPClientError(
+                f"Server request timed out: {deduct_api_key_from_string(str(error))}"
             ) from error
         except ClientConnectionError as error:
             raise HTTPServerConnectionError(
