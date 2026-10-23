@@ -61,7 +61,6 @@ REGISTRY_PAYLOAD = {
 PLAIN_DICT_FIELDS = {"steps_by_dimensionality", "configuration_equals", "details"}
 
 ENTERPRISE_LOADER = "roboflow_workflows.enterprise_blocks.loader"
-HOST_PLUGIN_LOADER = "inference.roboflow_workflows_plugin.loader"
 DECLARATION_HOOKS = (
     "discover_work_operations",
     "get_actual_restrictions",
@@ -628,7 +627,7 @@ def test_describe_workload_over_a_real_socket(interface, enrichment_disabled) ->
 
 
 # --------------------------------------------------------------------------
-# the registry the SERVER loads: core + enterprise + host plugin
+# the registry the SERVER loads: core + enterprise
 # --------------------------------------------------------------------------
 
 
@@ -637,7 +636,7 @@ def test_server_registry_declares_every_hook_on_every_block(monkeypatch) -> None
     import os
 
     environment = dict(os.environ)
-    environment["WORKFLOWS_PLUGINS"] = f"{ENTERPRISE_LOADER},{HOST_PLUGIN_LOADER}"
+    environment["WORKFLOWS_PLUGINS"] = ENTERPRISE_LOADER
     environment["SAM3_3D_OBJECTS_ENABLED"] = "True"
 
     # when
@@ -647,18 +646,23 @@ def test_server_registry_declares_every_hook_on_every_block(monkeypatch) -> None
 
     # then - counts derived from the registry, never hardcoded
     assert len(rows) > 200, f"registry looks truncated: {len(rows)} blocks"
-    plugin_rows = [
+    platform_rows = [
         row
         for row in rows
-        if row["manifest_module"].startswith("inference.roboflow_workflows_plugin")
+        if row["manifest_module"].startswith(
+            (
+                "roboflow_workflows.core_steps.sinks.roboflow",
+                "roboflow_workflows.core_steps.integrations.roboflow",
+            )
+        )
     ]
-    assert plugin_rows, "the host plugin contributed no block"
+    assert len(platform_rows) == 9, "the Roboflow-platform blocks are missing"
     for hook in DECLARATION_HOOKS:
         missing = sorted(row["block_type"] for row in rows if not row["declared"][hook])
         assert set(missing) <= RESOURCES_INTENTIONALLY_UNKNOWN, (hook, missing)
-    # every host-plugin block declares all three: no plugin step can contribute
-    # an unknown reason to a response
-    assert all(all(row["declared"].values()) for row in plugin_rows)
+    # every Roboflow-platform block declares all three: none of their steps can
+    # contribute an unknown reason to a response
+    assert all(all(row["declared"].values()) for row in platform_rows)
     # the flag-gated block is registered when the server enables it
     assert "roboflow_core/segment_anything3_3d_objects@v1" in {
         row["block_type"] for row in rows

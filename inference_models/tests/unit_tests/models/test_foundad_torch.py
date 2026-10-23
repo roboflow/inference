@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 from torch import nn
@@ -142,7 +143,8 @@ def test_score_is_mean_of_largest_patch_residuals(
     metadata = prediction.images_metadata[0]
     assert metadata["anomaly_score"] == pytest.approx(expected, rel=1e-5)
     assert metadata["is_anomalous"] is True
-    assert metadata["anomaly_map"].shape == (40, 72)
+    assert metadata["anomaly_map"].shape == (IMAGE_SIZE, IMAGE_SIZE)
+    assert metadata["anomaly_map"].dtype == np.float32
     assert prediction.class_id.tolist() == [1]
     assert network.encoder.backbone.requested_indices == [-3]
 

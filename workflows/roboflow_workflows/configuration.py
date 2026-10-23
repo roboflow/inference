@@ -142,6 +142,7 @@ class FontsConfiguration:
 
 @dataclass(frozen=True)
 class ModelsConfiguration:
+    use_inference_models: bool = True
     lmm_enabled: bool = False
     vlm_segmentation_max_polygon_vertices: int = 500
     clip_version_id: str = "ViT-B-16"

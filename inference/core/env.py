@@ -372,6 +372,8 @@ LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 COSMOS3_ENABLED = str2bool(os.getenv("COSMOS3_ENABLED", True))
 
+VJEPA2_1_ENABLED = str2bool(os.getenv("VJEPA2_1_ENABLED", True))
+
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
 QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
@@ -425,6 +427,15 @@ VIDEO_DOWNLOAD_TIMEOUT_SECONDS = float(
 # a clip is a model call, so this bounds the time one request can hold the
 # server, which the size cap alone does not. -1 removes the limit.
 MAX_VIDEO_DURATION_SECONDS = float(os.getenv("MAX_VIDEO_DURATION_SECONDS", "600"))
+ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS = float(
+    os.getenv("ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS", "600")
+)
+MAX_ACTION_RECOGNITION_CANDIDATES = int(
+    os.getenv("MAX_ACTION_RECOGNITION_CANDIDATES", "250000")
+)
+MAX_ACTION_RECOGNITION_RESPONSE_BYTES = int(
+    os.getenv("MAX_ACTION_RECOGNITION_RESPONSE_BYTES", str(64 * 1024 * 1024))
+)
 
 MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
     os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")
@@ -1348,21 +1359,7 @@ if LOAD_ENTERPRISE_BLOCKS:
             [ENTERPRISE_BLOCKS_PLUGIN] + _workflows_plugins
         )
 
-# The Roboflow-platform blocks (dataset upload, custom metadata, model
-# monitoring, vision events, asset-library attributes, visual search) live in
-# their own package so `inference/core/workflows` stops importing
-# `roboflow_api` and `active_learning`. They are always listed - they were
-# always part of the core block set - so there is no enable flag to honour;
-# the block-DISABLE policy (WORKFLOW_DISABLED_BLOCK_TYPES / _PATTERNS) is
-# applied inside the plugin's load_blocks(), exactly as the core loader does.
-# NORMALISED (not just prepended-if-absent) after the enterprise expansion:
-# any occurrence already in WORKFLOWS_PLUGINS - wherever it sits, e.g. because
-# an operator listed it explicitly - is removed and the plugin is prepended
-# exactly once, so the resulting order is always roboflow -> enterprise ->
-# user plugins, matching the historical core-then-enterprise ordering of
-# `load_workflow_blocks()`. Only prepending when absent would leave an
-# explicitly-listed entry wherever the operator put it (e.g. after enterprise,
-# or after a custom plugin), silently violating that order.
+# Listed once, first: the stub loads no blocks but initialises the host in children.
 ROBOFLOW_BLOCKS_PLUGIN = "inference.roboflow_workflows_plugin.loader"
 _workflows_plugins = [
     plugin
@@ -1436,7 +1433,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 1440 -> ~5G
 # 1600 -> ~10G
 # 2048 -> ~22G
-RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+# 0 (or negative) disables the cap — mirrored by inference_models'
+# RFDETR_MAX_INPUT_RESOLUTION default so both load paths agree.
+_RFDETR_ONNX_MAX_RESOLUTION_RAW = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+RFDETR_ONNX_MAX_RESOLUTION = (
+    _RFDETR_ONNX_MAX_RESOLUTION_RAW if _RFDETR_ONNX_MAX_RESOLUTION_RAW > 0 else None
+)
 
 # Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
 # pipeline futures on the main execution path.
@@ -1481,6 +1483,10 @@ WEBRTC_MODAL_WATCHDOG_TIMEMOUT = int(os.getenv("WEBRTC_MODAL_WATCHDOG_TIMEMOUT",
 # seconds
 WEBRTC_MODAL_FUNCTION_TIME_LIMIT = int(
     os.getenv("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "3600")
+)
+# Separate budget for imports, model downloads and compilation before inputs.
+WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT", "3600")
 )
 # seconds
 WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT = int(

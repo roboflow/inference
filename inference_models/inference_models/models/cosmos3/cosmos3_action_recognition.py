@@ -3,12 +3,13 @@ import math
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, Callable, List, Optional, Union
 
 import cv2
 import numpy as np
 import torch
 
+from inference_models.entities import Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.logger import LOGGER
 from inference_models.models.base.action_recognition import (
@@ -409,27 +410,54 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         frames: List[Union[np.ndarray, torch.Tensor]],
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
+        confidence: Optional[Confidence] = None,
+        duration_seconds: Optional[float] = None,
+        check_cancelled: Optional[Callable[[], None]] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
+        """Classify sampled RGB frames using the Cosmos generation path.
+
+        Args:
+            frames (list): Sampled RGB images in temporal order.
+            class_names (Optional[List[str]]): Requested vocabulary or class filter.
+            fps (Optional[float]): Sampling rate represented by the images.
+            confidence (Optional[Confidence]): Ignored because Cosmos is unscored.
+            duration_seconds (Optional[float]): Ignored. Spans use the supplied
+                sample count and FPS for their bounds.
+            check_cancelled (Optional[Callable]): Request control between model calls.
+            **kwargs: Additional text-generation options.
+
+        Returns:
+            List[ActionRecognitionPrediction]: Unscored sampled-frame spans.
+
+        Raises:
+            ValueError: The caller does not supply a sampling rate.
+        """
         if fps is None:
             raise ValueError("fps is required for action recognition")
+        if check_cancelled is not None:
+            check_cancelled()
 
         normalized_frames = _normalize_frames(frames)
         if not normalized_frames:
             return []
         if self._fine_tune_prefix_allowed_tokens_fn is not None:
-            return self._infer_fine_tuned(
+            result = self._infer_fine_tuned(
                 frames=normalized_frames,
                 class_filter=class_names,
                 fps=fps,
                 **kwargs,
             )
-        return self._infer_zero_shot(
-            frames=normalized_frames,
-            class_names=class_names,
-            fps=fps,
-            **kwargs,
-        )
+        else:
+            result = self._infer_zero_shot(
+                frames=normalized_frames,
+                class_names=class_names,
+                fps=fps,
+                **kwargs,
+            )
+        if check_cancelled is not None:
+            check_cancelled()
+        return result
 
     def _infer_fine_tuned(
         self,

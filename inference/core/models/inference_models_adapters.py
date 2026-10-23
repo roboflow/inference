@@ -2,6 +2,7 @@ import base64
 import io
 from collections import OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from contextlib import ExitStack, closing
 from inspect import Parameter, signature
 from io import BytesIO
 from threading import local
@@ -29,6 +30,7 @@ from inference.core.entities.responses.action_recognition import (
 from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
     AnomalyDetectionResponse,
+    AnomalyMapPayload,
     ClassificationInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
@@ -42,6 +44,7 @@ from inference.core.entities.responses.inference import (
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
     LMMInferenceResponse,
+    MaskCoordinateMetadata,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
@@ -51,17 +54,26 @@ from inference.core.entities.responses.inference import (
     SemanticSegmentationPrediction,
 )
 from inference.core.env import (
+    ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS,
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
     GCP_SERVERLESS,
+    MAX_ACTION_RECOGNITION_CANDIDATES,
+    MAX_ACTION_RECOGNITION_RESPONSE_BYTES,
     MAX_VIDEO_DURATION_SECONDS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
+    VJEPA2_1_ENABLED,
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
-from inference.core.exceptions import PayloadTooLargeError, PostProcessingError
+from inference.core.exceptions import (
+    InvalidMaskDecodeArgument,
+    ModelDeploymentNotSupportedError,
+    PayloadTooLargeError,
+    PostProcessingError,
+)
 from inference.core.models.action_recognition import merge_window_segments
 from inference.core.models.base import Model
 from inference.core.models.embeddings import make_embedding_info
@@ -70,10 +82,16 @@ from inference.core.models.semantic_segmentation_utils import (
 )
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
+from inference.core.utils.action_recognition_results import (
+    ActionRecognitionResultBudget,
+)
+from inference.core.utils.anomaly_map_encoding import encode_anomaly_map
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
+from inference.core.utils.video_processing import VideoProcessingControl
 from inference.core.utils.video_utils import (
+    VideoDecodeState,
     probe_video,
     read_frame_windows,
     video_source_path,
@@ -105,6 +123,7 @@ from inference_models.configuration import (
     MAX_RFDETR_PIPELINE_DEPTH,
     get_rfdetr_pipeline_depth,
 )
+from inference_models.entities import ImageDimensions
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     effective_max_frame_side,
@@ -128,6 +147,11 @@ from inference_models.models.base.semantic_segmentation import (
 )
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
+    resolve_mask_frame_size,
+    scale_polygons_to_image,
+)
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -424,6 +448,44 @@ class InferenceModelsObjectDetectionAdapter(Model):
         )
 
 
+_MASK_DECODE_MODE_TO_RESOLUTION_FACTOR = {
+    "accurate": 1.0,
+    "fast": 0.0,
+}
+
+
+def _resolve_masks_resolution_factor(
+    *,
+    mask_decode_mode: Optional[str],
+    tradeoff_factor: Optional[float],
+) -> float:
+    """Collapse the request enum and factor onto one resolution factor.
+
+    ``accurate`` keeps masks at image resolution and is the default, matching
+    the published contract. ``fast`` leaves them on the model's own grid.
+    ``tradeoff`` interpolates between the two by ``tradeoff_factor``.
+    """
+    if mask_decode_mode is None:
+        return 1.0
+
+    if mask_decode_mode in _MASK_DECODE_MODE_TO_RESOLUTION_FACTOR:
+        return _MASK_DECODE_MODE_TO_RESOLUTION_FACTOR[mask_decode_mode]
+
+    if mask_decode_mode != "tradeoff":
+        raise InvalidMaskDecodeArgument(
+            f"Invalid mask_decode_mode: {mask_decode_mode}. "
+            "Must be one of ['accurate', 'fast', 'tradeoff']"
+        )
+
+    resolution_factor = 0.0 if tradeoff_factor is None else float(tradeoff_factor)
+    if not 0.0 <= resolution_factor <= 1.0:
+        raise InvalidMaskDecodeArgument(
+            f"Invalid tradeoff_factor: {resolution_factor}. Must be in [0.0, 1.0]"
+        )
+
+    return resolution_factor
+
+
 class InferenceModelsInstanceSegmentationAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
@@ -521,6 +583,14 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
+        allow_reduced_masks = kwargs.pop("allow_reduced_mask_resolution", False)
+        resolution_factor = _resolve_masks_resolution_factor(
+            mask_decode_mode=kwargs.pop("mask_decode_mode", None),
+            tradeoff_factor=kwargs.pop("tradeoff_factor", None),
+        )
+        kwargs["masks_resolution_factor"] = (
+            resolution_factor if allow_reduced_masks else 1.0
+        )
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
@@ -572,6 +642,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         return 1
 
     def predict(self, img_in, **kwargs):
+        allow_reduced_masks = kwargs.get("allow_reduced_mask_resolution", False)
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         if self._pipeline_depth <= 1:
             # Original path: forward on current frame, postprocess on
@@ -592,6 +663,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_next_pending_gpu_work()
         pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
         fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
+        fut._adapter_allow_reduced_mask_resolution = allow_reduced_masks
         stream_pipeline_context_id = kwargs.get(STREAM_PIPELINE_CONTEXT_ID_KWARG)
         if not isinstance(stream_pipeline_context_id, str):
             stream_pipeline_context_id = None
@@ -801,8 +873,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         fut._meta = preprocess_return_metadata  # type: ignore[attr-defined]
         fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
         detections_list = fut.result()
+        response_kwargs = dict(mapped_kwargs)
+        response_kwargs["allow_reduced_mask_resolution"] = getattr(
+            fut, "_adapter_allow_reduced_mask_resolution", False
+        )
         return self._build_responses_from_detections(
-            detections_list, preprocess_return_metadata, **mapped_kwargs
+            detections_list, preprocess_return_metadata, **response_kwargs
         )
 
     def _postprocess_sync(
@@ -812,13 +888,17 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
         return_in_rle = kwargs.get("response_mask_format") == "rle"
+        allow_reduced_masks = kwargs.get("allow_reduced_mask_resolution", False)
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         mapped_kwargs["defer_count_to_adapter"] = not return_in_rle
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
         )
         return self._build_responses_from_detections(
-            detections_list, preprocess_return_metadata, **kwargs
+            detections_list,
+            preprocess_return_metadata,
+            allow_reduced_mask_resolution=allow_reduced_masks,
+            **kwargs,
         )
 
     def _build_responses_from_detections(
@@ -981,13 +1061,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 xyxy = det.xyxy.detach().cpu().numpy()
                 confs = det.confidence.detach().cpu().numpy()
                 if isinstance(det.mask, torch.Tensor):
-                    masks = det.mask.detach().cpu().numpy()
+                    masks = det.mask.detach().cpu()
                     if return_in_rle:
                         polys_or_rles = [
                             torch_mask_to_coco_rle(mask=mask) for mask in masks
                         ]
                     else:
-                        polys_or_rles = masks2poly(masks)
+                        polys_or_rles = masks2poly(masks.numpy())
                 else:
                     if return_in_rle:
                         polys_or_rles = det.mask.to_coco_rle_masks()
@@ -999,6 +1079,38 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             # thread-local pinned scratch buffers. Only scalar values and
             # polygon/RLE lists may be stored on responses below; do not return
             # those arrays or any view derived from them.
+            mask_size = getattr(det, "mask_size", None)
+            produced_against = resolve_mask_frame_size(preproc_metadata)
+            different_grid = mask_size is not None and tuple(mask_size) != (H, W)
+            # Async responses receive the already-resolved model factor.
+            native_grid = kwargs.get("allow_reduced_mask_resolution", False) or (
+                kwargs.get("masks_resolution_factor", 1.0) != 1.0
+            )
+            mask_metadata = None
+            original_image = None
+            output_height, output_width = H, W
+            box_scale_x = box_scale_y = 1.0
+            if native_grid and mask_size is not None:
+                output_height, output_width = int(mask_size[0]), int(mask_size[1])
+                original_image = InferenceResponseImage(width=W, height=H)
+                mask_metadata = MaskCoordinateMetadata(
+                    height=int(mask_size[0]),
+                    width=int(mask_size[1]),
+                    scale_x=W / mask_size[1],
+                    scale_y=H / mask_size[0],
+                )
+            if different_grid and not native_grid:
+                box_scale_x = produced_against.width / mask_size[1]
+                box_scale_y = produced_against.height / mask_size[0]
+            if not return_in_rle and different_grid and not native_grid:
+                polys_or_rles = scale_polygons_to_image(
+                    polys_or_rles,
+                    mask_size=ImageDimensions(
+                        height=int(mask_size[0]), width=int(mask_size[1])
+                    ),
+                    image_size=produced_against,
+                )
+
             predictions: List[
                 Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
             ] = []
@@ -1006,10 +1118,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             for (x1, y1, x2, y2), mask_as_poly_or_rle, conf, class_id in zip(
                 xyxy, polys_or_rles, confs, class_ids
             ):
-                cx = (float(x1) + float(x2)) / 2.0
-                cy = (float(y1) + float(y2)) / 2.0
-                w = float(x2) - float(x1)
-                h = float(y2) - float(y1)
+                cx = (float(x1) + float(x2)) / 2.0 * box_scale_x
+                cy = (float(y1) + float(y2)) / 2.0 * box_scale_y
+                w = (float(x2) - float(x1)) * box_scale_x
+                h = (float(y2) - float(y1)) * box_scale_y
                 class_id_int = int(class_id)
                 class_name = (
                     self.class_names[class_id_int]
@@ -1076,14 +1188,22 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 responses.append(
                     InstanceSegmentationInferenceResponseDC(
                         predictions=predictions,
-                        image=InferenceResponseImageDC(width=W, height=H),
+                        image=InferenceResponseImageDC(
+                            width=output_width, height=output_height
+                        ),
+                        original_image=original_image,
+                        mask_metadata=mask_metadata,
                     )
                 )
             else:
                 responses.append(
                     InstanceSegmentationInferenceResponse(
                         predictions=predictions,
-                        image=InferenceResponseImage(width=W, height=H),
+                        image=InferenceResponseImage(
+                            width=output_width, height=output_height
+                        ),
+                        original_image=original_image,
+                        mask_metadata=mask_metadata,
                     )
                 )
         return responses
@@ -1126,7 +1246,10 @@ def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
         return rle_masks_to_polygons(masks=masks)
 
     segments = []
-    h, w = masks.image_size
+    # counts are encoded on the mask grid, which is not the image grid once a
+    # resolution factor below 1.0 is in play. Decoding on image_size makes
+    # pycocotools reinterpret the runs without error and yields garbage.
+    h, w = masks.mask_size or masks.image_size
     for counts in masks.masks:
         rle_dict = {"size": [h, w], "counts": counts}
         decoded_rle = np.ascontiguousarray(mask_utils.decode(rle_dict))
@@ -1711,6 +1834,16 @@ def _reshape_classification_confidences(
 class InferenceModelsAnomalyDetectionAdapter(InferenceModelsClassificationAdapter):
     """Serves PatchCore and FoundAD through the classification route."""
 
+    def infer_from_request(
+        self,
+        request: ClassificationInferenceRequest,
+    ) -> Union[List[InferenceResponse], InferenceResponse]:
+        # The classification request defaults confidence to 0.4; a caller who sends
+        # none gets the model-eval recommendation instead.
+        if "confidence" not in request.model_fields_set:
+            request = request.model_copy(update={"confidence": "best"})
+        return super().infer_from_request(request)
+
     def postprocess(
         self,
         predictions: Any,
@@ -1718,7 +1851,9 @@ class InferenceModelsAnomalyDetectionAdapter(InferenceModelsClassificationAdapte
         **kwargs,
     ) -> List[AnomalyDetectionResponse]:
         post_processed_predictions = self._model.post_process(
-            predictions, include_anomaly_map=kwargs.get("include_anomaly_map", False)
+            predictions,
+            include_anomaly_map=kwargs.get("include_anomaly_map", False),
+            confidence=kwargs["confidence"],
         )
         return prepare_anomaly_detection_response(
             post_processed_predictions,
@@ -1732,8 +1867,8 @@ def prepare_anomaly_detection_response(
     image_sizes: List[Tuple[int, int]],
     class_names: List[str],
 ) -> List[AnomalyDetectionResponse]:
-    # The decision comes from the threshold saved with the model, so both classes
-    # are always reported and the request confidence does not filter them.
+    # The request confidence decides the verdict instead of filtering classes, so
+    # both classes are always reported, the decided one first.
     batch_confidences = _reshape_classification_confidences(
         confidence=post_processed_predictions.confidence.cpu(),
         expected_num_images=len(image_sizes),
@@ -1763,8 +1898,13 @@ def prepare_anomaly_detection_response(
                 confidence=class_predictions[0]["confidence"],
                 anomaly_score=image_metadata["anomaly_score"],
                 anomaly_threshold=image_metadata["anomaly_threshold"],
+                anomaly_scale=image_metadata["anomaly_scale"],
                 is_anomalous=image_metadata["is_anomalous"],
-                anomaly_map=anomaly_map.tolist() if anomaly_map is not None else None,
+                anomaly_map=(
+                    AnomalyMapPayload(**encode_anomaly_map(anomaly_map))
+                    if anomaly_map is not None
+                    else None
+                ),
             )
         )
     return responses
@@ -1870,6 +2010,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
+            rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
         fixed_input_hw = _fixed_input_hw_from_backend(self._model)
@@ -2146,18 +2287,47 @@ class InferenceModelsActionRecognitionAdapter(Model):
         )
 
     def infer_from_request(
-        self, request: ActionRecognitionInferenceRequest
+        self,
+        request: ActionRecognitionInferenceRequest,
+        *,
+        processing_control: Optional[VideoProcessingControl] = None,
     ) -> ActionRecognitionInferenceResponse:
+        control = processing_control or VideoProcessingControl(
+            timeout_seconds=ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS
+        )
+        control.check()
         sampling = self._model.video_sampling
+        default_confidence = getattr(self._model, "confidence_threshold", None)
         class_filter = request.class_filter or None
+        result_budget = ActionRecognitionResultBudget(
+            max_candidates=MAX_ACTION_RECOGNITION_CANDIDATES,
+            max_bytes=MAX_ACTION_RECOGNITION_RESPONSE_BYTES,
+        )
         # Only a model that carries its own class list has ids to report. A
         # request filter is not a vocabulary: a zero-shot model ignores it and
         # answers in its own words, so a caption that happens to match one of
         # the requested names would otherwise be given that name's index.
         id_vocabulary = self._model.class_names or None
+        threshold = None
+        per_class_thresholds = None
+        if self._model.supports_confidence:
+            thresholds = ConfidenceFilter(
+                confidence=(
+                    "default" if request.confidence is None else request.confidence
+                ),
+                recommended_parameters=getattr(
+                    self._model, "recommended_parameters", None
+                ),
+                default_confidence=default_confidence,
+            ).get_threshold(id_vocabulary or [])
+            if isinstance(thresholds, torch.Tensor):
+                per_class_thresholds = dict(zip(id_vocabulary, thresholds.tolist()))
+            else:
+                threshold = thresholds
         with video_source_path(
             video_type=request.video.type, value=request.video.value
-        ) as path:
+        ) as path, ExitStack() as cleanup:
+            control.check()
             source_fps, frame_count = probe_video(path=path)
             _ensure_clip_fits_the_duration_cap(
                 frame_count=frame_count, source_fps=source_fps
@@ -2168,37 +2338,167 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 sampling=sampling,
             )
             timeline: List[ActionRecognitionPrediction] = []
-            windows_classified = 0
-            window_frames = read_frame_windows(
-                path=path,
-                windows=[window.frame_indices for window in windows],
-                max_frame_side=effective_max_frame_side(sampling),
+            candidates = (
+                []
+                if request.include_candidates and self._model.supports_confidence
+                else None
             )
-            for window, frames in zip(windows, window_frames):
+            if candidates is not None:
+                estimate = self._model.estimate_candidate_count(
+                    sum(len(window.frame_indices) for window in windows),
+                    class_names=class_filter,
+                )
+                if estimate is not None:
+                    result_budget.check_candidate_count(estimate)
+            windows_classified = 0
+            frame_transform = getattr(self._model, "frame_storage_transform", None)
+            decode_kwargs = (
+                {"frame_transform": frame_transform}
+                if frame_transform is not None
+                else {"max_frame_side": effective_max_frame_side(sampling)}
+            )
+            decode_state = VideoDecodeState()
+            window_limits = [
+                min(
+                    frame_count,
+                    round(
+                        window.frame_indices[0]
+                        + (
+                            window.duration_seconds
+                            if window.duration_seconds is not None
+                            else len(window.frame_indices) / window.sample_fps
+                        )
+                        * source_fps
+                    ),
+                )
+                for window in windows
+            ]
+            window_frames = cleanup.enter_context(
+                closing(
+                    read_frame_windows(
+                        path=path,
+                        windows=[window.frame_indices for window in windows],
+                        decode_state=decode_state,
+                        window_end_frames=window_limits,
+                        check_cancelled=control.check,
+                        **decode_kwargs,
+                    )
+                )
+            )
+            for window, planned_limit, frames in zip(
+                windows, window_limits, window_frames
+            ):
+                control.check()
                 if len(frames) < max(1, sampling.min_frames):
                     continue
                 windows_classified += 1
                 # A window's segments index its own frames; the timeline
                 # counts the clip's.
+                infer_kwargs = {}
+                window_frame_limit = min(
+                    planned_limit,
+                    (
+                        decode_state.frame_count
+                        if decode_state.reached_end
+                        else frame_count
+                    ),
+                )
+                window_duration_seconds = getattr(window, "duration_seconds", None)
+                if (
+                    self._model.supports_observed_duration
+                    and window_duration_seconds is not None
+                ):
+                    infer_kwargs["duration_seconds"] = min(
+                        window_duration_seconds,
+                        (window_frame_limit - window.frame_indices[0]) / source_fps,
+                    )
+                if self._model.supports_confidence:
+                    infer_kwargs["confidence"] = (
+                        0.0
+                        if request.include_candidates
+                        else (
+                            "default"
+                            if request.confidence is None
+                            else request.confidence
+                        )
+                    )
+                segments = self._model.infer(
+                    frames=frames,
+                    class_names=class_filter,
+                    fps=window.sample_fps,
+                    check_cancelled=control.check,
+                    **infer_kwargs,
+                )
+                control.check()
+                if candidates is not None:
+                    result_budget.check_candidate_count(len(segments))
+                    candidate_start = len(candidates)
+                    merge_window_segments(
+                        timeline=candidates,
+                        frame_numbers=window.frame_indices[: len(frames)],
+                        segments=segments,
+                        id_vocabulary=id_vocabulary,
+                        stride=source_fps / window.sample_fps,
+                        sample_stride=source_fps / window.sample_fps,
+                        frame_limit=window_frame_limit,
+                        merge=False,
+                    )
+                    result_budget.add_candidates(candidates[candidate_start:])
+                    segment_thresholds = (
+                        torch.tensor(
+                            [
+                                per_class_thresholds[segment.class_name]
+                                for segment in segments
+                            ],
+                            dtype=torch.float32,
+                        )
+                        if per_class_thresholds is not None
+                        else threshold
+                    )
+                    keep = torch.ge(
+                        torch.tensor(
+                            [segment.confidence for segment in segments],
+                            dtype=torch.float32,
+                        ),
+                        torch.as_tensor(segment_thresholds, dtype=torch.float32),
+                    ).tolist()
+                    segments = [
+                        segment for segment, accepted in zip(segments, keep) if accepted
+                    ]
                 merge_window_segments(
                     timeline=timeline,
                     frame_numbers=window.frame_indices[: len(frames)],
-                    segments=self._model.infer(
-                        frames=frames,
-                        class_names=class_filter,
-                        fps=window.sample_fps,
-                    ),
+                    segments=segments,
                     id_vocabulary=id_vocabulary,
                     stride=max(1.0, source_fps / window.sample_fps),
+                    frame_limit=window_frame_limit,
+                    sample_stride=source_fps / window.sample_fps,
                 )
+                result_budget.check_response(
+                    timeline,
+                    {
+                        "per_class_confidence_thresholds": per_class_thresholds,
+                    },
+                )
+            if decode_state.reached_end:
+                frame_count = decode_state.frame_count
         timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
         response = ActionRecognitionInferenceResponse(
             timeline=timeline,
             source_fps=source_fps,
             frame_count=frame_count,
             windows_classified=windows_classified,
+            span_semantics=getattr(self._model, "span_semantics", "instances"),
+            confidence_threshold=threshold,
+            per_class_confidence_thresholds=per_class_thresholds,
+            candidates=candidates,
         )
         self._attach_resolved_model_metadata(response)
+        control.check()
+        result_budget.check_response(
+            timeline,
+            response.model_dump(mode="json", exclude={"timeline", "candidates"}),
+        )
         return response
 
     def preprocess(self, *args, **kwargs):
@@ -2249,8 +2549,33 @@ def load_action_recognition_model(
     The HTTP adapter and the workflow block both come through here, so one
     model id cannot resolve to different weights, or load under different
     trust settings, depending on which surface asked for it.
+
+    Args:
+        model_id: Roboflow model ID or local package directory.
+        api_key: Key with access to the model.
+        **kwargs: Additional model-loading options.
+
+    Returns:
+        A loaded action-recognition model.
+
+    Raises:
+        ModelDeploymentNotSupportedError: V-JEPA is disabled on this server.
     """
     model_id = resolve_roboflow_model_alias(model_id=model_id)
+    if not VJEPA2_1_ENABLED:
+        from inference.core.registries.roboflow import get_model_type
+
+        _, model_type = get_model_type(
+            model_id=model_id,
+            api_key=api_key,
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        if model_type in {"vjepa2-1-vitb-384", "vjepa2_1"}:
+            raise ModelDeploymentNotSupportedError(
+                "V-JEPA 2.1 is disabled on this server. Set VJEPA2_1_ENABLED=True "
+                "and restart the server to enable it."
+            )
     loaded_model = AutoModel.from_pretrained(
         model_id_or_path=model_id,
         api_key=api_key,

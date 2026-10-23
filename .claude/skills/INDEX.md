@@ -51,6 +51,7 @@ Independently of path, load each topic skill whose signal the PR exhibits
 | changes local vs remote / hosted / serverless execution, or backend / runtime routing | `review-topic-local-vs-remote-execution` |
 | touches boxes / masks / keypoints / coordinate transforms / pre- or post-processing / serialization | `review-topic-prediction-integrity` |
 | changes any public contract **or the user-visible behavior of one** — HTTP route/entity/behavior, SDK, CLI, workflow block schema / a new `vN.py` block version / kinds / loader registration, compiled-workflow format, `inference_models` API, persisted/cache format — or is release-bound | `review-topic-backward-compat-and-versioning` |
+| changes legacy `inference/` code the new serving stack re-implements — HTTP routes / entities / error mapping / headers, env vars and defaults, model lifecycle and registry resolution, model-type dispatch, image and URL input, usage rows, active learning, workflows and stream HTTP, docker entrypoints (the skill carries the legacy → `inference_server` / `inference_model_manager` counterpart map) | `review-topic-legacy-new-stack-parity` |
 | adds threads / async / background work, touches caches / locks / model lifecycle / temp dirs, or long-running resources | `review-topic-concurrency-and-resource-safety` |
 | calls an external / platform API, changes an SDK↔server contract, or adds fallback / auto-conversion | `review-topic-external-contract-and-silent-fallback` |
 | touches auth / api-key / workspace-tenant scoping / permissions / secrets | `review-topic-auth-and-tenant-security` |
@@ -67,6 +68,7 @@ topic skills:
 - `inference/core/{active_learning,cache,managers}/**`
 - `inference/usage_tracking/**`
 - `inference/enterprise/**`
+- `inference_server/**`, `inference_model_manager/**` (new serving stack; `review-topic-legacy-new-stack-parity` owns only its parity with the legacy tree)
 - `modal/**`, `development/**`, `signatures/**`
 - `docs/**`, `examples/**`
 

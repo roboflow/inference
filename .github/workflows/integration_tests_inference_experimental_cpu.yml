@@ -38,7 +38,7 @@ concurrency:
 
 jobs:
   integration-tests-inference-models-cpu:
-    name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
+    name: ${{ matrix.extras.marker }}${{ matrix.extras.shard && format('-{0}', matrix.extras.shard) || '' }}:${{ matrix.python-version }}
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
@@ -48,28 +48,36 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
         extras:
           - { install: "onnx-cpu,torch-cpu", marker: "onnx_extras", workers: "auto" }
-          - { install: "torch-cpu", marker: "torch_models", workers: "2" }
+          # torch_models is split by file into 3 shards (see the test step) to cut wall time.
+          # Each shard keeps -n 2: torch is multithreaded, more workers oversubscribe the CPU.
+          - { install: "torch-cpu", marker: "torch_models", workers: "2", shard: "1" }
+          - { install: "torch-cpu", marker: "torch_models", workers: "2", shard: "2" }
+          - { install: "torch-cpu", marker: "torch_models", workers: "2", shard: "3" }
     steps:
       - name: 🛎️ Checkout
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         uses: actions/checkout@v6
-      - name: 📦 Cache Python packages
+      # Restoring the full uv cache alongside model assets can exhaust runner disk.
+      # Download dependencies per job and retain only the model-asset cache.
+      - name: Check disk space before restoring model assets
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-${{ matrix.python-version }}-
+        run: df -h .
       - name: 📦 Cache test assets
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         uses: actions/cache@v5
         with:
           path: inference_models/tests/integration_tests/models/assets
-          # Keyed per marker (each downloads a different subset), not per Python version: assets are version-agnostic.
-          key: inference-models-test-assets-${{ matrix.extras.marker }}-${{ hashFiles('inference_models/tests/integration_tests/conftest.py', 'inference_models/tests/integration_tests/models/conftest.py') }}
+          # Keyed per marker and shard (each downloads a different subset), not per Python version: assets are version-agnostic.
+          key: inference-models-test-assets-${{ matrix.extras.marker }}${{ matrix.extras.shard && format('-shard{0}', matrix.extras.shard) || '' }}-${{ hashFiles('inference_models/tests/integration_tests/conftest.py', 'inference_models/tests/integration_tests/models/conftest.py') }}
           restore-keys: |
-            inference-models-test-assets-${{ matrix.extras.marker }}-
+            inference-models-test-assets-${{ matrix.extras.marker }}${{ matrix.extras.shard && format('-shard{0}', matrix.extras.shard) || '' }}-
+      - name: Check disk space after restoring model assets
+        if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
+        run: |
+          df -h .
+          if [ -d inference_models/tests/integration_tests/models/assets ]; then
+            du -sh inference_models/tests/integration_tests/models/assets
+          fi
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         uses: actions/setup-python@v6
@@ -85,11 +93,30 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
-          python -m uv pip install -e .[test,${{ matrix.extras.install }}] --python .venv
+          python -m uv pip install --no-cache -e ".[test,${{ matrix.extras.install }}]" --python .venv
+          df -h .
       - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         working-directory: inference_models
         timeout-minutes: 25
+        env:
+          SHARD: ${{ matrix.extras.shard }}
         run: |
           source .venv/bin/activate
-          python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not gpu_only" tests/integration_tests
+          # Shards 1 and 2 run fixed file lists, balanced by measured duration; shard 3 runs
+          # everything else, so every test runs exactly once and new files land in shard 3.
+          m=tests/integration_tests/models
+          SHARD_1="$m/test_rfdetr_seg_predictions_torch.py $m/test_yolov8_keypoints_detection_predictions_torch.py
+            $m/test_doctr_predictions.py $m/test_trocr_predictions.py $m/test_deep_lab_v3_segmentation_predictions_torch.py
+            $m/test_yolo26_keypoints_detection_predictions_torch.py $m/test_perception_encoder_preprocessing.py"
+          SHARD_2="$m/test_rfdetr_predictions_torch.py $m/test_yolov8_instance_segmentation_predictions_torch.py
+            $m/test_sam2_predictions.py $m/test_yolov8_object_detection_predictions_torch.py $m/test_depth_anything_v2_predictions.py
+            $m/test_vit_classifier_predictions_torch.py $m/test_rfdetr_semantic_segmentation_predictions_torch.py
+            $m/test_resnet_classifier_predictions_torch.py"
+          case "$SHARD" in
+            1) targets="$SHARD_1" ;;
+            2) targets="$SHARD_2" ;;
+            3) targets="tests/integration_tests $(printf -- '--ignore=%s ' $SHARD_1 $SHARD_2)" ;;
+            *) targets="tests/integration_tests" ;;
+          esac
+          python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not gpu_only" $targets
