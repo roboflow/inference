@@ -225,11 +225,19 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         # Without filtering every mask survives and the output is dense, so
         # the RLE round trip is pure overhead (7x slower on fragmented
         # masks); the crop masks are copied straight into the output stack.
+        #
+        # Input masks may already be CompactMask (e.g. from a model block
+        # emitting compact masks). Their dense form is only ever materialised
+        # one crop at a time: with filtering, inside compact_mask_for_crop
+        # while the crop is converted; without, inside stitch_masks_dense
+        # while the crop is copied. Decoding every crop up front would hold
+        # all N x crop_h x crop_w bytes until the block returns.
         overlap_filter = choose_overlap_filter_strategy(
             overlap_filtering_strategy=overlap_filtering_strategy,
         )
         re_aligned_predictions = []
-        crop_masks: List[Tuple[np.ndarray, np.ndarray]] = []
+        crop_masks: List[Tuple[Union[np.ndarray, CompactMask], np.ndarray]] = []
+        compact_crop_masks: List[CompactMask] = []
         masks_seen = False
         masks_missing = False
         for detections in predictions:
@@ -251,7 +259,14 @@ class DetectionsStitchBlockV1(WorkflowBlock):
                 masks_missing = True
                 continue
             masks_seen = True
-            crop_masks.append((np.asarray(mask), offset))
+            if overlap_filter is OverlapFilter.NONE:
+                crop_masks.append((mask, offset))
+            else:
+                compact_crop_masks.append(
+                    compact_mask_for_crop(
+                        np.asarray(mask), offset=offset, resolution_wh=resolution_wh
+                    )
+                )
         if masks_seen and masks_missing:
             raise ValueError(
                 "Detections Stitch block received a mix of predictions with and "
@@ -267,15 +282,8 @@ class DetectionsStitchBlockV1(WorkflowBlock):
                 )
             return {"predictions": merged}
 
-        if crop_masks:
-            merged.mask = CompactMask.merge(
-                [
-                    compact_mask_for_crop(
-                        masks, offset=offset, resolution_wh=resolution_wh
-                    )
-                    for masks, offset in crop_masks
-                ]
-            )
+        if compact_crop_masks:
+            merged.mask = CompactMask.merge(compact_crop_masks)
         if overlap_filter is OverlapFilter.NON_MAX_SUPPRESSION:
             filtered = merged.with_nms(threshold=iou_threshold)
         else:
@@ -332,7 +340,7 @@ def visible_crop_region(
 
 
 def stitch_masks_dense(
-    crop_masks: List[Tuple[np.ndarray, np.ndarray]],
+    crop_masks: List[Tuple[Union[np.ndarray, CompactMask], np.ndarray]],
     *,
     resolution_wh: Tuple[int, int],
 ) -> np.ndarray:
@@ -346,10 +354,14 @@ def stitch_masks_dense(
     writing the whole crop window per mask was 2x slower and left ~50% more
     resident memory on 300 masks from 640x640 crops.
 
+    A crop given as ``CompactMask`` is decoded inside the loop, so at most
+    one crop's dense ``(n_i, crop_h, crop_w)`` stack is alive at a time.
+
     Args:
         crop_masks: ``(masks, offset)`` per crop, in output order; ``masks``
-            is dense ``(n_i, crop_h, crop_w)`` and ``offset`` is the crop's
-            ``(x, y)`` position in the reference image.
+            is ``(n_i, crop_h, crop_w)``, dense or ``CompactMask``, and
+            ``offset`` is the crop's ``(x, y)`` position in the reference
+            image.
         resolution_wh: ``(width, height)`` of the reference image.
 
     Returns:
@@ -366,7 +378,7 @@ def stitch_masks_dense(
         )
         if region is not None:
             (sy1, sy2, sx1, sx2), (ty1, _, tx1, _) = region
-            visible = masks[:, sy1:sy2, sx1:sx2]
+            visible = np.asarray(masks)[:, sy1:sy2, sx1:sx2]
             # half-open boxes; an empty mask comes back as all zeros and is
             # skipped, which leaves its output rows False
             tight = sv.mask_to_xyxy(masks=visible, coordinate_convention="exclusive")

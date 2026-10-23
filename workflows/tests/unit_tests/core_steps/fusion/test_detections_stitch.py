@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Union
 
 import numpy as np
@@ -866,6 +867,114 @@ def test_detections_stitch_without_filtering_allocates_only_the_output_stack() -
     assert result.mask.nbytes == output_bytes
     # a single extra full-frame copy would add another output_bytes (~580 MB)
     assert peak < output_bytes + 64 * 1024 * 1024, f"peak={peak / 2**30:.2f} GiB"
+
+
+def _with_compact_mask(detections: sv.Detections) -> sv.Detections:
+    """Replace a crop's dense mask stack with its ``CompactMask`` form, as a
+    model block emitting compact masks would hand it over."""
+    from supervision.detection.compact_mask import CompactMask
+
+    masks = detections.mask
+    detections.mask = CompactMask.from_dense(
+        masks, sv.mask_to_xyxy(masks), masks.shape[1:]
+    )
+    return detections
+
+
+@pytest.mark.parametrize("strategy", ["none", "nms", "nmm"])
+def test_detections_stitch_compact_mask_inputs_match_dense_inputs(
+    strategy: str,
+) -> None:
+    # given - the same crops once with dense masks and once already compact
+    rng = np.random.default_rng(7)
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=300, height=200)
+    offsets = [(0, 0), (80, 0), (0, 80), (220, 130)]
+    dense_predictions = [
+        _random_slice_detections(
+            rng,
+            count=6,
+            slice_shape=(100, 100),
+            parent_offset=offset,
+            parent_dims=(200, 300),
+        )
+        for offset in offsets
+    ]
+    compact_predictions = [
+        _with_compact_mask(deepcopy(detections)) for detections in dense_predictions
+    ]
+
+    # when
+    from_dense = block.run(
+        reference_image=reference_image,
+        predictions=dense_predictions,
+        overlap_filtering_strategy=strategy,
+        iou_threshold=0.3,
+    )["predictions"]
+    from_compact = block.run(
+        reference_image=reference_image,
+        predictions=compact_predictions,
+        overlap_filtering_strategy=strategy,
+        iou_threshold=0.3,
+    )["predictions"]
+
+    # then
+    assert np.array_equal(from_compact.xyxy, from_dense.xyxy)
+    assert isinstance(from_compact.mask, np.ndarray)
+    assert np.array_equal(from_compact.mask, from_dense.mask)
+
+
+@pytest.mark.parametrize("strategy", ["none", "nms"])
+def test_detections_stitch_decodes_compact_mask_inputs_one_crop_at_a_time(
+    strategy: str,
+) -> None:
+    """Inputs that already carry ``CompactMask`` masks must not all be decoded
+    up front: 12 crops x 25 masks at 640x640 is ~117 MiB of dense masks that
+    would stay alive until the block returns. Each crop is decoded while it
+    is converted (filtering) or copied into the output (no filtering)."""
+    import tracemalloc
+
+    rng = np.random.default_rng(3)
+    block = DetectionsStitchBlockV1()
+    width, height = 1920, 1012
+    reference_image = make_test_image(width=width, height=height)
+    offsets = [(x, y) for y in (0, 372, 372) for x in (0, 427, 854, 1280)]
+    predictions = [
+        _with_compact_mask(
+            _random_slice_detections(
+                rng,
+                count=25,
+                slice_shape=(640, 640),
+                parent_offset=offset,
+                parent_dims=(height, width),
+            )
+        )
+        for offset in offsets
+    ]
+    all_inputs_dense_bytes = sum(
+        int(np.prod(detections.mask.shape)) for detections in predictions
+    )
+
+    tracemalloc.start()
+    try:
+        result = block.run(
+            reference_image=reference_image,
+            predictions=predictions,
+            overlap_filtering_strategy=strategy,
+            iou_threshold=0.3,
+        )["predictions"]
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert len(result) > 0
+    output_bytes = result.mask.nbytes
+    # retaining every decoded crop adds all_inputs_dense_bytes on top of the
+    # output; decoding one crop at a time adds a twelfth of that
+    assert peak < output_bytes + all_inputs_dense_bytes // 2, (
+        f"peak={peak / 2**20:.1f} MiB output={output_bytes / 2**20:.1f} MiB "
+        f"inputs={all_inputs_dense_bytes / 2**20:.1f} MiB"
+    )
 
 
 def _two_mask_crop(mask_a: np.ndarray, mask_b: np.ndarray) -> sv.Detections:
