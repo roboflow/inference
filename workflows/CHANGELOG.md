@@ -18,7 +18,7 @@ for contributor and maintainer responsibilities.
 
 ## `0.2.13`
 
-Execution engine: `1.17.0`.
+Bundled execution engine: `1.17.0`.
 
 ### Changed
 
