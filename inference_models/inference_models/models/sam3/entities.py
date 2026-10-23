@@ -8,7 +8,7 @@ import torch
 class SAM3ImageEmbeddings:
     image_hash: str
     image_size_hw: Tuple[int, int]
-    embeddings: Dict[str, Any]
+    embeddings: Optional[Dict[str, Any]]
 
     def to(self, device: torch.device) -> "SAM3ImageEmbeddings":
         def _move_to_device(obj: Any) -> Any:
