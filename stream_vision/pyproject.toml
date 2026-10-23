@@ -1,6 +1,6 @@
 [project]
 name = "streamvision"
-version = "0.1.3"
+version = "0.1.3rc1"
 description = "Video sources, InferencePipeline and the stream manager for Roboflow Inference"
 readme = "README.md"
 license = {file = "LICENSE"}
