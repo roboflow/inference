@@ -267,6 +267,7 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflow_workload,
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
+    schedule_execution_engine_close,
 )
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
@@ -1673,67 +1674,74 @@ class HttpInterface(BaseInterface):
                     workflow_id=workflow_request.workflow_id,
                     step_error_handler=resolve_step_error_handler(),
                 )
-            is_preview = False
-            if hasattr(workflow_request, "is_preview"):
-                is_preview = workflow_request.is_preview
-            # Capture python-block stdout/stderr only when the caller explicitly
-            # opts in via `debug=True` (clients must set the flag - preview runs
-            # do not enable it implicitly).
-            debug_requested = getattr(workflow_request, "debug", False)
-            if debug_requested:
-                # Session state is published via ContextVars; the execution engine
-                # re-binds them inside every worker thread spawned by its
-                # ThreadPoolExecutor (see `safe_execute_step`).
-                debug_ctx = register_debug_session()
-            else:
-                debug_ctx = nullcontext()
-            with debug_ctx as debug_session:
-                try:
-                    workflow_results = execution_engine.run(
-                        runtime_parameters=workflow_request.inputs,
-                        serialize_results=True,
-                        _is_preview=is_preview,
+            try:
+                is_preview = False
+                if hasattr(workflow_request, "is_preview"):
+                    is_preview = workflow_request.is_preview
+                # Capture python-block stdout/stderr only when the caller explicitly
+                # opts in via `debug=True` (clients must set the flag - preview runs
+                # do not enable it implicitly).
+                debug_requested = getattr(workflow_request, "debug", False)
+                if debug_requested:
+                    # Session state is published via ContextVars; the execution engine
+                    # re-binds them inside every worker thread spawned by its
+                    # ThreadPoolExecutor (see `safe_execute_step`).
+                    debug_ctx = register_debug_session()
+                else:
+                    debug_ctx = nullcontext()
+                with debug_ctx as debug_session:
+                    try:
+                        workflow_results = execution_engine.run(
+                            runtime_parameters=workflow_request.inputs,
+                            serialize_results=True,
+                            _is_preview=is_preview,
+                        )
+                    except Exception as error:
+                        # The error response is built outside this route (see
+                        # `with_route_exceptions`), after the session ContextVars
+                        # scope is gone - so carry snapshots on the exception to
+                        # surface debug output from steps that ran before the failure.
+                        if debug_session is not None:
+                            logs_snapshot = debug_session.output_streams.snapshot()
+                            if logs_snapshot:
+                                error.python_blocks_output_streams = logs_snapshot
+                            trace_entries = debug_session.debug_traces.snapshot()
+                            if trace_entries:
+                                error.python_blocks_debug_traces = trace_entries
+                        raise
+                    # Empty snapshots serialize as null in the response.
+                    python_blocks_output_streams = (
+                        debug_session.output_streams.snapshot()
+                        if debug_requested and debug_session is not None
+                        else None
+                    ) or None
+                    python_blocks_debug_traces = (
+                        debug_session.debug_traces.snapshot()
+                        if debug_requested and debug_session is not None
+                        else None
+                    ) or None
+                with profiler.profile_execution_phase(
+                    name="workflow_results_filtering",
+                    categories=["inference_package_operation"],
+                ):
+                    outputs = filter_out_unwanted_workflow_outputs(
+                        workflow_results=workflow_results,
+                        excluded_fields=workflow_request.excluded_fields,
                     )
-                except Exception as error:
-                    # The error response is built outside this route (see
-                    # `with_route_exceptions`), after the session ContextVars
-                    # scope is gone - so carry snapshots on the exception to
-                    # surface debug output from steps that ran before the failure.
-                    if debug_session is not None:
-                        logs_snapshot = debug_session.output_streams.snapshot()
-                        if logs_snapshot:
-                            error.python_blocks_output_streams = logs_snapshot
-                        trace_entries = debug_session.debug_traces.snapshot()
-                        if trace_entries:
-                            error.python_blocks_debug_traces = trace_entries
-                    raise
-                # Empty snapshots serialize as null in the response.
-                python_blocks_output_streams = (
-                    debug_session.output_streams.snapshot()
-                    if debug_requested and debug_session is not None
-                    else None
-                ) or None
-                python_blocks_debug_traces = (
-                    debug_session.debug_traces.snapshot()
-                    if debug_requested and debug_session is not None
-                    else None
-                ) or None
-            with profiler.profile_execution_phase(
-                name="workflow_results_filtering",
-                categories=["inference_package_operation"],
-            ):
-                outputs = filter_out_unwanted_workflow_outputs(
-                    workflow_results=workflow_results,
-                    excluded_fields=workflow_request.excluded_fields,
+                profiler_trace = profiler.export_trace()
+                response = WorkflowInferenceResponse(
+                    outputs=outputs,
+                    profiler_trace=profiler_trace,
+                    python_blocks_output_streams=python_blocks_output_streams,
+                    python_blocks_debug_traces=python_blocks_debug_traces,
                 )
-            profiler_trace = profiler.export_trace()
-            response = WorkflowInferenceResponse(
-                outputs=outputs,
-                profiler_trace=profiler_trace,
-                python_blocks_output_streams=python_blocks_output_streams,
-                python_blocks_debug_traces=python_blocks_debug_traces,
-            )
-            return orjson_response(response=response)
+                return orjson_response(response=response)
+            finally:
+                # after the run, so the close is queued behind the sink tasks it added
+                schedule_execution_engine_close(
+                    execution_engine=execution_engine,
+                    background_tasks=background_tasks,
+                )
 
         def load_core_model(
             inference_request: InferenceRequest,
@@ -2776,13 +2784,16 @@ class HttpInterface(BaseInterface):
                     }
                 )
                 bind_image_codec(workflow_init_parameters)
-                _ = ExecutionEngine.init(
+                execution_engine = ExecutionEngine.init(
                     workflow_definition=specification,
                     init_parameters=workflow_init_parameters,
                     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                     prevent_local_images_loading=True,
                     step_error_handler=resolve_step_error_handler(),
                 )
+                # Validation never runs the workflow, so no sink task can still need
+                # a block: release what the initialised blocks hold right away.
+                execution_engine.close()
                 return WorkflowValidationStatus(status="ok")
 
         if WEBRTC_WORKER_ENABLED:
