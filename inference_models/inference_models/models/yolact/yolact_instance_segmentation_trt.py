@@ -59,7 +59,10 @@ from inference_models.models.yolact.common import prepare_dense_masks, prepare_r
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt as trt
+    except ImportError:
+        import tensorrt_lean as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLA-CT model with TRT backend on GPU requires pycuda installation, which is brought with "
@@ -293,6 +296,7 @@ class YOLOACTForInstanceSegmentationTRT(
         max_detections: int = INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS,
         mask_format: InstanceSegmentationMaskFormat = "dense",
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:
@@ -362,12 +366,14 @@ class YOLOACTForInstanceSegmentationTRT(
                     nms_results=nms_results,
                     all_proto_data=all_proto_data,
                     pre_processing_meta=pre_processing_meta,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
             else:
                 final_results = prepare_rle_masks(
                     nms_results=nms_results,
                     all_proto_data=all_proto_data,
                     pre_processing_meta=pre_processing_meta,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
         self._post_process_stream.synchronize()
         return final_results

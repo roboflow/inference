@@ -10,6 +10,10 @@ from roboflow_workflows.core_steps.models.foundation.google_gemini import (
     v5 as gemini_v5,
 )
 from roboflow_workflows.core_steps.models.foundation.meta_vlm import v2 as meta_vlm_v2
+from roboflow_workflows.core_steps.models.foundation.meta_vlm import v3 as meta_vlm_v3
+from roboflow_workflows.core_steps.models.foundation.mistral_vlm import (
+    v1 as mistral_vlm_v1,
+)
 from roboflow_workflows.core_steps.models.foundation.openai import v6 as openai_v6
 from roboflow_workflows.core_steps.models.foundation.qwen_vlm import v3 as qwen_vlm_v3
 from roboflow_workflows.core_steps.models.foundation.spacexai import v2 as spacexai_v2
@@ -84,6 +88,12 @@ BLOCK_CONTRACTS = {
         meta_vlm_v2.MODEL_VERSION_METADATA,
         meta_vlm_v2.DEFAULT_REASONING_EFFORT,
     ),
+    "meta_vlm@v3": (
+        meta_vlm_v3.MODEL_REASONING_LEVELS,
+        meta_vlm_v3.REASONING_EFFORT_OPTIONS,
+        meta_vlm_v3.MODEL_VERSION_METADATA,
+        meta_vlm_v3.DEFAULT_REASONING_EFFORT,
+    ),
     "qwen_vlm@v3": (
         qwen_vlm_v3.MODEL_REASONING_LEVELS,
         qwen_vlm_v3.REASONING_EFFORT_OPTIONS,
@@ -95,6 +105,12 @@ BLOCK_CONTRACTS = {
         zai_vlm_v1.REASONING_EFFORT_OPTIONS,
         zai_vlm_v1.MODEL_VERSION_METADATA,
         zai_vlm_v1.DEFAULT_REASONING_EFFORT,
+    ),
+    "mistral_vlm@v1": (
+        mistral_vlm_v1.MODEL_REASONING_LEVELS,
+        mistral_vlm_v1.REASONING_EFFORT_OPTIONS,
+        mistral_vlm_v1.MODEL_VERSION_METADATA,
+        mistral_vlm_v1.DEFAULT_REASONING_EFFORT,
     ),
 }
 
@@ -150,6 +166,7 @@ _MANIFESTS = {
     "spacexai@v2": spacexai_v2.BlockManifest,
     "spacexai@v3": spacexai_v3.BlockManifest,
     "meta_vlm@v2": meta_vlm_v2.BlockManifest,
+    "meta_vlm@v3": meta_vlm_v3.BlockManifest,
     "qwen_vlm@v3": qwen_vlm_v3.BlockManifest,
 }
 
@@ -206,6 +223,10 @@ def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
         ("spacexai@v3", {"model_version": "grok-4.5", "reasoning_effort": "xhigh"}),
         (
             "meta_vlm@v2",
+            {"model_version": "Muse Glimmer", "reasoning_effort": "minimal"},
+        ),
+        (
+            "meta_vlm@v3",
             {"model_version": "Muse Glimmer", "reasoning_effort": "minimal"},
         ),
     ],

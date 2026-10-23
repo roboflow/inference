@@ -1,5 +1,6 @@
 import os
 import zipfile
+from pathlib import Path
 
 import pytest
 import requests
@@ -30,6 +31,8 @@ MOONDREAM2_BASE_FT_URL = (
 GLM_OCR_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/glm-ocr/glm-ocr.zip"
 )
+VJEPA_ACTION_RECOGNITION_T23_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/action-recognition-vitb-384-t23.zip"
+VJEPA_PREDICTION_VIDEO_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/synthetic-086-first-window-h264-v1.mp4"
 COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-nano-torch-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-letterbox-640.zip"
@@ -156,6 +159,10 @@ SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapi
 SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-center-crop.zip"
 SNAKES_RFDETR_SEG_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-nonsquare-letterbox.zip"
 SNAKES_RFDETR_SEG_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-bs-nonsquare-letterbox.zip"
+
+BALLOONS_RFDETR_SEM_NANO_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-sem-nano-onnx-static-bs-stretch.zip"
+BALLOONS_RFDETR_SEM_NANO_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-sem-nano-torch-stretch.zip"
+BALLOONS_RFDETR_SEM_NANO_T4_TRT_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-sem-nano-t4-trt.zip"
 
 DINOV3_CLASSIFICATION_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification-onnx.zip"
 DINOV3_MULTI_LABEL_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-onnx.zip"
@@ -423,6 +430,44 @@ def download_model_package(
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(unzipped_package_path)
     return unzipped_package_path
+
+
+@pytest.fixture(scope="module")
+def vjepa_action_recognition_package() -> Path:
+    """Locate the trained t23 package, or download the published test fixture.
+
+    Returns:
+        Directory containing the flat V-JEPA export.
+    """
+    local_dir = os.environ.get("VJEPA_ACTION_RECOGNITION_PACKAGE_DIR")
+    if local_dir:
+        package_dir = Path(local_dir).expanduser().resolve()
+    else:
+        package_dir = Path(
+            download_model_package(
+                model_package_zip_url=VJEPA_ACTION_RECOGNITION_T23_URL,
+                package_name="vjepa2-1-action-recognition-t23",
+            )
+        ).resolve()
+
+    return package_dir
+
+
+@pytest.fixture(scope="module")
+def vjepa_prediction_video() -> Path:
+    """Locate the H.264 clip for the prediction regression.
+
+    Returns:
+        Path to the 16-second clip at 4 fps from synthetic test video 086.
+    """
+    local_path = os.environ.get("VJEPA_ACTION_RECOGNITION_VIDEO_PATH")
+    if local_path:
+        path = Path(local_path).expanduser()
+    else:
+        path = Path(ASSETS_DIR) / "synthetic-086-first-window-h264-v1.mp4"
+        _download_if_not_exists(file_path=str(path), url=VJEPA_PREDICTION_VIDEO_URL)
+
+    return path
 
 
 @pytest.fixture(scope="module")
@@ -1349,6 +1394,30 @@ def snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package() -> str:
     return download_model_package(
         model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL,
         package_name="snakes-rfdetr-seg-torch-static-bs-nonsquare-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_rfdetr_sem_nano_onnx_static_bs_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=BALLOONS_RFDETR_SEM_NANO_ONNX_STATIC_BS_STRETCH_URL,
+        package_name="balloons-rfdetr-sem-nano-onnx-static-bs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_rfdetr_sem_nano_torch_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=BALLOONS_RFDETR_SEM_NANO_TORCH_STRETCH_URL,
+        package_name="balloons-rfdetr-sem-nano-torch-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_rfdetr_sem_nano_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=BALLOONS_RFDETR_SEM_NANO_T4_TRT_URL,
+        package_name="balloons-rfdetr-sem-nano-t4-trt",
     )
 
 

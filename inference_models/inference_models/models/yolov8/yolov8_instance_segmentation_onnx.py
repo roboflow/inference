@@ -231,6 +231,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
         masks_smoothing_enabled: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
         masks_binarization_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
         mask_format: InstanceSegmentationMaskFormat = "dense",
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:
@@ -274,6 +275,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
                     pre_processing_meta=pre_processing_meta,
                     masks_smoothing_enabled=masks_smoothing_enabled,
                     masks_binarization_threshold=masks_binarization_threshold,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
             else:
                 final_results = prepare_rle_masks(
@@ -282,6 +284,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
                     pre_processing_meta=pre_processing_meta,
                     masks_smoothing_enabled=masks_smoothing_enabled,
                     masks_binarization_threshold=masks_binarization_threshold,
+                    masks_resolution_factor=masks_resolution_factor,
                 )
         if post_process_stream is not None:
             post_process_stream.synchronize()

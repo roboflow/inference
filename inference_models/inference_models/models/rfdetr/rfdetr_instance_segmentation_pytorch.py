@@ -430,6 +430,7 @@ class RFDetrForInstanceSegmentationTorch(
         confidence: Confidence = "default",
         mask_format: InstanceSegmentationMaskFormat = "dense",
         max_detections: Optional[int] = INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS,
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:
@@ -462,6 +463,7 @@ class RFDetrForInstanceSegmentationTorch(
                 num_classes=len(self.class_names),
                 classes_re_mapping=self._classes_re_mapping,
                 max_detections=max_detections,
+                masks_resolution_factor=masks_resolution_factor,
             )
         else:
             results = post_process_instance_segmentation_results_to_rle_masks(
@@ -473,5 +475,6 @@ class RFDetrForInstanceSegmentationTorch(
                 num_classes=len(self.class_names),
                 classes_re_mapping=self._classes_re_mapping,
                 max_detections=max_detections,
+                masks_resolution_factor=masks_resolution_factor,
             )
         return results

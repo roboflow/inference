@@ -44,9 +44,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          # Workflow-specific key: many workflows install different package sets under
+          # the shared "<os>-pip-<python>-<hash>" key, so this job restored whichever
+          # set was saved first. No restore-keys, so the cache cannot grow without bound.
+          key: ${{ runner.os }}-pip-unit-tests-inference-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -58,7 +59,9 @@ jobs:
           pip install --upgrade setuptools
           # Composition-root tests also exercise the CLI entry points.
           pip install -r requirements/requirements.cli.txt -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.transformers.txt
-          pip install --no-deps ./inference_models
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
+          pip install --no-deps ./inference_model_manager
+          pip install --no-deps ./inference_server
       - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
           make create_workflows_wheel create_streamvision_wheel
@@ -66,7 +69,7 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
-        run: python -m pytest tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
+        run: python -m pytest -n auto --dist loadfile tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5
         run: python -m pytest tests/development/profiling

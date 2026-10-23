@@ -4,8 +4,20 @@ permissions:
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   workflow_dispatch:
     inputs:
       python-version:
@@ -85,9 +97,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-integration-tests-workflows-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 🚧 Install GDAL
         run: sudo apt-get update && sudo apt-get install -y libgdal-dev
       - name: 📦 Install dependencies
@@ -95,7 +105,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.sam.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.doctr.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.transformers.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.easyocr.txt
-          pip install --no-deps ./inference_models
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
       - name: 🔤 Cache Workflows font assets
         uses: actions/cache@v5
         with:
@@ -111,4 +121,8 @@ jobs:
           KAFKA_TEST_BOOTSTRAP_SERVERS: "localhost:9092"
         run: USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests --ignore=tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py --ignore=tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
       - name: 🧪 Integration Tests of Workflows (Modal, staging)
+        # This step does not read matrix.use-inference-models, so both legs ran the
+        # same tests. Run it once per Python version, on the "true" leg unless a
+        # manual dispatch selected only "false".
+        if: ${{ matrix.use-inference-models == 'true' || inputs.use-inference-models == 'false' }}
         run: PROJECT=roboflow-staging MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test python -m pytest tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py

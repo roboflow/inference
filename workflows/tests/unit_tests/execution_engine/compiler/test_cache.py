@@ -80,3 +80,40 @@ def test_cache_being_emptied_properly() -> None:
     assert cache.get(key_one) is None
     assert cache.get(key_two) == "my_value_2"
     assert cache.get(key_three) == "my_value_3"
+
+
+def test_caching_the_same_key_twice_does_not_break_eviction() -> None:
+    cache = BasicWorkflowsCache[str](cache_size=2, hash_functions=[])
+
+    cache.cache(key="a", value="1")
+    cache.cache(key="a", value="1")
+    cache.cache(key="b", value="2")
+    cache.cache(key="c", value="3")
+
+    assert cache.get(key="a") is None
+    assert cache.get(key="b") == "2"
+    assert cache.get(key="c") == "3"
+
+
+def test_recaching_an_existing_key_replaces_value_and_keeps_eviction_order() -> None:
+    cache = BasicWorkflowsCache[str](cache_size=2, hash_functions=[])
+    cache.cache(key="a", value="1")
+    cache.cache(key="b", value="2")
+
+    cache.cache(key="a", value="updated")
+    cache.cache(key="c", value="3")
+
+    assert cache.get(key="a") is None
+    assert cache.get(key="b") == "2"
+    assert cache.get(key="c") == "3"
+
+
+def test_recaching_an_existing_key_replaces_value() -> None:
+    cache = BasicWorkflowsCache[str](cache_size=2, hash_functions=[])
+    cache.cache(key="a", value="1")
+    cache.cache(key="b", value="2")
+
+    cache.cache(key="b", value="updated")
+
+    assert cache.get(key="a") == "1"
+    assert cache.get(key="b") == "updated"

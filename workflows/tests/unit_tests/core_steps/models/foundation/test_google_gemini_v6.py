@@ -27,7 +27,9 @@ from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     INFERENCE_ID_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 
 from tests.unit_tests.core_steps._vlm_prediction_readers import (
@@ -70,6 +72,7 @@ def _run_block(
     image: WorkflowImageData,
     classes: Optional[List[str]] = None,
     prompt: Optional[str] = None,
+    model_version: str = "gemini-2.5-pro",
 ) -> dict:
     block = GoogleGeminiBlockV6(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
@@ -80,7 +83,7 @@ def _run_block(
             prompt=prompt,
             output_structure=None,
             classes=classes,
-            model_version="gemini-2.5-pro",
+            model_version=model_version,
             max_tokens=None,
             temperature=None,
             thinking_level=None,
@@ -119,6 +122,8 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert outputs["error_status"] == [BOOLEAN_KIND]
@@ -305,3 +310,182 @@ def test_manifest_accepts_gemini_3_8_flash() -> None:
 
     # then
     assert result.model_version == "gemini-3.8-flash"
+
+
+@pytest.mark.parametrize("model", ["gemini-2.5-pro", "gemini-3.8-flash"])
+def test_segmentation_rejects_other_gemini_models(model: str) -> None:
+    with pytest.raises(ValueError, match="only for gemini-4-argon"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "segment",
+                "images": "$inputs.image",
+                "task_type": "instance-segmentation",
+                "model_version": model,
+                "classes": ["ring"],
+            }
+        )
+
+
+def test_argon_segmentation_manifest_and_request() -> None:
+    import base64
+    import io
+
+    from PIL import Image
+    from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
+        run_gemini_prompting,
+    )
+
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/google_gemini@v6",
+            "name": "segment",
+            "images": "$inputs.image",
+            "task_type": "instance-segmentation",
+            "model_version": "gemini-4-argon",
+            "classes": ["ring"],
+        }
+    )
+    outputs = {output.name: output.kind for output in manifest.get_actual_outputs()}
+    assert RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND in outputs["predictions"]
+    image = _build_image(width=2400, height=1200)
+    with patch(EXECUTE_REQUESTS_SEAM, return_value=[]) as execute:
+        run_gemini_prompting(
+            roboflow_api_key=None,
+            platform_client=None,
+            images=[image.to_inference_format()],
+            task_type="instance-segmentation",
+            prompt=None,
+            output_structure=None,
+            classes=["ring"],
+            google_api_key="key",
+            model_version="gemini-4-argon",
+            max_tokens=32768,
+            temperature=0,
+            thinking_level="low",
+            google_code_execution=False,
+            max_concurrent_requests=1,
+        )
+    payload = execute.call_args.kwargs["gemini_prompts"][0]
+    parts = payload["contents"]["parts"]
+    assert parts[0]["inline_data"]["mime_type"] == "image/png"
+    encoded = base64.b64decode(parts[0]["inline_data"]["data"])
+    assert Image.open(io.BytesIO(encoded)).size == (1600, 800)
+    assert "[y,x]" in parts[1]["text"]
+    component = payload["generationConfig"]["response_schema"]["items"]["properties"][
+        "mask"
+    ]["items"]
+    assert set(component["required"]) == {"outer", "holes"}
+    assert payload["generationConfig"]["temperature"] == 0
+
+
+def test_argon_components_holes_and_yx_scaling() -> None:
+    from pycocotools import mask as masks
+    from roboflow_workflows.core_steps.common.vlm_decoding.argon_segmentation import (
+        decode_argon_segmentations,
+    )
+
+    raw = [
+        {
+            "label": "ring",
+            "box_2d": [0, 0, 1000, 1000],
+            "mask": [
+                {
+                    "outer": [[100, 100], [100, 600], [800, 600], [800, 100]],
+                    "holes": [[[300, 200], [300, 400], [600, 400], [600, 200]]],
+                },
+                {
+                    "outer": [[400, 250], [400, 300], [500, 300], [500, 250]],
+                    "holes": [],
+                },
+                {
+                    "outer": [[100, 800], [100, 900], [200, 900], [200, 800]],
+                    "holes": [],
+                },
+            ],
+        }
+    ]
+    with patch(
+        "roboflow_workflows.core_steps.common.vlm_decoding.argon_segmentation.to_tensor_native_predictions",
+        side_effect=lambda **kw: kw["predictions"],
+    ):
+        error, result = decode_argon_segmentations(
+            json.dumps(raw),
+            image=_build_image(width=200, height=100),
+            classes=["ring"],
+            inference_id="test",
+        )
+    assert not error and len(result) == 1 and result.mask is None
+    mask = masks.decode(result.data["rle_mask"][0])
+    assert mask.shape == (100, 200)
+    assert mask[15, 30] and mask[15, 170]
+    assert not mask[35, 45] and mask[45, 55]
+    assert not mask[15, 140]
+    assert result.xyxy[0].tolist() == [20, 10, 181, 81]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "not json",
+        '[{"label":"ring","mask":[]}]',
+        '[{"label":"ring","mask":[{"outer":[[0,0],[0,1001],[500,500]],"holes":[]}]}]',
+    ],
+)
+def test_argon_invalid_masks_are_errors(raw: str) -> None:
+    from roboflow_workflows.core_steps.common.vlm_decoding.argon_segmentation import (
+        decode_argon_segmentations,
+    )
+
+    error, result = decode_argon_segmentations(
+        raw, image=_build_image(), classes=["ring"], inference_id="test"
+    )
+    assert error and result is None
+
+
+def test_argon_segmentation_block_and_empty_output() -> None:
+    raw = json.dumps(
+        [
+            {
+                "label": "ring",
+                "box_2d": [0, 0, 1000, 1000],
+                "mask": [
+                    {
+                        "outer": [[100, 100], [100, 600], [800, 600], [800, 100]],
+                        "holes": [],
+                    }
+                ],
+            }
+        ]
+    )
+    result = _run_block(
+        task_type="instance-segmentation",
+        raw_output=raw,
+        image=_build_image(width=200, height=100),
+        classes=["ring"],
+        model_version="gemini-4-argon",
+    )
+    assert result["error_status"] is False
+    assert detection_count(result["predictions"]) == 1
+    np.testing.assert_allclose(
+        detection_boxes(result["predictions"]), [[20, 10, 121, 81]]
+    )
+    empty = _run_block(
+        task_type="instance-segmentation",
+        raw_output="[]",
+        image=_build_image(),
+        classes=["ring"],
+        model_version="gemini-4-argon",
+    )
+    assert empty["error_status"] is False
+    assert detection_count(empty["predictions"]) == 0
+
+
+def test_segmentation_runtime_rejects_resolved_other_model() -> None:
+    with pytest.raises(ValueError, match="only for gemini-4-argon"):
+        _run_block(
+            task_type="instance-segmentation",
+            raw_output="[]",
+            image=_build_image(),
+            classes=["ring"],
+        )
