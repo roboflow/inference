@@ -4,6 +4,10 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Fixed
+
+- Joining a workflow `InferencePipeline` (after end of stream, `terminate()` or an inference error) now closes the workflow's blocks through `ExecutionEngine.close()`, after the workflow thread pools are shut down. Blocks with background connections, such as the OPC UA Reader, MQTT Reader and Kafka Consumer, no longer keep their threads and broker or server sessions while a stopped pipeline object is still referenced. With a `roboflow-workflows` that has no `ExecutionEngine.close()`, nothing changes.
+
 ## `0.1.2`
 
 ### Changed
