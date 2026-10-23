@@ -16,6 +16,11 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- Require the stable `inference-models>=0.39.5` and `inference-sdk>=1.8.1`
+  releases, and refresh the Workflows lockfile to match these minimum versions.
+
 ### Execution engine
 
 - Workflow syntax errors no longer repeat the raw input of the step that failed
