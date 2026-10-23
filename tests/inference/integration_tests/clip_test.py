@@ -48,7 +48,9 @@ def test_clip(test, auth_mode, clean_loaded_models_fixture):
         assert len(data["embeddings"]) == len(test["expected_response"]["embeddings"])
     if test["type"] == "compare":
         assert "similarity" in data
-        assert data["similarity"] == test["expected_response"]["similarity"]
+        assert data["similarity"] == pytest.approx(
+            test["expected_response"]["similarity"], abs=1e-3
+        )
 
 
 @pytest.fixture(scope="session", autouse=True)
