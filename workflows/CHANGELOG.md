@@ -52,6 +52,8 @@ for contributor and maintainer responsibilities.
 - OPC UA Reader waits for the subscription's final server-revised publishing interval when awaiting its initial notification, including a second revision during `ModifySubscription`, so a server that revises the interval upward does not cause repeated reconnects before the first value arrives. The first workflow run still returns within its configured `timeout` while the subscription continues waiting in the background.
 - Buffer block outputs retain their per-frame list contents when later frames update the buffer, including batched workflows and padded histories.
 
+- Detections Stitch (`roboflow_core/detections_stitch@v1`) with `overlap_filtering_strategy` set to `none` no longer encodes masks as compact masks and decodes them again: every mask survives, so each crop's masks are copied straight into the single dense output array (only each mask's bounding box is written). Outputs are unchanged. Measured with `supervision` 0.30.6, median block latency against the compact-mask stitch: 300 masks from twelve 640x640 crops onto 1920x1012 19 ms -> 12 ms; 48 salt-and-pepper masks from four 256x256 crops onto 640x480 14 ms -> 0.7 ms; 24 masks from four 100x100 crops onto 300x200 0.5 ms -> 0.2 ms. Peak memory stays at the size of the output. Crops whose masks already arrive as `CompactMask` are decoded one crop at a time on every filtering strategy, instead of all up front.
+
 ## `0.2.12`
 
 Bundled execution engine: `1.16.1`.
