@@ -12,16 +12,8 @@ import requests.exceptions
 import supervision as sv
 from fastapi import BackgroundTasks
 from requests_mock import Mocker
-
-from inference.core import roboflow_api
-from inference.core.cache import MemoryCache
-from inference.core.env import API_BASE_URL, ENABLE_TENSOR_DATA_REPRESENTATION
-from inference.core.utils.url_utils import wrap_url
-from inference.roboflow_workflows_plugin.sinks.dataset_upload import (
-    v1,
-    v1_tensor,
-)
-from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1 import (
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload import v1, v1_tensor
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     BatchCreationFrequency,
     RoboflowDatasetUploadBlockV1,
     encode_prediction,
@@ -31,12 +23,18 @@ from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1 import (
     is_prediction_registration_forbidden,
     register_datapoint,
 )
-from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1_tensor import (
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
     RoboflowDatasetUploadBlockV1 as TensorRoboflowDatasetUploadBlockV1,
 )
-from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1_tensor import (
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
     execute_registration as tensor_execute_registration,
 )
+
+from inference.core import roboflow_api
+from inference.core.cache import MemoryCache
+from inference.core.env import API_BASE_URL, ENABLE_TENSOR_DATA_REPRESENTATION
+from inference.core.interfaces.roboflow_platform_client import SERVER_PLATFORM_CLIENT
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
@@ -193,10 +191,9 @@ def test_is_prediction_registration_forbidden_when_non_empty_sv_detection_provid
     assert result is False
 
 
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_duplicate_found(
-    register_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_duplicate_found() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"duplicate": True}
     detections = sv.Detections(
@@ -210,6 +207,7 @@ def test_register_datapoint_when_duplicate_found(
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -227,17 +225,16 @@ def test_register_datapoint_when_duplicate_found(
     ), "No inference id found in sv detection"
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_is_not_delivered(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_is_not_delivered() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"duplicate": True}
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -256,16 +253,16 @@ def test_register_datapoint_when_prediction_is_not_delivered(
     annotate_image_at_roboflow.assert_not_called()
 
 
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_registration_should_be_forbidden(
-    register_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_registration_should_be_forbidden() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     detections = None
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -285,12 +282,10 @@ def test_register_datapoint_when_prediction_registration_should_be_forbidden(
     ), "No inference id found in sv detection"
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_registration_should_be_successful(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_registration_should_be_successful() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow_mock = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     detections = sv.Detections(
@@ -351,6 +346,7 @@ def test_register_datapoint_when_prediction_registration_should_be_successful(
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -379,12 +375,12 @@ def test_register_datapoint_when_prediction_registration_should_be_successful(
     )
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_registration_should_be_successful_but_without_inference_id(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_registration_should_be_successful_but_without_inference_id() -> (
+    None
+):
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow_mock = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     detections = sv.Detections(
@@ -444,6 +440,7 @@ def test_register_datapoint_when_prediction_registration_should_be_successful_bu
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -472,10 +469,9 @@ def test_register_datapoint_when_prediction_registration_should_be_successful_bu
     )
 
 
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_is_empty(
-    register_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_is_empty() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     detections = sv.Detections.empty()
@@ -491,6 +487,7 @@ def test_register_datapoint_when_prediction_is_empty(
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -508,12 +505,12 @@ def test_register_datapoint_when_prediction_is_empty(
     ), "Expected inference ID not to be denoted"
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_classification_prediction_registration_should_be_successful_with_inference_id(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_classification_prediction_registration_should_be_successful_with_inference_id() -> (
+    None
+):
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow_mock = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     prediction = {
@@ -527,6 +524,7 @@ def test_register_datapoint_when_classification_prediction_registration_should_b
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -555,12 +553,12 @@ def test_register_datapoint_when_classification_prediction_registration_should_b
     )
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_classification_prediction_registration_should_be_successful_without_inference_id(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_classification_prediction_registration_should_be_successful_without_inference_id() -> (
+    None
+):
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow_mock = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     prediction = {
@@ -573,6 +571,7 @@ def test_register_datapoint_when_classification_prediction_registration_should_b
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -640,7 +639,9 @@ def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     cache.set(key=expected_cache_key, value="my_workspace")
 
     # when
-    result = get_workspace_name(api_key=api_key, cache=cache)
+    result = get_workspace_name(
+        api_key=api_key, cache=cache, platform_client=MagicMock()
+    )
 
     # then
     assert (
@@ -648,10 +649,9 @@ def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     ), "Expected return value from the cache to be returned"
 
 
-@mock.patch.object(v1, "get_roboflow_workspace")
-def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
-    get_roboflow_workspace_mock: MagicMock,
-) -> None:
+def test_get_workspace_name_when_cache_does_not_contain_workspace_name() -> None:
+    platform_client = MagicMock()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
     # given
     api_key = "my_api_key"
     cache = MemoryCache()
@@ -661,7 +661,9 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     get_roboflow_workspace_mock.return_value = "workspace_from_api"
 
     # when
-    result = get_workspace_name(api_key=api_key, cache=cache)
+    result = get_workspace_name(
+        api_key=api_key, cache=cache, platform_client=platform_client
+    )
 
     # then
     assert (
@@ -698,6 +700,7 @@ def test_execute_registration_when_quota_limit_exceeded(
 
     # when
     result = execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=prediction,
         target_project="my_project",
@@ -753,6 +756,7 @@ def test_execute_registration_when_error_in_registration_happened(
 
     # when
     result = execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=prediction,
         target_project="my_project",
@@ -826,6 +830,7 @@ def test_execute_registration_when_registration_should_be_successful(
 
     # when
     result = execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=detections,
         target_project="my_project",
@@ -893,6 +898,7 @@ def test_execute_registration_scales_predictions_to_exact_jpeg_canvas_anisotropi
     )
 
     result = execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=detections,
         target_project="my_project",
@@ -971,6 +977,7 @@ def test_execute_registration_scales_predictions_to_exact_jpeg_canvas_anisotropi
     )
 
     result = tensor_execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=detections,
         target_project="my_project",
@@ -1282,11 +1289,13 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
     # given
     background_tasks = BackgroundTasks()
     cache = MemoryCache()
+    platform_client = MagicMock()
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=cache,
         api_key="my_api_key",
         background_tasks=background_tasks,
         thread_pool_executor=None,
+        platform_client=platform_client,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -1352,6 +1361,7 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
+                platform_client=platform_client,
                 image_name=None,
                 metadata=None,
             )
@@ -1408,6 +1418,7 @@ def test_run_sink_when_upload_retry_reports_duplicate(
         api_key=api_key,
         background_tasks=None,
         thread_pool_executor=None,
+        platform_client=SERVER_PLATFORM_CLIENT,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -1453,11 +1464,13 @@ def test_run_sink_when_predictions_not_provided(
     # given
     background_tasks = BackgroundTasks()
     cache = MemoryCache()
+    platform_client = MagicMock()
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=cache,
         api_key="my_api_key",
         background_tasks=background_tasks,
         thread_pool_executor=None,
+        platform_client=platform_client,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -1514,6 +1527,7 @@ def test_run_sink_when_predictions_not_provided(
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
+                platform_client=platform_client,
                 image_name=None,
                 metadata=None,
             )
@@ -1547,6 +1561,7 @@ def test_execute_registration_with_custom_image_name(
 
     # when
     result = execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=None,
         target_project="my_project",
@@ -1600,6 +1615,7 @@ def test_execute_registration_without_image_name_uses_uuid(
 
     # when
     result = execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=None,
         target_project="my_project",

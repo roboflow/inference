@@ -713,6 +713,19 @@ class BlockManifest(WorkflowBlockManifest):
         ge=0.0,
         le=2.0,
     )
+    service_tier: Optional[
+        Union[
+            Selector(kind=[STRING_KIND]),
+            Literal["auto", "default", "flex", "priority", "ultrafast"],
+        ]
+    ] = Field(
+        default=None,
+        description="OpenAI processing tier for the request: 'flex' is slower and cheaper, "
+        "'priority' and 'ultrafast' are faster and cost more. When unset, OpenAI's default tier "
+        "is used. With a Roboflow-managed key (`rf_key:`), Roboflow decides which tiers the "
+        "workspace may use.",
+        examples=["flex", "$inputs.service_tier"],
+    )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
         description="Number of concurrent requests that can be executed by block when batch of input images provided. "
@@ -851,6 +864,7 @@ class OpenAIBlockV7(WorkflowBlock):
         max_concurrent_requests: Optional[int],
         output_classes: Optional[List[str]] = None,
         api_key: str = "rf_key:account",
+        service_tier: Optional[str] = None,
     ) -> BlockResult:
         resolved_output_classes = validate_output_classes(classes, output_classes)
         inference_images = [i.to_inference_format() for i in images]
@@ -870,6 +884,7 @@ class OpenAIBlockV7(WorkflowBlock):
             max_tokens=max_tokens,
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
+            service_tier=service_tier,
         )
         box_format = get_detection_box_format(model_version)
         results = []
@@ -948,6 +963,7 @@ def run_openai_prompting(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
+    service_tier: Optional[str] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Encode images, build per-task prompts and execute OpenAI requests.
 
@@ -972,6 +988,7 @@ def run_openai_prompting(
         max_tokens: Maximum number of output tokens.
         temperature: Sampling temperature.
         max_concurrent_requests: Cap on concurrent OpenAI requests.
+        service_tier: OpenAI service tier, omitted from the request when ``None``.
 
     Returns:
         ``(output_text, input_tokens, output_tokens)`` tuples, one per input
@@ -1010,6 +1027,7 @@ def run_openai_prompting(
         max_tokens=max_tokens,
         temperature=temperature,
         max_concurrent_requests=max_concurrent_requests,
+        service_tier=service_tier,
     )
 
 
@@ -1076,6 +1094,7 @@ def execute_openai_requests(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
+    service_tier: Optional[str] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Execute prepared OpenAI request payloads in parallel.
 
@@ -1090,6 +1109,7 @@ def execute_openai_requests(
         temperature: Sampling temperature.
         max_concurrent_requests: Cap on concurrent requests; defaults to
             ``WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS``.
+        service_tier: OpenAI service tier, omitted from the request when ``None``.
 
     Returns:
         ``(output_text, input_tokens, output_tokens)`` tuples in the order of
@@ -1108,6 +1128,7 @@ def execute_openai_requests(
             reasoning_effort=reasoning_effort,
             max_tokens=max_tokens,
             temperature=temperature,
+            service_tier=service_tier,
         )
         for prompt in openai_prompts
     ]
@@ -1132,6 +1153,7 @@ def _execute_proxied_openai_request(
     max_tokens: Optional[int],
     temperature: Optional[float],
     text_format: Optional[dict] = None,
+    service_tier: Optional[str] = None,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request via Roboflow proxy."""
     payload = {
@@ -1151,6 +1173,9 @@ def _execute_proxied_openai_request(
 
     if temperature is not None:
         payload["temperature"] = temperature
+
+    if service_tier is not None:
+        payload["service_tier"] = service_tier
 
     validate_reasoning_level(
         model=model_version,
@@ -1239,6 +1264,7 @@ def _execute_direct_openai_request(
     max_tokens: Optional[int],
     temperature: Optional[float],
     text_format: Optional[dict] = None,
+    service_tier: Optional[str] = None,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request directly."""
     client = _get_openai_client(openai_api_key)
@@ -1259,6 +1285,9 @@ def _execute_direct_openai_request(
 
     if temperature is not None:
         request_params["temperature"] = temperature
+
+    if service_tier is not None:
+        request_params["service_tier"] = service_tier
 
     validate_reasoning_level(
         model=model_version,
@@ -1320,6 +1349,7 @@ def execute_openai_request(
     max_tokens: Optional[int],
     temperature: Optional[float],
     text_format: Optional[dict] = None,
+    service_tier: Optional[str] = None,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute a single OpenAI request, routing to direct or proxied mode.
 
@@ -1337,6 +1367,7 @@ def execute_openai_request(
         temperature: Sampling temperature.
         text_format: Optional structured-output ``text`` payload forwarded
             with the request.
+        service_tier: OpenAI service tier, omitted from the request when ``None``.
 
     Returns:
         Tuple of the raw text output and the input/output token counts
@@ -1359,6 +1390,7 @@ def execute_openai_request(
             max_tokens=max_tokens,
             temperature=temperature,
             text_format=text_format,
+            service_tier=service_tier,
         )
     else:
         return _execute_direct_openai_request(
@@ -1370,6 +1402,7 @@ def execute_openai_request(
             max_tokens=max_tokens,
             temperature=temperature,
             text_format=text_format,
+            service_tier=service_tier,
         )
 
 

@@ -18,7 +18,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers: stub manifest classes
 # ---------------------------------------------------------------------------
@@ -330,17 +329,17 @@ class TestEnrichWithAirGappedInfo:
         )
 
         with patch(
-            "inference.core.interfaces.http.handlers.workflows.describe_available_blocks"
+            "roboflow_workflows.http_contract.describe.describe_available_blocks"
         ) as mock_describe, patch(
-            "inference.core.interfaces.http.handlers.workflows.discover_blocks_connections"
+            "roboflow_workflows.http_contract.describe.discover_blocks_connections"
         ) as mock_connections, patch(
-            "inference.core.interfaces.http.handlers.workflows.compile_dynamic_blocks",
+            "roboflow_workflows.http_contract.describe.compile_dynamic_blocks",
             return_value=[],
         ), patch(
-            "inference.core.interfaces.http.handlers.workflows.prepare_operations_descriptions",
+            "roboflow_workflows.http_contract.describe.prepare_operations_descriptions",
             return_value=[],
         ), patch(
-            "inference.core.interfaces.http.handlers.workflows.prepare_operators_descriptions",
+            "roboflow_workflows.http_contract.describe.prepare_operators_descriptions",
             return_value=[],
         ):
             blocks = [

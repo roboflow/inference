@@ -1,6 +1,61 @@
 # Changelog
 
-## Unreleased
+## `0.39.5`
+
+### Added
+
+- Anomaly detection models put `anomaly_scale` in `images_metadata[i]`, next to `anomaly_score`, `anomaly_threshold` and `is_anomalous`, so a caller can re-decide against its own threshold with the same rule.
+- `RoboflowModelMetadata.model_latency_ms` exposes the registry's `modelLatencyMs`.
+  A non-numeric value is read as `None` instead of failing the metadata parse.
+- `SAM3Torch.segment_with_visual_prompts(...)` accepts `mask_format="rle"` to return
+  COCO RLE dictionaries (`masks`, `scores`) instead of dense `SAM3Prediction` objects;
+  the default stays `"dense"`.
+- `SAM3Torch.embed_images(..., return_embeddings=False)` populates the embeddings cache
+  without returning the embedding tensors (`SAM3ImageEmbeddings.embeddings` is `None`).
+- A `vllm` backend proxies Qwen3-VL, Qwen3.5 and Qwen3.8 VLM requests to a vLLM HTTP
+  sidecar and registers LoRA adapters there. It is selected only when the caller passes
+  `AutoModel.from_pretrained(..., allow_vllm_proxy=True)` and `VLLM_PROXY_ENABLED` is set;
+  without the argument, loading is unchanged. The `VLLM_*` settings are validated by
+  `validate_vllm_proxy_settings()` only when the proxy is selected, so an invalid value never
+  breaks importing the package or other loads.
+- `AutoModel.from_pretrained(..., preloaded_model_dependencies=...)` reuses already loaded
+  dependency models (validated against the dependency's model id and package id) instead
+  of loading them again. `AutoModel.from_pretrained(..., disabled_backends=...)` excludes
+  backends from auto-negotiation; the `DISABLED_INFERENCE_MODELS_BACKENDS` environment
+  variable is exposed as `configuration.DISABLED_INFERENCE_MODELS_BACKENDS` but is not
+  applied unless passed; listing `"disabled_backends"` in `forwarded_kwargs` applies the
+  exclusions to dependency models too. Both parameters are keyword-only and default to the
+  previous behaviour.
+- `ModelPackageMetadata.memory_profile` carries the package's `MemoryProfile` (peak VRAM
+  per batch size, `vram_for_batch(...)`) from the Roboflow API. A malformed profile is
+  replaced with an empty one and never rejects the package.
+- `InstanceSegmentationModel.max_batch_size` reports the model's batch limit.
+- SAM and SAM2 accept plain Python lists for point, label, box and mask prompts.
+- OWLv2 `infer_from_reference_examples(...)` accepts reference examples as dictionaries.
+
+### Changed
+
+- TensorRT models fall back to `tensorrt_lean` when `tensorrt` is not installed.
+- Boolean environment variables also accept `1/0`, `t/f`, `yes/no`, `y/n`, `on/off` and
+  surrounding whitespace. An empty value is still rejected.
+
+### Fixed
+
+- SAM3 `embed_images`, `segment_with_visual_prompts` and
+  `segment_with_text_prompts` accept `input_color_format`. With `"bgr"` the
+  image channels are reversed before inference; the default keeps treating
+  inputs as RGB.
+- GLM-OCR table recognition sent the formula-recognition prompt.
+
+### Changed
+
+- Anomaly detection (PatchCore, FoundAD): `is_anomalous` and `class_id` are decided by the request `confidence` — `sigmoid((anomaly_score - anomaly_threshold) / anomaly_scale) >= confidence` — instead of always `anomaly_score >= anomaly_threshold`. `post_process(..., confidence=...)` accepts a number in `[0, 1]`, `"best"` (the model-eval recommendation through `recommended_parameters`, which both models now accept at load) or `"default"` (0.5, the calibrated decision, identical to the previous rule).
+
+### Fixed
+
+- PatchCore bounds its nearest-neighbour distance matrix by elements (`NEAREST_NEIGHBOURS_CHUNK_ELEMENTS = 2**26`, 256 MiB in fp32) instead of 4096 rows, and computes it in place. A 640 px model with a ~140k-entry memory bank allocated about 2 GiB per chunk per request and ran out of GPU memory under concurrent requests.
+
+## `0.39.4`
 
 ### Added
 
@@ -30,6 +85,11 @@
   through unchanged.
 - Center crop of torch-tensor inputs floors the crop offset like the numpy path.
   Previously the offset was rounded, so odd margins shifted the crop by one pixel.
+- RF-DETR NAS TensorRT packages for object detection and instance segmentation
+  load on TensorRT again. These packages now declare their subnet as model
+  features (`resolution`, `patch_size`, `num_windows`, `dec_layers`,
+  `num_queries`, `num_select`), which the TensorRT registry entries did not
+  accept. Previously negotiation rejected them and fell back to ONNX.
 
 ## `0.39.3`
 
@@ -348,7 +408,7 @@
   invalid Cosmos package configuration is no longer ignored, and an
   input-size restriction rejects a package that omits the size needed to
   enforce it.
-- Bumped required dependencies versions for security reasons. 
+- Bumped required dependencies versions for security reasons.
 
 ---
 
@@ -707,7 +767,7 @@
 ## `0.32.1`
 
 ### Fixed
-- Patch for security issues 
+- Patch for security issues
 
 ---
 
@@ -808,10 +868,10 @@
 
 ### Added
 
-- Enriched `KeyPoints` representation to expose `covariance` and 
+- Enriched `KeyPoints` representation to expose `covariance` and
 `detection_confidence` to streamline changes in `supervision`
 
-- Align changes in RF-DETR model to expose pixel-space `covariance`, 
+- Align changes in RF-DETR model to expose pixel-space `covariance`,
 following up on https://github.com/roboflow/rf-detr/releases/tag/1.8.0.
 
 ---
@@ -973,7 +1033,7 @@ before release.
 
 ### Added
 
-- COCO RLE masks format for all instance segmentation predictions and all models 
+- COCO RLE masks format for all instance segmentation predictions and all models
 supported in the library were patched. `InstanceDetections` mask can now be `InstancesRLEMasks` object
 which follows the structure of `pycocotools` masks (providing memory-efficient alternative for dense
 representation). Clients who want to use the format, should pass `mask_format="rle"` to `**kwargs` of model
@@ -981,14 +1041,14 @@ forward pass.
 
 ### Changed
 
-- The change with RLE masks format yielded change to base interface of Instance Segmentation models - 
-**new abstract property `supported_mask_formats` was added, which is a breaking change for local-code 
-instance-segmentation models.** We are not aware of anyone using the library in such mode currently, due 
-to the maturity of the library, so we are introducing this change, such that the interface does not 
+- The change with RLE masks format yielded change to base interface of Instance Segmentation models -
+**new abstract property `supported_mask_formats` was added, which is a breaking change for local-code
+instance-segmentation models.** We are not aware of anyone using the library in such mode currently, due
+to the maturity of the library, so we are introducing this change, such that the interface does not
 implicitly enforce supported format.
 
-- Representation of `InstanceDetections` changed - new `InstancesRLEMasks` format is now an alternative for 
-`torch.Tensor` used for `dense` mask representation. This change is considered **non-breaking**, as alternative 
+- Representation of `InstanceDetections` changed - new `InstancesRLEMasks` format is now an alternative for
+`torch.Tensor` used for `dense` mask representation. This change is considered **non-breaking**, as alternative
 representation must be requested by the caller.
 
 ---
@@ -996,20 +1056,20 @@ representation must be requested by the caller.
 
 ### Changed
 
-- For Roboflow weights provider, Roboflow License Server proxy transitioned into 
-Roboflow Secure Gateway, altering naming conventions of all helper functions which are 
-considered private interface of weights provider (hence should not be considered breaking 
-for any clients). Along with this change, `LICENSE_SERVER` environmental variable controlling 
+- For Roboflow weights provider, Roboflow License Server proxy transitioned into
+Roboflow Secure Gateway, altering naming conventions of all helper functions which are
+considered private interface of weights provider (hence should not be considered breaking
+for any clients). Along with this change, `LICENSE_SERVER` environmental variable controlling
 the proxy address was replaced to be `SECURE_GATEWAY` - old variable will be deleted in the
 release following after the end of Q3 2026.
 
 ---
 
-## `0.26.0` 
+## `0.26.0`
 
 ### Added
 
-- Bringing back changes to filtering proposed in retracted release `0.25.0` 
+- Bringing back changes to filtering proposed in retracted release `0.25.0`
 along with fixes for bugs which caused retraction.
 
 ---
@@ -1037,9 +1097,9 @@ Gemma 4.
 
 ### Added
 
-- `post_process(...)` on object detection, instance segmentation, keypoint detection, classification, and semantic 
-segmentation models now accepts `confidence` as `"best"` (use per-class or global thresholds from 
-`RecommendedParameters` when available), `"default"` (model's built-in default), or a float override. Shared NMS 
+- `post_process(...)` on object detection, instance segmentation, keypoint detection, classification, and semantic
+segmentation models now accepts `confidence` as `"best"` (use per-class or global thresholds from
+`RecommendedParameters` when available), `"default"` (model's built-in default), or a float override. Shared NMS
 helpers accept a per-class `torch.Tensor` for single-pass per-class filtering.
 
 ---
@@ -1048,10 +1108,10 @@ helpers accept a per-class `torch.Tensor` for single-pass per-class filtering.
 
 ### Changed
 
-- Behavior of Roboflow weights provider was changed - instead of throwing error each time **any** known model 
+- Behavior of Roboflow weights provider was changed - instead of throwing error each time **any** known model
 package is fetched with manifest not passing validation - it warns about this fact and skips the package.
-This change is dictated by potential negative impact on stability which malformed manifests could have, in the face 
-of broader change on Roboflow platform making it possible tp externally register packages - sanitization and 
+This change is dictated by potential negative impact on stability which malformed manifests could have, in the face
+of broader change on Roboflow platform making it possible tp externally register packages - sanitization and
 validation is enabled on registry API side, but we introduce defensive change here to prevent potential instability.
 
 ### Added
@@ -1064,15 +1124,15 @@ validation is enabled on registry API side, but we introduce defensive change he
 
 - Added `sigmoid` smoothing for instance-segmentation masks in YOLOv8, YOLOv11, YOLOv12 models family.
 Smoothing can be enabled / disabled via `masks_smoothing_enabled` parameter of `post_process(...)` method
-(which can be passed as `**kwarg` to `forward(...)`) with default set with 
-`INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED` (set to `True`). Additionally, the binarization 
-threshold for masks can be controlled via `masks_binarization_threshold` parameter - default to be 
-controlled with `INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD` (set to `0.5` or `0.0` 
+(which can be passed as `**kwarg` to `forward(...)`) with default set with
+`INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED` (set to `True`). Additionally, the binarization
+threshold for masks can be controlled via `masks_binarization_threshold` parameter - default to be
+controlled with `INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD` (set to `0.5` or `0.0`
 depending on `INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED`).
 
 !!! warning "Instance-segmentation masks will change"
 
-    Due to smoothing, there is slight change to segmentation masks expected - mainly regarding edges 
+    Due to smoothing, there is slight change to segmentation masks expected - mainly regarding edges
     of predictions which should be smoother now. Change is dictated by alignment to old `inference` versions
     behaviour, effectively drifting from `ultralytics` post-processing.
 
@@ -1082,8 +1142,8 @@ depending on `INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED`
 
 ### Fixed
 
-- Issue with `INFERENCE_HOME` derived paths issues when running on Windows (lack `/tmp/cache` dereference to 
-Windows path). 
+- Issue with `INFERENCE_HOME` derived paths issues when running on Windows (lack `/tmp/cache` dereference to
+Windows path).
 
 ---
 
@@ -1091,8 +1151,8 @@ Windows path).
 
 ### Changed
 
-- Added optional field `alternatives_errors` to `ModelPackageAlternativesExhaustedError`, making it possible 
-to report to the caller what types of errors happened during the load - making it possible to deduce if 
+- Added optional field `alternatives_errors` to `ModelPackageAlternativesExhaustedError`, making it possible
+to report to the caller what types of errors happened during the load - making it possible to deduce if
 problem with loading is recoverable.
 
 ---
@@ -1119,7 +1179,7 @@ problem with loading is recoverable.
 
 - Ability to restrict maximum input resolution for models
 
-- Restriction of input resolution for RF-DETR - providing ability for caller to avoid OOM when loading models 
+- Restriction of input resolution for RF-DETR - providing ability for caller to avoid OOM when loading models
 with large input resolutions
 
 - New type of error `ModelPackageRestrictedError` - to manifest restrictions of runtime environment with package
@@ -1130,7 +1190,7 @@ with large input resolutions
 
 ### Added
 
-- GLM-OCR model added to models zoo 
+- GLM-OCR model added to models zoo
 
 ---
 
@@ -1138,7 +1198,7 @@ with large input resolutions
 
 ### Fixed
 
-- Lack of model package features denoted in auto-negotiation cache entries was causing errors while re-initialization 
+- Lack of model package features denoted in auto-negotiation cache entries was causing errors while re-initialization
 of models which had `required_features` denoted in model registry.
 
 ---
@@ -1146,8 +1206,8 @@ of models which had `required_features` denoted in model registry.
 ## `0.21.0`
 ### Added
 
-- Support for CUDA Graphs in TRT backend - all TRT models got upgraded - added ability to run with CUDA graphs, at 
-the expense of additional VRAM allocation, but with caller control on how many execution contexts for different 
+- Support for CUDA Graphs in TRT backend - all TRT models got upgraded - added ability to run with CUDA graphs, at
+the expense of additional VRAM allocation, but with caller control on how many execution contexts for different
 input shapes should be allowed.
 
 ---
@@ -1155,8 +1215,8 @@ input shapes should be allowed.
 ## `0.20.2`
 ### Added
 
-- Ability to override certain aspects of model pre-processing (like center-crop, contrast enhancement or grayscale 
-which may be performed by caller).  
+- Ability to override certain aspects of model pre-processing (like center-crop, contrast enhancement or grayscale
+which may be performed by caller).
 
 ---
 
@@ -1173,7 +1233,7 @@ which may be performed by caller).
 
 - Support for `transformers>=5`
 
-- Model registry feature allowing to treat specific model features as required during auto-negotiation  
+- Model registry feature allowing to treat specific model features as required during auto-negotiation
 
 ---
 
@@ -1194,14 +1254,14 @@ which may be performed by caller).
 ## `0.19.2`
 
 ### Fixed
-- Changed the default ranking for model packages in `AutoLoader` - ONNX to be preferred over Torch. 
+- Changed the default ranking for model packages in `AutoLoader` - ONNX to be preferred over Torch.
 
 ---
 
 ## `0.19.1`
 
 ### Fixed
-- Fixed issue with RF-DETR model post-processing causing all results to be empty (TRT implementation) 
+- Fixed issue with RF-DETR model post-processing causing all results to be empty (TRT implementation)
 
 ---
 
