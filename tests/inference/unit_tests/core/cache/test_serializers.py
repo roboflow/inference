@@ -176,7 +176,7 @@ def test_to_cachable_inference_item_fills_model_id_missing_from_request(
         predictions=[], image={"width": 1, "height": 1}, time=0.1
     )
 
-    result = to_cachable_inference_item(request, response, model_id="yolo_world/l")
+    result = to_cachable_inference_item(request, response, "yolo_world/l")
 
     assert result["request"]["model_id"] == "yolo_world/l"
 

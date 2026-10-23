@@ -21,7 +21,6 @@ from inference.core.version import __version__
 def to_cachable_inference_item(
     infer_request: InferenceRequest,
     infer_response: Union[InferenceResponse, List[InferenceResponse]],
-    *,
     model_id: Optional[str] = None,
 ) -> dict:
     """Build the model monitoring cache entry that the pingback reports.
