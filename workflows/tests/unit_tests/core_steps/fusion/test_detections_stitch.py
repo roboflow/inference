@@ -768,7 +768,7 @@ def test_detections_stitch_without_filtering_clips_like_move_masks(
         _random_slice_detections(
             rng,
             count=4,
-            slice_shape=(100, 100) if len(offsets) > 1 else (320, 240),
+            slice_shape=(100, 100) if len(offsets) > 1 else (320, 400),
             parent_offset=offset,
             parent_dims=(200, 300),
         )
@@ -951,9 +951,7 @@ def test_detections_stitch_decodes_compact_mask_inputs_one_crop_at_a_time(
         )
         for offset in offsets
     ]
-    all_inputs_dense_bytes = sum(
-        int(np.prod(detections.mask.shape)) for detections in predictions
-    )
+    one_crop_dense_bytes = int(np.prod(predictions[0].mask.shape))
 
     tracemalloc.start()
     try:
@@ -969,11 +967,11 @@ def test_detections_stitch_decodes_compact_mask_inputs_one_crop_at_a_time(
 
     assert len(result) > 0
     output_bytes = result.mask.nbytes
-    # retaining every decoded crop adds all_inputs_dense_bytes on top of the
-    # output; decoding one crop at a time adds a twelfth of that
-    assert peak < output_bytes + all_inputs_dense_bytes // 2, (
+    # decoding one crop at a time adds one crop's dense stack on top of the
+    # output; a retained previous crop would add a second one
+    assert peak < output_bytes + one_crop_dense_bytes * 3 // 2, (
         f"peak={peak / 2**20:.1f} MiB output={output_bytes / 2**20:.1f} MiB "
-        f"inputs={all_inputs_dense_bytes / 2**20:.1f} MiB"
+        f"crop={one_crop_dense_bytes / 2**20:.1f} MiB"
     )
 
 

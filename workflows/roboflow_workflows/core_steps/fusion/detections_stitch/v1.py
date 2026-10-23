@@ -388,6 +388,8 @@ def stitch_masks_dense(
                 stitched[row + index, ty1 + y1 : ty1 + y2, tx1 + x1 : tx1 + x2] = (
                     visible[index, y1:y2, x1:x2]
                 )
+            # drop the decoded crop before the next one is decoded
+            del visible
         row += count
     return stitched
 
