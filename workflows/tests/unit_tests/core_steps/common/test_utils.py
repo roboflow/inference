@@ -53,8 +53,8 @@ def test_empty_detections_with_image_metadata_keeps_empty_field_contract() -> No
 
     # then - image dimensions travel in metadata (zero rows means `data` is
     # invisible to the serialiser), while the fields `sv.Detections.empty()`
-    # populates stay empty arrays rather than becoming `None`; consumers such as
-    # `DetectionsPropertyExtract` call `.tolist()` on them unconditionally.
+    # populates stay empty arrays rather than becoming `None`, so consumers may
+    # iterate or `.tolist()` them without a `None` guard.
     assert len(result) == 0
     assert result.metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
     assert result.confidence.tolist() == []

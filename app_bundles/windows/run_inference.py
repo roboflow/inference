@@ -6,9 +6,21 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
 
 
+# A frozen-process diagnostic executes the bundled native libraries without
+# requiring a model download. Normal server startup is tested separately.
+import sys
+
+if __name__ == "__main__" and sys.argv[1:2] == ["--packaging-smoke-test"]:
+    from packaging_checks import main as packaging_main
+
+    packaging_main(args=sys.argv[2:])
+    sys.exit(0)
+
 import logging
 import os
-import sys
+
+# Surface the native loader exception before fake NMS registration can mask it.
+os.environ.setdefault("TORCHVISION_WARN_WHEN_EXTENSION_LOADING_FAILS", "1")
 
 # Set up logging configuration for bundled app
 # Enable in-memory logging for the FastAPI server to use
