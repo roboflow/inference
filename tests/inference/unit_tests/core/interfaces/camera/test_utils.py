@@ -1,5 +1,6 @@
 import os
 import time
+from fractions import Fraction
 from queue import Queue
 from typing import Callable, Generator, List, Optional, Union
 from unittest import mock
@@ -35,19 +36,20 @@ from inference.core.utils.preprocess import letterbox_image
 class FakeClock:
     """Simulated `time` module for the rate limiter tests.
 
-    Tests that count dropped frames patch `utils.time` with it, so frames arrive at
-    exact simulated times instead of depending on how long `time.sleep()` takes on a
-    busy machine.
+    Tests patch `utils.time` with it and take frame timestamps from it, so results
+    do not depend on scheduling delays on a busy machine. Time is a `Fraction`, so a
+    frame that lands exactly on the limit counts as on time instead of being pushed
+    under it by float rounding.
     """
 
     def __init__(self) -> None:
-        self._now = 0.0
+        self._now = Fraction(0)
 
-    def monotonic(self) -> float:
+    def monotonic(self) -> Fraction:
         return self._now
 
     def sleep(self, seconds: float) -> None:
-        self._now += seconds
+        self._now += Fraction(seconds)
 
 
 def test_rate_limiter_when_no_ticks_were_registered() -> None:
@@ -168,9 +170,12 @@ def test_limit_frame_rate_when_frames_to_be_dropped_and_stream_is_to_slow() -> N
     ], "As 50FPS stream does not violate 100FPS limit - all frames should have been kept, despite DROP strategy"
 
 
-def test_limit_frame_rate_when_frames_to_be_awaited_and_stream_is_to_fast() -> None:
+@mock.patch.object(utils, "time", new_callable=FakeClock)
+def test_limit_frame_rate_when_frames_to_be_awaited_and_stream_is_to_fast(
+    clock: FakeClock,
+) -> None:
     # given
-    frames_generator = generate_with_delay(items=10, delay=0.005)
+    frames_generator = generate_with_delay(items=10, delay=0.005, sleep=clock.sleep)
 
     # when
     results, results_timestamp = [], []
@@ -179,7 +184,7 @@ def test_limit_frame_rate_when_frames_to_be_awaited_and_stream_is_to_fast() -> N
         max_fps=100,
         strategy=FPSLimiterStrategy.WAIT,
     ):
-        results_timestamp.append(time.monotonic())
+        results_timestamp.append(clock.monotonic())
         results.append(result)
 
     # then
@@ -332,16 +337,18 @@ def test_get_video_frames_generator_when_fps_modulation_disabled(
     ], "Without rate limiting, generator must not alter order or completeness of generation"
 
 
+@mock.patch.object(utils, "time", new_callable=FakeClock)
 @mock.patch.object(utils.VideoSource, "init")
 def test_get_video_frames_generator_when_fps_modulation_enabled_against_video_file(
     init_mock: MagicMock,
+    clock: FakeClock,
 ) -> None:
     # given
     source_properties = SourceProperties(
         width=100, height=100, total_frames=10, is_file=True, fps=100
     )
     dummy_source = DummyVideoSource(
-        items=10, delay=0.01, source_properties=source_properties
+        items=10, delay=0.01, source_properties=source_properties, sleep=clock.sleep
     )
     init_mock.return_value = dummy_source
 
@@ -351,7 +358,7 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_video_fi
         video="source-ref",
         max_fps=50,
     ):
-        results_timestamp.append(time.monotonic())
+        results_timestamp.append(clock.monotonic())
         results.append(result)
 
     # then
