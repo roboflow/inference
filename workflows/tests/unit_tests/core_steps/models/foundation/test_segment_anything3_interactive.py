@@ -960,6 +960,27 @@ def test_rle_output_of_a_crop_is_serialized_in_root_coordinates(
 ) -> None:
     crop_mask = np.zeros((10, 18), dtype=bool)
     crop_mask[crop_rows, crop_columns] = True
+    _assert_rle_output_of_a_crop_is_in_root_coordinates(
+        crop_mask=crop_mask, expected_box=expected_box
+    )
+
+
+def test_rle_output_of_a_crop_with_two_parts_is_serialized_in_root_coordinates() -> (
+    None
+):
+    crop_mask = np.zeros((10, 18), dtype=bool)
+    crop_mask[2:5, 3:7] = True
+    crop_mask[-2, -2] = True
+
+    _assert_rle_output_of_a_crop_is_in_root_coordinates(
+        crop_mask=crop_mask,
+        expected_box={"x": 22.0, "y": 13.5, "width": 14.0, "height": 7.0},
+    )
+
+
+def _assert_rle_output_of_a_crop_is_in_root_coordinates(
+    crop_mask: np.ndarray, expected_box: dict
+) -> None:
     root_mask = np.zeros((30, 50), dtype=bool)
     root_mask[8:18, 12:30] = crop_mask
 

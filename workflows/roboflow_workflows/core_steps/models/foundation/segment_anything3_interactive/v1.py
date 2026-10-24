@@ -122,7 +122,8 @@ This block supports two output formats:
 - **polygons** (default): Returns polygon coordinates for each mask. A mask made of several
   separate regions becomes one prediction per region.
 - **rle**: Returns the mask the model predicted in RLE (Run-Length Encoding) format, one
-  prediction per prompt. Use it when you need the exact mask.
+  prediction per prompt. Use it when you need the exact mask. If the server can only answer
+  with polygons, the block fills them into the mask instead, and holes in the object are lost.
 """
 
 
