@@ -897,3 +897,78 @@ def test_tensor_empty_masks_are_dropped_for_rle_output(
 
     # the polygon output keeps the empty instance and its serializer drops it
     assert result[0]["predictions"].xyxy.shape[0] == expected_instances
+
+
+def _run_workflow_on_a_crop(crop_mask: np.ndarray) -> dict:
+    # an 18x10 crop at (x=12, y=8) of a 50x30 image
+    execution_engine = ExecutionEngine.init(
+        workflow_definition={
+            "version": "1.0",
+            "inputs": [{"type": "WorkflowImage", "name": "image"}],
+            "steps": [
+                {
+                    "type": "roboflow_core/absolute_static_crop@v1",
+                    "name": "crop",
+                    "images": "$inputs.image",
+                    "x_center": 21,
+                    "y_center": 13,
+                    "width": 18,
+                    "height": 10,
+                },
+                {
+                    "type": "roboflow_core/sam3_interactive@v1",
+                    "name": "sam3",
+                    "images": "$steps.crop.crops",
+                    "points": [{"x": 5, "y": 3, "positive": True}],
+                    "output_format": "rle",
+                },
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "predictions",
+                    "selector": "$steps.sam3.predictions",
+                }
+            ],
+        },
+        init_parameters={
+            "workflows_core.model_manager": _engine_model_manager(mask=crop_mask),
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=1,
+    )
+    image = np.zeros((30, 50, 3), dtype=np.uint8)
+
+    result = execution_engine.run(
+        runtime_parameters={"image": [image]}, serialize_results=True
+    )
+
+    return result[0]["predictions"]
+
+
+@pytest.mark.parametrize(
+    "crop_rows, crop_columns, expected_box",
+    [
+        (slice(2, 5), slice(3, 8), {"x": 17.5, "y": 11.5, "width": 5.0, "height": 3.0}),
+        (slice(4, 5), slice(6, 7), {"x": 18.5, "y": 12.5, "width": 1.0, "height": 1.0}),
+    ],
+    ids=["non-square mask", "single pixel"],
+)
+def test_rle_output_of_a_crop_is_serialized_in_root_coordinates(
+    crop_rows, crop_columns, expected_box
+) -> None:
+    crop_mask = np.zeros((10, 18), dtype=bool)
+    crop_mask[crop_rows, crop_columns] = True
+    root_mask = np.zeros((30, 50), dtype=bool)
+    root_mask[8:18, 12:30] = crop_mask
+
+    serialized = _run_workflow_on_a_crop(crop_mask=crop_mask)
+
+    (prediction,) = serialized["predictions"]
+    # COCO box extents in both representations: one pixel is a 1x1 box
+    assert {key: prediction[key] for key in expected_box} == expected_box
+    assert np.array_equal(
+        mask_utils.decode(prediction["rle_mask"]).astype(bool), root_mask
+    )
+    assert serialized["image"] == {"width": 50, "height": 30}

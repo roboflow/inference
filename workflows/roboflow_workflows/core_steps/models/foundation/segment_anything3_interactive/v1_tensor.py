@@ -28,8 +28,9 @@ separate ``sv.Detections`` row. Tensor-native differences:
 - ``output_format="rle"`` declares the RLE kind first, so the serializer emits
   ``rle_mask`` instead of polygon ``points`` (masks are RLE on every path either
   way). Like the numpy block's RLE output, it also keeps one instance per prompt
-  when a polygon answer is rasterised, and drops empty masks, which the polygon
-  serializer drops too.
+  when a polygon answer is rasterised, drops empty masks, which the polygon
+  serializer drops too, and reports COCO box extents (``max + 1``, as
+  ``toBbox``) instead of the inclusive ones above.
 """
 
 import logging
@@ -904,6 +905,10 @@ def _segmentation_results_to_instance_detections(
         confidence_tensor = torch.zeros((0,), dtype=torch.float32)
     else:
         xyxy = torch.stack([_mask_to_xyxy(mask) for mask in kept_masks])
+        if output_format == "rle":
+            # COCO box extents, as `toBbox` reports them for the numpy block's
+            # RLE output: one pixel is a 1x1 box.
+            xyxy = xyxy + torch.tensor([0.0, 0.0, 1.0, 1.0])
         class_id_tensor = torch.tensor(kept_class_ids, dtype=torch.int64)
         confidence_tensor = torch.tensor(kept_confidences, dtype=torch.float32)
 
