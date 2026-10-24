@@ -16,6 +16,14 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- SAM 3 Interactive (`roboflow_core/sam3_interactive@v1`): optional `output_format`, `polygons` (default, output unchanged) or `rle`, with the same values as SAM 3 v3. With `rle` the block asks SAM 3 for RLE masks on every execution path and returns one prediction per prompt that keeps the model's mask in `rle_mask` (decoded into `mask` for downstream blocks), declared as `rle_instance_segmentation_prediction` first, so serialized outputs carry `rle_mask` instead of polygon `points`. A server that answers polygons anyway has them rasterised into the prompt's mask. The tensor-native variant already carried RLE masks; with `rle` it declares and serializes them as RLE, and, like the NumPy block, keeps one mask per prompt for a polygon answer, drops empty masks and reports COCO box extents (a one-pixel mask is a 1x1 box). `ModelsProvider.run_sam2_segmentation` gains `format`, which the block sends only for `rle`.
+
+### Fixed
+
+- Root-coordinate recovery (`sv_detections_to_root_coordinates`, applied to workflow outputs by default) re-encodes `rle_mask` from the re-anchored dense masks. A block that ran on a crop and returns RLE with dense masks, such as SAM 3 v3 with `output_format: rle`, used to serialize root-coordinate boxes next to an RLE still sized and placed in the crop. RLE-only predictions (`mask=None`) are unchanged, as in `scale_sv_detections`.
+
 ## `0.2.13`
 
 Bundled execution engine: `1.17.0`.
