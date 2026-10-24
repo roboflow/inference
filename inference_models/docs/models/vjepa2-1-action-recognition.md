@@ -106,6 +106,8 @@ Calls that share a V-JEPA model serialize normalization, GPU transfer, inference
 
 HTTP video processing uses a 600-second deadline by default, set with `ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS` on the server.
 The server stops scheduling work when it detects a disconnected caller or an expired deadline.
+Connection monitoring observes ASGI disconnect events outside the HTTP middleware and shares a request-scoped flag with the processing loop.
+Both the action-recognition endpoint and the legacy model endpoint use this control, for V-JEPA and Cosmos.
 An active model call finishes before cleanup. Deadline failures return HTTP 504.
 
 HTTP releases frames after later windows no longer need them.

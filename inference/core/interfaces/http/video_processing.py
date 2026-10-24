@@ -12,6 +12,9 @@ from inference.core.entities.responses.action_recognition import (
     ActionRecognitionInferenceResponse,
 )
 from inference.core.env import ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS
+from inference.core.interfaces.http.middlewares.disconnect import (
+    REQUEST_DISCONNECT_STATE_KEY,
+)
 from inference.core.utils.video_processing import (
     VideoProcessingCancelledError,
     VideoProcessingControl,
@@ -43,9 +46,21 @@ def infer_action_recognition_request(
     Raises:
         HTTPException: Processing exceeds its deadline or the caller disconnects.
     """
+    disconnect_state = request.scope.get("state", {}).get(REQUEST_DISCONNECT_STATE_KEY)
+    if disconnect_state is not None:
+        # The sync route runs in an AnyIO worker; activate the watcher on its
+        # event loop, then poll only the thread-safe flag between model calls.
+        from_thread.run_sync(disconnect_state.start_monitoring)
+        is_disconnected = disconnect_state.disconnected.is_set
+    else:
+        # Preserve use of this helper in bare ASGI apps without our middleware.
+        def is_disconnected():
+            disconnected = from_thread.run(request.is_disconnected)
+            return disconnected
+
     control = VideoProcessingControl(
         timeout_seconds=ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS,
-        is_disconnected=lambda: from_thread.run(request.is_disconnected),
+        is_disconnected=is_disconnected,
     )
     try:
         control.check()
