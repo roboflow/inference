@@ -9,11 +9,15 @@ from fastapi.encoders import jsonable_encoder
 from inference.core.cache import model_monitoring as model_monitoring_cache_module
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.action_recognition import (
+    ActionRecognitionInferenceRequest,
+)
 from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
+    DISK_CACHE_CLEANUP,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     METRICS_ENABLED,
     METRICS_INTERVAL,
@@ -383,7 +387,9 @@ class ModelManager:
                                 request.image.value = str(request.image.value)
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                                value=to_cachable_inference_item(request, rtn_val),
+                                value=to_cachable_inference_item(
+                                    request, rtn_val, model_id=model_id
+                                ),
                                 score=finish_time,
                                 expire=METRICS_INTERVAL * 2,
                             )
@@ -489,7 +495,9 @@ class ModelManager:
                                 request.image.value = str(request.image.value)
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                                value=to_cachable_inference_item(request, rtn_val),
+                                value=to_cachable_inference_item(
+                                    request, rtn_val, model_id=model_id
+                                ),
                                 score=finish_time,
                                 expire=METRICS_INTERVAL * 2,
                             )
@@ -548,7 +556,15 @@ class ModelManager:
         model = self._get_model_reference(model_id=model_id)
         if isinstance(request, ImageEmbeddingRequest):
             return model.infer_embeddings_from_request(request)
-        return model.infer_from_request(request)
+        elif (
+            isinstance(request, ActionRecognitionInferenceRequest)
+            and "processing_control" in kwargs
+        ):
+            return model.infer_from_request(
+                request, processing_control=kwargs["processing_control"]
+            )
+        else:
+            return model.infer_from_request(request)
 
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
         """Run native model inference with cache lookup and telemetry.
@@ -786,10 +802,14 @@ class ModelManager:
             )
 
     def clear(self) -> None:
-        """Removes all models from the manager."""
+        """Removes all models from the manager.
+
+        Cached weights are deleted from disk only when ``DISK_CACHE_CLEANUP``
+        is enabled, so a persistent model cache survives ``/model/clear``.
+        """
         model_ids = list(self.keys())
         for model_id in model_ids:
-            self.remove(model_id)
+            self.remove(model_id, delete_from_disk=DISK_CACHE_CLEANUP)
 
     def _get_model_reference(self, model_id: str) -> Model:
         try:

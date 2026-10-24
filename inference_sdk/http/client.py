@@ -25,6 +25,7 @@ from inference_sdk.config import (
     EXECUTION_ID_HEADER,
     InferenceSDKGuidanceWarning,
     execution_id,
+    usage_source_tags,
 )
 from inference_sdk.http.entities import (
     ACTION_RECOGNITION_TASK,
@@ -47,6 +48,7 @@ from inference_sdk.http.errors import (
     FeatureDeprecatedError,
     HTTPCallErrorError,
     HTTPClientError,
+    HTTPServerConnectionError,
     InvalidInputFormatError,
     InvalidModelIdentifier,
     InvalidParameterError,
@@ -165,6 +167,20 @@ def _collect_processing_time_from_response(
 
 
 def wrap_errors(function: callable) -> callable:
+    """Translate synchronous request failures into SDK exceptions.
+
+    Args:
+        function (callable): Client operation to wrap.
+
+    Returns:
+        callable: Operation preserving HTTP status and connection error categories.
+
+    Raises:
+        HTTPServerConnectionError: If a server connection fails, including after retries.
+        HTTPCallErrorError: If the request receives an HTTP error status.
+        HTTPClientError: If retries fail for another reason.
+    """
+
     def decorate(*args, **kwargs) -> Any:
         try:
             return function(*args, **kwargs)
@@ -176,6 +192,15 @@ def wrap_errors(function: callable) -> callable:
                     status_code=error.status_code,
                     api_message=None,
                 ) from error
+            if isinstance(
+                error.inner_error,
+                (ConnectionError, requests.exceptions.ConnectionError),
+            ):
+                raise HTTPServerConnectionError(
+                    "Error with server connection: "
+                    f"{deduct_api_key_from_string(str(error.inner_error))}"
+                ) from error
+
             raise HTTPClientError(
                 f"Original request failed and retry did not succeed. Details: {error}"
             ) from error
@@ -196,7 +221,7 @@ def wrap_errors(function: callable) -> callable:
                 api_message=api_message,
             ) from error
         except (ConnectionError, requests.exceptions.ConnectionError) as error:
-            raise HTTPClientError(
+            raise HTTPServerConnectionError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
 
@@ -204,6 +229,20 @@ def wrap_errors(function: callable) -> callable:
 
 
 def wrap_errors_async(function: callable) -> callable:
+    """Translate asynchronous request failures into SDK exceptions.
+
+    Args:
+        function (callable): Async client operation to wrap.
+
+    Returns:
+        callable: Operation distinguishing connection failures from server timeouts.
+
+    Raises:
+        HTTPServerConnectionError: If a server connection fails.
+        HTTPCallErrorError: If the request receives an HTTP error status.
+        HTTPClientError: If the request times out while communicating with the server.
+    """
+
     async def decorate(*args, **kwargs) -> Any:
         try:
             return await function(*args, **kwargs)
@@ -213,8 +252,13 @@ def wrap_errors_async(function: callable) -> callable:
                 status_code=error.status,
                 api_message=deduct_api_key_from_string(error.message),
             ) from error
-        except ClientConnectionError as error:
+        except aiohttp.ServerTimeoutError as error:
+            # Includes read timeouts, which do not imply an unreachable server.
             raise HTTPClientError(
+                f"Server request timed out: {deduct_api_key_from_string(str(error))}"
+            ) from error
+        except ClientConnectionError as error:
+            raise HTTPServerConnectionError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
 
@@ -1464,7 +1508,7 @@ class InferenceHTTPClient:
         }
         payload = {
             **preprocessing,
-            "source": self.__inference_configuration.source,
+            **self.__inference_configuration.to_source_parameters(),
             "output_type": output_type,
         }
 
@@ -3420,12 +3464,13 @@ class InferenceHTTPClient:
         return {"api_key": self.__api_key}
 
     def __initialise_payload(self) -> dict:
+        payload = self.__inference_configuration.to_source_parameters()
         if (
             self.__client_mode is not HTTPClientMode.V0
             and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER
         ):
-            return {"api_key": self.__api_key}
-        return {}
+            payload["api_key"] = self.__api_key
+        return payload
 
     def __wrap_url_with_api_key(self, url: str) -> str:
         # The one URL seam every hand-built request method routes through, so
@@ -3434,6 +3479,10 @@ class InferenceHTTPClient:
         # send time) - the standard v0/v1 `infer()` methods serialize those
         # through `InferenceConfiguration` instead, and never call this.
         query_params: Dict[str, Any] = {}
+        if usage_source_tags.get():
+            query_params.update(
+                self.__inference_configuration.to_source_parameters(include_origin=True)
+            )
         if (
             self.__client_mode is HTTPClientMode.V0
             and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER

@@ -4,6 +4,39 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.3`
+
+### Changed
+
+- The `workflows` extra requires `roboflow-workflows>=0.2.13` instead of
+  `>=0.2.11rc1`, providing the execution-engine cleanup used below.
+
+### Documentation
+
+- Clarify `max_fps` behavior: video files retain every frame and wait by default; streams drop intermediate frames. `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True` enables frame dropping for files, and the Inference CLI sets this flag automatically.
+
+### Fixed
+
+- Joining a workflow `InferencePipeline` (after end of stream, `terminate()` or an inference error) now closes the workflow's blocks through `ExecutionEngine.close()`, after the workflow thread pools are shut down. Blocks with background connections, such as the OPC UA Reader, MQTT Reader and Kafka Consumer, no longer keep their threads and broker or server sessions while a stopped pipeline object is still referenced. With a `roboflow-workflows` that has no `ExecutionEngine.close()`, nothing changes.
+
+## `0.1.2`
+
+### Changed
+
+- The `workflows` extra requires `aiohttp~=3.14.4`, the aiohttp release that fixes GHSA-2g87-pp6c-29x5 and GHSA-5wr8-gcqf-gqf3.
+- The `workflows` extra requires `roboflow-workflows>=0.2.11rc1` (previously `>=0.2.4rc3`).
+
+## `0.1.1`
+
+### Added
+
+- `VideoFrame.total_frames` carries the source video file's frame count (`None` for streams, unknown counts, realtime WebRTC uploads, and after a source restart or initial seek). `InferencePipeline` workflow runs and WebRTC video-file uploads pass it into workflow `VideoMetadata.total_frames`.
+
+### Fixed
+
+- WebRTC sessions await peer/transport cleanup on cancellation and setup failures, finish in-flight inference, and join workflow thread pools before returning. Normal connection closure is no longer logged as fatal.
+- WebRTC worker logs TURN channel binds the relay refuses (403) at debug level instead of asyncio "Task exception was never retrieved" tracebacks.
+
 ## `0.1.0`
 
 ### Added

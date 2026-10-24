@@ -172,6 +172,7 @@ class YOLO26ForInstanceSegmentationTorchScript(
         pre_processing_meta: List[PreProcessingMetadata],
         confidence: Confidence = "default",
         mask_format: InstanceSegmentationMaskFormat = "dense",
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
         if mask_format not in self.supported_mask_formats:
@@ -199,9 +200,11 @@ class YOLO26ForInstanceSegmentationTorchScript(
                 filtered_results=filtered_results,
                 protos=protos,
                 pre_processing_meta=pre_processing_meta,
+                masks_resolution_factor=masks_resolution_factor,
             )
         return prepare_rle_masks(
             filtered_results=filtered_results,
             protos=protos,
             pre_processing_meta=pre_processing_meta,
+            masks_resolution_factor=masks_resolution_factor,
         )

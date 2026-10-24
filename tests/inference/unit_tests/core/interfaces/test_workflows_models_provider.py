@@ -426,6 +426,41 @@ def test_run_semantic_segmentation_still_rejects_an_explicit_none_confidence() -
     manager.infer_from_request_sync.assert_not_called()
 
 
+def test_run_classification_requests_the_anomaly_map_when_asked() -> None:
+    """The anomaly detection block asks for the heatmap through the port; the
+    request field defaults to False so plain classification is unchanged."""
+    from inference.core.entities.responses.inference import (
+        ClassificationInferenceResponse,
+    )
+
+    manager = manager_returning(
+        ClassificationInferenceResponse(
+            image=InferenceResponseImage(width=10, height=20),
+            predictions=[],
+            top="normal",
+            confidence=0.9,
+        )
+    )
+    ModelManagerModelsProvider(manager).run_classification(
+        model_id="m/1",
+        images=IMAGES,
+        api_key="k",
+        confidence="default",
+        include_anomaly_map=True,
+    )
+    request = captured_request(manager)
+    assert request.include_anomaly_map is True
+    assert "include_anomaly_map" in request.model_fields_set
+
+    manager.infer_from_request_sync.reset_mock()
+    ModelManagerModelsProvider(manager).run_classification(
+        model_id="m/1", images=IMAGES, api_key="k", confidence="default"
+    )
+    request = captured_request(manager)
+    assert request.include_anomaly_map is False
+    assert "include_anomaly_map" not in request.model_fields_set
+
+
 def test_run_classification_forwards_extra_inference_kwargs() -> None:
     """multi_label v2/v3 pass `confidence` to the model call as well as into the
     request; the port carries it as `inference_kwargs`."""

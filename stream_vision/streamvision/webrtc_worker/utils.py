@@ -5,6 +5,7 @@ import struct
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import av
 import cv2 as cv
 import numpy as np
 from av import VideoFrame
@@ -45,6 +46,7 @@ def process_frame(
     stream_output: Optional[str] = None,
     render_output: bool = True,
     include_errors_on_frame: bool = True,
+    total_frames: Optional[int] = None,
 ) -> Tuple[
     Dict[str, Union[WorkflowImageData, Any]],
     Optional[VideoFrame],
@@ -62,6 +64,7 @@ def process_frame(
             comes_from_video_file=comes_from_video_file,
             fps=declared_fps,
             measured_fps=measured_fps,
+            total_frames=total_frames,
         )
         workflow_output = inference_pipeline._on_video_frame([video_frame])[0]
     except Exception as e:
@@ -256,6 +259,27 @@ def get_video_fps(filepath: str) -> Optional[float]:
         logger.warning("ffprobe FPS detection failed: %s", e)
 
     return None
+
+
+def get_video_total_frames(filepath: str) -> Optional[int]:
+    """Read the frame count of the first video stream from container metadata.
+
+    Args:
+        filepath: Path to the video file
+
+    Returns:
+        Frame count, or None if the container does not report it
+    """
+    try:
+        with av.open(filepath) as container:
+            total_frames = container.streams.video[0].frames
+    except Exception as e:
+        logger.warning("Video frame count detection failed: %s", e)
+        return None
+    if total_frames <= 0:
+        return None
+    logger.info("Video total frames detected: %d", total_frames)
+    return total_frames
 
 
 def get_video_rotation(filepath: str) -> int:

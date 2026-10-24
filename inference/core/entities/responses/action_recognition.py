@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List, Literal, Optional
 
 from pydantic import Field
 
@@ -21,3 +21,13 @@ class ActionRecognitionInferenceResponse(InferenceResponse):
     source_fps: float = Field(description="Frames per second of the clip")
     frame_count: int = Field(description="Frames the clip holds")
     windows_classified: int = Field(description="Model calls the clip was cut into")
+    span_semantics: Literal["instances", "class_union"] = "instances"
+    confidence_threshold: Optional[float] = Field(
+        default=None,
+        description="Uniform confidence threshold; null for per-class thresholds or unscored models",
+    )
+    per_class_confidence_thresholds: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Effective class-specific thresholds when model-eval recommendations apply",
+    )
+    candidates: Optional[List[ActionRecognitionPrediction]] = None

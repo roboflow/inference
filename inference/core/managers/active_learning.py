@@ -5,6 +5,7 @@ from fastapi import BackgroundTasks
 
 from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
+from inference.core.active_learning.post_processing import project_mask_grid_to_original
 from inference.core.cache.base import BaseCache
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
@@ -158,7 +159,9 @@ class ActiveLearningManager(ModelManager):
         )
         self._middlewares[middleware_key].register_batch(
             inference_inputs=inference_inputs,
-            predictions=results_dicts,
+            predictions=[
+                project_mask_grid_to_original(result) for result in results_dicts
+            ],
             prediction_type=prediction_type,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
             inference_id=request.id,

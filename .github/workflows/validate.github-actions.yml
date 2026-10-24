@@ -63,4 +63,12 @@ jobs:
           uv export --locked --script .github/scripts/maintainer_review.py --format requirements-txt --output-file "$RUNNER_TEMP/handoff-requirements.txt"
           uv pip install --system --require-hashes --requirements "$RUNNER_TEMP/handoff-requirements.txt"
       - name: Test maintainer review handoff
-        run: python -m unittest discover -s .github/scripts -p 'test_*.py'
+        run: python -m unittest discover -s .github/scripts -p 'test_maintainer_review*.py'
+      - name: Test CI image reuse without network or credentials
+        run: |
+          python -m unittest discover -s .github/scripts -p 'test_ci_image.py'
+          python -m unittest discover -s .github/scripts -p 'test_depot_ci_image.py'
+      - name: Test hosted E2E accounting without network or credentials
+        run: |
+          uv pip install --system 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8' 'cryptography==46.0.3'
+          python -m unittest discover -s .github/scripts -p 'test_hosted_e2e*.py'
