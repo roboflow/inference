@@ -321,6 +321,8 @@ ARG TARGETARCH
 
 WORKDIR /app
 
+# ca-certificates >= 20260816 distrusts emSign ECC Root CA - G3 (eMudhra key compromise,
+# LP: #2171507); the version check stops a cached layer or stale mirror shipping an older store
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-runtime-gpu-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-runtime-gpu-${TARGETARCH} \
     apt-get update -y && \
@@ -352,7 +354,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-runtime
         libvpx7 \
         libxext6 \
         python3 \
-        zlib1g
+        zlib1g && \
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816
 
 COPY --from=gstreamer-runtime /opt/ffmpeg /opt/ffmpeg
 COPY --from=gstreamer-runtime /opt/gstreamer /opt/gstreamer
